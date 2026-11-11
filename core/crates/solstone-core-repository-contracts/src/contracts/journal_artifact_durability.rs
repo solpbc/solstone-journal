@@ -218,8 +218,8 @@ fn every_artifact_has_owning_production_mention_outside_durability() {
                 combined_source.contains(".join(\"census-started.json\")")
             }
             ArtifactId::ParentLossCensusRefusal => {
-                combined_source.contains("fn census_refusal(")
-                    && combined_source.contains("fn has_census_refusal_or_wedged(")
+                combined_source.contains("fn legacy_refusal_marker(")
+                    && combined_source.contains("\"census-refusal.json\"")
             }
             ArtifactId::CallosumSock => combined_source.contains("callosum.sock"),
             ArtifactId::SyncHeartbeat => {

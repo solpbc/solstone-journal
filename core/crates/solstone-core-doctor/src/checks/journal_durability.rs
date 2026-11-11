@@ -28,6 +28,10 @@ pub(crate) struct DurabilityReport {
     pub unresolved_generations: Vec<String>,
     /// What could not be inspected.
     pub unreadable: Vec<String>,
+    /// Generations a start refuses on: a retirement's descendant record lost.
+    pub refusals: Vec<String>,
+    /// Launches the newest generation still owes, when it has a directory.
+    pub outstanding: Option<(u64, usize)>,
 }
 
 impl DurabilityReport {
@@ -36,6 +40,7 @@ impl DurabilityReport {
             && self.closed_generations.is_empty()
             && self.unresolved_generations.is_empty()
             && self.unreadable.is_empty()
+            && self.refusals.is_empty()
     }
 }
 
@@ -76,6 +81,10 @@ fn scan_directory_recursive(journal: &Path, directory: &Path, report: &mut Durab
         };
         let path = entry.path();
         let name = entry.file_name();
+        // Discharged entries and folded caches wait there for the prune.
+        if name == "discharged" {
+            continue;
+        }
         if name.to_string_lossy().contains(SET_ASIDE_MARKER) {
             report.set_aside.push(relative(journal, &path));
         }
@@ -98,6 +107,7 @@ fn scan_directory_recursive(journal: &Path, directory: &Path, report: &mut Durab
 fn scan_generations(journal: &Path, report: &mut DurabilityReport) {
     use solstone_core_system::lifecycle::{
         AdmissionFinding, ParentLossGenerationRecord, ParentLossTerminalDisposition,
+        parent_loss_census_is_lost,
     };
 
     let generations = journal.join("health/parent-loss/generations");
@@ -131,11 +141,14 @@ fn scan_generations(journal: &Path, report: &mut DurabilityReport) {
         }
     }
     numbered.sort();
+    if let Some((generation, directory)) = numbered.last() {
+        report.outstanding = Some((*generation, count_entries(&directory.join("admissions"))));
+    }
     for (generation, directory) in numbered {
         let record_path = directory.join("record.json");
         let bytes = match fs::read(&record_path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
             Err(error) => {
                 report
                     .unreadable
@@ -143,34 +156,64 @@ fn scan_generations(journal: &Path, report: &mut DurabilityReport) {
                 continue;
             }
         };
-        let record: ParentLossGenerationRecord = match serde_json::from_slice(&bytes) {
-            Ok(record) => record,
-            Err(error) => {
-                report
-                    .unreadable
-                    .push(format!("{}: {error}", relative(journal, &record_path)));
-                continue;
-            }
+        let record =
+            match bytes.map(|bytes| serde_json::from_slice::<ParentLossGenerationRecord>(&bytes)) {
+                None => None,
+                Some(Ok(record)) => Some(record),
+                Some(Err(error)) => {
+                    report
+                        .unreadable
+                        .push(format!("{}: {error}", relative(journal, &record_path)));
+                    continue;
+                }
+            };
+        let closed = record
+            .as_ref()
+            .is_some_and(|record| record.closure.is_some());
+        if !closed && parent_loss_census_is_lost(&directory) {
+            report.refusals.push(format!(
+                "generation {generation}: the record of processes a retirement started is lost, \
+                 so the journal will not start until the computer restarts"
+            ));
+        }
+        let Some(record) = record else {
+            continue;
         };
         if let Some(closure) = record.closure.as_ref() {
-            let exited = closure
-                .admissions
-                .iter()
-                .filter(|admission| admission.finding == AdmissionFinding::Exited)
-                .count();
-            let retired = closure
-                .admissions
-                .iter()
-                .filter(|admission| matches!(admission.finding, AdmissionFinding::Retired { .. }))
-                .count();
-            let never_admitted = closure.admissions.len() - exited - retired;
+            let (total, exited, retired) = match closure.summary.as_ref() {
+                Some(summary) => (
+                    summary.total() as usize,
+                    summary.exited as usize,
+                    summary.retired as usize,
+                ),
+                None => (
+                    closure.admissions.len(),
+                    closure
+                        .admissions
+                        .iter()
+                        .filter(|admission| admission.finding == AdmissionFinding::Exited)
+                        .count(),
+                    closure
+                        .admissions
+                        .iter()
+                        .filter(|admission| {
+                            matches!(admission.finding, AdmissionFinding::Retired { .. })
+                        })
+                        .count(),
+                ),
+            };
+            let never_admitted = total - exited - retired;
             report.closed_generations.push(format!(
                 "generation {generation} was closed by the start that became generation {} \
-                 (unix {}): {} admissions, {exited} already exited, {retired} stopped by the journal, \
-                 {never_admitted} never admitted",
+                 (unix {}): {total} admissions, {exited} already exited, {retired} stopped by the journal, \
+                 {never_admitted} never admitted{}",
                 closure.successor_generation,
                 closure.closed_at,
-                closure.admissions.len(),
+                if closure.summary.as_ref().is_some_and(|summary| summary.boot_changed) {
+                    "; the computer had restarted since"
+                } else {
+                    ""
+                },
             ));
             for admission in &closure.admissions {
                 let finding_desc = match admission.finding {
@@ -217,6 +260,25 @@ fn scan_generations(journal: &Path, report: &mut DurabilityReport) {
 #[cfg(not(unix))]
 fn scan_generations(_journal: &Path, _report: &mut DurabilityReport) {}
 
+/// Entry directories in one `admissions/` listing.
+#[cfg(unix)]
+fn count_entries(admissions: &Path) -> usize {
+    fs::read_dir(admissions)
+        .map(|children| {
+            children
+                .flatten()
+                .filter(|child| child.file_type().is_ok_and(|kind| kind.is_dir()))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn outstanding_line(report: &DurabilityReport) -> Option<String> {
+    report.outstanding.map(|(generation, count)| {
+        format!("the newest run (generation {generation}) still owes {count} launches")
+    })
+}
+
 pub(crate) fn scan(journal: &Path) -> DurabilityReport {
     let mut report = DurabilityReport::default();
     let mut root_prefixes = std::collections::BTreeSet::new();
@@ -262,14 +324,16 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     }
     let report = scan(&context.journal_path);
     if report.is_clean() {
-        return Ok(make_result(
-            check,
-            Status::Ok,
-            "no recorded recovery to report",
-            None::<String>,
-        ));
+        let detail = match outstanding_line(&report) {
+            Some(line) => format!("no recorded recovery to report; {line}"),
+            None => "no recorded recovery to report".to_owned(),
+        };
+        return Ok(make_result(check, Status::Ok, detail, None::<String>));
     }
     let mut sections = Vec::new();
+    if !report.refusals.is_empty() {
+        sections.push(named("starts refused", &report.refusals));
+    }
     let mut heals = Vec::new();
     if !report.closed_generations.is_empty() {
         sections.push(named(
@@ -292,13 +356,19 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     if !report.unreadable.is_empty() {
         sections.push(named("could not inspect", &report.unreadable));
     }
+    if let Some(line) = outstanding_line(&report) {
+        sections.push(line);
+    }
     let detail = sections.join("\n");
-    let status = if report.unreadable.is_empty() {
+    let status = if report.unreadable.is_empty() && report.refusals.is_empty() {
         Status::Warn
     } else {
         Status::Fail
     };
-    let action = if report.unreadable.is_empty() {
+    let action = if !report.refusals.is_empty() {
+        "the journal refuses to start until the computer restarts; restart it, then start the \
+         journal again"
+    } else if report.unreadable.is_empty() {
         "no action is needed: recovered records stay beside the originals and are listed here"
     } else {
         "check the paths under 'could not inspect'; any recovered records stay beside the \
@@ -542,6 +612,7 @@ mod tests {
                         finding: AdmissionFinding::NeverAcknowledged,
                     },
                 ],
+                summary: None,
             }),
         };
         fs::write(
@@ -606,5 +677,103 @@ mod tests {
         assert_eq!(report.unreadable.len(), 1);
         #[cfg(not(unix))]
         assert!(report.unreadable.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_summary_counts_a_closure_and_its_rows_name_only_what_was_noteworthy() {
+        use solstone_core_system::lifecycle::{
+            AbandonedGenerationClosure, AdmissionClosure, AdmissionFinding, AuthorityObservation,
+            ClosureSummary, HeartbeatRetirement, PARENT_LOSS_CLOSURE_SCHEMA_V1,
+            PARENT_LOSS_LEDGER_SCHEMA_V1, ParentLossGenerationRecord,
+            ParentLossTerminalDisposition, ParentLossUnresolvedReason,
+        };
+        use solstone_core_system::process::{ProcessBirth, ProcessInstance};
+
+        let instance = |pid| ProcessInstance {
+            pid,
+            birth: ProcessBirth::linux(1, 1, 100),
+        };
+        let journal = TempDir::new().expect("journal");
+        let generation = journal.path().join("health/parent-loss/generations/8");
+        fs::create_dir_all(generation.join("admissions/live-a")).unwrap();
+        fs::create_dir_all(generation.join("admissions/live-b")).unwrap();
+        fs::create_dir_all(generation.join("discharged/old.wedged-1.json")).unwrap();
+        let record = ParentLossGenerationRecord {
+            schema: PARENT_LOSS_LEDGER_SCHEMA_V1,
+            generation: 7,
+            coordinator: Some(instance(2)),
+            supervisor: instance(1),
+            sealed_ledger_digest: Some("d".to_owned()),
+            terminal: Some(ParentLossTerminalDisposition::Unresolved {
+                reason: ParentLossUnresolvedReason::AuthoritiesLost,
+            }),
+            supervisor_heartbeat: None,
+            closure: Some(AbandonedGenerationClosure {
+                schema: PARENT_LOSS_CLOSURE_SCHEMA_V1,
+                closed_by: instance(3),
+                successor_generation: 8,
+                closed_at: 1_789_000_000,
+                supervisor: AuthorityObservation::Exited,
+                coordinator: AuthorityObservation::Exited,
+                heartbeat: HeartbeatRetirement::Removed,
+                set_aside: Vec::new(),
+                notes: Vec::new(),
+                admissions: vec![AdmissionClosure {
+                    launch_id: "cortex-a".to_owned(),
+                    service: None,
+                    instance: Some(instance(4)),
+                    uid: Some(501),
+                    finding: AdmissionFinding::Retired { escalated: false },
+                }],
+                summary: Some(ClosureSummary {
+                    exited: 107_066,
+                    retired: 1,
+                    never_acknowledged: 1,
+                    ..ClosureSummary::default()
+                }),
+            }),
+        };
+        let seven = journal.path().join("health/parent-loss/generations/7");
+        fs::create_dir_all(&seven).unwrap();
+        fs::write(
+            seven.join("record.json"),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+        let report = scan(journal.path());
+        assert!(
+            report.closed_generations[0]
+                .contains("107068 admissions, 107066 already exited, 1 stopped"),
+            "{:?}",
+            report.closed_generations
+        );
+        assert_eq!(
+            report.closed_generations.len(),
+            2,
+            "one summary line, one noteworthy row"
+        );
+        assert_eq!(report.outstanding, Some((8, 2)));
+        assert!(
+            report.set_aside.is_empty(),
+            "discharged/ is the prune's, not a heal"
+        );
+        let result = run(&test_context(journal.path().to_path_buf()), test_check()).expect("run");
+        assert!(result.detail.contains("still owes 2 launches"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_lost_descendant_census_is_named_as_a_refused_start() {
+        let journal = TempDir::new().expect("journal");
+        let generation = journal.path().join("health/parent-loss/generations/4");
+        fs::create_dir_all(&generation).unwrap();
+        fs::write(generation.join("census-started.json"), b"{\"schema\":1}").unwrap();
+        let report = scan(journal.path());
+        assert_eq!(report.refusals.len(), 1);
+        assert!(report.refusals[0].contains("generation 4"));
+        let result = run(&test_context(journal.path().to_path_buf()), test_check()).expect("run");
+        assert_eq!(result.status, Status::Fail);
+        assert!(result.detail.contains("starts refused"));
     }
 }

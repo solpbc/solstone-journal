@@ -20,18 +20,18 @@ use solstone_core_journal_io::{
 use thiserror::Error;
 
 use super::parent_loss_admission::{
-    AdmissionIdentity, AdmissionResultState, ParentLossAdmissionError,
-    ParentLossServiceWitnessDrop, admission_directory, read_parent_loss_admission_intent,
-    read_parent_loss_admission_result, witness_path,
-};
-use super::parent_loss_closure::{
-    AdmissionRetirer, ClosingAuthority, HeartbeatRetirement, SystemAdmissionRetirer,
-    settle_by_process_table,
+    AdmissionIdentity, ParentLossAdmissionError, ParentLossServiceWitnessDrop, admission_directory,
+    witness_path,
 };
 use super::parent_loss_ledger::{
-    ActiveGeneration, BootstrapRecoveryReason, CoordinatorLease, ParentLossGeneration,
-    ParentLossLedger, ParentLossLedgerError, ParentLossPhase, ParentLossTerminalDisposition,
+    ActiveGeneration, CoordinatorLease, ParentLossGeneration, ParentLossLedger,
+    ParentLossLedgerError, ParentLossPhase, ParentLossTerminalDisposition,
     ParentLossUnresolvedReason,
+};
+use super::parent_loss_outstanding::{
+    ADMISSION_SEAL_LOCK_TIMEOUT, AdmissionRetirer, ClosingAuthority, HeartbeatRetirement,
+    OutstandingEntry, Settlement, SystemAdmissionRetirer, discharge_sealed, list_entries,
+    prune_settled_generations, read_entries, settle,
 };
 use super::state;
 use super::{
@@ -39,8 +39,7 @@ use super::{
     ParentLossReason, ParentWatch, ParentWatchStatus, PlatformParentExitWatcher,
 };
 use crate::process::{
-    InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
-    SystemProcessInstanceSource,
+    InspectResult, ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource,
 };
 
 /// The parent-loss outcome must be resolved or durably refused no later than
@@ -48,7 +47,6 @@ use crate::process::{
 pub const PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE: Duration = Duration::from_secs(15);
 const POLL_INTERVAL: Duration = Duration::from_millis(25);
 pub(crate) const PARENT_LOSS_COORDINATOR_TERMINAL_WRITE_BUDGET: Duration = Duration::from_secs(1);
-const ADMISSION_SEAL_LOCK_TIMEOUT: Duration = Duration::from_secs(2);
 const BOOTSTRAP_SCHEMA: u32 = 1;
 const FILE_MODE: u32 = 0o600;
 
@@ -133,6 +131,30 @@ pub(crate) struct SealedAdmission {
     pub(crate) launch_id: String,
     pub(crate) service: Option<HostedServiceKind>,
     pub(crate) identity: AdmissionIdentity,
+}
+
+/// What a seal froze: every outstanding entry, read tolerantly, and how many
+/// of them yield no identity although a process may have been started.
+#[derive(Debug, Default)]
+pub(crate) struct SealedSet {
+    entries: Vec<OutstandingEntry>,
+    unconfirmed: usize,
+}
+
+enum Seal {
+    Sealed(SealedSet, String),
+    /// No launch ever wrote an intent: `admissions/` does not exist.
+    NeverAdmitted,
+    /// The seal could not complete; a terminal is already published.
+    Published(ParentLossTerminalDisposition),
+}
+
+/// The same process, as a witness and an admission drop each name it.
+fn same_process(left: &AdmissionIdentity, right: &AdmissionIdentity) -> bool {
+    left.instance == right.instance
+        && left.uid == right.uid
+        && left.generation == right.generation
+        && left.launch_id == right.launch_id
 }
 
 /// A witness may establish that a service completed its own shutdown work, but
@@ -246,6 +268,17 @@ impl ParentLossCoordinator {
     /// Run until normal retirement, parent loss, or a terminal fail-closed
     /// outcome.  The bounded wait is absolute from the first loss observation.
     pub fn run(mut self) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
+        // Off the start path and in no hurry: delete what settled generations
+        // below this one no longer need. Killed at any point, it resumes on the
+        // next run.
+        let root = self.ledger.canonical_root().to_path_buf();
+        let _ = thread::Builder::new()
+            .name("parent-loss-prune".to_owned())
+            .spawn(move || {
+                if let Ok(ledger) = ParentLossLedger::open(&root) {
+                    prune_settled_generations(&ledger);
+                }
+            });
         let watch = ParentWatch::admit(
             DeclaredParent::from_instance(self.active.supervisor),
             &SystemProcessInstanceSource,
@@ -279,8 +312,26 @@ impl ParentLossCoordinator {
             .map_err(ParentLossCoordinatorError::Io)?;
         loop {
             if self.accept_retire_expected_if_live(&watch)? {
-                let (sealed, digest) = self.seal_admissions()?;
-                return self.wait_for_retirement(&sealed, digest, true);
+                // One deadline from shutdown entry; the seal's wait spends it.
+                let deadline = Instant::now() + PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE;
+                return match self.seal_admissions()? {
+                    Seal::Published(disposition) => Ok(disposition),
+                    Seal::NeverAdmitted => {
+                        let digest = self.ledger.write_sealed_ledger(
+                            self.active.generation,
+                            &Vec::<SealedAdmission>::new(),
+                        )?;
+                        self.wait_for_retirement_until(
+                            &SealedSet::default(),
+                            digest,
+                            true,
+                            deadline,
+                        )
+                    }
+                    Seal::Sealed(sealed, digest) => {
+                        self.wait_for_retirement_until(&sealed, digest, true, deadline)
+                    }
+                };
             }
             match loss_receiver.try_recv() {
                 Ok(ParentLossReason::ExitedOrReused) => {
@@ -301,51 +352,30 @@ impl ParentLossCoordinator {
         let deadline = Instant::now()
             + PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE
                 .saturating_sub(PARENT_LOSS_COORDINATOR_TERMINAL_WRITE_BUDGET);
-        let (sealed, digest) = self.seal_admissions()?;
-        if sealed.is_empty() && !self.clear_lost_supervisor_heartbeat() {
-            return self.terminal_unresolved(ParentLossUnresolvedReason::ArtifactFailure, None);
+        match self.seal_admissions()? {
+            Seal::Published(disposition) => Ok(disposition),
+            Seal::NeverAdmitted => {
+                if !self.clear_lost_supervisor_heartbeat() {
+                    return self
+                        .terminal_unresolved(ParentLossUnresolvedReason::ArtifactFailure, None);
+                }
+                let digest = self
+                    .ledger
+                    .write_sealed_ledger(self.active.generation, &Vec::<SealedAdmission>::new())?;
+                let disposition = ParentLossTerminalDisposition::CancelledBeforeAdmission;
+                self.publish_terminal(disposition.clone(), Some(digest))?;
+                self.release_clean_lease();
+                Ok(disposition)
+            }
+            Seal::Sealed(sealed, digest) => {
+                self.wait_for_retirement_until(&sealed, digest, false, deadline)
+            }
         }
-        if sealed.is_empty() {
-            let disposition = ParentLossTerminalDisposition::CancelledBeforeAdmission;
-            self.publish_terminal(disposition.clone(), Some(digest))?;
-            self.release_clean_lease();
-            return Ok(disposition);
-        }
-        self.wait_for_retirement_until(&sealed, digest, false, deadline)
-    }
-
-    fn wait_for_retirement(
-        &mut self,
-        sealed: &[SealedAdmission],
-        digest: String,
-        expected_retirement: bool,
-    ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
-        self.wait_for_retirement_with_deadline(
-            sealed,
-            digest,
-            expected_retirement,
-            PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE,
-        )
-    }
-
-    fn wait_for_retirement_with_deadline(
-        &mut self,
-        sealed: &[SealedAdmission],
-        digest: String,
-        expected_retirement: bool,
-        timeout: Duration,
-    ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
-        self.wait_for_retirement_until(
-            sealed,
-            digest,
-            expected_retirement,
-            Instant::now() + timeout,
-        )
     }
 
     fn wait_for_retirement_until(
         &mut self,
-        sealed: &[SealedAdmission],
+        sealed: &SealedSet,
         digest: String,
         expected_retirement: bool,
         deadline: Instant,
@@ -362,13 +392,41 @@ impl ParentLossCoordinator {
 
     fn wait_for_retirement_with_deadline_and_source(
         &mut self,
-        sealed: &[SealedAdmission],
+        sealed: &SealedSet,
         digest: String,
         expected_retirement: bool,
         deadline: Instant,
         source: &dyn ProcessInstanceSource,
         owners: &dyn AdmissionRetirer,
     ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
+        let outcome = self.validate_until(
+            sealed,
+            digest,
+            expected_retirement,
+            deadline,
+            source,
+            owners,
+        );
+        // After the terminal, what was proven gone leaves the outstanding set,
+        // so a clean stop leaves an empty `admissions/`.
+        if self.active.phase == ParentLossPhase::Terminal {
+            self.discharge_settled(sealed, source, owners);
+        }
+        outcome
+    }
+
+    fn validate_until(
+        &mut self,
+        sealed: &SealedSet,
+        digest: String,
+        expected_retirement: bool,
+        deadline: Instant,
+        source: &dyn ProcessInstanceSource,
+        owners: &dyn AdmissionRetirer,
+    ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
+        let deadline_exceeded = ParentLossUnresolvedReason::RetirementDeadlineExceeded {
+            deadline_seconds: PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE.as_secs(),
+        };
         loop {
             match self.validate_witnesses_with_source(
                 sealed,
@@ -398,18 +456,13 @@ impl ParentLossCoordinator {
                     self.release_clean_lease();
                     return Ok(disposition);
                 }
-                Ok(RetirementValidation::Pending) if Instant::now() < deadline => {
+                Ok(RetirementValidation::Pending) | Err(_) if Instant::now() < deadline => {
                     thread::sleep(
                         POLL_INTERVAL.min(deadline.saturating_duration_since(Instant::now())),
                     );
                 }
-                Ok(RetirementValidation::Pending) => {
-                    return self.terminal_unresolved(
-                        ParentLossUnresolvedReason::RetirementDeadlineExceeded {
-                            deadline_seconds: PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE.as_secs(),
-                        },
-                        Some(digest),
-                    );
+                Ok(RetirementValidation::Pending) | Err(_) => {
+                    return self.terminal_unresolved(deadline_exceeded, Some(digest));
                 }
                 Ok(RetirementValidation::Unresolved(reason)) => {
                     return self.terminal_unresolved(reason, Some(digest));
@@ -420,20 +473,31 @@ impl ParentLossCoordinator {
                         Some(digest),
                     );
                 }
-                Err(error) if Instant::now() < deadline => {
-                    let _ = error;
-                    thread::sleep(
-                        POLL_INTERVAL.min(deadline.saturating_duration_since(Instant::now())),
-                    );
-                }
-                Err(_) => {
-                    return self.terminal_unresolved(
-                        ParentLossUnresolvedReason::RetirementDeadlineExceeded {
-                            deadline_seconds: PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE.as_secs(),
-                        },
-                        Some(digest),
-                    );
-                }
+            }
+        }
+    }
+
+    /// Discharge, as the sealing authority, every sealed entry proven gone.
+    /// What is not proven stays for the next start's closer.
+    fn discharge_settled(
+        &self,
+        sealed: &SealedSet,
+        source: &dyn ProcessInstanceSource,
+        owners: &dyn AdmissionRetirer,
+    ) {
+        for entry in &sealed.entries {
+            let gone = if entry.identities.is_empty() {
+                entry.settled_without_process()
+            } else {
+                entry.identities.iter().all(|identity| {
+                    matches!(
+                        settle(source, owners, identity.instance, identity.uid),
+                        Settlement::Gone(_)
+                    )
+                })
+            };
+            if gone {
+                let _ = discharge_sealed(&self.ledger, self.active.generation, &entry.launch_id);
             }
         }
     }
@@ -441,14 +505,15 @@ impl ParentLossCoordinator {
     fn wait_unverifiable_parent(
         &mut self,
     ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
-        self.wait_unverifiable_parent_with_deadline(PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE)
+        self.wait_unverifiable_parent_until(
+            Instant::now() + PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE,
+        )
     }
 
-    fn wait_unverifiable_parent_with_deadline(
+    fn wait_unverifiable_parent_until(
         &mut self,
-        timeout: Duration,
+        deadline: Instant,
     ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
-        let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
             thread::sleep(POLL_INTERVAL.min(deadline.saturating_duration_since(Instant::now())));
         }
@@ -460,117 +525,113 @@ impl ParentLossCoordinator {
         )
     }
 
-    fn seal_admissions(
-        &mut self,
-    ) -> Result<(Vec<SealedAdmission>, String), ParentLossCoordinatorError> {
-        let _admission_lock = hold_lock(
+    /// Freeze the outstanding set. The phase flips first, under the lifecycle
+    /// lock; launchers check it under the admission lock, so once that lock
+    /// is held no launch stands ahead of the seal. A seal that cannot finish
+    /// still publishes a terminal, over the empty set.
+    fn seal_admissions(&mut self) -> Result<Seal, ParentLossCoordinatorError> {
+        match self.ledger.seal(self.active.generation, self.coordinator) {
+            Ok(active) => self.active = active,
+            Err(_) => {
+                return self
+                    .terminal_unresolved(ParentLossUnresolvedReason::ArtifactFailure, None)
+                    .map(Seal::Published);
+            }
+        }
+        let Ok(admission_lock) = hold_lock(
             self.ledger.admission_lock_path(self.active.generation),
             LockOptions {
                 timeout: ADMISSION_SEAL_LOCK_TIMEOUT,
                 poll_interval: Duration::from_millis(10),
                 mode: Some(FILE_MODE),
             },
-        )
-        .map_err(|error| ParentLossCoordinatorError::Ledger(ParentLossLedgerError::Lock(error)))?;
-        self.active = self.ledger.seal(self.active.generation, self.coordinator)?;
+        ) else {
+            return self
+                .terminal_unresolved(ParentLossUnresolvedReason::ArtifactFailure, None)
+                .map(Seal::Published);
+        };
         let directory = admission_directory(&self.ledger, self.active.generation);
-        let mut entries = Vec::new();
-        match fs::read_dir(&directory) {
-            Ok(children) => {
-                for child in children {
-                    let child = child?;
-                    if !child.file_type()?.is_dir() {
-                        continue;
-                    }
-                    let launch_id = child.file_name().to_string_lossy().to_string();
-                    let Some(intent) = read_parent_loss_admission_intent(
-                        &self.ledger,
-                        self.active.generation,
-                        &launch_id,
-                    )?
-                    else {
-                        return self.seal_failure(ParentLossUnresolvedReason::MissingAdmission);
-                    };
-                    let Some(result) = read_parent_loss_admission_result(
-                        &self.ledger,
-                        self.active.generation,
-                        &launch_id,
-                    )?
-                    else {
-                        return self.seal_failure(ParentLossUnresolvedReason::AdmissionUnconfirmed);
-                    };
-                    if intent.generation != self.active.generation
-                        || result.identity.as_ref().is_some_and(|identity| {
-                            identity.generation != intent.generation
-                                || identity.launch_id != intent.launch_id
-                        })
-                    {
-                        return self.seal_failure(ParentLossUnresolvedReason::AdmissionConflict);
-                    }
-                    match result.state {
-                        AdmissionResultState::Admitted => {}
-                        AdmissionResultState::RejectedUnreaped { .. } => {
-                            return self
-                                .seal_failure(ParentLossUnresolvedReason::AdmissionReapFailed);
-                        }
-                        AdmissionResultState::SpawnFailed { .. }
-                        | AdmissionResultState::RejectedAndReaped { .. } => continue,
-                    }
-                    let Some(identity) = result.identity else {
-                        return self.seal_failure(ParentLossUnresolvedReason::AdmissionUnconfirmed);
-                    };
-                    entries.push(SealedAdmission {
-                        launch_id,
-                        service: intent.service,
-                        identity,
-                    });
+        let listing = match list_entries(&directory) {
+            Ok(Some(listing)) => listing,
+            Ok(None) => return Ok(Seal::NeverAdmitted),
+            Err(_) => {
+                drop(admission_lock);
+                return self
+                    .terminal_unresolved(ParentLossUnresolvedReason::ArtifactFailure, None)
+                    .map(Seal::Published);
+            }
+        };
+        let mut sealed = SealedSet::default();
+        for window in listing.names.chunks(1024) {
+            for entry in read_entries(&directory, window) {
+                match entry {
+                    Ok(entry) => sealed.entries.push(entry),
+                    Err(_) => sealed.unconfirmed += 1,
                 }
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
         }
-        entries.sort_by(|left, right| left.launch_id.cmp(&right.launch_id));
-        let digest = self
+        drop(admission_lock);
+        sealed.unconfirmed += sealed
+            .entries
+            .iter()
+            .filter(|entry| entry.identities.is_empty() && !entry.settled_without_process())
+            .count();
+        let rows: Vec<SealedAdmission> = sealed
+            .entries
+            .iter()
+            .flat_map(|entry| {
+                entry.identities.iter().map(|identity| SealedAdmission {
+                    launch_id: entry.launch_id.clone(),
+                    service: entry.service,
+                    identity: identity.clone(),
+                })
+            })
+            .collect();
+        match self
             .ledger
-            .write_sealed_ledger(self.active.generation, &entries)?;
-        Ok((entries, digest))
-    }
-
-    fn seal_failure<T>(
-        &mut self,
-        reason: ParentLossUnresolvedReason,
-    ) -> Result<T, ParentLossCoordinatorError> {
-        let _ = self.terminal_unresolved(reason, None)?;
-        Err(ParentLossCoordinatorError::Ledger(
-            ParentLossLedgerError::RecoveryRequired(BootstrapRecoveryReason::RecordMalformed),
-        ))
+            .write_sealed_ledger(self.active.generation, &rows)
+        {
+            Ok(digest) => Ok(Seal::Sealed(sealed, digest)),
+            Err(_) => self
+                .terminal_unresolved(ParentLossUnresolvedReason::ArtifactFailure, None)
+                .map(Seal::Published),
+        }
     }
 
     fn validate_witnesses_with_source(
         &self,
-        sealed: &[SealedAdmission],
+        sealed: &SealedSet,
         digest: &str,
         expected_retirement: bool,
         source: &dyn ProcessInstanceSource,
         owners: &dyn AdmissionRetirer,
     ) -> Result<RetirementValidation, ParentLossCoordinatorError> {
         let expected: BTreeSet<_> = self.active.enabled.iter().copied().collect();
-        let admitted: BTreeSet<_> = sealed.iter().filter_map(|entry| entry.service).collect();
+        let admitted: BTreeSet<_> = sealed
+            .entries
+            .iter()
+            .filter(|entry| !entry.identities.is_empty())
+            .filter_map(|entry| entry.service)
+            .collect();
         if admitted != expected {
             return Ok(RetirementValidation::Unresolved(
                 ParentLossUnresolvedReason::MissingAdmission,
             ));
         }
         for service in expected {
-            let Some(admission) = sealed.iter().find(|entry| entry.service == Some(service)) else {
-                return Ok(RetirementValidation::Unresolved(
-                    ParentLossUnresolvedReason::MissingAdmission,
-                ));
-            };
             let Some(witness) = read_witness(&self.ledger, self.active.generation, service)? else {
                 return Ok(RetirementValidation::Pending);
             };
-            if witness.identity != admission.identity || witness.parent != self.active.supervisor {
+            // The witness names the sealed root it speaks for; every other
+            // root of the service is held to exact exit below.
+            let named = sealed.entries.iter().any(|entry| {
+                entry.service == Some(service)
+                    && entry
+                        .identities
+                        .iter()
+                        .any(|identity| same_process(identity, &witness.identity))
+            });
+            if !named || witness.parent != self.active.supervisor {
                 return Ok(RetirementValidation::Unresolved(
                     ParentLossUnresolvedReason::WitnessInvalid,
                 ));
@@ -611,28 +672,23 @@ impl ParentLossCoordinator {
                 ));
             }
         }
-        // An admission is retired once its exact instance is gone. A pid that
-        // now names another process is the admitted one having exited and the
-        // pid being reused, which a long-running generation makes near certain;
-        // reading that as a mismatch left every later start to audit the whole
-        // generation. A pid `inspect` cannot read is settled by the process
-        // table, as the successor's closer does.
-        for admission in sealed {
-            match source.observe(&admission.identity.instance) {
-                InstanceVerdict::NotSameOrExited => continue,
-                InstanceVerdict::SameLive { .. } => return Ok(RetirementValidation::Pending),
-                InstanceVerdict::Unverifiable => {
-                    if settle_by_process_table(
-                        owners,
-                        admission.identity.instance,
-                        Some(admission.identity.uid),
-                    )
-                    .is_none()
-                    {
-                        return Ok(RetirementValidation::Pending);
-                    }
+        // Every identity the sealed set yields must be exactly gone. A reused
+        // pid is the admitted process having exited; a pid `inspect` cannot
+        // read is settled by the process table, as the successor's closer does.
+        for entry in &sealed.entries {
+            for identity in &entry.identities {
+                if !matches!(
+                    settle(source, owners, identity.instance, identity.uid),
+                    Settlement::Gone(_)
+                ) {
+                    return Ok(RetirementValidation::Pending);
                 }
             }
+        }
+        if sealed.unconfirmed > 0 {
+            return Ok(RetirementValidation::Unresolved(
+                ParentLossUnresolvedReason::AdmissionUnconfirmed,
+            ));
         }
         if expected_retirement {
             Ok(RetirementValidation::Complete(
@@ -660,7 +716,10 @@ impl ParentLossCoordinator {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
             Err(error) => return Err(error.into()),
         };
-        let control: RetireExpectedControl = serde_json::from_slice(&bytes)?;
+        // A damaged instruction authorizes nothing; parent loss still applies.
+        let Ok(control) = serde_json::from_slice::<RetireExpectedControl>(&bytes) else {
+            return Ok(false);
+        };
         if control.schema != BOOTSTRAP_SCHEMA
             || control.generation != self.active.generation
             || control.supervisor != self.active.supervisor
@@ -903,10 +962,11 @@ mod tests {
 
     use super::*;
     use crate::lifecycle::{
-        AdmissionIntent, AdmissionResult, HeartbeatV2, ParentLossReaderOutcome,
-        ParentLossServiceWitnessDrop, RunId, WriterId, read_parent_loss_outcome,
-        write_parent_loss_admission_intent, write_parent_loss_admission_result,
-        write_parent_loss_service_witness, write_sync_heartbeat,
+        AdmissionIntent, AdmissionResult, AdmissionResultState, BootstrapRecoveryReason,
+        HeartbeatV2, ParentLossReaderOutcome, ParentLossServiceWitnessDrop, RunId, WriterId,
+        read_parent_loss_outcome, write_parent_loss_admission_intent,
+        write_parent_loss_admission_result, write_parent_loss_service_witness,
+        write_sync_heartbeat,
     };
     #[cfg(all(test, feature = "full-tests"))]
     use crate::process::{
@@ -931,6 +991,55 @@ mod tests {
 
         fn owner(&self, _pid: u32) -> ProcessOwner {
             self.0
+        }
+    }
+
+    impl SealedSet {
+        /// One row per identity, as `ledger.json` holds them.
+        fn roots(&self) -> Vec<SealedAdmission> {
+            self.entries
+                .iter()
+                .flat_map(|entry| {
+                    entry.identities.iter().map(|identity| SealedAdmission {
+                        launch_id: entry.launch_id.clone(),
+                        service: entry.service,
+                        identity: identity.clone(),
+                    })
+                })
+                .collect()
+        }
+    }
+
+    impl ParentLossCoordinator {
+        /// The seal as these tests drive it: the frozen set and its digest.
+        fn seal_for_test(&mut self) -> Result<(SealedSet, String), ParentLossCoordinatorError> {
+            match self.seal_admissions()? {
+                Seal::Sealed(sealed, digest) => Ok((sealed, digest)),
+                Seal::NeverAdmitted => {
+                    let digest = self.ledger.write_sealed_ledger(
+                        self.active.generation,
+                        &Vec::<SealedAdmission>::new(),
+                    )?;
+                    Ok((SealedSet::default(), digest))
+                }
+                Seal::Published(disposition) => Err(ParentLossCoordinatorError::Io(
+                    io::Error::other(format!("the seal published {disposition:?}")),
+                )),
+            }
+        }
+
+        fn wait_for_retirement(
+            &mut self,
+            sealed: &SealedSet,
+            digest: String,
+            expected_retirement: bool,
+        ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
+            self.wait_for_retirement_until(
+                sealed,
+                digest,
+                expected_retirement,
+                Instant::now() + PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE,
+            )
         }
     }
 
@@ -1104,7 +1213,7 @@ mod tests {
         };
         mutate(&mut witness);
         write_parent_loss_service_witness(journal, &witness).expect("service witness");
-        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let (sealed, digest) = coordinator.seal_for_test().expect("sealed admissions");
         let source = gone_process_source();
         assert_eq!(
             coordinator
@@ -1160,7 +1269,7 @@ mod tests {
             ParentLossPhase::RetiringAcknowledged
         );
 
-        let (sealed, digest) = coordinator.seal_admissions().expect("seal empty roster");
+        let (sealed, digest) = coordinator.seal_for_test().expect("seal empty roster");
         assert_eq!(
             coordinator
                 .wait_for_retirement(&sealed, digest, true)
@@ -1202,10 +1311,11 @@ mod tests {
         let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
         let identity =
             write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
-        let (sealed, _) = coordinator.seal_admissions().expect("seal admissions");
-        assert_eq!(sealed.len(), 1);
-        assert_eq!(sealed[0].identity, identity);
-        assert_eq!(sealed[0].service, Some(HostedServiceKind::Sense));
+        let (sealed, _) = coordinator.seal_for_test().expect("seal admissions");
+        let roots = sealed.roots();
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].identity, identity);
+        assert_eq!(roots[0].service, Some(HostedServiceKind::Sense));
     }
 
     #[test]
@@ -1231,7 +1341,20 @@ mod tests {
             None,
         );
         write_parent_loss_admission_intent(journal.path(), &intent).expect("intent");
-        assert!(coordinator.seal_admissions().is_err());
+        // A launch with no identity no longer fails the seal: it is sealed,
+        // and the stop it belongs to can only end unresolved.
+        let (sealed, digest) = coordinator.seal_for_test().expect("seal");
+        let source = gone_process_source();
+        coordinator
+            .wait_for_retirement_with_deadline_and_source(
+                &sealed,
+                digest,
+                false,
+                Instant::now(),
+                &source,
+                &UnknownOwner,
+            )
+            .expect("terminal");
         let record = coordinator
             .ledger
             .record(coordinator.generation())
@@ -1240,7 +1363,7 @@ mod tests {
         assert_eq!(
             record.terminal,
             Some(ParentLossTerminalDisposition::Unresolved {
-                reason: ParentLossUnresolvedReason::AdmissionUnconfirmed,
+                reason: ParentLossUnresolvedReason::MissingAdmission,
             })
         );
         assert!(coordinator._lease.is_some());
@@ -1367,7 +1490,7 @@ mod tests {
     fn valid_witnesses_produce_completed_and_release_clean_lease() {
         let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
         write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
-        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let (sealed, digest) = coordinator.seal_for_test().expect("sealed admissions");
         let source = gone_process_source();
         assert_eq!(
             coordinator
@@ -1393,12 +1516,186 @@ mod tests {
         assert!(coordinator._lease.is_none());
     }
 
+    /// Answers per pid; any other pid is absent.
+    struct PerPid(std::collections::HashMap<u32, InspectResult>);
+
+    impl ProcessInstanceSource for PerPid {
+        fn inspect(&self, pid: u32) -> InspectResult {
+            self.0.get(&pid).copied().unwrap_or(InspectResult::Absent)
+        }
+
+        fn census(&self) -> InstanceCensus {
+            InstanceCensus::Complete(Vec::new())
+        }
+    }
+
+    fn outstanding(coordinator: &ParentLossCoordinator) -> Vec<String> {
+        list_entries(&admission_directory(
+            &coordinator.ledger,
+            coordinator.generation(),
+        ))
+        .expect("listing")
+        .map(|listing| listing.names)
+        .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_clean_stop_discharges_what_it_proved_gone() {
+        let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
+        write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
+        let (sealed, digest) = coordinator.seal_for_test().expect("sealed");
+        assert_eq!(outstanding(&coordinator), vec!["sense"]);
+        let terminal = coordinator
+            .wait_for_retirement_with_deadline_and_source(
+                &sealed,
+                digest,
+                false,
+                Instant::now() + Duration::from_secs(1),
+                &gone_process_source(),
+                &UnknownOwner,
+            )
+            .expect("terminal");
+        assert!(matches!(
+            terminal,
+            ParentLossTerminalDisposition::Completed { .. }
+        ));
+        assert!(
+            outstanding(&coordinator).is_empty(),
+            "a clean stop leaves nothing owed"
+        );
+    }
+
+    #[test]
+    fn a_witness_is_matched_to_the_sealed_root_it_names() {
+        for old_root_live in [false, true] {
+            let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
+            // An earlier root of the same service, sorted ahead of the one
+            // the witness names.
+            let old = AdmissionIdentity {
+                launch_id: "a-sense-before-restart".to_owned(),
+                instance: instance(4040, 40),
+                ..admitted_identity(&coordinator, HostedServiceKind::Sense)
+            };
+            write_parent_loss_admission_intent(
+                journal.path(),
+                &AdmissionIntent::new(
+                    coordinator.generation(),
+                    old.launch_id.clone(),
+                    Some(HostedServiceKind::Sense),
+                    None,
+                ),
+            )
+            .expect("intent");
+            write_parent_loss_admission_result(
+                journal.path(),
+                coordinator.generation(),
+                &old.launch_id,
+                &AdmissionResult {
+                    schema: 1,
+                    identity: Some(old.clone()),
+                    state: AdmissionResultState::Admitted,
+                },
+            )
+            .expect("result");
+            write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
+            let (sealed, digest) = coordinator.seal_for_test().expect("sealed");
+            let mut table = std::collections::HashMap::new();
+            if old_root_live {
+                table.insert(
+                    old.instance.pid,
+                    InspectResult::Present {
+                        instance: old.instance,
+                        uid: old.uid,
+                        execution: crate::process::ExecutionState::Running,
+                        ppid: Some(1),
+                        pgid: Some(1),
+                    },
+                );
+            }
+            let terminal = coordinator
+                .wait_for_retirement_with_deadline_and_source(
+                    &sealed,
+                    digest,
+                    false,
+                    Instant::now() + Duration::from_millis(100),
+                    &PerPid(table),
+                    &UnknownOwner,
+                )
+                .expect("terminal");
+            if old_root_live {
+                assert!(matches!(
+                    terminal,
+                    ParentLossTerminalDisposition::Unresolved {
+                        reason: ParentLossUnresolvedReason::RetirementDeadlineExceeded { .. }
+                    }
+                ));
+                assert_eq!(outstanding(&coordinator), vec!["a-sense-before-restart"]);
+            } else {
+                assert!(
+                    matches!(terminal, ParentLossTerminalDisposition::Completed { .. }),
+                    "the witness names the newer root: {terminal:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_empty_admissions_directory_is_an_ordinary_completed_stop() {
+        let (_journal, mut coordinator, _, _) = bootstrap([]);
+        std::fs::create_dir_all(admission_directory(
+            &coordinator.ledger,
+            coordinator.generation(),
+        ))
+        .expect("admissions directory");
+        assert!(matches!(
+            coordinator
+                .handle_confirmed_parent_loss()
+                .expect("terminal"),
+            ParentLossTerminalDisposition::Completed { .. }
+        ));
+    }
+
+    #[test]
+    fn a_seal_that_cannot_take_the_admission_lock_still_publishes_a_terminal() {
+        let (_journal, mut coordinator, _, _) = bootstrap([]);
+        let _held = hold_lock(
+            coordinator
+                .ledger
+                .admission_lock_path(coordinator.generation()),
+            LockOptions {
+                timeout: Duration::from_secs(1),
+                poll_interval: Duration::from_millis(5),
+                mode: Some(FILE_MODE),
+            },
+        )
+        .expect("an in-flight launch holds the lock");
+        let began = Instant::now();
+        assert_eq!(
+            coordinator
+                .handle_confirmed_parent_loss()
+                .expect("terminal"),
+            ParentLossTerminalDisposition::Unresolved {
+                reason: ParentLossUnresolvedReason::ArtifactFailure,
+            }
+        );
+        assert!(began.elapsed() >= ADMISSION_SEAL_LOCK_TIMEOUT);
+        let record = coordinator
+            .ledger
+            .record(coordinator.generation())
+            .expect("record")
+            .expect("record exists");
+        assert!(
+            record.sealed_ledger_digest.is_some(),
+            "bound to the empty-set ledger"
+        );
+    }
+
     #[test]
     fn a_reused_pid_is_a_retired_admission() {
         let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
         let identity =
             write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
-        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let (sealed, digest) = coordinator.seal_for_test().expect("sealed admissions");
         let reused = ProcessInstance {
             pid: identity.instance.pid,
             birth: ProcessBirth::linux(9_999, 1, 100),
@@ -1427,7 +1724,7 @@ mod tests {
         let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
         let identity =
             write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
-        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let (sealed, digest) = coordinator.seal_for_test().expect("sealed admissions");
         let source = MutableInspectSource {
             result: Mutex::new(InspectResult::Unverifiable),
         };
@@ -1466,7 +1763,7 @@ mod tests {
         let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
         let identity =
             write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
-        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let (sealed, digest) = coordinator.seal_for_test().expect("sealed admissions");
         let source = MutableInspectSource {
             result: Mutex::new(InspectResult::Unverifiable),
         };
@@ -1504,7 +1801,7 @@ mod tests {
         let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
         let identity =
             write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
-        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let (sealed, digest) = coordinator.seal_for_test().expect("sealed admissions");
         let source = MutableInspectSource {
             result: Mutex::new(InspectResult::Present {
                 instance: identity.instance,
@@ -1561,7 +1858,7 @@ mod tests {
                 .accept_retire_expected_if_live(&watch)
                 .expect("retirement acknowledgement")
         );
-        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let (sealed, digest) = coordinator.seal_for_test().expect("sealed admissions");
         let source = gone_process_source();
         assert_eq!(
             coordinator
@@ -1688,7 +1985,7 @@ mod tests {
             },
         )
         .expect("incomplete-census witness");
-        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let (sealed, digest) = coordinator.seal_for_test().expect("sealed admissions");
         let source = gone_process_source();
 
         assert_eq!(
@@ -1761,7 +2058,7 @@ mod tests {
         let (journal, mut coordinator, _, _) = bootstrap([]);
         assert_eq!(
             coordinator
-                .wait_unverifiable_parent_with_deadline(Duration::ZERO)
+                .wait_unverifiable_parent_until(Instant::now())
                 .expect("deadline terminal"),
             ParentLossTerminalDisposition::Unresolved {
                 reason: ParentLossUnresolvedReason::RetirementDeadlineExceeded {
@@ -1841,7 +2138,7 @@ mod tests {
         .expect("launch-boundary lock");
         let sealing = std::thread::spawn(move || {
             let mut coordinator = coordinator;
-            let result = coordinator.seal_admissions();
+            let result = coordinator.seal_for_test();
             (coordinator, result)
         });
         std::thread::sleep(Duration::from_millis(20));
@@ -1885,15 +2182,16 @@ mod tests {
         drop(lock);
         let (_, sealed_result) = sealing.join().expect("seal thread");
         let (sealed, _) = sealed_result.expect("seal after admission boundary");
-        assert_eq!(sealed.len(), 1);
-        assert_eq!(sealed[0].identity, identity);
+        let roots = sealed.roots();
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].identity, identity);
     }
 
     #[test]
     fn fresh_reader_validates_completed_record_before_successor_allocation() {
         let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
         write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
-        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let (sealed, digest) = coordinator.seal_for_test().expect("sealed admissions");
         let source = gone_process_source();
         let terminal = coordinator
             .wait_for_retirement_with_deadline_and_source(
@@ -2018,7 +2316,7 @@ mod tests {
         let (mut coordinator, filename) =
             coordinator_with_lost_heartbeat(&journal, 99_999_999, vec![HostedServiceKind::Sense]);
         write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
-        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admission");
+        let (sealed, digest) = coordinator.seal_for_test().expect("sealed admission");
 
         let terminal = coordinator
             .wait_for_retirement_with_deadline_and_source(
@@ -2076,30 +2374,64 @@ mod tests {
         assert!(result.is_err(), "unacknowledged child must be rejected");
     }
 
+    /// A rejected child whose reap was never confirmed is sealed by its
+    /// identity and held to exact exit: while it lives, the stop cannot end
+    /// clean and no successor is admitted.
     #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
-    #[test]
-    fn exact_reap_failure_is_durable_unresolved_and_blocks_successor() {
+    fn an_unreaped_rejection_holds_the_stop(fault: HostedAdmissionTestFault, break_record: bool) {
         let (journal, mut coordinator, _, _) = bootstrap([]);
-        reject_child_without_exact_reap(
-            journal.path(),
-            &coordinator,
-            "exact-reap-failure",
-            HostedAdmissionTestFault::ExactReap,
-        );
-
-        assert!(coordinator.seal_admissions().is_err());
+        reject_child_without_exact_reap(journal.path(), &coordinator, "unreaped-rejection", fault);
+        let (sealed, digest) = coordinator
+            .seal_for_test()
+            .expect("a damaged launch never fails the seal");
+        let roots = sealed.roots();
         assert_eq!(
-            coordinator
-                .ledger
-                .record(coordinator.generation())
-                .expect("record")
-                .expect("record exists")
-                .terminal,
-            Some(ParentLossTerminalDisposition::Unresolved {
-                reason: ParentLossUnresolvedReason::AdmissionReapFailed,
-            })
+            roots.len(),
+            1,
+            "the rejected child is sealed by its identity"
         );
+        let live = MutableInspectSource {
+            result: Mutex::new(InspectResult::Present {
+                instance: roots[0].identity.instance,
+                uid: roots[0].identity.uid,
+                execution: crate::process::ExecutionState::Running,
+                ppid: Some(1),
+                pgid: Some(1),
+            }),
+        };
+        if break_record {
+            std::fs::remove_file(coordinator.ledger.record_path(coordinator.generation()))
+                .expect("force terminal record persistence failure");
+        }
+        let outcome = coordinator.wait_for_retirement_with_deadline_and_source(
+            &sealed,
+            digest,
+            false,
+            Instant::now() + Duration::from_millis(100),
+            &live,
+            &UnknownOwner,
+        );
+        if break_record {
+            assert!(outcome.is_err());
+            assert!(matches!(
+                read_parent_loss_outcome(journal.path()).expect("fresh reader outcome"),
+                ParentLossReaderOutcome::BootstrapRecoveryRequired { .. }
+            ));
+        } else {
+            assert!(matches!(
+                outcome.expect("terminal"),
+                ParentLossTerminalDisposition::Unresolved {
+                    reason: ParentLossUnresolvedReason::RetirementDeadlineExceeded { .. }
+                }
+            ));
+            assert!(
+                admission_directory(&coordinator.ledger, coordinator.generation())
+                    .join("unreaped-rejection")
+                    .is_dir(),
+                "a live rejected child is never discharged"
+            );
+        }
         assert!(coordinator._lease.is_some());
         assert!(
             coordinator
@@ -2112,56 +2444,22 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
-    fn exact_exit_proof_failure_is_durable_unresolved_and_blocks_successor() {
-        let (journal, mut coordinator, _, _) = bootstrap([]);
-        reject_child_without_exact_reap(
-            journal.path(),
-            &coordinator,
-            "exit-proof-failure",
-            HostedAdmissionTestFault::ExitProof,
-        );
+    fn exact_reap_failure_is_durable_unresolved_and_blocks_successor() {
+        an_unreaped_rejection_holds_the_stop(HostedAdmissionTestFault::ExactReap, false);
+    }
 
-        assert!(coordinator.seal_admissions().is_err());
-        assert_eq!(
-            coordinator
-                .ledger
-                .record(coordinator.generation())
-                .expect("record")
-                .expect("record exists")
-                .terminal,
-            Some(ParentLossTerminalDisposition::Unresolved {
-                reason: ParentLossUnresolvedReason::AdmissionReapFailed,
-            })
-        );
-        assert!(coordinator._lease.is_some());
+    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(unix)]
+    #[test]
+    fn exact_exit_proof_failure_is_durable_unresolved_and_blocks_successor() {
+        an_unreaped_rejection_holds_the_stop(HostedAdmissionTestFault::ExitProof, false);
     }
 
     #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn exact_reap_failure_with_terminal_write_error_retains_nonterminal_lease() {
-        let (journal, mut coordinator, _, _) = bootstrap([]);
-        reject_child_without_exact_reap(
-            journal.path(),
-            &coordinator,
-            "terminal-write-failure",
-            HostedAdmissionTestFault::ExactReap,
-        );
-        std::fs::remove_file(coordinator.ledger.record_path(coordinator.generation()))
-            .expect("force terminal record persistence failure");
-
-        assert!(coordinator.seal_admissions().is_err());
-        assert!(matches!(
-            read_parent_loss_outcome(journal.path()).expect("fresh reader outcome"),
-            ParentLossReaderOutcome::BootstrapRecoveryRequired { .. }
-        ));
-        assert!(coordinator._lease.is_some());
-        assert!(
-            coordinator
-                .ledger
-                .reserve_generation(instance(903, 93), [])
-                .is_err()
-        );
+        an_unreaped_rejection_holds_the_stop(HostedAdmissionTestFault::ExactReap, true);
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -2226,7 +2524,7 @@ mod tests {
         );
 
         let (sealed, digest) = coordinator
-            .seal_admissions()
+            .seal_for_test()
             .expect("seal admissions succeeds");
         let terminal = coordinator
             .wait_for_retirement_with_deadline_and_source(
@@ -2301,7 +2599,7 @@ mod tests {
         ));
 
         let (sealed, digest) = coordinator
-            .seal_admissions()
+            .seal_for_test()
             .expect("seal admissions succeeds");
         let terminal = coordinator
             .wait_for_retirement_with_deadline_and_source(
@@ -2393,7 +2691,7 @@ mod tests {
         ));
 
         let (sealed, digest) = coordinator
-            .seal_admissions()
+            .seal_for_test()
             .expect("seal admissions succeeds");
         let terminal = coordinator
             .wait_for_retirement_with_deadline_and_source(

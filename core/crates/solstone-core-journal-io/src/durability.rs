@@ -218,7 +218,7 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         path: "health/parent-loss/generations/*/closure-recovery/*/*.json",
         class: DurabilityClass::Healable,
         parser: ParserKind::WholeJson,
-        rationale: "derived scheduling, audited chunks and prepared publication bytes are rebuilt from retained source evidence; only full audited publication authorizes a successor",
+        rationale: "an older closer's caches; its descendant obligations are folded into the census, then the cache is discarded",
     },
     DurableArtifact {
         id: ArtifactId::ParentLossCensusObligation,
@@ -239,7 +239,7 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         path: "health/parent-loss/generations/*/census-refusal.json",
         class: DurabilityClass::MustBeValid,
         parser: ParserKind::WholeJson,
-        rationale: "preserve authoritative retirement evidence and refuse on damage; admission drops cannot rebuild past ancestry",
+        rationale: "an older closer's refusal marker; cleared once an authoritative census is folded, and a start refuses while the census is lost",
     },
     DurableArtifact {
         id: ArtifactId::SegmentOwnerLineLabels,

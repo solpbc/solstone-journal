@@ -15,11 +15,11 @@ mod parent;
 #[cfg(unix)]
 mod parent_loss_admission;
 #[cfg(unix)]
-mod parent_loss_closure;
-#[cfg(unix)]
 mod parent_loss_coordinator;
 #[cfg(unix)]
 mod parent_loss_ledger;
+#[cfg(unix)]
+mod parent_loss_outstanding;
 #[cfg(all(test, unix))]
 mod parent_loss_regressions;
 mod readiness;
@@ -92,12 +92,6 @@ pub use parent_loss_admission::{
     write_parent_loss_admission_spawn_identity, write_parent_loss_service_witness,
 };
 #[cfg(unix)]
-pub use parent_loss_closure::{
-    AbandonedGenerationClosure, AdmissionClosure, AdmissionFinding, AdmissionRetirer,
-    AuthorityObservation, ClosingAuthority, HeartbeatRetirement, PARENT_LOSS_CLOSURE_SCHEMA_V1,
-    SystemAdmissionRetirer,
-};
-#[cfg(unix)]
 pub use parent_loss_coordinator::{
     CoordinatorBootstrap, CoordinatorBootstrapError, CoordinatorBootstrapReady,
     PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE, ParentLossCoordinator, ParentLossCoordinatorError,
@@ -109,6 +103,12 @@ pub use parent_loss_ledger::{
     PARENT_LOSS_LEDGER_SCHEMA_V1, ParentLossGeneration, ParentLossGenerationRecord,
     ParentLossLedger, ParentLossLedgerError, ParentLossPhase, ParentLossReaderOutcome,
     ParentLossTerminalDisposition, ParentLossUnresolvedReason, read_parent_loss_outcome,
+};
+#[cfg(unix)]
+pub use parent_loss_outstanding::{
+    AbandonedGenerationClosure, AdmissionClosure, AdmissionFinding, AdmissionRetirer,
+    AuthorityObservation, ClosingAuthority, ClosureSummary, HeartbeatRetirement,
+    PARENT_LOSS_CLOSURE_SCHEMA_V1, SystemAdmissionRetirer, parent_loss_census_is_lost,
 };
 #[cfg(any(target_os = "android", target_os = "ios"))]
 pub use readiness::wait_ready;

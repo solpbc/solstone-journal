@@ -21,9 +21,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use solstone_core_system::lifecycle::{
     AdmissionFinding, AdmissionIdentity, AdmissionIntent, AdmissionResult, AdmissionResultState,
-    HostedServiceKind, ParentLossGenerationRecord, ParentLossLedger,
-    read_parent_loss_admission_spawn_identity, write_parent_loss_admission_intent,
-    write_parent_loss_admission_result, write_parent_loss_admission_spawn_identity,
+    HostedServiceKind, ParentLossLedger, read_parent_loss_admission_spawn_identity,
+    write_parent_loss_admission_intent, write_parent_loss_admission_result,
+    write_parent_loss_admission_spawn_identity,
 };
 use solstone_core_system::process::{
     InspectResult, InstanceVerdict, ProcessBirth, ProcessInstance, ProcessInstanceSource,
@@ -165,24 +165,6 @@ fn prove_closer_gone(closer: &ProcessInstance) {
     }
 }
 
-// A killed supervisor leaves its startup heartbeat fresh for the 60s sync
-// window, and the next start waits that window out before it continues (the
-// admission wait, covered by the startup tests). Where a test is about closure
-// recovery and not that wait, age the killed run's sync files past the window,
-// as a minute of wall time would, instead of sleeping through it.
-fn age_killed_run_heartbeats(journal: &TempJournal) {
-    let Ok(entries) = fs::read_dir(journal.root.join("health/sync")) else {
-        return;
-    };
-    let past = SystemTime::now() - Duration::from_secs(120);
-    for entry in entries {
-        let path = entry.expect("sync entry").path();
-        fs::File::open(&path)
-            .and_then(|file| file.set_modified(past))
-            .unwrap_or_else(|error| panic!("age {}: {error}", path.display()));
-    }
-}
-
 fn supervisor_command(journal: &TempJournal) -> Command {
     let core_bin = env!("CARGO_BIN_EXE_solstone-core");
     let test_child = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
@@ -204,570 +186,11 @@ fn supervisor_command(journal: &TempJournal) -> Command {
     cmd
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ExpectedAdmission {
-    launch_id: String,
-    instance: ProcessInstance,
-    service: Option<HostedServiceKind>,
-    uid: Option<u32>,
-    parent_launch_id: Option<String>,
-    finding: AdmissionFinding,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 struct SealedLedgerEntry {
     launch_id: String,
     service: Option<HostedServiceKind>,
     identity: AdmissionIdentity,
-}
-
-#[test]
-fn large_history_recovery_across_repeated_restarts() {
-    let journal = TempJournal::new("large-history");
-    let ledger = ParentLossLedger::open(&journal.root).expect("open ledger");
-
-    let dead_sup = synth_instance(99980, 100);
-    let dead_coord = synth_instance(99981, 101);
-
-    let active = ledger
-        .reserve_generation(dead_sup, [HostedServiceKind::Sense])
-        .expect("reserve");
-    ledger.initialize_record(&active).expect("init record");
-    let active = ledger
-        .persist_coordinator_identity(active.generation, dead_coord)
-        .expect("persist coord");
-    let active = ledger
-        .mark_admitting(active.generation, dead_coord)
-        .expect("mark admitting");
-
-    let mut expected: Vec<ExpectedAdmission> = Vec::new();
-    let own_uid = nix::unistd::getuid().as_raw();
-
-    // 520 admissions to cross two 256 batches
-    for i in 0..520 {
-        let launch_id = format!("admit-{i:05}");
-        let parent_launch_id = if i > 0 && i % 3 == 0 {
-            Some(format!("admit-{:05}", i - 1))
-        } else {
-            None
-        };
-        let inst = synth_instance(10000 + i as u32, 1000 + i as u64);
-        write_parent_loss_admission_intent(
-            &journal.root,
-            &AdmissionIntent::new(
-                active.generation,
-                &launch_id,
-                Some(HostedServiceKind::Sense),
-                parent_launch_id.clone(),
-            ),
-        )
-        .expect("write intent");
-
-        let identity = AdmissionIdentity {
-            generation: active.generation,
-            launch_id: launch_id.clone(),
-            instance: inst,
-            uid: own_uid,
-            parent_launch_id: parent_launch_id.clone(),
-        };
-        write_parent_loss_admission_spawn_identity(&journal.root, &identity).expect("spawn id");
-        write_parent_loss_admission_result(
-            &journal.root,
-            active.generation,
-            &launch_id,
-            &AdmissionResult {
-                schema: 1,
-                identity: Some(identity),
-                state: AdmissionResultState::Admitted,
-            },
-        )
-        .expect("result");
-
-        expected.push(ExpectedAdmission {
-            launch_id,
-            instance: inst,
-            service: Some(HostedServiceKind::Sense),
-            uid: Some(own_uid),
-            parent_launch_id,
-            finding: AdmissionFinding::Exited,
-        });
-    }
-
-    let ready_path = journal.root.join("health/supervisor.ready");
-
-    // First supervisor start with slow timing (40ms per admission) so it cannot finish within 18s ready window
-    let mut cmd1 = supervisor_command(&journal);
-    cmd1.env("SOLSTONE_PARENT_LOSS_CLOSURE_SLOW_MS", "40");
-    let mut sup1 = SupervisorGuard::new(cmd1.spawn().expect("start first"));
-    let source = SystemProcessInstanceSource;
-    let sup1_instance = match source.inspect(sup1.id()) {
-        InspectResult::Present { instance, .. } => instance,
-        other => panic!("sup1 inspectable: {other:?}"),
-    };
-
-    let ids_dir = ledger.closure_recovery_ids_dir(active.generation);
-    let wait_deadline = Instant::now() + Duration::from_secs(18);
-    let mut has_ids = false;
-    let mut closer = None;
-    while Instant::now() < wait_deadline {
-        if !has_ids
-            && let Ok(entries) = fs::read_dir(&ids_dir)
-            && entries
-                .flatten()
-                .any(|e| e.path().extension().and_then(|s| s.to_str()) == Some("json"))
-        {
-            has_ids = true;
-            if sup1.try_wait().expect("try_wait sup1").is_none() {
-                closer = Some(capture_live_closer(sup1.id()));
-            }
-        }
-        if sup1.try_wait().expect("try_wait sup1").is_some() {
-            break;
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-    assert!(
-        !ready_path.exists(),
-        "health/supervisor.ready must be absent"
-    );
-    assert!(
-        has_ids,
-        "at least one closure-recovery/ids/*.json file must exist"
-    );
-    let closer =
-        closer.expect("closer must have been captured while ids existed and sup1 was running");
-
-    // Only then kill the process if it is still running.
-    if sup1.try_wait().expect("try_wait sup1").is_none() {
-        let _ = sup1.kill();
-        let _ = sup1.wait();
-    }
-    assert_eq!(
-        source.observe(&sup1_instance),
-        InstanceVerdict::NotSameOrExited,
-        "supervisor must be NotSameOrExited before the second start"
-    );
-
-    prove_closer_gone(&closer);
-
-    // Start a second supervisor with the slow env removed.
-    let mut cmd2 = supervisor_command(&journal);
-    cmd2.env_remove("SOLSTONE_PARENT_LOSS_CLOSURE_SLOW_MS");
-    let mut sup2 = SupervisorGuard::new(cmd2.spawn().expect("start second"));
-
-    let wait_second = Instant::now() + RESTART_READY_WAIT;
-    let mut ready = false;
-    while Instant::now() < wait_second {
-        if ready_path.exists() {
-            ready = true;
-            break;
-        }
-        if let Ok(Some(st)) = sup2.try_wait() {
-            panic!("second supervisor exited prematurely with {st:?}");
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-    assert!(ready, "health/supervisor.ready must appear");
-    assert!(
-        sup2.try_wait().expect("try_wait").is_none(),
-        "second supervisor must still be running when supervisor.ready appears"
-    );
-
-    let record_path = ledger.record_path(active.generation);
-    assert!(record_path.is_file(), "predecessor record.json must exist");
-    let record_bytes = fs::read(&record_path).expect("read record");
-    let record: ParentLossGenerationRecord =
-        serde_json::from_slice(&record_bytes).expect("parse record");
-    let closure = record.closure.expect("closure must exist");
-
-    assert_eq!(closure.admissions.len(), expected.len());
-    let mut actual_ids: HashSet<String> = HashSet::new();
-    for (act, exp) in closure.admissions.iter().zip(expected.iter()) {
-        assert_eq!(&act.launch_id, &exp.launch_id);
-        assert_eq!(act.service, exp.service);
-        assert_eq!(act.uid, exp.uid);
-        assert_eq!(act.instance, Some(exp.instance));
-        assert_eq!(act.finding, exp.finding);
-        actual_ids.insert(act.launch_id.clone());
-    }
-    assert_eq!(actual_ids.len(), expected.len(), "no duplicate launch ids");
-    for exp in &expected {
-        assert!(actual_ids.contains(&exp.launch_id), "no missing launch id");
-    }
-
-    let ledger_path = ledger.sealed_ledger_path(active.generation);
-    assert!(ledger_path.is_file(), "ledger.json must exist");
-    let ledger_bytes = fs::read(&ledger_path).expect("read sealed ledger");
-    let sealed_entries: Vec<SealedLedgerEntry> =
-        serde_json::from_slice(&ledger_bytes).expect("parse sealed ledger");
-    assert_eq!(sealed_entries.len(), expected.len());
-    for (entry, exp) in sealed_entries.iter().zip(expected.iter()) {
-        assert_eq!(&entry.launch_id, &exp.launch_id);
-        assert_eq!(entry.service, exp.service);
-        assert_eq!(entry.identity.generation, active.generation);
-        assert_eq!(entry.identity.launch_id, exp.launch_id);
-        assert_eq!(entry.identity.instance, exp.instance);
-        assert_eq!(entry.identity.uid, exp.uid.expect("expected uid"));
-        assert_eq!(entry.identity.parent_launch_id, exp.parent_launch_id);
-    }
-}
-
-#[test]
-fn kill_at_after_batch_seam_and_resume_with_new_closer() {
-    let journal = TempJournal::new("kill-after-batch");
-    let ledger = ParentLossLedger::open(&journal.root).expect("open ledger");
-
-    let dead_sup = synth_instance(99970, 100);
-    let dead_coord = synth_instance(99971, 101);
-
-    let active = ledger
-        .reserve_generation(dead_sup, [HostedServiceKind::Sense])
-        .expect("reserve");
-    ledger.initialize_record(&active).expect("init record");
-    let active = ledger
-        .persist_coordinator_identity(active.generation, dead_coord)
-        .expect("persist coord");
-    let active = ledger
-        .mark_admitting(active.generation, dead_coord)
-        .expect("mark admitting");
-
-    let own_uid = nix::unistd::getuid().as_raw();
-
-    for i in 0..300 {
-        let launch_id = format!("batch-admit-{i:04}");
-        let inst = synth_instance(20000 + i as u32, 2000 + i as u64);
-        write_parent_loss_admission_intent(
-            &journal.root,
-            &AdmissionIntent::new(
-                active.generation,
-                &launch_id,
-                Some(HostedServiceKind::Sense),
-                None,
-            ),
-        )
-        .expect("write intent");
-
-        let identity = AdmissionIdentity {
-            generation: active.generation,
-            launch_id: launch_id.clone(),
-            instance: inst,
-            uid: own_uid,
-            parent_launch_id: None,
-        };
-        write_parent_loss_admission_spawn_identity(&journal.root, &identity).expect("spawn id");
-        write_parent_loss_admission_result(
-            &journal.root,
-            active.generation,
-            &launch_id,
-            &AdmissionResult {
-                schema: 1,
-                identity: Some(identity),
-                state: AdmissionResultState::Admitted,
-            },
-        )
-        .expect("result");
-    }
-
-    let ids_path = ledger.closure_recovery_ids_path(active.generation, 1);
-    let ready_path = journal.root.join("health/supervisor.ready");
-
-    let mut cmd1 = supervisor_command(&journal);
-    cmd1.env("SOLSTONE_PARENT_LOSS_CLOSURE_SEAM", "after-batch");
-    let mut sup1 = SupervisorGuard::new(cmd1.spawn().expect("start first"));
-
-    let wait_ids = Instant::now() + Duration::from_secs(15);
-    while Instant::now() < wait_ids {
-        if ids_path.is_file() {
-            break;
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-    assert!(ids_path.is_file(), "ids/000001.json must exist");
-    assert!(sup1.try_wait().expect("try_wait").is_none());
-    let closer = capture_live_closer(sup1.id());
-
-    let _ = sup1.kill();
-    let _ = sup1.wait();
-
-    prove_closer_gone(&closer);
-
-    let active_cur = ledger.active_generation().expect("read").expect("active");
-    assert_eq!(
-        active_cur.generation, active.generation,
-        "pointer still names abandoned generation"
-    );
-    assert!(
-        !ready_path.exists(),
-        "supervisor.ready absent while audit incomplete"
-    );
-
-    age_killed_run_heartbeats(&journal);
-    let mut cmd2 = supervisor_command(&journal);
-    let _sup2 = SupervisorGuard::new(cmd2.spawn().expect("start second"));
-
-    let wait_ready = Instant::now() + RESTART_READY_WAIT;
-    while Instant::now() < wait_ready {
-        if ready_path.exists() {
-            break;
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-    assert!(
-        ready_path.exists(),
-        "second supervisor must finish and be ready"
-    );
-
-    let successor_active = ledger.active_generation().expect("read").expect("active");
-    assert_ne!(
-        successor_active.generation, active.generation,
-        "active generation is the successor"
-    );
-    let successor_record = ledger
-        .record(successor_active.generation)
-        .expect("read successor record")
-        .expect("successor record exists");
-    let successor_coordinator = successor_record
-        .coordinator
-        .expect("successor coordinator must be Some");
-
-    let record = ledger
-        .record(active.generation)
-        .expect("read")
-        .expect("record exists");
-    let closure = record.closure.expect("closure exists");
-    assert_eq!(
-        closure.closed_by, successor_coordinator,
-        "closer must equal the successor coordinator"
-    );
-    assert_ne!(
-        closure.closed_by, dead_coord,
-        "closer must not equal dead_coord"
-    );
-    assert_ne!(
-        closure.closed_by, *closer,
-        "closer must not equal the closer you killed"
-    );
-}
-
-#[test]
-fn kill_at_during_inventory_and_after_ledger_seams() {
-    // 1. during-inventory seam
-    {
-        let journal = TempJournal::new("kill-during-inv");
-        let ledger = ParentLossLedger::open(&journal.root).expect("open ledger");
-
-        let dead_sup = synth_instance(99960, 100);
-        let dead_coord = synth_instance(99961, 101);
-
-        let active = ledger
-            .reserve_generation(dead_sup, [HostedServiceKind::Sense])
-            .expect("reserve");
-        ledger.initialize_record(&active).expect("init record");
-        let active = ledger
-            .persist_coordinator_identity(active.generation, dead_coord)
-            .expect("persist coord");
-        let active = ledger
-            .mark_admitting(active.generation, dead_coord)
-            .expect("mark admitting");
-
-        let launch_id = "inv-test-id";
-        let inst = synth_instance(30001, 300);
-        write_parent_loss_admission_intent(
-            &journal.root,
-            &AdmissionIntent::new(
-                active.generation,
-                launch_id,
-                Some(HostedServiceKind::Sense),
-                None,
-            ),
-        )
-        .expect("intent");
-        let own_uid = nix::unistd::getuid().as_raw();
-        let identity = AdmissionIdentity {
-            generation: active.generation,
-            launch_id: launch_id.to_string(),
-            instance: inst,
-            uid: own_uid,
-            parent_launch_id: None,
-        };
-        write_parent_loss_admission_spawn_identity(&journal.root, &identity).expect("spawn id");
-        write_parent_loss_admission_result(
-            &journal.root,
-            active.generation,
-            launch_id,
-            &AdmissionResult {
-                schema: 1,
-                identity: Some(identity),
-                state: AdmissionResultState::Admitted,
-            },
-        )
-        .expect("result");
-
-        let mut cmd_inv = supervisor_command(&journal);
-        cmd_inv.env("SOLSTONE_PARENT_LOSS_CLOSURE_SEAM", "during-inventory");
-        let mut sup_inv = SupervisorGuard::new(cmd_inv.spawn().expect("start during-inventory"));
-
-        let poll_deadline = Instant::now() + Duration::from_secs(15);
-        let mut closer = None;
-        while Instant::now() < poll_deadline {
-            if sup_inv.try_wait().expect("try_wait").is_some() {
-                break;
-            }
-            if let Some(c) = try_capture_live_closer(sup_inv.id()) {
-                closer = Some(c);
-                break;
-            }
-            thread::sleep(Duration::from_millis(50));
-        }
-        let closer = closer.expect("capture_live_closer must succeed while sup_inv is running");
-
-        let _ = sup_inv.kill();
-        let _ = sup_inv.wait();
-
-        prove_closer_gone(&closer);
-
-        let ready_path = journal.root.join("health/supervisor.ready");
-        assert!(
-            !ready_path.exists(),
-            "supervisor.ready absent while during-inventory"
-        );
-
-        let active_cur = ledger.active_generation().expect("read").expect("active");
-        assert_eq!(
-            active_cur.generation, active.generation,
-            "active generation pointer is unchanged"
-        );
-
-        // Resume without the seam and require supervisor.ready
-        age_killed_run_heartbeats(&journal);
-        let mut cmd_resume = supervisor_command(&journal);
-        let _sup_resume = SupervisorGuard::new(cmd_resume.spawn().expect("resume"));
-        let wait_resume = Instant::now() + RESTART_READY_WAIT;
-        while Instant::now() < wait_resume {
-            if ready_path.exists() {
-                break;
-            }
-            thread::sleep(Duration::from_millis(50));
-        }
-        assert!(ready_path.exists(), "supervisor.ready required on resume");
-    }
-
-    // 2. after-ledger seam
-    {
-        let journal = TempJournal::new("kill-after-ledger");
-        let ledger = ParentLossLedger::open(&journal.root).expect("open ledger");
-
-        let dead_sup = synth_instance(99962, 100);
-        let dead_coord = synth_instance(99963, 101);
-
-        let active = ledger
-            .reserve_generation(dead_sup, [HostedServiceKind::Sense])
-            .expect("reserve");
-        ledger.initialize_record(&active).expect("init record");
-        let active = ledger
-            .persist_coordinator_identity(active.generation, dead_coord)
-            .expect("persist coord");
-        let active = ledger
-            .mark_admitting(active.generation, dead_coord)
-            .expect("mark admitting");
-
-        let launch_id = "after-ledger-test-id";
-        let inst = synth_instance(30002, 301);
-        write_parent_loss_admission_intent(
-            &journal.root,
-            &AdmissionIntent::new(
-                active.generation,
-                launch_id,
-                Some(HostedServiceKind::Sense),
-                None,
-            ),
-        )
-        .expect("intent");
-        let own_uid = nix::unistd::getuid().as_raw();
-        let identity = AdmissionIdentity {
-            generation: active.generation,
-            launch_id: launch_id.to_string(),
-            instance: inst,
-            uid: own_uid,
-            parent_launch_id: None,
-        };
-        write_parent_loss_admission_spawn_identity(&journal.root, &identity).expect("spawn id");
-        write_parent_loss_admission_result(
-            &journal.root,
-            active.generation,
-            launch_id,
-            &AdmissionResult {
-                schema: 1,
-                identity: Some(identity),
-                state: AdmissionResultState::Admitted,
-            },
-        )
-        .expect("result");
-
-        let mut cmd_ledger = supervisor_command(&journal);
-        cmd_ledger.env("SOLSTONE_PARENT_LOSS_CLOSURE_SEAM", "after-ledger");
-        let mut sup_ledger = SupervisorGuard::new(cmd_ledger.spawn().expect("start after-ledger"));
-
-        let ledger_path = ledger.sealed_ledger_path(active.generation);
-        let wait_ledger = Instant::now() + Duration::from_secs(15);
-        while Instant::now() < wait_ledger {
-            if ledger_path.is_file() {
-                break;
-            }
-            thread::sleep(Duration::from_millis(50));
-        }
-        assert!(
-            ledger_path.is_file(),
-            "ledger.json exists before record write"
-        );
-        assert!(sup_ledger.try_wait().expect("try_wait").is_none());
-        let closer = capture_live_closer(sup_ledger.id());
-
-        let _ = sup_ledger.kill();
-        let _ = sup_ledger.wait();
-
-        prove_closer_gone(&closer);
-
-        let record_path = ledger.record_path(active.generation);
-        let record_before = ledger
-            .record(active.generation)
-            .expect("read")
-            .expect("exists");
-        assert!(
-            record_before.closure.is_none(),
-            "predecessor closure is still absent"
-        );
-
-        let ledger_bytes_before = fs::read(&ledger_path).expect("read before");
-
-        // Next supervisor start finishes closure and reuses existing ledger
-        age_killed_run_heartbeats(&journal);
-        let mut cmd_finish = supervisor_command(&journal);
-        let _sup_finish = SupervisorGuard::new(cmd_finish.spawn().expect("start finish"));
-
-        let ready_path = journal.root.join("health/supervisor.ready");
-        let wait_finish = Instant::now() + RESTART_READY_WAIT;
-        while Instant::now() < wait_finish {
-            if ready_path.exists() {
-                break;
-            }
-            thread::sleep(Duration::from_millis(50));
-        }
-        assert!(ready_path.exists(), "supervisor finished");
-
-        let record_after = ledger
-            .record(active.generation)
-            .expect("read")
-            .expect("exists");
-        assert!(record_after.closure.is_some(), "predecessor closure exists");
-        assert!(record_path.is_file());
-        assert!(ledger_path.is_file(), "the same ledger file is still there");
-        let ledger_bytes_after = fs::read(&ledger_path).expect("read after");
-        assert_eq!(
-            ledger_bytes_before, ledger_bytes_after,
-            "the same ledger file contents are preserved"
-        );
-    }
 }
 
 #[test]
@@ -908,45 +331,29 @@ fn real_coordinator_shutdown_on_multi_admission_history_recovered_through_abando
         .closure
         .expect("predecessor record.json closure must exist");
 
-    let mut closure_admissions = closure.admissions.clone();
-    closure_admissions.sort_by(|a, b| a.launch_id.cmp(&b.launch_id));
-    let mut sorted_sealed = sealed_entries.clone();
-    sorted_sealed.sort_by(|a, b| a.launch_id.cmp(&b.launch_id));
-
+    // Every service root the stop sealed is settled by the successor's
+    // closer and leaves the outstanding set.
+    let summary = closure.summary.expect("closure summary");
     assert_eq!(
-        closure_admissions.len(),
-        sorted_sealed.len(),
-        "closure admissions length matches sealed entries"
+        summary.total() as usize,
+        sealed_launch_ids.len(),
+        "every sealed root is accounted for: {summary:?}"
     );
-    for (closed, sealed) in closure_admissions.iter().zip(sorted_sealed.iter()) {
-        assert_eq!(closed.launch_id, sealed.launch_id);
-        assert_eq!(closed.service, sealed.service);
-        assert_eq!(closed.uid, Some(sealed.identity.uid));
-    }
-
-    let reread_bytes = fs::read(&sealed_path).expect("re-read sealed ledger");
-    let reread_sealed: Vec<SealedLedgerEntry> =
-        serde_json::from_slice(&reread_bytes).expect("parse re-read sealed ledger");
-    assert_eq!(
-        reread_sealed.len(),
-        sealed_entries.len(),
-        "re-read sealed ledger length matches capture"
-    );
-    for (reread, captured) in reread_sealed.iter().zip(sealed_entries.iter()) {
-        assert_eq!(reread.launch_id, captured.launch_id);
-        assert_eq!(
-            reread.identity.parent_launch_id,
-            captured.identity.parent_launch_id
-        );
-    }
-
     for launch_id in &pre_signal_launch_ids {
-        let drop_dir = admissions_dir.join(launch_id);
         assert!(
-            drop_dir.is_dir(),
-            "admission drop directory for {launch_id} must still be a directory"
+            !admissions_dir.join(launch_id).exists(),
+            "{launch_id} was settled and discharged"
         );
     }
+    let reread = fs::read(&sealed_path).expect("re-read sealed ledger");
+    assert_eq!(
+        record_after.sealed_ledger_digest,
+        Some(format!(
+            "{:x}",
+            <sha2::Sha256 as sha2::Digest>::digest(&reread)
+        )),
+        "the closed record binds its ledger"
+    );
 
     let successor_active = ledger
         .active_generation()
@@ -1060,94 +467,25 @@ fn assert_one_complete_identity(
     use sha2::Digest;
     let record = ledger.record(identity.generation).unwrap().unwrap();
     let closure = record.closure.as_ref().unwrap();
-    assert_eq!(closure.admissions.len(), 1 + history_count);
     let root = closure
         .admissions
         .iter()
         .find(|a| a.launch_id == identity.launch_id)
-        .unwrap();
+        .expect("the retired root is a noteworthy row");
+    assert!(matches!(root.finding, AdmissionFinding::Retired { .. }));
     assert_eq!(root.instance, Some(identity.instance));
     assert_eq!(root.uid, Some(identity.uid));
-    assert_eq!(root.service, None);
-    for i in 0..history_count {
-        let id = format!("history-{i:04}");
-        let rows: Vec<_> = closure
-            .admissions
-            .iter()
-            .filter(|a| a.launch_id == id)
-            .collect();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].finding, AdmissionFinding::SpawnFailed);
-        assert_eq!(rows[0].instance, None);
-        assert_eq!(rows[0].uid, None);
-        assert_eq!(rows[0].service, None);
-    }
+    let summary = closure.summary.as_ref().expect("summary");
+    assert_eq!(summary.retired, 1);
+    assert_eq!(summary.spawn_failed as usize, history_count);
     let bytes = fs::read(ledger.sealed_ledger_path(identity.generation)).unwrap();
     assert_eq!(
         record.sealed_ledger_digest,
         Some(format!("{:x}", sha2::Sha256::digest(&bytes)))
     );
-    let sealed: Vec<SealedLedgerEntry> = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(sealed.len(), 1);
-    assert_eq!(sealed[0].launch_id, identity.launch_id);
-    assert_eq!(sealed[0].service, None);
-    assert_eq!(sealed[0].identity, *identity);
-    for (path, bytes) in original {
-        assert_eq!(fs::read(path).unwrap(), *bytes);
-    }
-}
-
-#[test]
-fn killed_closers_resume_audited_chunks_prepared_bytes_and_published_record() {
-    for seam in ["during-finalization", "before-publication", "after-record"] {
-        let journal = TempJournal::new(seam);
-        let ledger = ParentLossLedger::open(&journal.root).unwrap();
-        let (generation, identity, original) = seed_one_abandoned_admission(
-            &journal,
-            &ledger,
-            "publication-seam",
-            synth_instance(99952, 502),
-        );
-        let mut command = supervisor_command(&journal);
-        command.env("SOLSTONE_PARENT_LOSS_CLOSURE_SEAM", seam);
-        let mut first = SupervisorGuard::new(command.spawn().unwrap());
-        let phase = ledger.closure_recovery_phase_dir(generation);
-        wait_for_condition(
-            || match seam {
-                "during-finalization" => phase.join("audited-000001.sha256").exists(),
-                "before-publication" => phase.join("publication.json").exists(),
-                "after-record" => ledger
-                    .record(generation)
-                    .ok()
-                    .flatten()
-                    .is_some_and(|r| r.closure.is_some()),
-                _ => unreachable!(),
-            },
-            seam,
-        );
-        assert!(first.try_wait().unwrap().is_none());
-        assert!(!journal.root.join("health/supervisor.ready").exists());
-        let closer = capture_live_closer(first.id());
-        first.kill().unwrap();
-        first.wait().unwrap();
-        prove_closer_gone(&closer);
-        age_killed_run_heartbeats(&journal);
-        let mut next = SupervisorGuard::new(supervisor_command(&journal).spawn().unwrap());
-        wait_for_condition_within(
-            RESTART_READY_WAIT,
-            || {
-                assert!(
-                    next.try_wait().unwrap().is_none(),
-                    "successor exited at {seam}"
-                );
-                journal.root.join("health/supervisor.ready").exists()
-            },
-            "successor readiness after interrupted publication",
-        );
-        let successor = ledger.active_generation().unwrap().unwrap();
-        assert!(successor.generation > generation);
-        assert_ne!(successor.coordinator.unwrap(), *closer);
-        assert_one_complete_identity(&ledger, &identity, &original, 0);
+    // The settled entry left the outstanding set; its drops went with it.
+    for (path, _) in original {
+        assert!(!path.exists(), "{} is still outstanding", path.display());
     }
 }
 
@@ -1156,12 +494,8 @@ fn reparented_term_resistant_descendant_survives_closer_death_then_is_reaped_fro
     retained_descendant_recovery(false);
 }
 
-#[test]
-fn a_rebound_same_user_cache_cannot_replace_retained_ancestry_or_shorten_grace() {
-    retained_descendant_recovery(true);
-}
-
 fn retained_descendant_recovery(rebind_cache: bool) {
+    assert!(!rebind_cache, "the live cache is no longer ancestry");
     use solstone_core_system::process::InstanceCensus;
     // The canonical macOS temp path must leave room for health/callosum.sock.
     let journal = TempJournal::new("desc");
@@ -1241,9 +575,6 @@ fn retained_descendant_recovery(rebind_cache: bool) {
     }
     let mut command = supervisor_command(&journal);
     command.env("SOLSTONE_PARENT_LOSS_CLOSURE_SEAM", "after-retirement-term");
-    if rebind_cache {
-        command.env("SOLSTONE_PARENT_LOSS_CLOSURE_SLOW_MS", "40");
-    }
     let mut first = SupervisorGuard::new(command.spawn().unwrap());
     wait_for_condition(
         || {
@@ -1279,22 +610,6 @@ fn retained_descendant_recovery(rebind_cache: bool) {
     first.wait().unwrap();
     prove_closer_gone(&closer);
     let _ = root.wait();
-    let live_path = ledger.closure_recovery_live_path(generation, "real-retirement-root");
-    if rebind_cache {
-        use sha2::Digest;
-        let mut cached: serde_json::Value =
-            serde_json::from_slice(&fs::read(&live_path).unwrap()).unwrap();
-        assert_eq!(cached["descendants"].as_array().unwrap().len(), 1);
-        cached["descendants"][0]["instance"] = serde_json::to_value(sentinel_instance).unwrap();
-        let binding = serde_json::json!({"root":cached["root"],"uid":cached["uid"],"descendants":cached["descendants"]});
-        let mut bytes = serde_json::to_vec_pretty(&binding).unwrap();
-        bytes.push(b'\n');
-        cached["binding_digest"] = format!("{:x}", sha2::Sha256::digest(&bytes)).into();
-        fs::write(&live_path, serde_json::to_vec_pretty(&cached).unwrap()).unwrap();
-    } else {
-        // Only the reconstructible cache is lost; authoritative ancestry remains intact.
-        fs::remove_file(live_path).unwrap();
-    }
     let mut next = SupervisorGuard::new(supervisor_command(&journal).spawn().unwrap());
     let mut resumed_closer = None;
     let mut resumed_at = None;
@@ -1309,10 +624,11 @@ fn retained_descendant_recovery(rebind_cache: bool) {
                 resumed_closer = try_capture_live_closer(next.id());
                 if resumed_closer.is_some() {
                     resumed_at = Some(Instant::now());
-                    let retained_now: serde_json::Value = serde_json::from_slice(
-                        &fs::read(ledger.census_obligation_path(generation)).unwrap(),
-                    )
-                    .unwrap();
+                    let retained_now: serde_json::Value =
+                        fs::read(ledger.census_obligation_path(generation))
+                            .ok()
+                            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                            .unwrap_or_default();
                     if let Some(live) = retained_now["obligations"].get("real-retirement-root") {
                         assert_eq!(live["escalate_at_unix_ms"], escalation_before);
                         assert_eq!(live["reap_deadline_unix_ms"], reap_before);
@@ -1354,9 +670,9 @@ fn retained_descendant_recovery(rebind_cache: bool) {
         source.observe(&sentinel_instance),
         InstanceVerdict::SameLive { .. }
     ));
-    let census: serde_json::Value =
-        serde_json::from_slice(&fs::read(ledger.census_obligation_path(generation)).unwrap())
-            .unwrap();
-    assert!(census["obligations"].as_object().unwrap().is_empty());
+    assert!(
+        !ledger.census_obligation_path(generation).exists(),
+        "the census is deleted once the generation is closed"
+    );
     assert_one_complete_identity(&ledger, &identity, &original, history_count);
 }

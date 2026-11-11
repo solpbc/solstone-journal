@@ -1944,9 +1944,13 @@ fn exercise_abandoned_generation_boots_unattended(systemd_scope_unit: Option<&st
     );
     let closure = record.closure.expect("the closure is recorded");
     assert_eq!(closure.successor_generation, successor.generation);
+    let summary = closure
+        .summary
+        .clone()
+        .expect("the closure counts what it settled");
     assert!(
-        !closure.admissions.is_empty(),
-        "the closure names what the generation admitted"
+        summary.total() > 0,
+        "the closure accounts for what the generation admitted"
     );
     // A control-group kill lands mid-launch as often as not: an intent with a
     // child that died before it acknowledged is the honest
@@ -1964,12 +1968,8 @@ fn exercise_abandoned_generation_boots_unattended(systemd_scope_unit: Option<&st
         );
     }
     assert!(
-        closure.admissions.iter().any(|admission| matches!(
-            admission.finding,
-            AdmissionFinding::Exited | AdmissionFinding::Retired { .. }
-        )),
-        "at least one admitted process was proven exited or retired: {:?}",
-        closure.admissions
+        summary.exited + summary.retired + summary.pid_reused_by_another_user > 0,
+        "at least one admitted process was proven exited or retired: {summary:?}"
     );
     for instance in &admitted {
         assert!(

@@ -1436,15 +1436,28 @@ mod abandoned_generation_closer {
             .generation
     }
 
+    /// The one admission's finding: its row when noteworthy, else its count.
     fn finding(ledger: &ParentLossLedger, generation: u64) -> AdmissionFinding {
-        ledger
+        let closure = ledger
             .record(generation)
             .expect("record readable")
             .expect("record exists")
             .closure
-            .expect("closure recorded")
-            .admissions[0]
-            .finding
+            .expect("closure recorded");
+        if let Some(row) = closure.admissions.first() {
+            return row.finding;
+        }
+        let summary = closure.summary.expect("summary recorded");
+        assert_eq!(summary.total(), 1, "one admission: {summary:?}");
+        if summary.rejected_and_reaped == 1 {
+            AdmissionFinding::RejectedAndReaped
+        } else if summary.spawn_failed == 1 {
+            AdmissionFinding::SpawnFailed
+        } else if summary.pid_reused_by_another_user == 1 {
+            AdmissionFinding::PidReusedByAnotherUser
+        } else {
+            AdmissionFinding::Exited
+        }
     }
 
     #[test]

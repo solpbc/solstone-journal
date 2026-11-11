@@ -349,6 +349,7 @@ pub fn write_parent_loss_service_witness(
     write_immutable_json(&path, witness, DropParent::Create)
 }
 
+#[cfg(test)]
 pub(crate) fn read_parent_loss_admission_intent(
     ledger: &ParentLossLedger,
     generation: ParentLossGeneration,
@@ -356,15 +357,6 @@ pub(crate) fn read_parent_loss_admission_intent(
 ) -> Result<Option<AdmissionIntent>, ParentLossAdmissionError> {
     validate_launch_id(launch_id)?;
     read_json_optional(&intent_path(ledger, generation, launch_id))
-}
-
-pub(crate) fn read_parent_loss_admission_result(
-    ledger: &ParentLossLedger,
-    generation: ParentLossGeneration,
-    launch_id: &str,
-) -> Result<Option<AdmissionResult>, ParentLossAdmissionError> {
-    validate_launch_id(launch_id)?;
-    read_json_optional(&result_path(ledger, generation, launch_id))
 }
 
 pub(crate) fn read_parent_loss_admission_spawn_identity_in(

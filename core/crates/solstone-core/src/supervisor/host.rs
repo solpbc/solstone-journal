@@ -235,7 +235,7 @@ fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
 ///
 /// ⛔ There is no manual step any more. A generation whose supervisor and
 /// coordinator both exited is closed by the next start on its own
-/// (`lifecycle::parent_loss_closure`), so the walkthrough this copy used to
+/// (`lifecycle::parent_loss_outstanding`), so the walkthrough this copy used to
 /// carry -- `mv health/parent-loss …` -- would set aside the very records that
 /// closure retires from. Every remaining cause converges on a retry: a missed
 /// deadline under load, a coordinator still adjudicating the last run, or a

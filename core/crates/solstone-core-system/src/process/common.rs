@@ -261,6 +261,14 @@ impl ProcessBirth {
         }
     }
 
+    /// The boot a Linux birth was observed on, when it was recorded.
+    pub(crate) fn linux_boot(&self) -> Option<u128> {
+        match self.inner {
+            ProcessBirthInner::Linux { boot, .. } => boot,
+            _ => None,
+        }
+    }
+
     pub(crate) fn macos_micros(&self) -> Option<i64> {
         match self.inner {
             ProcessBirthInner::Macos { epoch_micros } => Some(epoch_micros),
