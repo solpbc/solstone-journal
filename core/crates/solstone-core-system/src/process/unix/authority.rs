@@ -1309,6 +1309,7 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     use crate::process::InstanceVerdict;
     use crate::process::{ProcessBirth, ProcessInstance};
+    #[cfg(all(test, feature = "full-tests"))]
     use std::ffi::OsString;
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -1511,10 +1512,14 @@ mod tests {
 
     /// This test binary re-run as a child: the probe test below does the
     /// child's part when `PROBE_ENV` names a mode.
+    #[cfg(all(test, feature = "full-tests"))]
     pub(crate) const PROBE_ENV: &str = "SOLSTONE_TEST_ADMISSION_PROBE";
+    #[cfg(all(test, feature = "full-tests"))]
     pub(crate) const PROBE_REPORT_ENV: &str = "SOLSTONE_TEST_ADMISSION_PROBE_REPORT";
+    #[cfg(all(test, feature = "full-tests"))]
     const PROBE_TEST: &str = "process::platform::authority::tests::admission_probe_child";
 
+    #[cfg(all(test, feature = "full-tests"))]
     pub(crate) fn probe_arguments() -> Vec<String> {
         ["--exact", PROBE_TEST, "--nocapture", "--test-threads=1"]
             .map(str::to_owned)
@@ -1538,6 +1543,7 @@ mod tests {
     /// `ack` records the child's own admission, as every journal binary does
     /// at process entry; `exec` reaches `ack` through a pid-preserving exec;
     /// `worker` also reports what it and its own children see.
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn admission_probe_child() {
         let Some(mode) = std::env::var_os(PROBE_ENV) else {
@@ -1546,6 +1552,7 @@ mod tests {
         std::process::exit(run_admission_probe(mode.to_str().unwrap_or_default()));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn run_admission_probe(mode: &str) -> i32 {
         use std::os::unix::process::CommandExt;
         if mode == "exec" {

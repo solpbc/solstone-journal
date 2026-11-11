@@ -3940,7 +3940,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "full-tests")]
+    #[cfg(all(test, feature = "full-tests"))]
     fn spawn_test_child(ignore_sigterm: bool) -> (std::process::Child, ProcessInstance) {
         let fixture = option_env!("CARGO_BIN_EXE_solstone-system-test-child")
             .map(PathBuf::from)
@@ -3990,7 +3990,7 @@ mod tests {
         (child, instance)
     }
 
-    #[cfg(feature = "full-tests")]
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn a_real_term_blocking_child_gets_its_grace_then_is_killed() {
         let directory = TempDir::new().unwrap();

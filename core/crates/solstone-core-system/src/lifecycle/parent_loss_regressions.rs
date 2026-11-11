@@ -14,24 +14,17 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{Duration, Instant};
 
-use solstone_core_journal_io::{LockOptions, hold_lock, write_json};
+use solstone_core_journal_io::write_json;
 use tempfile::TempDir;
 
 use super::HostedServiceKind;
-use super::parent::DeclaredParent;
 use super::parent_loss_admission::{
     AdmissionIdentity, AdmissionIntent, AdmissionResult, AdmissionResultState,
     acknowledge_parent_loss_admission, write_parent_loss_admission_intent,
     write_parent_loss_admission_result, write_parent_loss_admission_spawn_identity,
-};
-use super::parent_loss_coordinator::{
-    CoordinatorBootstrap, ParentLossCoordinator, write_retire_expected_control,
 };
 use super::parent_loss_ledger::{
     ActiveGeneration, CoordinatorLease, ParentLossGeneration, ParentLossLedger,
@@ -39,9 +32,21 @@ use super::parent_loss_ledger::{
 };
 use super::parent_loss_outstanding::{AdmissionRetirer, ClosingAuthority};
 use crate::process::{
-    CensusRow, Disposition, ExecutionState, InspectResult, InstanceCensus, LaunchError,
-    ProcessBirth, ProcessInstance, ProcessInstanceSource, ProcessOwner, SignalKind, TableBirth,
-    TerminationError, launch_generation_child,
+    CensusRow, ExecutionState, InspectResult, InstanceCensus, ProcessBirth, ProcessInstance,
+    ProcessInstanceSource, ProcessOwner, SignalKind, TableBirth, TerminationError,
+};
+// What only the cases that start processes use.
+#[cfg(all(test, feature = "full-tests"))]
+use {
+    super::parent::DeclaredParent,
+    super::parent_loss_coordinator::{
+        CoordinatorBootstrap, ParentLossCoordinator, write_retire_expected_control,
+    },
+    crate::process::{Disposition, LaunchError, launch_generation_child},
+    solstone_core_journal_io::{LockOptions, hold_lock},
+    std::process::Command,
+    std::sync::atomic::{AtomicBool, Ordering},
+    std::thread,
 };
 
 // ---- fakes (copied from parent_loss_closure::tests, trimmed) ----
@@ -555,6 +560,7 @@ fn a_torn_nonempty_drop_does_not_refuse_forever() {
 
 // ---- 9. a torn drop at stop ----
 
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 fn a_torn_drop_at_stop_still_publishes_a_terminal() {
     let journal = TempDir::new().expect("temporary journal");
@@ -608,6 +614,7 @@ fn a_torn_drop_at_stop_still_publishes_a_terminal() {
 
 // ---- 10. a task launch racing the seal ----
 
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 fn a_task_launch_cannot_spawn_after_the_seal() {
     let directory = TempDir::new().expect("temporary root");
@@ -678,7 +685,7 @@ fn a_task_launch_cannot_spawn_after_the_seal() {
 /// and reap each one, as the queue does, then abandon the generation with 3
 /// admitted processes still alive. Returns the outstanding entries the dead
 /// run left and what its successor's start cost.
-#[cfg(feature = "full-tests")]
+#[cfg(all(test, feature = "full-tests"))]
 fn recovery_after_real_launches(completed: usize) -> (usize, Duration, usize) {
     let directory = TempDir::new().expect("temporary root");
     let (ledger, active) = open_generation(directory.path());
@@ -727,7 +734,7 @@ fn recovery_after_real_launches(completed: usize) -> (usize, Duration, usize) {
 /// Now a reaped launch leaves the outstanding set, so the dead run owes only
 /// what was alive and the start costs the same however many launches came
 /// before.
-#[cfg(feature = "full-tests")]
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 fn recovery_cost_does_not_grow_with_completed_launches() {
     let (small_left, small, small_attempts) = recovery_after_real_launches(50);
