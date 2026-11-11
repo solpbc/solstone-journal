@@ -20,6 +20,7 @@ fn tag(path: &str) -> bundle::BundledTag {
         end: 0,
         path: path.to_owned(),
         media: None,
+        part: "boot".to_owned(),
     }
 }
 
@@ -50,22 +51,54 @@ fn isolation_bundle() -> String {
         .text
 }
 
+fn split_bundles() -> (String, String) {
+    let boot = [(tag("/static/boot.js"), "var bootRan = true;\n".to_owned())];
+    let rest = [(
+        tag("/static/rest.js"),
+        "// rest breaks on its first statement\nthrow new Error('rest broke');\n".to_owned(),
+    )];
+    (
+        bundle::script_bundle(
+            &boot,
+            "globalThis.SOL_SHELL_REGISTRY = {};\n",
+            "shell.js.map",
+        )
+        .expect("boot bundle")
+        .text,
+        bundle::script_bundle(&rest, "", "shell-rest.js.map")
+            .expect("rest bundle")
+            .text,
+    )
+}
+
 #[test]
 fn shell_bundle_dom_contract() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     let scratch = tempfile::tempdir().expect("scratch directory");
     let shipped = solstone_core_convey_shell::assets::lookup("/static/shell.js")
-        .expect("the shell serves its script bundle");
+        .expect("the shell serves its boot script");
+    let shipped_rest = solstone_core_convey_shell::assets::lookup("/static/shell-rest.js")
+        .expect("the shell serves its rest script");
     let bundle_path = scratch.path().join("shell.js");
+    let rest_path = scratch.path().join("shell-rest.js");
     std::fs::write(&bundle_path, shipped.bytes).expect("bundle writes");
+    std::fs::write(&rest_path, shipped_rest.bytes).expect("rest bundle writes");
     let isolation_path = scratch.path().join("isolation.js");
     std::fs::write(&isolation_path, isolation_bundle()).expect("isolation bundle writes");
+    let (split_boot, split_rest) = split_bundles();
+    let split_boot_path = scratch.path().join("split-boot.js");
+    let split_rest_path = scratch.path().join("split-rest.js");
+    std::fs::write(&split_boot_path, split_boot).expect("split boot writes");
+    std::fs::write(&split_rest_path, split_rest).expect("split rest writes");
 
     let output = Command::new("node")
         .arg(format!("{manifest}/tests/shell_bundle_dom.js"))
         .arg(&bundle_path)
+        .arg(&rest_path)
         .arg(format!("{manifest}/assets/static"))
         .arg(&isolation_path)
+        .arg(&split_boot_path)
+        .arg(&split_rest_path)
         .output()
         .expect("shell bundle DOM harness starts (requires node)");
     let stdout = String::from_utf8_lossy(&output.stdout);

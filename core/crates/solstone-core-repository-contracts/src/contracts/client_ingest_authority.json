@@ -276,13 +276,13 @@
                 "media_type": "image/webp"
               }
             ],
-            "accepted_types_rule": "The bytes must be the type the extension names. HEIC, HEIF, TIFF, GIF, PDF and every other type are refused: the journal can't decode them. A device does not convert one, because conversion changes the screenshot's identity.",
+            "accepted_types_rule": "The bytes must be the type the extension names. The journal accepts png, jpg, jpeg and webp, and refuses HEIC, HEIF, TIFF, GIF, PDF and every other type because it can't decode them. Send an accepted type exactly as the platform saved it. A type outside those is converted to PNG on the device, keeping its metadata, and sent as png.",
             "size_limit": {
               "max_bytes": 67108864,
               "max_pixels": 100000000,
               "rule": "At most 64 MiB, the part limit for every upload (larger is refused with `multipart_part_too_large`), and at most 100,000,000 pixels by the image's own header (larger is refused with `screenshot_invalid`)."
             },
-            "identity": "A screenshot is the SHA-256 of its exact bytes, computed by the journal; the device sends no id. Send the file exactly as the platform saved it: never re-encode, resize, crop, rotate or strip its metadata. iCloud Photos and synced folders hand each of the owner's devices the same bytes, so the same screenshot from a second device, or sent again after a re-scan, a turn-back-on or a re-pair, is the same screenshot and is answered `duplicate`.",
+            "identity": "A screenshot is the SHA-256 of its exact bytes, computed by the journal; the device sends no id. Send an accepted type exactly as the platform saved it: do not re-encode, resize, crop, rotate or strip its metadata. A type outside png, jpg, jpeg and webp is converted to PNG on the device, keeping its metadata, and then the identity is the hash of that PNG. The same bytes from a second device, or sent again after a re-scan, a turn-back-on or a re-pair, are the same screenshot and are answered `duplicate`.",
             "capture_time": "`meta.screenshot.captured_at` is the moment it was taken, RFC 3339 with the UTC offset in force where it was taken (`Z` means `+00:00`). It comes from the platform's own record of the screenshot or from the file (its embedded date or modification time), never from a model, and `meta.screenshot.taken_from` says which (`platform` or `file`). The envelope's `day` (`YYYYMMDD`) and `segment` (`HHMMSS_1`) are that moment's date and clock time in its own offset, so the screenshot lands at the minute it was taken.",
             "device": "The device is the linked device that sends the upload, by its mTLS identity; no field names it. The screenshot lands in that device's screenshots stream and is labelled with the device's name as the journal shows it. A screenshot already received from another device keeps the label of the device that sent it first.",
             "meta_schema": {

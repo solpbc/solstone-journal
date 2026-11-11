@@ -123,6 +123,16 @@ input[type="checkbox"], input[type="radio"], input[type="range"] {
   pointer-events: none;
   overflow: hidden;
   contain: strict;
+  /* Day ground for this layer, before the sun arc script runs. A dark
+     setting wears the dark row's day ground below, so the script only
+     moves within that row, by the hour. */
+  background-color: var(--sunarc-ground-light-day);
+}
+
+@media (prefers-color-scheme: dark) {
+  #sunarc {
+    background-color: var(--sunarc-ground-dark-day);
+  }
 }
 #sunarc .sunarc-twilight,
 #sunarc .sunarc-glow,

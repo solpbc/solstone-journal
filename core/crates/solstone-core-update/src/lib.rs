@@ -440,6 +440,11 @@ pub fn perform(
     };
     let lane = args.lane.as_deref().unwrap_or(&pos.lane);
     let mut report = base_report(&pos, hold, lane);
+    // A journal from the journal's own installer, in its default prefix, is
+    // updated by the platform installer, which takes it over where it is.
+    let moves_to_platform = args.mode == CommandMode::Update
+        && pos.route_kind == RouteKind::NativeTree
+        && pos.prefix.as_deref().is_some_and(is_standalone_prefix);
     match args.mode {
         CommandMode::Help => return Ok(report),
         CommandMode::Hold | CommandMode::Unhold => {
@@ -560,6 +565,7 @@ pub fn perform(
             && args.version.is_none()
             && args.lane.is_none()
             && report.availability == Availability::NotAvailable
+            && !moves_to_platform
         {
             report.message = Some("your journal is up to date.".to_owned());
             return Ok(report);
@@ -586,14 +592,26 @@ pub fn perform(
         check_target_admissibility(prefix, &pos.current_journal_version, &target_journal)
             .map_err(|e| refusal(&e.code, &e.message))?;
     }
-    let source = if pos.route_kind == RouteKind::NativeTree {
+    let source = if pos.route_kind == RouteKind::NativeTree && !moves_to_platform {
         InstallerSource::Native
     } else {
         InstallerSource::Platform
     };
     let script = acquire(fetch, source)
         .map_err(|_| refusal("fetch-failed", "could not fetch the installer."))?;
-    let invocations = if pos.route_kind == RouteKind::NativeTree {
+    let invocations = if moves_to_platform {
+        // The platform installer finds the journal in its default prefix, so
+        // it gets no prefix of its own: its tree components keep the default.
+        build_platform_mutation_invocations(
+            &script.path,
+            &pos.components,
+            None,
+            report.latest_platform_version.as_deref(),
+            lane,
+            args.yes,
+        )
+        .map_err(|_| refusal("argv-failed", "invalid installer arguments."))?
+    } else if pos.route_kind == RouteKind::NativeTree {
         let component = pos.components.first().expect("positive native component");
         vec![PlatformInvocation {
             args: build_native_mutation_argv(
@@ -612,7 +630,7 @@ pub fn perform(
         build_platform_mutation_invocations(
             &script.path,
             &pos.components,
-            pos.prefix.as_deref(),
+            pos.platform_prefix.as_deref(),
             target_platform.as_deref(),
             lane,
             args.yes,
@@ -684,7 +702,7 @@ pub fn perform(
         }
     }
     report.current = Some(target_journal);
-    report.platform_version = if pos.route_kind == RouteKind::NativeTree {
+    report.platform_version = if pos.route_kind == RouteKind::NativeTree && !moves_to_platform {
         None
     } else {
         target_platform
@@ -692,8 +710,26 @@ pub fn perform(
     report.availability = Availability::NotAvailable;
     report.target = None;
     report.components = Some(components);
-    report.message = Some("updated your journal.".to_owned());
+    report.message = Some(
+        if moves_to_platform {
+            "updated your journal. it now updates with the solstone installer, from where it is."
+        } else {
+            "updated your journal."
+        }
+        .to_owned(),
+    );
     Ok(report)
+}
+
+/// The prefix the journal's own installer uses when run by itself:
+/// `~/.local/solstone-journal`. The platform installer looks for exactly this
+/// one, under the owner's home, and refuses with nothing changed otherwise.
+fn is_standalone_prefix(prefix: &Path) -> bool {
+    prefix.file_name() == Some(std::ffi::OsStr::new("solstone-journal"))
+        && prefix
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|name| name == ".local")
 }
 
 pub fn render_human(report: &UpdateReport) -> String {
@@ -1586,6 +1622,178 @@ esac
         let actual = fs::read_to_string(marker).unwrap();
         assert!(actual.contains("--lane\nstaging\n") && actual.contains("--version\n2.0.49-r3\n"));
         assert!(actual.contains("--confirm-package-command\n") && actual.contains("--no-path\n"));
+    }
+
+    struct SourceFetch {
+        script_path: PathBuf,
+        sources: Mutex<Vec<InstallerSource>>,
+    }
+
+    impl InstallerFetch for SourceFetch {
+        fn fetch(&self, source: InstallerSource) -> std::io::Result<PathBuf> {
+            self.sources.lock().unwrap().push(source);
+            Ok(self.script_path.clone())
+        }
+    }
+
+    fn standalone_update(
+        journal_prefix: &Path,
+        catalogue: &Catalogue,
+    ) -> (UpdateReport, Vec<InstallerSource>, Vec<Vec<OsString>>) {
+        let data = journal_prefix.parent().unwrap().join("data");
+        fs::create_dir_all(&data).unwrap();
+        let etc = journal_prefix.parent().unwrap().join("etc");
+        let runner = ScriptedRunner {
+            responses: Mutex::new(vec![response(true, serde_json::json!({}))]),
+            recorded_args: Mutex::new(vec![]),
+        };
+        let fetch = SourceFetch {
+            script_path: journal_prefix.parent().unwrap().join("installer.sh"),
+            sources: Mutex::new(vec![]),
+        };
+        let exe = journal_prefix.join("current/bin/solstone");
+        let report = perform(
+            catalogue,
+            &runner,
+            &fetch,
+            &MockPackageProbe(false),
+            &exe,
+            &data,
+            &etc,
+            true,
+            &parse_args(&[OsString::from("--yes")]).unwrap(),
+        )
+        .unwrap();
+        let sources = fetch.sources.lock().unwrap().clone();
+        let calls = runner.recorded_args.lock().unwrap().clone();
+        (report, sources, calls)
+    }
+
+    #[test]
+    fn a_standalone_journal_updates_through_the_platform_installer_even_when_current() {
+        for (platform, journal) in [("2.0.49-r1", "2.0.49"), ("2.0.48-r2", "2.0.48")] {
+            let home = tempfile::tempdir().unwrap();
+            let prefix = home.path().join(".local/solstone-journal");
+            make_tree(&prefix, "2.0.48");
+            let (report, sources, calls) = standalone_update(&prefix, &listing(platform, journal));
+            assert_eq!(sources, vec![InstallerSource::Platform], "{journal}");
+            assert_eq!(calls.len(), 1);
+            let argv = &calls[0];
+            for flag in ["--upgrade", "--json", "--no-path", "--yes"] {
+                assert!(argv.contains(&OsString::from(flag)), "{flag} in {argv:?}");
+            }
+            assert!(
+                argv.windows(2)
+                    .any(|w| w == [OsString::from("--components"), OsString::from("journal")])
+            );
+            assert!(
+                argv.windows(2)
+                    .any(|w| w == [OsString::from("--version"), OsString::from(platform)])
+            );
+            assert!(
+                !argv.contains(&OsString::from("--prefix")),
+                "the platform keeps its own prefix: {argv:?}"
+            );
+            assert_eq!(
+                report.message.as_deref(),
+                Some(
+                    "updated your journal. it now updates with the solstone installer, from where it is."
+                )
+            );
+            assert_eq!(report.platform_version.as_deref(), Some(platform));
+        }
+    }
+
+    #[test]
+    fn a_native_tree_elsewhere_keeps_its_own_installer() {
+        let home = tempfile::tempdir().unwrap();
+        let prefix = home.path().join("elsewhere/solstone-journal");
+        make_tree(&prefix, "2.0.48");
+        let (report, sources, calls) = standalone_update(&prefix, &listing("2.0.49-r1", "2.0.49"));
+        assert_eq!(sources, vec![InstallerSource::Native]);
+        assert!(calls[0].contains(&OsString::from("--prefix")));
+        assert_eq!(report.message.as_deref(), Some("updated your journal."));
+    }
+
+    #[test]
+    fn a_taken_over_journal_updates_in_its_own_prefix_with_the_platform_prefix_on_argv() {
+        let home = tempfile::tempdir().unwrap();
+        let journal_prefix = home.path().join(".local/solstone-journal");
+        let platform_prefix = home.path().join(".local");
+        make_tree(&journal_prefix, "2.0.48");
+        let data = home.path().join("data");
+        fs::create_dir_all(&data).unwrap();
+        fs::write(
+            data.join("install.conf"),
+            format!(
+                "[solstone]\nschema_version=1\norigin=https://updates.solstone.app\nroute=tree\nphase=complete\nprefix={}\nlane=release\nplatform_version=2.0.48-r1\n[component:journal]\nroute=tree\nstatus=installed\nprefix={}\n",
+                platform_prefix.display(),
+                journal_prefix.display()
+            ),
+        )
+        .unwrap();
+        let exe = journal_prefix.join("current/bin/solstone");
+        let etc = home.path().join("etc");
+        match classify_ownership(&exe, &data, &etc, &MockPackageProbe(false)) {
+            OwnershipResult::Positive(pos) => {
+                assert_eq!(pos.route_kind, RouteKind::PlatformTree);
+                assert_eq!(pos.prefix.as_deref(), Some(journal_prefix.as_path()));
+                assert_eq!(
+                    pos.platform_prefix.as_deref(),
+                    Some(platform_prefix.as_path())
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        let runner = ScriptedRunner {
+            responses: Mutex::new(vec![response(true, serde_json::json!({}))]),
+            recorded_args: Mutex::new(vec![]),
+        };
+        let fetch = SourceFetch {
+            script_path: home.path().join("installer.sh"),
+            sources: Mutex::new(vec![]),
+        };
+        perform(
+            &listing("2.0.49-r1", "2.0.49"),
+            &runner,
+            &fetch,
+            &MockPackageProbe(false),
+            &exe,
+            &data,
+            &etc,
+            true,
+            &parse_args(&[OsString::from("--yes")]).unwrap(),
+        )
+        .unwrap();
+        let calls = runner.recorded_args.lock().unwrap();
+        assert!(calls[0].windows(2).any(|w| w
+            == [
+                OsString::from("--prefix"),
+                platform_prefix.clone().into_os_string()
+            ]));
+    }
+
+    #[test]
+    fn an_unrecorded_package_names_the_step_that_records_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("data");
+        fs::create_dir_all(&data).unwrap();
+        let exe = temp.path().join("usr/bin/solstone");
+        for (owned, expected) in [(true, Some("install-not-owned")), (false, None)] {
+            match classify_ownership(
+                &exe,
+                &data,
+                &temp.path().join("etc"),
+                &MockPackageProbe(owned),
+            ) {
+                OwnershipResult::Refusal { code, message } => {
+                    assert_eq!(Some(code.as_str()), expected);
+                    assert!(message.contains("sh -s -- --upgrade once"), "{message}");
+                }
+                OwnershipResult::NotOwned => assert_eq!(expected, None),
+                other => panic!("{other:?}"),
+            }
+        }
     }
 }
 

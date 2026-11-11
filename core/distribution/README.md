@@ -17,10 +17,12 @@ This file ships inside the installed tree, at `share/README.md`, next to `bin/` 
 solstone journal setup
 ```
 
-If you are moving specifically from v1.0.22 after installing this linux native
-`.deb` or `.rpm`, run `/usr/bin/solstone journal setup` once instead. This is only for
-that package crossover when the old `~/.local/bin/journal` still comes first on
-your normal PATH. Do not remove the old install first: setup recognizes only
+If you are moving specifically from v1.0.22 and already installed this linux
+native `.deb` or `.rpm` yourself, run `/usr/bin/solstone journal setup` once instead.
+This is only for that package crossover when the old `~/.local/bin/journal` still
+comes first on your normal PATH, and then run the installer at
+https://solstone.app/install.sh with `--upgrade` once, so `solstone update` updates the
+package. The installer runs setup itself, on either route. Do not remove the old install first: setup recognizes only
 its known runtime and service artifacts, keeps recovery backups of recognized
 legacy launchers, and preserves your journal. Archive installs still use
 `solstone journal setup`.

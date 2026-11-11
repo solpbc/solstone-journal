@@ -30,27 +30,32 @@ serving path.
   stand in for what that query hides. The served shell carries it inside `shell.css` (below), in
   an `@media (prefers-color-scheme: dark)` block at its place, so the cascade is the same, and its
   bytes load with the rest of that one stylesheet.
-- **The shell is served as two files.** `shell.html` keeps listing every
+- **The shell is served as three files.** `shell.html` keeps listing every
   stylesheet and deferred script it loads, in order; that list is the source.
+  Each script tag says `data-shell-part="boot"` or `data-shell-part="rest"`.
   The convey shell's `build.rs` concatenates them, unchanged, into
-  `/static/shell.css` and `/static/shell.js`
+  `/static/shell.css`, `/static/shell.js` (boot) and `/static/shell-rest.js`
   (`core/build-support/convey_shell_bundle.rs`), with a `/* file: … */` banner
-  per file, and the served page names those two instead. Nothing is minified or
-  transpiled, and no other toolchain is involved.
+  per file. The served page names the stylesheet and the boot script. The rest
+  script is a placeholder with no `src` until boot fetches it, after the first
+  view is ready, or about three seconds after boot, whichever is first.
+  A rest file that needs the workspace calls `bindWorkspaceMount`: it runs for
+  the mount already on the page, then for each mount after it.
+  Nothing is minified or transpiled, and no other toolchain is involved.
   - Each script runs inside its own function, so a file that throws stops only
     itself; its error still reaches `window`'s `error` event, named by its file
-    and line (the diagnostic console maps bundle positions; `shell.js.map` does
-    the same for developer tools).
+    and line (the diagnostic console maps bundle positions; `shell.js.map` and
+    `shell-rest.js.map` do the same for developer tools).
   - Every name a file declares at its top level stays a global, read and
     written through the same binding, so `relativeTime` works from any file as
     before. The build refuses a name declared at the top of two files, a
     top-level destructuring declaration, and anything its lexer can't read (an
     unclosed string or bracket, a `/` it can't tell is division or a regular
-    expression). A full parse of every file and of the bundle runs under Node
-    in `make ci-full`.
+    expression). A full parse of every file and of both script bundles runs
+    under Node in `make ci-full`.
   - A new shell script or stylesheet is added to `shell.html` like any other.
     It must be a plain `/static/` file, and a script must be a classic `defer`
-    script (no `type`, no `async`).
+    script (no `type`, no `async`) with `data-shell-part="boot"` or `"rest"`.
 - **Precompressed.** Every compressible dashboard file the shell's build knows
   (the shell's own and each web crate's recorded assets) is gzipped once at
   build time. A client that accepts gzip gets that copy, with
@@ -66,7 +71,7 @@ serving path.
 
 1. Static shell parses with `#app-rail`, `#app-dock`, and `#status-instrument`
    slots. An inline script in its `<head>` starts, beside the download of the
-   shell's two files, `GET /api/shell`, the stream labels, and from the entry
+   shell's stylesheet and boot script, `GET /api/shell`, the stream labels, and from the entry
    table (below) the view's fragment, its scripts and styles, and its first
    reads.
 2. `shell_boot.js` reads `/api/shell` through `apiJson` with `scope: 'shell'`,

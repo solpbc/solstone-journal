@@ -103,19 +103,15 @@ Options:
 
 ### A distribution package
 
-`apt` and `dnf` do not check our signature. Complete the signature and digest comparison under [verify independently](#verify-independently) first, then install the artifact you checked.
+To install the journal with your system's package manager instead, add `--route package`:
 
 ```bash
-sudo apt install ./solstone-journal-<version>-linux-<arch>.deb
+curl -fsSL https://solstone.app/install.sh | sh -s -- --components journal --route package
 ```
 
-On Fedora or RHEL:
+The installer verifies the signed release, then installs the `.deb` with `apt` on Debian or Ubuntu, or the `.rpm` with `dnf` on Fedora or RHEL, using `sudo`. It runs setup and records the package, so `solstone update` and the installer's `--upgrade` update it. The package puts `solstone` on PATH for every account on the machine and installs the OpenMP runtime dependency. `journal <args>` has moved to `solstone journal <args>`; update any commands or scripts that use the old name.
 
-```bash
-sudo dnf install ./solstone-journal-<version>-linux-<arch>.rpm
-```
-
-Either one puts `solstone` on PATH for every account on the machine and installs the OpenMP runtime dependency. `journal <args>` has moved to `solstone journal <args>`; update any commands or scripts that use the old name. Run `solstone journal setup`; that owner-scoped step writes `~/.local/share/solstone/package-install-receipt` because the packages intentionally have no maintainer scripts.
+If you installed a `.deb` or `.rpm` yourself, run the same command once. The installer checks every file the package installed against the signed release before it records it. If a file doesn't match, it stops and changes nothing. An older package is replaced with the current signed one.
 
 On linux, `solstone update` updates copies recorded by the solstone installer. `solstone update --check` reports whether an update is available. If the installation cannot be identified, use its original installer.
 
@@ -186,7 +182,7 @@ The status should read `Valid`, and the signer certificate's subject should star
 
 ## Finish setup on linux
 
-The installer above already runs journal setup. Follow the setup step it prints; do not run setup a second time. If you installed a `.deb` or `.rpm` directly, or are repairing setup, run:
+The installer above already runs journal setup. Follow the setup step it prints; do not run setup a second time. If you are repairing setup, run:
 
 ```bash
 solstone journal setup
@@ -231,19 +227,23 @@ Your journal works alongside the solstone app: the app takes in what you share w
 
 ## Moving from a pip, uv or pipx install on linux
 
-Earlier releases installed the journal as a set of Python packages (`pip`, `uv tool`, or `pipx`). If you are moving specifically from v1.0.22 after installing this linux native `.deb` or `.rpm`, run this one time instead, even when `~/.local/bin/journal` comes first on your normal PATH:
+Earlier releases installed the journal as a set of Python packages (`pip`, `uv tool`, or `pipx`). To move to this version, run the installer, on either route:
+
+```bash
+curl -fsSL https://solstone.app/install.sh | sh -s -- --components journal
+```
+
+Do not remove the old install first. The installer runs setup, which recognizes the old runtime and service artifacts, preserves your journal, replaces only what it can identify, and saves recovery backups of recognized legacy launchers.
+
+If you are moving specifically from v1.0.22 and already installed this linux native `.deb` or `.rpm` yourself, run this one time instead, even when `~/.local/bin/journal` comes first on your normal PATH:
 
 ```bash
 /usr/bin/solstone journal setup
 ```
 
-This exception is only for that v1.0.22 linux package crossover. Do not remove the old install first: setup recognizes its runtime and service artifacts, preserves your journal, replaces only what it can identify, and saves recovery backups of recognized legacy launchers. For every other install route, run:
+This exception is only for that v1.0.22 linux package crossover. Then run `curl -fsSL https://solstone.app/install.sh | sh -s -- --upgrade` once, so `solstone update` updates the package.
 
-```bash
-solstone journal setup
-```
-
-That one setup command finds a real prior install, its `solstone`, `journal`, and `sol` binaries wherever `pip`/`uv`/`pipx` put them under `~/.local/bin`, stops its service, and replaces it automatically in one invocation. There is no separate cleanup command to run first. Running `pip uninstall` / `uv tool uninstall` / `pipx uninstall`, or `solstone journal service stop` against the old install, yourself before setup only removes the evidence it needs to find and safely replace the old runtime; let the applicable setup command above do it.
+Setup finds a real prior install, its `solstone`, `journal`, and `sol` binaries wherever `pip`/`uv`/`pipx` put them under `~/.local/bin`, stops its service, and replaces it automatically in one invocation. There is no separate cleanup command to run first. Running `pip uninstall` / `uv tool uninstall` / `pipx uninstall`, or `solstone journal service stop` against the old install, yourself before setup only removes the evidence it needs to find and safely replace the old runtime; let the applicable setup command above do it.
 
 When setup replaces recognized legacy launchers, it keeps durable recovery backups under `~/.local/share/solstone/setup-backups/` before touching those launchers.
 
@@ -257,7 +257,7 @@ On mac, each app handles its own updates. The shell installer verifies an existi
 
 On linux, use the route that owns the installation:
 
-For a tree install, `sh install.sh --upgrade` is the whole upgrade: it preserves the recorded lane unless `--lane` is explicit, verifies the signed release, flips `current`, and repoints the managed wrapper and service through setup. If a package owns the install, the tree installer refuses. This release has no package repository. To upgrade an existing 2.x package installation, download the newer local `.deb` or `.rpm` and repeat the applicable package install command above. You do not need to run setup again.
+For a tree install, `sh install.sh --upgrade` is the whole upgrade: it preserves the recorded lane unless `--lane` is explicit, verifies the signed release, flips `current`, and repoints the managed wrapper and service through setup. For a package install, run `solstone update`, or the installer with `--upgrade`; there is no package repository to add. If you installed the `.deb` or `.rpm` yourself, run `curl -fsSL https://solstone.app/install.sh | sh -s -- --upgrade` once: it checks the installed files against the signed release and records the package, and `solstone update` updates it from then on.
 
 The new build takes effect when your journal next starts, including after a login or reboot. It checks for updates to models, location data and agent skills you already use. Files that already match the new build stay in place, and optional assets you have not installed stay absent. A failed refresh does not stop your journal; it tries again on a later start.
 

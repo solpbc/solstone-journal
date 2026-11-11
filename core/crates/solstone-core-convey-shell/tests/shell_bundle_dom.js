@@ -21,8 +21,11 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const [bundlePath, staticDir, isolationPath] = process.argv.slice(2);
+const [bundlePath, restPath, staticDir, isolationPath, splitBootPath, splitRestPath] = process.argv.slice(2);
 const bundle = fs.readFileSync(bundlePath, 'utf8');
+const restBundle = fs.readFileSync(restPath, 'utf8');
+const splitBoot = fs.readFileSync(splitBootPath, 'utf8');
+const splitRest = fs.readFileSync(splitRestPath, 'utf8');
 let passed = 0;
 
 function check(name, fn) {
@@ -77,36 +80,43 @@ function exportedNames(segmentText) {
   return names.sort();
 }
 
-check('the bundle parses', () => {
-  new vm.Script(bundle, { filename: 'shell.js' });
-});
-
-const table = segmentTable(bundle);
-
-check('every file in the bundle parses on its own', () => {
-  assert(table.length > 20, `only ${table.length} segments`);
-  for (const [, name] of table) {
-    const source = fs.readFileSync(path.join(staticDir, name.replace(/^static\//, '')), 'utf8');
-    try {
-      new vm.Script(source, { filename: '/' + name });
-    } catch (error) {
-      throw new Error(`/${name} doesn't parse: ${error.message}`);
+function checkBundle(label, text, minSegments) {
+  check(`${label} parses`, () => {
+    new vm.Script(text, { filename: label });
+  });
+  const table = segmentTable(text);
+  check(`every file in ${label} parses on its own`, () => {
+    assert(table.length >= minSegments, `${label} has only ${table.length} segments`);
+    for (const [, name] of table) {
+      const source = fs.readFileSync(path.join(staticDir, name.replace(/^static\//, '')), 'utf8');
+      try {
+        new vm.Script(source, { filename: '/' + name });
+      } catch (error) {
+        throw new Error(`/${name} doesn't parse: ${error.message}`);
+      }
     }
-  }
-});
+  });
+  return table;
+}
+
+const bootTable = checkBundle('shell.js', bundle, 20);
+const restTable = checkBundle('shell-rest.js', restBundle, 5);
 
 check('each file hands over exactly the names it declares at its top level', () => {
-  const lines = bundle.split('\n');
   let total = 0;
-  for (const [line, name] of table) {
-    const source = fs.readFileSync(path.join(staticDir, name.replace(/^static\//, '')), 'utf8');
-    const header = lines[line - 2];
-    assert(header.startsWith('try { (function () {'), `/${name}'s wrapper`);
-    const exported = exportedNames(header);
-    assert.deepStrictEqual(exported, declaredNames(source, name), `/${name}`);
-    total += exported.length;
+  for (const [text, table] of [[bundle, bootTable], [restBundle, restTable]]) {
+    const lines = text.split('\n');
+    for (const [line, name] of table) {
+      const source = fs.readFileSync(path.join(staticDir, name.replace(/^static\//, '')), 'utf8');
+      const header = lines[line - 2];
+      assert(header.startsWith('try { (function () {'), `/${name}'s wrapper`);
+      const exported = exportedNames(header);
+      assert.deepStrictEqual(exported, declaredNames(source, name), `/${name}`);
+      total += exported.length;
+    }
   }
   assert(total >= 20, `only ${total} names handed over`);
+  assert(bootTable.length + restTable.length >= 25, 'a shell file is in neither bundle');
 });
 
 const isolation = fs.readFileSync(isolationPath, 'utf8');
@@ -172,4 +182,177 @@ check("an error's position names its file and line", () => {
   assert.strictEqual(shell.stack(stack), 'Error: b broke\n    at /static/b.js:1:7');
 });
 
-console.log(`DOM CASES: ${passed} passed`);
+function runSplit(order) {
+  const reported = [];
+  const bootUrl = 'http://journal.test/static/0123456789abcdef/shell.js';
+  const restUrl = 'http://journal.test/static/0123456789abcdef/shell-rest.js';
+  const currentScript = { src: bootUrl };
+  const context = vm.createContext({
+    document: { currentScript },
+    setTimeout,
+    reportError: (error) => reported.push(error),
+  });
+  for (const which of order) {
+    currentScript.src = which === 'rest' ? restUrl : bootUrl;
+    const text = which === 'rest' ? splitRest : splitBoot;
+    vm.runInContext(text, context, { filename: currentScript.src });
+  }
+  return { context, reported, bootUrl, restUrl };
+}
+
+check('an error in the rest file names its own file, whichever file ran first', () => {
+  const row = segmentTable(splitRest).find(([, name]) => name === 'static/rest.js');
+  assert(row, 'rest.js is in the rest table');
+  for (const order of [['boot', 'rest'], ['rest', 'boot']]) {
+    const { context, reported, restUrl } = runSplit(order);
+    assert.strictEqual(reported.length, 1, order.join(' then '));
+    assert.strictEqual(reported[0].message, 'rest broke');
+    const shell = vm.runInContext('__solShell', context);
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(shell.locate(restUrl, row[0] + 1))),
+      { file: '/static/rest.js', line: 2 }
+    );
+    const stack = `Error: rest broke\n    at ${restUrl}:${row[0]}:1`;
+    assert.strictEqual(shell.stack(stack), 'Error: rest broke\n    at /static/rest.js:1:1');
+    assert.strictEqual(shell.locate('http://elsewhere/x.js', row[0]), null);
+  }
+});
+
+function host() {
+  const sandbox = vm.createContext({
+    console: { error() {}, debug() {} },
+    setTimeout,
+    clearTimeout,
+    URL,
+  });
+  sandbox.window = sandbox;
+  sandbox.addEventListener = function () {};
+  sandbox.document = {
+    readyState: 'complete',
+    baseURI: 'http://journal.test/',
+    visibilityState: 'visible',
+    addEventListener() {},
+    getElementById() { return null; },
+    querySelector() { return null; },
+  };
+  sandbox.location = {
+    pathname: '/app/journal/',
+    href: 'http://journal.test/app/journal/',
+    origin: 'http://journal.test',
+    reload() { sandbox.reloads += 1; },
+  };
+  sandbox.reloads = 0;
+  const store = new Map();
+  sandbox.sessionStorage = {
+    getItem(key) { return store.has(key) ? store.get(key) : null; },
+    setItem(key, value) { store.set(key, String(value)); },
+  };
+  return sandbox;
+}
+
+check('a view that is not ready by three seconds still gets the rest file', () => {
+  const timers = [];
+  const created = [];
+  const restSrc = '/static/0123456789abcdef/shell-rest.js';
+  const holder = {
+    getAttribute(name) {
+      return name === 'data-src' ? restSrc : null;
+    },
+  };
+  const sandbox = vm.createContext({
+    console: { warn() {}, error() {}, debug() {} },
+    setTimeout(fn, ms) {
+      timers.push({ fn, ms });
+      return timers.length;
+    },
+    clearTimeout() {},
+    URL,
+    performance: { mark() {} },
+    AppServices: {
+      escapeHtml(value) {
+        return String(value == null ? '' : value);
+      },
+    },
+  });
+  sandbox.window = sandbox;
+  sandbox.location = { pathname: '/app/journal/' };
+  sandbox.document = {
+    currentScript: null,
+    getElementById() { return null; },
+    querySelector(selector) {
+      return selector === 'script[data-shell-part="rest"]' ? holder : null;
+    },
+    createElement() {
+      const el = { async: true, src: '' };
+      created.push(el);
+      return el;
+    },
+    head: { appendChild() {} },
+  };
+  // The promise has to be born in this context. One from outside does not
+  // suspend the await, and the boot failure path would load the file at once.
+  vm.runInContext(
+    'window.apiJson = function () { return new Promise(function () {}); };',
+    sandbox
+  );
+  vm.runInContext(
+    fs.readFileSync(path.join(staticDir, 'shell_boot.js'), 'utf8'),
+    sandbox,
+    { filename: '/static/shell_boot.js' }
+  );
+  assert.strictEqual(
+    created.length,
+    0,
+    `rest loaded before the delay; timers ${timers.map((timer) => timer.ms).join(',')}`
+  );
+  const wait = timers.filter((timer) => timer.ms === 3000);
+  assert.strictEqual(wait.length, 1);
+  wait[0].fn();
+  assert.strictEqual(created.length, 1);
+  assert.strictEqual(created[0].src, restSrc);
+  assert.strictEqual(created[0].async, false);
+});
+
+check('an error before the diagnostic console loads is shown once the console loads', () => {
+  const sandbox = host();
+  vm.runInContext(
+    fs.readFileSync(path.join(staticDir, 'error-handler.js'), 'utf8'),
+    sandbox,
+    { filename: '/static/error-handler.js' }
+  );
+  sandbox.logError(new Error('kept'), { kind: 'test' });
+  assert.strictEqual(sandbox.convey.pendingDiagnostics.length, 1);
+  assert.strictEqual(sandbox.convey.pendingDiagnostics[0].detail.message, 'kept');
+  const got = [];
+  sandbox.convey.deliverPendingDiagnostics({ push(entry) { got.push(entry); } });
+  assert.strictEqual(got.length, 1);
+  assert.strictEqual(got[0].detail.message, 'kept');
+  assert.strictEqual(sandbox.convey.pendingDiagnostics.length, 0);
+});
+
+async function staleAssetCase() {
+  const sandbox = host();
+  const url = 'http://journal.test/static/0123456789abcdef/shell-rest.js';
+  sandbox.fetch = async () => { throw new Error('offline'); };
+  vm.runInContext(
+    fs.readFileSync(path.join(staticDir, 'api.js'), 'utf8'),
+    sandbox,
+    { filename: '/static/api.js' }
+  );
+  assert.strictEqual(await sandbox.recoverFromStaleAsset(url), false);
+  assert.strictEqual(sandbox.reloads, 0);
+  sandbox.fetch = async () => ({ status: 404 });
+  assert.strictEqual(await sandbox.recoverFromStaleAsset(url), true);
+  assert.strictEqual(sandbox.reloads, 1);
+  assert.strictEqual(await sandbox.recoverFromStaleAsset(url), false);
+  assert.strictEqual(sandbox.reloads, 1);
+  passed += 1;
+}
+
+staleAssetCase().then(() => {
+  console.log(`DOM CASES: ${passed} passed`);
+}).catch((error) => {
+  console.error(`FAIL a rest file that 404s reloads once, and a network failure does not: ${error && error.stack || error}`);
+  process.exitCode = 1;
+  console.log(`DOM CASES: ${passed} passed`);
+});

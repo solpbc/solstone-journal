@@ -589,7 +589,7 @@
                 "media_type": "image/webp"
               }
             ],
-            "accepted_types_rule": "The bytes must be the type the extension names. HEIC, HEIF, TIFF, GIF, PDF and every other type are refused: the journal can't decode them. A device does not convert one, because conversion changes the screenshot's identity.",
+            "accepted_types_rule": "The bytes must be the type the extension names. The journal accepts png, jpg, jpeg and webp, and refuses HEIC, HEIF, TIFF, GIF, PDF and every other type because it can't decode them. Send an accepted type exactly as the platform saved it. A type outside those is converted to PNG on the device, keeping its metadata, and sent as png.",
             "answers": [
               {
                 "client_action": "Mark it delivered and never send it again. It counts toward the in-your-journal total.",
@@ -705,7 +705,7 @@
                 "source": "screenshots"
               }
             ],
-            "identity": "A screenshot is the SHA-256 of its exact bytes, computed by the journal; the device sends no id. Send the file exactly as the platform saved it: never re-encode, resize, crop, rotate or strip its metadata. iCloud Photos and synced folders hand each of the owner's devices the same bytes, so the same screenshot from a second device, or sent again after a re-scan, a turn-back-on or a re-pair, is the same screenshot and is answered `duplicate`.",
+            "identity": "A screenshot is the SHA-256 of its exact bytes, computed by the journal; the device sends no id. Send an accepted type exactly as the platform saved it: do not re-encode, resize, crop, rotate or strip its metadata. A type outside png, jpg, jpeg and webp is converted to PNG on the device, keeping its metadata, and then the identity is the hash of that PNG. The same bytes from a second device, or sent again after a re-scan, a turn-back-on or a re-pair, are the same screenshot and are answered `duplicate`.",
             "meta_schema": {
               "properties": {
                 "screenshot": {

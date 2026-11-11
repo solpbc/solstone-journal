@@ -26,6 +26,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when `solstone journal facet merge` finds a file of the same name in both facets, the copy from the facet merged away now waits in the trash. recovering it puts that copy in place of the one the merge kept.
 - the trash page now shows anything that stopped part way into the trash or back out of it.
 - `solstone journal entities doctor` is gone. it only recorded old deletes, and a name you delete is no longer kept from coming back.
+- on linux, `solstone update` on a journal installed by the journal's own installer in its usual place now updates it through the solstone installer, which keeps it where it is and updates it from then on.
+- on linux, when a journal was installed from a `.deb` or `.rpm` by hand, `solstone update` now names the one command that records it.
+- the journal's own linux installer, run by itself in its usual place, no longer starts a new installation. it still updates one it installed before, and for a new one it names the solstone installer's command.
 - the areas on the month map keep their places. before, a stop far from the others could shift every area in that month.
 - you can now delete a Strava, Apple Health or Oura import, from its page or by selecting several on the import page. it waits in the trash like any other import, and erase removes it. this now covers every import except journal archives. a delete takes only what that import was the first to bring in, and anything an earlier import brought in stays.
 - deleting a Strava workout on the body page now moves it to the trash, where you can recover it, in place of a delete you could cancel for 10 seconds.

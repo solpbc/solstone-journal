@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-// The dashboard shell's stylesheets and scripts, served as one file each.
+// The dashboard shell's stylesheets and scripts, served as one stylesheet and
+// two scripts. The shell page says which script file each tag belongs to.
 // Included by the shell's build script, which writes the bundles, and by the
 // shell's tests, which check them, so both read the shell page the same way.
 //
@@ -24,6 +25,8 @@ pub struct BundledTag {
     pub path: String,
     /// A stylesheet's `media` query, if any.
     pub media: Option<String>,
+    /// `boot` or `rest` for a script. Empty for a stylesheet.
+    pub part: String,
 }
 
 #[allow(dead_code)]
@@ -40,6 +43,20 @@ pub const SHELL_SCRIPT_BUNDLE: &str = "/static/shell.js";
 pub const SHELL_STYLE_BUNDLE: &str = "/static/shell.css";
 #[allow(dead_code)]
 pub const SHELL_SCRIPT_MAP: &str = "/static/shell.js.map";
+#[allow(dead_code)]
+pub const SHELL_REST_BUNDLE: &str = "/static/shell-rest.js";
+#[allow(dead_code)]
+pub const SHELL_REST_MAP: &str = "/static/shell-rest.js.map";
+
+/// Which script bundle a tag belongs in. A stylesheet is not a script.
+#[allow(dead_code)]
+pub fn script_bundle_of(tag: &BundledTag) -> &'static str {
+    if tag.part == "rest" {
+        SHELL_REST_BUNDLE
+    } else {
+        SHELL_SCRIPT_BUNDLE
+    }
+}
 
 fn attribute<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
     let lower = tag.to_ascii_lowercase();
@@ -121,6 +138,7 @@ pub fn shell_page_tags(page: &str) -> Result<ShellPageTags, String> {
                     end,
                     path: href.to_owned(),
                     media: attribute(tag, "media").map(str::to_owned),
+                    part: String::new(),
                 });
             }
             cursor = close;
@@ -134,16 +152,19 @@ pub fn shell_page_tags(page: &str) -> Result<ShellPageTags, String> {
         let Some(src) = attribute(tag, "src") else {
             continue; // inline scripts stay where they are
         };
+        let part = attribute(tag, "data-shell-part").unwrap_or("");
         if !src.starts_with("/static/")
             || src.contains(['?', '#'])
             || attribute(tag, "defer").is_none()
             || attribute(tag, "async").is_some()
             || attribute(tag, "type").is_some()
+            || (part != "boot" && part != "rest")
             || !page[close..end_tag].trim().is_empty()
         {
             return Err(format!(
                 "the shell page loads script {src} in a way the bundle can't keep in order; \
-                 every shell script is a plain deferred /static file"
+                 every shell script is a plain deferred /static file with \
+                 data-shell-part=\"boot\" or \"rest\""
             ));
         }
         let (start, end) = whole_line(page, start, cursor);
@@ -152,6 +173,7 @@ pub fn shell_page_tags(page: &str) -> Result<ShellPageTags, String> {
             end,
             path: src.to_owned(),
             media: None,
+            part: part.to_owned(),
         });
     }
     if tags.styles.is_empty() || tags.scripts.is_empty() {
@@ -740,16 +762,20 @@ fn bundle_end(text: String, segments: Vec<(String, usize)>) -> Bundle {
     Bundle { text, segments }
 }
 
-/// The shell's scripts in one script. `registry` is a script that runs first,
-/// with data the shell reads (the app table); it is generated, not a file.
+/// One name, one file. The two bundles are built separately, and a name
+/// declared in both would be two globals; this is the check that still sees
+/// the whole page.
 #[allow(dead_code)]
-pub fn script_bundle(
+pub fn refuse_shared_top_level_names(files: &[(BundledTag, String)]) -> Result<(), String> {
+    let mut owners = std::collections::BTreeMap::new();
+    claim_top_level_names(files, &mut owners).map(|_| ())
+}
+
+fn claim_top_level_names(
     files: &[(BundledTag, String)],
-    registry: &str,
-    map_name: &str,
-) -> Result<Bundle, String> {
+    owners: &mut std::collections::BTreeMap<String, String>,
+) -> Result<Vec<ScriptFacts>, String> {
     let mut facts = Vec::new();
-    let mut owners: std::collections::BTreeMap<String, String> = Default::default();
     for (tag, source) in files {
         let found = script_facts(&tag.path, source)?;
         for name in &found.top_level {
@@ -769,6 +795,18 @@ pub fn script_bundle(
         }
         facts.push(found);
     }
+    Ok(facts)
+}
+
+/// The shell's scripts in one script. `registry` is a script that runs first,
+/// with data the shell reads (the app table); it is generated, not a file.
+#[allow(dead_code)]
+pub fn script_bundle(
+    files: &[(BundledTag, String)],
+    registry: &str,
+    map_name: &str,
+) -> Result<Bundle, String> {
+    let facts = claim_top_level_names(files, &mut std::collections::BTreeMap::new())?;
 
     let mut text = String::from(
         "/* The journal dashboard's shell scripts in one file, in the order the shell page lists \
@@ -777,24 +815,52 @@ pub fn script_bundle(
          Built with the journal; edit the files, not this. */\n",
     );
     // The prologue: where each segment starts, so an error's position names
-    // its file, and how a segment's error is reported.
-    text.push_str("(function () { var src = document.currentScript && document.currentScript.src; var segments = [/*SEGMENTS*/];\n");
-    text.push_str(concat!(
-        "  function locate(file, line) { if (!src || file !== src) return null; ",
-        "for (var i = segments.length - 1; i >= 0; i--) { if (line >= segments[i][0]) ",
-        "return { file: '/' + segments[i][1], line: line - segments[i][0] + 1 }; } return null; }\n",
-        "  function stack(text) { if (!src || typeof text !== 'string') return text; ",
-        "return text.split(src + ':').map(function (part, i) { if (i === 0) return part; ",
-        "var m = /^\\d+/.exec(part); var at = m && locate(src, Number(m[0])); ",
-        "return at ? at.file + ':' + at.line + part.slice(m[0].length) : src + ':' + part; }).join(''); }\n",
-        "  function fail(error) { if (typeof globalThis.reportError === 'function') { globalThis.reportError(error); } ",
-        "else { setTimeout(function () { throw error; }); } }\n",
-        "  Object.defineProperty(globalThis, '__solShell', { value: Object.freeze({ src: src, ",
-        "segments: segments, locate: locate, stack: stack, fail: fail }) });\n",
-        "})();\n",
-    ));
-    text.push_str("/* file: the app registry, generated with the journal */\n");
-    text.push_str(&with_newline(registry));
+    // its file. A second bundle registers its own table instead of defining
+    // the locator again. Either file may run first.
+    text.push_str(
+        r#"(function () {
+  var src = document.currentScript && document.currentScript.src;
+  var segments = [/*SEGMENTS*/];
+  var existing = globalThis.__solShell;
+  if (existing && typeof existing.register === 'function') { existing.register(src, segments); return; }
+  var books = [{ src: src, segments: segments }];
+  function locate(file, line) {
+    var book = null;
+    for (var b = 0; b < books.length; b++) { if (books[b].src === file) book = books[b]; }
+    if (!book) return null;
+    var rows = book.segments;
+    for (var i = rows.length - 1; i >= 0; i--) {
+      if (line >= rows[i][0]) return { file: '/' + rows[i][1], line: line - rows[i][0] + 1 };
+    }
+    return null;
+  }
+  function stack(text) {
+    if (typeof text !== 'string') return text;
+    for (var b = 0; b < books.length; b++) {
+      var bookSrc = books[b].src;
+      if (!bookSrc) continue;
+      text = text.split(bookSrc + ':').map(function (part, i) {
+        if (i === 0) return part;
+        var m = /^\d+/.exec(part);
+        var at = m && locate(bookSrc, Number(m[0]));
+        return at ? at.file + ':' + at.line + part.slice(m[0].length) : bookSrc + ':' + part;
+      }).join('');
+    }
+    return text;
+  }
+  function fail(error) {
+    if (typeof globalThis.reportError === 'function') { globalThis.reportError(error); }
+    else { setTimeout(function () { throw error; }); }
+  }
+  function register(file, rows) { books.push({ src: file, segments: rows }); }
+  Object.defineProperty(globalThis, '__solShell', { value: Object.freeze({ src: src, segments: segments, locate: locate, stack: stack, fail: fail, register: register }) });
+})();
+"#,
+    );
+    if !registry.is_empty() {
+        text.push_str("/* file: the app registry, generated with the journal */\n");
+        text.push_str(&with_newline(registry));
+    }
 
     let mut segments = Vec::new();
     for ((tag, source), found) in files.iter().zip(&facts) {

@@ -3,6 +3,21 @@
 
 (function () {
   let activeMount = null;
+  // The rest of the shell can arrive after this event. A listener that binds
+  // here hears the mount already on the page, then each mount after it.
+  let currentWorkspaceMount = null;
+
+  function publishWorkspaceMount(detail) {
+    currentWorkspaceMount = detail;
+    document.dispatchEvent(new CustomEvent('workspace:mounted', { detail: detail }));
+  }
+
+  window.bindWorkspaceMount = function (handler) {
+    document.addEventListener('workspace:mounted', handler);
+    if (currentWorkspaceMount) {
+      handler(new CustomEvent('workspace:mounted', { detail: currentWorkspaceMount }));
+    }
+  };
 
   // Capture this mount before starting asynchronous reads. A late completion
   // from an earlier mount cannot mark the replacement view ready.
@@ -27,6 +42,9 @@
       }
       mount.ready = true;
       performance.mark('view:ready', { detail: Object.assign({ view, state }, mount.detail || {}) });
+      // A fast view loads the rest of the shell here, so those bytes stay
+      // out of the wait. A view still reading is caught by the boot timer.
+      window.loadShellRest?.();
       window.settleEarly?.();
       if (state !== 'error') prefetchDateViewCode();
     };
@@ -408,11 +426,10 @@
         }
       }
       performance.mark('view:scripts-loaded');
-      document.dispatchEvent(
-        new CustomEvent('workspace:mounted', {
-          detail: { appName: options.appName || null, url: url }
-        })
-      );
+      // A contract view reports ready later, from its own first read. Loading
+      // the rest of the shell here would put that request ahead of the mark.
+      if (!contract) window.loadShellRest?.();
+      publishWorkspaceMount({ appName: options.appName || null, url: url });
     } catch (error) {
       if (superseded()) return;
       window.settleEarly?.();
