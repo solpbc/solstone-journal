@@ -5,7 +5,7 @@
 
 #[cfg(test)]
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::error::Error;
 use std::fmt;
 use std::io;
@@ -165,6 +165,11 @@ pub enum EntityWriteError {
     IdentityDeleted {
         identity_id: String,
     },
+    /// The entity is hidden, and a hidden entity's name, aliases and emails
+    /// stay as they were hidden; nothing was written.
+    EntityHidden {
+        identity_id: String,
+    },
     ReconciliationRepairRequired {
         entity_dir: String,
         version_id: String,
@@ -228,6 +233,10 @@ impl fmt::Display for EntityWriteError {
             Self::IdentityDeleted { identity_id } => write!(
                 formatter,
                 "'{identity_id}' was deleted, and a deleted entity is never created again under its id"
+            ),
+            Self::EntityHidden { identity_id } => write!(
+                formatter,
+                "'{identity_id}' is hidden, so its name, aliases and emails can't change until it is unhidden"
             ),
             Self::AmbiguityRowInvalid { detail } => {
                 write!(formatter, "invalid entity ambiguity row: {detail}")
@@ -308,6 +317,7 @@ impl Error for EntityWriteError {
             | Self::CreateDestinationOccupied { .. }
             | Self::IdentityMerged { .. }
             | Self::IdentityDeleted { .. }
+            | Self::EntityHidden { .. }
             | Self::ReconciliationRepairRequired { .. }
             | Self::PreparedStageCollision { .. }
             | Self::AmbiguityChoiceNotFound { .. }
@@ -571,6 +581,18 @@ pub fn save_entity_identity_with_map(
 
     if before
         .as_ref()
+        .is_some_and(|snapshot| renames_hidden_entity(snapshot.value(), &after))
+    {
+        return Err(EntitySaveError {
+            error: EntityWriteError::EntityHidden {
+                identity_id: identity_id.to_owned(),
+            },
+            durable,
+        });
+    }
+
+    if before
+        .as_ref()
         .is_some_and(|snapshot| python_json_equal(snapshot.value(), &after))
         && operation.is_none()
     {
@@ -636,6 +658,34 @@ pub fn save_entity_identity_with_map(
         changed: true,
         event: Some(event),
     })
+}
+
+/// Whether a write from `before` to `after` changes the name, aliases or
+/// emails of an entity that is hidden on both sides. Hiding keeps every name
+/// it hides as it was: a new alias would reach detections the hide never
+/// matched. Hiding and unhiding themselves change `blocked` and pass.
+fn renames_hidden_entity(before: &Value, after: &Value) -> bool {
+    use super::lifecycle::entity_is_hidden;
+    entity_is_hidden(before)
+        && entity_is_hidden(after)
+        && ["name", "aka", "emails"]
+            .iter()
+            .any(|field| name_set(before, field) != name_set(after, field))
+}
+
+/// A field's names as a set: absent, null and empty are all none, and order
+/// doesn't matter.
+fn name_set(identity: &Value, field: &str) -> BTreeSet<String> {
+    match identity.get(field) {
+        Some(Value::String(name)) if !name.is_empty() => BTreeSet::from([name.clone()]),
+        Some(Value::Array(names)) => names
+            .iter()
+            .filter_map(Value::as_str)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned)
+            .collect(),
+        _ => BTreeSet::new(),
+    }
 }
 
 /// Exact identity states for a retained daily promotion/alias sequence.
@@ -731,6 +781,15 @@ pub fn publish_identity_change(
     // A plan prepared before the flag rule may still carry a flag the writer
     // drops; compare against what the writer will actually leave.
     let after = without_stray_principal_flag(change.before.as_ref(), change.after.clone());
+    if current
+        .as_ref()
+        .is_some_and(|current| renames_hidden_entity(current, &after))
+    {
+        return Err(ReviewOwnerError::conflict(
+            ReviewOwnerConflictKind::IdentityBlocked,
+            "conflict: the entity is hidden, so its names were not changed",
+        ));
+    }
     let needs_identity_write = current.as_ref() != Some(&after);
     if needs_identity_write && (!allow_before || current != change.before) {
         return Err(ReviewOwnerError::conflict(

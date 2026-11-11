@@ -406,7 +406,7 @@ fn bulk_test_03_stop_at_k_relationship_write_and_retry_and_prepared_event() {
 
 // 4. Two batches under one operation, one response ignored. Undo restores every entity either request hid,
 // reattaches only hide-marked links, and remaining reaches 0 across calls with limit in 1..50.
-// Hidden, then renamed, then single-blocked again: undo unhides it.
+// Hidden, then edited, then single-blocked again: undo unhides it.
 // Hidden, unhidden by hand, then single-blocked: undo does not touch it.
 // An entity hidden under a second operation is not touched.
 // After undo has started, a batch under the same id writes nothing and returns operation_undone.
@@ -437,14 +437,14 @@ fn bulk_test_04_multiple_batches_undo_renamed_unhidden_undone_set() {
     // Batch 2: e3, e4
     block_journal_entities(j.path(), op, &[e3.to_owned(), e4.to_owned()]).unwrap();
 
-    // Hidden, then renamed, then single-blocked again: undo unhides it
-    // Save rename on e1
+    // Hidden, then edited, then single-blocked again: undo unhides it. A
+    // hidden entity's name can't change, so the edit is to another field.
     let mut e1_renamed = read_entity_identity(j.path(), e1)
         .unwrap()
         .unwrap()
         .value()
         .clone();
-    e1_renamed["name"] = json!("e1 renamed");
+    e1_renamed["description"] = json!("edited while hidden");
     save_entity_identity(j.path(), e1, &e1_renamed, None).unwrap();
     // Single block again
     block_journal_entity(j.path(), e1).unwrap();

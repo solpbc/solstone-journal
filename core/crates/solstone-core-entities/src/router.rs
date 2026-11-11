@@ -2735,6 +2735,10 @@ async fn update_journal_entity_route(
                 solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        Ok(Err(solstone_core_entity::EntityWriteError::EntityHidden { .. })) => refusal(
+            ReasonCode::EntityBlocked,
+            "this entity is hidden, so its names can't change until it is unhidden",
+        ),
         _ => refusal(ReasonCode::EntityOperationFailed, "entity update failed"),
     }
 }
@@ -4626,6 +4630,12 @@ async fn aka_route(
                 solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityWrite(
+            solstone_core_entity::EntityWriteError::EntityHidden { .. },
+        ))) => refusal(
+            ReasonCode::EntityBlocked,
+            "this entity is hidden, so its names can't change until it is unhidden",
+        ),
         _ => refusal(
             ReasonCode::EntityOperationFailed,
             "entity alias update failed",
@@ -4721,6 +4731,12 @@ async fn update_entity_route(
                 solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityWrite(
+            solstone_core_entity::EntityWriteError::EntityHidden { .. },
+        ))) => refusal(
+            ReasonCode::EntityBlocked,
+            "this entity is hidden, so its names can't change until it is unhidden",
+        ),
         _ => refusal(ReasonCode::EntityOperationFailed, "entity update failed"),
     }
 }

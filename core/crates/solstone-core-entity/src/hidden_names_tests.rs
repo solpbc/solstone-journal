@@ -307,3 +307,93 @@ fn a_facet_without_an_entities_folder_hides_only_the_owners_names() {
     assert!(keys.is_hidden("BOB"));
     assert!(keys.entities().is_empty());
 }
+
+#[test]
+fn a_hidden_entitys_names_are_not_rewritten_and_a_visible_ones_are() {
+    let journal = Journal::new();
+    let root = &journal.0;
+    for (id, blocked) in [("dana", true), ("eve", false)] {
+        crate::save_entity_identity(
+            root,
+            id,
+            &json!({"id": id, "name": id, "type": "Person", "blocked": blocked, "aka": ["one"]}),
+            None,
+        )
+        .unwrap();
+    }
+    let change = |id: &str, field: &str, value: Value| {
+        let mut identity = crate::read_entity_identity(root, id)
+            .unwrap()
+            .unwrap()
+            .value()
+            .clone();
+        identity[field] = value;
+        crate::save_entity_identity(root, id, &identity, None)
+    };
+    for (field, value) in [
+        ("name", json!("Dana Ruiz")),
+        ("aka", json!(["one", "two"])),
+        ("emails", json!(["dana@example.com"])),
+    ] {
+        assert!(
+            matches!(
+                change("dana", field, value.clone()),
+                Err(crate::EntityWriteError::EntityHidden { .. })
+            ),
+            "{field}"
+        );
+        change("eve", field, value).unwrap();
+    }
+    // Anything else, the same names in another order, and unhiding still write.
+    change("dana", "description", json!("a note")).unwrap();
+    change("dana", "aka", json!(["one"])).unwrap();
+    change("dana", "blocked", json!(false)).unwrap();
+    change("dana", "name", json!("Dana Ruiz")).unwrap();
+}
+
+#[test]
+fn a_prepared_name_change_to_an_entity_hidden_since_is_refused() {
+    let journal = Journal::new();
+    let root = &journal.0;
+    crate::save_entity_identity(
+        root,
+        "dana",
+        &json!({"id": "dana", "name": "Dana", "type": "Person"}),
+        None,
+    )
+    .unwrap();
+    let before = crate::read_entity_identity(root, "dana")
+        .unwrap()
+        .unwrap()
+        .value()
+        .clone();
+    let mut renamed = before.clone();
+    renamed["aka"] = json!(["DR"]);
+    let changes = crate::prepare_identity_changes(root, "dana", &[renamed]).unwrap();
+    let mut hidden = before.clone();
+    hidden["blocked"] = json!(true);
+    crate::save_entity_identity(root, "dana", &hidden, None).unwrap();
+    let mut change = changes[0].clone();
+    change.before = Some(hidden.clone());
+    change.after["blocked"] = json!(true);
+    let error =
+        crate::publish_identity_change(root, &change, true, || Ok(()), || Ok(())).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            crate::ReviewOwnerError::Conflict {
+                kind: crate::ReviewOwnerConflictKind::IdentityBlocked,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+    assert_eq!(
+        crate::read_entity_identity(root, "dana")
+            .unwrap()
+            .unwrap()
+            .value()
+            .get("aka"),
+        None
+    );
+}

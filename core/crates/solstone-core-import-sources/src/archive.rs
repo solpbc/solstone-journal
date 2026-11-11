@@ -1711,7 +1711,13 @@ fn stage_entities(
                 let index = resolution.entity_index.expect("resolved entity has index");
                 let (target_dir, target_entity) = &mut target_entities[index];
                 let mut merged = target_entity.value.clone();
-                let fields_changed = merge_entity_fields(&mut merged, &source_value);
+                // A hidden entity keeps the names and emails it was hidden
+                // with, so an archive adds none to it.
+                let fields_changed = if solstone_core_entity::entity_is_hidden(&merged) {
+                    Vec::new()
+                } else {
+                    merge_entity_fields(&mut merged, &source_value)
+                };
                 let target_is_principal = merged.get("is_principal") == Some(&Value::Bool(true));
                 let principal_adoption = if !source_claims_principal {
                     PrincipalAdoption::NotClaimed
@@ -4681,6 +4687,28 @@ mod tests {
                 .unwrap();
         let aka = merged["aka"].as_array().unwrap();
         assert!(aka.contains(&json!("Countess")) && aka.contains(&json!("Enchantress")));
+    }
+
+    #[test]
+    fn an_archive_adds_no_name_to_a_hidden_entity_and_one_to_its_visible_twin() {
+        for (blocked, grows) in [(true, false), (false, true)] {
+            let tree = PlanTree::new();
+            let target = tree.path.join("target");
+            let original =
+                json!({"id":"ada","name":"Ada Lovelace","type":"Person","blocked":blocked})
+                    .to_string();
+            write_target(&target, "entities/ada/entity.json", original.as_bytes());
+            let archive = write_zip(
+                &tree.path,
+                &[(
+                    "entities/one/entity.json",
+                    br#"{"id":"one","name":"Ada Lovelace","type":"Person","aka":["Countess"],"emails":["ada@example.com"]}"#,
+                )],
+            );
+            merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+            let after = fs::read(target.join("entities/ada/entity.json")).unwrap();
+            assert_eq!(after != original.as_bytes(), grows, "blocked {blocked}");
+        }
     }
 
     #[test]

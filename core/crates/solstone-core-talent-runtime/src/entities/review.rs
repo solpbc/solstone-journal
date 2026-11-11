@@ -1267,9 +1267,13 @@ pub(crate) fn apply_result_cancellable(
                 crate::writers::check_cancellation(cancellation)?;
                 match solstone_core_facets::add_entity_aka(journal, facet, &entity_id, alias) {
                     Ok(_) => *counts.get_mut("aliased").unwrap() += 1,
-                    Err(solstone_core_facets::FacetEntityWriteError::AkaConflict { .. }) => {
-                        *counts.get_mut("skipped").unwrap() += 1
-                    }
+                    // A hidden entity keeps the names it was hidden with.
+                    Err(
+                        solstone_core_facets::FacetEntityWriteError::AkaConflict { .. }
+                        | solstone_core_facets::FacetEntityWriteError::EntityWrite(
+                            solstone_core_entity::EntityWriteError::EntityHidden { .. },
+                        ),
+                    ) => *counts.get_mut("skipped").unwrap() += 1,
                     Err(error_value) => {
                         *counts.get_mut("errored").unwrap() += 1;
                         error = Some(format!("FacetEntityWriteError: {error_value}"));
