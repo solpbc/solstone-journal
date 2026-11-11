@@ -174,6 +174,19 @@ project https://leafletjs.com
 License notice: BSD 2-Clause License (BSD-2-Clause). The licence text ships
 beside the library as `vendor/leaflet/LICENSE`.
 
+## location grid (h3-js)
+
+The month map bins stops with h3-js 4.5.0, served from the journal at
+`/static/vendor/h3/h3-js.umd.js`. The page draws each cell from the library
+boundary and fetches nothing off the journal.
+
+Source: https://registry.npmjs.org/h3-js/-/h3-js-4.5.0.tgz (SHA-256
+`f2819d14956bebc98388d25becb84711d0c464c0ef92ffb63e804b01121a6d6d`);
+project https://h3geo.org
+
+License notice: Apache License 2.0 (Apache-2.0). The licence text ships
+beside the library as `vendor/h3/LICENSE`, and the notice as `vendor/h3/NOTICE`.
+
 ## icons and the journal mark (Lucide, Feather, EFF word list)
 
 The journal's pages draw icons from Lucide, built into the journal, with the

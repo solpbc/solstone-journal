@@ -86,6 +86,14 @@ const KEPT_UNREFERENCED: &[(&str, &str)] = &[
         "the library's license, which ships beside it",
     ),
     (
+        "/static/vendor/h3/LICENSE",
+        "the library's license, which ships beside it",
+    ),
+    (
+        "/static/vendor/h3/NOTICE",
+        "the library's notice, which ships beside it",
+    ),
+    (
         "/static/sol-status/mark-error.svg",
         "kept with the status mark family; the status table deliberately doesn't name it",
     ),

@@ -2,7 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 // The map workspace under plain Node with a stand-in DOM and a stand-in
-// Leaflet that records what is drawn.
+// Leaflet that records what is drawn. The month grid is the same h3 build
+// the page loads.
 
 const assert = require('assert');
 const fs = require('fs');
@@ -11,6 +12,7 @@ const vm = require('vm');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
+const h3 = require(path.join(crateDir, '../solstone-core-convey-shell/assets/static/vendor/h3/h3-js.umd.js'));
 const html = fs.readFileSync(path.join(crateDir, 'assets', 'workspace.html'), 'utf8');
 const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
 assert.strictEqual(scripts.length, 1, 'one inline workspace script');
@@ -380,7 +382,7 @@ function leafletRecorder() {
   return { L, calls };
 }
 
-async function run({ pathname, responses, withLeaflet = false }) {
+async function run({ pathname, responses, withLeaflet = false, withGrid = true }) {
   const elements = {
     'map-shell': element('map-shell'),
     'map-view-root': element('map-view-root'),
@@ -408,6 +410,7 @@ async function run({ pathname, responses, withLeaflet = false }) {
     location: { pathname, replace: (url) => replaced.push(url) },
     getComputedStyle: () => ({ getPropertyValue: () => '' }),
     L: leaflet ? leaflet.L : undefined,
+    h3: withGrid ? h3 : undefined,
     addEventListener: (type, handler) => {
       if (!window._listeners[type]) window._listeners[type] = [];
       window._listeners[type].push(handler);
@@ -1231,6 +1234,64 @@ test('calendar keydown End on month with today 20261015 and no later location la
   const zeroButtons = elements['map-view-root'].querySelectorAll('[data-map-month-cal] button[tabindex="0"]');
   assert.strictEqual(zeroButtons.length, 1);
   assert.strictEqual(zeroButtons[0].getAttribute('data-day'), '20261015');
+});
+
+test('month area is the resolution 8 cell of the stop, and a hex draws six corners', async () => {
+  const p = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
+  const cell = h3.latLngToCell(39.75, -105, 8);
+  const poly = elements['map-view-root'].querySelector('[data-map-month-svg] [data-cell]');
+  assert.strictEqual(poly.getAttribute('data-cell'), cell);
+  assert.strictEqual(poly.getAttribute('points').trim().split(/\s+/).length, 6);
+});
+
+test('a stop far from the others leaves the near stop in the same area', async () => {
+  const near = { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] };
+  const far = { kind: 'visit', device: 0, area: { label: 'Far, Elsewhere' }, arrival: { utc: '2026-10-08T10:00:00Z', clock: '10:00', day: '20261008' }, departure: { utc: '2026-10-08T11:00:00Z', clock: '11:00', day: '20261008' }, point: [51.5, -0.12, 40] };
+  const alone = makeMonth({ '20261001': { items: [near] } });
+  const both = makeMonth({ '20261001': { items: [near] }, '20261008': { items: [far] } });
+  const a = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': alone } });
+  const b = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': both } });
+  const cell = h3.latLngToCell(39.75, -105, 8);
+  const cells = (res) => [...res.elements['map-view-root'].querySelectorAll('[data-map-month-svg] [data-cell]')].map((el) => el.getAttribute('data-cell'));
+  assert.deepEqual(cells(a), [cell]);
+  assert.ok(cells(b).includes(cell));
+});
+
+test('a pentagon draws five corners', async () => {
+  const pent = h3.getPentagons(8)[0];
+  const [lat, lon] = h3.cellToLatLng(pent);
+  const p = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [lat, lon, 40] },
+      ],
+    },
+  });
+  const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
+  const poly = elements['map-view-root'].querySelector('[data-map-month-svg] [data-cell]');
+  assert.strictEqual(poly.getAttribute('data-cell'), pent);
+  assert.strictEqual(poly.getAttribute('points').trim().split(/\s+/).length, 5);
+});
+
+test('month with a stop and no location grid shows the month error', async () => {
+  const p = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p }, withGrid: false });
+  const gateText = elements['map-state-gate'].textContent.replaceAll('&#39;', "'");
+  assert.ok(gateText.includes("couldn't open this month's location."));
+  assert.strictEqual(elements['map-view-root'].hidden, true);
 });
 
 (async () => {

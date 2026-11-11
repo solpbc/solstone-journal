@@ -563,6 +563,7 @@ button.map-month-row:hover { background: var(--cream); }
 </div>
 
 <script src="/static/vendor/leaflet/leaflet.js"></script>
+<script src="/static/vendor/h3/h3-js.umd.js"></script>
 <script>
 (() => {
   "use strict";
@@ -1315,31 +1316,43 @@ button.map-month-row:hover { background: var(--cream); }
     }
   }
 
-  const SIZE = { w: 1000, label: "about 1 km" };
+  const H3_RES = 8;
+  const SIZE = { label: "about 1 km" };
+  // Resolution 8 cells are about 1 km across. The ring is the cell's own
+  // boundary, projected with the stops, so a pentagon keeps five corners.
   const WORDS = ["no", "once", "twice"];
   const COMPASS = ["east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east"];
 
-  function axial(x, y, w) {
-    const s = w / Math.sqrt(3);
-    let q = (Math.sqrt(3) / 3 * x - y / 3) / s, r = (2 / 3 * y) / s, z = -q - r;
-    let rq = Math.round(q), rr = Math.round(r), rz = Math.round(z);
-    const dq = Math.abs(rq - q), dr = Math.abs(rr - r), dz = Math.abs(rz - z);
-    if (dq > dr && dq > dz) rq = -rr - rz; else if (dr > dz) rr = -rq - rz;
-    return [rq, rr];
-  }
-
-  function hexCenter(q, r, w) {
-    const s = w / Math.sqrt(3);
-    return [s * Math.sqrt(3) * (q + r / 2), s * 1.5 * r];
-  }
-
-  function hexCorners(cx, cy, w) {
-    const s = w / Math.sqrt(3), pts = [];
-    for (let i = 0; i < 6; i++) {
-      const a = Math.PI / 180 * (60 * i - 30);
-      pts.push([cx + s * Math.cos(a), cy + s * Math.sin(a)]);
+  function locationGrid() {
+    const grid = window.h3;
+    if (!grid || typeof grid.latLngToCell !== "function") {
+      throw new Error("location grid is not available");
     }
-    return pts;
+    return grid;
+  }
+
+  function cellOf(lat, lon) {
+    return locationGrid().latLngToCell(lat, lon, H3_RES);
+  }
+
+  function cellCenter(cell, project) {
+    const [lat, lon] = locationGrid().cellToLatLng(cell);
+    return project(lat, lon);
+  }
+
+  function cellRing(cell, project) {
+    return locationGrid().cellToBoundary(cell).map(([lat, lon]) => project(lat, lon));
+  }
+
+  function ringSpan(ring) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const [x, y] of ring) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    return Math.max(maxX - minX, maxY - minY);
   }
 
   function coreOf(list) {
@@ -1662,6 +1675,7 @@ button.map-month-row:hover { background: var(--cream); }
         // internal helpers
         drawnX,
         drawnY,
+        cellId: drawable ? cellOf(drawLat, drawLon) : null,
         item: it,
       };
     });
@@ -1731,8 +1745,8 @@ button.map-month-row:hover { background: var(--cream); }
       const cellFirstIndex = new Map();
       for (let i = 0; i < drawableStops.length; i++) {
         const s = drawableStops[i];
-        const cid = axial(s.drawnX, s.drawnY, 1000).join(",");
-        s.cellId = cid;
+        const cid = s.cellId;
+        if (!cid) throw new Error("location grid is not available");
         if (!cellDaysMap.has(cid)) {
           cellDaysMap.set(cid, new Set());
           cellFirstIndex.set(cid, i);
@@ -1743,8 +1757,7 @@ button.map-month-row:hover { background: var(--cream); }
         return b[1].size - a[1].size || cellFirstIndex.get(a[0]) - cellFirstIndex.get(b[0]);
       });
       anchorId = sortedHexes[0][0];
-      const [aq, ar] = anchorId.split(",").map(Number);
-      const [hx, hy] = hexCenter(aq, ar, 1000);
+      const [hx, hy] = cellCenter(anchorId, project);
 
       const far = (s) => Math.hypot(s.drawnX - hx, s.drawnY - hy) > 50000;
       const farDays = new Set();
@@ -1774,11 +1787,11 @@ button.map-month-row:hover { background: var(--cream); }
         const cellFirst = new Map();
         for (let i = 0; i < drawStops.length; i++) {
           const s = drawStops[i];
-          const cid = s.cellId || axial(s.drawnX, s.drawnY, 1000).join(",");
+          const cid = s.cellId;
+          if (!cid) throw new Error("location grid is not available");
           if (!cellMap.has(cid)) {
-            const [q, r] = cid.split(",").map(Number);
-            const [cx, cy] = hexCenter(q, r, 1000);
-            cellMap.set(cid, { id: cid, q, r, cx, cy, entries: [] });
+            const [cx, cy] = cellCenter(cid, project);
+            cellMap.set(cid, { id: cid, cx, cy, ring: cellRing(cid, project), entries: [] });
             cellFirst.set(cid, i);
           }
           cellMap.get(cid).entries.push(s);
@@ -1827,10 +1840,9 @@ button.map-month-row:hover { background: var(--cream); }
 
           areasList.push({
             id: c.id,
-            q: c.q,
-            r: c.r,
             cx: c.cx,
             cy: c.cy,
+            ring: c.ring,
             entries: c.entries,
             days: [...daysSet].sort(),
             dayCount: daysSet.size,
@@ -2174,7 +2186,7 @@ button.map-month-row:hover { background: var(--cream); }
       const W = Math.max(280, root.querySelector("[data-map-month-map]").clientWidth || 600);
       const narrow = W < 560;
       const fit = view.all || (activeChoice && activeChoice.trip) ? list : coreOf(list);
-      const pts = fit.flatMap((c) => hexCorners(c.cx, c.cy, SIZE.w));
+      const pts = fit.flatMap((c) => c.ring);
       let x0 = Math.min(...pts.map((p) => p[0])), x1 = Math.max(...pts.map((p) => p[0]));
       let y0 = Math.min(...pts.map((p) => p[1])), y1 = Math.max(...pts.map((p) => p[1]));
       if (pts.length === 0) {
@@ -2191,13 +2203,19 @@ button.map-month-row:hover { background: var(--cream); }
       const py = (y) => (H - 60) / 2 + 6 - (y - my) * k;
       const inView = (x, y) => px(x) > 6 && px(x) < W - 6 && py(y) > 10 && py(y) < H - 6;
 
+      const screenOf = (c) => {
+        const pts = c.ring.map(([x, y]) => [px(x), py(y)]);
+        const span = ringSpan(pts);
+        if (!(span > 0 && span < 8)) return pts;
+        const ox = px(c.cx), oy = py(c.cy), scale = 8 / span;
+        return pts.map(([x, y]) => [ox + (x - ox) * scale, oy + (y - oy) * scale]);
+      };
       const polys = list.map((c) => {
         const d = c.dayCount;
         const cls = ["map-month-cell"];
         if (activeDay) cls.push(c.days.includes(activeDay) ? "ring" : "dim");
         if (activeCell === c.id) cls.push("sel");
-        const rpx = Math.max(SIZE.w / Math.sqrt(3) * k, 4.5);
-        const ptsArr = hexCorners(0, 0, rpx * Math.sqrt(3)).map(([x, y]) => `${(px(c.cx) + x).toFixed(1)},${(py(c.cy) - y).toFixed(1)}`).join(" ");
+        const ptsArr = screenOf(c).map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
         return `<polygon class="${cls.join(" ")}" data-cell="${c.id}" points="${ptsArr}" style="fill:var(--b${bin(d)})"><title>${escapeHtml(c.label)} · ${plural(d, "day", "days")}</title></polygon>`;
       });
 
@@ -2214,7 +2232,11 @@ button.map-month-row:hover { background: var(--cream); }
 
       const zoomed = view.z > 1 ? " zoomed in." : "";
       const choiceLabel = activeChoice ? (activeChoice.trip ? activeChoice.name : activeChoice.name) : "";
-      const summary = `map of ${choiceLabel}: ${plural(list.length, "shaded area", "shaded areas")}, each ${SIZE.label} across${k * SIZE.w < 8 ? ", drawn larger so they can be seen" : ""}. the same areas are listed under areas this month.${zoomed}`;
+      const drawnLarger = list.some((c) => {
+        const span = ringSpan(c.ring);
+        return span > 0 && span * k < 8;
+      });
+      const summary = `map of ${choiceLabel}: ${plural(list.length, "shaded area", "shaded areas")}, each ${SIZE.label} across${drawnLarger ? ", drawn larger so they can be seen" : ""}. the same areas are listed under areas this month.${zoomed}`;
       const outside = list.filter((c) => !(px(c.cx) > 0 && px(c.cx) < W && py(c.cy) > 0 && py(c.cy) < H - 50)).length;
       outBtn.hidden = !outside;
       outBtn.textContent = outside ? `${plural(outside, "area", "areas")} outside the map · show all` : "";
@@ -2482,7 +2504,7 @@ button.map-month-row:hover { background: var(--cream); }
       if (c && z === "in") {
         view.all = true;
         const list = activeChoice.areas;
-        const xs = list.flatMap((x) => hexCorners(x.cx, x.cy, SIZE.w));
+        const xs = list.flatMap((x) => x.ring);
         const cx0 = (Math.min(...xs.map((p) => p[0])) + Math.max(...xs.map((p) => p[0]))) / 2;
         const cy0 = (Math.min(...xs.map((p) => p[1])) + Math.max(...xs.map((p) => p[1]))) / 2;
         view.dx = c.cx - cx0;

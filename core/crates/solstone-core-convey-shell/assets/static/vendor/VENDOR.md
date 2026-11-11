@@ -91,6 +91,19 @@ const clean = DOMPurify.sanitize(marked.parse(dirty));
 **Currently Used By**:
 - `core/crates/solstone-core-map-web/assets/workspace.html`
 
+### h3-js (v4.5.0)
+
+**Purpose**: The month map's location grid. Stops are binned in the browser, and the page draws each cell from the library's own boundary. Nothing is fetched off the journal, and the cell ids are not stored.
+
+**License**: Apache-2.0 (`vendor/h3/LICENSE`, notice `vendor/h3/NOTICE`)
+
+**Source**: https://registry.npmjs.org/h3-js/-/h3-js-4.5.0.tgz (`dist/h3-js.umd.js`, `LICENSE`, `NOTICE`, unmodified; tarball SHA-256 `f2819d14956bebc98388d25becb84711d0c464c0ef92ffb63e804b01121a6d6d`)
+
+**Usage**: the map workspace loads `/static/vendor/h3/h3-js.umd.js`.
+
+**Currently Used By**:
+- `core/crates/solstone-core-map-web/assets/workspace.html`
+
 ## Adding New Libraries
 
 When adding a new third-party library:

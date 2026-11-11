@@ -19,6 +19,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- the areas on the month map keep their places. before, a stop far from the others could shift every area in that month.
 - you can now delete a Strava, Apple Health or Oura import, from its page or by selecting several on the import page. it waits in the trash like any other import, and erase removes it. this now covers every import except journal archives. a delete takes only what that import was the first to bring in, and anything an earlier import brought in stays.
 - deleting a Strava workout on the body page now moves it to the trash, where you can recover it, in place of a delete you could cancel for 10 seconds.
 - importing an Apple Health export or a Strava download again brings back what you deleted from it. each Apple Health export holds your whole history, so a newer one brings back days you deleted too.
