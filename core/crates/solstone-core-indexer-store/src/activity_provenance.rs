@@ -13,7 +13,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, params};
 use sha2::{Digest, Sha256};
-use solstone_core_format::content::{Family, JsonObject, produce_chunks};
+use solstone_core_format::content::{Family, JsonObject, indexed, produce_chunks};
 
 use crate::StoreError;
 use crate::db::sqlite_table_exists;
@@ -146,10 +146,8 @@ pub(crate) fn activity_source_current(
         return Ok(false);
     }
     // An index written before retired plans stopped being indexed still holds
-    // their entries; the same bytes now render fewer chunks.
-    if text.contains("\"anticipated\"")
-        && produce_chunks(Family::Activity, rel, &text).chunks.len() as i64 != chunk_count
-    {
+    // their entries; the same bytes now index fewer chunks.
+    if text.contains("\"anticipated\"") && indexed_chunks(rel, &text) as i64 != chunk_count {
         return Ok(false);
     }
     Ok(digests
@@ -157,11 +155,19 @@ pub(crate) fn activity_source_current(
         .all(|stored| stored.as_deref() == Some(digest.as_slice())))
 }
 
+/// Whether the file's bytes give search any entry. A file whose records are
+/// all hidden gives none, and is current with none stored.
 fn activity_file_has_chunk(rel: &str, text: &str) -> bool {
+    indexed_chunks(rel, text) > 0
+}
+
+/// How many entries the file's bytes give search, as the indexer counts them.
+fn indexed_chunks(rel: &str, text: &str) -> usize {
     produce_chunks(Family::Activity, rel, text)
         .chunks
         .iter()
-        .any(|chunk| !chunk.content.trim().is_empty())
+        .filter(|chunk| indexed(Family::Activity, chunk))
+        .count()
 }
 
 #[cfg(test)]
@@ -340,7 +346,7 @@ mod tests {
         write(
             &root,
             rel,
-            "{\"id\":\"two\",\"title\":\"Second\",\"hidden\":true}\n",
+            "{\"id\":\"two\",\"title\":\"Second\",\"hidden\":false}\n",
         );
         File::options()
             .write(true)
@@ -362,15 +368,15 @@ mod tests {
         assert_ne!(rewritten, saved);
         assert!(rewritten[0].contains("Second"));
         assert!(!rewritten[0].contains("First"));
-        let hidden = proofs(&conn, rel);
-        assert_eq!(hidden[0].0, file_digest(&root, rel));
-        assert_eq!(hidden[0].1, 1);
+        let rewritten_proofs = proofs(&conn, rel);
+        assert_eq!(rewritten_proofs[0].0, file_digest(&root, rel));
+        assert_eq!(rewritten_proofs[0].1, 0);
         drop(conn);
 
         write(
             &root,
             rel,
-            "{\"id\":\"two\",\"title\":\"Second\",\"hidden\":true}\n",
+            "{\"id\":\"two\",\"title\":\"Second\",\"hidden\":false}\n",
         );
         File::options()
             .write(true)
@@ -561,7 +567,7 @@ mod tests {
         write(
             &root,
             shaped,
-            "{\"id\":\"one\",\"title\":\"First\",\"hidden\":true}\n",
+            "{\"id\":\"one\",\"title\":\"First\",\"hidden\":false}\n",
         );
         write(
             &root,
@@ -574,7 +580,7 @@ mod tests {
 
         let conn = Connection::open(db_path(&root)).expect("open");
         assert_eq!(proofs(&conn, shaped).len(), 1);
-        assert_eq!(proofs(&conn, shaped)[0].1, 1);
+        assert_eq!(proofs(&conn, shaped)[0].1, 0);
         assert!(chunk_content(&conn, shaped)[0].contains("First"));
         assert!(proofs(&conn, alias).is_empty());
         assert!(proofs(&conn, named).is_empty());
@@ -678,7 +684,7 @@ mod tests {
         write(
             &root,
             shaped,
-            "{\"id\":\"three\",\"title\":\"Third\",\"hidden\":true}\n",
+            "{\"id\":\"three\",\"title\":\"Third\",\"hidden\":false}\n",
         );
         let current = fs::metadata(&shaped_path)
             .expect("third mtime")
@@ -693,7 +699,7 @@ mod tests {
         rescan_file(&root, Path::new(shaped)).expect("rescan shaped activity");
         let conn = Connection::open(db_path(&root)).expect("open after rescan");
         assert!(chunk_content(&conn, shaped)[0].contains("Third"));
-        assert_eq!(proofs(&conn, shaped)[0].1, 1);
+        assert_eq!(proofs(&conn, shaped)[0].1, 0);
         assert_eq!(proofs(&conn, shaped)[0].0, file_digest(&root, shaped));
         assert_eq!(chunk_content(&conn, alias), alias_saved);
         assert!(proofs(&conn, alias).is_empty());

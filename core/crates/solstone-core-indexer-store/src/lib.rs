@@ -10,6 +10,7 @@ pub mod classification_batch;
 pub mod db;
 pub mod edge_refresh;
 pub mod generation;
+mod hide;
 pub mod merge;
 pub mod migrations;
 pub mod reconcile;
