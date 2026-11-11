@@ -932,17 +932,15 @@ fn delete_entity_output(ctx: CommandContext<'_>) -> CommandOutput {
     if truthy(result.get("erased")) {
         return stdout_line(format!("Erased '{entity_id}'."));
     }
-    let erase_at = result
-        .get("trash")
-        .and_then(|trash| string_field(trash, "erase_at"))
-        .unwrap_or_default();
     let failed = if truthy(result.get("erase_failed")) {
         " It couldn't be erased now."
     } else {
         ""
     };
-    stdout_line(format!(
-        "Moved '{entity_id}' to the trash.{failed} It's erased at {erase_at} unless it's recovered."
+    stdout_line(crate::command::moved_to_trash_line(
+        entity_id,
+        failed,
+        crate::command::erase_day_of(ctx, &result).as_deref(),
     ))
 }
 
@@ -2420,7 +2418,7 @@ mod tests {
     fn run_delete(args: &[&str], json: Value, answer: Value) -> CommandOutput {
         use crate::seam::ExpectedHttpCall;
         use crate::transport::HttpResponse;
-        let transport = crate::seam::ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+        let mut calls = vec![ExpectedHttpCall::Request {
             expected: ApiRequest {
                 method: HttpMethod::Post,
                 path: "/app/entities/api/journal/delete".to_owned(),
@@ -2435,7 +2433,12 @@ mod tests {
                 body: answer.to_string().into_bytes(),
                 policy: TimeoutPolicy::EntityMutation,
             }),
-        }]);
+        }];
+        // A move that says its erase day asks the journal for its today.
+        if answer.pointer("/done/0/result/trash/erase_day").is_some() {
+            calls.push(crate::command::shell_today_call("20261111"));
+        }
+        let transport = crate::seam::ScriptedHttpTransport::new(calls);
         let (_, handler) =
             crate::aggregate::handler_for(&["entities", "delete"]).expect("registered");
         handler(CommandContext {
@@ -2459,11 +2462,14 @@ mod tests {
         let moved = run_delete(
             &["bob", "--yes"],
             json!({"ids": ["bob"], "erase": false}),
-            json!({"success": true, "done": [{"id": "bob", "result": {"success": true, "trash": {"id": "t1", "erase_at": "2026-11-17T00:00:00.000Z"}}}], "failed": []}),
+            json!({"success": true, "done": [{"id": "bob", "result": {"success": true, "trash": {"id": "t1", "erase_at": "2026-11-17T06:00:00.000Z", "erase_day": "20261116"}}}], "failed": []}),
         );
         assert_eq!(moved.exit, 0, "{}", moved.stderr);
         assert!(moved.stdout.contains("trash"), "{}", moved.stdout);
-        assert!(moved.stdout.contains("2026-11-17"), "{}", moved.stdout);
+        // The owner's day, not the time's UTC date.
+        let day = crate::command::format_erase_day("20261116", Some("20261111")).unwrap();
+        assert!(moved.stdout.contains(&day), "{}", moved.stdout);
+        assert!(!moved.stdout.contains("2026-11-17"), "{}", moved.stdout);
 
         let erased = run_delete(
             &["bob", "--yes", "--erase"],

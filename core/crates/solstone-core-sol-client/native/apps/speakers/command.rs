@@ -981,7 +981,8 @@ pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
     if json_output {
         return stdout_json(&report);
     }
-    render_wipe(&mut out, &report);
+    let erase_day = crate::command::erase_day_of(ctx, &report);
+    render_wipe(&mut out, &report, erase_day.as_deref());
     CommandOutput::success(out)
 }
 
@@ -2323,7 +2324,9 @@ fn render_backfill_last_seen(out: &mut String, stats: &Value) {
     render_errors(out, stats.get("errors"));
 }
 
-fn render_wipe(out: &mut String, report: &Value) {
+/// `erase_day` is the day the trash erases what the wipe took, as the owner
+/// reads it.
+fn render_wipe(out: &mut String, report: &Value, erase_day: Option<&str>) {
     for (key, label) in [
         ("segment_embeddings", "segment_embeddings "),
         ("speaker_labels", "speaker_labels     "),
@@ -2353,15 +2356,14 @@ fn render_wipe(out: &mut String, report: &Value) {
     );
     if report.get("erased").and_then(Value::as_bool) == Some(true) {
         emit(out, "erased");
-    } else if let Some(erase_at) = report
-        .get("trash")
-        .and_then(|trash| trash.get("erase_at"))
-        .and_then(Value::as_str)
-    {
+    } else if report.get("trash").is_some_and(Value::is_object) {
         if report.get("erase_failed").and_then(Value::as_bool) == Some(true) {
             emit(out, "couldn't erase now; it waits in the trash");
         }
-        emit(out, format!("in the trash until {erase_at}"));
+        match erase_day {
+            Some(day) => emit(out, format!("in the trash; erases {day}")),
+            None => emit(out, "in the trash"),
+        }
     }
 }
 
@@ -2773,6 +2775,16 @@ mod tests {
     use crate::seam::{Clock, ExpectedHttpCall, FakeClock, ScriptedHttpTransport};
     use crate::transport::{ApiRequest, HttpMethod, HttpResponse, TimeoutPolicy};
     use serde_json::json;
+
+    #[test]
+    fn a_wipe_in_the_trash_says_the_day_it_is_erased_not_the_time() {
+        let report = json!({"trash": {"id": "t1", "erase_at": "2026-11-17T06:00:00.000Z", "erase_day": "20261116"}});
+        let day = crate::command::format_erase_day("20261116", Some("20261111")).unwrap();
+        let mut out = String::new();
+        render_wipe(&mut out, &report, Some(&day));
+        assert!(out.contains(&day), "{out}");
+        assert!(!out.contains("2026-11-17"), "{out}");
+    }
 
     #[test]
     fn repair_dry_run_reports_the_planned_removals_the_server_sends() {

@@ -110,6 +110,45 @@ pub fn journal_today(ctx: CommandContext<'_>) -> Result<String, ClientError> {
         })
 }
 
+/// The day a thing in the trash is erased, from its `YYYYMMDD` key, as the
+/// trash page writes it: lowercase weekday, month and day, with the year when
+/// it isn't the year of `today` (also a `YYYYMMDD` key). Never "today" or
+/// "tomorrow". `None` for a key that is not a date.
+#[must_use]
+pub fn format_erase_day(day: &str, today: Option<&str>) -> Option<String> {
+    if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    let mut text = date.format("%a %b %-d").to_string().to_lowercase();
+    if today.and_then(|today| today.get(..4)) != day.get(..4) {
+        text.push_str(&date.format(" '%y").to_string());
+    }
+    Some(text)
+}
+
+/// The day a delete's answer says its thing is erased on (`trash.erase_day`),
+/// written for the owner with [`format_erase_day`]. Asks the journal for its
+/// today to know the year; without it the year is always written.
+pub fn erase_day_of(ctx: CommandContext<'_>, answer: &Value) -> Option<String> {
+    let day = answer.pointer("/trash/erase_day").and_then(Value::as_str)?;
+    let today = journal_today(ctx).ok();
+    format_erase_day(day, today.as_deref())
+}
+
+/// What the command line says of a thing it moved to the trash: its name,
+/// `failed` when an erase asked for now was refused, and the day it's erased
+/// on when the answer gave one.
+#[must_use]
+pub fn moved_to_trash_line(name: &str, failed: &str, day: Option<&str>) -> String {
+    match day {
+        Some(day) => {
+            format!("Moved '{name}' to the trash.{failed} It's erased {day} unless it's recovered.")
+        }
+        None => format!("Moved '{name}' to the trash.{failed}"),
+    }
+}
+
 /// A scripted `/api/shell` exchange answering with the journal's `today`.
 #[cfg(test)]
 pub(crate) fn shell_today_call(today: &str) -> crate::seam::ExpectedHttpCall {
@@ -169,6 +208,26 @@ mod tests {
             Ok("20261001".to_owned())
         );
         transport.assert_done();
+    }
+
+    #[test]
+    fn an_erase_day_reads_as_the_trash_page_writes_it() {
+        assert_eq!(
+            format_erase_day("20261117", Some("20261111")).as_deref(),
+            Some("tue nov 17")
+        );
+        // Another year's day carries its year; an unknown today always does.
+        assert_eq!(
+            format_erase_day("20270105", Some("20261231")).as_deref(),
+            Some("tue jan 5 '27")
+        );
+        assert_eq!(
+            format_erase_day("20261117", None).as_deref(),
+            Some("tue nov 17 '26")
+        );
+        for day in ["", "2026111", "2026-11-17", "20261341"] {
+            assert_eq!(format_erase_day(day, Some("20261111")), None, "{day}");
+        }
     }
 
     #[test]

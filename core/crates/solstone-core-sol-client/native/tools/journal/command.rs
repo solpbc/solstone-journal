@@ -68,12 +68,22 @@ pub fn facet_delete(ctx: CommandContext<'_>) -> CommandOutput {
     if !parsed.has_flag("--yes") {
         return stderr("Error: --yes is required to delete a facet.");
     }
-    post(
-        ctx,
+    let answer = match send_request(
+        &ctx,
         HttpMethod::Delete,
         &format!("/app/settings/api/facet/{name}"),
+        vec![],
         Some(json!({"consent": true})),
-    )
+    ) {
+        Ok(answer) => answer,
+        Err(output) => return output,
+    };
+    let line = crate::command::moved_to_trash_line(
+        name,
+        "",
+        crate::command::erase_day_of(ctx, &answer).as_deref(),
+    );
+    CommandOutput::success(format!("{line}\n"))
 }
 
 #[must_use]
@@ -731,6 +741,59 @@ mod tests {
                 stderr: String::new(),
                 exit: 0,
             }
+        );
+        transport.assert_done();
+    }
+
+    #[test]
+    fn facet_delete_says_what_moved_and_the_day_it_is_erased() {
+        let transport = ScriptedHttpTransport::new(vec![
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Delete,
+                    path: "/app/settings/api/facet/work".to_string(),
+                    params: vec![],
+                    json: Some(json!({"consent": true})),
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Ok(HttpResponse {
+                    status: 200,
+                    headers: vec![],
+                    body: json!({"success": true, "trash": {"id": "t1", "erase_at": "2026-11-17T06:00:00.000Z", "erase_day": "20261116"}})
+                        .to_string()
+                        .into_bytes(),
+                    policy: TimeoutPolicy::Api,
+                }),
+            },
+            crate::command::shell_today_call("20261111"),
+        ]);
+        let (_, handler) =
+            crate::aggregate::handler_for(&["journal", "facet", "delete"]).expect("command");
+        let args = vec!["work".to_owned(), "--yes".to_owned()];
+        let env = BTreeMap::new();
+        let output = handler(CommandContext {
+            args: &args,
+            env: &env,
+            stdin: "".into(),
+            transport: &transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        });
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        let day = crate::command::format_erase_day("20261116", Some("20261111")).unwrap();
+        assert_eq!(
+            output.stdout,
+            format!(
+                "{}\n",
+                crate::command::moved_to_trash_line("work", "", Some(&day))
+            )
         );
         transport.assert_done();
     }
