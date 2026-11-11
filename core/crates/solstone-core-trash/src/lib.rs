@@ -224,6 +224,24 @@ pub trait Kind {
     fn companions(&self, _journal: &Path, _item: &Item) -> Result<Vec<String>, String> {
         Ok(Vec::new())
     }
+
+    /// Live paths, other than the item's own, that recovering it replaces:
+    /// for a kind whose new arrival sits somewhere other than where the item
+    /// was (a person detected again under a new id). Asked under the hold
+    /// before anything moves back; each is set aside with the item, and the
+    /// record says it was erased. A path already set aside is no longer live,
+    /// so a resumed recovery doesn't return it again.
+    fn in_the_way(&self, _journal: &Path, _item: &Item) -> Result<Vec<String>, String> {
+        Ok(Vec::new())
+    }
+
+    /// Whether one of the item's paths still has a home to come back to.
+    /// One that doesn't stays with the item and goes when the item does: it
+    /// belonged to a thing the owner removed since (a recording, an entity, a
+    /// facet), and putting it back would make a folder holding only it.
+    fn returns(&self, _journal: &Path, _item: &Item, _path: &str) -> bool {
+        true
+    }
 }
 
 /// Why a trash step did not happen.
@@ -489,10 +507,17 @@ pub fn list(journal: &Path) -> Result<Vec<Item>, TrashError> {
 /// Items part-way through a step: on their way in, back or out, or stopped
 /// there until the next sweep finishes them.
 pub fn unfinished(journal: &Path) -> Result<usize, TrashError> {
-    Ok(all_items(journal)?
-        .iter()
+    Ok(stopped(journal)?.len())
+}
+
+/// The items [`unfinished`] counts, oldest first, for a page that shows each.
+pub fn stopped(journal: &Path) -> Result<Vec<Item>, TrashError> {
+    let mut items: Vec<Item> = all_items(journal)?
+        .into_iter()
         .filter(|item| item.state != State::Trashed)
-        .count())
+        .collect();
+    items.sort_by(|left, right| left.trashed_at.cmp(&right.trashed_at));
+    Ok(items)
 }
 
 /// Items moving now, or stopped part way and waiting for the sweep: on their
@@ -1143,10 +1168,43 @@ fn finish_attach(
     item: &Item,
     hold: &dyn Hold,
 ) -> Result<(), TrashError> {
+    let mut overwrote = false;
+    for path in kind.in_the_way(journal, item).map_err(TrashError::Io)? {
+        if item.paths.contains(&path) {
+            continue;
+        }
+        let live = journal_entry(journal, &path)?;
+        if !path_lexists(&live)? {
+            continue;
+        }
+        hold.moving(&path).map_err(TrashError::Held)?;
+        let displaced = displaced_rel(&item.id, &path);
+        ensure_trash_parent(journal, &displaced)?;
+        let aside = trash_entry(journal, &displaced)?;
+        if path_lexists(&aside)? {
+            return Err(TrashError::Io(format!(
+                "item {} already set aside what was at {path}",
+                item.id
+            )));
+        }
+        // Recorded before it moves: a stop between the two would otherwise
+        // leave it set aside and never recorded, since a resumed recovery no
+        // longer finds it in the way.
+        if !overwrote {
+            record_pending(journal, item, Event::Erased);
+            overwrote = true;
+        }
+        move_entry(&live, &aside)?;
+        sync_parent(journal, &path);
+    }
     let mut files = Vec::new();
     for path in &item.paths {
         let trashed = files_rel(&item.id, path);
         let held = trash_entry(journal, &trashed)?;
+        if path_lexists(&held)? && !kind.returns(journal, item, path) {
+            // No home for it now: it goes with the item.
+            continue;
+        }
         if path_lexists(&held)? {
             hold.moving(path).map_err(TrashError::Held)?;
             ensure_journal_parent(journal, path)?;
@@ -1561,6 +1619,8 @@ mod tests {
         fail_references: std::cell::Cell<bool>,
         refuse_check_at: std::cell::Cell<u32>,
         companion: bool,
+        in_the_way: Vec<String>,
+        homeless: Vec<String>,
     }
 
     impl Kind for Fake {
@@ -1573,6 +1633,12 @@ mod tests {
         fn present(&self, journal: &Path, path: &str) -> bool {
             let place = journal.join(path);
             place.is_file() || (place.is_dir() && !place.join("tombstone.json").exists())
+        }
+        fn in_the_way(&self, _: &Path, _: &Item) -> Result<Vec<String>, String> {
+            Ok(self.in_the_way.clone())
+        }
+        fn returns(&self, _: &Path, _: &Item, path: &str) -> bool {
+            !self.homeless.iter().any(|gone| gone == path)
         }
         fn companions(&self, _: &Path, _: &Item) -> Result<Vec<String>, String> {
             Ok(if self.companion {
@@ -1775,6 +1841,46 @@ mod tests {
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
         // The copy it replaced is recorded as erased by the recover.
         assert!(events(&root).contains(&(Event::Erased, Action::Recover)));
+    }
+
+    #[test]
+    fn recovering_sets_aside_what_the_kind_says_is_in_its_way() {
+        let (_dir, root) = journal();
+        let newer = "chronicle/20261108/phone/080000_300";
+        let kind = Fake {
+            in_the_way: vec![newer.into(), "nothing/here".into()],
+            ..Fake::default()
+        };
+        let item = trash(&root, &kind);
+        fs::create_dir_all(root.join(newer)).unwrap();
+        fs::write(root.join(newer).join("audio.flac"), b"newer").unwrap();
+        attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
+        assert_eq!(
+            fs::read(root.join(SEGMENT).join("audio.flac")).unwrap(),
+            b"sound"
+        );
+        // What was in its way went with the item, and the recover says so.
+        assert!(!root.join(newer).exists());
+        assert!(!root.join(TRASH_DIR).join(&item.id).exists());
+        assert!(events(&root).contains(&(Event::Erased, Action::Recover)));
+    }
+
+    #[test]
+    fn a_path_with_no_home_goes_with_the_item_instead_of_coming_back() {
+        let (_dir, root) = journal();
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(root.join("config/private-note.json"), b"private text").unwrap();
+        let mut kind = Fake {
+            companion: true,
+            ..Fake::default()
+        };
+        let item = trash(&root, &kind);
+        kind.homeless = vec!["config/private-note.json".into()];
+        attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
+        assert!(root.join(SEGMENT).join("audio.flac").exists());
+        assert!(!root.join("config/private-note.json").exists());
+        assert!(!root.join(TRASH_DIR).join(&item.id).exists());
+        assert!(!events(&root).contains(&(Event::Erased, Action::Recover)));
     }
 
     #[test]
