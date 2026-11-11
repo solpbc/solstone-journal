@@ -1436,44 +1436,62 @@ a.body-day-cell:focus-visible {
       if (close) close(false);
     }
 
+    // The handlers close over this scope. Forget the button, and take the
+    // handlers off the dialog, once it has closed. Otherwise the day the
+    // button belongs to stays in memory after the owner has left it.
     function openWorkoutDialog(button, day) {
       closeDialog();
       const id = button.getAttribute("data-strava-delete");
       const start = button.getAttribute("data-strava-start") || "";
       const meta = [workoutDayLabel(day), start, "Strava"].filter(Boolean).join(" · ");
-      const dialog = document.createElement("dialog");
+      let trigger = button;
+      button = null;
+      let dialog = document.createElement("dialog");
       dialog.className = "body-trash-dialog";
       dialog.setAttribute("aria-modal", "true");
       let step = "move";
       const paint = () => {
+        const node = dialog;
+        if (!node) return;
         const copy = WORKOUT_COPY[step];
         const erasing = step === "erase";
-        dialog.classList.toggle("body-trash-erase", erasing);
-        dialog.setAttribute("aria-label", copy.title);
-        dialog.innerHTML = html([
+        node.classList.toggle("body-trash-erase", erasing);
+        node.setAttribute("aria-label", copy.title);
+        node.innerHTML = html([
           `<div class="body-trash-head"><h3>${escapeHtml(copy.title)}</h3><button type="button" class="body-trash-close" data-workout-cancel aria-label="close">&times;</button></div>`,
           `<div class="body-trash-body"><div class="body-trash-note" data-workout-step="${step}"><p class="body-trash-meta"><strong>${escapeHtml(meta)}</strong></p><p>${escapeHtml(copy.reach)}</p><p>${escapeHtml(copy.stays)}</p><p>${escapeHtml(WORKOUT_COPY.again)}</p></div></div>`,
           erasing
             ? `<div class="body-trash-foot"><span class="body-trash-right"><button type="button" class="body-trash-btn body-trash-secondary" data-workout-back>${escapeHtml(WORKOUT_COPY.buttons.back)}</button><button type="button" class="body-trash-btn body-trash-danger-fill" data-workout-erase>${escapeHtml(WORKOUT_COPY.buttons.eraseNow)}</button></span></div>`
             : `<div class="body-trash-foot"><button type="button" class="body-trash-btn body-trash-danger" data-workout-erase-step>${escapeHtml(WORKOUT_COPY.buttons.eraseNow)}</button><span class="body-trash-right"><button type="button" class="body-trash-btn body-trash-secondary" data-workout-cancel>${escapeHtml(WORKOUT_COPY.buttons.cancel)}</button><button type="button" class="body-trash-btn body-trash-primary" data-workout-move>${escapeHtml(WORKOUT_COPY.buttons.moveToTrash)}</button></span></div>`,
         ]);
-        dialog.querySelector(erasing ? "[data-workout-back]" : "[data-workout-move]")?.focus();
+        node.querySelector(erasing ? "[data-workout-back]" : "[data-workout-move]")?.focus();
       };
       const close = (focus) => {
+        const node = dialog;
+        const back = trigger;
+        dialog = null;
+        trigger = null;
         if (closeOpenDialog === close) closeOpenDialog = null;
-        dialog.close();
-        dialog.remove();
-        if (focus !== false && button.isConnected) button.focus();
+        if (!node) return;
+        node.removeEventListener("click", onClick);
+        node.removeEventListener("cancel", onCancel);
+        node.close();
+        node.remove();
+        if (focus !== false && back && back.isConnected) back.focus();
       };
-      closeOpenDialog = close;
-      dialog.addEventListener("click", (event) => {
-        if (event.target === dialog || event.target.closest("[data-workout-cancel]")) { close(); return; }
+      const onClick = (event) => {
+        const node = dialog;
+        if (!node) return;
+        if (event.target === node || event.target.closest("[data-workout-cancel]")) { close(); return; }
         if (event.target.closest("[data-workout-erase-step]")) { step = "erase"; paint(); return; }
         if (event.target.closest("[data-workout-back]")) { step = "move"; paint(); return; }
         if (event.target.closest("[data-workout-move]")) { close(); deleteWorkout(id, day, false); return; }
         if (event.target.closest("[data-workout-erase]")) { close(); deleteWorkout(id, day, true); }
-      });
-      dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
+      };
+      const onCancel = (event) => { event.preventDefault(); close(); };
+      closeOpenDialog = close;
+      dialog.addEventListener("click", onClick);
+      dialog.addEventListener("cancel", onCancel);
       document.body.appendChild(dialog);
       paint();
       dialog.showModal();

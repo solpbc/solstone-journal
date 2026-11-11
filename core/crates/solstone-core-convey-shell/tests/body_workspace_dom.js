@@ -67,6 +67,10 @@ function boot(fixtures = {}) {
         getAttribute(name) { return this.attrs[name]; },
         querySelector() { return { focus() {} }; },
         addEventListener(type, fn) { listeners.push({ type, fn }); },
+        removeEventListener(type, fn) {
+          const index = listeners.findIndex((row) => row.type === type && row.fn === fn);
+          if (index >= 0) listeners.splice(index, 1);
+        },
         close() {},
         remove() {
           this.removed = true;
@@ -74,6 +78,7 @@ function boot(fixtures = {}) {
           if (index >= 0) dialogs.splice(index, 1);
         },
         showModal() {},
+        listeners,
         fire(selector) {
           const target = { closest: (sel) => (sel === selector ? target : null) };
           for (const row of [...listeners]) if (row.type === 'click') row.fn({ target, type: 'click' });
@@ -400,9 +405,11 @@ const cases = [
     assert.strictEqual(page.listeners(), 1);
     page.click(page.button('9001'));
     assert.strictEqual(page.dialogs.length, 1);
+    const dialog = page.dialogs[0];
     page.window.SolViews.dispose();
     assert.strictEqual(page.listeners(), 0);
     assert.strictEqual(page.dialogs.length, 0, 'the dialog is gone');
+    assert.strictEqual(dialog.listeners.length, 0, 'a closed dialog does not keep its handlers');
     status.resolve(STATUS);
     await page.settle();
     assert.strictEqual(page.root.innerHTML, '', 'a cut-off read does not draw');
@@ -463,6 +470,33 @@ const cases = [
     await page.settle();
     assert.strictEqual(page.document.activeElement, page.main);
     assert.ok(page.root.innerHTML.includes('nothing for this day'));
+  }],
+  ['a closed dialog drops its handlers and the button that opened it', async () => {
+    const page = boot({ '/app/body/api/day/20260110': DAY });
+    await page.mount('20260110');
+    await page.settle();
+    vm.runInContext(`window.__trigger = {
+      isConnected: true,
+      getAttribute(name) {
+        if (name === 'data-strava-delete') return '9001';
+        if (name === 'data-strava-start') return '7:00 AM';
+        return '';
+      },
+      closest(selector) { return selector === '[data-strava-delete]' ? this : null; },
+      focus() { document.activeElement = this; },
+    };`, page.context);
+    page.click(page.window.__trigger);
+    const dialog = page.dialogs[0];
+    assert.strictEqual(dialog.listeners.length, 2);
+    dialog.fire('[data-workout-cancel]');
+    assert.strictEqual(dialog.listeners.length, 0);
+    assert.strictEqual(page.dialogs.length, 0);
+    page.document.activeElement = null;
+    vm.runInContext('window.__ref = new WeakRef(window.__trigger); window.__trigger = null;', page.context);
+    await page.settle();
+    gc();
+    gc();
+    assert.strictEqual(vm.runInContext('window.__ref.deref() === undefined', page.context), true);
   }],
   ['a delete in flight still finishes after the view is gone, and its notice does not keep the view', async () => {
     const page = boot({ '/app/body/api/day/20260110': DAY });
