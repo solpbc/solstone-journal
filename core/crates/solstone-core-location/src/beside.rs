@@ -15,6 +15,9 @@ use crate::record::Precision;
 
 const DAY_SECONDS: u32 = 24 * 60 * 60;
 
+/// How an entry ranks against another covering the same moment.
+type Ranked = (u8, std::cmp::Reverse<i64>);
+
 /// What sits beside one activity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Beside {
@@ -62,7 +65,7 @@ impl DayBeside {
     /// The entry covering `instant`, as each entry's device timed it, ranked
     /// as [`location_beside`] ranks: for an item that carries instants, not a
     /// device's clock.
-    fn at_instant(&self, instant: i64) -> Option<((u8, std::cmp::Reverse<i64>), Option<Beside>)> {
+    fn at_instant(&self, instant: i64) -> Option<(Ranked, Option<Beside>)> {
         let day = self.day.as_ref()?;
         let (entry, length) = day
             .entries
