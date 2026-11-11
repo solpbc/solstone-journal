@@ -228,7 +228,10 @@ bootstrap_install() {
 	PATH=/qualification-tools:/usr/bin:/usr/sbin:/bin:/sbin
 	LD_LIBRARY_PATH=/qualification-tools
 	export HOME PATH LD_LIBRARY_PATH
-	if sh /origin-negative/install.sh --version "$version" --origin "$negative_origin" \
+	# Run by itself with no --prefix, the bootstrap refuses a new install
+	# (standalone-retired); the platform installer always names a prefix.
+	if sh /origin-negative/install.sh --prefix "$HOME/.local/solstone-journal" \
+		--version "$version" --origin "$negative_origin" \
 		>/origin-negative/install.out 2>/origin-negative/install.err; then
 		refuse "tampered signed manifest was accepted"
 	else
@@ -261,7 +264,8 @@ bootstrap_install() {
 	[ "$(sha256sum /qualification-tools/install.sh | awk '{print $1}')" = \
 		"$(sha256sum /origin/downloaded-install.sh | awk '{print $1}')" ] \
 		|| refuse "bootstrap did not fetch the exact installer"
-	if sh /origin/downloaded-install.sh --version "$version" --origin "$origin" \
+	if sh /origin/downloaded-install.sh --prefix "$HOME/.local/solstone-journal" \
+		--version "$version" --origin "$origin" \
 		>/origin/install.out 2>/origin/install.err; then
 		refuse "networkless bootstrap unexpectedly completed full setup"
 	else
