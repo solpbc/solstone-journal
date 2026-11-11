@@ -131,12 +131,6 @@ impl Journal {
             .unwrap()
     }
 
-    pub(crate) fn has(&self, rel: &str, word: &str) -> bool {
-        self.rows(rel)
-            .iter()
-            .any(|(_, content)| content.contains(word))
-    }
-
     /// Every indexed entry of a journal file that holds `word`. The entity
     /// search's own rows aren't files and aren't counted.
     pub(crate) fn search(&self, word: &str) -> Vec<(String, i64)> {
@@ -467,7 +461,7 @@ fn a_damaged_hidden_names_file_holds_the_facets_detections_until_it_reads_again(
     );
     assert!(journal.search("Alice").is_empty());
     assert_eq!(journal.stored_mtime(&day), Some(-1));
-    assert_eq!(journal.failures_named(), [day.clone()]);
+    assert_eq!(journal.failures_named(), std::slice::from_ref(&day));
     // The build still completes: an undecided file is named, not counted.
     let state = crate::db::read_index_build_state(&journal.conn())
         .unwrap()
