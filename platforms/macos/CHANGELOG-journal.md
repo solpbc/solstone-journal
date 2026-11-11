@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.75 (build 127)] - 2026-11-11
+
 ### Added
 
-- you can now start a new journal from the location pane and restore from a backup during setup. your current journal stops and stays in its folder, unchanged, and you can switch back to it there.
+- you can now start a new journal from the location pane and restore from a backup during setup. your current journal stops and stays in its folder, unchanged, and you can switch back to it from the location pane.
+
+### Changed
+
+- updated the bundled journal to [2.0.75](https://solstone.app/releases#v2.0.75) →
 
 ## [2.0.74 (build 126)] - 2026-11-10
 
