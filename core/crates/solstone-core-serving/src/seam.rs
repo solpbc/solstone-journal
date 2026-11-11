@@ -21,3 +21,19 @@ where
 {
     tokio::task::spawn_blocking(f).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::run_blocking;
+
+    #[tokio::test]
+    async fn a_store_operation_answers_and_a_panic_comes_back_as_an_error() {
+        assert_eq!(run_blocking(|| 2 + 2).await.ok(), Some(4));
+        // A handler can answer for a panicking store operation instead of
+        // losing the request.
+        let error = run_blocking(|| -> u8 { panic!("store failed") })
+            .await
+            .expect_err("a panic is an error");
+        assert!(error.is_panic());
+    }
+}
