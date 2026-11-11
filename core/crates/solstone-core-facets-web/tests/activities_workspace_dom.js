@@ -337,9 +337,10 @@ async function createPage({ items, url = `https://journal.example/app/activities
   };
   let href = url;
   win.location = new URL(href);
+  const historyWrites = { push: 0, replace: 0 };
   win.history = {
-    pushState(_s, _t, next) { win.location = new URL(next, win.location.href); },
-    replaceState(_s, _t, next) { win.location = new URL(next, win.location.href); },
+    pushState(_s, _t, next) { historyWrites.push += 1; win.location = new URL(next, win.location.href); },
+    replaceState(_s, _t, next) { historyWrites.replace += 1; win.location = new URL(next, win.location.href); },
   };
   const viewBody = (url) => {
     const match = String(url).match(/\/app\/activities\/api\/day\/(\d{8})\/view/);
@@ -418,6 +419,7 @@ async function createPage({ items, url = `https://journal.example/app/activities
   await win.SolViews.mount('activities');
   await settle();
   env.win = win;
+  env.pushes = () => historyWrites.push;
   env.panel = () => doc.querySelector('[data-panel-area]');
   env.click = async (el) => { assert.ok(el, 'clickable element exists'); el.dispatchEvent({ type: 'click', bubbles: true }); await settle(); };
   env.posts = () => requests.filter((r) => r.method === 'POST');
@@ -812,6 +814,25 @@ test('on a narrow screen, a tap outside the sheet still closes it', async () => 
   await env.click(env.doc.body);
   assert.strictEqual(env.panel().querySelector('[data-action-correct]'), null);
   assert.strictEqual(env.win.location.hash, '');
+});
+
+test('on a narrow screen, a tap the page is already leaving on leaves the sheet', async () => {
+  const env = await createPage({ items: [activity()], narrow: true });
+  assert.ok(env.panel().querySelector('[data-action-correct]'));
+  const href = env.win.location.href;
+  const focus = env.doc.activeElement;
+  const pushes = env.pushes();
+  const link = env.doc.createElement('a');
+  link.setAttribute('href', '/app/more/');
+  env.doc.body.appendChild(link);
+  // The router takes a dock link first and marks the click handled.
+  link.addEventListener('click', (event) => event.preventDefault());
+  await env.click(link);
+  assert.ok(env.panel().querySelector('[data-action-correct]'), 'the sheet stays open');
+  assert.strictEqual(env.win.location.hash, '#work/standup', 'the selection stays');
+  assert.strictEqual(env.win.location.href, href, 'the address is not written');
+  assert.strictEqual(env.pushes(), pushes, 'nothing is pushed');
+  assert.strictEqual(env.doc.activeElement, focus, 'focus stays where it was');
 });
 
 const NEXT_DAY = '20261030';

@@ -2854,10 +2854,14 @@
       // Backdrop click on mobile sheet. A tap inside the panel often
       // re-renders it before this runs, detaching the tapped element, so
       // where the tap landed is read from the path the event took, not from
-      // the target's current ancestors.
+      // the target's current ancestors. A click the router has already taken
+      // is the owner leaving: this listener is registered after the router's,
+      // so that click arrives with defaultPrevented set. Closing here would
+      // write the address they just left to, and move focus off the page
+      // they are opening.
       const path = e.composedPath();
       const landedIn = (sel) => path.some((node) => typeof node.matches === 'function' && node.matches(sel));
-      if (isMobile() && state.selectedId && !landedIn('[data-panel-area]') && !landedIn('button.act-block') && !landedIn('.act-untimed-row')) {
+      if (isMobile() && state.selectedId && !e.defaultPrevented && !landedIn('[data-panel-area]') && !landedIn('button.act-block') && !landedIn('.act-untimed-row')) {
         closePanel();
       }
     });

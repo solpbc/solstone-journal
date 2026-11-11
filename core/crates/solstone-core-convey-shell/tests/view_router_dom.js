@@ -552,10 +552,22 @@ const VIEW_CODE = {
           ctx.route = window.SolViews.routeOf(window.location);
         }
         let day = ctx.route.day;
+        let selected = window.location.hash.indexOf('#work/') === 0 ? 'standup' : null;
         ctx.on(window, 'popstate', () => {
           if (window.location.pathname === '/app/activities/' + day) views.pops += 1;
         });
-        window.__openActivity = () => ctx.history.push(window.location.pathname + window.location.search + '#work/standup');
+        window.__activitySelected = () => selected;
+        window.__openActivity = () => {
+          selected = 'standup';
+          ctx.history.push(window.location.pathname + window.location.search + '#work/standup');
+        };
+        // Registered at mount, after the router's click listener. A click the
+        // router has taken is the owner leaving, so the sheet stays.
+        ctx.on(document, 'click', (event) => {
+          if (!selected || event.defaultPrevented) return;
+          selected = null;
+          ctx.history.push(window.location.pathname + window.location.search);
+        });
         const read = () => {
           const asked = day;
           ctx.read('/app/activities/api/day/' + asked + '/view').then((answer) => {
@@ -1351,20 +1363,52 @@ asyncCase('router: an undated activities arrival becomes that day, and an own en
   assert.strictEqual(page.location.pathname, '/app/activities/20260102', 'forward lands on the dated address');
 });
 
-asyncCase('router: a history call to another view does not retarget the mounted path', async () => {
+asyncCase('router: a view cannot write another view\'s address', async () => {
   const page = makePage();
   page.answerAll();
   answerActivities(page);
   await page.boot('home');
   page.click('/app/activities/');
   await page.clock.advance(400);
-  const held = page.window.solRouter.held().mountedPath;
-  assert.strictEqual(held, '/app/activities/20260102');
+  const held = page.window.solRouter.held();
+  assert.strictEqual(held.mountedPath, '/app/activities/20260102');
+  const href = page.location.href;
+  const length = page.history.length;
   page.window.solRouter.viewEntry('replace', '/app/home/');
-  assert.strictEqual(page.window.solRouter.held().mountedPath, held);
-  assert.strictEqual(page.location.pathname, '/app/home/');
   page.window.solRouter.viewEntry('push', '/app/transcripts/20260102');
-  assert.strictEqual(page.window.solRouter.held().mountedPath, held);
+  assert.strictEqual(page.window.solRouter.held().mountedPath, held.mountedPath);
+  assert.strictEqual(page.window.solRouter.held().entryId, held.entryId);
+  assert.strictEqual(page.location.href, href, 'a foreign address is not written');
+  assert.strictEqual(page.history.length, length, 'a foreign push adds no entry');
+  page.window.solRouter.viewEntry('replace', '/app/activities/20260103');
+  assert.strictEqual(page.location.pathname, '/app/activities/20260103', 'the same view still replaces its own address');
+  assert.strictEqual(page.window.solRouter.held().mountedPath, '/app/activities/20260103');
+  assert.strictEqual(page.history.length, length, 'a replace does not add an entry');
+});
+
+asyncCase('router: a dock link with an activity open adds one entry, and back returns to it', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerActivities(page);
+  await page.boot('home');
+  page.click('/app/activities/');
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/activities/20260102');
+  page.window.__openActivity();
+  assert.strictEqual(page.location.hash, '#work/standup');
+  assert.strictEqual(page.window.__activitySelected(), 'standup');
+  const length = page.history.length;
+  const event = page.document.getElementById('app-dock').querySelector('a[href="/app/more/"]').click();
+  assert.ok(event.defaultPrevented, 'the router took the dock link');
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/more/');
+  assert.strictEqual(page.history.length, length + 1, 'the dock tap adds the one entry the router wrote');
+  await page.history.back();
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/activities/20260102');
+  assert.strictEqual(page.location.hash, '#work/standup');
+  assert.ok(page.view('activities'));
+  assert.strictEqual(page.window.__activitySelected(), 'standup', 'back lands on the open activity');
 });
 
 asyncCase('router: back and forward between pilot entries restore view and scroll', async () => {

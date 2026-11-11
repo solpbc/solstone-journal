@@ -84,6 +84,12 @@
   function viewEntry(kind, url) {
     let next = null;
     try { next = new URL(url, window.location.href); } catch (_) {}
+    // Another view's address is the router's to write. A view writing it
+    // would add a second entry for a move the router already made, and the
+    // first step back would stay on the page the owner just opened. The
+    // first load has no mounted path yet, and an address that does not
+    // parse still writes.
+    if (next && mountedPath && viewOf(next.pathname) !== viewOf(mountedPath)) return;
     if (kind === 'push') {
       rememberScroll();
       entryId = newEntryId();
