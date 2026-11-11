@@ -919,6 +919,32 @@ tr:hover .entity-delete-btn {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
+/* The detected row's hide sits where the delete did; hide isn't destructive,
+   so it never turns red. */
+.entity-delete-btn.ent-hide-btn:hover,
+.entity-delete-btn.ent-hide-btn:focus-visible {
+  color: var(--ink);
+  opacity: 1 !important;
+  outline-color: var(--facet-color, var(--focus));
+  background: transparent;
+}
+.entity-delete-btn.ent-hide-btn:active {
+  color: var(--ink);
+  background: var(--cream-bright);
+}
+
+/* The hidden names: a foot line with its toggle, then their own small table. */
+.ent-hidden-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5em 1em; padding: .75em 1.5em; color: var(--ink-soft); font-size: .9em; border-top: 1px solid var(--hairline-2); }
+.ent-hidden-foot[hidden], .ent-hidden-list[hidden] { display: none; }
+.ent-hidden-list { border-top: 1px solid var(--hairline-2); background: var(--cream-bright); }
+.ent-hidden-list h4 { margin: 0; padding: 1em 1.5em .25em; font-size: .95em; font-weight: 600; color: var(--ink); }
+.ent-hidden-list .entities-table tr:hover { background: transparent; }
+.ent-hidden-row .entity-name, .ent-hidden-row .entity-type { color: var(--ink-soft); }
+.ent-hidden-row .entity-desc { display: flex; align-items: center; justify-content: space-between; gap: 1em; flex-wrap: wrap; }
+.ent-hidden-last { color: var(--ink-soft); font-size: .9em; }
+.ent-unhide-btn { min-height: 2.25rem; }
+@media (max-width: 480px) { .ent-unhide-btn { min-height: 44px; } .ent-hidden-row td:first-child, .ent-hidden-row .entity-type { display: none; } .ent-hidden-last { white-space: nowrap; } }
+
 /* Section headers */
 .entities-section {
   margin-bottom: 2em;
@@ -1259,25 +1285,6 @@ tr:hover .entity-delete-btn {
   padding: 12px;
   margin-bottom: 1em;
   color: var(--warn-ink);
-}
-
-.delete-days-list {
-  max-height: 200px;
-  overflow-y: auto;
-  background: var(--cream-bright);
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-  padding: 12px;
-  margin-top: 8px;
-}
-
-.delete-day-item {
-  padding: 6px 0;
-  border-bottom: 1px solid var(--hairline);
-}
-
-.delete-day-item:last-child {
-  border-bottom: none;
 }
 
 /* Error message */
@@ -2216,7 +2223,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
       </div>
       <div id="block-action-error" class="error-message" style="display: none;"></div>
       <p style="margin-top: 0.75em; font-size: 0.85em; color: var(--ink-faint);">
-        <strong>hide</strong> removes the entity from all facets and keeps its data.
+        <strong>hide</strong> <span id="journal-detail-hide-help"></span>
         <span id="journal-detail-delete-help" hidden><strong id="journal-detail-delete-help-name"></strong> <span id="journal-detail-delete-help-text"></span></span>
       </p>
     </div>
@@ -2263,6 +2270,17 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
         </table>
         <div id="no-detected-entities" class="no-entities" style="display: none;"></div>
         <div id="no-detected-matches" class="no-card-matches" style="display: none;">no entities match your search.</div>
+        <div id="detected-hidden-foot" class="ent-hidden-foot" hidden>
+          <span id="detected-hidden-count"></span>
+          <button type="button" id="detected-hidden-toggle" class="btn btn-secondary btn-sm" aria-expanded="false" aria-controls="detected-hidden-list"></button>
+        </div>
+        <section id="detected-hidden-list" class="ent-hidden-list" aria-labelledby="detected-hidden-heading" hidden>
+          <h4 id="detected-hidden-heading"></h4>
+          <p class="entities-subtitle" id="detected-hidden-lede"></p>
+          <table class="entities-table">
+            <tbody id="detected-hidden-tbody"></tbody>
+          </table>
+        </section>
         <div id="detected-pagination" class="detected-pagination"></div>
       </div>
     </div>
@@ -2328,30 +2346,6 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
       <textarea id="attach-description" placeholder="e.g., lead engineer on the project, primary contact for sales…"></textarea>
       <button class="btn-attach" id="attach-entity-btn" disabled>attach to facet</button>
       <div id="attach-error" style="color: var(--danger); margin-top: 0.5em; display: none;"></div>
-    </div>
-  </div>
-</div>
-
-<!-- Delete Entity Confirmation Modal -->
-<div id="deleteModal" class="modal">
-  <div class="modal-content">
-    <div class="modal-header danger">
-      <h3>delete detected entity</h3>
-      <button class="close" aria-label="close" onclick="closeDeleteModal()">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="delete-warning">
-        ⚠️ this will permanently remove this entity from all detected day files. this action cannot be undone.
-      </div>
-      <p>entity: <strong id="deleteEntityName"></strong></p>
-      <div id="deleteDaysContainer" style="display: none;">
-        <p>found in <strong id="deleteDaysCount"></strong>:</p>
-        <div class="delete-days-list" id="deleteDaysList"></div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeDeleteModal()">cancel</button>
-      <button id="confirmDeleteBtn" class="btn btn-danger" onclick="confirmEntityDelete()">delete</button>
     </div>
   </div>
 </div>
@@ -4203,6 +4197,8 @@ function renderJournalDetailView(entity) {
 
   // Update action buttons based on state
   const blockBtn = document.getElementById('journal-detail-block-btn');
+  const hideHelp = document.getElementById('journal-detail-hide-help');
+  if (hideHelp) hideHelp.textContent = ENT_COPY.ENT_HIDE_PANE_HELP || '';
 
   if (isPrincipal) {
     // Principal cannot be hidden; it has no delete at all.
@@ -6180,11 +6176,8 @@ async function initEntities() {
 
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
-      const deleteModal = document.getElementById('deleteModal');
       const detachConfirmModal = document.getElementById('detachConfirmModal');
-      if (deleteModal.style.display === 'flex') {
-        closeDeleteModal();
-      } else if (detachConfirmModal.style.display === 'flex') {
+      if (detachConfirmModal.style.display === 'flex') {
         closeDetachConfirmModal();
       }
     }
@@ -6192,11 +6185,7 @@ async function initEntities() {
 
   // Modal close on outside click
   window.onclick = function(event) {
-    const deleteModal = document.getElementById('deleteModal');
     const detachConfirmModal = document.getElementById('detachConfirmModal');
-    if (event.target == deleteModal) {
-      closeDeleteModal();
-    }
     if (event.target == detachConfirmModal) {
       closeDetachConfirmModal();
     }
@@ -6236,7 +6225,9 @@ async function loadEntities() {
     const data = await window.apiJson(`api/${encodeURIComponent(currentFacet)}`);
     entitiesData = {
       attached: data.attached || [],
-      detected: data.detected || []
+      detected: data.detected || [],
+      hidden: data.hidden || [],
+      hiddenUnreadable: data.hidden_unreadable === true
     };
 
     document.getElementById('entities-loading').style.display = 'none';
@@ -6810,52 +6801,6 @@ function createEntityCard(entity) {
   return card;
 }
 
-function renderDetectedTable(searchTerm = '') {
-  const tbody = document.getElementById('all-entities-tbody');
-  const noDetectedEntities = document.getElementById('no-detected-entities');
-  const noDetectedMatches = document.getElementById('no-detected-matches');
-  tbody.innerHTML = '';
-
-  const detected = entitiesData.detected || [];
-  const attachedNames = new Set((entitiesData.attached || []).map(e => e.name));
-
-  // Filter out already attached and apply search
-  let filtered = detected.filter(e => !attachedNames.has(e.name));
-
-  if (searchTerm) {
-    const term = searchTerm.toLowerCase();
-    filtered = filtered.filter(e => e.name.toLowerCase().includes(term));
-  }
-
-  // Paginate
-  const pageSize = 25;
-  const total = filtered.length;
-  if (searchTerm) {
-    noDetectedEntities.style.display = 'none';
-    noDetectedMatches.style.display = total === 0 ? 'block' : 'none';
-  } else {
-    noDetectedMatches.style.display = 'none';
-    if (total === 0) {
-      noDetectedEntities.textContent = ENT_COPY.ENT_DETECTED_EMPTY;
-      noDetectedEntities.style.display = 'block';
-    } else {
-      noDetectedEntities.style.display = 'none';
-    }
-  }
-  const totalPages = Math.ceil(total / pageSize);
-  if (detectedPage > totalPages) detectedPage = Math.max(1, totalPages);
-  const start = (detectedPage - 1) * pageSize;
-  const end = Math.min(start + pageSize, total);
-  const pageItems = filtered.slice(start, end);
-
-  pageItems.forEach(entity => {
-    const row = createDetectedRow(entity);
-    tbody.appendChild(row);
-  });
-
-  renderDetectedPagination(total, start, end);
-}
-
 function renderDetectedPagination(total, start, end) {
   const el = document.getElementById('detected-pagination');
   if (total <= 25) {
@@ -6882,6 +6827,96 @@ function renderDetectedPagination(total, start, end) {
     const searchInput = document.getElementById('entity-search');
     renderDetectedTable(searchInput ? searchInput.value.trim() : '');
   });
+}
+
+// ========== DETECTED HIDE ==========
+// Hiding a name's detections in a facet: the row's hide, its receipt, the
+// hidden names under the table and their unhide. Every word comes from an
+// ENT_* copy key; names and facet titles are set as text.
+
+// Whether the hidden names are shown, and for which facet: it stays put while
+// the owner is on the page and resets on a facet change.
+let detectedHiddenShown = false;
+let detectedHiddenFacet = null;
+
+function detectedFill(key, fill = {}) {
+  let text = ENT_COPY[key] || '';
+  Object.entries(fill).forEach(([name, value]) => {
+    text = text.split(`{${name}}`).join(String(value));
+  });
+  return text;
+}
+
+function detectedFacetTitle() {
+  return facetTitle(currentFacet);
+}
+
+// The key a hidden name is matched on, as near as the page can tell; the
+// journal's own list is read again after an unhide.
+function detectedNameKey(name) {
+  return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function detectedSearchValue() {
+  const input = document.getElementById('entity-search');
+  return input ? input.value.trim() : '';
+}
+
+function renderDetectedTable(searchTerm = '') {
+  const tbody = document.getElementById('all-entities-tbody');
+  const noDetectedEntities = document.getElementById('no-detected-entities');
+  const noDetectedMatches = document.getElementById('no-detected-matches');
+  tbody.innerHTML = '';
+  if (detectedHiddenFacet !== currentFacet) {
+    detectedHiddenFacet = currentFacet;
+    detectedHiddenShown = false;
+  }
+
+  const unreadable = entitiesData.hiddenUnreadable === true;
+  const detected = unreadable ? [] : (entitiesData.detected || []);
+  const hidden = unreadable ? [] : (entitiesData.hidden || []);
+  const attachedNames = new Set((entitiesData.attached || []).map(e => e.name));
+
+  // Filter out already attached and apply search
+  let filtered = detected.filter(e => !attachedNames.has(e.name));
+
+  if (searchTerm) {
+    const term = searchTerm.toLowerCase();
+    filtered = filtered.filter(e => e.name.toLowerCase().includes(term));
+  }
+
+  // Paginate
+  const pageSize = 25;
+  const total = filtered.length;
+  if (unreadable) {
+    noDetectedMatches.style.display = 'none';
+    noDetectedEntities.textContent = detectedFill('ENT_DETECTED_UNREADABLE');
+    noDetectedEntities.style.display = 'block';
+  } else if (searchTerm) {
+    noDetectedEntities.style.display = 'none';
+    noDetectedMatches.style.display = total === 0 ? 'block' : 'none';
+  } else {
+    noDetectedMatches.style.display = 'none';
+    if (total === 0) {
+      noDetectedEntities.textContent = detectedFill(hidden.length ? 'ENT_DETECTED_ALL_HIDDEN' : 'ENT_DETECTED_EMPTY');
+      noDetectedEntities.style.display = 'block';
+    } else {
+      noDetectedEntities.style.display = 'none';
+    }
+  }
+  const totalPages = Math.ceil(total / pageSize);
+  if (detectedPage > totalPages) detectedPage = Math.max(1, totalPages);
+  const start = (detectedPage - 1) * pageSize;
+  const end = Math.min(start + pageSize, total);
+  const pageItems = filtered.slice(start, end);
+
+  pageItems.forEach(entity => {
+    const row = createDetectedRow(entity);
+    tbody.appendChild(row);
+  });
+
+  renderDetectedHidden(hidden, searchTerm);
+  renderDetectedPagination(total, start, end);
 }
 
 function createDetectedRow(entity) {
@@ -6923,22 +6958,237 @@ function createDetectedRow(entity) {
   descCell.className = 'entity-desc';
   descCell.textContent = entity.description || '—';
 
-  // Delete button
-  const deleteBtn = document.createElement('button');
-  deleteBtn.type = 'button';
-  deleteBtn.className = 'entity-delete-btn';
-  deleteBtn.title = 'Delete detected entity';
-  deleteBtn.setAttribute('aria-label', deleteBtn.title);
-  deleteBtn.innerHTML = `<span aria-hidden="true">${(window.ConveyIcons?.svg('trash-2') || '')}</span>`;
-  deleteBtn.onclick = (e) => {
+  // Hide: it keeps the name's detections and holds against new ones, so it
+  // needs no confirm; the receipt and the hidden list undo it.
+  const hideBtn = document.createElement('button');
+  hideBtn.type = 'button';
+  hideBtn.className = 'entity-delete-btn ent-hide-btn';
+  hideBtn.title = detectedFill('ENT_DETECTED_HIDE_ACTION', { name: entity.name, facet: detectedFacetTitle() });
+  hideBtn.setAttribute('aria-label', hideBtn.title);
+  hideBtn.innerHTML = `<span aria-hidden="true">${(window.ConveyIcons?.svg('eye-off') || '')}</span>`;
+  hideBtn.onclick = (e) => {
     e.stopPropagation();
-    previewEntityDelete(entity.name);
+    hideDetectedName(entity, hideBtn);
   };
-  descCell.appendChild(deleteBtn);
+  descCell.appendChild(hideBtn);
   row.appendChild(descCell);
 
   return row;
 }
+
+// The foot line, its toggle, and the hidden names when they're shown.
+function renderDetectedHidden(hidden, searchTerm = '') {
+  const foot = document.getElementById('detected-hidden-foot');
+  const list = document.getElementById('detected-hidden-list');
+  const count = document.getElementById('detected-hidden-count');
+  const toggle = document.getElementById('detected-hidden-toggle');
+  const tbody = document.getElementById('detected-hidden-tbody');
+  const facet = detectedFacetTitle();
+  foot.hidden = hidden.length === 0;
+  count.textContent = hidden.length === 1
+    ? detectedFill('ENT_DETECTED_HIDDEN_COUNT_ONE', { facet })
+    : detectedFill('ENT_DETECTED_HIDDEN_COUNT', { n: groupedCount(hidden.length), facet });
+  const shown = detectedHiddenShown && hidden.length > 0;
+  toggle.textContent = detectedFill(shown ? 'ENT_DETECTED_HIDDEN_STOP_SHOW' : 'ENT_DETECTED_HIDDEN_SHOW');
+  toggle.setAttribute('aria-expanded', shown ? 'true' : 'false');
+  toggle.onclick = () => {
+    detectedHiddenShown = !detectedHiddenShown;
+    renderDetectedHidden(hidden, detectedSearchValue());
+  };
+  list.hidden = !shown;
+  document.getElementById('detected-hidden-heading').textContent = detectedFill('ENT_DETECTED_HIDDEN_HEADING', { facet });
+  document.getElementById('detected-hidden-lede').textContent = detectedFill('ENT_DETECTED_HIDDEN_LEDE');
+  tbody.innerHTML = '';
+  if (!shown) return;
+  const term = searchTerm.toLowerCase();
+  hidden
+    .filter(entry => !term || String(entry.name).toLowerCase().includes(term))
+    .forEach(entry => tbody.appendChild(createHiddenRow(entry)));
+}
+
+function createHiddenRow(entry) {
+  const row = document.createElement('tr');
+  row.className = 'ent-hidden-row';
+  row.appendChild(document.createElement('td'));
+
+  const typeCell = document.createElement('td');
+  typeCell.className = 'entity-type';
+  typeCell.textContent = entry.type || '';
+  row.appendChild(typeCell);
+
+  const nameCell = document.createElement('td');
+  nameCell.className = 'entity-name';
+  nameCell.textContent = entry.name;
+  const badge = document.createElement('span');
+  badge.className = 'journal-row-badge';
+  badge.textContent = detectedFill('ENT_DETECTED_HIDDEN_BADGE');
+  nameCell.appendChild(badge);
+  if (entry.count && entry.count > 0) {
+    const mentions = document.createElement('span');
+    mentions.className = 'mention-count-badge';
+    mentions.textContent = groupedCount(entry.count);
+    nameCell.appendChild(mentions);
+  }
+  row.appendChild(nameCell);
+
+  const lastCell = document.createElement('td');
+  lastCell.className = 'entity-desc';
+  if (/^\d{8}$/.test(entry.last_seen || '')) {
+    const last = document.createElement('span');
+    last.className = 'ent-hidden-last';
+    last.textContent = detectedFill('ENT_DETECTED_HIDDEN_LAST', { day: window.JournalFormat.day(entry.last_seen).toLowerCase() });
+    lastCell.appendChild(last);
+  }
+  const unhideBtn = document.createElement('button');
+  unhideBtn.type = 'button';
+  unhideBtn.className = 'btn btn-secondary btn-sm ent-unhide-btn';
+  unhideBtn.textContent = detectedFill('ENT_DETECTED_UNHIDE');
+  unhideBtn.onclick = () => unhideDetectedName(entry.name, unhideBtn);
+  lastCell.appendChild(unhideBtn);
+  row.appendChild(lastCell);
+  return row;
+}
+
+async function postDetectedName(verb, name) {
+  return window.apiJson(`api/${encodeURIComponent(currentFacet)}/detected/${verb}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+}
+
+// Read the facet's lists again, without leaving the page.
+async function reloadDetectedLists() {
+  const data = await window.apiJson(`api/${encodeURIComponent(currentFacet)}`);
+  entitiesData = {
+    ...entitiesData,
+    attached: data.attached || [],
+    detected: data.detected || [],
+    hidden: data.hidden || [],
+    hiddenUnreadable: data.hidden_unreadable === true,
+  };
+  renderEntities(detectedSearchValue());
+}
+
+// Hide `entity`'s name: the row leaves the list, the hidden count goes up and
+// the receipt shows. A refusal or no answer leaves the row where it was.
+async function hideDetectedName(entity, button) {
+  const name = entity.name;
+  if (button) button.disabled = true;
+  let answer;
+  try {
+    answer = await postDetectedName('hide', name);
+  } catch (err) {
+    if (button) button.disabled = false;
+    showInlineError('detected-action-error', detectedFill('ENT_DETECTED_HIDE_FAILED', { name }));
+    window.logError(err, { context: 'entities: hide detected failed' });
+    return;
+  }
+  hideInlineError('detected-action-error');
+  const rows = entitiesData.detected || [];
+  const key = detectedNameKey(name);
+  const position = rows.findIndex(row => row === entity);
+  const leaving = rows.filter(row => detectedNameKey(row.name) === key);
+  entitiesData.detected = rows.filter(row => detectedNameKey(row.name) !== key);
+  const hidden = entitiesData.hidden || [];
+  if (!hidden.some(entry => detectedNameKey(entry.name) === key)) {
+    const last = leaving.map(row => row.last_seen).filter(Boolean).sort().at(-1) || null;
+    const count = leaving.reduce((sum, row) => sum + (row.count || 0), 0);
+    entitiesData.hidden = [...hidden, { name, type: entity.type || null, count: count || null, last_seen: last }];
+  }
+  renderDetectedTable(detectedSearchValue());
+  focusAfterHide(position);
+  showHideReceipt(entity, answer && answer.search_queued !== false);
+}
+
+function focusAfterHide(position) {
+  const buttons = Array.from(document.getElementById('all-entities-tbody').querySelectorAll('.ent-hide-btn'));
+  const next = buttons[Math.min(Math.max(position, 0), buttons.length - 1)];
+  (next || document.getElementById('entity-search'))?.focus();
+}
+
+function showHideReceipt(entity, searchQueued) {
+  const name = entity.name;
+  const unhide = { label: detectedFill('ENT_DETECTED_UNHIDE'), dismiss: true, onClick: () => unhideDetectedName(name, null) };
+  const notice = {
+    app: 'entities',
+    icon: 'eye-off',
+    title: detectedFill('ENT_DETECTED_HIDE_DONE', { name, facet: detectedFacetTitle() }),
+    dismissible: true,
+  };
+  if (searchQueued) {
+    notice.message = detectedFill('ENT_DETECTED_HIDE_DONE_DETAIL');
+    notice.autoDismiss = 8000;
+    notice.buttons = [unhide];
+  } else {
+    // The hide stands; hiding again queues search again.
+    notice.message = detectedFill('ENT_DETECTED_HIDE_NO_SEARCH');
+    notice.buttons = [
+      { label: detectedFill('ENT_DETECTED_HIDE_TRY_AGAIN'), dismiss: true, onClick: () => retryHide(entity) },
+      unhide,
+    ];
+  }
+  window.AppServices.notifications.show(notice);
+}
+
+async function retryHide(entity) {
+  let answer;
+  try {
+    answer = await postDetectedName('hide', entity.name);
+  } catch (err) {
+    showInlineError('detected-action-error', detectedFill('ENT_DETECTED_HIDE_FAILED', { name: entity.name }));
+    window.logError(err, { context: 'entities: hide detected again failed' });
+    return;
+  }
+  showHideReceipt(entity, answer && answer.search_queued !== false);
+}
+
+// Unhide `name`: it comes back into the list, read again from the journal.
+// When a hidden entity still matches it, the card says which.
+async function unhideDetectedName(name, button) {
+  const buttons = Array.from(document.getElementById('detected-hidden-tbody').querySelectorAll('.ent-unhide-btn'));
+  const position = button ? buttons.indexOf(button) : -1;
+  if (button) button.disabled = true;
+  let answer;
+  try {
+    answer = await postDetectedName('unhide', name);
+  } catch (err) {
+    if (button) button.disabled = false;
+    showInlineError('detected-action-error', detectedFill('ENT_DETECTED_UNHIDE_FAILED', { name }));
+    window.logError(err, { context: 'entities: unhide detected failed' });
+    return;
+  }
+  hideInlineError('detected-action-error');
+  const key = detectedNameKey(name);
+  entitiesData.hidden = (entitiesData.hidden || []).filter(entry => detectedNameKey(entry.name) !== key);
+  try {
+    await reloadDetectedLists();
+  } catch (err) {
+    renderDetectedTable(detectedSearchValue());
+    window.logError(err, { context: 'entities: detected reload failed' });
+  }
+  if (position !== -1) {
+    const left = Array.from(document.getElementById('detected-hidden-tbody').querySelectorAll('.ent-unhide-btn'));
+    const toggle = document.getElementById('detected-hidden-toggle');
+    (left[Math.min(position, left.length - 1)] || (toggle && !document.getElementById('detected-hidden-foot').hidden ? toggle : document.getElementById('entity-search')))?.focus();
+  }
+  const still = answer && answer.still_hidden_by;
+  if (still && still.id) {
+    const entity = still.name || still.id;
+    window.AppServices.notifications.show({
+      app: 'entities',
+      icon: 'eye-off',
+      title: detectedFill('ENT_DETECTED_STILL_HIDDEN', { name, entity }),
+      dismissible: true,
+      buttons: [{
+        label: detectedFill('ENT_DETECTED_STILL_HIDDEN_OPEN', { entity }),
+        dismiss: true,
+        onClick: () => { selectEntityScope(null); navigateToEntity(still.id); },
+      }],
+    });
+  }
+}
+// ========== END DETECTED HIDE ==========
 
 function attachDetectedEntity(entity, button) {
   button.disabled = true;
@@ -6972,72 +7222,6 @@ function attachDetectedEntity(entity, button) {
     button.disabled = false;
     button.style.opacity = '1';
   });
-}
-
-// Delete detected entity
-function previewEntityDelete(entityName) {
-  window.apiJson(`api/${encodeURIComponent(currentFacet)}/detected/preview?name=${encodeURIComponent(entityName)}`)
-    .then(data => {
-      if (data.success && data.days) {
-        hideInlineError('detected-action-error');
-        const modal = document.getElementById('deleteModal');
-        document.getElementById('deleteEntityName').textContent = entityName;
-        document.getElementById('deleteDaysCount').textContent = `${data.days.length} day${data.days.length !== 1 ? 's' : ''}`;
-
-        const daysList = document.getElementById('deleteDaysList');
-        daysList.innerHTML = '';
-        data.days.forEach(item => {
-          const div = document.createElement('div');
-          div.className = 'delete-day-item';
-          div.innerHTML = `<strong>${item.day}</strong> - ${item.type}`;
-          daysList.appendChild(div);
-        });
-
-        document.getElementById('deleteDaysContainer').style.display = 'block';
-        document.getElementById('confirmDeleteBtn').dataset.entityName = entityName;
-        modal.style.display = 'flex';
-      }
-    })
-    .catch(err => {
-      showInlineError('detected-action-error', entityErrorMessage(err, "Couldn't load delete preview"));
-      window.logError(err, { context: 'entities: previewEntityDelete failed' });
-    });
-}
-
-function closeDeleteModal() {
-  document.getElementById('deleteModal').style.display = 'none';
-}
-
-function removeEntityFromUI(entityName) {
-  if (entitiesData && entitiesData.detected) {
-    entitiesData.detected = entitiesData.detected.filter(e => e.name !== entityName);
-  }
-  renderDetectedTable(document.getElementById('entity-search').value.trim());
-}
-
-async function confirmEntityDelete() {
-  const entityName = document.getElementById('confirmDeleteBtn').dataset.entityName;
-  if (!entityName) return;
-
-  const confirmBtn = document.getElementById('confirmDeleteBtn');
-  confirmBtn.disabled = true;
-
-  try {
-    await window.apiJson(`api/${encodeURIComponent(currentFacet)}/detected`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: entityName })
-    });
-    hideInlineError('detected-action-error');
-    closeDeleteModal();
-    removeEntityFromUI(entityName);
-  } catch (err) {
-    closeDeleteModal();
-    showInlineError('detected-action-error', entityErrorMessage(err, "Couldn't delete entity"));
-    window.logError(err, { context: 'entities: confirmEntityDelete failed' });
-  } finally {
-    confirmBtn.disabled = false;
-  }
 }
 
 // Tidy-up: the "look like an ID" and "possible duplicates" groups, bulk hide

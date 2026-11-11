@@ -216,6 +216,7 @@ class PickNode {
     return false;
   }
   querySelector(selector) { let found = null; this.walk((node) => { if (!found && node.matches(selector)) found = node; }); return found; }
+  querySelectorAll(selector) { const out = []; this.walk((node) => { if (node.matches(selector)) out.push(node); }); return out; }
   all(cls) { const out = []; this.walk((node) => { if (node.classList.contains(cls)) out.push(node); }); return out; }
 }
 
@@ -282,7 +283,9 @@ async function entityDeleteCases(workspace) {
     && !workspace.includes('watchEntityDeleteOutcome') && !workspace.includes('reportUnfinishedEntityDeletes')
     && !workspace.includes('api/delete-status') && !workspace.includes('api/cancel-delete'),
   'the old permanent delete, its cancel window and its outcome polling are gone');
-  check(workspace.includes('id="deleteModal"'), 'the detections delete stays');
+  check(!workspace.includes('id="deleteModal"') && !workspace.includes('detected/preview')
+    && !workspace.includes('previewEntityDelete') && !workspace.includes('confirmEntityDelete'),
+  'the detections delete, its dialog and its preview are gone');
   const pageButton = /<button[^>]*id="journal-detail-delete-btn"[^>]*>/.exec(workspace);
   check(pageButton && pageButton[0].includes('btn-secondary') && !pageButton[0].includes('btn-danger'), 'the pane delete is secondary: it leads to the reversible act');
 
@@ -574,6 +577,242 @@ async function entityDeleteCases(workspace) {
     check(erased.receipt === C.set.erased && erased.settled === true, 'an erased set');
     const partErase = api.entitySetOutcome(true, ids, { done: [{ id: 'a', erased: true }], failed: [{ id: 'b', reason: 'busy' }] }, there);
     check(partErase.receipt === C.set.partErased && partErase.keep[0][1] === 'erase:busy', 'a refused erase takes the erase note');
+  }
+}
+
+
+// Hiding a name's detections: the row's hide, its receipt, the hidden names
+// and their unhide. Asserts which copy key reaches which element and which
+// state renders; the expected words are read from the copy file, never typed.
+async function detectedHideCases(workspace, copy) {
+  const start = workspace.indexOf('// ========== DETECTED HIDE ==========');
+  const end = workspace.indexOf('// ========== END DETECTED HIDE ==========');
+  check(start !== -1 && end > start, 'the detected hide block is marked');
+  const fill = (key, values = {}) => Object.entries(values).reduce((text, [name, value]) => text.split(`{${name}}`).join(String(value)), copy[key]);
+  Object.keys(copy).filter((key) => key.startsWith('ENT_DETECTED_') || key === 'ENT_HIDE_PANE_HELP')
+    .forEach((key) => check(typeof copy[key] === 'string' && copy[key].length > 0, `${key} has words`));
+  const paneHelp = /<strong>hide<\/strong>\s*<span id="journal-detail-hide-help"><\/span>/.test(workspace)
+    && workspace.includes("hideHelp.textContent = ENT_COPY.ENT_HIDE_PANE_HELP");
+  check(paneHelp, 'the pane helper takes its hide sentence from its copy key');
+
+  const flush = async () => { for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setImmediate(resolve)); };
+  const setup = (data) => {
+    const h = pickHarness();
+    const make = (id, tag = 'div') => { const node = new PickNode(h.doc, tag); node.id = id; h.doc.registry.set(id, node); return node; };
+    ['all-entities-tbody', 'no-detected-entities', 'no-detected-matches', 'detected-hidden-foot', 'detected-hidden-list',
+      'detected-hidden-count', 'detected-hidden-heading', 'detected-hidden-lede', 'detected-hidden-tbody', 'detected-action-error']
+      .forEach((id) => make(id));
+    make('detected-hidden-toggle', 'button');
+    make('entity-search', 'input');
+    h.log.errors = [];
+    h.log.apis = [];
+    h.context.window.ConveyIcons = { svg: (name) => `<svg data-icon="${name}"></svg>` };
+    h.context.window.logError = () => {};
+    h.context.window.apiJson = async (url, options = {}) => {
+      h.log.apis.push({ url, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : undefined });
+      const answer = h.answers[`${options.method || 'GET'} ${url}`];
+      if (answer instanceof Error) throw answer;
+      return typeof answer === 'function' ? answer() : answer;
+    };
+    h.context.window.JournalFormat = { day: (key) => `DAY:${key}` };
+    vm.runInContext(`
+      let ENT_COPY = ${JSON.stringify(copy)};
+      let entitiesData = ${JSON.stringify(data)};
+      let currentFacet = 'work';
+      let detectedPage = 1;
+      function facetTitle(name) { return 'Title of ' + name; }
+      function groupedCount(n) { return String(n); }
+      function renderDetectedPagination() {}
+      function attachDetectedEntity() {}
+      function renderEntities(term) { renderDetectedTable(term); }
+      function showInlineError(id, text) { __log.errors.push(text); }
+      function hideInlineError() {}
+      function selectEntityScope(facet) { __log.scope = facet; }
+      function navigateToEntity(id) { __log.navigated.push(id); }
+      ${workspace.slice(start, end)}
+      this.api = { renderDetectedTable, data: () => entitiesData, setFacet(f) { currentFacet = f; } };
+    `.replace(/__log/g, 'this.__log'), h.context);
+    h.context.__log = h.log;
+    return h;
+  };
+  const el = (h, id) => h.doc.getElementById(id);
+  const row = (name, extra = {}) => ({ type: 'Person', name, description: 'seen', count: 2, last_seen: '20261101', ...extra });
+  const hideButtons = (h) => el(h, 'all-entities-tbody').all('ent-hide-btn');
+  const unhideButtons = (h) => el(h, 'detected-hidden-tbody').all('ent-unhide-btn');
+
+  // The row action: hide, keyed by name and facet title, never a delete.
+  {
+    const h = setup({ attached: [], detected: [row('Ada'), row('Bob')], hidden: [] });
+    h.context.api.renderDetectedTable('');
+    const [ada] = hideButtons(h);
+    check(hideButtons(h).length === 2 && el(h, 'all-entities-tbody').all('entity-delete-btn').length === 2, 'each row has its hide in the place of the delete');
+    check(ada.title === fill('ENT_DETECTED_HIDE_ACTION', { name: 'Ada', facet: 'Title of work' }) && ada.getAttribute('aria-label') === ada.title,
+      'the hide is titled and labelled from its copy key with the name and facet title');
+    check(ada.innerHTML.includes('eye-off') && !ada.innerHTML.includes('trash'), 'the hide carries the eye-off icon');
+    check(el(h, 'detected-hidden-foot').hidden === true, 'nothing hidden: no foot line');
+    check(el(h, 'no-detected-entities').style.display === 'none', 'rows: no empty line');
+  }
+
+  // A hide: the row leaves, the hidden count rises, focus moves on, the receipt shows.
+  {
+    const h = setup({ attached: [], detected: [row('Ada'), row('Bob'), row('Cy')], hidden: [] });
+    h.context.api.renderDetectedTable('');
+    h.answers['POST api/work/detected/hide'] = { success: true, changed: true, search_queued: true };
+    hideButtons(h)[1].fire('click');
+    await flush();
+    const call = h.log.apis.find((c) => c.method === 'POST');
+    check(call.url === 'api/work/detected/hide' && call.body.name === 'Bob', 'a hide posts the name, with no confirm first');
+    const names = el(h, 'all-entities-tbody').children.map((r) => r.children[2].textContent);
+    check(names.length === 2 && !names.some((n) => n.startsWith('Bob')), 'the row leaves the list');
+    check(el(h, 'detected-hidden-foot').hidden === false
+      && el(h, 'detected-hidden-count').textContent === fill('ENT_DETECTED_HIDDEN_COUNT_ONE', { facet: 'Title of work' }), 'the foot line counts one hidden name');
+    check(h.doc.activeElement === hideButtons(h)[1], "focus moves to the next row's hide");
+    const receipt = h.log.receipts.at(-1);
+    check(receipt.icon === 'eye-off' && receipt.app === 'entities' && receipt.autoDismiss === 8000, 'the receipt is the shared card, dismissing itself');
+    check(receipt.title === fill('ENT_DETECTED_HIDE_DONE', { name: 'Bob', facet: 'Title of work' }) && receipt.message === copy.ENT_DETECTED_HIDE_DONE_DETAIL,
+      'the receipt says the name is hidden here and stays hidden');
+    check(receipt.buttons.length === 1 && receipt.buttons[0].label === copy.ENT_DETECTED_UNHIDE, 'its one button unhides');
+    h.answers['POST api/work/detected/unhide'] = { success: true, changed: true, search_queued: true };
+    h.answers['GET api/work'] = { attached: [], detected: [row('Ada'), row('Bob'), row('Cy')], hidden: [], hidden_unreadable: false };
+    await receipt.buttons[0].onClick();
+    await flush();
+    check(h.log.apis.some((c) => c.url === 'api/work/detected/unhide' && c.body.name === 'Bob'), 'the receipt unhides');
+    check(h.log.receipts.length === 1, 'an unhide from the receipt makes no second card');
+    check(el(h, 'all-entities-tbody').children.length === 3 && el(h, 'detected-hidden-foot').hidden === true, 'the name is back, read again');
+  }
+
+  // The last row hidden: focus goes to the search; the all-hidden line shows.
+  {
+    const h = setup({ attached: [], detected: [row('Ada')], hidden: [] });
+    h.context.api.renderDetectedTable('');
+    h.answers['POST api/work/detected/hide'] = { success: true, changed: true, search_queued: true };
+    hideButtons(h)[0].fire('click');
+    await flush();
+    check(h.doc.activeElement === el(h, 'entity-search'), 'no rows left: focus goes to the search');
+    check(el(h, 'no-detected-entities').textContent === copy.ENT_DETECTED_ALL_HIDDEN && el(h, 'no-detected-entities').style.display === 'block',
+      'everything recent hidden: its own empty line, not the nothing-yet one');
+    check(el(h, 'detected-hidden-foot').hidden === false, 'the foot line still shows');
+  }
+
+  // Search wasn't queued: the second card, which stays, with try again.
+  {
+    const h = setup({ attached: [], detected: [row('Ada')], hidden: [] });
+    h.context.api.renderDetectedTable('');
+    h.answers['POST api/work/detected/hide'] = { success: true, changed: true, search_queued: false };
+    hideButtons(h)[0].fire('click');
+    await flush();
+    const receipt = h.log.receipts.at(-1);
+    check(receipt.message === copy.ENT_DETECTED_HIDE_NO_SEARCH && receipt.autoDismiss === undefined, 'the no-search card stays until dismissed');
+    check(receipt.buttons.map((b) => b.label).join() === [copy.ENT_DETECTED_HIDE_TRY_AGAIN, copy.ENT_DETECTED_UNHIDE].join(), 'try again, then unhide');
+    h.answers['POST api/work/detected/hide'] = { success: true, changed: false, search_queued: true };
+    await receipt.buttons[0].onClick();
+    await flush();
+    check(h.log.apis.filter((c) => c.url === 'api/work/detected/hide').length === 2, 'try again hides again');
+    check(h.log.receipts.at(-1).message === copy.ENT_DETECTED_HIDE_DONE_DETAIL, 'once queued, the first receipt');
+  }
+
+  // A refusal or no answer: the failure line, the row stays.
+  {
+    const h = setup({ attached: [], detected: [row('Ada')], hidden: [] });
+    h.context.api.renderDetectedTable('');
+    h.answers['POST api/work/detected/hide'] = new Error('refused');
+    hideButtons(h)[0].fire('click');
+    await flush();
+    check(h.log.errors.at(-1) === fill('ENT_DETECTED_HIDE_FAILED', { name: 'Ada' }), 'a failed hide says nothing changed');
+    check(el(h, 'all-entities-tbody').children.length === 1 && h.log.receipts.length === 0, 'the row stays and no receipt shows');
+  }
+
+  // The hidden list: the toggle, its rows, the search, unhide and its focus.
+  {
+    const hidden = [
+      { name: 'Dr. Ellis', type: 'Person', count: 3, last_seen: '20261109' },
+      { name: 'the clinic', type: 'Other', count: null, last_seen: null },
+    ];
+    const h = setup({ attached: [], detected: [row('Ada')], hidden });
+    h.context.api.renderDetectedTable('');
+    const toggle = el(h, 'detected-hidden-toggle');
+    check(el(h, 'detected-hidden-count').textContent === fill('ENT_DETECTED_HIDDEN_COUNT', { n: 2, facet: 'Title of work' }), 'the foot line counts the names');
+    check(toggle.textContent === copy.ENT_DETECTED_HIDDEN_SHOW && toggle.getAttribute('aria-expanded') === 'false' && el(h, 'detected-hidden-list').hidden === true,
+      'the list starts closed');
+    toggle.onclick();
+    check(toggle.textContent === copy.ENT_DETECTED_HIDDEN_STOP_SHOW && toggle.getAttribute('aria-expanded') === 'true' && el(h, 'detected-hidden-list').hidden === false,
+      'pressed, the list shows and the toggle says so');
+    check(el(h, 'detected-hidden-heading').textContent === fill('ENT_DETECTED_HIDDEN_HEADING', { facet: 'Title of work' })
+      && el(h, 'detected-hidden-lede').textContent === copy.ENT_DETECTED_HIDDEN_LEDE, 'the heading and its explainer');
+    const rows = el(h, 'detected-hidden-tbody').children;
+    check(rows.length === 2 && rows[0].all('journal-row-badge')[0].textContent === copy.ENT_DETECTED_HIDDEN_BADGE, 'each hidden name carries the hidden badge');
+    check(rows[0].all('mention-count-badge').length === 1 && rows[1].all('mention-count-badge').length === 0, 'the count shows only when there is one');
+    check(rows[0].all('ent-hidden-last')[0].textContent === fill('ENT_DETECTED_HIDDEN_LAST', { day: 'day:20261109' })
+      && rows[1].all('ent-hidden-last').length === 0, 'last detected, lowercased, only with a day');
+    h.doc.getElementById('entity-search').value = 'clinic';
+    h.context.api.renderDetectedTable('clinic');
+    check(el(h, 'detected-hidden-tbody').children.length === 1, 'the search filters the hidden rows');
+    check(el(h, 'detected-hidden-list').hidden === false, 'the list stays shown while the owner is on the page');
+    h.doc.getElementById('entity-search').value = '';
+    h.context.api.renderDetectedTable('');
+
+    h.answers['POST api/work/detected/unhide'] = { success: true, changed: true, search_queued: true };
+    h.answers['GET api/work'] = { attached: [], detected: [row('Ada'), row('Dr. Ellis')], hidden: [hidden[1]], hidden_unreadable: false };
+    const first = unhideButtons(h)[0];
+    first.fire('click');
+    await flush();
+    check(h.log.apis.some((c) => c.url === 'api/work/detected/unhide' && c.body.name === 'Dr. Ellis'), 'unhide posts the name');
+    check(el(h, 'all-entities-tbody').children.length === 2 && unhideButtons(h).length === 1, 'the name is back in the list, read again');
+    check(h.doc.activeElement === unhideButtons(h)[0], 'focus goes to the next unhide');
+    check(h.log.receipts.length === 0, 'an unhide needs no receipt');
+    h.answers['GET api/work'] = { attached: [], detected: [row('Ada'), row('Dr. Ellis'), row('the clinic')], hidden: [], hidden_unreadable: false };
+    unhideButtons(h)[0].fire('click');
+    await flush();
+    check(h.doc.activeElement === el(h, 'entity-search') && el(h, 'detected-hidden-foot').hidden === true, 'none left: the foot line goes and focus moves on');
+
+    h.context.api.setFacet('home');
+    h.context.api.data().hidden = hidden;
+    h.context.api.renderDetectedTable('');
+    check(el(h, 'detected-hidden-list').hidden === true, 'a facet change closes the list');
+  }
+
+  // Unhide while a hidden entity still matches: the card names it and opens it.
+  {
+    const h = setup({ attached: [], detected: [], hidden: [{ name: 'Bob Smith', type: 'Person', count: 1, last_seen: '20261101' }] });
+    h.context.api.renderDetectedTable('');
+    el(h, 'detected-hidden-toggle').onclick();
+    h.answers['POST api/work/detected/unhide'] = { success: true, changed: true, search_queued: true, still_hidden_by: { id: 'bob', name: 'Robert Smith' } };
+    h.answers['GET api/work'] = { attached: [], detected: [], hidden: [], hidden_unreadable: false };
+    unhideButtons(h)[0].fire('click');
+    await flush();
+    const card = h.log.receipts.at(-1);
+    check(card && card.title === fill('ENT_DETECTED_STILL_HIDDEN', { name: 'Bob Smith', entity: 'Robert Smith' }) && card.autoDismiss === undefined,
+      'the card names the hidden entity and stays');
+    check(card.buttons.length === 1 && card.buttons[0].label === fill('ENT_DETECTED_STILL_HIDDEN_OPEN', { entity: 'Robert Smith' }), 'its button opens the entity');
+    card.buttons[0].onClick();
+    check(h.log.scope === null && h.log.navigated.at(-1) === 'bob', 'it goes to the entity in the whole journal');
+  }
+
+  // A failed unhide: the failure line; the name stays hidden.
+  {
+    const h = setup({ attached: [], detected: [], hidden: [{ name: 'Bob', type: 'Person', count: 1, last_seen: '20261101' }] });
+    h.context.api.renderDetectedTable('');
+    el(h, 'detected-hidden-toggle').onclick();
+    h.answers['POST api/work/detected/unhide'] = new Error('refused');
+    unhideButtons(h)[0].fire('click');
+    await flush();
+    check(h.log.errors.at(-1) === fill('ENT_DETECTED_UNHIDE_FAILED', { name: 'Bob' }) && unhideButtons(h).length === 1, 'a failed unhide says nothing changed');
+  }
+
+  // The hidden names can't be read: its own line, no foot line, no rows.
+  {
+    const h = setup({ attached: [], detected: [row('Ada')], hidden: [{ name: 'Bob' }], hiddenUnreadable: true });
+    h.context.api.renderDetectedTable('');
+    check(el(h, 'no-detected-entities').textContent === copy.ENT_DETECTED_UNREADABLE && el(h, 'no-detected-entities').style.display === 'block',
+      'the unreadable line shows');
+    check(el(h, 'all-entities-tbody').children.length === 0 && el(h, 'detected-hidden-foot').hidden === true, 'no detections and no foot line');
+  }
+
+  // Nothing detected and nothing hidden: the nothing-yet line, unchanged.
+  {
+    const h = setup({ attached: [], detected: [], hidden: [] });
+    h.context.api.renderDetectedTable('');
+    check(el(h, 'no-detected-entities').textContent === copy.ENT_DETECTED_EMPTY, 'nothing yet');
   }
 }
 
@@ -1347,6 +1586,8 @@ async function main() {
   }
 
   await entityDeleteCases(workspace);
+  const entitiesCopy = JSON.parse(fs.readFileSync(path.join(manifestDir, '../solstone-core-entities/src/data/entities_copy.json'), 'utf8'));
+  await detectedHideCases(workspace, entitiesCopy);
 
   console.log(`DOM CASES: ${cases} passed`);
 }

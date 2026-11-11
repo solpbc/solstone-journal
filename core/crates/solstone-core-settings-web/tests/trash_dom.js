@@ -210,6 +210,11 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     assert.ok(!(await rowOf(ent('e0', { facets: 0 }))).textContent.includes(C.facetOne), 'no facets: no count');
     assert.ok((await rowOf(ent('e2', { facets: ['a'] }))).textContent.includes(C.facetOne));
     assert.deepStrictEqual(lines(await rowOf(ent('e3', { same_name: true })), 'trash-returned'), [C.entitySameName], 'another of its name: both will be there');
+    const hidden = await rowOf(ent('e4', { hidden: true }));
+    assert.deepStrictEqual(quals(hidden), ['Dana Ruiz', 'person', C.entityHidden], 'a hidden entity says so after its type');
+    assert.deepStrictEqual(lines(hidden, 'trash-returned'), [C.entityHiddenBack], 'a hidden one comes back hidden');
+    assert.deepStrictEqual(lines(await rowOf(ent('e5', { hidden: true, same_name: true })), 'trash-returned'), [C.entitySameName, C.entityHiddenBack], 'both lines, the same-name one first');
+    assert.ok(!quals(row).includes(C.entityHidden), 'a visible one has no hidden mark');
   }
   {
     const row = await rowOf(fac('f1'));
