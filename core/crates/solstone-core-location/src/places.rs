@@ -259,8 +259,11 @@ impl PlaceStore {
         })
     }
 
-    /// A fingerprint of every name and alias, so day documents that use them
-    /// are rewritten when the owner changes one.
+    /// A fingerprint of every name and alias, and of which places are hidden,
+    /// so day documents that use them are rewritten when the owner changes
+    /// one. Only a hidden place's id counts, not its centre, which moves as
+    /// stays come and go. With no place hidden it is the names alone, so
+    /// days built before hiding counted keep their records.
     pub fn names_fingerprint(&self) -> String {
         let mut digest = Sha256::new();
         for place in &self.places {
@@ -268,6 +271,13 @@ impl PlaceStore {
                 digest.update(place.id.as_bytes());
                 digest.update([0]);
                 digest.update(name.as_bytes());
+                digest.update([0]);
+            }
+        }
+        if self.places.iter().any(|place| place.hidden) {
+            digest.update(b"hidden\0");
+            for place in self.places.iter().filter(|place| place.hidden) {
+                digest.update(place.id.as_bytes());
                 digest.update([0]);
             }
         }

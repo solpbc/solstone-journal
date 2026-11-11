@@ -53,6 +53,7 @@ pub enum ParserKind {
 pub enum ArtifactId {
     JournalConfig,
     WeekLeftOut,
+    MapPlaces,
     SchedulesConfig,
     ConveyConfig,
     ParentLossActive,
@@ -167,6 +168,13 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::MustBeValid,
         parser: ParserKind::WholeJson,
         rationale: "the memories and quotes the owner left out of their week pages, written under a lock with atomic replace and read strictly by week_left_out::read_left_out; nothing can rebuild what the owner chose, so a damaged one is kept as it is, the page shows everything with a notice, further changes refuse and search leaves out every week page",
+    },
+    DurableArtifact {
+        id: ArtifactId::MapPlaces,
+        path: "solstone/apps/map/places.json",
+        class: DurabilityClass::MustBeValid,
+        parser: ParserKind::WholeJson,
+        rationale: "the places worked out from the owner's stays, with the names they gave them and the ones they hid, written under a lock with atomic replace and read strictly by PlaceStore::read_strict; the names and hides can't be rebuilt, so a damaged one is kept as it is, no day's location words are rendered and nothing is described beside an activity",
     },
     // Healable
     DurableArtifact {
@@ -1117,6 +1125,7 @@ mod tests {
                 "config/journal.json",
                 "health/owner-asks.json",
                 "config/week-left-out.json",
+                "solstone/apps/map/places.json",
                 "health/parent-loss/generations/*/census-obligation.json",
                 "health/parent-loss/generations/*/census-started.json",
                 "health/parent-loss/generations/*/census-refusal.json",
