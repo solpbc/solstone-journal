@@ -2023,6 +2023,51 @@ mod tests {
     }
 
     #[test]
+    fn a_name_hidden_after_the_review_was_prepared_is_not_promoted() {
+        use crate::{ExecutionContext, PreparedTalent};
+        let root = owner_journal();
+        for day in ["20260106", "20260107"] {
+            detect(root.path(), day, "Grace Hopper");
+            detect(root.path(), day, "Alan Turing");
+        }
+        let prepared = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            serde_json::json!({
+                "day": "20260108",
+                "facet": "work",
+                "type": "generate",
+                "hook": {"pre": "entities:entities_review", "post": "entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        );
+        let context = ExecutionContext {
+            journal: root.path().to_path_buf(),
+        };
+        let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
+        let (prepared, _) = crate::daily_prepare::thaw(&packet).unwrap();
+        // While the model is thinking, the owner hides one of the names.
+        solstone_core_facets::hide_detected_name(root.path(), "work", "Grace Hopper").unwrap();
+        let hidden = serde_json::json!({"promotions": [
+            {"name":"Grace Hopper","description":"Writes compilers.","promote":true,"aliases":[]},
+        ], "merges": []})
+        .to_string();
+        assert!(prepare_publication(root.path(), &hidden, "work", "20260108", &prepared).is_err());
+        // Twin: a name nobody hid is still promoted from the same review.
+        let visible = serde_json::json!({"promotions": [
+            {"name":"Alan Turing","description":"Breaks codes.","promote":true,"aliases":[]},
+        ], "merges": []})
+        .to_string();
+        assert!(
+            !prepare_publication(root.path(), &visible, "work", "20260108", &prepared)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(work_entity_ids(root.path()).is_empty());
+    }
+
+    #[test]
     fn a_misheard_owner_name_joins_the_owner_unless_a_known_person_has_it() {
         let root = owner_journal();
         solstone_core_entity::save_entity_identity(

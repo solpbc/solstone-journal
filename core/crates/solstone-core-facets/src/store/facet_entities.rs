@@ -790,7 +790,12 @@ pub fn review_promotion_snapshot(root: &Path, facet: &str, name: &str) -> Result
         }
     }
     links.sort_by_key(Value::to_string);
-    Ok(json!({"identities":identities,"relationships":links}))
+    // A name hidden in the facet after the prompt was prepared changes the
+    // state the promotion was decided on, so publishing it conflicts.
+    let hidden = solstone_core_entity::hidden_names::facet_hidden_keys(root, facet)
+        .map_err(|e| e.to_string())?
+        .is_hidden(name);
+    Ok(json!({"identities":identities,"relationships":links,"hidden":hidden}))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1093,6 +1098,16 @@ pub fn publish_review_attachment(
         return Err(ReviewOwnerError::conflict(
             ReviewOwnerConflictKind::IdentityBlocked,
             "conflict: promotion identity hidden",
+        ));
+    }
+    // The owner can hide the name in this facet between preparing the
+    // promotion and publishing it; hiding takes the lock held here.
+    let hides = solstone_core_entity::hidden_names::facet_hidden_keys(root, &change.facet)
+        .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+    if hides.is_hidden(identity_name(identity.value()).as_str()) {
+        return Err(ReviewOwnerError::conflict(
+            ReviewOwnerConflictKind::IdentityBlocked,
+            "conflict: promotion name hidden in this facet",
         ));
     }
     let current = read_facet_entity_link(root, &change.facet, &change.relationship_dir)
