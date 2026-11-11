@@ -348,6 +348,9 @@ fn run_drain(
                 break 'snapshots;
             };
             report.batches += 1;
+            // Hides are read once a batch: every hint in it was saved, and
+            // its hide written, before this snapshot was read.
+            let mut hides = crate::hide::HideCache::default();
             for entry in batch {
                 if check().is_err() {
                     report.timed_out = true;
@@ -368,7 +371,7 @@ fn run_drain(
                     Err(error) => return Err(error.into()),
                 }
                 crate::writer_admission::check_test_seam("todo-claimed");
-                let result = process(journal, entry, &admission, &check);
+                let result = process(journal, entry, &admission, &check, &mut hides);
                 match result {
                     Ok(Some(outcome)) => {
                         record_attempt(journal, entry, outcome, None);
@@ -748,10 +751,13 @@ fn process(
     entry: &Entry,
     admission: &IndexAdmission,
     checkpoint: &dyn Fn() -> Result<(), String>,
+    hides: &mut crate::hide::HideCache,
 ) -> Result<Option<&'static str>, StoreError> {
     match entry.rank() {
-        Some(0) => crate::scan::reconcile_path_admitted(journal, &entry.key, admission, checkpoint)
-            .map(Some),
+        Some(0) => {
+            crate::scan::reconcile_path_admitted(journal, &entry.key, admission, checkpoint, hides)
+                .map(Some)
+        }
         Some(1) => {
             // A pass that finishes has done this token's work. Files it could
             // not index stay on its receipt, show on Health, and are retried

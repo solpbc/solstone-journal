@@ -10,6 +10,7 @@ pub mod classification_batch;
 pub mod db;
 pub mod edge_refresh;
 pub mod generation;
+mod hide;
 pub mod merge;
 pub mod migrations;
 pub mod reconcile;
@@ -35,6 +36,8 @@ pub use screen_text::{
     screen_text_source_current,
 };
 
+#[cfg(test)]
+mod hide_tests;
 #[cfg(test)]
 mod test_support;
 

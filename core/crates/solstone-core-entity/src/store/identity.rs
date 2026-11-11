@@ -66,6 +66,8 @@ pub fn observe_entity_identity(
     entity_dir: &str,
 ) -> Result<IdentityObservation, EntityStoreError> {
     let path = identity_path(journal_root, entity_dir)?;
+    #[cfg(any(test, feature = "test-hooks"))]
+    super::test_counters::test_instrumentation::increment_identity_read();
     Ok(match observe_json_durable(ArtifactId::Entity, &path) {
         DurableObservation::Present(Value::Null) => IdentityObservation::Absent,
         DurableObservation::Present(value) => match identity_snapshot(entity_dir, value)? {

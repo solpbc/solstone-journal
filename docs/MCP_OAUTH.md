@@ -274,10 +274,10 @@ not promise directory-entry durability across sudden power loss.
 search and fetch check an activity against the file it was indexed from before
 they return its text. an activity is an entry the index recorded as an activity,
 including one indexed from a written shape. the read uses that record and does
-not open a shape file again. an activity result includes `hidden`, true or
-false, taken from that index observation. trust that field. the text can mention
-hidden without the activity being hidden, and a short preview can omit the
-mention entirely.
+not open a shape file again. a hidden activity is not indexed, so search and
+fetch never return one: search also drops a body record its group hides through
+another member, and fetch of a hidden activity's reference answers as for a
+missing record. an activity result still carries `hidden`, and it is false.
 
 the check is the whole file. a change to any record in that daily file, including
 one the result did not show, leaves every activity from that file out until the

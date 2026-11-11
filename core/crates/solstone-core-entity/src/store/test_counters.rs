@@ -18,6 +18,7 @@ pub mod test_instrumentation {
         static AMBIGUITY_REWRITES: Cell<usize> = const { Cell::new(0) };
         static RELATIONSHIP_READS: RefCell<HashMap<PathBuf, usize>> = RefCell::new(HashMap::new());
         static VISIBLE_HISTORY_READS: RefCell<HashMap<String, usize>> = RefCell::new(HashMap::new());
+        static IDENTITY_READS: Cell<usize> = const { Cell::new(0) };
         static CACHE_FAILURE_HOOK: Cell<Option<CacheFailMode>> = const { Cell::new(None) };
     }
 
@@ -26,6 +27,17 @@ pub mod test_instrumentation {
         AMBIGUITY_REWRITES.with(|c| c.set(0));
         RELATIONSHIP_READS.with(|r| r.borrow_mut().clear());
         VISIBLE_HISTORY_READS.with(|v| v.borrow_mut().clear());
+        IDENTITY_READS.with(|c| c.set(0));
+    }
+
+    /// Counts a strict read of one entity's `entity.json`.
+    pub fn increment_identity_read() {
+        IDENTITY_READS.with(|c| c.set(c.get() + 1));
+    }
+
+    /// Strict reads of entity files on this thread since the last reset.
+    pub fn identity_read_count() -> usize {
+        IDENTITY_READS.with(|c| c.get())
     }
 
     pub fn increment_entities_dir_listing() {

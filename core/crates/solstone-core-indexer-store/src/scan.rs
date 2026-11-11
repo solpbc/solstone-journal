@@ -54,6 +54,7 @@ use crate::db::{
 };
 use crate::edge_refresh::STALE_EDGE_MTIME;
 use crate::generation::{ScanReceipt, WRITER_VERSION, record_scan};
+use crate::hide::{FileHide, HideCache};
 use crate::screen_text::screen_text_source_current;
 #[cfg(test)]
 use crate::screen_text::{screen_text_current_digest, screen_text_pinned_bytes_match};
@@ -81,8 +82,11 @@ pub struct ScanReport {
     /// do `warnings`. A failed file or a retained row does.
     pub benign_skips: Vec<String>,
     /// Every counted failure: the file and the modification time it failed
-    /// at, or no file for a failure of the pass itself. `failed` always equals
-    /// its length, so the count, the receipt and the exit code agree.
+    /// at, or no file for a failure of the pass itself. A file left out of
+    /// search because what hides part of it can't be read is named here too,
+    /// so Health says it failed, but isn't counted in `failed`, which gates a
+    /// build's completion. Without those, `failed` equals its length, so the
+    /// count, the receipt and the exit code agree.
     pub failures: Vec<ScanFailure>,
     /// A light scan found a large difference while a full pass is working
     /// through it, so it left the difference to that pass.
@@ -108,6 +112,19 @@ impl ScanReport {
             path: path.map(str::to_owned),
             mtime,
         });
+    }
+
+    /// A file indexed with nothing because what hides part of it can't be
+    /// read. It is named, not counted: the build can still complete, and the
+    /// next scan tries it again.
+    fn undecided(&mut self, path: &str, mtime: i64, cause: String) {
+        log::warn!(target: "solstone::indexer", "{cause}");
+        self.skipped += 1;
+        self.failures.push(ScanFailure {
+            path: Some(path.to_owned()),
+            mtime: Some(mtime),
+        });
+        self.warnings.push(cause);
     }
 }
 
@@ -611,7 +628,7 @@ fn scan_journal_pass(
     let mut report = ScanReport::default();
     let files = discover_indexable_files(journal)?;
 
-    mark_once_reindexes(&mut conn, journal, checkpoint)?;
+    mark_once_reindexes(&mut conn, journal, !full, checkpoint)?;
 
     let db_mtimes = load_file_mtimes(&conn)?;
     let missing_memberships = missing_activity_memberships(&conn)?;
@@ -700,6 +717,7 @@ fn scan_journal_pass(
     // Read once per pass. An unreadable settings file leaves calendar rows as
     // they are; the edge pass below reports that file once for the whole scan.
     let mut calendar_zone_readable: Option<bool> = None;
+    let mut hides = HideCache::default();
     for (rel, path, mtime) in &to_index {
         let family = match resolve_content_shape(path, rel) {
             ContentResolution::Indexed(family) => family,
@@ -790,7 +808,7 @@ fn scan_journal_pass(
         }
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let chunk_rows = pending_chunks.take(&tx, rel)?;
-        let warnings = match ensure_file_current(
+        let outcome = match ensure_file_current(
             &tx,
             journal,
             rel,
@@ -799,8 +817,9 @@ fn scan_journal_pass(
             FileUpdate::Scan(&chunk_rows),
             family,
             memory_original.as_ref(),
+            &mut hides,
         ) {
-            Ok(warnings) => warnings,
+            Ok(outcome) => outcome,
             Err(StoreError::Io(error)) => {
                 crate::recovery::report_if_damage_text(journal, &error.to_string());
                 report.skipped += 1;
@@ -811,8 +830,11 @@ fn scan_journal_pass(
             Err(error) => return Err(error),
         };
         commit_scanned(tx, checkpoint)?;
-        report.warnings.extend(warnings);
-        report.indexed += 1;
+        report.warnings.extend(outcome.warnings);
+        match outcome.undecidable {
+            Some(cause) => report.undecided(rel, *mtime, cause),
+            None => report.indexed += 1,
+        }
     }
 
     // Rows this pass knows it could not reconcile: a light scan keeps them for
@@ -952,7 +974,7 @@ pub(crate) fn plan_scan_turns(
             return Ok(None);
         };
         let mut conn = open_index_admitted(journal, &admission, checkpoint)?;
-        mark_once_reindexes(&mut conn, journal, checkpoint)?;
+        mark_once_reindexes(&mut conn, journal, false, checkpoint)?;
         load_file_mtimes(&conn)?
     };
     let mut planned = Vec::new();
@@ -1000,6 +1022,7 @@ pub(crate) fn index_scan_turn(
     require_chunk_path_lookup(&conn)?;
     let mut report = TurnReport::default();
     let mut calendar_zone_readable: Option<bool> = None;
+    let mut hides = HideCache::default();
     let mut attempted = 0;
     let mut last_check = std::time::Instant::now();
     while let Some(file) = plan.pop_front() {
@@ -1009,6 +1032,7 @@ pub(crate) fn index_scan_turn(
             journal,
             &file,
             &mut calendar_zone_readable,
+            &mut hides,
             checkpoint,
         )? {
             report.committed += 1;
@@ -1031,6 +1055,7 @@ fn index_planned_file(
     journal: &Path,
     file: &PlannedFile,
     calendar_zone_readable: &mut Option<bool>,
+    hides: &mut HideCache,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<bool, StoreError> {
     let (rel, path) = (file.rel.as_str(), file.path.as_path());
@@ -1077,11 +1102,15 @@ fn index_planned_file(
         FileUpdate::IfChanged,
         family,
         memory_original.as_ref(),
+        hides,
     ) {
-        Ok(warnings) => {
+        Ok(outcome) => {
             commit_scanned(tx, checkpoint)?;
-            for warning in warnings {
+            for warning in outcome.warnings {
                 log::info!(target: "solstone::indexer", "{warning}");
+            }
+            if let Some(cause) = outcome.undecidable {
+                log::warn!(target: "solstone::indexer", "{cause}");
             }
             Ok(true)
         }
@@ -1213,7 +1242,7 @@ fn run_bounded_merge(
 
 pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, StoreError> {
     let admission = IndexAdmission::acquire(journal, "rescan-file")?;
-    rescan_file_admitted(journal, input, &admission)
+    rescan_file_admitted(journal, input, &admission, &mut HideCache::default())
 }
 
 /// Reconcile a hint against current disk state. Only NotFound permits pruning.
@@ -1222,6 +1251,7 @@ pub(crate) fn reconcile_path_admitted(
     rel: &str,
     admission: &IndexAdmission,
     checkpoint: &dyn Fn() -> Result<(), String>,
+    hides: &mut HideCache,
 ) -> Result<&'static str, StoreError> {
     let path = resolve_journal_path(journal, rel)?;
     match reconcile_metadata(&path) {
@@ -1231,11 +1261,11 @@ pub(crate) fn reconcile_path_admitted(
         }
         Err(error) => Err(error.into()),
         Ok(metadata) if metadata.is_dir() => {
-            reconcile_directory_admitted(journal, rel, &path, admission, checkpoint)?;
+            reconcile_directory_admitted(journal, rel, &path, admission, checkpoint, hides)?;
             Ok("indexed")
         }
         Ok(metadata) if metadata.is_file() => {
-            match rescan_file_admitted(journal, Path::new(rel), admission)? {
+            match rescan_file_admitted(journal, Path::new(rel), admission, hides)? {
                 RescanFileStatus::Indexed { .. } => Ok("indexed"),
                 RescanFileStatus::Declined => {
                     crate::db::prune_by_paths_admitted(journal, &[rel], admission)?;
@@ -1291,6 +1321,7 @@ fn reconcile_directory_admitted(
     directory: &Path,
     admission: &IndexAdmission,
     checkpoint: &dyn Fn() -> Result<(), String>,
+    hides: &mut HideCache,
 ) -> Result<(), StoreError> {
     let mut directories = vec![directory.to_path_buf()];
     while let Some(directory) = directories.pop() {
@@ -1306,7 +1337,7 @@ fn reconcile_directory_admitted(
             } else if metadata.is_file() {
                 let child_rel = relative_to_journal(journal, &child.path())
                     .ok_or_else(|| StoreError::OutsideJournal(child.path()))?;
-                reconcile_path_admitted(journal, &child_rel, admission, checkpoint)?;
+                reconcile_path_admitted(journal, &child_rel, admission, checkpoint, hides)?;
             }
         }
     }
@@ -1360,6 +1391,7 @@ pub(crate) fn rescan_file_admitted(
     journal: &Path,
     input: &Path,
     admission: &IndexAdmission,
+    hides: &mut HideCache,
 ) -> Result<RescanFileStatus, StoreError> {
     check_test_seam("before-source");
     let (rel, path) = resolve_rescan_target(journal, input)?;
@@ -1427,7 +1459,7 @@ pub(crate) fn rescan_file_admitted(
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let mut warnings = Vec::new();
     if let Some(family) = family {
-        warnings.extend(ensure_file_current(
+        let outcome = ensure_file_current(
             &tx,
             journal,
             &rel,
@@ -1436,7 +1468,13 @@ pub(crate) fn rescan_file_admitted(
             FileUpdate::Force,
             family,
             memory_original.as_ref(),
-        )?);
+            hides,
+        )?;
+        warnings.extend(outcome.warnings);
+        if let Some(cause) = outcome.undecidable {
+            log::warn!(target: "solstone::indexer", "{cause}");
+            warnings.push(cause);
+        }
     }
     if edge_source.is_some() {
         let result = replace_edge_file_edges(&tx, journal, &rel, &path, mtime, &mut edge_resolver)?;
@@ -1829,6 +1867,7 @@ const RETIRED_EVENT_PLANS_META: &str = "retired_event_plans";
 fn mark_once_reindexes(
     conn: &mut Connection,
     journal: &Path,
+    queue_full_pass: bool,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), StoreError> {
     // Calendar text names the owner by their addresses, so new addresses mean
@@ -1845,7 +1884,145 @@ fn mark_once_reindexes(
     } else {
         tx.rollback()?;
     }
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
+    match reindex_hidden_once(&tx, journal)? {
+        Some(marked) => {
+            commit_scanned(tx, checkpoint)?;
+            // Too many for one light scan to carry: a full pass takes turns
+            // with saves instead.
+            if queue_full_pass
+                && marked > crate::todo::scan_turns_min()
+                && let Err(error) = solstone_core_indexer_todo::enqueue_token(
+                    journal,
+                    solstone_core_indexer_todo::Token::ScanFull,
+                )
+            {
+                log::warn!(target: "solstone::indexer", "full search pass not queued: {error}");
+            }
+        }
+        None => tx.rollback()?,
+    }
     Ok(())
+}
+
+/// The `index_meta` key marking that what hides kept in search before hides
+/// were left out of it was left for a scan to index again.
+const HIDES_META: &str = "hides_left_out";
+
+/// An index written before hides were left out of search still holds what
+/// they hide, and the files that say so may never change again. Once per
+/// index, leave for this scan to index again: each activity day file with a
+/// hidden record, with its connections, the outputs of those records, and
+/// every entity file of a facet with a detached link (a hidden person's notes
+/// and the detections their names hide). The files are only read. A file that
+/// cannot be read leaves the mark unset, so a later scan looks again. Says how
+/// many files it left, or nothing once done.
+fn reindex_hidden_once(conn: &Connection, journal: &Path) -> Result<Option<usize>, StoreError> {
+    let marked = conn
+        .query_row("SELECT 1 FROM index_meta WHERE key=?", [HIDES_META], |_| {
+            Ok(())
+        })
+        .optional()?
+        .is_some();
+    if marked {
+        return Ok(None);
+    }
+    let stored = |glob: &str| -> Result<Vec<String>, StoreError> {
+        Ok(conn
+            .prepare("SELECT path FROM files WHERE path GLOB ? AND mtime != -1")?
+            .query_map([glob], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?)
+    };
+    let mut every_file_read = true;
+    let mut leave = BTreeSet::new();
+    // Activity day files, and the ids of their hidden records by facet and day.
+    let mut hidden_ids: BTreeMap<(String, String), HashSet<String>> = BTreeMap::new();
+    for rel in stored("facets/*/activities/*.jsonl")? {
+        let parts: Vec<&str> = rel.split('/').collect();
+        let ["facets", facet, "activities", file] = parts.as_slice() else {
+            continue;
+        };
+        let Some(day) = file.strip_suffix(".jsonl") else {
+            continue;
+        };
+        let text = match resolve_journal_path(journal, &rel).map(fs::read_to_string) {
+            Ok(Ok(text)) => text,
+            Ok(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            _ => {
+                every_file_read = false;
+                continue;
+            }
+        };
+        if !text.contains("\"hidden\"") {
+            continue;
+        }
+        let ids: HashSet<String> = solstone_core_format::content::parse_jsonl_objects(&text)
+            .iter()
+            .filter(|record| solstone_core_format::content::is_hidden_activity(record))
+            .map(|record| {
+                record
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned()
+            })
+            .collect();
+        if ids.is_empty() {
+            continue;
+        }
+        conn.execute(
+            "UPDATE edge_files SET mtime=? WHERE path=?",
+            params![STALE_EDGE_MTIME, &rel],
+        )?;
+        leave.insert(rel.clone());
+        hidden_ids.insert(((*facet).to_owned(), day.to_owned()), ids);
+    }
+    for rel in stored("facets/*/activities/*/*/*.md")? {
+        let parts: Vec<&str> = rel.split('/').collect();
+        if let ["facets", facet, "activities", day, id, _] = parts.as_slice()
+            && hidden_ids
+                .get(&((*facet).to_owned(), (*day).to_owned()))
+                .is_some_and(|ids| ids.contains(*id))
+        {
+            leave.insert(rel);
+        }
+    }
+    // Entity files, by facet, where the facet has a detached link.
+    let mut entity_files: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for rel in stored("facets/*/entities/*")? {
+        if let Some(facet) = rel.split('/').nth(1) {
+            entity_files.entry(facet.to_owned()).or_default().push(rel);
+        }
+    }
+    for (facet, files) in entity_files {
+        if facet_may_hide_entities(journal, &facet) {
+            leave.extend(files);
+        }
+    }
+    for rel in &leave {
+        conn.execute("UPDATE files SET mtime=-1 WHERE path=?", [rel])?;
+    }
+    if every_file_read {
+        conn.execute(
+            "REPLACE INTO index_meta(key, value) VALUES (?, '1')",
+            [HIDES_META],
+        )?;
+    }
+    Ok(Some(leave.len()))
+}
+
+/// Whether some link in the facet is detached, or can't be read: only those
+/// can be a hidden entity's.
+fn facet_may_hide_entities(journal: &Path, facet: &str) -> bool {
+    let dirs = solstone_core_entity::facet_links::LinkDirs::for_facet(journal, facet);
+    let Ok(folders) = dirs.link_folders() else {
+        return true;
+    };
+    folders.iter().any(|folder| match dirs.read_link(folder) {
+        Ok(None) => false,
+        Ok(Some(link)) => link.detached(),
+        Err(_) => true,
+    })
 }
 
 /// An index written before retired schedule plans stopped being indexed still
@@ -2291,6 +2468,7 @@ fn migrate_segment_aggregate(
         }
     };
     let mut warnings = Vec::new();
+    let mut hides = HideCache::default();
     for (rel, path) in talent_files {
         let mtime = match file_mtime_secs(&path) {
             Ok(mtime) => mtime,
@@ -2320,8 +2498,9 @@ fn migrate_segment_aggregate(
             FileUpdate::IfChanged,
             family,
             None,
+            &mut hides,
         ) {
-            Ok(mut file_warnings) => warnings.append(&mut file_warnings),
+            Ok(mut outcome) => warnings.append(&mut outcome.warnings),
             Err(StoreError::Io(error)) => {
                 tx.rollback()?;
                 return Ok(SegmentMigrationOutcome::Blocked(format!(
@@ -2626,7 +2805,8 @@ fn ensure_file_current(
     update: FileUpdate<'_>,
     family: Family,
     memory_original: Option<&ReadyMemoryOriginal>,
-) -> Result<Vec<String>, StoreError> {
+    hides: &mut HideCache,
+) -> Result<FileOutcome, StoreError> {
     let stored_mtime = conn
         .query_row("SELECT mtime FROM files WHERE path=?", [rel], |row| {
             row.get(0)
@@ -2640,7 +2820,7 @@ fn ensure_file_current(
             || (memory_original.is_some() && memory_original_exists(conn, rel)?))
         && (family != Family::ScreenText || screen_text_file_current(conn, journal, rel)?)
     {
-        return Ok(Vec::new());
+        return Ok(FileOutcome::default());
     }
     let known_chunk_rows = match update {
         FileUpdate::Scan(rows) => Some(rows),
@@ -2648,26 +2828,54 @@ fn ensure_file_current(
     };
     let forgotten = delete_file_chunks(conn, rel, known_chunk_rows)?;
     let indexed = if family == Family::Calendar {
-        index_calendar_source(conn, journal, rel, path, forgotten)
+        index_calendar_source(conn, journal, rel, path, forgotten).map(|(warnings, relisted)| {
+            (
+                FileOutcome {
+                    warnings,
+                    undecidable: None,
+                },
+                relisted,
+            )
+        })
     } else {
-        index_file(conn, journal, rel, path, family, memory_original)
-            .map(|warnings| (warnings, None))
+        index_file(conn, journal, rel, path, family, memory_original, hides)
+            .map(|outcome| (outcome, None))
     };
-    let (warnings, relisted) = indexed.map_err(|warning| {
+    let (outcome, relisted) = indexed.map_err(|warning| {
         StoreError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             warning,
         ))
     })?;
+    // A file whose hide can't be read keeps no rows and is not current, so
+    // every scan tries it again until the hide reads.
+    let stored = if outcome.undecidable.is_some() {
+        UNDECIDED_MTIME
+    } else {
+        mtime
+    };
     conn.execute(
         "REPLACE INTO files(path, mtime) VALUES (?, ?)",
-        params![rel, mtime],
+        params![rel, stored],
     )?;
     // After this file's own row, so a file left to index again stays marked.
     if let Some(relisted) = relisted {
         relisted.mark_for_reindex(conn)?;
     }
-    Ok(warnings)
+    Ok(outcome)
+}
+
+/// The stored time of a file that isn't current, as a hint's invalidation
+/// leaves it.
+const UNDECIDED_MTIME: i64 = -1;
+
+/// What making one file current did.
+#[derive(Debug, Default)]
+struct FileOutcome {
+    warnings: Vec<String>,
+    /// The file was left with no rows and not current, because what hides
+    /// part of it couldn't be read. Says what couldn't be read.
+    undecidable: Option<String>,
 }
 
 fn index_file(
@@ -2677,7 +2885,15 @@ fn index_file(
     path: &Path,
     family: Family,
     memory_original: Option<&ReadyMemoryOriginal>,
-) -> Result<Vec<String>, String> {
+    hides: &mut HideCache,
+) -> Result<FileOutcome, String> {
+    let hide = hides.decide(journal, rel);
+    if let FileHide::Undecidable(cause) = hide {
+        return Ok(FileOutcome {
+            warnings: Vec::new(),
+            undecidable: Some(format!("{rel} is left out of search for now: {cause}")),
+        });
+    }
     let text = if family == Family::AgentMemory {
         let original = memory_original
             .ok_or_else(|| format!("validated memory original missing for {rel}"))?;
@@ -2706,10 +2922,11 @@ fn index_file(
     warnings.extend(stream_lookup.warning);
 
     for (idx, chunk) in produced.chunks.iter().enumerate() {
-        let content = chunk.content.trim();
-        if content.is_empty() {
+        // A chunk left out keeps its index, so every other entry keeps its own.
+        if !hide.keeps(family, chunk) {
             continue;
         }
+        let content = chunk.content.trim();
         conn.execute(
             "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             params![
@@ -2781,7 +2998,10 @@ fn index_file(
         )
         .map_err(|error| format!("memory original insert failed for {rel}: {error}"))?;
     }
-    Ok(warnings)
+    Ok(FileOutcome {
+        warnings,
+        undecidable: None,
+    })
 }
 
 /// Index one calendar file's notes on the day they were stored, then relist

@@ -5,8 +5,8 @@ mod action_logs;
 mod activities;
 pub use activities::{
     BODY_ENTRY_LINE, BODY_RECORD_SOURCE, EDIT_REMOVED, activity_field_held, body_record_at,
-    body_record_indexed, edit_names, edit_removed, is_body_record, is_retired_plan,
-    is_strava_reading, non_body_entries, ordinary_entries, owner_edit,
+    body_record_indexed, edit_names, edit_removed, is_body_record, is_hidden_activity,
+    is_retired_plan, is_strava_reading, non_body_entries, ordinary_entries, owner_edit,
 };
 mod ai_chat;
 mod audio;
@@ -165,6 +165,22 @@ pub struct IndexChunk {
     pub occurrence_time_ms: Option<OccurrenceTimeMs>,
     pub source: Option<Map<String, Value>>,
     pub group_offset_ms: Option<i64>,
+}
+
+/// Whether a chunk goes into the search index. An empty chunk doesn't, and
+/// neither does an activity file's entry for a hidden record: both keep their
+/// position, so every other entry keeps its own. Only [`Family::Activity`]
+/// chunks are judged by `source.hidden`.
+#[must_use]
+pub fn indexed(family: Family, chunk: &IndexChunk) -> bool {
+    !chunk.content.trim().is_empty()
+        && !(family == Family::Activity
+            && chunk
+                .source
+                .as_ref()
+                .and_then(|source| source.get("hidden"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1382,6 +1398,53 @@ mod tests {
                 ));
             }
         }
+    }
+
+    #[test]
+    fn a_hidden_activity_keeps_its_position_and_leaves_the_index() {
+        let rel = "facets/work/activities/20260301.jsonl";
+        let text = concat!(
+            r#"{"id":"a","title":"Alpha","created_at":1}"#,
+            "\n",
+            r#"{"id":"b","title":"Bravo","created_at":2,"hidden":true}"#,
+            "\n",
+            r#"{"id":"c","title":"Charlie","created_at":3}"#,
+            "\n",
+        );
+        let produced = produce_chunks(Family::Activity, rel, text);
+        let kept: Vec<bool> = produced
+            .chunks
+            .iter()
+            .map(|chunk| indexed(Family::Activity, chunk))
+            .collect();
+        assert_eq!(kept, [true, false, true]);
+        assert!(produced.chunks[2].content.contains("Charlie"));
+        // The renderer still marks the hidden entry for its other readers.
+        assert!(produced.chunks[1].content.contains("Bravo"));
+    }
+
+    #[test]
+    fn only_an_activity_chunk_is_judged_by_its_hidden_source() {
+        let source = serde_json::json!({"name": "Bob", "hidden": true})
+            .as_object()
+            .unwrap()
+            .clone();
+        let chunk = IndexChunk {
+            content: "Bob".to_owned(),
+            occurrence_time_ms: None,
+            source: Some(source),
+            group_offset_ms: None,
+        };
+        assert!(!indexed(Family::Activity, &chunk));
+        for family in [Family::FacetEntity, Family::Observation, Family::Event] {
+            assert!(indexed(family, &chunk), "{family:?}");
+        }
+        let empty = IndexChunk {
+            content: " \n".to_owned(),
+            source: None,
+            ..chunk
+        };
+        assert!(!indexed(Family::FacetEntity, &empty));
     }
 
     #[test]

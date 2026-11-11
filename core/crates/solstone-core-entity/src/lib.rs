@@ -103,9 +103,10 @@ pub use store::test_counters::test_instrumentation;
 #[cfg(any(test, feature = "test-hooks"))]
 pub use store::test_counters::test_instrumentation::{
     CacheFailMode, CacheFailureGuard, ambiguity_rewrite_count, entities_dir_listing_count,
-    increment_entities_dir_listing, increment_relationship_read, increment_visible_history_read,
-    relationship_read_count_for_path, reset_test_counters, set_write_resolved_cache_failure_hook,
-    total_relationship_read_count, total_visible_history_read_count, visible_history_read_count,
+    identity_read_count, increment_entities_dir_listing, increment_identity_read,
+    increment_relationship_read, increment_visible_history_read, relationship_read_count_for_path,
+    reset_test_counters, set_write_resolved_cache_failure_hook, total_relationship_read_count,
+    total_visible_history_read_count, visible_history_read_count,
 };
 
 #[cfg(test)]
@@ -123,6 +124,8 @@ mod fixture_tests;
 mod hidden_names_tests;
 #[cfg(test)]
 mod lifecycle_tests;
+#[cfg(test)]
+mod link_folder_hidden_tests;
 #[cfg(test)]
 mod merge_tests;
 #[cfg(test)]
