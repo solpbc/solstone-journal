@@ -8,56 +8,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- you can now delete a facet in settings. it waits in the trash with everything in it, and recovering it puts it back. segments sorted into it stay in your journal, and a new facet you give its name holds them. what came into your journal while it was in the trash isn't sorted into it when it comes back.
-- `solstone call entities delete` moves a person or topic to the trash from the command line, and `--erase` erases it at once.
-- when your journal runs on a computer, once a day it reads a short notice, signed by sol pbc, that names the versions missing a security fix. if your journal, or the solstone app on a computer paired with it, is on one of them, you get a notification and a banner on your journal's home page that says which version to update to and links to what it fixes. the check is a plain request for a public file, like visiting a web page, and nothing about you, your journal or your devices goes with it.
-- you can now bring an Apple Health export in from the Apple Health card on the import page, when your journal runs on a computer. the card shows what the export holds and how much space the import needs before you start, and the import keeps running if you close the page.
-- you can bring Oura into your journal through an app you register with Oura yourself. `solstone journal importer --connect oura` asks for the app's client ID and secret the first time, then `--sync oura --save` brings Oura in. its workouts, sleep and readings land on their own days, the same way as Apple Health's. how to register it: [connecting Oura](https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md#connecting-oura).
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
-- text that showed in your terminal is now screen text, as text on your screens already was. search finds it, and an agent you let read screen text can read it, with the same best-effort masking of passwords and other secrets. it starts with terminal text your journal thinks about after you update. when an agent asks for a transcript or an activity's sources and gets nothing back, the answer now says where screen and terminal text is. thanks @dvanduzer for the report (#415).
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
-
-### Changed
-
-- deleting a person or topic on the entities page now moves it to the trash, with its notes in every facet and its voice, in place of a delete you could cancel for 10 seconds. you can select several and delete them together. if someone you deleted turns up again in what you share, they come back as someone new, and recovering the one in the trash puts them back beside the new one.
-- clearing what your journal keeps about voices (`solstone call speakers wipe --commit`) now moves it to the trash as one item, which you can recover until it's erased. it now also reaches recordings it used to miss and the voices your journal was still grouping. voices you turned down, groups you dismissed and lines you marked as yours stay. people and recordings already in the trash keep theirs.
-- when `solstone journal facet merge` finds a file of the same name in both facets, the copy from the facet merged away now waits in the trash. recovering it puts that copy in place of the one the merge kept.
-- the trash page now shows anything that stopped part way into the trash or back out of it.
-- `solstone journal entities doctor` is gone. it only recorded old deletes, and a name you delete is no longer kept from coming back.
-- on linux, `solstone update` on a journal installed by the journal's own installer in its usual place now updates it through the solstone installer, which keeps it where it is and updates it from then on.
-- on linux, when a journal was installed from a `.deb` or `.rpm` by hand, `solstone update` now names the one command that records it.
-- the journal's own linux installer, run by itself in its usual place, no longer starts a new installation. it still updates one it installed before, and for a new one it names the solstone installer's command.
-- the areas on the month map keep their places. before, a stop far from the others could shift every area in that month.
-- you can now delete a Strava, Apple Health or Oura import, from its page or by selecting several on the import page. it waits in the trash like any other import, and erase removes it. this now covers every import except journal archives. a delete takes only what that import was the first to bring in, and anything an earlier import brought in stays.
-- deleting a Strava workout on the body page now moves it to the trash, where you can recover it, in place of a delete you could cancel for 10 seconds.
-- importing an Apple Health export or a Strava download again brings back what you deleted from it. each Apple Health export holds your whole history, so a newer one brings back days you deleted too.
-- a sync no longer brings back what you deleted. an Oura sync leaves out what you deleted, and an audio folder file or Plaud recording you deleted no longer comes back at the next sync. asking Oura for a range of days brings those days back, and importing a file again brings it back.
-- when you delete an Evernote import after this update, the note text kept only for it goes to the trash too, and erase removes it. deleting a note on its own takes its kept text the same way.
-- notes you deleted now come back in a later Evernote export. if you deleted the whole import, you can bring the same file in again.
-- the journal app on windows checks for a journal update once a day, downloads it in the background on an unrestricted connection, and installs it the next time the app starts, including a sign-in start. settings still checks, downloads, and installs now. a journal that was running starts again afterward. a journal that was stopped stays stopped.
-- moving between home, the more page and transcripts, and to another day in transcripts, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
-- `--sync oura` without `--save` now says which days it would ask Oura for, from what your journal already holds, and doesn't ask Oura anything.
-- when your journal can confirm which workout an earlier Strava record belongs to, it now lists the workout the same way as new ones, each one once, keeping your edits and hides. it can join duplicate listings and split a listing that covered two workouts. records it can't match stay as they were, and the import summary counts them.
-- `solstone call transcripts read` now names who spoke, the same way your agent's transcript reads do. a line your journal recognized as your voice, or that you marked as yours, shows your name with "(owner)". someone it recognized by voice, or that you named, shows by name. every other line keeps its speaker number.
 
 ### Fixed
 
-- `solstone call journal facet delete` no longer refuses with "consent is required". it now moves the facet to the trash.
-- security fix: updated the journal's database library to fix a flaw that could expose memory when opening specially crafted database files.
-- security fix: new Apple Health and Oura entries could inherit an earlier import's facet, making them readable to an agent limited to that facet. new entries now use the import's chosen facet. earlier entries filed elsewhere stay there unless you agree to move them, and the summary names any updated entries that kept their earlier facet.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
-- the sources app now shows when screen and audio last came in from the solstone app on your computers, and audio, screen and location from your iphone or ipad. before, it left them out, so it could look as though they weren't coming in.
-- the people and things a moment is about no longer include a name from earlier in your journal just because the moment holds a word that looks like part of it, such as "been" for someone called Ben, or "read" for Red Hat. thanks @dvanduzer for the report (#404).
-- screen text in search results now shows punctuation and symbols as written, without extra backslashes or codes such as `&amp;`.
-- photos from your android phone's camera now show in a segment's transcript and on its photos tab as soon as you open it. before, they showed only after you opened that segment's screen tab, so in a segment with no screen tab they never showed.
-- on linux, setup no longer stops partway through downloading the speech-to-text model when the connection drops or pauses for a second or two. downloads now wait out a short pause, and after a dropped connection, setup tries again and picks up where it stopped. before, setup could end by asking you to run the install command again.
-- on windows, restoring a journal from a backup now works while you set one up: choose restore from a backup, pick a backup by date, and your journal starts as that backup. a journal that's already set up can't be restored over, so the backup page no longer offers it. to go back to an older copy, start a new journal and choose restore during setup.
-- restoring an older backup while you set up a new journal on a computer now keeps the backups made after it. before, the restored journal's own backups could push them out, the newest first.
-- a stopped Apple Health import now says when the disk on the computer running your journal is full. the body page's empty state also makes clear that Apple Health and Oura imports need a journal running on a computer.
-- a stopped Apple Health import's own page now says what its row in your import history says, in place of "import failed".
-- the backup and health pages now say when another copy of your journal took over encrypted backup, in place of only "backup is off."
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
@@ -66,7 +24,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - original screen recordings can now finish opening in the android development journal when the player seeks ahead in the video.
 - the android development journal can save journal exports, its recovery key and troubleshooting logs to a file you choose.
 - local speech-to-text takes less time in the android and iphone development journals. the iphone development journal uses less memory when working through speech.
-- some recordings transcribed by early versions of the journal read as never transcribed, so that day's daily briefing was never made. they now count as transcribed, and that day's daily briefing is made.
 - the iphone development journal can save its recovery key and journal exports through the native share sheet.
 - home and health now show daily processing status in the iphone development journal.
 - fixed another android permission error when downloading a journal archive.
@@ -87,6 +44,59 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a first restore on a phone or tablet now waits for work in your journal to finish before copying. if restore is interrupted, you can retry the same backup.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.75] - 2026-11-11
+
+### Added
+
+- you can now delete a facet in settings. it waits in the trash with everything in it, and recovering it puts it back. segments sorted into it stay in your journal, and a new facet you give its name holds them. if you recover the old facet after making a new one with its name, recovering erases the new one, with everything in it, and the trash page asks you first. what came into your journal while it was in the trash isn't sorted into it when it comes back.
+- `solstone call entities delete` moves a person or topic to the trash from the command line, and `--erase` erases it at once.
+- when your journal runs on a computer, it reads a short notice, signed by sol pbc, when it starts and once a day after that. the notice names the versions missing a security fix. if your journal, or the solstone app on a computer paired with it, is on one of them, you get a notification and a banner on your journal's home page that says which version to update to and links to what it fixes. the check is a plain request for a public file, like visiting a web page. it carries no identifier and nothing from your journal or your devices.
+- you can now bring an Apple Health export in from the Apple Health card on the import page, when your journal runs on a computer. the card shows what the export holds and how much space the import needs before you start, and the import keeps running if you close the page.
+- you can bring Oura into your journal through an app you register with Oura yourself. `solstone journal importer --connect oura` asks for the app's client ID and secret the first time, then `--sync oura --save` brings Oura in. its workouts, sleep and readings land on their own days, the same way as Apple Health's. how to register it: [connecting Oura](https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md#connecting-oura).
+- text that showed in your terminal is now screen text, as text on your screens already was. search finds it, and an agent you let read screen text can read it, with the same best-effort masking of passwords and other secrets. it starts with terminal text your journal thinks about after you update. when an agent asks for a transcript or an activity's sources and gets nothing back, the answer now says where screen and terminal text is. thanks @dvanduzer for the report (#415).
+
+### Changed
+
+- deleting a person or topic on the entities page now moves it to the trash, with its notes in every facet and its voice, in place of a delete you could cancel for 10 seconds. you can select several and delete them together. if someone you deleted turns up again in what you share, they come back as someone new, and recovering the one in the trash puts them back beside the new one.
+- clearing what your journal keeps about voices (`solstone call speakers wipe --commit`) now moves it to the trash as one item, which you can recover until it's erased. it now also reaches recordings it used to miss and the voices your journal was still grouping. voices you turned down, groups you dismissed and lines you marked as yours stay. people and recordings already in the trash keep theirs.
+- when `solstone journal facet merge` finds a file of the same name in both facets, the copy from the facet merged away now waits in the trash. recovering it puts that copy in place of the one the merge kept.
+- the trash page now shows anything that stopped part way into the trash or back out of it.
+- `solstone journal entities doctor` is gone. it only recorded old deletes, and a name you delete is no longer kept from coming back.
+- on linux, `solstone update` on a journal installed by the journal's own installer in its usual place now updates it through the solstone installer, which keeps it where it is and updates it from then on.
+- on linux, when a journal was installed from a `.deb` or `.rpm` by hand, `solstone update` now names the one command that records it.
+- the journal's own linux installer, run by itself in its usual place, no longer starts a new installation. it still updates one it installed before, and for a new one it names the solstone installer's command.
+- on linux, the journal's own installer now always checks what it downloads against sol pbc's signature. `--skip-signature` is gone, and if minisign is missing, an online install downloads a checked copy of it.
+- the areas on the month map keep their places. before, a stop far from the others could shift every area in that month.
+- you can now delete a Strava, Apple Health or Oura import, from its page or by selecting several on the import page. it waits in the trash like any other import, and erase removes it. this now covers every import except journal archives. a delete takes only what that import was the first to bring in, and anything an earlier import brought in stays.
+- deleting a Strava workout on the body page now moves it to the trash, where you can recover it, in place of a delete you could cancel for 10 seconds.
+- importing an Apple Health export or a Strava download again brings back what you deleted from it. each Apple Health export holds your whole history, so a newer one brings back days you deleted too.
+- a sync no longer brings back what you deleted. an Oura sync leaves out what you deleted, and an audio folder file or Plaud recording you deleted no longer comes back at the next sync. asking Oura for a range of days brings those days back, and importing a file again brings it back.
+- when you delete an Evernote import after this update, the note text kept only for it goes to the trash too, and erase removes it. deleting a note on its own takes its kept text the same way.
+- notes you deleted now come back in a later Evernote export. if you deleted the whole import, you can bring the same file in again.
+- the journal app on windows checks for a journal update once a day, downloads it in the background on a connection that isn't metered, and installs it the next time the app starts, including a sign-in start. settings still checks, downloads, and installs now. a journal that was running starts again afterward. a journal that was stopped stays stopped.
+- moving between home, the more page and transcripts, and to another day in transcripts, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+- `--sync oura` without `--save` now says which days it would ask Oura for, from what your journal already holds, and doesn't ask Oura anything.
+- an earlier Strava record now becomes a listed workout only when your journal can confirm which workout it belongs to. records it can't match stay as they were, with your edits and hides, and the import summary counts them.
+- `solstone call transcripts read` now names who spoke, the same way your agent's transcript reads do. a line your journal recognized as your voice, or that you marked as yours, shows your name with "(owner)". someone it recognized by voice, or that you named, shows by name. every other line keeps its speaker number.
+
+### Fixed
+
+- security fix: updated the journal's database library to fix a flaw that could expose memory when opening specially crafted database files.
+- security fix: new Apple Health and Oura entries could inherit an earlier import's facet, making them readable to an agent limited to that facet. an import with a facet chosen now files its new entries under that facet. earlier entries filed elsewhere stay there unless you agree to move them, and the summary names any updated entries that kept their earlier facet. an import with no facet chosen can still add entries to a part of your journal that already carries a facet, and its summary says so.
+- security fix: when your journal matched an earlier Strava record to a workout by time alone, it could file that workout under the record's facet, and what you wrote on the record could join the workout's listing in the workout's facet. either could then be read by an agent limited to the facet it landed in. it now does this only when it can confirm the record names that workout. if you ran 2.0.74, a workout filed that way stays where it is until you import that Strava download again and choose a facet for it, which moves the workout and its listing together. what you wrote that joined a listing stays on it, wherever it moves, until you change it.
+- `solstone call journal facet delete` no longer refuses with "consent is required". it now moves the facet to the trash.
+- the sources app now shows when screen and audio last came in from the solstone app on your computers, and audio, screen and location from your iphone or ipad. before, it left them out, so it could look as though they weren't coming in.
+- the people and things a moment is about no longer include a name from earlier in your journal just because the moment holds a word that looks like part of it, such as "been" for someone called Ben, or "read" for Red Hat. thanks @dvanduzer for the report (#404).
+- screen text in search results now shows punctuation and symbols as written, without extra backslashes or codes such as `&amp;`.
+- photos from your android phone's camera now show in a segment's transcript and on its photos tab as soon as you open it. before, they showed only after you opened that segment's screen tab, so in a segment with no screen tab they never showed.
+- on linux, setup no longer stops partway through downloading the speech-to-text model when the connection drops or pauses for a second or two. downloads now wait out a short pause, and after a dropped connection, setup tries again and picks up where it stopped. before, setup could end by asking you to run the install command again.
+- on windows, restoring a journal from a backup now works while you set one up: choose restore from a backup, pick a backup by date, and your journal starts as that backup. a journal that's already set up can't be restored over, so the backup page no longer offers it. to go back to an older copy, start a new journal and choose restore during setup.
+- restoring an older backup while you set up a new journal on a computer now keeps the backups made after it. before, the restored journal's own backups could push them out, the newest first.
+- a stopped Apple Health import now says the disk that filled up is the one on the computer running your journal. the body page's empty state also makes clear that Apple Health and Oura imports need a journal running on a computer.
+- a stopped Apple Health import's own page now says what its row in your import history says, in place of "import failed".
+- the backup and health pages now say when another copy of your journal took over encrypted backup, in place of only "backup is off."
+- some recordings transcribed by early versions of the journal read as never transcribed, so that day's daily briefing was never made. they now count as transcribed, and that day's daily briefing is made.
 - if one of your journal's daily or weekly jobs fails, such as the weekly reflection, it now tries once more an hour later, or when your journal next starts if that is later, instead of waiting a whole day or week. if that try fails too, the job waits for its usual time.
 
 ## [2.0.74] - 2026-11-10
