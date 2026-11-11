@@ -404,8 +404,11 @@ pub fn build(
         });
     }
 
+    // Only entities attached to the facet and not hidden can take notes, so
+    // only they are offered. A detached or hidden one would be refused when
+    // its notes are saved, and it would hold a place another entity could use.
     let scoped =
-        solstone_core_facets::list_scoped_facet_entities(&context.journal, facet, true, true)
+        solstone_core_facets::list_scoped_facet_entities(&context.journal, facet, false, false)
             .map_err(|e| {
                 RuntimeOutcome::StageFailed(stage_error(
                     "build",
@@ -417,6 +420,7 @@ pub fn build(
 
     let selected = candidate_map
         .into_iter()
+        .filter(|(entity_id, _)| scoped.iter().any(|e| &e.entity_id == entity_id))
         .take(MAX_ACTIVE_ENTITIES)
         .collect::<Vec<_>>();
 
@@ -787,8 +791,12 @@ pub fn prepare_publication(
             *counts.entry("unselected").or_default() += ops.len();
             continue;
         }
+        // An entity detached or hidden since it was offered takes no notes.
+        // Its notes are passed over, as in `apply_result`, so the rest of the
+        // day's notes are still saved; a saved response replays the same way.
         if !attached_ids.iter().any(|attached| attached == id) {
-            return Err("conflict: served entity is no longer attached".into());
+            *counts.entry("unselected").or_default() += ops.len();
+            continue;
         }
         combined.entry(id.into()).or_default().extend(ops);
     }
@@ -899,7 +907,13 @@ fn attached_entities(
 > {
     let scoped = solstone_core_facets::list_scoped_facet_entities(journal, facet, true, true)
         .map_err(|e| e.to_string())?;
-    let attached_ids = scoped.iter().map(|e| e.entity_id.clone()).collect();
+    // Name matching still sees every linked entity; only an attached, visible
+    // one counts as attached for taking notes.
+    let attached_ids = scoped
+        .iter()
+        .filter(|e| !e.detached && !e.blocked)
+        .map(|e| e.entity_id.clone())
+        .collect();
     let candidates = scoped
         .into_iter()
         .map(|e| solstone_core_entity_matching::EntityNameCandidate {
@@ -1451,6 +1465,131 @@ mod tests {
         assert_eq!(outcome["refused"], 0);
         assert_eq!(outcome["unselected"], 1);
         assert!(!temp.path().join("facets/work/entities/ada").exists());
+    }
+
+    fn two_people_in_work(journal: &Path) -> (String, String) {
+        solstone_core_facets::create_facet(journal, "work", "Work", "", "", "", None).unwrap();
+        let ids = ["Ada", "Bea"].map(|name| {
+            solstone_core_facets::attach_or_reactivate_entity(
+                journal, "work", "Person", name, "Role",
+            )
+            .unwrap()
+            .relationship["entity_id"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        });
+        let [ada, bea] = ids;
+        (ada, bea)
+    }
+
+    fn notes_for(ids: &[&str]) -> String {
+        let entities = ids
+            .iter()
+            .map(|id| serde_json::json!({"entity_id": id, "decisions": [{"op": "add", "content": format!("A fact about {id}")}]}))
+            .collect::<Vec<_>>();
+        serde_json::json!({ "entities": entities }).to_string()
+    }
+
+    fn daily_publication(
+        journal: &Path,
+        served: &[&str],
+    ) -> Result<(Vec<solstone_core_facets::PreparedObservationBatch>, Value), String> {
+        let served_ids = served.iter().map(|id| (*id).to_owned()).collect();
+        let talent = PreparedTalent::new(
+            "entities:entity_observer".into(),
+            serde_json::json!({"day": "20260910", "facet": "work"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        prepare_publication(
+            journal,
+            &notes_for(served),
+            "work",
+            "20260910",
+            &served_ids,
+            &BTreeMap::new(),
+            &talent,
+        )
+    }
+
+    #[test]
+    fn a_daily_save_passes_over_an_entity_detached_since_it_was_offered() {
+        let temp = tempfile::tempdir().unwrap();
+        let (ada, bea) = two_people_in_work(temp.path());
+        solstone_core_facets::detach_facet_entity(temp.path(), "work", &bea).unwrap();
+
+        let (batches, outcome) = daily_publication(temp.path(), &[&ada, &bea]).unwrap();
+
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].entity_id, ada);
+        assert_eq!(outcome["unselected"], 1);
+        assert_eq!(outcome["refused"], 0);
+    }
+
+    #[test]
+    fn a_daily_save_passes_over_an_entity_hidden_since_it_was_offered() {
+        let temp = tempfile::tempdir().unwrap();
+        let (ada, bea) = two_people_in_work(temp.path());
+        solstone_core_facets::block_journal_entity(temp.path(), &bea).unwrap();
+
+        let (batches, outcome) = daily_publication(temp.path(), &[&ada, &bea]).unwrap();
+
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].entity_id, ada);
+        assert_eq!(outcome["unselected"], 1);
+    }
+
+    #[test]
+    fn observer_offers_only_attached_visible_entities() {
+        let temp = tempfile::tempdir().unwrap();
+        let (ada, bea) = two_people_in_work(temp.path());
+        let cy = solstone_core_facets::attach_or_reactivate_entity(
+            temp.path(),
+            "work",
+            "Person",
+            "Cy",
+            "Role",
+        )
+        .unwrap()
+        .relationship["entity_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        solstone_core_facets::detach_facet_entity(temp.path(), "work", &bea).unwrap();
+        solstone_core_facets::block_journal_entity(temp.path(), &cy).unwrap();
+        let suggested = [&ada, &bea, &cy].map(|id| {
+            serde_json::json!({
+                "entity_id": id,
+                "suggestions": [{"content": format!("Suggestion for {id}")}]
+            })
+        });
+        let entities_dir = temp.path().join("facets/work/entities");
+        std::fs::create_dir_all(&entities_dir).unwrap();
+        std::fs::write(
+            entities_dir.join("20260910_observer_suggestions.json"),
+            serde_json::json!({"facet": "work", "day": "20260910", "entities": suggested})
+                .to_string(),
+        )
+        .unwrap();
+        let mut talent = PreparedTalent::new(
+            "entities:entity_observer".into(),
+            serde_json::json!({"day": "20260910", "facet": "work", "prompt": "$observer_context"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        let context = ExecutionContext {
+            journal: temp.path().to_path_buf(),
+        };
+
+        let state = build(&mut talent, &context).unwrap();
+        let PrePostState::EntityObserver(ref obs_state) = state else {
+            panic!("expected EntityObserver state");
+        };
+
+        assert_eq!(obs_state.served_ids, BTreeSet::from([ada]));
     }
 
     #[test]
