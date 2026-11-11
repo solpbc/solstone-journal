@@ -758,6 +758,65 @@ fn without_the_upgrade_mark_an_older_index_keeps_what_it_held() {
     assert_eq!(journal.search("bobnoteneedle").len(), 1);
 }
 
+#[test]
+fn an_upgrade_that_leaves_more_than_a_light_scan_carries_queues_a_full_pass() {
+    use crate::todo::{ScanLimits, TEST_SCAN_LIMITS};
+    use solstone_core_indexer_todo::{Token, listed_attempts};
+    let journal = Journal::new("upgrade-many");
+    let days: Vec<String> = (1..=6)
+        .map(|day| format!("facets/work/activities/202603{day:02}.jsonl"))
+        .collect();
+    for rel in &days {
+        journal.lines(rel, &[activity("a", "alphaneedle", false)]);
+    }
+    journal.scan(true);
+    let conn = journal.conn();
+    for rel in &days {
+        journal.rewrite_keeping_time(rel, &format!("{}\n", activity("a", "alphaneedle", true)));
+        let digest =
+            crate::activity_provenance::digest_bytes(&fs::read(journal.path().join(rel)).unwrap());
+        conn.execute(
+            "UPDATE activity_provenance SET digest=? WHERE rowid IN \
+             (SELECT rowid FROM chunk_sources WHERE path=?)",
+            rusqlite::params![digest.as_slice(), rel],
+        )
+        .unwrap();
+    }
+    conn.execute("DELETE FROM index_meta WHERE key='hides_left_out'", [])
+        .unwrap();
+    drop(conn);
+    TEST_SCAN_LIMITS.set(Some(ScanLimits {
+        turns_min: 2,
+        turn: std::time::Duration::from_secs(60),
+        run: std::time::Duration::from_secs(3_600),
+        min_turn_files: 2,
+        check_every_files: 2,
+    }));
+    let report = scan_journal(journal.path(), false);
+    TEST_SCAN_LIMITS.set(None);
+    let report = report.unwrap();
+    assert!(
+        listed_attempts(journal.path(), Token::ScanFull)
+            .unwrap()
+            .is_some()
+    );
+    // The light scan leaves them to that pass.
+    assert!(report.deferred_to_full, "{report:?}");
+}
+
+#[test]
+fn an_upgrade_a_light_scan_can_carry_queues_nothing() {
+    use solstone_core_indexer_todo::{Token, listed_attempts};
+    let journal = upgrade_journal("upgrade-few");
+    hide_under_an_older_index(&journal);
+    journal.scan(false);
+    assert!(
+        listed_attempts(journal.path(), Token::ScanFull)
+            .unwrap()
+            .is_none()
+    );
+}
+
 /// A journal holding one of each hide.
 fn hide_everything(journal: &Journal) {
     journal.lines(
