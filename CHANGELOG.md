@@ -33,12 +33,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix: updated the journal's database library to fix a flaw that could expose memory when opening specially crafted database files.
+- security fix: new Apple Health and Oura entries could inherit an earlier import's facet, making them readable to an agent limited to that facet. new entries now use the import's chosen facet. earlier entries filed elsewhere stay there unless you agree to move them, and the summary names any updated entries that kept their earlier facet.
+- security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - the people and things a moment is about no longer include a name from earlier in your journal just because the moment holds a word that looks like part of it, such as "been" for someone called Ben, or "read" for Red Hat. thanks @dvanduzer for the report (#404).
 - screen text in search results now shows punctuation and symbols as written, without extra backslashes or codes such as `&amp;`.
 - photos from your android phone's camera now show in a segment's transcript and on its photos tab as soon as you open it. before, they showed only after you opened that segment's screen tab, so in a segment with no screen tab they never showed.
 - on windows, restoring a journal from a backup now works while you set one up: choose restore from a backup, pick a backup by date, and your journal starts as that backup. a journal that's already set up can't be restored over, so the backup page no longer offers it. to go back to an older copy, start a new journal and choose restore during setup.
-- security fix: updated the journal's database library to fix a flaw that could expose memory when opening specially crafted database files.
-- security fix: new Apple Health and Oura entries could inherit an earlier import's facet, making them readable to an agent limited to that facet. new entries now use the import's chosen facet. earlier entries filed elsewhere stay there unless you agree to move them, and the summary names any updated entries that kept their earlier facet.
 - restoring an older backup while you set up a new journal on a computer now keeps the backups made after it. before, the restored journal's own backups could push them out, the newest first.
 - a stopped Apple Health import now says when the disk on the computer running your journal is full. the body page's empty state also makes clear that Apple Health and Oura imports need a journal running on a computer.
 - a stopped Apple Health import's own page now says what its row in your import history says, in place of "import failed".
@@ -70,7 +71,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - archive recovery in the android development app could be refused even with files in its own storage. this corrects that storage check.
 - android and ios no longer reject requests to retrieve offloaded media solely because of the platform.
 - a first restore on a phone or tablet now waits for work in your journal to finish before copying. if restore is interrupted, you can retry the same backup.
-- security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
 - if one of your journal's daily or weekly jobs fails, such as the weekly reflection, it now tries once more an hour later, or when your journal next starts if that is later, instead of waiting a whole day or week. if that try fails too, the job waits for its usual time.
