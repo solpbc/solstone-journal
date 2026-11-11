@@ -11,7 +11,7 @@ use std::process::ExitCode;
 use serde_json::Value;
 use solstone_core_cli_boundary::DESCRIBE_USAGE;
 use solstone_core_describe::selection::CategoryOverride;
-use solstone_core_describe::{WinnowConfig, pipeline, process_video_metadata};
+use solstone_core_describe::{WinnowConfig, pipeline};
 use solstone_core_journal::{
     detect_checkout_root, discover_home, installed_site_packages_from_executable_dir,
     read_config_journal, resolve_journal_path,
@@ -95,7 +95,9 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
         Command::FramesOnly(arguments) => {
             let journal = effective_journal(arguments.journal.as_deref())?;
             let config = read_config(&journal)?;
-            let result = process_video_metadata(&arguments.video_path, config.winnow);
+            let capture =
+                pipeline::CaptureContext::from_environment().map_err(CliError::Internal)?;
+            let result = pipeline::frames(&arguments.video_path, config.winnow, &capture);
             if result.decode_failed {
                 return Err(CliError::Decode(format!(
                     "failed to decode video: {}",

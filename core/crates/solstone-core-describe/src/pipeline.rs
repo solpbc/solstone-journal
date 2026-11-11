@@ -194,6 +194,29 @@ pub struct DescribeOptions<'a> {
     pub capture: CaptureContext,
 }
 
+/// The frames [`run`] would describe, without describing them.
+pub fn frames(
+    video: &Path,
+    config: WinnowConfig,
+    capture: &CaptureContext,
+) -> crate::DescribeResult {
+    let resolver = screen_ocr::InstalledHelperResolver;
+    let mut ocr = screen_ocr::ResolvedWorkerFactory::new(&resolver);
+    let phone = capture
+        .meta
+        .as_ref()
+        .and_then(|meta| PhoneScreen::from_segment_meta(&Value::Object(meta.clone())));
+    let gate = if phone.is_none() {
+        Some(&mut ocr as &mut dyn OcrWorkerFactory)
+    } else {
+        None
+    };
+    walk_video_metadata(video, config, gate, &|| false).unwrap_or_else(|_| crate::DescribeResult {
+        decode_failed: true,
+        ..Default::default()
+    })
+}
+
 pub fn run(options: DescribeOptions<'_>) -> Result<(), RunError> {
     run_with_factory(options, &SystemSessionFactory)
 }
@@ -445,10 +468,17 @@ fn run_prepared(
         DecodeStart::Ready(decoded) => (decoded, false),
         DecodeStart::Deferred(decode) => (decode(), false),
         DecodeStart::Video => {
-            let decoded = walk_video_metadata(options.video, options.config, checkpoint)?;
+            // Phone and tablet screens have not been measured for the text gate yet.
+            let gate = if phone.is_none() {
+                Some(&mut *ocr_factory as &mut dyn OcrWorkerFactory)
+            } else {
+                None
+            };
+            let decoded = walk_video_metadata(options.video, options.config, gate, checkpoint)?;
             (decoded, true)
         }
     };
+    let text_changed = decoded.text_changed.clone();
     let redecode = video_source;
     let start = Instant::now();
     let parent = output
@@ -558,6 +588,7 @@ fn run_prepared(
                 )
             })?;
         pull.retain_pngs(png_ids.clone());
+        pull.replay_text_changes(text_changed.clone());
         let mut live = LivePull {
             pull,
             eof: false,
@@ -1002,6 +1033,7 @@ fn run_prepared(
             redecode,
             options.video,
             options.config,
+            &text_changed,
             row.frame_id,
             row.timestamp,
             &row.png,
@@ -1081,6 +1113,7 @@ fn run_prepared(
                     true,
                     options.video,
                     options.config,
+                    &text_changed,
                     *frame_id,
                     timestamp,
                     &[],
@@ -1215,18 +1248,23 @@ enum ExtractionError {
 }
 
 /// One forward metadata pass. PNGs stay empty so the merge plan sees every qualified id.
+///
+/// With a screen-text factory, the text gate decides on frames below the hash threshold;
+/// every later open of the video replays what it kept.
 #[allow(clippy::result_large_err)]
 fn walk_video_metadata(
     video: &Path,
     config: WinnowConfig,
+    text_gate: Option<&mut dyn OcrWorkerFactory>,
     checkpoint: &dyn Fn() -> bool,
 ) -> Result<crate::DescribeResult, RunError> {
     let mut pull = match crate::decode::FramePull::open(video, config, false) {
         Ok(pull) => pull,
         Err(result) => return Ok(result),
     };
+    let mut gate = text_gate.map(crate::text_gate::TextGate::new);
     loop {
-        match pull.next(checkpoint) {
+        match pull.next_gated(checkpoint, gate.as_mut()) {
             PullNext::Frame(_) => {}
             PullNext::Done => break,
             PullNext::Cancelled => return Err(RunError::Cancelled),
@@ -1271,10 +1309,12 @@ fn frame_did_not_reappear(frame_id: u64) -> RunError {
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn owned_frame_png(
     redecode: bool,
     video: &Path,
     config: WinnowConfig,
+    text_changed: &BTreeSet<u64>,
     frame_id: u64,
     timestamp: f64,
     held: &[u8],
@@ -1286,7 +1326,14 @@ fn owned_frame_png(
     if checkpoint() {
         return Err(RunError::Cancelled);
     }
-    match crate::decode::redecode_frame(video, config, frame_id, timestamp, checkpoint) {
+    match crate::decode::redecode_frame(
+        video,
+        config,
+        text_changed,
+        frame_id,
+        timestamp,
+        checkpoint,
+    ) {
         Ok(png) => Ok(png),
         Err(RedecodeFail::Cancelled) => Err(RunError::Cancelled),
         Err(RedecodeFail::Missing) => Err(RunError::Internal(format!(
@@ -1730,6 +1777,7 @@ fn prepare_video_ocr(
     }
     let mut pull = crate::decode::FramePull::open(video, config, true)
         .map_err(|_| RunError::Internal("could not reopen video for OCR retry".into()))?;
+    pull.replay_text_changes(decoded.text_changed.clone());
     let mut ocr = screen_ocr::StreamingOcr::new();
     loop {
         match pull.next(checkpoint) {
@@ -2437,6 +2485,12 @@ fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
             "qualified_count".to_owned(),
             json!(promotion.decoded.qualified_count),
         );
+        if !promotion.decoded.text_changed.is_empty() {
+            header.insert(
+                "text_changed_count".to_owned(),
+                json!(promotion.decoded.text_changed.len()),
+            );
+        }
         if let Some(model) = &promotion.model {
             header.insert("_solstone_thinking".to_owned(), json!({"model":model}));
         }
