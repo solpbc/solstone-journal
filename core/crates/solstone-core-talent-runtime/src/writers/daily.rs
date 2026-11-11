@@ -1602,7 +1602,7 @@ mod tests {
     #[test]
     fn a_promotion_skips_only_a_retired_create_and_resolves_a_re_added_name() {
         let root = fixture();
-        solstone_core_entity::record_deleted_entity(root.path(), "bob", "bob", None).unwrap();
+        solstone_core_entity::record_deleted_entity(root.path(), "bob", "bob").unwrap();
         // With no live "Bob", the plan would create `bob`: the review skips it.
         let plan = solstone_core_facets::prepare_review_promotion(
             root.path(),

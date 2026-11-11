@@ -1422,7 +1422,7 @@ mod tests {
         )
         .unwrap();
         solstone_core_facets::delete_journal_entity_after(temp.path(), "ada", |dir, _| {
-            solstone_core_entity::record_deleted_entity(temp.path(), "ada", dir, Some("Ada"))
+            solstone_core_entity::record_deleted_entity(temp.path(), "ada", dir)
         })
         .unwrap();
         let served_ids = BTreeSet::from(["ada".to_string()]);
