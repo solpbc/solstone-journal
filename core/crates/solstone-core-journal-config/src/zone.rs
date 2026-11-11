@@ -16,6 +16,14 @@ pub fn owner_zone(journal: &Path) -> Tz {
     configured_zone(journal).unwrap_or_else(host_zone)
 }
 
+/// The owner's day (`YYYYMMDD`) that `at` falls on, in [`owner_zone`]: for a
+/// time the owner reads as a date, such as when the trash erases something.
+pub fn owner_day(journal: &Path, at: chrono::DateTime<chrono::Utc>) -> String {
+    at.with_timezone(&owner_zone(journal))
+        .format("%Y%m%d")
+        .to_string()
+}
+
 /// This computer's zone, or UTC on a host that names none. A `TZ` naming a
 /// real zone wins, as it does for the system clock; otherwise the zone the
 /// system is set to.
@@ -97,7 +105,7 @@ mod tests {
     use chrono_tz::Tz;
     use serde_json::json;
 
-    use super::{host_zone, owner_zone, parse_zone, zone_label};
+    use super::{host_zone, owner_day, owner_zone, parse_zone, zone_label};
     use crate::test_support::TempDir;
 
     #[test]
@@ -139,6 +147,30 @@ mod tests {
         }
         let missing = TempDir::new();
         assert_eq!(owner_zone(missing.path()), host_zone());
+    }
+
+    #[test]
+    fn the_owner_day_is_the_date_in_the_owner_zone_across_utc_midnight() {
+        let journal = journal_with(json!({ "timezone": "America/Denver" }));
+        let at = |text: &str| {
+            chrono::DateTime::parse_from_rfc3339(text)
+                .unwrap()
+                .with_timezone(&chrono::Utc)
+        };
+        // 03:30 UTC on the 17th is still the evening of the 16th in Denver.
+        assert_eq!(
+            owner_day(journal.path(), at("2026-11-17T03:30:00Z")),
+            "20261116"
+        );
+        assert_eq!(
+            owner_day(journal.path(), at("2026-11-17T07:30:00Z")),
+            "20261117"
+        );
+        // The year turns in the owner's zone, not in UTC.
+        assert_eq!(
+            owner_day(journal.path(), at("2027-01-01T05:00:00Z")),
+            "20261231"
+        );
     }
 
     #[test]
