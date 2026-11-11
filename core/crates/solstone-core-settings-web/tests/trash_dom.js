@@ -483,5 +483,11 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     assert.strictEqual(fold.removalGroupHow(plain), 'HOW:erased');
     const [loose] = groups([at('recovered', 'facet', undefined)]);
     assert.strictEqual(fold.removalGroupHow(loose), 'HOW:recovered');
+    // A set moved and erased at once records both under its one operation:
+    // its erases and its moves are each a row, so neither counts twice.
+    const set = groups([at('erased', 'entity', 'op6'), at('trashed', 'entity', 'op6'), at('erased', 'entity', 'op6'), at('trashed', 'entity', 'op6')]);
+    assert.deepStrictEqual(set.map((group) => [fold.removalGroupHow(group), group.units.length]), [['HOW:erased', 2], ['HOW:trashed', 2]]);
+    const partly = groups([at('erased', 'entity', 'op7'), at('trashed', 'entity', 'op7'), at('trashed', 'entity', 'op7')]);
+    assert.deepStrictEqual(partly.map((group) => group.units.length), [1, 2], 'one whose erase was refused is still counted as moved');
   }
 })().catch((error) => { console.error(error); process.exit(1); });

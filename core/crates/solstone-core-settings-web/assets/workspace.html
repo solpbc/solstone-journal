@@ -7475,7 +7475,20 @@ function removalGroups(entries) {
     if (last && entry.operation && last.operation === entry.operation) last.units.push(entry);
     else groups.push({ operation: entry.operation, units: [entry] });
   }
-  return groups.map(removalFold);
+  return groups.flatMap(removalSplit).map(removalFold);
+}
+
+// A set moved to the trash and erased at once records both under its one
+// operation. Its moves and its erases are a row each, so no thing counts
+// twice; a recover keeps its group, for the fold below.
+function removalSplit(group) {
+  if (group.units.some(entry => entry.event === 'recovered')) return [group];
+  const byEvent = new Map();
+  for (const entry of group.units) {
+    if (!byEvent.has(entry.event)) byEvent.set(entry.event, { operation: group.operation, units: [] });
+    byEvent.get(entry.event).units.push(entry);
+  }
+  return [...byEvent.values()];
 }
 
 // What a recover set aside in its way, or couldn't put back, is recorded as
