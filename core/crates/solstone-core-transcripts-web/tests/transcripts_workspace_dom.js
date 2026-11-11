@@ -1062,6 +1062,7 @@ async function createEnvironment(
     Object,
     Set,
     Map,
+    WeakRef,
     JSON,
     Promise,
     TypeError,
@@ -1079,12 +1080,12 @@ async function createEnvironment(
   vm.runInContext(drawerSource, context);
   vm.runInContext(viewRuntimeSource, context);
   vm.runInContext(scriptSource, context);
-  const mounted = await vm.runInContext("window.SolViews.mount('transcripts')", context);
+  let mounted = await vm.runInContext("window.SolViews.mount('transcripts')", context);
 
   // Flush microtasks for day load
   await new Promise((r) => setTimeout(r, 10));
 
-  return {
+  const environment = {
     doc,
     window: windowObj,
     history,
@@ -1098,6 +1099,7 @@ async function createEnvironment(
     context,
     requested,
     windowListeners,
+    resizeObserverCallbacks,
     timelineResizeObserver: resizeObserverCallbacks[0],
     zoomResizeObserver: resizeObserverCallbacks[1],
     flushHashchanges: async () => {
@@ -1112,6 +1114,8 @@ async function createEnvironment(
       await new Promise((r) => setTimeout(r, 10));
     },
   };
+  mounted = null;
+  return environment;
 }
 
 function getZoomPills(doc) {
@@ -3225,6 +3229,166 @@ test('a day step drops the old day\'s selection and keeps the view mounted', asy
   assert.strictEqual(isDeleteBtnVisible(env.doc), false, 'no segment of the old day stays selected');
   assert.ok(env.intervals.size <= intervalsBefore, 'the old day leaves no timer running');
   assert.strictEqual(env.window.SolViews.current(), env.view, 'the same mounted view');
+});
+
+// The receipt stays open. The page's own handlers, and the harness notes of
+// the observers it installed, are dropped first: this case is the receipt,
+// which is still held. The view has to be gone anyway.
+function dropPageHandlers(root) {
+  const walk = (node) => {
+    if (!node) return;
+    if (node.listeners) node.listeners = {};
+    (node.children || []).forEach(walk);
+  };
+  walk(root);
+}
+
+function pillKeys(doc) {
+  return [...getZoomPills(doc)].map((pill) => `${pill.dataset.stream}:${pill.dataset.key}`);
+}
+
+async function viewIsGone(env) {
+  vm.runInContext('{ window.__ref = new WeakRef(window.SolViews.current().ctx); }', env.context);
+  env.window.SolViews.dispose();
+  env.view = null;
+  env.timelineResizeObserver = null;
+  env.zoomResizeObserver = null;
+  env.resizeObserverCallbacks.length = 0;
+  dropPageHandlers(env.doc.documentElement);
+  env.doc.listeners = {};
+  env.segmentGetRequests.length = 0;
+  env.pendingLocationGets.length = 0;
+  env.intervals.clear();
+  Object.keys(env.windowListeners).forEach((type) => { env.windowListeners[type] = []; });
+  // A timer queued before dispose can still add a handler on the turn it
+  // fires. Let that turn finish, then drop again, before asking if the view
+  // is gone.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  dropPageHandlers(env.doc.documentElement);
+  gc();
+  gc();
+  return vm.runInContext('window.__ref.deref() === undefined', env.context);
+}
+
+test('an open segment notice does not keep a disposed transcripts mount', async () => {
+  const env = await createEnvironment(undefined, 'analyzed', false, null, {
+    postResponse: (record) => ({ status: 200, body: { done: record.body.ids || [], failed: [] } }),
+  });
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets();
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  await env.window.confirmDeleteSegment();
+  const notice = env.notifications.at(-1);
+  assert.strictEqual(notice.title, 'moved to the trash');
+  const keys = pillKeys(env.doc);
+  assert.strictEqual(await viewIsGone(env), true);
+  assert.strictEqual(env.notifications.at(-1), notice, 'the notice is still open');
+  await notice.buttons.find((button) => button.label === TRASH_COPY.buttons.recover).onClick();
+  assert.deepStrictEqual(pillKeys(env.doc), keys, 'recover does not draw on the view that was left');
+  assert.deepStrictEqual(env.posts.at(-1).body, { ids: ['trash_1'], page: 'transcripts' });
+  assert.strictEqual(env.notifications.at(-1).title, TRASH_COPY.receipt.recovered.title.replace('{noun}', TRASH_COPY.noun.segment));
+});
+
+test('an open set notice does not keep a disposed transcripts mount', async () => {
+  const env = await createEnvironment(undefined, 'analyzed', false, null, {
+    postResponse: (record) => {
+      if (String(record.url).endsWith('/app/transcripts/api/segments/delete')) {
+        return { status: 200, body: {
+          done: record.body.segments.map((segment, index) => ({
+            segment,
+            trash: { id: `set_${index}`, erase_at: '2020-01-22T09:00:00Z' },
+            erased: false,
+          })),
+          failed: [],
+        } };
+      }
+      return { status: 200, body: { done: record.body.ids, failed: [] } };
+    },
+  });
+  const $ = (id) => env.doc.getElementById(id);
+  $('trSelectBtn').dispatchEvent({ type: 'click' });
+  $('trPickAll').dispatchEvent({ type: 'change' });
+  $('trPickDelete').dispatchEvent({ type: 'click' });
+  $('trDeleteSegmentModalConfirm').dispatchEvent({ type: 'click' });
+  await settle();
+  const notice = env.notifications.at(-1);
+  assert.strictEqual(notice.title, pickFill(TRASH_COPY.setReceipt.moved.title, { n: 3, things: TRASH_COPY.noun.segments }));
+  const keys = pillKeys(env.doc);
+  assert.strictEqual(keys.length, 0, 'what moved has left');
+  assert.strictEqual(await viewIsGone(env), true);
+  assert.strictEqual(env.notifications.at(-1), notice, 'the notice is still open');
+  await notice.buttons.find((button) => button.label === TRASH_COPY.buttons.recover).onClick();
+  assert.deepStrictEqual(pillKeys(env.doc), keys, 'recover does not draw on the view that was left');
+  assert.deepStrictEqual(env.posts.at(-1).body, { ids: ['set_0', 'set_1', 'set_2'], page: 'transcripts' });
+  assert.strictEqual(env.notifications.at(-1).title, pickFill(TRASH_COPY.setReceipt.recovered.title, { n: 3, things: TRASH_COPY.noun.segments }));
+});
+
+function otherDayAnswer(url, payload) {
+  if (String(url).includes('20200116')) {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        audio: [{ start: '00:30', end: '23:30', streams: ['room'], state: 'analyzed' }],
+        screen: [],
+        segments: [{ key: 'only_new_day', stream: 'room', start: '11:45', end: '11:50', types: ['audio'], data_state: { audio: 'analyzed' } }],
+      }),
+    });
+  }
+  return Promise.resolve({ ok: true, status: 200, json: async () => payload });
+}
+
+test('recover from a segment delete on another transcripts day does not draw there', async () => {
+  const env = await createEnvironment(undefined, 'analyzed', false, null, { dayAnswer: otherDayAnswer });
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets();
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  await env.window.confirmDeleteSegment();
+  const notice = env.notifications.at(-1);
+  env.window.history.pushState(null, '', '/app/transcripts/20200116');
+  env.window.SolViews.update({ day: '20200116' });
+  await settle();
+  assert.deepStrictEqual(pillKeys(env.doc), ['room:only_new_day']);
+  const reads = env.requested.length;
+  await notice.buttons.find((button) => button.label === TRASH_COPY.buttons.recover).onClick();
+  assert.deepStrictEqual(pillKeys(env.doc), ['room:only_new_day'], 'the day on the page is unchanged');
+  assert.deepStrictEqual(env.posts.at(-1).body, { ids: ['trash_1'], page: 'transcripts' });
+  assert.ok(env.requested.slice(reads).every((url) => !url.includes('20200115')), 'recover does not read the day that was left');
+});
+
+test('recover from a set delete on another transcripts day does not draw there', async () => {
+  const env = await createEnvironment(undefined, 'analyzed', false, null, {
+    dayAnswer: otherDayAnswer,
+    postResponse: (record) => {
+      if (String(record.url).endsWith('/app/transcripts/api/segments/delete')) {
+        return { status: 200, body: {
+          done: record.body.segments.map((segment, index) => ({
+            segment,
+            trash: { id: `day_${index}`, erase_at: '2020-01-22T09:00:00Z' },
+            erased: false,
+          })),
+          failed: [],
+        } };
+      }
+      return { status: 200, body: { done: record.body.ids, failed: [] } };
+    },
+  });
+  const $ = (id) => env.doc.getElementById(id);
+  $('trSelectBtn').dispatchEvent({ type: 'click' });
+  $('trPickAll').dispatchEvent({ type: 'change' });
+  $('trPickDelete').dispatchEvent({ type: 'click' });
+  $('trDeleteSegmentModalConfirm').dispatchEvent({ type: 'click' });
+  await settle();
+  const notice = env.notifications.at(-1);
+  env.window.history.pushState(null, '', '/app/transcripts/20200116');
+  env.window.SolViews.update({ day: '20200116' });
+  await settle();
+  assert.deepStrictEqual(pillKeys(env.doc), ['room:only_new_day']);
+  const reads = env.requested.length;
+  await notice.buttons.find((button) => button.label === TRASH_COPY.buttons.recover).onClick();
+  assert.deepStrictEqual(pillKeys(env.doc), ['room:only_new_day'], 'the day on the page is unchanged');
+  assert.deepStrictEqual(env.posts.at(-1).body, { ids: ['day_0', 'day_1', 'day_2'], page: 'transcripts' });
+  assert.ok(env.requested.slice(reads).every((url) => !url.includes('20200115')));
 });
 
 test('dispose takes back the listeners, timers, observers and globals the view added', async () => {

@@ -8,7 +8,181 @@
 (() => {
   window.SolViews.register('transcripts', { mount: mountTranscripts });
 
+  // A delete's receipt can stay up after this view is gone, or after the day
+  // has changed. The button looks the view up when it is clicked. It does not
+  // keep the view. While that day is showing, the view puts the segment back.
+  // Otherwise the same recover runs and only the receipt is shown.
+  let transcriptHooks = null;
+
+  function transcriptsShowing(day) {
+    const current = window.SolViews && window.SolViews.current && window.SolViews.current();
+    if (!current || current.name !== 'transcripts' || !current.ctx || current.ctx.disposed) return false;
+    if (!transcriptHooks || transcriptHooks.shown() !== day) return false;
+    const routeDay = current.ctx.route && current.ctx.route.day;
+    return routeDay === day;
+  }
+
+  function goToSettingsTrash() {
+    window.location.href = '/app/settings#trash';
+  }
+
+  function plainSegment(seg) {
+    if (!seg || typeof seg !== 'object') return seg;
+    const copy = {};
+    Object.keys(seg).forEach((key) => {
+      const value = seg[key];
+      if (typeof value === 'function') return;
+      if (value && typeof value === 'object' && typeof value.nodeType === 'number') return;
+      copy[key] = value;
+    });
+    return copy;
+  }
+
+  function fillWords(template, values) {
+    return Object.entries(values).reduce(
+      (text, [key, value]) => text.split(`{${key}}`).join(String(value)),
+      String(template)
+    );
+  }
+
+  function showTranscriptNotice(notice) {
+    window.AppServices.notifications.show(notice);
+  }
+
+  function awayTrashReceipt(copy, kind, fill = {}, buttons = []) {
+    const card = copy.receipt[kind];
+    const put = (text) => String(text)
+      .replace('{noun}', copy.noun.segment)
+      .replace('{date}', fill.date || '');
+    const settled = kind === 'moved' || kind === 'recovered' || kind === 'erased';
+    const notice = {
+      app: 'transcripts',
+      icon: settled ? (kind === 'recovered' ? 'undo-2' : 'trash-2') : 'triangle-alert',
+      title: put(card.title),
+      dismissible: true,
+      buttons,
+    };
+    if (card.message && (kind !== 'moved' || fill.date)) notice.message = put(card.message);
+    if (settled) notice.autoDismiss = 10000;
+    showTranscriptNotice(notice);
+  }
+
+  function awaySetReceipt(copy, card, fill = {}, buttons = [], options = {}) {
+    const put = (text) => fillWords(text, { things: copy.noun.segments, ...fill });
+    const notice = {
+      app: 'transcripts',
+      icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
+      title: put(card.title),
+      dismissible: true,
+      buttons,
+    };
+    const message = options.message !== undefined ? options.message : card.message && put(card.message);
+    if (message) notice.message = message;
+    if (options.settled) notice.autoDismiss = 10000;
+    showTranscriptNotice(notice);
+  }
+
+  function awayOpenTrash(copy) {
+    return { label: copy.buttons.openTrash, onClick: goToSettingsTrash };
+  }
+
+  function segmentRecoverClick(trashId, seg, segDay, copy) {
+    const snapshot = plainSegment(seg);
+    return async function () {
+      if (transcriptHooks && transcriptsShowing(segDay)) {
+        await transcriptHooks.recoverSegment(trashId, snapshot, segDay);
+        return;
+      }
+      await recoverSegmentAway(trashId, copy);
+    };
+  }
+
+  async function recoverSegmentAway(trashId, copy) {
+    let response;
+    try {
+      response = await fetch('/app/settings/api/trash/recover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [trashId], page: 'transcripts' }),
+      });
+    } catch (_) {
+      awayTrashReceipt(copy, 'noAnswerRecover');
+      return;
+    }
+    const data = response.ok ? await response.json().catch(() => null) : null;
+    if (response.ok && !data) {
+      awayTrashReceipt(copy, 'noAnswerRecover');
+      return;
+    }
+    if (Array.isArray(data?.done) && data.done.includes(trashId)) {
+      awayTrashReceipt(copy, 'recovered');
+      return;
+    }
+    awayTrashReceipt(copy, 'recoverFailed', {}, [awayOpenTrash(copy)]);
+  }
+
+  function setRecoverClick(items, segDay, copy) {
+    const snapshot = items.map(({ seg, entry }) => ({
+      seg: plainSegment(seg),
+      entry: { trash: { id: entry && entry.trash && entry.trash.id } },
+    }));
+    return async function () {
+      if (transcriptHooks && transcriptsShowing(segDay)) {
+        await transcriptHooks.recoverSet(snapshot, segDay);
+        return;
+      }
+      await recoverSetAway(snapshot, copy);
+    };
+  }
+
+  async function recoverSetAway(moved, copy) {
+    const cards = copy.setReceipt;
+    const ids = moved.map(({ entry }) => entry.trash.id);
+    const one = ids.length === 1;
+    let response;
+    try {
+      response = await fetch('/app/settings/api/trash/recover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, page: 'transcripts' }),
+      });
+    } catch (_) {
+      if (one) awayTrashReceipt(copy, 'noAnswerRecover');
+      else awaySetReceipt(copy, cards.noAnswerRecover);
+      return;
+    }
+    const data = response.ok ? await response.json().catch(() => null) : null;
+    if (response.ok && !data) {
+      if (one) awayTrashReceipt(copy, 'noAnswerRecover');
+      else awaySetReceipt(copy, cards.noAnswerRecover);
+      return;
+    }
+    const back = moved.filter(({ entry }) => Array.isArray(data?.done) && data.done.includes(entry.trash.id));
+    if (back.length && back.length === ids.length) {
+      if (one) awayTrashReceipt(copy, 'recovered');
+      else awaySetReceipt(copy, cards.recovered, { n: ids.length }, [], { settled: true, icon: 'undo-2' });
+    } else if (back.length) {
+      const others = ids.length - back.length;
+      awaySetReceipt(copy, cards.partRecovered, { done: back.length, n: ids.length }, [awayOpenTrash(copy)], {
+        message: others === 1 ? cards.partRecoveredOne : cards.partRecoveredMany,
+      });
+    } else if (one) {
+      awayTrashReceipt(copy, 'recoverFailed', {}, [awayOpenTrash(copy)]);
+    } else {
+      awaySetReceipt(copy, cards.recoverFailed, {}, [awayOpenTrash(copy)]);
+    }
+  }
+
   function mountTranscripts(ctx) {
+    // The receipt of a delete looks this mount up by this object, and only
+    // while it is still the one showing. A throw before it is published leaves
+    // none, including one a previous mount published.
+    transcriptHooks = null;
+    let noticeHooks = null;
+    ctx.onDispose(() => {
+      if (transcriptHooks === noticeHooks) transcriptHooks = null;
+    });
+
     // Timers, observers and reads belong to this mount.
     const setTimeout = ctx.setTimeout;
     const clearTimeout = ctx.clearTimeout;
@@ -4924,7 +5098,6 @@
         noAnswerRecover: { title: "your journal didn't answer", message: 'it may already be back in your journal. reload to check.' },
       },
     };
-    const TRASH_PAGE = '/app/settings#trash';
 
     deleteSegmentModalErase.textContent = TRASH_COPY.buttons.eraseNow;
     deleteSegmentModalCancel.textContent = TRASH_COPY.buttons.cancel;
@@ -5106,7 +5279,7 @@
     }
 
     function openTrashButton() {
-      return { label: TRASH_COPY.buttons.openTrash, onClick: () => { window.location.href = TRASH_PAGE; } };
+      return { label: TRASH_COPY.buttons.openTrash, onClick: goToSettingsTrash };
     }
 
     // The erase date on the journal's own clock, worded as the trash page words it.
@@ -5170,8 +5343,9 @@
         return { kind: 'eraseFailed' };
       }
       const trashId = data.trash?.id;
+      const recoverCopy = { receipt: TRASH_COPY.receipt, noun: TRASH_COPY.noun, buttons: TRASH_COPY.buttons };
       trashReceipt('moved', { date: trashEraseDate(data.trash?.erase_at) }, [
-        { label: TRASH_COPY.buttons.recover, onClick: () => recoverFromReceipt(trashId, seg, segDay) },
+        { label: TRASH_COPY.buttons.recover, onClick: segmentRecoverClick(trashId, seg, segDay, recoverCopy) },
         openTrashButton(),
       ]);
       return { kind: 'moved' };
@@ -5511,7 +5685,13 @@
         return;
       }
       const moved = done.filter(({ entry }) => entry.trash?.id);
-      const recover = { label: TRASH_COPY.buttons.recover, onClick: () => recoverSetFromReceipt(moved, segDay) };
+      const recoverCopy = {
+        receipt: TRASH_COPY.receipt,
+        noun: TRASH_COPY.noun,
+        buttons: TRASH_COPY.buttons,
+        setReceipt: TRASH_COPY.setReceipt,
+      };
+      const recover = { label: TRASH_COPY.buttons.recover, onClick: setRecoverClick(moved, segDay, recoverCopy) };
       if (!k) {
         const earliest = moved.map(({ entry }) => entry.trash.erase_at).filter(Boolean).sort((a, b) => new Date(a) - new Date(b))[0];
         const date = trashEraseDate(earliest);
@@ -5579,6 +5759,13 @@
     deleteBtn.addEventListener('click', () => {
       showDeleteSegmentModal();
     });
+
+    noticeHooks = {
+      recoverSegment: recoverFromReceipt,
+      recoverSet: recoverSetFromReceipt,
+      shown: () => day,
+    };
+    transcriptHooks = noticeHooks;
 
     return {
       update(params) {
