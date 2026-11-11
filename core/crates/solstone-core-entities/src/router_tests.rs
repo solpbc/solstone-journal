@@ -9686,3 +9686,109 @@ async fn tidy_up_items_carry_folder_names_and_rows() {
         ])
     );
 }
+
+fn queued_keys(root: &Path) -> Vec<String> {
+    solstone_core_indexer_store::todo::inspect(root)
+        .map(|status| status.keys)
+        .unwrap_or_default()
+}
+
+fn seed_linked_facets(root: &Path) {
+    for facet in ["work", "personal", "other"] {
+        write(
+            root,
+            &format!("facets/{facet}/facet.json"),
+            json!({"title": facet}),
+        );
+    }
+    seed_entity(root, "a", "Alice");
+    seed_facet_entity(root, "work", "a");
+    seed_facet_entity(root, "personal", "a");
+}
+
+#[tokio::test]
+async fn hiding_an_entity_queues_the_detections_of_each_facet_it_is_linked_in() {
+    let j = Journal::new();
+    seed_linked_facets(j.path());
+    let (status, _) = post(
+        j.path(),
+        "/app/entities/api/journal/entity/a/block",
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let keys = queued_keys(j.path());
+    assert!(
+        keys.contains(&"facets/work/entities".to_owned()),
+        "{keys:?}"
+    );
+    assert!(
+        keys.contains(&"facets/personal/entities".to_owned()),
+        "{keys:?}"
+    );
+    assert!(
+        !keys.contains(&"facets/other/entities".to_owned()),
+        "{keys:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_refused_unhide_still_queues_the_entitys_facets() {
+    let j = Journal::new();
+    seed_linked_facets(j.path());
+    let (status, _) = post(
+        j.path(),
+        "/app/entities/api/journal/entity/a/unblock",
+        json!({}),
+    )
+    .await;
+    assert_ne!(status, 200);
+    let keys = queued_keys(j.path());
+    assert!(
+        keys.contains(&"facets/work/entities".to_owned()),
+        "{keys:?}"
+    );
+    assert!(
+        keys.contains(&"facets/personal/entities".to_owned()),
+        "{keys:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_set_hide_and_its_undo_queue_the_facets_they_reach() {
+    let j = Journal::new();
+    seed_linked_facets(j.path());
+    let (status, _) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation":"op-hide-set-1","ids":["a"]}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let keys = queued_keys(j.path());
+    assert!(
+        keys.contains(&"facets/work/entities".to_owned()),
+        "{keys:?}"
+    );
+    assert!(
+        !keys.contains(&"facets/other/entities".to_owned()),
+        "{keys:?}"
+    );
+
+    let j = Journal::new();
+    seed_linked_facets(j.path());
+    let (status, _) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation":"op-hide-set-1","limit":10}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let keys = queued_keys(j.path());
+    for facet in ["work", "personal", "other"] {
+        assert!(
+            keys.contains(&format!("facets/{facet}/entities")),
+            "{keys:?}"
+        );
+    }
+}

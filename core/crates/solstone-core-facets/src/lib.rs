@@ -109,7 +109,8 @@ pub use store::{
 };
 pub use store::{
     HiddenNameWrite, HiddenNamesError, check_hidden_names_readable, hide_detected_name,
-    hide_detected_name_at, merge_hidden_names_locked, queue_facet_detections, unhide_detected_name,
+    hide_detected_name_at, merge_hidden_names_locked, queue_every_facet_detections,
+    queue_facet_detections, queue_linked_facet_detections, unhide_detected_name,
 };
 pub use store::{StravaConvertedLine, append_strava_converted, read_strava_converted};
 pub use store::{

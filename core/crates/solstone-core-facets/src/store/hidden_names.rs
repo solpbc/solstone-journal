@@ -232,3 +232,59 @@ pub fn queue_facet_detections(journal: &Path, facet: &str) -> bool {
         }
     }
 }
+
+/// Queue the detections of every facet holding a link to one of
+/// `entity_ids`, so a hide, unhide or undo of those entities reaches search.
+/// A facet whose links can't all be read is queued too. Reports whether
+/// every queue succeeded.
+pub fn queue_linked_facet_detections(journal: &Path, entity_ids: &[String]) -> bool {
+    let mut queued = true;
+    for facet in facet_folders(journal) {
+        let dirs = solstone_core_entity::facet_links::LinkDirs::for_facet(journal, &facet);
+        let links = match dirs.scan() {
+            Ok((links, unreadable)) => unreadable.is_empty().then_some(links),
+            Err(_) => None,
+        };
+        let linked = links.is_none_or(|links| {
+            links
+                .iter()
+                .any(|link| entity_ids.contains(&link.entity_id))
+        });
+        if linked {
+            queued &= queue_facet_detections(journal, &facet);
+        }
+    }
+    queued
+}
+
+/// Queue the detections of every facet, for a change whose entities aren't
+/// known up front (an undo of a set of hides).
+pub fn queue_every_facet_detections(journal: &Path) -> bool {
+    let mut queued = true;
+    for facet in facet_folders(journal) {
+        queued &= queue_facet_detections(journal, &facet);
+    }
+    queued
+}
+
+fn facet_folders(journal: &Path) -> Vec<String> {
+    let Ok(facets) = contained_path(journal, "facets") else {
+        return Vec::new();
+    };
+    match solstone_core_journal_io::list_dir_entries(&facets) {
+        Ok(entries) => entries
+            .into_iter()
+            .filter(|entry| entry.kind == solstone_core_journal_io::DirEntryKind::Directory)
+            .filter_map(|entry| entry.name.to_str().map(str::to_owned))
+            // A dot-named folder is a merge's scratch, never a facet.
+            .filter(|name| !name.starts_with('.'))
+            .collect(),
+        Err(error) => {
+            log::warn!(
+                target: "solstone::indexer",
+                "facet detections not queued for search: facets can't be listed: {error}"
+            );
+            Vec::new()
+        }
+    }
+}

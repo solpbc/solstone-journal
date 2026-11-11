@@ -118,6 +118,8 @@ pub struct EntityPreview {
     pub entity_type: Option<String>,
     pub facets: usize,
     pub voice: bool,
+    /// The entity is hidden.
+    pub hidden: bool,
 }
 
 /// [`EntityPreview`] for live entity `entity_id`; `None` when it isn't one.
@@ -139,6 +141,9 @@ pub fn preview(journal: &Path, entity_id: &str) -> Result<Option<EntityPreview>,
         }),
         facets: link_paths(journal, entity_id)?.len(),
         voice,
+        hidden: identity
+            .as_ref()
+            .is_some_and(|identity| solstone_core_entity::entity_is_hidden(identity.value())),
     }))
 }
 
@@ -151,6 +156,8 @@ pub struct EntityTrashView {
     /// Another entity of the same name is in the journal now; recovering this
     /// one puts it back beside that one.
     pub same_name: bool,
+    /// The entity was hidden, and recovering it puts it back hidden.
+    pub hidden: bool,
 }
 
 /// [`EntityTrashView`] for an entity item.
@@ -165,6 +172,9 @@ pub fn trash_view(journal: &Path, item: &Item) -> EntityTrashView {
         .iter()
         .filter(|path| link_of(path).is_some())
         .count();
+    let hidden = identity
+        .as_ref()
+        .is_some_and(|(_, value)| solstone_core_entity::entity_is_hidden(value));
     let own_id = identity.map(|(id, _)| id);
     let same_name = item
         .label
@@ -180,6 +190,7 @@ pub fn trash_view(journal: &Path, item: &Item) -> EntityTrashView {
         entity_type,
         facets,
         same_name,
+        hidden,
     }
 }
 
@@ -328,8 +339,8 @@ impl Kind for Entities<'_> {
                     files.iter().cloned().map(RemovedPath::confirmed).collect();
                 self.index
                     .paths_removed(&removed)
-                    .map(|_| ())
-                    .map_err(|error| format!("search was not updated: {}", error.reason))
+                    .map_err(|error| format!("search was not updated: {}", error.reason))?;
+                queue_moved_links_detections(journal, files)
             }
             Change::Attached => {
                 self.index
@@ -339,11 +350,42 @@ impl Kind for Entities<'_> {
                     .map_err(|error| format!("the entity map wasn't rewritten: {error}"))?;
                 let kept = kept_ambiguities(journal, &item.id)?;
                 solstone_core_entity::restore_entity_ambiguity_references(journal, &id, &kept)
-                    .map(|_| ())
-                    .map_err(|error| format!("its ambiguities weren't put back: {error}"))
+                    .map_err(|error| format!("its ambiguities weren't put back: {error}"))?;
+                queue_moved_links_detections(journal, files)
             }
         }
     }
+}
+
+/// Queue the detections of each facet whose link moved: a hidden entity's
+/// name is hidden in a facet only while its link is there, so its detections
+/// there come back while it's in the trash and go again when it returns.
+fn queue_moved_links_detections(journal: &Path, files: &[String]) -> Result<(), String> {
+    // `files` names each moved file, so a link's files sit below its folder.
+    let mut facets: Vec<&str> = files
+        .iter()
+        .filter_map(|path| {
+            let mut parts = path.split('/');
+            match (parts.next(), parts.next(), parts.next(), parts.next()) {
+                (Some("facets"), Some(facet), Some("entities"), Some(folder))
+                    if !facet.is_empty() && !folder.is_empty() =>
+                {
+                    Some(facet)
+                }
+                _ => None,
+            }
+        })
+        .collect();
+    facets.sort_unstable();
+    facets.dedup();
+    for facet in facets {
+        if !crate::queue_facet_detections(journal, facet) {
+            return Err(format!(
+                "search was not updated: the detections of '{facet}' weren't queued"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Going: refuse the owner's own entity and a link that can't be read, then

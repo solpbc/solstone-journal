@@ -810,6 +810,7 @@ fn the_trash_view_and_preview_say_what_the_entity_holds() {
             entity_type: Some("Person".to_owned()),
             facets: 2,
             voice: true,
+            hidden: false,
         })
     );
     assert_eq!(preview(journal.root(), "nobody").unwrap(), None);
@@ -820,6 +821,7 @@ fn the_trash_view_and_preview_say_what_the_entity_holds() {
             entity_type: Some("Person".to_owned()),
             facets: 2,
             same_name: false,
+            hidden: false,
         }
     );
     journal.person("bobby", "BOB");
@@ -849,4 +851,64 @@ impl PipeSorted for Vec<Event> {
         self.sort_by_key(|event| format!("{event:?}"));
         self
     }
+}
+
+fn queued(journal: &Journal) -> Vec<String> {
+    solstone_core_indexer_todo::inspect(journal.root())
+        .map(|status| status.keys)
+        .unwrap_or_default()
+}
+
+fn clear_queue(journal: &Journal) {
+    let _ = fs::remove_dir_all(solstone_core_indexer_todo::root(journal.root()));
+}
+
+#[test]
+fn a_hidden_entity_says_so_in_the_trash_and_its_preview() {
+    let journal = bob_and_ann();
+    let told = Told::default();
+    let path = journal.root().join("entities/bob/entity.json");
+    let mut identity: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    identity["blocked"] = Value::Bool(true);
+    fs::write(&path, identity.to_string()).unwrap();
+    assert!(preview(journal.root(), "bob").unwrap().unwrap().hidden);
+    assert!(!preview(journal.root(), "ann").unwrap().unwrap().hidden);
+    let item = trash(&journal, &told, "bob").unwrap();
+    assert!(trash_view(journal.root(), &item).hidden);
+    let ann = trash(&journal, &told, "ann").unwrap();
+    assert!(!trash_view(journal.root(), &ann).hidden);
+}
+
+#[test]
+fn moving_an_entity_queues_the_detections_of_each_facet_its_links_leave_and_return_to() {
+    let journal = bob_and_ann();
+    journal.facet("other");
+    let told = Told::default();
+    clear_queue(&journal);
+    let item = trash(&journal, &told, "bob").unwrap();
+    let keys = queued(&journal);
+    assert!(
+        keys.contains(&"facets/work/entities".to_owned()),
+        "{keys:?}"
+    );
+    assert!(
+        keys.contains(&"facets/home/entities".to_owned()),
+        "{keys:?}"
+    );
+    assert!(
+        !keys.contains(&"facets/other/entities".to_owned()),
+        "{keys:?}"
+    );
+
+    clear_queue(&journal);
+    recover(&journal, &told, &item.id).unwrap();
+    let keys = queued(&journal);
+    assert!(
+        keys.contains(&"facets/work/entities".to_owned()),
+        "{keys:?}"
+    );
+    assert!(
+        keys.contains(&"facets/home/entities".to_owned()),
+        "{keys:?}"
+    );
 }

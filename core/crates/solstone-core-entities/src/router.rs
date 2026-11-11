@@ -2831,7 +2831,10 @@ async fn block_journal_entity_route(
         return r;
     }
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_facets::block_journal_entity(&root, &entity_id)
+        let result = solstone_core_facets::block_journal_entity(&root, &entity_id);
+        // Queued on every call, refused or unchanged too, so a retry heals.
+        solstone_core_facets::queue_linked_facet_detections(&root, &[entity_id]);
+        result
     })
     .await
     {
@@ -2867,7 +2870,10 @@ async fn unblock_journal_entity_route(
         return r;
     }
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_facets::unblock_journal_entity(&root, &entity_id)
+        let result = solstone_core_facets::unblock_journal_entity(&root, &entity_id);
+        // Queued on every call, refused or unchanged too, so a retry heals.
+        solstone_core_facets::queue_linked_facet_detections(&root, &[entity_id]);
+        result
     })
     .await
     {
@@ -2961,7 +2967,10 @@ async fn block_journal_entities_route(
     }
 
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_facets::block_journal_entities(&root, &operation, &ids)
+        let result = solstone_core_facets::block_journal_entities(&root, &operation, &ids);
+        // Queued on every call, refused or unchanged too, so a retry heals.
+        solstone_core_facets::queue_linked_facet_detections(&root, &ids);
+        result
     })
     .await
     {
@@ -3043,7 +3052,11 @@ async fn unblock_journal_operation_route(
     };
 
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_facets::unblock_journal_operation(&root, &operation, limit)
+        let result = solstone_core_facets::unblock_journal_operation(&root, &operation, limit);
+        // Which entities the undo reaches isn't known before it runs, and a
+        // refused one reaches none, so every facet is queued on every call.
+        solstone_core_facets::queue_every_facet_detections(&root);
+        result
     })
     .await
     {

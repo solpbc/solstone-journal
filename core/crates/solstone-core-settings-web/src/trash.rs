@@ -121,8 +121,8 @@ fn common(item: &Item, kind: &str) -> serde_json::Map<String, Value> {
 }
 
 /// A person or topic as the page shows it: its name, its type, how many
-/// facets it was in, and whether another of its name is in the journal now,
-/// which recovering puts it back beside.
+/// facets it was in, whether another of its name is in the journal now,
+/// which recovering puts it back beside, and whether it was hidden.
 fn entity_view(journal_root: &Path, item: &Item) -> Value {
     let facts = solstone_core_facets::entity_trash::trash_view(journal_root, item);
     let mut fields = common(item, "entity");
@@ -130,6 +130,7 @@ fn entity_view(journal_root: &Path, item: &Item) -> Value {
     fields.insert("entity_type".to_owned(), json!(facts.entity_type));
     fields.insert("facets".to_owned(), json!(facts.facets));
     fields.insert("same_name".to_owned(), json!(facts.same_name));
+    fields.insert("hidden".to_owned(), json!(facts.hidden));
     Value::Object(fields)
 }
 
