@@ -337,18 +337,16 @@ impl Registry {
             .as_ref()
     }
 
-    /// Merged, deleted, or in the middle of a delete; a damaged record counts.
+    /// Merged away; a damaged record counts. An id kept from a delete
+    /// doesn't: an entity of it that is here was recovered.
     fn retired(&self, entity_id: &str) -> bool {
         let mut retired = self
             .retired
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *retired.entry(entity_id.to_owned()).or_insert_with(|| {
-            !matches!(
-                solstone_core_entity::retired_record_hold(&self.journal_root, entity_id),
-                solstone_core_entity::RetiredRecordHold::Free
-            )
-        })
+        *retired
+            .entry(entity_id.to_owned())
+            .or_insert_with(|| merged_or_unknown(&self.journal_root, entity_id))
     }
 
     /// Whether `words` are, ignoring case, spaces and punctuation, the name of
@@ -434,8 +432,8 @@ pub struct CandidateEntity {
 }
 
 /// Every entity a possible name may be drawn from, by id: unblocked, with a
-/// non-detached facet relationship and a canonical name, and neither merged
-/// nor deleted. Reads go through the entity and facet stores.
+/// non-detached facet relationship and a canonical name, and not merged
+/// away. Reads go through the entity and facet stores.
 pub fn load_candidate_entities(journal_root: &Path) -> Result<Vec<CandidateEntity>, String> {
     let map = solstone_core_entity::read_identity_map(journal_root)
         .map_err(|error| format!("entity identities could not be read: {error}"))?;
@@ -488,15 +486,29 @@ pub fn load_candidate_entities(journal_root: &Path) -> Result<Vec<CandidateEntit
                 .insert(facet_dir.clone(), description);
         }
     }
+    let retired = solstone_core_entity::read_retired_entities(journal_root);
     Ok(found
         .into_values()
-        .filter(|entity| {
-            matches!(
-                solstone_core_entity::retired_record_hold(journal_root, &entity.entity_id),
-                solstone_core_entity::RetiredRecordHold::Free
-            )
-        })
+        .filter(|entity| !merged_in(&retired, &entity.entity_id))
         .collect())
+}
+
+/// Whether the record of retired entities names `entity_id` as merged away,
+/// or can't be read, so it can't be told.
+fn merged_or_unknown(journal_root: &Path, entity_id: &str) -> bool {
+    merged_in(
+        &solstone_core_entity::read_retired_entities(journal_root),
+        entity_id,
+    )
+}
+
+fn merged_in(retired: &solstone_core_entity::RetiredEntities, entity_id: &str) -> bool {
+    match retired {
+        solstone_core_entity::RetiredEntities::Absent => false,
+        solstone_core_entity::RetiredEntities::Loaded(merged) => merged.contains_key(entity_id),
+        solstone_core_entity::RetiredEntities::Malformed(_)
+        | solstone_core_entity::RetiredEntities::Unreadable(_) => true,
+    }
 }
 
 /// The speech transcript a segment's possible names address: `audio.jsonl`

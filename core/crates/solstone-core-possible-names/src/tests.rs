@@ -266,7 +266,7 @@ fn rename_block_detach_merge_and_delete_hide_that_entity_only() {
     fs::remove_dir_all(fixture.path().join("facets/beta/entities/friar")).unwrap();
     fixture.link("alpha", "friar", false);
 
-    // A merge or an owner delete records the id before anything is removed.
+    // A merge records the id before anything is removed.
     fs::write(
         fixture.path().join("entities/retired.json"),
         json!({"ids": {"friar": {"state": "merged", "dir": "friar", "successor": "ana"}}})
@@ -340,7 +340,8 @@ fn candidates_are_the_entities_a_reader_admits_with_their_relationships() {
             .iter()
             .map(|entity| entity.entity_id.as_str())
             .collect::<Vec<_>>(),
-        ["ana", "friar"]
+        // An id kept from a delete doesn't hide its entity once it's back.
+        ["ana", "friar", "gone"]
     );
     let ana = &candidates[0];
     assert_eq!(ana.name, "Ana Lima");

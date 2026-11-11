@@ -192,6 +192,23 @@ pub fn remove_entity_ambiguity_references(
     journal_root: &Path,
     entity_id: &str,
 ) -> Result<EntityAmbiguityRemovalReport, EntityWriteError> {
+    remove_entity_ambiguity_references_keeping(journal_root, entity_id, &mut |_| Ok(()))
+}
+
+/// [`remove_entity_ambiguity_references`], first handing `keep` what the
+/// rewrite takes from each row it changes, so a recover can put it back
+/// ([`restore_entity_ambiguity_references`]). `keep` runs under the
+/// ambiguities' own lock, before anything is written, and only when some row
+/// changes; if it fails, nothing is rewritten.
+///
+/// Each kept record is `{"ambiguity_id", "candidate"?, "resolved"?}`:
+/// `candidate` is the candidate object the rewrite strips, and `resolved`
+/// (`{"status", "at"}`) is there when the row was resolved to this entity.
+pub fn remove_entity_ambiguity_references_keeping(
+    journal_root: &Path,
+    entity_id: &str,
+    keep: &mut dyn FnMut(&[Value]) -> Result<(), String>,
+) -> Result<EntityAmbiguityRemovalReport, EntityWriteError> {
     let _trust = hold_entity_trust_lock(journal_root)?;
     let mut report = EntityAmbiguityRemovalReport {
         rewritten_ambiguity_ids: Vec::new(),
@@ -199,6 +216,13 @@ pub fn remove_entity_ambiguity_references(
     };
 
     mutate_ambiguities(journal_root, |rows| {
+        let kept: Vec<Value> = rows
+            .iter()
+            .filter_map(|row| ambiguity_reference(row, entity_id))
+            .collect();
+        if !kept.is_empty() {
+            keep(&kept).map_err(EntityWriteError::PublicationRefused)?;
+        }
         for row in rows.iter_mut() {
             let object = row
                 .as_object_mut()
@@ -246,6 +270,134 @@ pub fn remove_entity_ambiguity_references(
     })?;
 
     Ok(report)
+}
+
+/// What [`remove_entity_ambiguity_references`] takes from one row for
+/// `entity_id`, as a record to put back; `None` when it changes nothing there.
+fn ambiguity_reference(row: &Value, entity_id: &str) -> Option<Value> {
+    let object = row.as_object()?;
+    let ambiguity_id = object.get("ambiguity_id").and_then(Value::as_str)?;
+    let candidates = object.get("ranked_candidates").and_then(Value::as_array)?;
+    // The rewrite strips a candidate only when others remain.
+    let candidate = (candidates.len() > 1)
+        .then(|| {
+            candidates
+                .iter()
+                .find(|candidate| candidate.get("id").and_then(Value::as_str) == Some(entity_id))
+                .cloned()
+        })
+        .flatten();
+    let resolved = (object.get("resolved_entity_id").and_then(Value::as_str) == Some(entity_id))
+        .then(|| {
+            serde_json::json!({
+                "status": object.get("status").cloned().unwrap_or(Value::Null),
+                "at": object.get("resolved_at").cloned().unwrap_or(Value::Null),
+            })
+        });
+    if candidate.is_none() && resolved.is_none() {
+        return None;
+    }
+    let mut record = Map::new();
+    record.insert(
+        "ambiguity_id".to_owned(),
+        Value::String(ambiguity_id.to_owned()),
+    );
+    if let Some(candidate) = candidate {
+        record.insert("candidate".to_owned(), candidate);
+    }
+    if let Some(resolved) = resolved {
+        record.insert("resolved".to_owned(), resolved);
+    }
+    Some(Value::Object(record))
+}
+
+/// Put back what [`remove_entity_ambiguity_references_keeping`] kept for
+/// `entity_id`, field by field, so it composes with what happened since:
+///
+/// - a row that still exists and doesn't list the entity among its candidates
+///   gets the kept candidate back, at the row's current tier;
+/// - a row that was resolved to the entity, and is open now with no choice,
+///   is resolved to it again, at the time it was.
+///
+/// A row the owner resolved or dismissed since keeps that. A row the restore
+/// would leave invalid is left as it is. Safe to repeat.
+pub fn restore_entity_ambiguity_references(
+    journal_root: &Path,
+    entity_id: &str,
+    kept: &[Value],
+) -> Result<Vec<String>, EntityWriteError> {
+    let _trust = hold_entity_trust_lock(journal_root)?;
+    if kept.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut restored = Vec::new();
+    mutate_ambiguities(journal_root, |rows| {
+        for record in kept {
+            let Some(ambiguity_id) = record.get("ambiguity_id").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(row) = rows.iter_mut().find(|row| {
+                row.get("ambiguity_id").and_then(Value::as_str) == Some(ambiguity_id)
+            }) else {
+                continue;
+            };
+            let mut changed = row.clone();
+            let Some(object) = changed.as_object_mut() else {
+                continue;
+            };
+            let mut touched = false;
+            if let Some(mut candidate) = record.get("candidate").cloned() {
+                let tier = object.get("observed_tier").cloned();
+                if let Some(candidates) = object
+                    .get_mut("ranked_candidates")
+                    .and_then(Value::as_array_mut)
+                    && !candidates
+                        .iter()
+                        .any(|existing| existing.get("id").and_then(Value::as_str) == Some(entity_id))
+                {
+                    if let (Some(fields), Some(tier)) = (candidate.as_object_mut(), tier) {
+                        fields.insert("tier".to_owned(), tier);
+                    }
+                    candidates.push(candidate);
+                    touched = true;
+                }
+            }
+            if let Some(resolved) = record.get("resolved")
+                && object.get("status").and_then(Value::as_str) == Some("open")
+                && object.get("resolved_entity_id").is_none_or(Value::is_null)
+            {
+                let status = resolved
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .filter(|status| *status != "open")
+                    .unwrap_or("resolved");
+                object.insert("status".to_owned(), Value::String(status.to_owned()));
+                object.insert(
+                    "resolved_entity_id".to_owned(),
+                    Value::String(entity_id.to_owned()),
+                );
+                object.insert(
+                    "resolved_at".to_owned(),
+                    resolved.get("at").cloned().unwrap_or(Value::Null),
+                );
+                touched = true;
+            }
+            if !touched {
+                continue;
+            }
+            match validate_row(object) {
+                Ok(()) => {
+                    *row = changed;
+                    restored.push(ambiguity_id.to_owned());
+                }
+                Err(detail) => {
+                    log::warn!("ambiguity {ambiguity_id} was left as it is on recover: {detail}");
+                }
+            }
+        }
+        Ok(Value::Null)
+    })?;
+    Ok(restored)
 }
 
 fn row_references_facet(row: &Map<String, Value>, facet: &str) -> bool {

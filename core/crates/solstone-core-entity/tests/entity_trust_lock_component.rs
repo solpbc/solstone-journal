@@ -381,7 +381,7 @@ mod merge_recovery {
         {
             let _entity = solstone_core_entity::hold_entity_trust_lock(&journal).unwrap();
             solstone_core_entity::recover_interrupted_entity_merge(&journal).unwrap();
-            solstone_core_entity::record_deleted_entity(&journal, "other", "other", Some("Other"))
+            solstone_core_entity::record_deleted_entity(&journal, "other", "other")
                 .unwrap();
         }
         assert!(journal.join("entities/source").exists());
@@ -403,7 +403,7 @@ mod merge_recovery {
     fn recording_a_delete_without_settling_an_interrupted_merge_would_wedge_it() {
         let journal = recovery_fixture();
         crash_merge(&journal, "audit");
-        solstone_core_entity::record_deleted_entity(&journal, "other", "other", None).unwrap();
+        solstone_core_entity::record_deleted_entity(&journal, "other", "other").unwrap();
         assert!(
             commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
                 .is_err()

@@ -615,7 +615,7 @@ fn identity(journal: &Journal, id: &str) {
 }
 
 #[test]
-fn the_doctor_reports_then_repairs_what_needs_no_judgment_and_leaves_the_rest() {
+fn the_doctor_reports_then_repairs_what_needs_no_judgment() {
     use crate::facet_links::{LinkIssueKind, check_journal_links, repair_journal_links};
     let journal = Journal::new();
     for id in ["ada", "bob", "carol", "fred", "xavier", "gone"] {
@@ -632,15 +632,13 @@ fn the_doctor_reports_then_repairs_what_needs_no_judgment_and_leaves_the_rest() 
     journal.notes("xavier", &[row(1, "fred's note", 1)]);
     journal.link("xx", json!({"entity_id": "xavier"}));
     journal.notes("xx", &[row(1, "xavier's note", 1)]);
-    // A link to a merged-away id, and one to a deleted id.
+    // A link to a merged-away id.
     journal.link("merged_one", json!({"entity_id": "merged_one"}));
     journal.notes("merged_one", &[row(1, "kept by carol", 1)]);
-    journal.link("gone_link", json!({"entity_id": "deleted_one"}));
     fs::write(
         journal.0.join("entities/retired.json"),
         serde_json::to_vec(&json!({"ids": {
             "merged_one": {"state": "merged", "dir": "merged_one", "successor": "carol"},
-            "deleted_one": {"state": "deleted", "dir": "deleted_one"},
         }}))
         .unwrap(),
     )
@@ -659,7 +657,6 @@ fn the_doctor_reports_then_repairs_what_needs_no_judgment_and_leaves_the_rest() 
         vec![
             ("ada".to_owned(), LinkIssueKind::Duplicate),
             ("bob".to_owned(), LinkIssueKind::Misnamed),
-            ("deleted_one".to_owned(), LinkIssueKind::Deleted),
             ("fred".to_owned(), LinkIssueKind::Misnamed),
             (
                 "merged_one".to_owned(),
@@ -673,11 +670,10 @@ fn the_doctor_reports_then_repairs_what_needs_no_judgment_and_leaves_the_rest() 
 
     let (repaired, left) = repair_journal_links(&journal.0).unwrap();
     assert_eq!(repaired.len(), 5, "{repaired:?}");
-    assert_eq!(left.len(), 1);
-    assert_eq!(left[0].kind, LinkIssueKind::Deleted);
+    assert!(left.is_empty(), "{left:?}");
     assert_eq!(
         journal.folders(),
-        vec!["ada", "bob", "carol", "fred", "gone_link", "xavier"]
+        vec!["ada", "bob", "carol", "fred", "xavier"]
     );
     assert_eq!(journal.read_notes("fred")[0].content, "fred's note");
     assert_eq!(journal.read_notes("xavier")[0].content, "xavier's note");

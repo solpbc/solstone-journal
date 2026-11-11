@@ -572,14 +572,17 @@ fn linked_entity_ids(journal_root: &Path) -> Result<BTreeSet<String>, String> {
     Ok(ids)
 }
 
-/// Record an owner delete, before anything is removed. An id already in the
-/// record, merged or deleted, is left as it is, so a delete that resumes
-/// after a stop records nothing twice. A damaged record refuses.
+/// Reserve the id of an entity the owner deletes, before anything of it
+/// moves, so no new entity ever takes it and inherits what still names it.
+/// The entry keeps the id and its directory, never the name. An id already
+/// recorded as deleted is left as it is, so a delete that resumes after a
+/// stop records nothing twice. A damaged record refuses. The entry is never
+/// removed: a recovered entity is live again, and every reader checks live
+/// first.
 pub fn record_deleted_entity(
     journal_root: &Path,
     identity_id: &str,
     entity_dir: &str,
-    name: Option<&str>,
 ) -> Result<(), String> {
     let path = retired_path(journal_root).ok_or("entities/retired.json path is invalid")?;
     let mut root = match solstone_core_journal_io::read_optional_text(&path) {
@@ -610,17 +613,11 @@ pub fn record_deleted_entity(
     {
         return Ok(());
     }
-    let mut value = json!({
+    let value = json!({
         "state": "deleted",
         "dir": entity_dir,
         "at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
     });
-    if let Some(name) = name.filter(|name| !name.is_empty()) {
-        value
-            .as_object_mut()
-            .expect("json object")
-            .insert("name".to_owned(), Value::String(name.to_owned()));
-    }
     ids.insert(identity_id.to_owned(), value);
     write_json(
         &path,
@@ -776,86 +773,6 @@ pub fn read_merge_log(journal_root: &Path) -> Result<(Vec<MergeLogRow>, Vec<Stri
         }
     }
     Ok((rows, malformed))
-}
-
-/// What `entities/retired.json` says about one id, read without interpreting
-/// entries: any entry at all, in any state, counts as held.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RetiredRecordHold {
-    /// The record has no entry for the id (or doesn't exist yet).
-    Free,
-    /// The record has an entry for the id.
-    Held,
-    /// The record can't be read or isn't a record; the detail is owner text.
-    Damaged(String),
-}
-
-pub fn retired_record_hold(journal_root: &Path, identity_id: &str) -> RetiredRecordHold {
-    let Some(path) = retired_path(journal_root) else {
-        return RetiredRecordHold::Damaged(damaged_record_detail("the record's path is invalid"));
-    };
-    match solstone_core_journal_io::read_optional_text(&path) {
-        Ok(None) => RetiredRecordHold::Free,
-        Ok(Some(text)) => match serde_json::from_str::<Value>(&text) {
-            Ok(Value::Object(root)) => match root.get("ids") {
-                Some(Value::Object(ids)) if ids.contains_key(identity_id) => {
-                    RetiredRecordHold::Held
-                }
-                Some(Value::Object(_)) => RetiredRecordHold::Free,
-                _ => RetiredRecordHold::Damaged(damaged_record_detail("missing ids object")),
-            },
-            Ok(_) => RetiredRecordHold::Damaged(damaged_record_detail("not a JSON object")),
-            Err(error) => RetiredRecordHold::Damaged(damaged_record_detail(&error.to_string())),
-        },
-        Err(error) => RetiredRecordHold::Damaged(damaged_record_detail(&error.to_string())),
-    }
-}
-
-/// Record a delete found after the fact (the doctor's seeding): a `deleted`
-/// entry dated `at`, marked `seeded`. Unlike the live writer it never
-/// replaces anything: an existing entry for the id, in any state, is left
-/// byte for byte and `false` is returned.
-pub fn record_seeded_deletion(
-    journal_root: &Path,
-    identity_id: &str,
-    at: &str,
-) -> Result<bool, String> {
-    let path = retired_path(journal_root).ok_or("entities/retired.json path is invalid")?;
-    let mut root = match solstone_core_journal_io::read_optional_text(&path) {
-        Ok(Some(text)) => match serde_json::from_str::<Value>(&text) {
-            Ok(Value::Object(root)) if matches!(root.get("ids"), Some(Value::Object(_))) => root,
-            Ok(_) => return Err(damaged_record_detail("missing ids object")),
-            Err(error) => return Err(damaged_record_detail(&error.to_string())),
-        },
-        Ok(None) => {
-            let mut root = Map::new();
-            root.insert("ids".to_owned(), Value::Object(Map::new()));
-            root
-        }
-        Err(error) => return Err(damaged_record_detail(&error.to_string())),
-    };
-    let ids = root
-        .get_mut("ids")
-        .and_then(Value::as_object_mut)
-        .expect("ids object checked above");
-    if ids.contains_key(identity_id) {
-        return Ok(false);
-    }
-    ids.insert(
-        identity_id.to_owned(),
-        json!({"state": "deleted", "dir": identity_id, "at": at, "seeded": true}),
-    );
-    write_json(
-        &path,
-        &Value::Object(root),
-        JsonWriteOptions {
-            mode: Some(0o600),
-            indent: Some(2),
-            sort_keys: false,
-        },
-    )
-    .map_err(|error| error.to_string())?;
-    Ok(true)
 }
 
 /// Whether the record exists but can't be used; the detail is owner-readable.
@@ -1067,16 +984,16 @@ mod tests {
     }
 
     #[test]
-    fn a_delete_is_recorded_once_and_retires_the_id_and_its_directory() {
+    fn a_delete_is_recorded_once_without_a_name_and_retires_the_id_and_its_directory() {
         let root = journal();
         person(&root, "live", "Live");
-        super::record_deleted_entity(&root, "bob", "bob_dir", Some("Bob")).unwrap();
-        super::record_deleted_entity(&root, "bob", "other", None).unwrap();
+        super::record_deleted_entity(&root, "bob", "bob_dir").unwrap();
+        super::record_deleted_entity(&root, "bob", "other").unwrap();
         let text = fs::read_to_string(root.join("entities/retired.json")).unwrap();
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["ids"]["bob"]["state"], "deleted");
         assert_eq!(value["ids"]["bob"]["dir"], "bob_dir");
-        assert_eq!(value["ids"]["bob"]["name"], "Bob");
+        assert!(value["ids"]["bob"].get("name").is_none());
         let deleted = Ok(Some(super::RetiredState::Deleted));
         assert_eq!(super::retired_state(&root, "bob"), deleted);
         assert_eq!(super::retired_state(&root, "bob_dir"), deleted);
@@ -1094,7 +1011,7 @@ mod tests {
         let root = journal();
         // `robert` lives in directory `bob`; the deleted `bob` lived in `bob_old`.
         live(&root, "bob", r#"{"id":"robert","name":"Robert"}"#);
-        super::record_deleted_entity(&root, "bob_id", "bob_old", None).unwrap();
+        super::record_deleted_entity(&root, "bob_id", "bob_old").unwrap();
         fs::write(
             root.join("entities/retired.json"),
             r#"{"ids":{"bob":{"state":"deleted","dir":"bob_old"}}}"#,
@@ -1112,7 +1029,7 @@ mod tests {
     fn a_tombstone_left_for_a_live_entity_retires_neither_its_id_nor_its_directory() {
         let root = journal();
         live(&root, "ann_dir", r#"{"id":"ann","name":"Ann"}"#);
-        super::record_deleted_entity(&root, "ann", "ann_dir", None).unwrap();
+        super::record_deleted_entity(&root, "ann", "ann_dir").unwrap();
         assert_eq!(super::retired_state(&root, "ann"), Ok(None));
         assert_eq!(super::retired_state(&root, "ann_dir"), Ok(None));
         fs::remove_dir_all(root).unwrap();
@@ -1125,7 +1042,7 @@ mod tests {
             &root,
             r#"{"ids":{"sam":{"state":"merged","dir":"sam","successor":"samuel"}}}"#,
         );
-        super::record_deleted_entity(&root, "sam", "sam", None).unwrap();
+        super::record_deleted_entity(&root, "sam", "sam").unwrap();
         assert_eq!(
             super::retired_state(&root, "sam"),
             Ok(Some(super::RetiredState::Deleted))
@@ -1137,7 +1054,7 @@ mod tests {
     fn a_damaged_record_refuses_to_record_a_delete() {
         let root = journal();
         record(&root, "{nope");
-        assert!(super::record_deleted_entity(&root, "bob", "bob", None).is_err());
+        assert!(super::record_deleted_entity(&root, "bob", "bob").is_err());
         assert_eq!(
             fs::read_to_string(root.join("entities/retired.json")).unwrap(),
             "{nope"
@@ -1149,7 +1066,7 @@ mod tests {
     fn a_fresh_id_skips_every_way_an_id_can_be_taken() {
         let root = journal();
         assert_eq!(super::fresh_entity_id(&root, "bob").unwrap(), "bob");
-        super::record_deleted_entity(&root, "bob", "bob", None).unwrap();
+        super::record_deleted_entity(&root, "bob", "bob").unwrap();
         // A directory, even one without a readable identity.
         fs::create_dir_all(root.join("entities/bob_2")).unwrap();
         // A merge recorded only in the merge log.
