@@ -566,6 +566,8 @@ async function entityDeleteCases(workspace) {
     check(gone.receipt === C.set.noneMoved && gone.message === C.set.noneGoneMany && gone.keep.length === 0, 'refused because gone: nothing kept, no note');
     const unanswered = api.entitySetOutcome(false, ids, null, (id) => id === 'a');
     check(unanswered.receipt === C.set.noAnswerMove && JSON.stringify(unanswered.keep) === JSON.stringify([['a', null]]), 'no answer: what is still listed stays picked without a note');
+    const vanished = api.entitySetOutcome(false, ids, { done: [{ id: 'a', trash: { id: 'T-a' } }], failed: [{ id: 'b', reason: 'busy' }] }, (id) => id !== 'b');
+    check(vanished.keep.length === 0 && vanished.message === C.set.othersGoneOne, 'a refused one the reloaded list no longer shows is not counted and gets no note');
     const noList = api.entitySetOutcome(false, ids, { done: [], failed: [{ id: 'a', reason: 'busy' }, { id: 'b', reason: 'busy' }] }, null);
     check(noList.message === '' && noList.keep.length === 0, 'without a reloaded list nothing is said that needs it');
     const erased = api.entitySetOutcome(true, ids, { done: ids.map((id) => ({ id })), failed: [] }, there);
