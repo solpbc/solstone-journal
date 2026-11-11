@@ -4159,6 +4159,10 @@ function renderJournalDetailView(entity) {
   } else {
     detailView.classList.remove('blocked');
   }
+  // A hidden entity's names can't change, so its edit form takes no input
+  // from the keyboard either.
+  const editForm = document.getElementById('journal-detail-edit-form');
+  if (editForm) editForm.inert = isBlocked;
 
   // Header
   document.getElementById('journal-detail-name').textContent = entity.name;
