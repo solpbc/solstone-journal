@@ -99,10 +99,58 @@ pub fn discover_indexable_files(
     } else {
         journal
     };
+    let mut day_files = BTreeMap::new();
     for spec in patterns_for_root(PatternRoot::DayRooted) {
-        discover_from_root(day_root, day_root, spec.pattern, &mut files)?;
+        discover_from_root(day_root, day_root, spec.pattern, &mut day_files)?;
     }
+    // A segment the owner deleted is not searchable, whatever a late writer
+    // left beside its tombstone. A row already indexed for it is then a
+    // removal, so the next pass clears it.
+    let mut deleted = HashMap::new();
+    day_files.retain(|rel: &String, _| !in_deleted_segment_cached(day_root, rel, &mut deleted));
+    files.extend(day_files);
     Ok(files)
+}
+
+/// Whether a day-rooted file sits under a segment the owner deleted: a
+/// segment directory (`day/stream/segment`, or the older `day/segment`) that
+/// holds its `tombstone.json`. `rel` is journal-relative or day-root-relative.
+pub fn in_deleted_segment(journal: &Path, rel: &str) -> bool {
+    let chronicle = journal.join(CHRONICLE_DIR);
+    let day_root = if chronicle.is_dir() {
+        chronicle
+    } else {
+        journal.to_path_buf()
+    };
+    in_deleted_segment_cached(&day_root, rel, &mut HashMap::new())
+}
+
+fn in_deleted_segment_cached(
+    day_root: &Path,
+    rel: &str,
+    cache: &mut HashMap<PathBuf, bool>,
+) -> bool {
+    let rel = rel
+        .strip_prefix(CHRONICLE_DIR)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .unwrap_or(rel);
+    let parts = rel.split('/').collect::<Vec<_>>();
+    let Some(day) = parts.first() else {
+        return false;
+    };
+    if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    // The file itself is below the segment directory, so a candidate needs
+    // at least one more part after it.
+    (2..=3).filter(|depth| parts.len() > *depth).any(|depth| {
+        let dir = parts[..depth]
+            .iter()
+            .fold(day_root.to_path_buf(), |dir, part| dir.join(part));
+        *cache
+            .entry(dir)
+            .or_insert_with_key(|dir| fs::symlink_metadata(dir.join("tombstone.json")).is_ok())
+    })
 }
 
 struct CompiledStep<'a> {

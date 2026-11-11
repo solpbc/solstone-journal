@@ -1406,6 +1406,10 @@ pub(crate) fn rescan_file_admitted(
     if family.is_none() && edge_source.is_none() {
         return Ok(RescanFileStatus::Declined);
     }
+    // Nothing under a segment the owner deleted is indexed.
+    if solstone_core_indexer::discovery::in_deleted_segment(journal, &rel) {
+        return Ok(RescanFileStatus::Declined);
+    }
     match fs::metadata(&path) {
         Ok(metadata) if metadata.is_file() => {}
         Ok(_) => return Ok(RescanFileStatus::Declined),
@@ -7536,6 +7540,57 @@ mod tests {
         }
         drop(conn);
         fs::remove_dir_all(root).expect("cleanup all families root");
+    }
+
+    #[test]
+    fn a_deleted_segment_is_not_indexed_and_its_leftovers_clear_on_the_next_pass() {
+        let root = temp_root("deleted-segment");
+        let live = "20260101/default/090000_300/talents/sense.json";
+        let deleted = "20260101/phone_screenshots/093311_1/talents/sense.json";
+        write(
+            &root,
+            &format!("chronicle/{live}"),
+            r#"{"density":"active","content_type":"work"}"#,
+        );
+        write(
+            &root,
+            &format!("chronicle/{deleted}"),
+            r#"{"density":"idle","content_type":"idle"}"#,
+        );
+        scan_journal(&root, true).expect("first pass");
+        let chunks = |rel: &str| {
+            let conn = Connection::open(db_path(&root)).expect("open db");
+            count(
+                &conn,
+                &format!("SELECT count(*) FROM chunks WHERE path='{rel}'"),
+            ) + count(
+                &conn,
+                &format!("SELECT count(*) FROM files WHERE path='{rel}'"),
+            )
+        };
+        assert!(
+            chunks(deleted) > 0,
+            "the leftover is indexed before its tombstone"
+        );
+
+        // The owner deletes it: the trash leaves a tombstone, and a late writer's
+        // file beside it is a leftover.
+        write(
+            &root,
+            "chronicle/20260101/phone_screenshots/093311_1/tombstone.json",
+            "{}",
+        );
+        scan_journal(&root, false).expect("light pass");
+        assert_eq!(chunks(deleted), 0, "the leftover clears on the next pass");
+        assert!(chunks(live) > 0, "a live segment stays");
+
+        // A file written there later is declined, not indexed.
+        assert_eq!(
+            rescan_file(&root, Path::new(deleted)).expect("rescan"),
+            RescanFileStatus::Declined
+        );
+        assert_eq!(chunks(deleted), 0);
+        fs::remove_dir_all(root).expect("cleanup deleted segment root");
     }
 
     #[test]
