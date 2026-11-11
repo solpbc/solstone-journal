@@ -36,7 +36,11 @@ pub fn queue_body_entries_once(journal_root: &Path) {
     let Ok(facets) = std::fs::read_dir(journal_root.join("facets")) else {
         return;
     };
-    for facet in facets.flatten() {
+    // A dot-named folder is a facet merge's scratch or leftover, never a facet.
+    for facet in facets
+        .flatten()
+        .filter(|facet| !facet.file_name().to_string_lossy().starts_with('.'))
+    {
         let Ok(days) = std::fs::read_dir(facet.path().join("activities")) else {
             continue;
         };
