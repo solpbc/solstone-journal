@@ -14,6 +14,13 @@ pub fn is_retired_plan(record: &JsonObject) -> bool {
     record.get("source").and_then(Value::as_str) == Some("anticipated")
 }
 
+/// Whether the owner or the journal hid an activity record. A hidden record
+/// stays in its file and keeps its entry position, and nothing of it is
+/// indexed.
+pub fn is_hidden_activity(record: &JsonObject) -> bool {
+    json_truthy(record.get("hidden"))
+}
+
 /// What a body record's `source` says.
 pub const BODY_RECORD_SOURCE: &str = "body";
 
@@ -191,7 +198,7 @@ pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunk
             }
         }
 
-        if json_truthy(record.get("hidden")) {
+        if is_hidden_activity(record) {
             lines.push("- Hidden: yes".to_string());
         }
 
@@ -237,7 +244,7 @@ fn body_chunk(rel: Option<&str>, record: &JsonObject) -> super::IndexChunk {
     if let Some(details) = held("details") {
         lines.push(format!("- Details: {details}"));
     }
-    if json_truthy(record.get("hidden")) {
+    if is_hidden_activity(record) {
         lines.push("- Hidden: yes".to_string());
     }
     let occurrence = record
@@ -256,7 +263,7 @@ fn body_chunk(rel: Option<&str>, record: &JsonObject) -> super::IndexChunk {
     }
     source.insert(
         "hidden".to_string(),
-        Value::Bool(json_truthy(record.get("hidden"))),
+        Value::Bool(is_hidden_activity(record)),
     );
     recorded_chunk(lines.join("\n"), occurrence, &source)
 }
@@ -319,7 +326,7 @@ fn normalize_record(record: &JsonObject) -> JsonObject {
     );
     normalized.insert(
         "hidden".to_string(),
-        Value::Bool(json_truthy(record.get("hidden"))),
+        Value::Bool(is_hidden_activity(record)),
     );
     normalized.insert(
         "edits".to_string(),
