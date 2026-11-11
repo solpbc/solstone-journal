@@ -234,6 +234,19 @@ fn owner_entity_id(journal_root: &Path, slug: &str) -> Result<String, FacetEntit
     }
 }
 
+/// The id a new entity of `slug` is made under: the slug itself, unless it
+/// is kept from an entity the owner deleted, when it is the next free one, so
+/// the new entity never inherits what still names the one deleted. A slug
+/// merged away stays as it is, and its create refuses.
+pub(crate) fn new_entity_id(journal_root: &Path, slug: &str) -> Result<String, String> {
+    match solstone_core_entity::retired_state(journal_root, slug)? {
+        Some(solstone_core_entity::RetiredState::Deleted) => {
+            solstone_core_entity::fresh_entity_id(journal_root, slug)
+        }
+        _ => Ok(slug.to_owned()),
+    }
+}
+
 fn attach_or_reactivate(
     journal_root: &Path,
     facet_dir: &str,
@@ -366,7 +379,14 @@ fn attach_or_reactivate(
         let entity_id = if owner {
             owner_entity_id(journal_root, &slug)?
         } else {
-            slug
+            new_entity_id(journal_root, &slug).map_err(|detail| {
+                FacetEntityWriteError::EntityWrite(
+                    solstone_core_entity::EntityWriteError::InvalidIdentity {
+                        identity_id: slug.clone(),
+                        detail,
+                    },
+                )
+            })?
         };
         create_identity(journal_root, facet_dir, entity_id, entity_type, name)?
     };
@@ -449,14 +469,14 @@ pub enum FacetEntityCreateOutcome {
 /// - it names any journal identity confidently, by name, alias, email or id,
 ///   whatever facets link it and whether it is attached, detached or hidden;
 ///   a tie between identities counts, since either may be the one meant;
-/// - its slug is a live identity's id, or a retired one, deleted or merged;
+/// - its slug is a live identity's id, or one merged away;
 /// - it is one of the owner's configured names and `entity_type` is `Person`.
 ///   The owner's principal entity is covered by the first rule.
 ///
-/// A retired record keeps only an id and a folder, so a deleted entity whose
-/// id isn't its name's slug (renamed, suffixed, or known by an alias) is not
-/// recognized by name. A record of retired ids that can't be read is an
-/// error: nothing is created while it can't be checked.
+/// A slug kept from a deleted entity isn't taken: the new entity is made
+/// under the next free id, so it never inherits what still names the one
+/// deleted. A record of retired ids that can't be read is an error: nothing
+/// is created while it can't be checked.
 ///
 /// The check and the create happen under facet trust and entity trust, taken
 /// in the order every attach takes them, so no attach, detach or hide can land
@@ -514,7 +534,15 @@ fn create_facet_entity_if_absent_inner(
     if name_is_taken(journal_root, entity_type, name, &slug)? {
         return Ok(FacetEntityCreateOutcome::Exists);
     }
-    let (entity_id, _) = create_identity(journal_root, facet_dir, slug, entity_type, name)?;
+    let entity_id = new_entity_id(journal_root, &slug).map_err(|detail| {
+        FacetEntityWriteError::EntityWrite(
+            solstone_core_entity::EntityWriteError::InvalidIdentity {
+                identity_id: slug.clone(),
+                detail,
+            },
+        )
+    })?;
+    let (entity_id, _) = create_identity(journal_root, facet_dir, entity_id, entity_type, name)?;
     let relationship = link_new(journal_root, facet_dir, &entity_id, name, description)?;
     Ok(FacetEntityCreateOutcome::Created {
         entity_id,
@@ -562,7 +590,11 @@ fn name_is_taken(
             },
         )
     })?;
-    if retired.is_some() {
+    // A merged name redirects; one kept from a delete is created anew.
+    if matches!(
+        retired,
+        Some(solstone_core_entity::RetiredState::Merged { .. })
+    ) {
         return Ok(true);
     }
     if entity_type == "Person" {
@@ -885,8 +917,9 @@ pub fn prepare_review_promotion(
             };
             (owner.entity_id().to_owned(), owner.value().clone())
         } else {
-            let mut new_identity =
-                json!({"id":slug,"name":name,"type":entity_type,"created_at":now});
+            // A slug kept from a deleted entity gives way to the next free id.
+            let id = new_entity_id(root, &slug)?;
+            let mut new_identity = json!({"id":id,"name":name,"type":entity_type,"created_at":now});
             if !batch_principal_taken
                 && entity_type == "Person"
                 && solstone_core_entity::becomes_journal_principal(root, name, None, &[])
@@ -897,7 +930,7 @@ pub fn prepare_review_promotion(
                     .ok_or("malformed promotion identity")?
                     .insert("is_principal".into(), Value::Bool(true));
             }
-            (slug.clone(), new_identity)
+            (id, new_identity)
         }
     };
 

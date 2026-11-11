@@ -1421,10 +1421,8 @@ mod tests {
             "Role",
         )
         .unwrap();
-        solstone_core_facets::delete_journal_entity_after(temp.path(), "ada", |dir, _| {
-            solstone_core_entity::record_deleted_entity(temp.path(), "ada", dir, Some("Ada"))
-        })
-        .unwrap();
+        solstone_core_entity::record_deleted_entity(temp.path(), "ada", "ada").unwrap();
+        solstone_core_facets::delete_journal_entity(temp.path(), "ada").unwrap();
         let served_ids = BTreeSet::from(["ada".to_string()]);
         let output = serde_json::json!({
             "entities": [{"entity_id": "ada", "decisions": [{"op": "add", "content": "A new fact"}]}]

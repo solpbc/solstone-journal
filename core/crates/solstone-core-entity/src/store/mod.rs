@@ -35,7 +35,8 @@ mod write;
 pub use ambiguity::{
     EntityAmbiguityRemovalReport, EntityAmbiguityRescopeError, EntityAmbiguityRescopeReport,
     load_resolved_ambiguity_choice, read_ambiguities, remove_entity_ambiguity_references,
-    rescope_facet_ambiguities,
+    remove_entity_ambiguity_references_keeping, rescope_facet_ambiguities,
+    restore_entity_ambiguity_references,
 };
 pub use census::{CensusEntity, IdentityCensus, scan_identity_census};
 pub use create::{
@@ -97,10 +98,9 @@ pub use repair::{
 };
 pub use retired::{
     EntityEdgeAlias, MergeLogRow, MergedEntity, RETIRED_ENTITIES_FILE, RetiredEntities,
-    RetiredRecordHold, RetiredState, damaged_record_detail, entity_edge_aliases, fresh_entity_id,
+    RetiredState, damaged_record_detail, entity_edge_aliases, fresh_entity_id,
     live_merge_successor, merged_away, merged_successor, parse_retired_entities, read_merge_log,
-    read_retired_entities, record_deleted_entity, record_seeded_deletion, retired_record_damage,
-    retired_record_hold, retired_state,
+    read_retired_entities, record_deleted_entity, retired_record_damage, retired_state,
 };
 pub use review_candidates::{
     EntityMergeOpenClass, EntityReviewCandidateError, PreparedMergeProposals,

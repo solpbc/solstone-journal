@@ -236,7 +236,6 @@
       "planned_local_paths": [
         "archive export",
         "archive merge",
-        "entities doctor",
         "facet doctor",
         "facet merge"
       ],

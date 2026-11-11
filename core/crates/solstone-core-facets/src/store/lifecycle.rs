@@ -369,15 +369,8 @@ pub enum FacetEntityLifecycleError {
     Entity(EntityLifecycleError),
     FacetStore(FacetStoreError),
     FacetWrite(FacetWriteError),
-    PrincipalEntityProtected {
-        entity_id: String,
-    },
-    RelationshipsUnreadable {
-        path: String,
-    },
-    /// The step the caller runs before anything is removed refused; nothing
-    /// was removed.
-    BeforeRemoval(String),
+    PrincipalEntityProtected { entity_id: String },
+    RelationshipsUnreadable { path: String },
 }
 
 impl fmt::Display for FacetEntityLifecycleError {
@@ -395,7 +388,6 @@ impl fmt::Display for FacetEntityLifecycleError {
                 )
             }
             Self::RelationshipsUnreadable { path } => formatter.write_str(path),
-            Self::BeforeRemoval(detail) => formatter.write_str(detail),
         }
     }
 }
@@ -408,9 +400,7 @@ impl Error for FacetEntityLifecycleError {
             Self::Entity(error) => Some(error),
             Self::FacetStore(error) => Some(error),
             Self::FacetWrite(error) => Some(error),
-            Self::PrincipalEntityProtected { .. }
-            | Self::RelationshipsUnreadable { .. }
-            | Self::BeforeRemoval(_) => None,
+            Self::PrincipalEntityProtected { .. } | Self::RelationshipsUnreadable { .. } => None,
         }
     }
 }
@@ -802,20 +792,7 @@ pub fn delete_journal_entity(
     journal_root: &Path,
     entity_id: &str,
 ) -> Result<EntityDeleteReport, FacetEntityLifecycleError> {
-    delete_journal_entity_inner(journal_root, entity_id, |_, _| Ok(()), || {})
-}
-
-/// The owner's delete: as [`delete_journal_entity`], and after its own
-/// refusals (not found, the principal) and before anything is removed, it
-/// runs `before_removal` with the entity's directory and identity. The
-/// owner delete records the deleted id there; if that refuses, nothing is
-/// removed.
-pub fn delete_journal_entity_after(
-    journal_root: &Path,
-    entity_id: &str,
-    before_removal: impl FnOnce(&str, &Value) -> Result<(), String>,
-) -> Result<EntityDeleteReport, FacetEntityLifecycleError> {
-    delete_journal_entity_inner(journal_root, entity_id, before_removal, || {})
+    delete_journal_entity_inner(journal_root, entity_id, || {})
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -824,13 +801,12 @@ pub fn delete_journal_entity_with_hook(
     entity_id: &str,
     hook: impl FnOnce(),
 ) -> Result<EntityDeleteReport, FacetEntityLifecycleError> {
-    delete_journal_entity_inner(journal_root, entity_id, |_, _| Ok(()), hook)
+    delete_journal_entity_inner(journal_root, entity_id, hook)
 }
 
 fn delete_journal_entity_inner(
     journal_root: &Path,
     entity_id: &str,
-    before_removal: impl FnOnce(&str, &Value) -> Result<(), String>,
     hook: impl FnOnce(),
 ) -> Result<EntityDeleteReport, FacetEntityLifecycleError> {
     let _facet_trust =
@@ -862,8 +838,6 @@ fn delete_journal_entity_inner(
             entity_id: entity_id.to_owned(),
         });
     }
-    before_removal(&entity_dir, identity.value())
-        .map_err(FacetEntityLifecycleError::BeforeRemoval)?;
     let references = scan_entity_references(journal_root, entity_id, &entity_dir, None)?;
     let mut facets_deleted = Vec::new();
     for entry in list_dir_entries(&facets_dir(journal_root)?)

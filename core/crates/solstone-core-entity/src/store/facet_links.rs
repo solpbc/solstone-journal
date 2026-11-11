@@ -1196,8 +1196,6 @@ pub enum LinkIssueKind {
     Misnamed,
     /// The linked id was merged away; its links belong with `successor`.
     Merged { successor: String },
-    /// The linked id was deleted.
-    Deleted,
     /// The link's `entity.json` can't be read.
     Unreadable,
 }
@@ -1241,7 +1239,6 @@ pub fn check_journal_links(journal: &Path) -> Result<Vec<LinkIssue>, LinkFolderE
                 Ok(Some(super::retired::RetiredState::Merged { successor })) => {
                     LinkIssueKind::Merged { successor }
                 }
-                Ok(Some(super::retired::RetiredState::Deleted)) => LinkIssueKind::Deleted,
                 _ if folders.len() > 1 => LinkIssueKind::Duplicate,
                 _ if folders[0] != entity_id => LinkIssueKind::Misnamed,
                 _ => continue,
@@ -1262,8 +1259,8 @@ pub fn check_journal_links(journal: &Path) -> Result<Vec<LinkIssue>, LinkFolderE
 /// Repair what can be repaired without a judgment call, under the facet trust
 /// lock: an entity's duplicate or misnamed folders become one folder named by
 /// its id, and links to a merged-away id join the live entity it was merged
-/// into. A folder held by another entity, a deleted id and an unreadable link
-/// are left as they are. Returns what was repaired and what is left.
+/// into. A folder held by another entity and an unreadable link are left as
+/// they are. Returns what was repaired and what is left.
 pub fn repair_journal_links(
     journal: &Path,
 ) -> Result<(Vec<LinkIssue>, Vec<LinkIssue>), LinkFolderError> {
@@ -1307,7 +1304,7 @@ pub fn repair_journal_links(
                         None => Ok(false),
                     }
                 }
-                LinkIssueKind::Deleted | LinkIssueKind::Unreadable => Ok(false),
+                LinkIssueKind::Unreadable => Ok(false),
             };
             let key = (
                 issue.facet.clone(),

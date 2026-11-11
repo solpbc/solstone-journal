@@ -72,6 +72,7 @@ fn view(journal_root: &Path, item: &Item) -> Value {
         (Unit::Workout { source, day, .. }, _) => {
             return workout_view(journal_root, item, source, day.as_deref());
         }
+        (Unit::Entity, _) => return entity_view(journal_root, item),
         (Unit::Facet, _) => return facet_view(journal_root, item),
         (Unit::FacetFile, _) => return facet_file_view(journal_root, item),
         (Unit::Speakers, _) => return speakers_view(item),
@@ -117,6 +118,19 @@ fn common(item: &Item, kind: &str) -> serde_json::Map<String, Value> {
     fields.insert("bytes".to_owned(), json!(item.bytes));
     fields.insert("surface".to_owned(), json!(item.surface));
     fields
+}
+
+/// A person or topic as the page shows it: its name, its type, how many
+/// facets it was in, and whether another of its name is in the journal now,
+/// which recovering puts it back beside.
+fn entity_view(journal_root: &Path, item: &Item) -> Value {
+    let facts = solstone_core_facets::entity_trash::trash_view(journal_root, item);
+    let mut fields = common(item, "entity");
+    fields.insert("label".to_owned(), json!(item.label));
+    fields.insert("entity_type".to_owned(), json!(facts.entity_type));
+    fields.insert("facets".to_owned(), json!(facts.facets));
+    fields.insert("same_name".to_owned(), json!(facts.same_name));
+    Value::Object(fields)
 }
 
 /// A facet as the page shows it: its title, its folder name, and whether a

@@ -283,7 +283,7 @@ fn an_identity_with_no_name_whose_id_is_the_slug_exists() {
 }
 
 #[test]
-fn a_deleted_name_is_not_created_again() {
+fn a_deleted_name_is_created_anew_under_the_next_free_id() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
     create_test_facet(root, "work");
@@ -292,7 +292,17 @@ fn a_deleted_name_is_not_created_again() {
         "entities/retired.json",
         &json!({"ids":{"sam_chen":{"state":"deleted","dir":"sam_chen"}}}),
     );
-    assert_exists_and_nothing_written(root, "Person", "Sam Chen");
+    let outcome =
+        create_facet_entity_if_absent(root, "work", "Person", "Sam Chen", "named in 3 workouts")
+            .unwrap();
+    assert!(
+        matches!(
+            &outcome,
+            FacetEntityCreateOutcome::Created { entity_id, .. } if entity_id == "sam_chen_2"
+        ),
+        "{outcome:?}"
+    );
+    assert!(!root.join("entities/sam_chen").exists());
 }
 
 #[test]

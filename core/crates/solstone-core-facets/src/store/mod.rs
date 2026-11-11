@@ -110,8 +110,7 @@ pub use lifecycle::{
     FacetEntityLifecycleError, FacetRelationshipPlan, FailedEntity, PlannedFacetRelationship,
     RestoredEntity, StoppedReport, UnreadableEntityRecord, block_journal_entities,
     block_journal_entity, delete_created_entity_if_unreferenced, delete_journal_entity,
-    delete_journal_entity_after, plan_facet_entity_relationships, unblock_journal_entity,
-    unblock_journal_operation,
+    plan_facet_entity_relationships, unblock_journal_entity, unblock_journal_operation,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use lifecycle::{

@@ -4878,7 +4878,6 @@ dependencies = [
  "chrono-tz",
  "log",
  "rapidfuzz",
- "ring",
  "rusqlite",
  "serde",
  "serde_json",
@@ -4892,6 +4891,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-removals",
  "solstone-core-serving",
+ "solstone-core-trash",
  "tokio",
  "tower",
 ]
@@ -6224,14 +6224,9 @@ dependencies = [
 name = "solstone-core-serving"
 version = "2.0.74"
 dependencies = [
- "chrono",
- "serde",
  "serde_json",
  "solstone-core-entity",
  "solstone-core-facets",
- "solstone-core-journal-io",
- "solstone-core-removals",
- "tempfile",
  "tokio",
 ]
 

@@ -252,50 +252,6 @@ async fn request_without_access_basis(
     (status, body)
 }
 
-async fn delete_with_router(router: &axum::Router, uri: &str) -> (u16, Value) {
-    let mut request = Request::delete(uri).body(Body::empty()).unwrap();
-    request.extensions_mut().insert(AccessBasis::Localhost);
-    response_value(router.clone().oneshot(request).await.unwrap()).await
-}
-
-async fn get_with_router(router: &axum::Router, uri: &str) -> (u16, Value) {
-    let mut request = Request::get(uri).body(Body::empty()).unwrap();
-    request.extensions_mut().insert(AccessBasis::Localhost);
-    response_value(router.clone().oneshot(request).await.unwrap()).await
-}
-
-async fn post_with_router(router: &axum::Router, uri: &str) -> (u16, Value) {
-    let mut request = Request::post(uri).body(Body::empty()).unwrap();
-    request.extensions_mut().insert(AccessBasis::Localhost);
-    response_value(router.clone().oneshot(request).await.unwrap()).await
-}
-
-/// Every journal-level action record, from every day's ledger. A test that runs
-/// across the owner zone's midnight writes its rows into two day files.
-fn deferred_delete_action_records(root: &Path) -> Vec<Value> {
-    let Ok(entries) = fs::read_dir(root.join("config/actions")) else {
-        return Vec::new();
-    };
-    let mut ledgers: Vec<PathBuf> = entries
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|extension| extension == "jsonl")
-        })
-        .collect();
-    ledgers.sort();
-    ledgers
-        .iter()
-        .flat_map(|ledger| {
-            fs::read_to_string(ledger)
-                .unwrap()
-                .lines()
-                .map(|line| serde_json::from_str(line).unwrap())
-                .collect::<Vec<Value>>()
-        })
-        .collect()
-}
-
 async fn response_value(response: axum::response::Response) -> (u16, Value) {
     let status = response.status().as_u16();
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -5996,546 +5952,128 @@ async fn detect_refuses_invalid_type() {
     assert_eq!(response["reason_code"], "invalid_entity_type");
 }
 
-#[tokio::test]
-async fn deferred_delete_lapse_commits_and_logs_both_phases() {
-    let j = Journal::new();
-    seed_entity(j.path(), "target", "Target");
-    seed_facet_entity(j.path(), "work", "target");
-    let router = crate::router_with_delete_window_and_registry(
-        j.path(),
-        Duration::from_secs(3600),
-        solstone_core_serving::held_delete::Registry::new(),
+fn seed_linked(root: &Path, id: &str, name: &str) {
+    seed_entity(root, id, name);
+    write(
+        root,
+        "facets/work/facet.json",
+        json!({"title": "Work", "description": "", "color": "blue", "emoji": "💼"}),
     );
-
-    let (status, response) =
-        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
-
-    assert_eq!(status, 200);
-    let pending_id = response["pending"].as_str().unwrap().to_owned();
-    assert_eq!(pending_id.len(), 32);
-    assert!(response["commit_at_ms"].is_u64());
-    assert_eq!(response["ttl_seconds"], 3600.0);
-
-    // The deadline, reached early: the timer would do exactly this.
-    crate::deferred_delete::commit(j.path(), &pending_id, false);
-    let records = deferred_delete_action_records(j.path());
-
-    let (entity_status, entity) = call(j.path(), "/app/entities/api/journal/entity/target").await;
-    assert_eq!(entity_status, 404);
-    assert_eq!(entity["reason_code"], "entity_not_found");
-    let (_, facet) = call(j.path(), "/app/entities/api/work").await;
-    assert_eq!(facet["attached"], json!([]));
-    assert!(records.iter().any(|record| {
-        record["params"]["pending_id"] == pending_id && record["params"]["phase"] == "pending"
-    }));
-    assert!(records.iter().any(|record| {
-        record["params"]["pending_id"] == pending_id && record["params"]["phase"] == "committed"
-    }));
+    write(
+        root,
+        &format!("facets/work/entities/{id}/entity.json"),
+        json!({"entity_id": id}),
+    );
 }
 
 #[tokio::test]
-async fn deferred_delete_cancel_preserves_entity_and_logs_cancellation() {
+async fn deleting_an_entity_moves_it_and_its_links_to_the_trash() {
     let j = Journal::new();
-    seed_entity(j.path(), "target", "Target");
-    seed_facet_entity(j.path(), "work", "target");
-    let router = crate::router_with_delete_window_and_registry(
-        j.path(),
-        Duration::from_secs(3600),
-        solstone_core_serving::held_delete::Registry::new(),
-    );
-    let (_, scheduled) =
-        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
-    let pending_id = scheduled["pending"].as_str().unwrap();
+    seed_linked(j.path(), "target", "Target");
+    let (status, preview) = call(j.path(), "/app/entities/api/journal/entity/target/delete").await;
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["facets"], 1);
+    assert_eq!(preview["voice"], false);
 
-    let (cancel_status, cancelled) = post_with_router(
-        &router,
-        &format!("/app/entities/api/cancel-delete/{pending_id}"),
+    let (status, response) = delete(j.path(), "/app/entities/api/journal/entity/target").await;
+    assert_eq!(status, 200, "{response}");
+    assert_eq!(response["success"], true);
+    let item = response["trash"]["id"].as_str().unwrap();
+    assert!(response["trash"]["erase_at"].is_string());
+    assert!(!j.path().join("entities/target").exists());
+    assert!(!j.path().join("facets/work/entities/target").exists());
+    let held = solstone_core_trash::item(j.path(), item).unwrap().unwrap();
+    assert_eq!(held.unit, solstone_core_removals::Unit::Entity);
+    assert_eq!(
+        held.surface,
+        solstone_core_removals::Surface::Web {
+            page: solstone_core_removals::Page::Entities
+        }
+    );
+    assert!(!j.path().join("config/entity-deletes").exists());
+
+    let (status, again) = delete(j.path(), "/app/entities/api/journal/entity/target").await;
+    assert_eq!(status, 404, "{again}");
+    assert_eq!(again["reason"], "gone");
+}
+
+#[tokio::test]
+async fn deleting_an_entity_with_erase_erases_it_at_once() {
+    let j = Journal::new();
+    seed_linked(j.path(), "target", "Target");
+    let (status, response) = delete_json(
+        j.path(),
+        "/app/entities/api/journal/entity/target",
+        json!({"erase": true}),
     )
     .await;
-
-    assert_eq!(cancel_status, 200);
-    assert_eq!(cancelled, json!({"cancelled":pending_id}));
-    // A deadline after the cancel finds the record cancelled and stops.
-    crate::deferred_delete::commit(j.path(), pending_id, false);
-    let (entity_status, entity) = call(j.path(), "/app/entities/api/journal/entity/target").await;
-    assert_eq!(entity_status, 200);
-    assert_eq!(entity["entity"]["id"], "target");
-    let records = deferred_delete_action_records(j.path());
-    assert!(records.iter().any(|record| {
-        record["params"]["pending_id"] == pending_id && record["params"]["phase"] == "cancelled"
-    }));
-    assert!(!records.iter().any(|record| {
-        record["params"]["pending_id"] == pending_id && record["params"]["phase"] == "committed"
-    }));
+    assert_eq!(status, 200, "{response}");
+    assert_eq!(response, json!({"success": true, "erased": true}));
+    assert!(!j.path().join("entities/target").exists());
+    assert!(solstone_core_trash::list(j.path()).unwrap().is_empty());
 }
 
 #[tokio::test]
-async fn deferred_delete_missing_entity_is_bad_request_not_found() {
-    let j = Journal::new();
-    let (status, response) = delete(j.path(), "/app/entities/api/journal/entity/missing").await;
-    assert_eq!(status, 400);
-    assert_eq!(response["reason_code"], "entity_not_found");
-}
-
-#[tokio::test]
-async fn deferred_delete_refuses_the_principal_entity() {
+async fn the_principal_entity_is_refused_and_stays() {
     let j = Journal::new();
     write(
         j.path(),
         "entities/principal/entity.json",
-        json!({"id":"principal","name":"Self","type":"Person","is_principal":true}),
+        json!({"id":"principal","name":"Me","type":"Person","is_principal":true}),
     );
     let (status, response) = delete(j.path(), "/app/entities/api/journal/entity/principal").await;
-    assert_eq!(status, 400);
-    assert_eq!(response["reason_code"], "principal_entity_protected");
+    assert_eq!(status, 400, "{response}");
+    assert_eq!(response["success"], false);
+    assert_eq!(response["reason"], "principal");
+    assert!(j.path().join("entities/principal/entity.json").is_file());
+    let (_, preview) = call(j.path(), "/app/entities/api/journal/entity/missing/delete").await;
+    assert_eq!(preview["reason"], "gone");
 }
 
 #[tokio::test]
-async fn deferred_delete_refuses_malformed_pending_id() {
+async fn a_set_moves_each_entity_and_names_each_refusal() {
     let j = Journal::new();
-    let (status, response) = post(
-        j.path(),
-        "/app/entities/api/cancel-delete/not-a-pending-id",
-        json!({}),
-    )
-    .await;
-    assert_eq!(status, 410);
-    assert_eq!(response["reason_code"], "operation_no_longer_available");
-}
-
-#[tokio::test]
-async fn deferred_delete_refuses_unknown_well_formed_pending_id() {
-    let j = Journal::new();
-    let pending_id = "0123456789abcdef0123456789abcdef";
-    let (status, response) = post(
-        j.path(),
-        &format!("/app/entities/api/cancel-delete/{pending_id}"),
-        json!({}),
-    )
-    .await;
-    assert_eq!(status, 410);
-    assert_eq!(response["reason_code"], "operation_no_longer_available");
-}
-
-fn seed_created_entity(root: &Path, id: &str, name: &str, created_at: i64) {
-    write(
-        root,
-        &format!("entities/{id}/entity.json"),
-        json!({"id":id,"name":name,"type":"Person","created_at":created_at}),
-    );
-}
-
-/// Run `work` in a runtime that is then dropped, as a journal that stops
-/// takes its timers with it.
-fn in_stopped_process<T>(work: impl std::future::Future<Output = T>) -> T {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    let value = runtime.block_on(work);
-    drop(runtime);
-    value
-}
-
-fn delete_record(root: &Path, pending: &str) -> Option<Value> {
-    fs::read(
-        root.join("config/entity-deletes")
-            .join(format!("{pending}.json")),
-    )
-    .ok()
-    .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-}
-
-fn wait_for_delete_state(root: &Path, pending: &str, state: &str) -> Value {
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    loop {
-        if let Some(record) = delete_record(root, pending)
-            && record["state"] == state
-        {
-            return record;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "delete {pending} never reached {state}: {:?}",
-            delete_record(root, pending)
-        );
-        std::thread::sleep(Duration::from_millis(20));
-    }
-}
-
-fn delete_phases(root: &Path, pending: &str) -> Vec<(String, bool)> {
-    let mut rows = deferred_delete_action_records(root);
-    rows.sort_by(|left: &Value, right: &Value| {
-        left["timestamp"].as_str().cmp(&right["timestamp"].as_str())
-    });
-    rows.iter()
-        .filter(|row| row["params"]["pending_id"] == pending)
-        .map(|row| {
-            (
-                row["params"]["phase"].as_str().unwrap().to_owned(),
-                row["params"]["resumed"] == true,
-            )
-        })
-        .collect()
-}
-
-fn held_router(root: &Path, window: Duration) -> axum::Router {
-    crate::router_with_delete_window_and_registry(
-        root,
-        window,
-        solstone_core_serving::held_delete::Registry::new(),
-    )
-}
-
-#[test]
-fn a_confirmed_entity_delete_survives_a_stop_inside_its_window() {
-    let j = Journal::new();
-    seed_created_entity(j.path(), "target", "Target", 1_700_000_000_000);
-    seed_facet_entity(j.path(), "work", "target");
-    let (_, response) = in_stopped_process(async {
-        let router = held_router(j.path(), Duration::from_millis(300));
-        delete_with_router(&router, "/app/entities/api/journal/entity/target").await
-    });
-    let pending = response["pending"].as_str().unwrap().to_owned();
-    std::thread::sleep(Duration::from_millis(400));
-    assert!(
-        j.path().join("entities/target/entity.json").is_file(),
-        "the stopped process must not have committed"
-    );
-
-    let _next_start = held_router(j.path(), Duration::from_secs(10));
-    wait_for_delete_state(j.path(), &pending, "deleted");
-    assert!(!j.path().join("entities/target").exists());
-    assert!(!j.path().join("facets/work/entities/target").exists());
-    assert_eq!(
-        delete_phases(j.path(), &pending),
-        vec![("pending".into(), false), ("committed".into(), true)]
-    );
-}
-
-#[tokio::test]
-async fn a_failed_entity_delete_is_never_logged_committed_and_cancel_says_so() {
-    let j = Journal::new();
-    seed_entity(j.path(), "target", "Target");
-    seed_facet_entity(j.path(), "work", "target");
-    // An unreadable link makes the store refuse before it removes anything,
-    // without depending on file permissions.
-    write_raw(
-        j.path(),
-        "facets/aaa/entities/broken/entity.json",
-        b"{not json",
-    );
-    let router = held_router(j.path(), Duration::ZERO);
-    let (status, response) =
-        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
-    assert_eq!(status, 200);
-    let pending = response["pending"].as_str().unwrap().to_owned();
-
-    let (status, body) = get_with_router(
-        &router,
-        &format!("/app/entities/api/delete-status/{pending}"),
-    )
-    .await;
-    assert_eq!(status, 200);
-    assert_eq!(body["state"], "not_deleted");
-    assert_eq!(body["name"], "Target");
-    // The store's error can name paths; it stays in the action log.
-    assert!(body.get("reason").is_none());
-    assert!(j.path().join("entities/target/entity.json").is_file());
-    let phases = delete_phases(j.path(), &pending);
-    assert_eq!(
-        phases,
-        vec![("pending".into(), false), ("refused".into(), false)]
-    );
-
-    let (status, body) = post_with_router(
-        &router,
-        &format!("/app/entities/api/cancel-delete/{pending}"),
-    )
-    .await;
-    assert_eq!(status, 409);
-    assert_eq!(body["reason_code"], "entity_not_deleted");
-
-    let (status, body) = get_with_router(&router, "/app/entities/api/delete-outcomes").await;
-    assert_eq!(status, 200);
-    assert_eq!(body["outcomes"][0]["pending"], pending);
-    assert_eq!(body["outcomes"][0]["state"], "not_deleted");
-}
-
-#[tokio::test]
-async fn cancel_says_already_deleted_only_when_it_was() {
-    let j = Journal::new();
-    seed_entity(j.path(), "target", "Target");
-    let router = held_router(j.path(), Duration::ZERO);
-    let (_, response) =
-        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
-    let pending = response["pending"].as_str().unwrap().to_owned();
-    assert!(!j.path().join("entities/target").exists());
-    let (status, body) = post_with_router(
-        &router,
-        &format!("/app/entities/api/cancel-delete/{pending}"),
-    )
-    .await;
-    assert_eq!(status, 410);
-    assert_eq!(body["reason_code"], "entity_already_deleted");
-    let (status, _) = get_with_router(
-        &router,
-        &format!("/app/entities/api/delete-status/{}", "0".repeat(32)),
-    )
-    .await;
-    assert_eq!(status, 404);
-}
-
-#[test]
-fn a_resumed_entity_delete_can_still_be_cancelled_inside_its_window() {
-    let j = Journal::new();
-    seed_created_entity(j.path(), "target", "Target", 1_700_000_000_000);
-    let (_, response) = in_stopped_process(async {
-        let router = held_router(j.path(), Duration::from_secs(30));
-        delete_with_router(&router, "/app/entities/api/journal/entity/target").await
-    });
-    let pending = response["pending"].as_str().unwrap().to_owned();
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    let (status, body) = runtime.block_on(async {
-        let next_start = held_router(j.path(), Duration::from_secs(30));
-        post_with_router(
-            &next_start,
-            &format!("/app/entities/api/cancel-delete/{pending}"),
-        )
-        .await
-    });
-    assert_eq!(status, 200);
-    assert_eq!(body, json!({"cancelled":pending}));
-    assert_eq!(
-        delete_record(j.path(), &pending).unwrap()["state"],
-        "cancelled"
-    );
-    assert!(j.path().join("entities/target/entity.json").is_file());
-}
-
-#[test]
-fn a_resumed_entity_delete_keeps_an_entity_created_again_under_the_same_id() {
-    let j = Journal::new();
-    seed_created_entity(j.path(), "target", "Target", 1_700_000_000_000);
-    let (_, response) = in_stopped_process(async {
-        let router = held_router(j.path(), Duration::from_millis(100));
-        delete_with_router(&router, "/app/entities/api/journal/entity/target").await
-    });
-    let pending = response["pending"].as_str().unwrap().to_owned();
-    // While the journal is down, the entity is replaced by a new one that
-    // took the same id.
-    fs::remove_dir_all(j.path().join("entities/target")).unwrap();
-    seed_created_entity(j.path(), "target", "Target", 1_800_000_000_000);
-    // Its window passed while the journal was down.
-    let mut record = delete_record(j.path(), &pending).unwrap();
-    record["commit_at_ms"] = json!(chrono::Utc::now().timestamp_millis() - 1);
+    seed_linked(j.path(), "ada", "Ada");
+    seed_entity(j.path(), "bea", "Bea");
     write(
         j.path(),
-        &format!("config/entity-deletes/{pending}.json"),
-        record,
+        "entities/me/entity.json",
+        json!({"id":"me","name":"Me","type":"Person","is_principal":true}),
     );
-
-    let _next_start = held_router(j.path(), Duration::from_secs(10));
-    let record = wait_for_delete_state(j.path(), &pending, "not_deleted");
-    assert!(
-        record["reason"]
-            .as_str()
-            .unwrap()
-            .contains("a new entity has taken its place")
-    );
-    assert!(j.path().join("entities/target/entity.json").is_file());
-    assert_eq!(
-        delete_phases(j.path(), &pending),
-        vec![("pending".into(), false), ("refused".into(), true)]
-    );
-}
-
-/// A record as a previous run left it, with its deadline passed.
-fn write_left_record(root: &Path, pending: &str, created_at: i64, extra: Value) {
-    let mut record = json!({
-        "pending_id": pending,
-        "entity_id": "target",
-        "entity_dir": "target",
-        "name": "Target",
-        "created_at": created_at,
-        "requested_at": "2026-09-25T00:00:00+00:00",
-        "commit_at_ms": 1,
-        "state": "pending",
-    });
-    record
-        .as_object_mut()
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/delete",
+        json!({"ids": ["ada", "bea", "me", "nobody", "ada"]}),
+    )
+    .await;
+    assert_eq!(status, 200, "{response}");
+    let done: Vec<&str> = response["done"]
+        .as_array()
         .unwrap()
-        .extend(extra.as_object().unwrap().clone());
-    write(
-        root,
-        &format!("config/entity-deletes/{pending}.json"),
-        record,
-    );
-}
+        .iter()
+        .map(|row| row["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(done, ["ada", "bea"]);
+    assert!(response["done"][0]["result"]["trash"]["id"].is_string());
+    let failed: Vec<(&str, &str)> = response["failed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| (row["id"].as_str().unwrap(), row["reason"].as_str().unwrap()))
+        .collect();
+    assert_eq!(failed, [("nobody", "gone"), ("me", "principal")]);
+    assert!(!j.path().join("entities/ada").exists());
+    assert!(!j.path().join("entities/bea").exists());
+    assert!(j.path().join("entities/me/entity.json").is_file());
 
-#[test]
-fn a_taken_over_claim_reports_deleted_only_when_its_removal_had_started() {
-    // Claimed, then stopped before the removal began; meanwhile the entity
-    // went some other way (a merge). This delete removed nothing.
-    let j = Journal::new();
-    let pending = "a".repeat(32);
-    write_left_record(
+    let (status, bad) = post(
         j.path(),
-        &pending,
-        1_700_000_000_000,
-        json!({"started_at":"2026-09-25T00:00:01+00:00"}),
-    );
-    let _next_start = held_router(j.path(), Duration::from_secs(10));
-    let record = wait_for_delete_state(j.path(), &pending, "not_deleted");
-    assert!(
-        record["reason"]
-            .as_str()
-            .unwrap()
-            .contains("merged or removed")
-    );
-
-    // The same, but this delete's removal had started: it is what removed it.
-    let j = Journal::new();
-    let pending = "b".repeat(32);
-    write_left_record(
-        j.path(),
-        &pending,
-        1_700_000_000_000,
-        json!({
-            "started_at":"2026-09-25T00:00:01+00:00",
-            "removal_started_at":"2026-09-25T00:00:02+00:00",
-        }),
-    );
-    let _next_start = held_router(j.path(), Duration::from_secs(10));
-    wait_for_delete_state(j.path(), &pending, "deleted");
-    assert_eq!(
-        delete_phases(j.path(), &pending),
-        vec![("committed".into(), true)]
-    );
-}
-
-#[tokio::test]
-async fn an_entity_with_a_null_created_at_can_be_deleted() {
-    let j = Journal::new();
-    write(
-        j.path(),
-        "entities/target/entity.json",
-        json!({"id":"target","name":"Target","type":"Person","created_at":null}),
-    );
-    let router = held_router(j.path(), Duration::ZERO);
-    let (_, response) =
-        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
-    let pending = response["pending"].as_str().unwrap();
-    assert_eq!(
-        delete_record(j.path(), pending).unwrap()["state"],
-        "deleted"
-    );
-    assert!(!j.path().join("entities/target").exists());
-}
-
-#[tokio::test]
-async fn a_delete_does_not_join_a_waiting_delete_of_an_earlier_entity_under_the_id() {
-    let j = Journal::new();
-    seed_created_entity(j.path(), "target", "Target", 1_800_000_000_000);
-    let stale = "c".repeat(32);
-    write_left_record(
-        j.path(),
-        &stale,
-        1_700_000_000_000,
-        json!({"commit_at_ms": chrono::Utc::now().timestamp_millis() + 3_600_000}),
-    );
-    let router = held_router(j.path(), Duration::from_secs(3600));
-    let (status, response) =
-        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
-    assert_eq!(status, 200);
-    assert_ne!(response["pending"], stale);
-    // The earlier entity's delete is settled as kept at once, so it never
-    // later reports the entity being deleted now as kept.
-    assert_eq!(
-        delete_record(j.path(), &stale).unwrap()["state"],
-        "not_deleted"
-    );
-}
-
-#[tokio::test]
-async fn a_delete_joins_a_claimed_delete_of_the_entity_whose_removal_never_started() {
-    // A commit claimed this and gave up on a busy journal; deleting again
-    // re-arms it instead of running a second delete beside it.
-    let j = Journal::new();
-    seed_created_entity(j.path(), "target", "Target", 1_700_000_000_000);
-    let claimed = "f".repeat(32);
-    write_left_record(
-        j.path(),
-        &claimed,
-        1_700_000_000_000,
-        json!({
-            "started_at":"2026-09-25T00:00:01+00:00",
-            "commit_at_ms": chrono::Utc::now().timestamp_millis() + 3_600_000,
-        }),
-    );
-    let router = crate::router_with_delete_window_and_registry(
-        j.path(),
-        Duration::from_secs(3600),
-        solstone_core_serving::held_delete::Registry::new(),
-    );
-    let (status, response) =
-        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
-    assert_eq!(status, 200);
-    assert_eq!(response["pending"], claimed);
-}
-
-#[test]
-fn a_started_removal_that_left_the_directory_is_reported_partial() {
-    // The stopped run's removal took the identity and left the directory.
-    let j = Journal::new();
-    fs::create_dir_all(j.path().join("entities/target/history")).unwrap();
-    let pending = "d".repeat(32);
-    write_left_record(
-        j.path(),
-        &pending,
-        1_700_000_000_000,
-        json!({
-            "started_at":"2026-09-25T00:00:01+00:00",
-            "removal_started_at":"2026-09-25T00:00:02+00:00",
-        }),
-    );
-    let _next_start = held_router(j.path(), Duration::from_secs(10));
-    wait_for_delete_state(j.path(), &pending, "incomplete");
-}
-
-#[test]
-fn a_started_removal_of_a_still_present_entity_is_finished() {
-    let j = Journal::new();
-    seed_created_entity(j.path(), "target", "Target", 1_700_000_000_000);
-    let pending = "e".repeat(32);
-    write_left_record(
-        j.path(),
-        &pending,
-        1_700_000_000_000,
-        json!({
-            "started_at":"2026-09-25T00:00:01+00:00",
-            "removal_started_at":"2026-09-25T00:00:02+00:00",
-        }),
-    );
-    let _next_start = held_router(j.path(), Duration::from_secs(10));
-    let record = wait_for_delete_state(j.path(), &pending, "deleted");
-    assert!(record["removal_started_at"].is_string());
-    assert!(!j.path().join("entities/target").exists());
-}
-
-#[tokio::test]
-async fn a_second_delete_of_a_waiting_entity_joins_the_first() {
-    let j = Journal::new();
-    seed_entity(j.path(), "target", "Target");
-    let router = held_router(j.path(), Duration::from_secs(3600));
-    let (_, first) = delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
-    let (status, second) =
-        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
-    assert_eq!(status, 200);
-    assert_eq!(first["pending"], second["pending"]);
+        "/app/entities/api/journal/delete",
+        json!({"ids": []}),
+    )
+    .await;
+    assert_eq!(status, 400, "{bad}");
+    assert_eq!(bad["reason"], "bad_request");
 }
 
 #[tokio::test]
@@ -6857,32 +6395,6 @@ async fn refusal_sites_batch_1_store_conditions_are_exact() {
         404,
     );
     assert_oracle_refusal(
-        "delete_journal_entity_route:1979",
-        delete(missing.path(), "/app/entities/api/journal/entity/missing").await,
-        "entity_not_found",
-        400,
-    );
-    assert_oracle_refusal(
-        "cancel_delete_journal_entity:2046",
-        post_without_body(
-            missing.path(),
-            "/app/entities/api/cancel-delete/not-a-pending-id",
-        )
-        .await,
-        "operation_no_longer_available",
-        410,
-    );
-    assert_oracle_refusal(
-        "cancel_delete_journal_entity:2052",
-        post_without_body(
-            missing.path(),
-            "/app/entities/api/cancel-delete/0123456789abcdef0123456789abcdef",
-        )
-        .await,
-        "operation_no_longer_available",
-        410,
-    );
-    assert_oracle_refusal(
         "block_journal_entity_route:2086",
         post(
             missing.path(),
@@ -6900,11 +6412,11 @@ async fn refusal_sites_batch_1_store_conditions_are_exact() {
         "entities/owner/entity.json",
         json!({"id":"owner","name":"Owner","type":"Person","is_principal":true}),
     );
-    assert_oracle_refusal(
-        "delete_journal_entity_route:1986",
-        delete(principal.path(), "/app/entities/api/journal/entity/owner").await,
-        "principal_entity_protected",
-        400,
+    let (status, body) = delete(principal.path(), "/app/entities/api/journal/entity/owner").await;
+    assert_eq!(status, 400, "delete_journal_entity_route: status");
+    assert_eq!(
+        body["reason"], "principal",
+        "delete_journal_entity_route: reason"
     );
 }
 
@@ -6972,11 +6484,11 @@ async fn refusal_sites_batch_1_unexpected_store_failures_are_exact() {
         "not json",
     )
     .unwrap();
-    assert_oracle_refusal(
-        "delete_journal_entity_route:2039",
-        delete(bad_identity.path(), "/app/entities/api/journal/entity/a").await,
-        "entity_not_found",
-        400,
+    let (status, body) = delete(bad_identity.path(), "/app/entities/api/journal/entity/a").await;
+    assert_eq!(status, 404, "delete_journal_entity_route: status");
+    assert_eq!(
+        body["reason"], "gone",
+        "delete_journal_entity_route: reason"
     );
 }
 
@@ -8072,12 +7584,9 @@ async fn every_success_envelope_branch_sets_success_true() {
         let j = Journal::new();
         seed_entity(j.path(), "a", "Alice");
         let (status, body) = delete(j.path(), "/app/entities/api/journal/entity/a").await;
-        assert_eq!(status, 200, "deferred-delete: status");
-        assert_success_envelope("deferred-delete", &body, &json!({}));
-        assert!(
-            body["pending"].as_str().is_some(),
-            "deferred-delete: pending"
-        );
+        assert_eq!(status, 200, "delete: status");
+        assert_success_envelope("delete", &body, &json!({}));
+        assert!(body["trash"]["id"].as_str().is_some(), "delete: trash id");
     }
     {
         let j = Journal::new();
@@ -8489,25 +7998,6 @@ async fn resource_mutation_routes_omit_success() {
     }
     {
         let j = Journal::new();
-        seed_entity(j.path(), "target", "Target");
-        let router = crate::router_with_delete_window_and_registry(
-            j.path(),
-            Duration::from_secs(3600),
-            solstone_core_serving::held_delete::Registry::new(),
-        );
-        let (_, scheduled) =
-            delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
-        let pending_id = scheduled["pending"].as_str().unwrap();
-        let (status, body) = post_with_router(
-            &router,
-            &format!("/app/entities/api/cancel-delete/{pending_id}"),
-        )
-        .await;
-        assert_eq!(status, 200, "cancel-delete: status");
-        assert_no_success_envelope("cancel-delete", &body);
-    }
-    {
-        let j = Journal::new();
         seed_entity(j.path(), "a", "Alice");
         seed_facet_entity(j.path(), "work", "a");
         let row = seed_facet_ambiguity(j.path(), "Alic");
@@ -8704,29 +8194,14 @@ async fn attaching_a_merged_name_is_refused_naming_the_entity_it_joined() {
     assert!(!j.path().join("entities/source").exists());
 }
 
-/// Delete an entity as the owner does and wait for the delete to land.
+/// Delete an entity as the owner does.
 async fn owner_delete(root: &Path, entity_id: &str) {
-    let router = held_router(root, Duration::ZERO);
-    let (status, response) = delete_with_router(
-        &router,
+    let (status, response) = delete(
+        root,
         &format!("/app/entities/api/journal/entity/{entity_id}"),
     )
     .await;
     assert_eq!(status, 200, "{response}");
-    let pending = response["pending"].as_str().unwrap().to_owned();
-    for _ in 0..500 {
-        let (_, body) = get_with_router(
-            &router,
-            &format!("/app/entities/api/delete-status/{pending}"),
-        )
-        .await;
-        if body["state"] == "deleted" {
-            return;
-        }
-        assert_ne!(body["state"], "not_deleted", "{body}");
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    panic!("the delete of {entity_id} never landed");
 }
 
 fn retired_record(root: &Path) -> Value {
@@ -8798,16 +8273,13 @@ async fn a_name_merged_into_an_entity_since_deleted_is_added_under_a_suffixed_id
 }
 
 #[tokio::test]
-async fn a_damaged_entity_record_refuses_a_delete_before_its_window() {
+async fn a_damaged_entity_record_refuses_a_delete_and_nothing_moves() {
     let j = Journal::new();
     seed_entity(j.path(), "target", "Target");
     write_raw(j.path(), "entities/retired.json", b"{not json");
-    let router = held_router(j.path(), Duration::from_secs(60));
-    let (status, body) =
-        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
+    let (status, body) = delete(j.path(), "/app/entities/api/journal/entity/target").await;
     assert_eq!(status, 409, "{body}");
-    assert_eq!(body["reason_code"], "entity_record_damaged");
-    assert!(!j.path().join("config/entity-deletes").exists());
+    assert_eq!(body["reason"], "record_damaged");
     assert!(j.path().join("entities/target/entity.json").is_file());
     assert_eq!(
         fs::read(j.path().join("entities/retired.json")).unwrap(),
@@ -8837,7 +8309,7 @@ async fn notes_about_a_deleted_name_are_refused_and_create_nothing() {
 }
 
 #[tokio::test]
-async fn a_merge_that_can_not_be_finished_refuses_a_delete_with_its_reason() {
+async fn a_merge_that_can_not_be_finished_refuses_a_delete_as_busy() {
     let j = Journal::new();
     seed_entity(j.path(), "target", "Target");
     // A recovery record the journal can't settle.
@@ -8846,12 +8318,9 @@ async fn a_merge_that_can_not_be_finished_refuses_a_delete_with_its_reason() {
         "health/entity-merge-recovery/state.json",
         b"{not json",
     );
-    let router = held_router(j.path(), Duration::from_secs(60));
-    let (status, body) =
-        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
+    let (status, body) = delete(j.path(), "/app/entities/api/journal/entity/target").await;
     assert_eq!(status, 409, "{body}");
-    assert_eq!(body["reason_code"], "entity_merge_recovery_pending");
-    assert!(!j.path().join("config/entity-deletes").exists());
+    assert_eq!(body["reason"], "busy");
     assert!(j.path().join("entities/target/entity.json").is_file());
 }
 

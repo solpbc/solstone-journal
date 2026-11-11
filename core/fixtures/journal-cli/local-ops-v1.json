@@ -2,7 +2,7 @@
   "schema": "journal-local-ops-v1",
   "source": "P-CLI",
   "approval_reference": "fixture-local-no-external-approval",
-  "leaf_count": 5,
+  "leaf_count": 4,
   "exit_codes": {
     "success": 0,
     "operation_failed": 1,
@@ -103,52 +103,6 @@
           "expected_exit": 65,
           "expected_stdout": "",
           "expected_stderr_contains": "SOURCE must be a regular file"
-        }
-      ]
-    },
-    {
-      "path": ["entities", "doctor"],
-      "owner": "journal-direct",
-      "grammar": "journal entities doctor [--fix]",
-      "reads_stdin": false,
-      "introduced_local": true,
-      "retired_spellings": [],
-      "capabilities": [
-        "read journal_entity_delete rows from config/actions and report each delete that removed its entity: the immediate shape, committed, and failed with entity_removed",
-        "report without writing by default, naming the action-log days it could see",
-        "with --fix record each reported delete in entities/retired.json as a deleted entry marked seeded, dated by the delete's confirmation, when the id is not in the journal in any form, the record holds nothing for it, and no merge of it is newer",
-        "never replace an existing record entry, never write merged entries, never rebuild or move a damaged record",
-        "an unreadable merge log, identity map, record or action-log day refuses --fix before anything is written, as does an entity folder or merge-log line that can't be read and names no id: an id it can't read is unknown, never absent",
-        "list deletes that were asked for and never finished, and merged ids that are back in the journal, without changing them"
-      ],
-      "cases": [
-        {
-          "name": "report_only_writes_nothing",
-          "argv": ["entities", "doctor"],
-          "stdin": "",
-          "fixture": "one_pre_record_delete",
-          "expected_exit": 0
-        },
-        {
-          "name": "fix_records_the_delete",
-          "argv": ["entities", "doctor", "--fix"],
-          "stdin": "",
-          "fixture": "one_pre_record_delete",
-          "expected_exit": 0
-        },
-        {
-          "name": "fix_refuses_an_unreadable_log_day",
-          "argv": ["entities", "doctor", "--fix"],
-          "stdin": "",
-          "fixture": "unreadable_action_log_day",
-          "expected_exit": 74
-        },
-        {
-          "name": "unexpected_argument_is_usage",
-          "argv": ["entities", "doctor", "--merge"],
-          "stdin": "",
-          "fixture": "one_pre_record_delete",
-          "expected_exit": 64
         }
       ]
     },

@@ -62,16 +62,8 @@ pub enum ReasonCode {
     /// The name's entity was merged into another; merges are permanent.
     EntityMerged,
     EntityRecordDamaged,
-    EntityMergeRecoveryPending,
     EntityBlocked,
     EntityBusy,
-    EntityAlreadyDeleted,
-    EntityDeleteIncomplete,
-    EntityDeleteInProgress,
-    EntityDeleteNotCancelled,
-    EntityDeleteNotSaved,
-    EntityDeleteUnknown,
-    EntityNotDeleted,
     EntityNotFound,
     EntityOperationFailed,
     EntitySearchActivityUnavailable,
@@ -82,7 +74,6 @@ pub enum ReasonCode {
     InvalidRequestValue,
     MissingRequestBody,
     MissingRequiredField,
-    OperationNoLongerAvailable,
     OperationUndone,
     PrincipalEntityProtected,
     ResolvedChoiceEntityAbsent,
@@ -99,16 +90,8 @@ impl ReasonCode {
             Self::EntityAlreadyExists => "entity_already_exists",
             Self::EntityMerged => "entity_merged",
             Self::EntityRecordDamaged => "entity_record_damaged",
-            Self::EntityMergeRecoveryPending => "entity_merge_recovery_pending",
             Self::EntityBlocked => "entity_blocked",
             Self::EntityBusy => "entity_busy",
-            Self::EntityAlreadyDeleted => "entity_already_deleted",
-            Self::EntityDeleteIncomplete => "entity_delete_incomplete",
-            Self::EntityDeleteInProgress => "entity_delete_in_progress",
-            Self::EntityDeleteNotCancelled => "entity_delete_not_cancelled",
-            Self::EntityDeleteNotSaved => "entity_delete_not_saved",
-            Self::EntityDeleteUnknown => "entity_delete_unknown",
-            Self::EntityNotDeleted => "entity_not_deleted",
             Self::EntityNotFound => "entity_not_found",
             Self::EntityOperationFailed => "entity_operation_failed",
             Self::EntitySearchActivityUnavailable => "entity_search_activity_unavailable",
@@ -119,7 +102,6 @@ impl ReasonCode {
             Self::InvalidRequestValue => "invalid_request_value",
             Self::MissingRequestBody => "missing_request_body",
             Self::MissingRequiredField => "missing_required_field",
-            Self::OperationNoLongerAvailable => "operation_no_longer_available",
             Self::OperationUndone => "operation_undone",
             Self::PrincipalEntityProtected => "principal_entity_protected",
             Self::ResolvedChoiceEntityAbsent => "resolved_choice_entity_absent",
@@ -140,20 +122,13 @@ impl ReasonCode {
             | Self::EntityAlreadyExists
             | Self::EntityMerged
             | Self::EntityRecordDamaged
-            | Self::EntityMergeRecoveryPending
-            | Self::EntityDeleteIncomplete
-            | Self::EntityDeleteInProgress
-            | Self::EntityNotDeleted
             | Self::OperationUndone => StatusCode::CONFLICT,
-            Self::EntityDeleteUnknown
-            | Self::EntityNotFound
+            Self::EntityNotFound
             | Self::ResolvedChoiceEntityAbsent
             | Self::ResolvedChoiceEntityBlocked => StatusCode::NOT_FOUND,
-            Self::EntityAlreadyDeleted | Self::OperationNoLongerAvailable => StatusCode::GONE,
-            Self::EntityOperationFailed
-            | Self::EntityAmbiguityCorrupt
-            | Self::EntityDeleteNotCancelled
-            | Self::EntityDeleteNotSaved => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::EntityOperationFailed | Self::EntityAmbiguityCorrupt => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
             Self::EntityBlocked
             | Self::InvalidEntityType
             | Self::InvalidRequestValue

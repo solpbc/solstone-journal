@@ -993,9 +993,10 @@ pub fn prepare_publication(
             batch_principal_taken,
             &batch_claims,
         )?;
-        // A merged or deleted entity is never created again. A name a live
-        // entity carries (one the owner added again under a new id) resolves
-        // to that entity and is promoted as usual.
+        // A merged entity is never created again. A name a live entity
+        // carries (one the owner added again under a new id) resolves to that
+        // entity and is promoted as usual, and a name kept from a deleted one
+        // was given the next free id when it was prepared.
         if let Some(change) = &promotion.identity
             && solstone_core_entity::retired_state(journal, &change.entity_id)?.is_some()
         {
@@ -1220,11 +1221,10 @@ pub(crate) fn apply_result_cancellable(
                     *counts.get_mut("skipped").unwrap() += 1;
                     Some(canonical_slug.to_owned())
                 }
-                // A merged or deleted entity is never created again; the
-                // detection is not an error, and nothing is attached for it.
+                // A merged entity is never created again; the detection is
+                // not an error, and nothing is attached for it.
                 Err(solstone_core_facets::FacetEntityWriteError::EntityWrite(
-                    solstone_core_entity::EntityWriteError::IdentityMerged { .. }
-                    | solstone_core_entity::EntityWriteError::IdentityDeleted { .. },
+                    solstone_core_entity::EntityWriteError::IdentityMerged { .. },
                 )) => {
                     *counts.get_mut("skipped").unwrap() += 1;
                     None

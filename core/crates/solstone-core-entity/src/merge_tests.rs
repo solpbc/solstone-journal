@@ -2499,7 +2499,7 @@ fn a_merged_name_gets_no_new_observation_link() {
 fn a_deleted_name_is_never_created_again_and_takes_no_notes() {
     let journal = voiceprint_journal();
     two_entities(&journal);
-    crate::record_deleted_entity(&journal, "source", "source", Some("source")).unwrap();
+    crate::record_deleted_entity(&journal, "source", "source").unwrap();
     fs::remove_dir_all(journal.join("entities/source")).unwrap();
 
     let error = save_entity_identity(
@@ -2539,7 +2539,7 @@ fn a_folder_whose_link_names_a_deleted_entity_takes_no_notes() {
     let folder = journal.join("facets/work/entities/old_folder");
     fs::create_dir_all(&folder).unwrap();
     fs::write(folder.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
-    crate::record_deleted_entity(&journal, "source", "source", None).unwrap();
+    crate::record_deleted_entity(&journal, "source", "source").unwrap();
     fs::remove_dir_all(journal.join("entities/source")).unwrap();
 
     for query in ["source", "old_folder"] {
