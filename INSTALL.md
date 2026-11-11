@@ -14,10 +14,10 @@ The latest version of these instructions is at https://solstone.app/install.
 solstone --version 2>&1 && solstone journal service status 2>&1
 ```
 
-On linux, a missing PATH command can also mean an archive installation used `--no-path`; check its prefix before installing again. On mac, check for `/Applications/journal.app` instead. On windows, run `solstone journal --version` in a terminal; if windows cannot find `solstone`, see [install on windows](#install-on-windows).
+On linux, a missing PATH command can also mean an install used `--no-path`; check its prefix before installing again. On mac, check for `/Applications/journal.app` instead. On windows, run `solstone journal --version` in a terminal; if windows cannot find `solstone`, see [install on windows](#install-on-windows).
 On linux, if both commands succeed and the second command reports `state: running (systemd)`, skip to [install the solstone app on your devices](#install-the-solstone-app-on-your-devices).
 
-For a curl installation, the prefix is `~/.local`, with binary `~/.local/current/bin/solstone` and receipt `~/.local/install-receipt`. For an archive installation, run the linux `solstone` commands below through that installation's `current/bin/solstone`. The default full path is `~/.local/solstone-journal/current/bin/solstone` (receipt `~/.local/solstone-journal/install-receipt`); use your chosen prefix if it differs. This also covers `--no-path` installations.
+For a curl installation, the prefix is `~/.local`, with binary `~/.local/current/bin/solstone` and receipt `~/.local/install-receipt`. For an install made by the journal installer (default prefix `~/.local/solstone-journal`), run the linux `solstone` commands below through that installation's `current/bin/solstone`. The default full path is `~/.local/solstone-journal/current/bin/solstone` (receipt `~/.local/solstone-journal/install-receipt`); use your chosen prefix if it differs. This also covers `--no-path` installations.
 
 ### Prerequisites
 
@@ -53,7 +53,13 @@ curl -fsSL https://solstone.app/install.sh | sh -s -- --components journal
 
 The curl route installs under prefix `~/.local`, with binary `~/.local/current/bin/solstone` and receipt `~/.local/install-receipt`.
 
-That follows the `release` lane's `latest` pointer, fetches the archive and signed release set from `updates.solstone.app`, verifies the manifest signature with the pinned minisign key, then checks the manifest digests for the selected archive, checksum, and release record. It installs and runs setup once. When a desktop is available, the installer opens the setup page; otherwise it prints the link and an SSH tunnel command for opening it from another computer. After setup, use the printed network-page link to make a pairing link for the solstone app. Pass `--version <version>` to pin a version instead of following `latest`. A tree downgrade with `--version` proceeds only when that exact build is still inside this release's three-directory `journal-v2` window; outside the epoch or window it refuses without touching the journal. The archive route below is the same operation with the files already on disk.
+That follows the `release` lane's `latest` pointer, fetches the archive and signed release set from `updates.solstone.app`, verifies the manifest signature with the pinned minisign key, then checks the manifest digests for the selected archive, checksum, and release record. It installs and runs setup once. When a desktop is available, the installer opens the setup page; otherwise it prints the link and an SSH tunnel command for opening it from another computer. After setup, use the printed network-page link to make a pairing link for the solstone app. Pass `--version <version>` to pin a version instead of following `latest`. A tree downgrade with `--version` proceeds only when that exact build is still inside this release's three-directory `journal-v2` window; outside the epoch or window it refuses without touching the journal.
+
+⚠ **The installer adds `~/.local/current/bin` to PATH in `~/.profile`, which is read by login shells.** A new terminal window on most linux desktops is not one, and zsh does not read it at all. Either log out and back in, or:
+
+```bash
+. ~/.profile
+```
 
 Every release names its files the same way: `solstone-journal-<version>-linux-<arch>`, where `<arch>` is `x86_64` or `aarch64`. The three archives are `.tar.gz`, `.deb` and `.rpm`. Each release also carries a `.sha256`, a `.manifest.json`, a `.manifest.json.minisig` and a `.release` record.
 
@@ -71,35 +77,9 @@ If minisign refuses, stop. Compare the artifact digest printed by `sha256sum` wi
 
 The public key is in this repository at `packaging/keys/solstone-journal-release.pub`. It is also at `https://updates.solstone.app/solstone-journal/minisign.pub`. Install minisign from your distribution if you do not have it (for example `apt install minisign`, `dnf install minisign` or `pacman -S minisign`).
 
-For an online install, the installer downloads and checks a pinned copy of minisign if it is missing. To verify files independently or install from local files, have minisign available on PATH.
+The installer downloads and checks a pinned copy of minisign if it is missing.
 
 If a completed journal or CLI tree install skipped signature verification, download the [journal installer](https://updates.solstone.app/solstone-journal/install.sh) and run it with the same `--prefix`, `--role` and `--version`. If the installed files match the signed release, it updates the receipt and keeps the installed files and service settings.
-
-### The archive
-
-This local-file route verifies the manifest signature, then checks its digests for the selected archive, checksum, and release record before installing. Give it all five files:
-
-```bash
-sh core/distribution/install.sh --archive solstone-journal-<version>-linux-<arch>.tar.gz \
-              --sha256 solstone-journal-<version>-linux-<arch>.sha256 \
-              --release solstone-journal-<version>-linux-<arch>.release \
-              --manifest solstone-journal-<version>-linux-<arch>.manifest.json \
-              --minisig solstone-journal-<version>-linux-<arch>.manifest.json.minisig
-```
-
-With no `--prefix` it installs under `~/.local/solstone-journal`, keeps each version in its own directory, points `current` at the live one, and runs `solstone journal setup --yes` from that build so the managed PATH wrapper and service follow it. It leaves a plain-text receipt at `~/.local/solstone-journal/install-receipt`. It adds `current/bin` to PATH by writing a block into `~/.profile` between `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`. `--no-path` skips that edit, so a throwaway or side-by-side prefix does not touch your login files. On success it prints the version, lane, prefix, and how to pick up PATH.
-
-Options:
-- `--role <journal|cli>`: installation role (default: `journal`). `journal` configures host background services, managed wrappers, and journal state via `solstone journal setup`. `cli` installs the verified tree binaries and PATH integration only, without configuring or running background services (`solstone journal setup` is never invoked, `setup_status=not-applicable`, `service_policy=none`). When transitioning a prefix previously configured to run a journal to `--role cli`, run `solstone journal setup --clean-uninstall` first (which removes setup/service ownership without deleting journal records or the verified payload tree).
-- `--no-start`: during journal installation, skips starting the background supervisor (`solstone journal setup --skip-service`), marking `service_policy=no-start` in the receipt while completing all other setup tasks. Has no effect on `--role cli`.
-
-`--prune` is a separate, explicit maintenance run. It keeps `current` plus the two newest other version directories; an install or upgrade never prunes as a side effect.
-
-⚠ **`~/.profile` is read by login shells.** A new terminal window on most linux desktops is not one, and zsh does not read it at all. Either log out and back in, or:
-
-```bash
-. ~/.profile
-```
 
 ### A distribution package
 
@@ -263,8 +243,6 @@ The new build takes effect when your journal next starts, including after a logi
 
 If a tree install reports `setup-failed`, follow the named correction and rerun the same `install.sh` command. When setup may already have changed a managed wrapper or service, the installer keeps the candidate selected and writes `setup_status=pending` in its receipt; the same command finishes that transaction safely.
 
-The archive route keeps each version in its own directory and moves the `current` symlink, so an upgrade unpacks a second tree alongside the live one before switching.
-
 ### If you already have a journal with history in it
 
 A few more things happen, or need to happen, on top of the install.
@@ -297,10 +275,10 @@ Setup keeps the journal in an `adopted` installation record unless you pass `--j
 
 Your journal stays, including its models, keys, device connections and setup record.
 
-If an archive was installed only with `--role cli` and setup was never run, skip to step 2.
+If an install made by the journal installer (default prefix `~/.local/solstone-journal`) was made only with `--role cli` and setup was never run, skip to step 2.
 
-1. Before removing a journal installation, run its setup cleanup. For a package installation, use `solstone journal setup --clean-uninstall --yes`. For a curl installation, use `~/.local/current/bin/solstone journal setup --clean-uninstall --yes`. For an archive, use `~/.local/solstone-journal/current/bin/solstone journal setup --clean-uninstall --yes`, replacing the default prefix if you chose another. This removes its service and owned command wrappers. For the last installation, it also removes the journal-location config, setup backups, package-install receipt and rclone cache outside the journal. It prints where your journal remains and skips any cleanup directory containing it. If cleanup refuses or any step fails, stop before removing the program so you can retry through the same command.
-2. Remove the program through the route that installed it: `sudo apt remove solstone-journal`, `sudo dnf remove solstone-journal`, or remove your archive installation prefix. Removing a curl installation removes its `current` link, its version directories, and `install-receipt` under `~/.local`, and leaves the rest of `~/.local`. Check that the prefix does not contain your journal before deleting it. The archive installer's PATH block in `~/.profile`, marked `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`, can then be removed.
+1. Before removing a journal installation, run its setup cleanup. For a package installation, use `solstone journal setup --clean-uninstall --yes`. For a curl installation, use `~/.local/current/bin/solstone journal setup --clean-uninstall --yes`. For an install made by the journal installer (default prefix `~/.local/solstone-journal`), use `~/.local/solstone-journal/current/bin/solstone journal setup --clean-uninstall --yes`, replacing the default prefix if you chose another. This removes its service and owned command wrappers. For the last installation, it also removes the journal-location config, setup backups, package-install receipt and rclone cache outside the journal. It prints where your journal remains and skips any cleanup directory containing it. If cleanup refuses or any step fails, stop before removing the program so you can retry through the same command.
+2. Remove the program through the route that installed it: `sudo apt remove solstone-journal`, `sudo dnf remove solstone-journal`, or remove the installation prefix. Removing a curl installation removes its `current` link, its version directories, and `install-receipt` under `~/.local`, and leaves the rest of `~/.local`. Check that the prefix does not contain your journal before deleting it. The installer's PATH block in `~/.profile`, marked `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`, can then be removed.
 
 Small installation records stay to prevent old launchers from starting a removed installation. For the last installation, cleanup removes agent skill copies that match this runtime from `~/.claude/skills/solstone`, `~/.codex/skills/solstone` and `~/.gemini/skills/solstone`. Modified or unrecognized copies stay; older links pointing into this runtime are removed. The shared `~/.local/bin` PATH lines stay because other commands may use them.
 

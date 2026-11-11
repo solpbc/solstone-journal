@@ -7,8 +7,8 @@ This file ships inside the installed tree, at `share/README.md`, next to `bin/` 
 - `~/.local/bin/solstone`: the CLI. `solstone journal` runs and repairs the journal on this computer (setup, service, doctor); the other commands reach your journal through its API
 `journal <args>` has moved to `solstone journal <args>`; update any commands or scripts that use the old name.
 - `~/.config/systemd/user/solstone.service`: the systemd user unit
-- `~/.local/solstone-journal/versions/<version>-<hash>/`: one immutable directory per installed version
-- `~/.local/solstone-journal/current`: symlink to the live version; `current/bin` is what is on PATH
+- `<prefix>/versions/<version>-<hash>/`: one immutable directory per installed version. The prefix is `~/.local` for a curl install and `~/.local/solstone-journal` for the journal installer
+- `<prefix>/current`: symlink to the live version; `current/bin` is what is on PATH
 - `~/journal` (default, overridable): the owner's journal. Never move, delete, reformat, or otherwise touch its contents yourself.
 
 ## The one command that fixes almost everything
@@ -24,8 +24,7 @@ comes first on your normal PATH, and then run the installer at
 https://solstone.app/install.sh with `--upgrade` once, so `solstone update` updates the
 package. The installer runs setup itself, on either route. Do not remove the old install first: setup recognizes only
 its known runtime and service artifacts, keeps recovery backups of recognized
-legacy launchers, and preserves your journal. Archive installs still use
-`solstone journal setup`.
+legacy launchers, and preserves your journal.
 
 Safe to re-run. It repairs config, fetches the transcription model, installs skill links, and reconciles the service unit. If it finds a leftover install from the earlier Python-based journal, installed via `pip`, `uv tool`, or `pipx` (its `solstone`, `journal`, and `sol` binaries under `~/.local/bin`), it stops that install's service, backs up its binaries, and replaces them with this one, automatically, in this one invocation.
 
