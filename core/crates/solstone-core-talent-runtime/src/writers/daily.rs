@@ -1600,10 +1600,11 @@ mod tests {
     }
 
     #[test]
-    fn a_promotion_skips_only_a_retired_create_and_resolves_a_re_added_name() {
+    fn a_promotion_of_a_deleted_name_takes_the_next_id_and_resolves_a_re_added_name() {
         let root = fixture();
         solstone_core_entity::record_deleted_entity(root.path(), "bob", "bob").unwrap();
-        // With no live "Bob", the plan would create `bob`: the review skips it.
+        // With no live "Bob", the plan creates Bob under the next free id, so
+        // the new entity never inherits what still names the deleted one.
         let plan = solstone_core_facets::prepare_review_promotion(
             root.path(),
             "work",
@@ -1616,11 +1617,11 @@ mod tests {
         )
         .unwrap();
         let create = plan.identity.as_ref().expect("a new identity");
-        assert_eq!(create.entity_id, "bob");
+        assert_eq!(create.entity_id, "bob_2");
         assert!(
             solstone_core_entity::retired_state(root.path(), &create.entity_id)
                 .unwrap()
-                .is_some()
+                .is_none()
         );
         // The owner adds "Bob" again, in another facet: the name resolves to
         // the new entity, and nothing retired is created.

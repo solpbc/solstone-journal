@@ -2,7 +2,7 @@
   "schema": "journal-local-ops-v1",
   "source": "P-CLI",
   "approval_reference": "fixture-local-no-external-approval",
-  "leaf_count": 5,
+  "leaf_count": 4,
   "exit_codes": {
     "success": 0,
     "operation_failed": 1,

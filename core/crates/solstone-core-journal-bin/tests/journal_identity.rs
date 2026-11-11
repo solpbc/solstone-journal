@@ -17,7 +17,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const LOCAL_OPS_JSON: &str = include_str!("../../../fixtures/journal-cli/local-ops-v1.json");
-const LOCAL_OPS_SHA256: &str = "a51edec033f41210d76b292922edc7d65d83823b7d393a97564aae67be7c1484";
+const LOCAL_OPS_SHA256: &str = "e13ada7eb0bb5437af720db3748b4712c6ccf1c480157b9c3242a4285b8e21d7";
 const CLI_BOUNDARY_JSON: &str = include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
 
 struct TempDir {
@@ -855,7 +855,7 @@ fn journal_local_operations_fixture_is_the_boundary_census() {
         8
     );
     let local_paths = local_op_paths(&fixture);
-    assert_eq!(local_paths.len(), 5);
+    assert_eq!(local_paths.len(), 4);
     assert_eq!(fixture["leaf_count"], local_paths.len());
     let unique = local_paths
         .iter()
