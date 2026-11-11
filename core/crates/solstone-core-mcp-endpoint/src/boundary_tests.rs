@@ -8014,7 +8014,7 @@ fn activity_hits_for(journal: &tempfile::TempDir, query: &str) -> Vec<Value> {
 }
 
 #[test]
-fn activity_hits_report_stored_hidden_and_saved_prose() {
+fn activity_hits_leave_out_a_hidden_activity_and_keep_saved_prose() {
     let journal = tempfile::Builder::new()
         .prefix("activity-hidden-")
         .tempdir_in(crate::test_scratch())
@@ -8051,38 +8051,19 @@ fn activity_hits_report_stored_hidden_and_saved_prose() {
     grant_whole_journal(journal.path());
     let source = fs::read(journal.path().join(day)).unwrap();
 
-    let hidden_saved = indexed_content(journal.path(), day, 0);
-    indexed_content(journal.path(), day, 1);
-    let hidden_preview: String = hidden_saved.chars().take(800).collect();
-    let hidden_hits = activity_hits_for(&journal, "hiddenstorytoken");
-    assert_eq!(hidden_hits.len(), 1);
-    assert_eq!(hidden_hits[0]["hidden"], true);
-    assert_eq!(
-        literal_display_text(hidden_hits[0]["snippet"].as_str().unwrap()),
-        hidden_preview
-    );
-    let hidden_fetch = probe(
-        &journal,
-        "fetch",
-        json!({"reference": hidden_hits[0]["reference"]}),
-    )
-    .unwrap();
-    assert_eq!(hidden_fetch["hidden"], true);
-    let hid_obj: Value = serde_json::from_str(hidden_fetch["text"].as_str().unwrap()).unwrap();
-    assert_eq!(hid_obj["id"], "hid");
-    assert!(
-        hid_obj["story"]["body"]
-            .as_str()
-            .unwrap()
-            .contains("hiddenstorytoken")
-    );
-    assert!(
-        !hidden_fetch["text"]
-            .as_str()
-            .unwrap()
-            .contains("visiblestorytoken")
-    );
-    assert!(hidden_fetch["text"].as_str().unwrap().chars().count() > 800);
+    // A hidden activity isn't indexed, and isn't returned; the visible one
+    // keeps its own position.
+    let index = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
+    let positions: Vec<i64> = index
+        .prepare("SELECT idx FROM chunks WHERE path = ?1 ORDER BY idx")
+        .unwrap()
+        .query_map([day], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    drop(index);
+    assert_eq!(positions, [1]);
+    assert!(activity_hits_for(&journal, "hiddenstorytoken").is_empty());
 
     let visible_hits = activity_hits_for(&journal, "visiblestorytoken");
     assert_eq!(visible_hits.len(), 1);
@@ -8238,7 +8219,6 @@ fn activity_changes_stay_out_until_the_file_is_indexed_again() {
             json!({
                 "id": "two",
                 "title": "Second",
-                "hidden": true,
                 "story": {"body": format!("secondstoryneedle {}", "q".repeat(50))}
             })
         ),
@@ -8254,7 +8234,7 @@ fn activity_changes_stay_out_until_the_file_is_indexed_again() {
     solstone_core_indexer_store::scan::scan_journal(journal.path(), false).unwrap();
     let second_hits = activity_hits_for(&journal, "secondstoryneedle");
     assert_eq!(second_hits.len(), 1);
-    assert_eq!(second_hits[0]["hidden"], true);
+    assert_eq!(second_hits[0]["hidden"], false);
     let second_fetch = probe(
         &journal,
         "fetch",
@@ -8269,7 +8249,7 @@ fn activity_changes_stay_out_until_the_file_is_indexed_again() {
             .unwrap()
             .contains("secondstoryneedle")
     );
-    assert_eq!(second_fetch["hidden"], true);
+    assert_eq!(second_fetch["hidden"], false);
     assert_ne!(second_fetch["text"], "legacysavedprose");
 
     let second_mtime = fs::metadata(&day_path).unwrap().modified().unwrap();
@@ -8680,7 +8660,7 @@ fn shaped_activity_follows_the_indexed_family_under_a_chosen_facet_grant() {
             json!({
                 "id": "shaped",
                 "title": "Shaped",
-                "hidden": true,
+                "hidden": false,
                 "story": {"body": "shapedactivityneedle"}
             })
         ),
@@ -8707,7 +8687,7 @@ fn shaped_activity_follows_the_indexed_family_under_a_chosen_facet_grant() {
             json!({
                 "id": "beta",
                 "title": "Beta",
-                "hidden": true,
+                "hidden": false,
                 "story": {"body": "betashapedneedle"}
             })
         ),
@@ -8717,10 +8697,10 @@ fn shaped_activity_follows_the_indexed_family_under_a_chosen_facet_grant() {
 
     let hits = activity_hits_for(&journal, "shapedactivityneedle");
     assert_eq!(hits.len(), 1, "{hits:?}");
-    assert_eq!(hits[0]["hidden"], true);
+    assert_eq!(hits[0]["hidden"], false);
     let reference = hits[0]["reference"].as_str().unwrap().to_owned();
     let fetched = probe(&journal, "fetch", json!({"reference": reference})).unwrap();
-    assert_eq!(fetched["hidden"], true);
+    assert_eq!(fetched["hidden"], false);
     let shaped_obj: Value = serde_json::from_str(fetched["text"].as_str().unwrap()).unwrap();
     assert_eq!(shaped_obj["id"], "shaped");
     assert!(
@@ -8809,7 +8789,7 @@ fn shaped_activity_follows_the_indexed_family_under_a_chosen_facet_grant() {
             json!({
                 "id": "shaped",
                 "title": "Shaped",
-                "hidden": true,
+                "hidden": false,
                 "story": {"body": "shapedactivityrescanned"}
             })
         ),
@@ -8819,7 +8799,7 @@ fn shaped_activity_follows_the_indexed_family_under_a_chosen_facet_grant() {
     solstone_core_indexer_store::scan::rescan_file(journal.path(), Path::new(shaped)).unwrap();
     let rescanned = activity_hits_for(&journal, "shapedactivityrescanned");
     assert_eq!(rescanned.len(), 1, "{rescanned:?}");
-    assert_eq!(rescanned[0]["hidden"], true);
+    assert_eq!(rescanned[0]["hidden"], false);
 
     let alias_path = journal.path().join(alias);
     let alias_before = indexed_content(journal.path(), alias, 0);
@@ -8847,7 +8827,7 @@ fn shaped_activity_follows_the_indexed_family_under_a_chosen_facet_grant() {
     );
     let still_activity = activity_hits_for(&journal, "shapedactivityrescanned");
     assert_eq!(still_activity.len(), 1, "{still_activity:?}");
-    assert_eq!(still_activity[0]["hidden"], true);
+    assert_eq!(still_activity[0]["hidden"], false);
     let still_alias = activity_hits_for(&journal, "aliascontrolneedle");
     assert_eq!(still_alias.len(), 1);
     assert!(still_alias[0].get("hidden").is_none());
@@ -8970,7 +8950,7 @@ fn membership_journal() -> tempfile::TempDir {
         "facets/alpha/events/20261010.jsonl",
         &format!(
             "{}\n",
-            json!({"id":"one", "hidden":true, "story":{"body":"membershipneedle"}})
+            json!({"id":"one", "hidden":false, "story":{"body":"membershipneedle"}})
         ),
     );
     solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
@@ -9006,7 +8986,7 @@ fn activity_membership_legacy_unknown_is_withheld_and_writer_recovers() {
     solstone_core_indexer_store::scan::scan_journal(journal.path(), false).unwrap();
     assert_eq!(
         activity_hits_for(&journal, "membershipneedle")[0]["hidden"],
-        true
+        false
     );
     let conn = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
     conn.execute("DROP TABLE activity_provenance", []).unwrap();
@@ -9094,7 +9074,7 @@ fn activity_membership_malformed_digest_does_not_block_normal_refresh() {
     solstone_core_indexer_store::scan::scan_journal(journal.path(), false).unwrap();
     let hits = activity_hits_for(&journal, "membershipneedle");
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0]["hidden"], true);
+    assert_eq!(hits[0]["hidden"], false);
 }
 
 #[test]
@@ -11312,24 +11292,31 @@ fn fetch_activity_jsonl_neighbor_isolation() {
 fn fetch_hidden_activity_and_stale_file() {
     let journal = base_activity_journal();
     let day = "20260308";
-    write_activity_line(
-        journal.path(),
-        "alpha",
-        day,
-        "act_hidden_fetch",
-        "Hidden Activity",
-        100,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(true),
-        Some("hiddenfetchdescriptionneedle"),
-    );
-
+    let rel = "facets/alpha/activities/20260308.jsonl";
+    let write = |hidden: bool| {
+        // The line is appended: start the day afresh each time.
+        fs::create_dir_all(journal.path().join("facets/alpha/activities")).unwrap();
+        fs::write(journal.path().join(rel), "").unwrap();
+        write_activity_line(
+            journal.path(),
+            "alpha",
+            day,
+            "act_hidden_fetch",
+            "Hidden Activity",
+            100,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(hidden),
+            Some("hiddenfetchdescriptionneedle"),
+        );
+    };
+    write(false);
     solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
 
+    // Before the hide, search finds it and its reference fetches.
     let search_res = probe(
         &journal,
         "search",
@@ -11337,21 +11324,59 @@ fn fetch_hidden_activity_and_stale_file() {
     )
     .unwrap();
     assert_no_leaked_keys(&search_res);
-    let hit = &search_res["results"].as_array().unwrap()[0];
-    assert_eq!(hit["hidden"], true);
-
+    let hit = search_res["results"].as_array().unwrap()[0].clone();
+    assert_eq!(hit["hidden"], false);
     let fetched = probe(&journal, "fetch", json!({"reference": hit["reference"]})).unwrap();
     assert_no_leaked_keys(&fetched);
-    assert_eq!(fetched["hidden"], true);
     let parsed: Value = serde_json::from_str(fetched["text"].as_str().unwrap()).unwrap();
     assert_eq!(parsed["id"], "act_hidden_fetch");
 
-    let file_path = journal
-        .path()
-        .join("facets/alpha/activities/20260308.jsonl");
-    fs::write(&file_path, "modified bytes\n").unwrap();
+    // Hidden and indexed again, it isn't returned, and the old reference finds
+    // nothing.
+    write(true);
+    solstone_core_indexer_store::scan::rescan_file(journal.path(), Path::new(rel)).unwrap();
+    let hidden_res = probe(
+        &journal,
+        "search",
+        json!({"query": "hiddenfetchdescriptionneedle"}),
+    )
+    .unwrap();
+    assert!(
+        hidden_res["results"].as_array().unwrap().is_empty(),
+        "{hidden_res}"
+    );
     assert_eq!(
         probe(&journal, "fetch", json!({"reference": hit["reference"]})),
+        Err(McpProbeError::Unavailable)
+    );
+
+    // Unhidden, it is back.
+    write(false);
+    solstone_core_indexer_store::scan::rescan_file(journal.path(), Path::new(rel)).unwrap();
+    let back = probe(
+        &journal,
+        "search",
+        json!({"query": "hiddenfetchdescriptionneedle"}),
+    )
+    .unwrap();
+    let back_hit = back["results"].as_array().unwrap()[0].clone();
+    assert!(
+        probe(
+            &journal,
+            "fetch",
+            json!({"reference": back_hit["reference"]})
+        )
+        .is_ok()
+    );
+
+    let file_path = journal.path().join(rel);
+    fs::write(&file_path, "modified bytes\n").unwrap();
+    assert_eq!(
+        probe(
+            &journal,
+            "fetch",
+            json!({"reference": back_hit["reference"]})
+        ),
         Err(McpProbeError::Unavailable)
     );
 }
@@ -11777,7 +11802,7 @@ fn assert_source_words(
 }
 
 #[test]
-fn list_activities_normalized_hidden_matches_include_hidden_and_fetch() {
+fn list_activities_normalized_hidden_matches_include_hidden_and_fetch_finds_none() {
     let journal = base_activity_journal();
     let day = "20260308";
     let raw_identity_line = r#"{"title":"Visible Raw Identity","created_at":400,"hidden":false}"#;
@@ -11862,7 +11887,9 @@ fn list_activities_normalized_hidden_matches_include_hidden_and_fetch() {
     else {
         panic!("connection snapshot");
     };
-    for (identity, raw_hidden) in [("hid_yes", json!("yes")), ("hid_true", json!(true))] {
+    // A hidden activity's reference finds nothing, as a missing one doesn't,
+    // however its file spells hidden.
+    for identity in ["hid_yes", "hid_true"] {
         let reference = crate::dispatch::codec()
             .mint(
                 CONNECTION,
@@ -11880,13 +11907,11 @@ fn list_activities_normalized_hidden_matches_include_hidden_and_fetch() {
                 ),
             )
             .unwrap();
-        let fetched = probe(&journal, "fetch", json!({"reference": reference})).unwrap();
-        assert_no_leaked_keys(&fetched);
-        assert_eq!(fetched["hidden"], true);
-        let parsed: Value = serde_json::from_str(fetched["text"].as_str().unwrap()).unwrap();
-        assert_eq!(parsed["id"], identity);
-        assert_eq!(parsed["hidden"], raw_hidden);
-        assert!(parsed.get("stream").is_none());
+        assert_eq!(
+            probe(&journal, "fetch", json!({"reference": reference})),
+            Err(McpProbeError::Unavailable),
+            "{identity}"
+        );
     }
 }
 
@@ -11910,7 +11935,7 @@ fn search_derived_flags_across_record_types() {
         None,
         None,
         None,
-        Some(true),
+        Some(false),
         Some("storybodyneedle content"),
     );
 
@@ -11970,7 +11995,7 @@ fn search_derived_flags_across_record_types() {
     assert_no_leaked_keys(&s1);
     let hit1 = &s1["results"].as_array().unwrap()[0];
     assert_eq!(hit1["derived"], true);
-    assert_eq!(hit1["hidden"], true);
+    assert_eq!(hit1["hidden"], false);
 
     let s2 = probe(&journal, "search", json!({"query": "nostoryneedle"})).unwrap();
     assert_no_leaked_keys(&s2);
@@ -12453,7 +12478,7 @@ fn a_body_entry_a_connection_may_not_read_doesnt_stop_search_relaxing_to_what_it
 }
 
 #[test]
-fn a_body_search_hit_in_a_group_with_a_hidden_member_comes_back_hidden() {
+fn a_body_search_hit_in_a_group_with_a_hidden_member_is_not_returned() {
     use solstone_core_format::content::body_records::{
         BodyRow, RowKind, decode_rows, encode_rows, recorder_id,
     };
@@ -12462,8 +12487,10 @@ fn a_body_search_hit_in_a_group_with_a_hidden_member_comes_back_hidden() {
         .set_permission(CONNECTION, ReadPermission::default_whole_journal())
         .unwrap();
     hold_body_title(&journal, "Zebrafinch loop", json!({}));
+    assert_eq!(activity_hits_for(&journal, "Zebrafinch").len(), 1);
     // A second recorder's account of the same run, hidden by the owner: the
-    // group reads hidden, though the held record's own line doesn't say so.
+    // group reads hidden, though the held record's own line doesn't say so,
+    // and a hidden activity isn't returned.
     let window = journal.path().join(WATCH_WINDOW);
     let mut rows = decode_rows(&fs::read_to_string(window.join("body.jsonl")).unwrap()).unwrap();
     let mut second = BodyRow::new(
@@ -12492,20 +12519,18 @@ fn a_body_search_hit_in_a_group_with_a_hidden_member_comes_back_hidden() {
     fs::write(&path, text).unwrap();
     solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
     let hits = activity_hits_for(&journal, "Zebrafinch");
-    assert_eq!(hits.len(), 1, "{hits:?}");
-    assert_eq!(hits[0]["hidden"], true, "{hits:?}");
+    assert!(hits.is_empty(), "{hits:?}");
 }
 
 #[test]
-fn a_hidden_body_record_says_so_in_search_and_a_body_entry_moves_no_other_entry() {
+fn a_hidden_body_record_leaves_search_and_a_body_entry_moves_no_other_entry() {
     let journal = body_record_journal(true);
     PermissionStore::open(journal.path())
         .set_permission(CONNECTION, ReadPermission::default_whole_journal())
         .unwrap();
     hold_body_title(&journal, "Zebrafinch loop", json!({"hidden": true}));
     let hits = activity_hits_for(&journal, "Zebrafinch");
-    assert_eq!(hits.len(), 1, "{hits:?}");
-    assert_eq!(hits[0]["hidden"], true);
+    assert!(hits.is_empty(), "{hits:?}");
 
     // A body record ahead of an ordinary one, and an unheld one before that.
     let path = journal
@@ -12517,21 +12542,27 @@ fn a_hidden_body_record_says_so_in_search_and_a_body_entry_moves_no_other_entry(
             "end": "2026-03-08 02:00:00 -0500"}});
     let other = json!({"id": "run_080000_300", "title": "Zebrafinch review", "activity": "review",
         "created_at": 1, "segments": ["080000_300"]});
-    fs::write(&path, format!("{bare}\n{held}{other}\n")).unwrap();
-    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
-    let hits = activity_hits_for(&journal, "Zebrafinch");
-    assert_eq!(hits.len(), 2, "{hits:?}");
-    let texts = hits
-        .iter()
-        .map(|hit| {
-            probe(&journal, "fetch", json!({"reference": hit["reference"]})).unwrap()["text"]
-                .as_str()
-                .unwrap()
-                .to_owned()
-        })
-        .collect::<Vec<_>>();
-    assert!(texts.iter().any(|text| text.contains("Zebrafinch review")));
-    assert!(texts.iter().any(|text| text.contains("Synthetic Watch")));
+    let texts = |held: &str| {
+        fs::write(&path, format!("{bare}\n{held}{other}\n")).unwrap();
+        solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+        activity_hits_for(&journal, "Zebrafinch")
+            .iter()
+            .map(|hit| {
+                probe(&journal, "fetch", json!({"reference": hit["reference"]})).unwrap()["text"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>()
+    };
+    let hidden = texts(&held);
+    assert_eq!(hidden.len(), 1, "{hidden:?}");
+    assert!(hidden[0].contains("Zebrafinch review"));
+    // Unhidden, the body record is back beside the ordinary one.
+    let shown = texts(&held.replace("\"hidden\":true", "\"hidden\":false"));
+    assert_eq!(shown.len(), 2, "{shown:?}");
+    assert!(shown.iter().any(|text| text.contains("Zebrafinch review")));
+    assert!(shown.iter().any(|text| text.contains("Synthetic Watch")));
 }
 
 #[test]
@@ -14832,4 +14863,279 @@ fn every_record_reader_shows_an_oura_account_and_nothing_oura_judges() {
             assert!(!text.contains(judged), "{reader} says {judged}: {text}");
         }
     }
+}
+
+fn rescan(journal: &tempfile::TempDir, rel: &str) {
+    solstone_core_indexer_store::scan::rescan_file(journal.path(), Path::new(rel)).unwrap();
+}
+
+#[test]
+fn a_hidden_activity_between_two_leaves_its_neighbours_and_the_body_entry_found() {
+    let journal = body_record_journal(true);
+    grant_whole_journal(journal.path());
+    hold_body_title(&journal, "Zebrafinch loop", json!({}));
+    let rel = "facets/alpha/activities/20260308.jsonl";
+    let path = journal.path().join(rel);
+    let held = fs::read_to_string(&path).unwrap();
+    let day = |bravo_hidden: bool| {
+        let record = |id: &str, title: &str, hidden: bool| {
+            json!({"id": id, "title": title, "activity": "review", "created_at": 1,
+                "hidden": hidden})
+        };
+        fs::write(
+            &path,
+            format!(
+                "{}\n{}\n{}\n{held}",
+                record("a", "Alphaneedle", false),
+                record("b", "Bravoneedle", bravo_hidden),
+                record("c", "Charlieneedle", false),
+            ),
+        )
+        .unwrap();
+        rescan(&journal, rel);
+    };
+    day(false);
+    let bravo = activity_hits_for(&journal, "Bravoneedle");
+    assert_eq!(bravo.len(), 1, "{bravo:?}");
+    let bravo_reference = bravo[0]["reference"].clone();
+
+    day(true);
+    assert!(activity_hits_for(&journal, "Bravoneedle").is_empty());
+    assert_eq!(
+        probe(&journal, "fetch", json!({"reference": bravo_reference})),
+        Err(McpProbeError::Unavailable)
+    );
+    let charlie = activity_hits_for(&journal, "Charlieneedle");
+    assert_eq!(charlie.len(), 1, "{charlie:?}");
+    let fetched = probe(
+        &journal,
+        "fetch",
+        json!({"reference": charlie[0]["reference"]}),
+    )
+    .unwrap();
+    let record: Value = serde_json::from_str(fetched["text"].as_str().unwrap()).unwrap();
+    assert_eq!(record["id"], "c");
+    let body = activity_hits_for(&journal, "Zebrafinch");
+    assert_eq!(body.len(), 1, "{body:?}");
+    let face = probe(
+        &journal,
+        "fetch",
+        json!({"reference": body[0]["reference"]}),
+    )
+    .unwrap();
+    assert!(
+        face["text"].as_str().unwrap().contains("Synthetic Watch"),
+        "{face}"
+    );
+}
+
+/// Alpha holds a person, Bob, linked and noted, and a day of detections
+/// naming him beside Alice.
+fn person_journal() -> tempfile::TempDir {
+    let journal = tempfile::Builder::new()
+        .prefix("hidden-person-")
+        .tempdir_in(crate::test_scratch())
+        .unwrap();
+    setup_facets(journal.path());
+    let root = journal.path();
+    let write = |rel: &str, text: String| {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    };
+    for (id, name, note) in [
+        ("bob", "Bob Smith", "bobnoteneedle"),
+        ("ann", "Ann Lee", "annnoteneedle"),
+    ] {
+        write(
+            &format!("entities/{id}/entity.json"),
+            json!({"id": id, "name": name}).to_string(),
+        );
+        write(
+            &format!("facets/alpha/entities/{id}/entity.json"),
+            json!({"entity_id": id}).to_string(),
+        );
+        write(
+            &format!("facets/alpha/entities/{id}/observations.jsonl"),
+            format!(
+                "{}\n",
+                json!({"content": note, "observed_at": 1772658000000_i64, "source_day": "20260304"})
+            ),
+        );
+    }
+    write(
+        "facets/alpha/entities/20260304.jsonl",
+        format!(
+            "{}\n{}\n",
+            json!({"type": "Person", "name": "Bob Smith", "description": "bobdetectedneedle"}),
+            json!({"type": "Person", "name": "Alice Jones", "description": "alicedetectedneedle"}),
+        ),
+    );
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    grant_whole_journal(root);
+    journal
+}
+
+#[test]
+fn a_hidden_person_leaves_search_and_fetch_with_their_notes_and_detections() {
+    let journal = person_journal();
+    let notes = activity_hits_for(&journal, "bobnoteneedle");
+    let detected = activity_hits_for(&journal, "bobdetectedneedle");
+    assert_eq!((notes.len(), detected.len()), (1, 1));
+
+    let root = journal.path();
+    fs::write(
+        root.join("entities/bob/entity.json"),
+        json!({"id": "bob", "name": "Bob Smith", "blocked": true}).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        root.join("facets/alpha/entities/bob/entity.json"),
+        json!({"entity_id": "bob", "detached": true, "detached_by": "hide"}).to_string(),
+    )
+    .unwrap();
+    rescan(&journal, "facets/alpha/entities/bob/observations.jsonl");
+    rescan(&journal, "facets/alpha/entities/20260304.jsonl");
+    for (word, before) in [("bobnoteneedle", &notes), ("bobdetectedneedle", &detected)] {
+        assert!(activity_hits_for(&journal, word).is_empty(), "{word}");
+        assert_eq!(
+            probe(
+                &journal,
+                "fetch",
+                json!({"reference": before[0]["reference"]})
+            ),
+            Err(McpProbeError::Unavailable),
+            "{word}"
+        );
+    }
+    let listed = probe(&journal, "list_entities", json!({})).unwrap();
+    assert!(!listed.to_string().contains("Bob Smith"), "{listed}");
+    // The visible people beside him stay.
+    assert_eq!(activity_hits_for(&journal, "annnoteneedle").len(), 1);
+    assert_eq!(activity_hits_for(&journal, "alicedetectedneedle").len(), 1);
+    assert!(listed.to_string().contains("Ann Lee"), "{listed}");
+}
+
+#[test]
+fn a_name_hidden_in_a_facet_leaves_search_and_fetch_and_comes_back_unhidden() {
+    let journal = person_journal();
+    let detected = activity_hits_for(&journal, "bobdetectedneedle");
+    assert_eq!(detected.len(), 1);
+    let day = "facets/alpha/entities/20260304.jsonl";
+    let hide = |names: Value| {
+        fs::write(
+            journal.path().join("facets/alpha/hidden-names.json"),
+            json!({ "names": names }).to_string(),
+        )
+        .unwrap();
+        rescan(&journal, day);
+    };
+    hide(json!([{"name": "Bob Smith", "hidden_at": "2026-11-11T07:00:00Z"}]));
+    assert!(activity_hits_for(&journal, "bobdetectedneedle").is_empty());
+    assert_eq!(
+        probe(
+            &journal,
+            "fetch",
+            json!({"reference": detected[0]["reference"]})
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+    let alice = activity_hits_for(&journal, "alicedetectedneedle");
+    assert_eq!(alice.len(), 1);
+    assert!(
+        probe(
+            &journal,
+            "fetch",
+            json!({"reference": alice[0]["reference"]})
+        )
+        .is_ok()
+    );
+    // His notes are the person's, not the name's.
+    assert_eq!(activity_hits_for(&journal, "bobnoteneedle").len(), 1);
+
+    hide(json!([]));
+    let back = activity_hits_for(&journal, "bobdetectedneedle");
+    assert_eq!(back.len(), 1);
+    assert!(
+        probe(
+            &journal,
+            "fetch",
+            json!({"reference": back[0]["reference"]})
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_week_page_with_something_left_out_leaves_search_and_fetch() {
+    let journal = tempfile::Builder::new()
+        .prefix("week-left-out-")
+        .tempdir_in(crate::test_scratch())
+        .unwrap();
+    setup_facets(journal.path());
+    let root = journal.path();
+    let weekly = root.join("reflections/weekly");
+    fs::create_dir_all(&weekly).unwrap();
+    fs::write(
+        weekly.join("20260301.md"),
+        "# Your week\n\nkestrelweekneedle came back on monday.\n",
+    )
+    .unwrap();
+    fs::write(
+        weekly.join("20260301.json"),
+        json!({"memories": [{"key": "m1", "day": "20260302", "text": "kestrelweekneedle"}],
+            "said": []})
+        .to_string(),
+    )
+    .unwrap();
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    grant_whole_journal(root);
+    let page = "reflections/weekly/20260301.md";
+    let hits = activity_hits_for(&journal, "kestrelweekneedle");
+    assert_eq!(hits.len(), 1);
+    // Before anything is left out, the page fetches.
+    let fetched = probe(
+        &journal,
+        "fetch",
+        json!({"reference": hits[0]["reference"]}),
+    )
+    .unwrap();
+    assert!(
+        fetched["text"]
+            .as_str()
+            .unwrap()
+            .contains("kestrelweekneedle")
+    );
+
+    fs::create_dir_all(root.join("config")).unwrap();
+    let leave_out = |keys: Value| {
+        fs::write(
+            root.join("config/week-left-out.json"),
+            json!({ "keys": keys }).to_string(),
+        )
+        .unwrap();
+        rescan(&journal, page);
+    };
+    leave_out(json!(["m1"]));
+    assert!(activity_hits_for(&journal, "kestrelweekneedle").is_empty());
+    assert_eq!(
+        probe(
+            &journal,
+            "fetch",
+            json!({"reference": hits[0]["reference"]})
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+
+    leave_out(json!([]));
+    let back = activity_hits_for(&journal, "kestrelweekneedle");
+    assert_eq!(back.len(), 1);
+    assert!(
+        probe(
+            &journal,
+            "fetch",
+            json!({"reference": back[0]["reference"]})
+        )
+        .is_ok()
+    );
 }
