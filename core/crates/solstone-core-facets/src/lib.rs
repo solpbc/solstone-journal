@@ -9,7 +9,6 @@ mod action_log;
 mod activity_calendar;
 mod activity_placement;
 mod body_facet;
-pub mod entity_doctor;
 mod speculative_facets;
 mod store;
 mod trust_lock;
@@ -62,8 +61,7 @@ pub use store::{
     append_edit, append_log, apply_observation_change, assign_new_facet_id,
     assign_new_facet_id_locked, backfill_facet_ids, block_journal_entities, block_journal_entity,
     count_observations, create_facet, delete_created_entity_if_unreferenced,
-    delete_detected_entity, delete_facet, delete_facet_entity_link, delete_journal_entity,
-    delete_journal_entity_after, dismiss_candidate, edit_removable, edit_removed,
+    delete_detected_entity, delete_facet, delete_facet_entity_link, delete_journal_entity, dismiss_candidate, edit_removable, edit_removed,
     enrich_relationship_with_journal, ensure_daily_facet_id, ensure_default_facet,
     extract_spoken_names, facet_declaration_entry, facet_name_is_free, facet_slug,
     facet_write_identity, first_free_facet_name, get_activity_record, hold_activity_enrichment,
@@ -136,8 +134,6 @@ mod create_if_absent_tests;
 mod detected_entity_exclusion_fixture_tests;
 #[cfg(all(test, feature = "full-tests"))]
 mod detected_entity_tests;
-#[cfg(all(test, feature = "full-tests"))]
-mod entity_doctor_tests;
 #[cfg(all(test, feature = "full-tests"))]
 mod facet_entity_fixture_tests;
 #[cfg(all(test, feature = "full-tests"))]

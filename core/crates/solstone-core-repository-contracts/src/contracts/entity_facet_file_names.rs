@@ -74,13 +74,6 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
         "message: the correction report names the archive by the entity's id",
     ),
     (
-        "core/crates/solstone-core-facets/src/entity_doctor.rs",
-        "ids_in_unresolved_folder",
-        "entity.",
-        1,
-        "derived: salvages ids from damaged identity files and their set-aside copies by bytes, which no owner reader parses",
-    ),
-    (
         "core/crates/solstone-core-format/src/content/mod.rs",
         "INDEX_FAMILY_PATTERNS",
         "observations.jsonl",

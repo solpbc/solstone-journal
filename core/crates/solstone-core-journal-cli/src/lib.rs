@@ -336,7 +336,7 @@ pub fn evaluate_args(args: &[OsString]) -> JournalCommand {
             verbose,
         };
     }
-    if matches!(value, "archive" | "entities" | "facet" | "news") {
+    if matches!(value, "archive" | "facet" | "news") {
         let Some(leaf) = rest.first().and_then(|leaf| leaf.to_str()) else {
             return JournalCommand::Unknown;
         };
@@ -637,9 +637,9 @@ mod tests {
         assert_eq!(evaluate_args(&args(&["-v"])), JournalCommand::Help);
         assert_eq!(evaluate_args(&args(&["--help"])), JournalCommand::Help);
         assert_eq!(
-            evaluate_args(&args(&["entities", "doctor", "--fix"])),
+            evaluate_args(&args(&["facet", "doctor", "--fix"])),
             JournalCommand::Local {
-                token: "entities doctor",
+                token: "facet doctor",
                 rest: args(&["--fix"]),
                 verbose: false,
             }
