@@ -336,6 +336,17 @@ else
 	fail "stale route lock remained after recovery"
 fi
 
+# Run by itself with no prefix, the journal installer no longer starts a new
+# installation; the main installer does, and passes its own prefix.
+expect_refuse standalone-retired standalone-fresh-install-points-at-the-main-installer \
+	env HOME="$BASE/retired-home" \
+	"$INSTALL" --version 1.0.22 --role cli
+if [ -e "$BASE/retired-home/.local/solstone-journal" ]; then
+	fail "a refused standalone install left its prefix behind"
+else
+	pass "a refused standalone install leaves nothing behind"
+fi
+
 # origin-refused
 expect_refuse origin-refused origin-http-public \
 	env HOME="$BASE/home" \

@@ -49,6 +49,7 @@
 #   cxx-runtime-too-old
 #   runtime-library-missing
 #   libc-undetermined
+#   standalone-retired
 
 set -eu
 
@@ -75,6 +76,11 @@ BOOTSTRAP_CONTRACT_VERSION=2
 # Read by the platform installer before delegating a skipped tree recovery.
 # shellcheck disable=SC2034
 BOOTSTRAP_RECOVERS_SKIPPED=1
+# Read by the platform installer before it takes over a journal this script
+# installed by itself: the journal it delivers finds that journal's own prefix
+# on the platform's receipt when solstone update runs.
+# shellcheck disable=SC2034
+BOOTSTRAP_PLATFORM_TAKEOVER=1
 
 refuse() {
 	_name=$1
@@ -96,6 +102,7 @@ usage() {
 }
 
 PREFIX=
+PREFIX_EXPLICIT=0
 VERSION=
 LANE=release
 LANE_EXPLICIT=0
@@ -234,6 +241,7 @@ parse_args() {
 		--prefix)
 			[ "$#" -ge 2 ] || refuse release-invalid "--prefix requires a value"
 			PREFIX=$2
+			PREFIX_EXPLICIT=1
 			shift 2
 			;;
 		--version)
@@ -1497,6 +1505,12 @@ detect_existing_route() {
 		refuse package-route "this install is owned by the package database; run: ${_package_command}"
 	elif [ "$UPGRADE" -eq 1 ]; then
 		refuse upgrade-not-installed "no installed journal route was detected; run the documented install command without --upgrade"
+	fi
+	# Run by itself with its default prefix, this installer only updates a
+	# journal it installed before. New installs come from the main installer,
+	# which runs this one with a prefix of its own.
+	if [ "$ROUTE" = fresh ] && [ "$PREFIX_EXPLICIT" -eq 0 ] && [ -z "$ARCHIVE" ]; then
+		refuse standalone-retired "to install the journal, run: curl -fsSL https://solstone.app/install.sh | sh -s -- --components ${ROLE}. nothing was changed"
 	fi
 	case $LANE in
 	release | staging | dev | unknown) ;;

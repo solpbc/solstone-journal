@@ -122,7 +122,12 @@ pub struct RecordedComponent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PositiveOwnership {
     pub route_kind: RouteKind,
+    /// Where the journal's tree lives, when the journal is a tree install.
     pub prefix: Option<PathBuf>,
+    /// The platform installer's own prefix for its tree components. It differs
+    /// from `prefix` for a journal the platform took over from the journal's
+    /// own installer, which stays where it was installed.
+    pub platform_prefix: Option<PathBuf>,
     pub lane: String,
     pub current_journal_version: String,
     pub current_platform_version: Option<String>,
@@ -501,6 +506,7 @@ pub fn classify_ownership(
         return OwnershipResult::Positive(PositiveOwnership {
             route_kind: RouteKind::PlatformMixed,
             prefix: t_res.prefix.clone(),
+            platform_prefix: t_res.platform_prefix.clone(),
             lane: t_res.lane.clone(),
             current_journal_version: journal_ver,
             current_platform_version: plat_ver,
@@ -538,6 +544,7 @@ pub fn classify_ownership(
                 return OwnershipResult::Positive(PositiveOwnership {
                     route_kind: RouteKind::PlatformMixed,
                     prefix: t_res.prefix,
+                    platform_prefix: t_res.platform_prefix,
                     lane: t_res.lane,
                     current_journal_version: t_res.current_journal_version,
                     current_platform_version: t_res.current_platform_version,
@@ -580,7 +587,8 @@ pub fn classify_ownership(
                 comps.extend(other_tree_comps);
                 return OwnershipResult::Positive(PositiveOwnership {
                     route_kind: RouteKind::PlatformMixed,
-                    prefix,
+                    prefix: prefix.clone(),
+                    platform_prefix: prefix,
                     lane: p_res.lane,
                     current_journal_version: p_res.current_journal_version,
                     current_platform_version: p_res.current_platform_version,
@@ -597,8 +605,21 @@ pub fn classify_ownership(
         return native_res;
     }
 
+    // A package installed without the solstone installer has no receipt. The
+    // installer checks its files against the signed release and records it.
+    if probe.owns_journal(executable) {
+        return OwnershipResult::Refusal {
+            code: "install-not-owned".to_owned(),
+            message: UNRECORDED_PACKAGE_MESSAGE.to_owned(),
+        };
+    }
+
     OwnershipResult::NotOwned
 }
+
+/// What `solstone update` says for a package the solstone installer has not
+/// recorded: the one command that records it.
+pub const UNRECORDED_PACKAGE_MESSAGE: &str = "this journal was installed from a package without the solstone installer, so solstone update can't update it yet. run curl -fsSL https://solstone.app/install.sh | sh -s -- --upgrade once. it checks the installed files against the signed release, and solstone update updates it after that.";
 
 fn classify_platform_package(
     executable: &Path,
@@ -696,6 +717,7 @@ fn classify_platform_package(
     Some(PositiveOwnership {
         route_kind: RouteKind::PlatformPackage,
         prefix: None,
+        platform_prefix: None,
         lane,
         current_journal_version: journal_ver,
         current_platform_version: plat_ver,
@@ -718,9 +740,8 @@ fn classify_platform_tree(
         return None;
     }
 
-    let prefix_str = sol_sec.get("prefix")?;
-    let prefix = PathBuf::from(prefix_str);
-    if !prefix.is_absolute() {
+    let platform_prefix = PathBuf::from(sol_sec.get("prefix")?);
+    if !platform_prefix.is_absolute() {
         return None;
     }
 
@@ -733,6 +754,15 @@ fn classify_platform_tree(
         return None;
     }
     if journal_sec.get("status").map(|s| s.as_str()) != Some("installed") {
+        return None;
+    }
+    // A journal the platform took over from the journal's own installer keeps
+    // the prefix it was installed in, recorded on its own section.
+    let prefix = journal_sec
+        .get("prefix")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| platform_prefix.clone());
+    if !prefix.is_absolute() {
         return None;
     }
 
@@ -802,6 +832,7 @@ fn classify_platform_tree(
     Some(PositiveOwnership {
         route_kind: RouteKind::PlatformTree,
         prefix: Some(prefix),
+        platform_prefix: Some(platform_prefix),
         lane,
         current_journal_version: journal_ver,
         current_platform_version: plat_ver,
@@ -926,6 +957,7 @@ fn classify_native_tree(
     Some(OwnershipResult::Positive(PositiveOwnership {
         route_kind: RouteKind::NativeTree,
         prefix: Some(prefix.to_path_buf()),
+        platform_prefix: None,
         lane,
         current_journal_version: tree_ver,
         current_platform_version: None,
