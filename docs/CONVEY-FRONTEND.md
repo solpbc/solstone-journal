@@ -149,7 +149,7 @@ window.SolViews.register('transcripts', {
 view takes a change of parameters in place. A view's scripts run once in the
 life of the page (they only register); the view starts each time it is
 mounted. Home (with its week and originals pages), transcripts, more, body,
-activities and the map are on the contract; every other view is not, and keeps its full page loads.
+activities, the map and search are on the contract; every other view is not, and keeps its full page loads.
 A view may await in `mount` only on a promise that settles, and a superseded
 mount publishes nothing.
 
@@ -185,7 +185,11 @@ the page has learned the journal is another build (`appEvents.buildChanged()`)
 or doesn't know the destination's app. Each history entry has one owner: an
 entry that changes the address path is the router's; one that keeps the path
 and changes only the query or the hash is the view's (a transcript segment),
-and the router leaves it to the view. A view may replace its own address
+and the router leaves it to the view. A view whose state is its address's
+query (search) takes a click on a link to its own path with another query
+itself, once the router has left it, and writes the entry through
+`ctx.history.push`; the same address again is still the router's fresh mount.
+A view may replace its own address
 with another address of the same view through `ctx.history.replace`, and the
 router follows. An address of another view is the router's, and `ctx.history`
 does not write it. A move starts the next view's declared
