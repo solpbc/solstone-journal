@@ -23,6 +23,8 @@ solstone-core-indexer-store.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-segment.workspace = true
+solstone-core-retention.workspace = true
+solstone-core-trash.workspace = true
 
 [features]
 full-tests = []
