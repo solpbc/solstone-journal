@@ -1427,6 +1427,12 @@ fn search(
             } else {
                 hidden
             };
+            // A hidden activity is never returned: indexing leaves its entry
+            // out, and this drops one a body group hides through another
+            // member, or one indexed before that.
+            if hidden == Some(true) {
+                continue;
+            }
             // A possible name serves its label and the words it labels, which
             // the segment's transcript grant (this row's own classification)
             // lets this connection read.
@@ -1975,6 +1981,10 @@ fn fetch(
                         &a.record,
                     );
                 }
+                // A hidden activity is not found, as a missing one isn't.
+                ActivityAdmit::Admitted(a) if a.hidden => {
+                    return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+                }
                 ActivityAdmit::Admitted(a) => {
                     let cleaned =
                         crate::tools::activities::clean_activity_record_for_wire(a.record.clone());
@@ -2109,9 +2119,13 @@ fn fetch(
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             };
 
-            let hidden = record
+            // A hidden activity is not found, as a missing one isn't.
+            if record
                 .get("hidden")
-                .is_some_and(solstone_core_facets::activity_value_truthy);
+                .is_some_and(solstone_core_facets::activity_value_truthy)
+            {
+                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+            }
             let cleaned = crate::tools::activities::clean_activity_record_for_wire(record.clone());
             let text = literal_record_text(cleaned)?;
 
@@ -2158,9 +2172,6 @@ fn fetch(
                 "date": act_ref.day,
                 "text": text,
             });
-            if hidden {
-                value["hidden"] = Value::Bool(true);
-            }
             if !subjects[0].segments.is_empty() {
                 value["segments"] = Value::Array(subjects[0].segments.clone());
             }
@@ -2187,20 +2198,21 @@ fn fetch_body_face(
     record: &Map<String, Value>,
 ) -> Result<Prepared, DispatchError> {
     let face = body_face_for(journal_root, snapshot, facet_dir, day, record)?;
+    // A hidden group is not found, as a missing one isn't.
+    if face.hidden {
+        return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+    }
     // A source app names itself, so every value is a third party's text: served
     // literal, as a capture record is.
     let Value::Object(item) = solstone_core_location::body_records::face_json(&face) else {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     };
     let text = literal_record_text(item)?;
-    let mut value = json!({
+    let value = json!({
         "title": entry_title(&face.anchor.day),
         "date": face.anchor.day,
         "text": text,
     });
-    if face.hidden {
-        value["hidden"] = Value::Bool(true);
-    }
     let mut targets = vec![format!("{rel_path}#{record_identity}")];
     crate::body_source::name_windows(&mut targets, crate::body_source::face_windows(&face));
     Ok(Prepared::new(value, 1, targets).served_as_is(&["text"]))
