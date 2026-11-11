@@ -49,6 +49,7 @@ pub mod retroactive_confirm;
 pub mod segment_catalog;
 pub mod speaker_candidate_pair_review_candidates;
 pub mod speaker_review_candidates;
+pub mod speakers_trash;
 pub mod transcribed_clusters;
 pub mod voice_members;
 pub mod voice_tags;

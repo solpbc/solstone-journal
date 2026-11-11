@@ -69,7 +69,8 @@ async fn bootstrap_call(root: Arc<JournalRoot>, request: Request, imports: bool)
 }
 
 pub async fn wipe(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
-    // No page calls this route; the command line does.
+    // No page calls this route; the command line does. `commit` moves every
+    // voice file to the trash; `erase` erases it at once as well.
     let surface = solstone_core_removals::Surface::of_request(
         solstone_core_removals::Page::Speakers,
         request
@@ -79,32 +80,56 @@ pub async fn wipe(Extension(root): Extension<Arc<JournalRoot>>, request: Request
     );
     let body = json_body(request).await.unwrap_or_else(|_| json!({}));
     let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
-    let removal = commit.then(|| {
-        solstone_core_removals::Removal::begin(
-            &root.0,
-            solstone_core_removals::Action::SpeakersWipe,
-            surface,
-        )
-    });
-    match solstone_core_speaker_resolve::artifact_wipe::wipe_speaker_artifacts(
-        &root.0,
-        removal.as_ref(),
-    ) {
-        Ok(report) => {
-            Json(serde_json::to_value(report).expect("wipe report serializes")).into_response()
+    let erase = body.get("erase").and_then(Value::as_bool).unwrap_or(false);
+    let journal = root.0.clone();
+    let outcome = tokio::task::spawn_blocking(move || {
+        if commit {
+            solstone_core_speaker_resolve::speakers_trash::wipe(&journal, surface, erase)
+                .map(|wiped| wiped.to_json())
+                .map_err(|error| match error {
+                    solstone_core_speaker_resolve::speakers_trash::TrashError::Held(reason) => {
+                        (true, reason)
+                    }
+                    error => (false, error.to_string()),
+                })
+        } else {
+            solstone_core_speaker_resolve::artifact_wipe::dry_run(&journal)
+                .map(|report| serde_json::to_value(report).unwrap_or_else(|_| json!({})))
+                .map_err(|error| (false, error.to_string()))
         }
-        Err(solstone_core_speaker_resolve::artifact_wipe::ArtifactWipeError::Lock(
-            solstone_core_journal_io::LockError::Timeout(timeout),
-        )) => err(
-            "speaker_voiceprint_busy",
-            "that voice couldn't be updated right now because it was busy. try again in a moment.",
-            &timeout.to_string(),
-            StatusCode::SERVICE_UNAVAILABLE,
-        ),
-        Err(error) => err(
+    })
+    .await;
+    match outcome {
+        Ok(Ok(value)) => Json(value).into_response(),
+        Ok(Err((true, reason))) => {
+            let code = solstone_core_speaker_resolve::speakers_trash::refusal_code(&reason)
+                .unwrap_or_else(|| "busy".to_owned());
+            let words = if code == "busy" {
+                "your journal is busy with recordings right now; try again in a moment."
+            } else {
+                "your voices couldn't be wiped right now, so nothing was wiped."
+            };
+            (
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "error": words,
+                    "reason_code": "speaker_wipe_held",
+                    "reason": code,
+                    "detail": reason,
+                })),
+            )
+                .into_response()
+        }
+        Ok(Err((false, detail))) => err(
             "speaker_command_failed",
             "that speaker command didn't finish.",
-            &error.to_string(),
+            &detail,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+        Err(_) => err(
+            "speaker_command_failed",
+            "that speaker command didn't finish.",
+            "the wipe task stopped",
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }

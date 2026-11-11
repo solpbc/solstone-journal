@@ -433,7 +433,7 @@ impl NumpyPcg64 {
     }
 }
 
-fn clear_discovery_cache(
+pub(crate) fn clear_discovery_cache(
     root: &Path,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), String> {

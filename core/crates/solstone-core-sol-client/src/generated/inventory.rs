@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: 1c3fe576db55b3530cf1a316f953691cf2663ce6b4cc56ef35e313a7011a697c
+// authority-source-sha256: be1fc93aa0f323202c1bb92aac1c1eaf1d8b40726166498fb4cc218c66938042
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -1560,9 +1560,9 @@ pub const ENTRIES: &[InventoryEntry] = &[
         surface: "sol-call",
         path: &["speakers", "wipe"],
         kind: "command",
-        help: "Remove all legacy speaker artifacts from the journal (DESTRUCTIVE).\n\nDESTRUCTIVE. Without --commit, prints a report of what would be\nremoved. With --commit, permanently deletes segment-embedding NPZs,\nspeaker labels/corrections, per-entity voiceprints, owner centroids,\nand the owner-candidate snapshot.",
+        help: "Move every speaker voice file in the journal to the trash.\n\nWithout --commit, prints a report of what would be moved. With\n--commit, moves segment-embedding NPZs, speaker labels/corrections,\nper-entity voiceprints, owner centroids, the owner-candidate snapshot\nand the candidate pool to the trash, where they can be recovered until\nthey are erased. --erase erases them at once instead.",
         authority_path: "core/native-sol/apps/speakers/native/authority.toml",
-        params_json: "[{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"commit\",\"nargs\":1,\"options\":[\"--commit\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"json_output\",\"nargs\":1,\"options\":[\"--json\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
+        params_json: "[{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"commit\",\"nargs\":1,\"options\":[\"--commit\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"erase\",\"nargs\":1,\"options\":[\"--erase\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"json_output\",\"nargs\":1,\"options\":[\"--json\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
         entry_type: "http",
         operation_id: "speakers.wipe",
         method: Some("POST"),

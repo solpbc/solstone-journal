@@ -946,11 +946,23 @@ pub fn backfill_last_seen(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_json_commit(ctx.args) {
+    let parsed = match parse_args(
+        ctx.args,
+        &[],
+        &[
+            FlagSpec::true_flag("--commit"),
+            FlagSpec::true_flag("--erase"),
+            FlagSpec::true_flag("--json"),
+        ],
+    ) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let commit = parsed.flag("--commit");
+    let erase = parsed.flag("--erase");
+    if erase && !commit {
+        return stderr("--erase needs --commit");
+    }
     let json_output = parsed.flag("--json");
     let mut out = String::new();
     if !commit && !json_output {
@@ -961,7 +973,7 @@ pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
         HttpMethod::Post,
         "/app/speakers/api/wipe",
         vec![],
-        Some(json!({"commit": commit})),
+        Some(json!({"commit": commit, "erase": erase})),
     ) {
         Ok(report) => report,
         Err(error) => return speaker_error_preserving_stdout(out, error),
@@ -2319,6 +2331,7 @@ fn render_wipe(out: &mut String, report: &Value) {
         ("entity_voiceprints", "entity_voiceprints "),
         ("owner_centroids", "owner_centroids    "),
         ("owner_candidate", "owner_candidate    "),
+        ("speaker_candidates", "speaker_candidates "),
     ] {
         let item = report.get(key).and_then(Value::as_object);
         emit(
@@ -2338,6 +2351,18 @@ fn render_wipe(out: &mut String, report: &Value) {
             value_to_string(report.get("total_bytes")),
         ),
     );
+    if report.get("erased").and_then(Value::as_bool) == Some(true) {
+        emit(out, "erased");
+    } else if let Some(erase_at) = report
+        .get("trash")
+        .and_then(|trash| trash.get("erase_at"))
+        .and_then(Value::as_str)
+    {
+        if report.get("erase_failed").and_then(Value::as_bool) == Some(true) {
+            emit(out, "couldn't erase now; it waits in the trash");
+        }
+        emit(out, format!("in the trash until {erase_at}"));
+    }
 }
 
 fn render_presence(out: &mut String, result: &Value) {
