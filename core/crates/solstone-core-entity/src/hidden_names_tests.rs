@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use crate::hidden_names::{
     HiddenBy, HiddenName, HiddenNames, HideUndecidable, decode_hidden_names, encode_hidden_names,
-    facet_hidden_keys, hidden_names_rel, read_hidden_names,
+    facet_hidden_keys, hidden_names_rel, link_folder_hidden, read_hidden_names,
 };
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -182,8 +182,10 @@ fn a_hide_marked_link_hides_its_entitys_keys_and_a_visible_link_does_not() {
 }
 
 #[test]
-fn an_attached_link_is_visible_without_reading_its_entity() {
+fn an_attached_link_hides_only_when_its_entity_is_blocked() {
     let journal = Journal::new();
+    // A block interrupted before it detached this link, or a hidden entity an
+    // archive brought in attached.
     journal.entity(
         "dana",
         json!({"id": "dana", "name": "Dana", "blocked": true})
@@ -191,10 +193,37 @@ fn an_attached_link_is_visible_without_reading_its_entity() {
             .as_bytes(),
     );
     journal.link("dana", json!({"entity_id": "dana"}));
+    // Twin: an attached visible entity stays visible.
+    journal.entity(
+        "eve",
+        json!({"id": "eve", "name": "Eve"}).to_string().as_bytes(),
+    );
+    journal.link("eve", json!({"entity_id": "eve"}));
+    let keys = facet_hidden_keys(&journal.0, "work").unwrap();
+    assert!(keys.is_hidden("Dana"));
+    assert!(keys.hides_folder("dana"));
+    assert!(!keys.is_hidden("Eve"));
+    assert_eq!(
+        link_folder_hidden(&journal.0, "work", "dana").unwrap(),
+        true
+    );
+    assert_eq!(
+        link_folder_hidden(&journal.0, "work", "eve").unwrap(),
+        false
+    );
+}
+
+#[test]
+fn an_attached_link_whose_entity_is_damaged_stays_visible() {
+    let journal = Journal::new();
     journal.entity("mark", b"{broken");
-    journal.link("mark", json!({"entity_id": "mark", "detached_by": "hide"}));
+    journal.link("mark", json!({"entity_id": "mark"}));
     let keys = facet_hidden_keys(&journal.0, "work").unwrap();
     assert!(keys.is_empty());
+    assert_eq!(
+        link_folder_hidden(&journal.0, "work", "mark").unwrap(),
+        false
+    );
 }
 
 #[test]

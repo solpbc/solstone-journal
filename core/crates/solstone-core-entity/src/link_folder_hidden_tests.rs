@@ -56,10 +56,12 @@ impl Drop for Journal {
 }
 
 #[test]
-fn an_attached_link_is_visible_whatever_its_entity_says() {
+fn an_attached_link_hides_only_while_its_entity_is_blocked() {
     let journal = Journal::new();
     journal.link("bob", json!({"entity_id": "bob"}));
     journal.entity("bob", br#"{"id":"bob","name":"Bob","blocked":true}"#);
+    assert!(journal.hidden("bob").unwrap());
+    journal.entity("bob", br#"{"id":"bob","name":"Bob"}"#);
     assert!(!journal.hidden("bob").unwrap());
     journal.entity("bob", b"{ damaged");
     assert!(!journal.hidden("bob").unwrap());

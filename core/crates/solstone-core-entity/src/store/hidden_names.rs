@@ -309,8 +309,8 @@ impl HiddenKeys {
 /// Everything `facet` keeps hidden: the names in its `hidden-names.json` and
 /// the keys of each hidden entity's link folder there.
 ///
-/// Per link folder: an attached link is visible and its entity isn't read. A
-/// detached link marked by a hide (`detached_by: "hide"`) hides. A detached
+/// Per link folder: an attached link hides only when its entity is `blocked`
+/// (a damaged entity file leaves it visible). A detached link marked by a hide (`detached_by: "hide"`) hides. A detached
 /// link without the mark hides when its entity is `blocked`. A hiding link's
 /// keys are its entity's name, aliases, emails and id, read straight from
 /// `entities/<id>/entity.json`; when that file is absent the link's own id and
@@ -349,8 +349,36 @@ pub fn facet_hidden_keys(journal: &Path, facet: &str) -> Result<HiddenKeys, Hide
                 });
             }
         };
-        // An attached link shows its entity, whatever its entity says.
+        // An attached link hides only when its entity is hidden: a block
+        // interrupted before it detached this link, or a hidden entity an
+        // archive brought in attached. Its entity file is read for that and
+        // nothing else, so a damaged one leaves the link visible rather than
+        // holding back the whole facet.
         if !link.detached() {
+            if !is_folder_name(&link.entity_id) {
+                continue;
+            }
+            let identity = match identities.get(&link.entity_id) {
+                Some(identity) => identity.clone(),
+                None => {
+                    let Ok(identity) = read_identity_strict(journal, &link.entity_id) else {
+                        continue;
+                    };
+                    identities.insert(link.entity_id.clone(), identity.clone());
+                    identity
+                }
+            };
+            if identity
+                .as_ref()
+                .is_some_and(|identity| identity.get("blocked").is_some_and(value_is_truthy))
+            {
+                entities.push(hiding_entity(
+                    folder,
+                    &link.entity_id,
+                    &link.value,
+                    identity,
+                ));
+            }
             continue;
         }
         if !is_folder_name(&link.entity_id) {
@@ -468,7 +496,7 @@ fn strings(value: Option<&Value>) -> Vec<String> {
 
 /// Whether the link folder `folder` in `facet` belongs to a hidden entity, for
 /// that folder alone, by the same per-link rule as [`facet_hidden_keys`]: an
-/// attached link is visible, a detached link a hide marked is hidden, and a
+/// attached link is hidden when its entity is `blocked`, a detached link a hide marked is hidden, and a
 /// detached link without the mark is hidden when its entity is `blocked`.
 ///
 /// Unlike [`facet_hidden_keys`], nothing else in the facet is read, so a
@@ -494,7 +522,17 @@ pub fn link_folder_hidden(
         }
     };
     if !link.detached() {
-        return Ok(false);
+        // Hidden only when its entity is: see `facet_hidden_keys`. A damaged
+        // entity file leaves an attached link visible.
+        return Ok(is_folder_name(&link.entity_id)
+            && read_identity_strict(journal, &link.entity_id)
+                .ok()
+                .flatten()
+                .is_some_and(|identity| {
+                    identity
+                        .get("blocked")
+                        .is_some_and(super::lifecycle::value_is_truthy)
+                }));
     }
     if link.value.get("detached_by").and_then(Value::as_str) == Some(HIDE_DETACHED_BY) {
         return Ok(true);
