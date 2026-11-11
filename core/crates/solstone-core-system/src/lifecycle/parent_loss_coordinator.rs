@@ -24,7 +24,9 @@ use super::parent_loss_admission::{
     ParentLossServiceWitnessDrop, admission_directory, read_parent_loss_admission_intent,
     read_parent_loss_admission_result, witness_path,
 };
-use super::parent_loss_closure::{ClosingAuthority, HeartbeatRetirement, SystemAdmissionRetirer};
+use super::parent_loss_closure::{
+    AdmissionRetirer, ClosingAuthority, HeartbeatRetirement, SystemAdmissionRetirer,
+};
 use super::parent_loss_ledger::{
     ActiveGeneration, BootstrapRecoveryReason, CoordinatorLease, ParentLossGeneration,
     ParentLossLedger, ParentLossLedgerError, ParentLossPhase, ParentLossTerminalDisposition,
@@ -36,7 +38,8 @@ use super::{
     ParentLossReason, ParentWatch, ParentWatchStatus, PlatformParentExitWatcher,
 };
 use crate::process::{
-    InspectResult, ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource,
+    InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource, ProcessOwner,
+    SystemProcessInstanceSource,
 };
 
 /// The parent-loss outcome must be resolved or durably refused no later than
@@ -352,6 +355,7 @@ impl ParentLossCoordinator {
             expected_retirement,
             deadline,
             &SystemProcessInstanceSource,
+            &SystemAdmissionRetirer,
         )
     }
 
@@ -362,10 +366,16 @@ impl ParentLossCoordinator {
         expected_retirement: bool,
         deadline: Instant,
         source: &dyn ProcessInstanceSource,
+        owners: &dyn AdmissionRetirer,
     ) -> Result<ParentLossTerminalDisposition, ParentLossCoordinatorError> {
         loop {
-            match self.validate_witnesses_with_source(sealed, &digest, expected_retirement, source)
-            {
+            match self.validate_witnesses_with_source(
+                sealed,
+                &digest,
+                expected_retirement,
+                source,
+                owners,
+            ) {
                 Ok(RetirementValidation::Complete(
                     ParentLossTerminalDisposition::Completed { .. }
                     | ParentLossTerminalDisposition::RetiredExpected,
@@ -541,6 +551,7 @@ impl ParentLossCoordinator {
         digest: &str,
         expected_retirement: bool,
         source: &dyn ProcessInstanceSource,
+        owners: &dyn AdmissionRetirer,
     ) -> Result<RetirementValidation, ParentLossCoordinatorError> {
         let expected: BTreeSet<_> = self.active.enabled.iter().copied().collect();
         let admitted: BTreeSet<_> = sealed.iter().filter_map(|entry| entry.service).collect();
@@ -599,18 +610,25 @@ impl ParentLossCoordinator {
                 ));
             }
         }
+        // An admission is retired once its exact instance is gone. A pid that
+        // now names another process is the admitted one having exited and the
+        // pid being reused, which a long-running generation makes near certain;
+        // reading that as a mismatch left every later start to audit the whole
+        // generation. A pid another user now holds is unreadable on macOS, so
+        // its owner settles it, as the successor's closer does.
         for admission in sealed {
-            match source.inspect(admission.identity.instance.pid) {
-                InspectResult::Absent => continue,
-                InspectResult::Unverifiable => return Ok(RetirementValidation::Pending),
-                InspectResult::Present { instance, uid, .. }
-                    if instance != admission.identity.instance || uid != admission.identity.uid =>
-                {
-                    return Ok(RetirementValidation::Unresolved(
-                        ParentLossUnresolvedReason::AdmissionIdentityMismatch,
-                    ));
+            match source.observe(&admission.identity.instance) {
+                InstanceVerdict::NotSameOrExited => continue,
+                InstanceVerdict::SameLive { .. } => return Ok(RetirementValidation::Pending),
+                InstanceVerdict::Unverifiable => {
+                    match owners.owner(admission.identity.instance.pid) {
+                        ProcessOwner::Absent => continue,
+                        ProcessOwner::Uid(uid) if uid != admission.identity.uid => continue,
+                        ProcessOwner::Uid(_) | ProcessOwner::Unknown => {
+                            return Ok(RetirementValidation::Pending);
+                        }
+                    }
                 }
-                InspectResult::Present { .. } => return Ok(RetirementValidation::Pending),
             }
         }
         if expected_retirement {
@@ -892,7 +910,27 @@ mod tests {
         Disposition, HostedAdmissionTestFault, HostedLaunchProvenance, ManagedLaunchRequest,
         SpawnOptions, launch_managed_hosted, set_hosted_admission_test_fault,
     };
-    use crate::process::{InstanceCensus, ProcessBirth};
+    use crate::process::{InstanceCensus, ProcessBirth, SignalKind, TerminationError};
+
+    /// Answers every owner lookup the same way and sends no signals.
+    struct FixedOwner(ProcessOwner);
+
+    impl AdmissionRetirer for FixedOwner {
+        fn signal(
+            &self,
+            _instance: ProcessInstance,
+            _signal: SignalKind,
+        ) -> Result<(), TerminationError> {
+            Ok(())
+        }
+
+        fn owner(&self, _pid: u32) -> ProcessOwner {
+            self.0
+        }
+    }
+
+    #[allow(non_upper_case_globals)]
+    const UnknownOwner: FixedOwner = FixedOwner(ProcessOwner::Unknown);
 
     struct MutableInspectSource {
         result: Mutex<InspectResult>,
@@ -1044,7 +1082,7 @@ mod tests {
         let source = gone_process_source();
         assert_eq!(
             coordinator
-                .validate_witnesses_with_source(&sealed, &digest, false, &source)
+                .validate_witnesses_with_source(&sealed, &digest, false, &source, &UnknownOwner)
                 .expect("witness validation"),
             RetirementValidation::Unresolved(expected.clone())
         );
@@ -1313,6 +1351,7 @@ mod tests {
                     false,
                     Instant::now() + Duration::from_millis(1),
                     &source,
+                    &UnknownOwner,
                 )
                 .expect("completed terminal"),
             ParentLossTerminalDisposition::Completed {
@@ -1326,6 +1365,74 @@ mod tests {
             }
         );
         assert!(coordinator._lease.is_none());
+    }
+
+    #[test]
+    fn a_reused_pid_is_a_retired_admission() {
+        let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
+        let identity =
+            write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
+        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let reused = ProcessInstance {
+            pid: identity.instance.pid,
+            birth: ProcessBirth::linux(9_999, 1, 100),
+        };
+        assert_ne!(reused, identity.instance);
+        let source = MutableInspectSource {
+            result: Mutex::new(InspectResult::Present {
+                instance: reused,
+                uid: identity.uid,
+                execution: crate::process::ExecutionState::Running,
+                ppid: None,
+                pgid: None,
+            }),
+        };
+
+        assert!(matches!(
+            coordinator
+                .validate_witnesses_with_source(&sealed, &digest, false, &source, &UnknownOwner)
+                .expect("reused pid observation"),
+            RetirementValidation::Complete(ParentLossTerminalDisposition::Completed { .. })
+        ));
+    }
+
+    #[test]
+    fn an_unreadable_pid_is_settled_by_its_owner() {
+        let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
+        let identity =
+            write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
+        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let source = MutableInspectSource {
+            result: Mutex::new(InspectResult::Unverifiable),
+        };
+        let validate = |owner: ProcessOwner| {
+            coordinator
+                .validate_witnesses_with_source(
+                    &sealed,
+                    &digest,
+                    false,
+                    &source,
+                    &FixedOwner(owner),
+                )
+                .expect("unreadable pid observation")
+        };
+
+        assert!(matches!(
+            validate(ProcessOwner::Uid(identity.uid + 1)),
+            RetirementValidation::Complete(ParentLossTerminalDisposition::Completed { .. })
+        ));
+        assert!(matches!(
+            validate(ProcessOwner::Absent),
+            RetirementValidation::Complete(ParentLossTerminalDisposition::Completed { .. })
+        ));
+        assert_eq!(
+            validate(ProcessOwner::Uid(identity.uid)),
+            RetirementValidation::Pending
+        );
+        assert_eq!(
+            validate(ProcessOwner::Unknown),
+            RetirementValidation::Pending
+        );
     }
 
     #[test]
@@ -1346,7 +1453,7 @@ mod tests {
 
         assert_eq!(
             coordinator
-                .validate_witnesses_with_source(&sealed, &digest, false, &source)
+                .validate_witnesses_with_source(&sealed, &digest, false, &source, &UnknownOwner)
                 .expect("live service observation"),
             RetirementValidation::Pending,
             "a self-reported witness cannot complete a still-live service"
@@ -1365,7 +1472,7 @@ mod tests {
         *source.result.lock().expect("inspect result lock") = InspectResult::Absent;
         assert!(matches!(
             coordinator
-                .validate_witnesses_with_source(&sealed, &digest, false, &source)
+                .validate_witnesses_with_source(&sealed, &digest, false, &source, &UnknownOwner)
                 .expect("retired service observation"),
             RetirementValidation::Complete(ParentLossTerminalDisposition::Completed { .. })
         ));
@@ -1400,6 +1507,7 @@ mod tests {
                     true,
                     Instant::now() + Duration::from_millis(1),
                     &source,
+                    &UnknownOwner,
                 )
                 .expect("expected retirement terminal"),
             ParentLossTerminalDisposition::RetiredExpected
@@ -1521,7 +1629,7 @@ mod tests {
 
         assert_eq!(
             coordinator
-                .validate_witnesses_with_source(&sealed, &digest, false, &source)
+                .validate_witnesses_with_source(&sealed, &digest, false, &source, &UnknownOwner)
                 .expect("incomplete census remains pending"),
             RetirementValidation::Pending
         );
@@ -1533,6 +1641,7 @@ mod tests {
                     false,
                     Instant::now() + Duration::from_millis(1),
                     &source,
+                    &UnknownOwner,
                 )
                 .expect("deadline-bounded unresolved terminal"),
             ParentLossTerminalDisposition::Unresolved {
@@ -1729,6 +1838,7 @@ mod tests {
                 false,
                 Instant::now() + Duration::from_millis(1),
                 &source,
+                &UnknownOwner,
             )
             .expect("completed terminal");
         assert!(matches!(
@@ -1853,6 +1963,7 @@ mod tests {
                 false,
                 Instant::now() + Duration::from_millis(1),
                 &gone_process_source(),
+                &UnknownOwner,
             )
             .expect("completed parent loss");
 
@@ -2060,6 +2171,7 @@ mod tests {
                 false,
                 Instant::now() + Duration::from_millis(1),
                 &gone_process_source(),
+                &UnknownOwner,
             )
             .expect("completed parent loss");
         assert!(matches!(
@@ -2134,6 +2246,7 @@ mod tests {
                 false,
                 Instant::now() + Duration::from_millis(1),
                 &gone_process_source(),
+                &UnknownOwner,
             )
             .expect("completed parent loss");
         assert!(matches!(
@@ -2225,6 +2338,7 @@ mod tests {
                 false,
                 Instant::now() + Duration::from_millis(1),
                 &gone_process_source(),
+                &UnknownOwner,
             )
             .expect("completed parent loss");
         assert!(matches!(
