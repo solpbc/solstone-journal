@@ -19,6 +19,8 @@ const pageScript = pageHtml.slice(pageHtml.indexOf('<script>') + '<script>'.leng
 const staticDir = path.join(crateDir, '../solstone-core-convey-shell/assets/static');
 const apiSource = fs.readFileSync(path.join(staticDir, 'api.js'), 'utf8');
 const drawerSource = fs.readFileSync(path.join(staticDir, 'drawer.js'), 'utf8');
+const storeSource = fs.readFileSync(path.join(staticDir, 'store.js'), 'utf8');
+const viewsSource = fs.readFileSync(path.join(staticDir, 'views.js'), 'utf8');
 
 class ClassList {
   constructor(element) { this.element = element; this.values = new Set(); }
@@ -192,6 +194,7 @@ class Document {
     this.documentElement.appendChild(this.body);
     this.activeElement = this.body;
     this.listeners = {};
+    this.hidden = false;
   }
   createElement(tag) { return new Element(tag, this); }
   querySelector(sel) { return this.documentElement.querySelector(sel); }
@@ -289,15 +292,35 @@ async function settle() {
   for (let i = 0; i < 6; i += 1) await new Promise((r) => setTimeout(r, 0));
 }
 
-async function createPage({ items, url = `https://journal.example/app/activities/${DAY}#work/standup`, transcripts = {}, post = () => respond(200, { record: {}, markdown: '', asked: true }), narrow = false }) {
+async function createPage({ items, url = `https://journal.example/app/activities/${DAY}#work/standup`, transcripts = {}, post = () => respond(200, { record: {}, markdown: '', asked: true }), narrow = false, views = {} }) {
   const doc = new Document();
   parseHtml(markup, doc).forEach((el) => doc.body.appendChild(el));
   const requests = [];
-  const env = { view: view(items), requests, doc };
+  const timers = [];
+  let timerSeq = 100000;
+  let holdingReads = false;
+  const heldReads = [];
+  const env = { view: view(items), views, requests, doc };
   const winListeners = {};
+  // A long timer is the updating poll or a read deadline. Record it so a case
+  // can fire one, and so dispose can clear it. A short one runs as before.
+  const armTimer = (fn, ms, immediate) => {
+    if (ms && ms >= 1000) {
+      const id = timerSeq;
+      timerSeq += 1;
+      timers.push({ id, fn });
+      return id;
+    }
+    return setTimeout(fn, immediate ? 0 : ms);
+  };
+  const clearTimer = (id) => {
+    const index = timers.findIndex((timer) => timer.id === id);
+    if (index >= 0) timers.splice(index, 1);
+    else clearTimeout(id);
+  };
   const win = { createViewReady: () => () => {},
     addEventListener(type, fn) { (winListeners[type] ||= []).push(fn); },
-    removeEventListener() {},
+    removeEventListener(type, fn) { winListeners[type] = (winListeners[type] || []).filter((l) => l !== fn); },
     dispatchEvent(event) { (winListeners[event.type] || []).forEach((fn) => fn(event)); },
     matchMedia: (query) => ({ matches: narrow && query.includes('max-width'), addEventListener() {} }),
     JournalClock: {
@@ -318,6 +341,13 @@ async function createPage({ items, url = `https://journal.example/app/activities
     pushState(_s, _t, next) { win.location = new URL(next, win.location.href); },
     replaceState(_s, _t, next) { win.location = new URL(next, win.location.href); },
   };
+  const viewBody = (url) => {
+    const match = String(url).match(/\/app\/activities\/api\/day\/(\d{8})\/view/);
+    if (!match) return undefined;
+    if (Object.prototype.hasOwnProperty.call(env.views, match[1])) return env.views[match[1]];
+    if (match[1] === DAY) return env.view;
+    return undefined;
+  };
   const fetchMock = async (target, opts = {}) => {
     const u = String(target);
     const method = opts.method || 'GET';
@@ -330,7 +360,37 @@ async function createPage({ items, url = `https://journal.example/app/activities
     };
     requests.push(record);
     if (method === 'POST') return post(record);
-    if (u.startsWith(`/app/activities/api/day/${DAY}/view`)) return respond(200, env.view);
+    const body = viewBody(u);
+    if (body) {
+      // Stringify now, so a later day step cannot change what this read returns.
+      const response = respond(200, body);
+      if (holdingReads && method === 'GET') {
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          const fail = () => {
+            if (settled) return;
+            settled = true;
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+          };
+          const succeed = () => {
+            if (settled) return;
+            settled = true;
+            resolve(response);
+          };
+          if (opts.signal && opts.signal.aborted) {
+            fail();
+            return;
+          }
+          if (opts.signal && typeof opts.signal.addEventListener === 'function') {
+            opts.signal.addEventListener('abort', fail, { once: true });
+          }
+          heldReads.push(succeed);
+        });
+      }
+      return response;
+    }
     if (u.startsWith('/app/transcripts/api/segment/')) {
       const key = decodeURIComponent(u.split('/').pop());
       return respond(200, transcripts[key] || SCREEN_ONLY);
@@ -340,24 +400,52 @@ async function createPage({ items, url = `https://journal.example/app/activities
   };
   const sandbox = {
     window: win, document: doc, fetch: fetchMock, Headers, Response, URL, URLSearchParams, console,
-    // Long timers (the updating poll) never fire in a case; short ones run.
-    setTimeout: (fn, ms) => (ms && ms >= 1000 ? 0 : setTimeout(fn, ms)),
-    clearTimeout: () => {},
+    setTimeout: (fn, ms) => armTimer(fn, ms, false),
+    clearTimeout: clearTimer,
     Promise, JSON, Math, Date, Number, String, Array, Object, Set, Map, Error, encodeURIComponent, decodeURIComponent, isNaN,
     HTMLInputElement: class {}, HTMLSelectElement: class {}, HTMLTextAreaElement: class {},
   };
   win.window = win;
+  win.document = doc;
+  win.setTimeout = (fn, ms) => armTimer(fn, ms, true);
+  win.clearTimeout = clearTimer;
   vm.createContext(sandbox);
   vm.runInContext(apiSource, sandbox);
   vm.runInContext(drawerSource, sandbox);
+  vm.runInContext(storeSource, sandbox);
+  vm.runInContext(viewsSource, sandbox);
   vm.runInContext(pageScript, sandbox);
+  await win.SolViews.mount('activities');
   await settle();
   env.win = win;
   env.panel = () => doc.querySelector('[data-panel-area]');
   env.click = async (el) => { assert.ok(el, 'clickable element exists'); el.dispatchEvent({ type: 'click', bubbles: true }); await settle(); };
   env.posts = () => requests.filter((r) => r.method === 'POST');
   env.viewReads = () => requests.filter((r) => r.method === 'GET' && r.url.includes('/view')).length;
+  env.viewUrls = () => requests.filter((r) => r.method === 'GET' && r.url.includes('/view')).map((r) => r.url);
+  env.listeners = winListeners;
+  env.pendingTimers = () => timers.length;
+  env.fireTimer = () => {
+    const next = timers.shift();
+    if (!next) return false;
+    next.fn();
+    return true;
+  };
+  env.holdReads = () => { holdingReads = true; };
+  env.releaseReads = async () => {
+    holdingReads = false;
+    heldReads.splice(0).forEach((succeed) => succeed());
+    await settle();
+  };
   return env;
+}
+
+function blockIds(env) {
+  return env.doc.querySelectorAll('button.act-block').map((el) => el.getAttribute('data-id'));
+}
+
+function listenerCount(map, type) {
+  return (map[type] || []).length;
 }
 
 const keyed = (root, key) => root.querySelector(`[data-copy-key="${key}"]`);
@@ -724,6 +812,184 @@ test('on a narrow screen, a tap outside the sheet still closes it', async () => 
   await env.click(env.doc.body);
   assert.strictEqual(env.panel().querySelector('[data-action-correct]'), null);
   assert.strictEqual(env.win.location.hash, '');
+});
+
+const NEXT_DAY = '20261030';
+
+function stepTo(env, day, search = '') {
+  env.win.history.pushState(null, '', `https://journal.example/app/activities/${day}${search}`);
+  return env.win.SolViews.update({ day });
+}
+
+test('an undated activities address becomes today before the day is read', async () => {
+  const today = '20261031';
+  const env = await createPage({
+    items: [activity()],
+    url: 'https://journal.example/app/activities/',
+    views: { [today]: view([activity({ id: 'today' })]) },
+  });
+  assert.strictEqual(env.win.location.pathname, `/app/activities/${today}`);
+  assert.deepStrictEqual(env.viewUrls(), [`/app/activities/api/day/${today}/view`]);
+  assert.deepStrictEqual(blockIds(env), ['today']);
+});
+
+test('dispose drops the page listeners and the updating poll, and a later timer reads nothing', async () => {
+  const env = await createPage({ items: [activity({ updating: true })] });
+  assert.ok(env.pendingTimers() >= 1, 'the updating poll is armed');
+  assert.ok(listenerCount(env.listeners, 'scroll') > 0);
+  assert.ok(listenerCount(env.listeners, 'resize') > 0);
+  assert.ok(listenerCount(env.listeners, 'popstate') > 0);
+  assert.ok(listenerCount(env.doc.listeners, 'click') > 0);
+  assert.ok(listenerCount(env.doc.listeners, 'keydown') > 0);
+  await env.click(env.panel().querySelector('[data-action-edit]'));
+  assert.ok(env.panel().querySelector('[data-edit-form]'));
+  const reads = env.viewReads();
+  env.win.SolViews.dispose();
+  assert.strictEqual(env.win.SolViews.current(), null);
+  assert.strictEqual(listenerCount(env.listeners, 'scroll'), 0);
+  assert.strictEqual(listenerCount(env.listeners, 'resize'), 0);
+  assert.strictEqual(listenerCount(env.listeners, 'popstate'), 0);
+  assert.strictEqual(listenerCount(env.doc.listeners, 'click'), 0);
+  assert.strictEqual(listenerCount(env.doc.listeners, 'keydown'), 0);
+  assert.strictEqual(env.pendingTimers(), 0, 'dispose clears the poll');
+  assert.strictEqual(env.fireTimer(), false);
+  await settle();
+  assert.strictEqual(env.viewReads(), reads);
+  assert.strictEqual(env.posts().length, 0, 'a form in progress is closed without saving');
+  assert.strictEqual(env.panel().querySelector('[data-edit-form]'), null);
+});
+
+test('a day step updates in place, keeps the facet, and closes an unsaved form', async () => {
+  const env = await createPage({
+    items: [activity()],
+    url: `https://journal.example/app/activities/${DAY}?facet=work#work/standup`,
+  });
+  const mounted = env.win.SolViews.current();
+  await env.click(env.panel().querySelector('[data-action-edit]'));
+  assert.ok(env.panel().querySelector('[data-edit-form]'));
+  const reads = env.viewReads();
+  env.views[NEXT_DAY] = view([activity({ id: 'fresh' })]);
+  assert.strictEqual(stepTo(env, NEXT_DAY, '?facet=work'), true);
+  await settle();
+  assert.strictEqual(env.win.SolViews.current(), mounted, 'the same mount takes the new day');
+  assert.strictEqual(env.viewReads(), reads + 1);
+  assert.ok(env.viewUrls().at(-1).includes(`/day/${NEXT_DAY}/view?facet=work`));
+  assert.deepStrictEqual(blockIds(env), ['fresh']);
+  assert.strictEqual(env.panel().querySelector('[data-edit-form]'), null);
+  assert.strictEqual(env.panel().querySelector('[data-action-edit]'), null, 'the open panel closes');
+  assert.strictEqual(env.posts().length, 0, 'the form is not saved');
+});
+
+test('a late answer from the day that was left is not drawn', async () => {
+  const env = await createPage({ items: [activity({ id: 'old', updating: true })] });
+  const mounted = env.win.SolViews.current();
+  assert.deepStrictEqual(blockIds(env), ['old']);
+  env.holdReads();
+  env.view = view([activity({ id: 'stale', updating: true })]);
+  assert.strictEqual(env.fireTimer(), true, 'the poll asks for the open day');
+  env.views[NEXT_DAY] = view([activity({ id: 'fresh' })]);
+  assert.strictEqual(stepTo(env, NEXT_DAY), true);
+  await env.releaseReads();
+  assert.strictEqual(env.win.SolViews.current(), mounted);
+  assert.deepStrictEqual(blockIds(env), ['fresh']);
+  assert.ok(!blockIds(env).includes('stale') && !blockIds(env).includes('old'));
+  assert.strictEqual(env.panel().querySelector('[data-action-hide]'), null);
+});
+
+test('a hidden tab does not poll, and leaving the day or the page drops that wait', async () => {
+  const hidden = await createPage({ items: [activity({ updating: true })] });
+  const before = hidden.viewReads();
+  hidden.doc.hidden = true;
+  assert.strictEqual(hidden.fireTimer(), true);
+  await settle();
+  assert.strictEqual(hidden.viewReads(), before, 'a hidden tab waits instead of reading');
+  hidden.doc.hidden = false;
+  hidden.doc.dispatchEvent({ type: 'visibilitychange' });
+  await settle();
+  assert.strictEqual(hidden.viewReads(), before + 1);
+
+  const left = await createPage({ items: [activity({ updating: true })] });
+  left.doc.hidden = true;
+  assert.strictEqual(left.fireTimer(), true);
+  const leftReads = left.viewReads();
+  left.views[NEXT_DAY] = view([activity({ id: 'fresh' })]);
+  stepTo(left, NEXT_DAY);
+  await settle();
+  left.doc.hidden = false;
+  left.doc.dispatchEvent({ type: 'visibilitychange' });
+  await settle();
+  assert.deepStrictEqual(left.viewUrls(), [
+    `/app/activities/api/day/${DAY}/view`,
+    `/app/activities/api/day/${NEXT_DAY}/view`,
+  ]);
+  assert.strictEqual(left.viewReads(), leftReads + 1);
+
+  const gone = await createPage({ items: [activity({ updating: true })] });
+  gone.doc.hidden = true;
+  assert.strictEqual(gone.fireTimer(), true);
+  const goneReads = gone.viewReads();
+  gone.win.SolViews.dispose();
+  gone.doc.hidden = false;
+  gone.doc.dispatchEvent({ type: 'visibilitychange' });
+  await settle();
+  assert.strictEqual(gone.viewReads(), goneReads);
+});
+
+test('the view restores its own entry and ignores a popstate for another day', async () => {
+  const env = await createPage({ items: [activity()] });
+  assert.ok(env.panel().querySelector('[data-action-hide]'));
+  env.doc.dispatchEvent({ type: 'keydown', key: 'Escape', preventDefault() {} });
+  await settle();
+  assert.strictEqual(env.win.location.hash, '');
+  assert.strictEqual(env.panel().querySelector('[data-action-hide]'), null);
+  env.win.location.hash = '#work/standup';
+  env.win.dispatchEvent({ type: 'popstate' });
+  await settle();
+  assert.ok(env.panel().querySelector('[data-action-hide]'), 'back to this view\'s entry reopens it');
+
+  env.win.history.pushState(null, '', `https://journal.example/app/activities/${NEXT_DAY}#work/standup`);
+  env.win.dispatchEvent({ type: 'popstate' });
+  await settle();
+  assert.ok(env.panel().querySelector('[data-action-hide]'), 'another day is the router\'s, so the selection stays');
+  assert.deepStrictEqual(blockIds(env), ['standup']);
+});
+
+function holdPost() {
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  return {
+    post: () => pending.then(() => respond(200, { ok: true })),
+    release,
+  };
+}
+
+test('a write in flight is not drawn on a day the owner stepped away from', async () => {
+  const held = holdPost();
+  const env = await createPage({ items: [activity()], post: held.post });
+  const reads = env.viewReads();
+  await env.click(env.panel().querySelector('[data-action-hide]'));
+  assert.strictEqual(env.posts().length, 1);
+  assert.ok(env.posts()[0].url.includes(`/day/${DAY}/`));
+  env.views[NEXT_DAY] = view([activity({ id: 'fresh' })]);
+  stepTo(env, NEXT_DAY);
+  held.release();
+  await settle();
+  assert.strictEqual(keyed(env.doc, 'hidden-outline'), null);
+  assert.deepStrictEqual(blockIds(env), ['fresh']);
+  assert.strictEqual(env.viewReads(), reads + 1, 'the write does not read the day it left');
+});
+
+test('a write in flight is not drawn after the view is gone', async () => {
+  const held = holdPost();
+  const env = await createPage({ items: [activity()], post: held.post });
+  const reads = env.viewReads();
+  await env.click(env.panel().querySelector('[data-action-hide]'));
+  assert.strictEqual(env.posts().length, 1);
+  env.win.SolViews.dispose();
+  held.release();
+  await settle();
+  assert.strictEqual(env.viewReads(), reads);
+  assert.strictEqual(keyed(env.doc, 'hidden-outline'), null);
 });
 
 (async () => {

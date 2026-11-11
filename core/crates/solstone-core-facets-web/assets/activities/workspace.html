@@ -1,3 +1,5 @@
+<!-- first-read: /app/activities/{day} -> /app/activities/api/day/{day}/view -->
+<!-- view-contract -->
 <link rel="stylesheet" href="/static/date-nav.css">
 <script src="/static/date-nav.js"></script>
 <style>
@@ -946,7 +948,65 @@
 // Copyright (c) 2026 sol pbc
 
 (() => {
-  const reportActivitiesReady = window.createViewReady('activities');
+  // The script only registers. Nothing of the view runs until it is mounted,
+  // and a later mount of the same page starts from an empty state.
+  let ctx = null;
+  let mountGen = 0;
+  let dayEpoch = 0;
+  let dayScope = null;
+  let pollWait = null;
+
+  function live() {
+    return !!(ctx && !ctx.disposed);
+  }
+
+  function captured() {
+    return { gen: mountGen, day: state.day, epoch: dayEpoch };
+  }
+
+  function still(token) {
+    return !!(token && token.gen === mountGen && token.epoch === dayEpoch && token.day === state.day && live());
+  }
+
+  function cutOff() {
+    return window.SolStore.never();
+  }
+
+  // A day read. A cut-off one is its own pending promise and is not drawn.
+  function readJson(url) {
+    if (!live()) return cutOff();
+    const asked = dayEpoch;
+    const gen = mountGen;
+    const signal = window.SolStore.eitherSignal(ctx.signal, dayScope && dayScope.signal);
+    return ctx.read(url, { signal }).then(
+      (value) => (asked === dayEpoch && gen === mountGen && live() ? value : cutOff()),
+      (error) => (asked === dayEpoch && gen === mountGen && live() ? Promise.reject(error) : cutOff())
+    );
+  }
+
+  function historyPush(url) {
+    if (ctx && ctx.history) ctx.history.push(url);
+    else window.history.pushState(null, '', url);
+  }
+
+  function historyReplace(url) {
+    if (ctx && ctx.history) ctx.history.replace(url);
+    else window.history.replaceState(window.history.state, '', url);
+  }
+
+  function reportActivitiesReady(kind) {
+    if (ctx) ctx.ready(kind);
+  }
+
+  function stopPoll() {
+    if (ctx) ctx.clearTimeout(state.pollTimer);
+    else clearTimeout(state.pollTimer);
+    state.pollTimer = null;
+    if (pollWait) {
+      pollWait();
+      pollWait = null;
+    }
+  }
 
   // --- owner-facing strings ---
   const STRINGS = {
@@ -1139,9 +1199,13 @@
     pollTimer: null
   };
 
-  function parsePathDay() {
+  function pathDay() {
     const m = window.location.pathname.match(/\/app\/activities\/(\d{8})/);
-    return m ? m[1] : (window.JournalClock ? window.JournalClock.today() : '');
+    return m ? m[1] : '';
+  }
+
+  function parsePathDay() {
+    return pathDay() || (window.JournalClock ? window.JournalClock.today() : '');
   }
 
   function readUrlParams() {
@@ -1221,11 +1285,13 @@
     if (state.facet) params.set('facet', state.facet);
     if (state.includeHidden) params.set('include_hidden', '1');
     const q = params.toString() ? '?' + params.toString() : '';
-    const url = `/app/activities/api/day/${state.day}/view${q}`;
+    const day = state.day;
+    const epoch = dayEpoch;
+    const url = `/app/activities/api/day/${day}/view${q}`;
 
     try {
-      const data = await (window.apiJson ? window.apiJson(url) : fetch(url).then(r => r.json()));
-      if (seq !== state.fetchSequence) return;
+      const data = await readJson(url);
+      if (seq !== state.fetchSequence || epoch !== dayEpoch || state.day !== day || !live()) return;
       state.view = data;
       viewLoadedOnce = true;
       showContent();
@@ -1236,7 +1302,7 @@
         if (!found) {
           const u = new URL(window.location.href);
           u.searchParams.delete('facet');
-          window.history.replaceState(null, '', u.pathname + (u.search ? u.search : '') + u.hash);
+          historyReplace(u.pathname + (u.search ? u.search : '') + u.hash);
           state.facet = null;
           fetchView();
           const host = document.querySelector('[data-date-nav]');
@@ -1251,7 +1317,7 @@
         if (!item && !justHiddenMatches(state.selectedId, state.selectedFacet)) {
           const u = new URL(window.location.href);
           u.hash = '';
-          window.history.replaceState(null, '', u.pathname + u.search);
+          historyReplace(u.pathname + u.search);
           state.selectedId = null;
           state.selectedFacet = null;
         }
@@ -1262,14 +1328,14 @@
         state.openCorrect = false;
         const u = new URL(window.location.href);
         u.searchParams.delete('correct');
-        window.history.replaceState(null, '', u.pathname + u.search + u.hash);
+        historyReplace(u.pathname + u.search + u.hash);
         const item = currentItem();
         if (item && !item.hidden) openCorrect(item);
       }
       scheduleUpdatingPoll();
       reportActivitiesReady((data.items || []).length ? 'content' : 'empty');
     } catch (err) {
-      if (seq !== state.fetchSequence) return;
+      if (seq !== state.fetchSequence || epoch !== dayEpoch || state.day !== day || !live()) return;
       const stateArea = document.querySelector('[data-state-area]');
       if (!stateArea || !window.SurfaceState) return;
       const errorHtml = window.SurfaceState.error({ heading: STRINGS['load-error'], retry: true, detail: err });
@@ -1678,10 +1744,6 @@
     const top = Math.max(0, Math.round(panelArea.getBoundingClientRect().top));
     panelArea.style.setProperty('--act-panel-top', `${top}px`);
   }
-  if (typeof window.addEventListener === 'function') {
-    window.addEventListener('scroll', fitPanel, { passive: true });
-    window.addEventListener('resize', fitPanel);
-  }
 
   function renderPanel() {
     fitPanel();
@@ -2012,6 +2074,7 @@
   }
 
   async function separateAccount(item, acct, control) {
+    const token = captured();
     const url = `/app/activities/api/day/${acct.day || state.day}/record/${encodeURIComponent(acct.id)}/separate?facet=${encodeURIComponent(item.facet)}`;
     const opts = { method: 'POST', headers: { [ACTOR_HEADER]: ACTOR_OWNER, 'Content-Type': 'application/json' }, body: '{}' };
     try {
@@ -2020,6 +2083,7 @@
       } else {
         await window.apiJson(url, opts);
       }
+      if (!still(token)) return;
       state.separating = null;
       await fetchView();
     } catch (_) {
@@ -2064,17 +2128,21 @@
       }
 
       const errEl = form.querySelector('[data-copy-key="save-failure"]');
+      const token = captured();
       try {
         const url = `/app/activities/api/day/${state.day}/record/${encodeURIComponent(item.id)}/update?facet=${encodeURIComponent(item.facet)}`;
         await (window.apiJson
           ? window.apiJson(url, { method: 'POST', headers: { [ACTOR_HEADER]: ACTOR_OWNER, 'Content-Type': 'application/json' }, body: JSON.stringify({ patch }) })
           : fetch(url, { method: 'POST', headers: { [ACTOR_HEADER]: ACTOR_OWNER, 'Content-Type': 'application/json' }, body: JSON.stringify({ patch }) }).then(r => r.json()));
 
+        if (!still(token)) return;
         state.editing = false;
         state.isDirty = false;
         await fetchView();
+        if (!still(token)) return;
         document.querySelector('[data-action-edit]')?.focus();
       } catch (err) {
+        if (!still(token)) return;
         if (errEl) errEl.hidden = false;
       }
     });
@@ -2113,19 +2181,35 @@
   }
 
   function scheduleUpdatingPoll() {
-    clearTimeout(state.pollTimer);
-    state.pollTimer = null;
+    stopPoll();
+    if (!live()) return;
     if (!(state.view?.items || []).some(it => it.updating)) return;
-    state.pollTimer = setTimeout(() => {
+    const gen = mountGen;
+    const epoch = dayEpoch;
+    const day = state.day;
+    state.pollTimer = ctx.setTimeout(() => {
       state.pollTimer = null;
+      if (gen !== mountGen || epoch !== dayEpoch || state.day !== day || !live()) return;
       // A form in progress is never redrawn under the owner; try again later.
       if (state.editing || state.correct) {
         scheduleUpdatingPoll();
         return;
       }
-      // A hidden page waits to be seen before it asks again.
-      if (window.AppServices?.whenVisible) window.AppServices.whenVisible(fetchView);
-      else fetchView();
+      // A hidden page waits to be seen before it asks again. The wait belongs
+      // to this mount and this day, so leaving either drops it.
+      if (document.hidden) {
+        pollWait = ctx.on(document, 'visibilitychange', () => {
+          if (document.hidden) return;
+          if (pollWait) {
+            pollWait();
+            pollWait = null;
+          }
+          if (gen !== mountGen || epoch !== dayEpoch || state.day !== day || !live()) return;
+          fetchView();
+        });
+        return;
+      }
+      fetchView();
     }, UPDATING_POLL_MS);
   }
 
@@ -2196,7 +2280,7 @@
       if (!seg.key || !stream) return Promise.resolve([]);
       const url = `/app/transcripts/api/segment/${state.day}/${encodeURIComponent(stream)}/${encodeURIComponent(seg.key)}`;
       // A segment that can't be read offers no lines; the others still do.
-      return window.apiJson(url).then(data => spokenLines(data, stream, seg.key)).catch(() => []);
+      return readJson(url).then(data => spokenLines(data, stream, seg.key)).catch(() => []);
     });
     entry.promise = Promise.all(reads).then(groups => {
       entry.lines = groups.flat().sort((a, b) => a.timestamp - b.timestamp);
@@ -2213,15 +2297,20 @@
   }
 
   function loadPeople() {
+    if (!live()) return cutOff();
     if (!state.peoplePromise) {
       state.peopleFailed = false;
-      state.peoplePromise = window.apiJson('/app/entities/api/journal').then(data => {
+      const gen = mountGen;
+      const pending = ctx.read('/app/entities/api/journal');
+      state.peoplePromise = pending.then(data => {
+        if (gen !== mountGen || !live()) return cutOff();
         state.people = (data?.entities || [])
           .filter(e => e && e.type === 'Person' && !e.blocked && !e.is_principal && e.entity_id)
           .map(e => ({ id: String(e.entity_id), name: String(e.name || e.entity_id), aka: Array.isArray(e.aka) ? e.aka.map(String) : [] }))
           .sort((a, b) => a.name.localeCompare(b.name));
         return state.people;
       }).catch(err => {
+        if (gen !== mountGen || !live()) return cutOff();
         state.peoplePromise = null;
         state.peopleFailed = true;
         throw err;
@@ -2445,6 +2534,7 @@
         if (!c.picking) return;
         panelArea.querySelector('[data-person-search]')?.focus();
         loadPeople().catch(() => {}).then(() => {
+          if (!live() || state.correct !== c) return;
           const list = state.correct === c && document.querySelector('[data-person-list]');
           if (!list) return;
           list.innerHTML = personListHtml();
@@ -2476,6 +2566,7 @@
   }
 
   async function submitLines(item, speaker, control) {
+    const token = captured();
     const c = state.correct;
     const lines = answerableLines(item)
       .filter(l => c.ticked.has(l.key))
@@ -2484,46 +2575,57 @@
     try {
       await ownerPost(recordUrl(item, 'lines'), { lines, speaker });
     } catch (err) {
-      if (state.correct !== c) return;
+      if (!still(token) || state.correct !== c) return;
       c.refusal = LINE_REFUSALS[err && err.reasonCode] || 'refusal-line-other';
       renderPanel();
       document.querySelector('[data-panel-area] .act-correct-refusal')?.focus();
       return;
     }
+    if (!still(token)) return;
     await afterCorrection(item);
   }
 
   async function submitPatch(item, patch, errEl) {
+    const token = captured();
     if (errEl) errEl.hidden = true;
     try {
       await ownerPost(recordUrl(item, 'update'), { patch });
     } catch (_) {
+      if (!still(token)) return;
       if (errEl) errEl.hidden = false;
       return;
     }
+    if (!still(token)) return;
     await afterCorrection(item);
   }
 
   // After a correction the panel reads the day again; while the journal thinks
-  // it through, the view says the activity is updating.
+  // it through, the view says the activity is updating. A day the owner has
+  // left is not drawn.
   async function afterCorrection(item) {
+    const token = captured();
+    if (!still(token)) return;
     state.correct = null;
     state.lines.delete(itemKey(item));
     await fetchView();
+    if (!still(token)) return;
     document.querySelector('[data-action-correct]')?.focus();
   }
 
   async function removeEdit(item, ed, control) {
+    const token = captured();
     state.notice = null;
     if (control) control.disabled = true;
     try {
       await ownerPost(recordUrl(item, 'edits/remove'), { position: ed.position, timestamp: ed.timestamp, actor: ed.actor });
     } catch (err) {
+      if (!still(token)) return;
       state.notice = REMOVE_STALE.has(err && err.reasonCode) ? 'remove-stale' : 'remove-failure';
       if (state.notice === 'remove-stale') await fetchView();
       else renderPanel();
       return;
     }
+    if (!still(token)) return;
     state.lines.delete(itemKey(item));
     await fetchView();
   }
@@ -2538,12 +2640,15 @@
   }
 
   async function mutateHide(item, control) {
+    const token = captured();
     try {
       await postRecord(item, 'mute', control);
+      if (!still(token)) return;
 
       state.outlineBlock = true;
       state.justHidden = state.includeHidden ? null : { item };
       await fetchView();
+      if (!still(token)) return;
       refreshDateNav();
       (document.querySelector(`[data-outline-unhide="${cssId(item.id)}"]`) || document.querySelector('[data-action-unhide]'))?.focus();
     } catch (_) {
@@ -2552,8 +2657,10 @@
   }
 
   async function mutateUnhide(item, control) {
+    const token = captured();
     try {
       await postRecord(item, 'unmute', control);
+      if (!still(token)) return;
       state.outlineBlock = null;
       state.justHidden = null;
       await fetchView();
@@ -2586,7 +2693,7 @@
     state.notice = null;
     state.expandedEvidence = false;
     const hash = `#${encodeURIComponent(facet)}/${encodeURIComponent(id)}`;
-    window.history.pushState(null, '', window.location.pathname + window.location.search + hash);
+    historyPush(window.location.pathname + window.location.search + hash);
     renderMain();
     renderPanel();
     if (isMobile()) {
@@ -2606,7 +2713,7 @@
     state.isDirty = false;
     state.correct = null;
     state.notice = null;
-    window.history.pushState(null, '', window.location.pathname + window.location.search);
+    historyPush(window.location.pathname + window.location.search);
     renderMain();
     renderPanel();
     if (prevId) {
@@ -2623,7 +2730,7 @@
     const u = new URL(window.location.href);
     if (facet) u.searchParams.set('facet', facet);
     else u.searchParams.delete('facet');
-    window.history.pushState(null, '', u.pathname + (u.search ? u.search : '') + u.hash);
+    historyPush(u.pathname + (u.search ? u.search : '') + u.hash);
     fetchView();
     refreshDateNav();
   }
@@ -2642,10 +2749,13 @@
   }
 
   function setupEvents() {
+    ctx.on(window, 'scroll', fitPanel, { passive: true });
+    ctx.on(window, 'resize', fitPanel);
+
     // Listbox keydown listener directly on listbox
     const listbox = document.querySelector('[data-scope-listbox]');
     if (listbox) {
-      listbox.addEventListener('keydown', (e) => {
+      ctx.on(listbox, 'keydown', (e) => {
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 't' || e.key === 'T') {
           e.preventDefault();
           return;
@@ -2693,16 +2803,17 @@
     // Media query listener
     if (window.matchMedia) {
       const mql = window.matchMedia('(max-width: 700px)');
-      const onMediaChange = () => renderPanel();
+      const onMediaChange = () => { if (live()) renderPanel(); };
       if (typeof mql.addEventListener === 'function') {
-        mql.addEventListener('change', onMediaChange);
+        ctx.on(mql, 'change', onMediaChange);
       } else if (typeof mql.addListener === 'function') {
         mql.addListener(onMediaChange);
+        ctx.onDispose(() => mql.removeListener?.(onMediaChange));
       }
     }
 
     // Scope control
-    document.addEventListener('click', (e) => {
+    ctx.on(document, 'click', (e) => {
       const btn = e.target.closest('[data-scope-btn]');
       if (btn) {
         toggleScopeListbox();
@@ -2752,7 +2863,7 @@
     });
 
     // Keydown handling on document
-    document.addEventListener('keydown', (e) => {
+    ctx.on(document, 'keydown', (e) => {
       if (state.listboxOpen) {
         const listbox = document.querySelector('[data-scope-listbox]');
         const options = Array.from(listbox?.querySelectorAll('.act-scope-option') || []);
@@ -2808,15 +2919,20 @@
     });
 
     // Toggle hidden
-    document.querySelector('[data-toggle-hidden]')?.addEventListener('click', () => {
-      state.includeHidden = !state.includeHidden;
-      state.justHidden = null;
-      state.outlineBlock = null;
-      fetchView();
-    });
+    const hiddenToggle = document.querySelector('[data-toggle-hidden]');
+    if (hiddenToggle) {
+      ctx.on(hiddenToggle, 'click', () => {
+        state.includeHidden = !state.includeHidden;
+        state.justHidden = null;
+        state.outlineBlock = null;
+        fetchView();
+      });
+    }
 
-    // Popstate
-    window.addEventListener('popstate', () => {
+    // A hash or a facet on this day's address is this view's. A different
+    // path, including another day, is the router's.
+    ctx.on(window, 'popstate', () => {
+      if (pathDay() !== state.day) return;
       const oldFacet = state.facet;
       const wasDirty = state.editing && state.isDirty;
       const prevSelectedId = state.selectedId;
@@ -2841,20 +2957,109 @@
     });
   }
 
-  function init() {
-    state.day = parsePathDay();
+  function resetState() {
+    state.day = null;
+    state.facet = null;
+    state.includeHidden = false;
+    state.separating = null;
+    state.view = null;
+    state.selectedFacet = null;
+    state.selectedId = null;
+    state.editing = false;
+    state.isDirty = false;
+    state.expandedEvidence = false;
+    state.outlineBlock = null;
+    state.fetchSequence = 0;
+    state.justHidden = null;
+    state.listboxOpen = false;
+    state.correct = null;
+    state.openCorrect = false;
+    state.lines = new Map();
+    state.people = null;
+    state.peoplePromise = null;
+    state.peopleFailed = false;
+    state.notice = null;
+    state.pollTimer = null;
+  }
+
+  function clearShownDay() {
+    document.querySelector('[data-lines-audio]')?.pause?.();
+    const panel = document.querySelector('[data-panel-area]');
+    if (panel) panel.innerHTML = '';
+    const content = document.querySelector('[data-content-area]');
+    if (content) content.hidden = true;
+    state.view = null;
+  }
+
+  // A day step follows the address: the facet stays, the selection is whatever
+  // the address names, and an edit or a correction closes without saving.
+  function changeDay(day) {
+    if (!live()) return;
+    dayEpoch += 1;
+    if (dayScope) dayScope.abort();
+    dayScope = window.SolStore.createAbort();
+    stopPoll();
+    state.lines = new Map();
+    state.editing = false;
+    state.isDirty = false;
+    state.correct = null;
+    state.notice = null;
+    state.separating = null;
+    state.listboxOpen = false;
+    state.expandedEvidence = false;
+    state.outlineBlock = null;
+    state.justHidden = null;
+    viewLoadedOnce = false;
+    clearShownDay();
     readUrlParams();
-    // A link may open an activity with its corrections showing.
     state.openCorrect = new URLSearchParams(window.location.search).get('correct') === '1';
-    setupEvents();
+    state.day = (day && /^\d{8}$/.test(day)) ? day : parsePathDay();
+    if (window.DateNav && typeof window.DateNav.setDay === 'function') window.DateNav.setDay(state.day);
     showLoading();
     fetchView();
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
+  function mountActivities(mountCtx) {
+    ctx = mountCtx;
+    mountGen += 1;
+    dayEpoch = 0;
+    if (dayScope) dayScope.abort();
+    dayScope = window.SolStore.createAbort();
+    resetState();
+    viewLoadedOnce = false;
+    // An undated address is today's. The replace is synchronous, so the date
+    // nav, which reads the path when the mount finishes, sees the day.
+    if (!mountCtx.route.day) {
+      const today = window.JournalClock ? window.JournalClock.today() : '';
+      if (/^\d{8}$/.test(today)) {
+        mountCtx.history.replace(`/app/activities/${today}${window.location.search}${window.location.hash}`);
+        if (window.SolViews && typeof window.SolViews.routeOf === 'function') {
+          mountCtx.route = window.SolViews.routeOf(window.location);
+        }
+      }
+    }
+    const mine = mountCtx;
+    mountCtx.onDispose(() => {
+      stopPoll();
+      if (dayScope) dayScope.abort();
+      dayScope = null;
+      state.peoplePromise = null;
+      state.lines = new Map();
+      state.people = null;
+      clearShownDay();
+      if (ctx === mine) ctx = null;
+    });
+    state.day = parsePathDay();
+    readUrlParams();
+    state.openCorrect = new URLSearchParams(window.location.search).get('correct') === '1';
+    setupEvents();
+    showLoading();
+    fetchView();
+    return {
+      update(params) { changeDay(params && params.day); }
+    };
   }
+
+  window.SolViews.register('activities', { mount: mountActivities });
 })();
 </script>
