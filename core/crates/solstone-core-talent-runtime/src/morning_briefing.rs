@@ -38,6 +38,9 @@ pub struct DigestActivity {
     /// What the owner's calendar had scheduled while the activity ran.
     #[serde(default)]
     pub scheduled: Vec<String>,
+    /// The owner says a recording or video was playing.
+    #[serde(default)]
+    pub playback: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -470,6 +473,7 @@ fn load_digest_activities(
                             source_limitation,
                             story_body,
                             scheduled,
+                            playback: record.get("playback") == Some(&Value::Bool(true)),
                         },
                     ));
                 }
@@ -600,8 +604,18 @@ fn render_digest_activity(act: &DigestActivity, include_story: bool) -> String {
     {
         lines.push(format!("- description: {desc}"));
     }
+    // The owner's own word on the activity outranks everything else here.
     if let Some(ref det) = act.details {
-        lines.push(format!("- details: {det}"));
+        lines.push(format!(
+            "- what you told the journal about it, which is what happened: {}",
+            crate::prompt_context::as_you(det)
+        ));
+    }
+    if act.playback {
+        lines.push(
+            "- a recording or video you watched or listened to; no one in it was with you"
+                .to_owned(),
+        );
     }
     if !act.participants.is_empty() {
         lines.push(format!("- participants: {}", act.participants.join(", ")));
@@ -1273,6 +1287,7 @@ mod tests {
                 "title": "design review", "start": "10:00", "end": "11:00",
                 "people": ["Alex Rivera", "Dana Ortiz"],
             }))],
+            playback: false,
         };
         let rendered = render_digest_activity(&act, false);
         let line = rendered
@@ -1304,6 +1319,7 @@ mod tests {
             source_limitation: false,
             story_body: Some(story.into()),
             scheduled: vec![],
+            playback: false,
         };
 
         let agent = act("Your agent fixed the build on v2.0.1. You reviewed it.");
@@ -1383,6 +1399,7 @@ mod tests {
             source_limitation: false,
             story_body: Some(huge_story),
             scheduled: vec![],
+            playback: false,
         };
         let initial_gap = "activities from Work, which couldn't be read".to_string();
         let values = Map::from_iter([

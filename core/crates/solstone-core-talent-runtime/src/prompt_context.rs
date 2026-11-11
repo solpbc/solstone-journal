@@ -236,9 +236,80 @@ fn covered_time(activity: &Map<String, Value>, field: &str) -> Option<String> {
     Some(format!("{} to {}", format_time(start), format_time(end)))
 }
 
+/// The owner's words told to them, as everything else in a story is: "I",
+/// "me", "my" become "you", "your", outside anything they quote. A small model
+/// writing "you" keeps who did what straight far more often when the account
+/// already says "you" than when it has to work out that "I" is the owner.
+pub(crate) fn as_you(account: &str) -> String {
+    let mut out = String::with_capacity(account.len() + 16);
+    let mut quoted = false;
+    let mut word = String::new();
+    // Whether the next word starts a sentence, so "you" is "You" there.
+    let mut sentence_start = true;
+    let flush = |word: &mut String, out: &mut String, sentence_start: &mut bool, quoted: bool| {
+        if word.is_empty() {
+            return;
+        }
+        let told = if quoted {
+            None
+        } else {
+            match word.as_str() {
+                "I" => Some("you"),
+                "I'm" | "I’m" => Some("you're"),
+                "I've" | "I’ve" => Some("you've"),
+                "I'll" | "I’ll" => Some("you'll"),
+                "I'd" | "I’d" => Some("you'd"),
+                "me" | "Me" => Some("you"),
+                "my" | "My" => Some("your"),
+                "mine" | "Mine" => Some("yours"),
+                "myself" | "Myself" => Some("yourself"),
+                _ => None,
+            }
+        };
+        match told {
+            Some(you) if *sentence_start => {
+                let mut chars = you.chars();
+                if let Some(first) = chars.next() {
+                    out.extend(first.to_uppercase());
+                    out.push_str(chars.as_str());
+                }
+            }
+            Some(you) => out.push_str(you),
+            None => out.push_str(word),
+        }
+        *sentence_start = false;
+        word.clear();
+    };
+    for c in account.chars() {
+        if c.is_alphanumeric() || c == '\'' || c == '’' {
+            word.push(c);
+            continue;
+        }
+        flush(&mut word, &mut out, &mut sentence_start, quoted);
+        if matches!(c, '"' | '“' | '”') {
+            quoted = !quoted;
+        }
+        if matches!(c, '.' | '!' | '?' | '\n') {
+            sentence_start = true;
+        }
+        out.push(c);
+    }
+    flush(&mut word, &mut out, &mut sentence_start, quoted);
+    // "you am", "you was" and "you wasn't" read as they should.
+    out.replace("you am ", "you are ")
+        .replace("You am ", "You are ")
+        .replace("you was ", "you were ")
+        .replace("You was ", "You were ")
+        .replace("you wasn't", "you weren't")
+        .replace("You wasn't", "You weren't")
+        .replace("you wasn’t", "you weren’t")
+        .replace("You wasn’t", "You weren’t")
+}
+
 /// What the owner's correction says, in the words both its places use.
 fn account_words(activity: &Map<String, Value>) -> Option<String> {
-    let account = owner_account(activity)?;
+    let account = as_you(owner_account(activity)?);
+    let account = account.as_str();
     Some(match covered_time(activity, "details") {
         Some(time) => format!("About {time}, part of this activity:\n\n{account}"),
         None => account.to_owned(),
@@ -346,7 +417,7 @@ fn activity_context(
     // of it. Both read the record exactly as stored.
     if let Some(account) = account_words(activity) {
         parts.push(format!(
-            "## Your Account\nThe owner's own account of this activity, in their words. Where the transcript, the screen or the description disagrees, follow the owner. Keep quoted words exactly as they were said.\n\n{account}"
+            "## Your Account\nThe owner's own account of this activity, told to them. Where the transcript, the screen or the description disagrees, follow the owner. Keep quoted words exactly as they were said.\n\n{account}"
         ));
     }
     if activity.get("playback") == Some(&Value::Bool(true)) {
@@ -638,6 +709,23 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn the_owners_account_is_told_to_them_and_their_quotes_stay_as_said() {
+        assert_eq!(
+            as_you("I'm doing the architecture overview. Juliet has the live demo, not me."),
+            "You're doing the architecture overview. Juliet has the live demo, not you."
+        );
+        assert_eq!(
+            as_you("I wasn't alone. I was on the phone with Juliet and my notes are hers."),
+            "You weren't alone. You were on the phone with Juliet and your notes are hers."
+        );
+        assert_eq!(
+            as_you("Juliet said \"I will wait for the board\" and I agreed."),
+            "Juliet said \"I will wait for the board\" and you agreed."
+        );
+        assert_eq!(as_you("Mina ran the slides."), "Mina ran the slides.");
+    }
 
     #[test]
     fn weekly_window_ends_six_calendar_days_after_the_requested_start() {

@@ -288,14 +288,25 @@ pub fn output(
 /// Asks a story talent to repeat the owner's account as the first thing it
 /// writes: on a small model, its own copy of their words pulls what follows
 /// toward them. `parse` drops the field, so it never reaches the record.
+/// After the copied account, who it says did what, one row per person, before
+/// the body: the small model writes the swap down the right way round once
+/// more, right before the words that need it.
+pub(crate) const ACCOUNT_ROLES: &str = "who_did_what";
+
 pub(crate) fn repeat_account_first(schema: &mut Map<String, Value>) {
     let mut properties = Map::new();
     properties.insert(REPEATED_ACCOUNT.to_owned(), json!({"type": "string"}));
+    properties.insert(
+        ACCOUNT_ROLES.to_owned(),
+        json!({"type": "array", "maxItems": 6, "items": {"type": "object", "additionalProperties": false,
+            "required": ["who", "did"],
+            "properties": {"who": {"type": "string"}, "did": {"type": "string"}}}}),
+    );
     if let Some(rest) = schema.get("properties").and_then(Value::as_object) {
         properties.extend(rest.clone());
     }
     schema.insert("properties".to_owned(), Value::Object(properties));
-    let mut required = vec![json!(REPEATED_ACCOUNT)];
+    let mut required = vec![json!(REPEATED_ACCOUNT), json!(ACCOUNT_ROLES)];
     if let Some(rest) = schema.get("required").and_then(Value::as_array) {
         required.extend(rest.iter().cloned());
     }
@@ -323,6 +334,7 @@ pub fn parse(
         .is_some_and(|properties| properties.get(REPEATED_ACCOUNT).is_some());
     if repeated_account_asked {
         object.remove(REPEATED_ACCOUNT);
+        object.remove(ACCOUNT_ROLES);
     }
     for key in object.keys() {
         if !matches!(key.as_str(), "body" | "topics" | "confidence" | "relations") {
@@ -1313,6 +1325,7 @@ mod tests {
     fn a_repeated_account_is_dropped_only_where_the_story_was_asked_for_it() {
         let output = json!({
             "correction": "Mina ran the slides.",
+            "who_did_what": [{"who": "Mina", "did": "ran the slides"}],
             "body": "You watched Mina run the slides.",
             "topics": [],
             "confidence": 0.8,
@@ -1332,6 +1345,7 @@ mod tests {
             panic!("story output is JSON");
         };
         assert!(kept.get(REPEATED_ACCOUNT).is_none());
+        assert!(kept.get(ACCOUNT_ROLES).is_none());
         assert_eq!(kept["body"], "You watched Mina run the slides.");
     }
 

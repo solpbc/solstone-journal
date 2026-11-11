@@ -299,8 +299,9 @@ pub fn prepare(
             Some(schema) => {
                 crate::story::repeat_account_first(schema);
                 format!(
-                    "{instruction}\n\nStart your JSON with the field `{}`: copy those words exactly.",
-                    crate::story::REPEATED_ACCOUNT
+                    "{instruction}\n\nStart your JSON with the field `{}`: copy those words exactly. Then `{}`: each person those words name, and what they say that person did. Then the body: its first sentence says what those words say happened.",
+                    crate::story::REPEATED_ACCOUNT,
+                    crate::story::ACCOUNT_ROLES
                 )
             }
             None => instruction,
@@ -1375,7 +1376,7 @@ mod tests {
             } else {
                 assert!(
                     told.ends_with(&format!(
-                        "{last}\n\nStart your JSON with the field `correction`: copy those words exactly."
+                        "{last}\n\nStart your JSON with the field `correction`: copy those words exactly. Then `who_did_what`: each person those words name, and what they say that person did. Then the body: its first sentence says what those words say happened."
                     )),
                     "{talent}"
                 );
@@ -1451,8 +1452,9 @@ mod tests {
         recording["playback"] = json!(true);
         for talent in ["work", "conversation"] {
             let (first, required) = fields(talent, told.clone());
-            assert_eq!(first[0], "correction", "{talent}");
+            assert_eq!(first[..2], ["correction", "who_did_what"], "{talent}");
             assert_eq!(required[0], "correction", "{talent}");
+            assert_eq!(required[1], "who_did_what", "{talent}");
             // Only an account: nothing to copy from a recording, and no field
             // with nothing standing.
             for activity in [base.clone(), recording.clone()] {
