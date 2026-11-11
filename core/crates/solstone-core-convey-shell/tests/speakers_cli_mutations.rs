@@ -492,7 +492,7 @@ async fn backfill_last_seen_skips_ineligible_speaker_voiceprints() {
 }
 
 #[tokio::test]
-async fn wipe_is_safe_by_default_and_removes_only_on_commit() {
+async fn wipe_is_safe_by_default_and_moves_to_the_trash_only_on_commit() {
     let journal = Journal::new();
     let file = journal
         .0
@@ -514,8 +514,23 @@ async fn wipe_is_safe_by_default_and_removes_only_on_commit() {
         json!({"commit":true}),
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{committed}");
     assert_eq!(committed["dry_run"], false);
+    assert_eq!(committed["total_files"], 1);
+    assert!(committed["trash"]["id"].is_string(), "{committed}");
+    assert!(committed["trash"]["erase_at"].is_string(), "{committed}");
+    assert!(!file.exists());
+
+    fs::write(&file, b"synthetic").expect("embedding");
+    let (status, erased) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/wipe",
+        json!({"commit":true,"erase":true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{erased}");
+    assert_eq!(erased["erased"], true, "{erased}");
+    assert!(erased.get("trash").is_none(), "{erased}");
     assert!(!file.exists());
 }
 

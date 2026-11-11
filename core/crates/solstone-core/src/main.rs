@@ -2751,22 +2751,27 @@ fn wipe_speaker_artifacts_request(value: Value) -> Result<Value, String> {
     let object = request_object(
         value,
         "solstone-speaker-resolve-wipe-speaker-artifacts-request-v1",
-        &["schema", "journal_root", "dry_run"],
+        &["schema", "journal_root", "dry_run", "erase"],
     )?;
     let journal_root = PathBuf::from(required_string(&object, "journal_root")?);
-    let removal = (!required_bool(&object, "dry_run")?).then(|| {
-        solstone_core_removals::Removal::begin(
-            &journal_root,
-            solstone_core_removals::Action::SpeakersWipe,
-            solstone_core_removals::Surface::Cli,
-        )
-    });
-    let report = solstone_core_speaker_resolve::artifact_wipe::wipe_speaker_artifacts(
+    if required_bool(&object, "dry_run")? {
+        let report = solstone_core_speaker_resolve::artifact_wipe::dry_run(&journal_root)
+            .map_err(|error| error.to_string())?;
+        return serde_json::to_value(report).map_err(|error| error.to_string());
+    }
+    // Moved to the trash; erased at once only when asked.
+    let erase = match object.get("erase") {
+        None => false,
+        Some(Value::Bool(erase)) => *erase,
+        Some(_) => return Err("erase must be a boolean".to_owned()),
+    };
+    solstone_core_speaker_resolve::speakers_trash::wipe(
         &journal_root,
-        removal.as_ref(),
+        solstone_core_removals::Surface::Cli,
+        erase,
     )
-    .map_err(|error| error.to_string())?;
-    serde_json::to_value(report).map_err(|error| error.to_string())
+    .map(|wiped| wiped.to_json())
+    .map_err(|error| error.to_string())
 }
 
 /// Refuse a label or correction that names a speaker who is not an admissible

@@ -1,16 +1,35 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Mechanical cleanup of durable speaker-identity artifacts.
+//! What a speakers wipe takes: every file the journal keeps about voices.
+//!
+//! The wipe moves them to the trash as one item ([`crate::speakers_trash`]),
+//! where they wait to be recovered or erased. A dry run reports the same set.
+//!
+//! Taken: each live recording's embeddings (its top-level `*.npz`) and its
+//! speaker labels and corrections, in both segment layouts; each entity's
+//! voiceprints and owner centroid; the owner candidate; and the candidate
+//! pool, which holds voice centroids.
+//!
+//! Left alone, as the owner's own decisions or not about voice: the owner's
+//! answers about who spoke a line (`talents/owner_line_labels.json`), the
+//! rejections in `awareness/current.json`, everything under `speakers/`, and
+//! `talents/speakers.json`. The discovery groups are a cache, cleared when the
+//! wipe moves and again when it comes back.
 
 use std::fs;
 use std::io;
 use std::path::Path;
 
 use serde::Serialize;
-use solstone_core_journal_io::{LockError, LockOptions, Removed, hold_lock, path_lexists};
-use solstone_core_removals::{Removal, RemovalIo, Unit};
+use solstone_core_journal_io::{PathOrDay, StreamLocation, day_dirs, iter_segments};
 use thiserror::Error;
+
+/// The owner candidate's snapshot.
+pub const OWNER_CANDIDATE: &str = "awareness/owner_candidate.npz";
+
+/// The candidate pool: voice centroids gathered across recordings.
+pub const SPEAKER_CANDIDATES: &str = "awareness/speaker_candidates.json";
 
 /// One wipe category's deterministic receipt.
 #[derive(Debug, Default, Serialize)]
@@ -20,7 +39,7 @@ pub struct WipeCategory {
     pub paths: Vec<String>,
 }
 
-/// Result of removing only the durable speaker-identity artifacts owned here.
+/// What a wipe takes, or would take, by category.
 #[derive(Debug, Default, Serialize)]
 pub struct WipeReport {
     pub dry_run: bool,
@@ -30,166 +49,151 @@ pub struct WipeReport {
     pub entity_voiceprints: WipeCategory,
     pub owner_centroids: WipeCategory,
     pub owner_candidate: WipeCategory,
+    pub speaker_candidates: WipeCategory,
     pub total_files: usize,
     pub total_bytes: u64,
 }
 
-/// Failure while finding or removing a speaker artifact.
+/// Failure while finding the files a wipe takes.
 #[derive(Debug, Error)]
 pub enum ArtifactWipeError {
-    #[error("artifact lock failed: {0}")]
-    Lock(#[from] LockError),
     #[error("artifact path failed: {0}")]
     Path(#[from] solstone_core_journal_io::PathError),
     #[error("artifact directory read failed at {path}: {source}")]
     Read { path: String, source: io::Error },
+    #[error("a name in your journal can't be read: {path}")]
+    NotUtf8 { path: String },
 }
 
-/// Report, and optionally remove, all legacy speaker artifacts.
-///
-/// The owner's own answers about who spoke a line
-/// (`talents/owner_line_labels.json`) are not speaker artifacts: they are
-/// owner-authored, can't be rebuilt, and are left in place.
-///
-/// `commit` is the owner's removal operation; without one this only reports.
-/// A committed wipe that removed anything is recorded in the deletion record.
-pub fn wipe_speaker_artifacts(
-    journal_root: &Path,
-    commit: Option<&Removal>,
-) -> Result<WipeReport, ArtifactWipeError> {
-    match commit {
-        None => wipe_with(journal_root, &Mode::DryRun),
-        Some(removal) => removal.commit_when(Unit::Speakers, |io| {
-            let report = wipe_with(journal_root, &Mode::Commit(io))?;
-            let removed = report.total_files > 0;
-            Ok((report, removed))
-        }),
+/// Report what a wipe would take, moving nothing.
+pub fn dry_run(journal_root: &Path) -> Result<WipeReport, ArtifactWipeError> {
+    let paths = wipe_paths(journal_root)?;
+    Ok(report(true, &paths, |path| {
+        fs::symlink_metadata(journal_root.join(path)).map_or(0, |metadata| metadata.len())
+    }))
+}
+
+/// Every file a wipe takes, journal-relative and sorted, so the files of one
+/// recording sit together.
+pub fn wipe_paths(journal_root: &Path) -> Result<Vec<String>, ArtifactWipeError> {
+    let mut paths = Vec::new();
+    segment_files(journal_root, &mut paths)?;
+    for entity in entity_dirs(journal_root)? {
+        for name in ["voiceprints.npz", "owner_centroid.npz"] {
+            let path = format!("entities/{entity}/{name}");
+            if is_file(journal_root, &path) {
+                paths.push(path);
+            }
+        }
     }
+    for path in [OWNER_CANDIDATE, SPEAKER_CANDIDATES] {
+        if is_file(journal_root, path) {
+            paths.push(path.to_owned());
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
 }
 
-enum Mode<'a> {
-    DryRun,
-    Commit(&'a RemovalIo<'a>),
-}
-
-fn wipe_with(journal_root: &Path, mode: &Mode<'_>) -> Result<WipeReport, ArtifactWipeError> {
-    let dry_run = matches!(mode, Mode::DryRun);
-    let _trust = (!dry_run)
-        .then(|| solstone_core_entity::hold_entity_trust_lock(journal_root))
-        .transpose()
-        .map_err(|error| match error {
-            solstone_core_entity::EntityTrustLockError::Path(error) => {
-                ArtifactWipeError::Path(error)
-            }
-            solstone_core_entity::EntityTrustLockError::Lock(error) => {
-                ArtifactWipeError::Lock(error)
-            }
-        })?;
+/// The report for `paths`, each sized by `size`.
+pub(crate) fn report(dry_run: bool, paths: &[String], size: impl Fn(&str) -> u64) -> WipeReport {
     let mut report = WipeReport {
         dry_run,
         ..WipeReport::default()
     };
-    for segment in chronicle_segments(journal_root)? {
-        for entry in directory_files(&segment)? {
-            if !entry
-                .extension()
-                .is_some_and(|extension| extension == "npz")
-            {
+    for path in paths {
+        let category = if path.starts_with("chronicle/") {
+            if path.ends_with(".npz") {
+                &mut report.segment_embeddings
+            } else if path.ends_with("/speaker_labels.json") {
+                &mut report.speaker_labels
+            } else {
+                &mut report.speaker_corrections
+            }
+        } else if path.starts_with("entities/") {
+            if path.ends_with("/voiceprints.npz") {
+                &mut report.entity_voiceprints
+            } else {
+                &mut report.owner_centroids
+            }
+        } else if path == OWNER_CANDIDATE {
+            &mut report.owner_candidate
+        } else {
+            &mut report.speaker_candidates
+        };
+        let bytes = size(path);
+        category.count += 1;
+        category.bytes += bytes;
+        category.paths.push(path.clone());
+        report.total_files += 1;
+        report.total_bytes += bytes;
+    }
+    report
+}
+
+/// Each live recording's voice files, in both layouts.
+fn segment_files(journal_root: &Path, paths: &mut Vec<String>) -> Result<(), ArtifactWipeError> {
+    let mut days: Vec<_> = day_dirs(journal_root)?.into_iter().collect();
+    days.sort();
+    for (day, directory) in days {
+        for segment in iter_segments(journal_root, PathOrDay::Directory(&directory))? {
+            let name = utf8(segment.name(), segment.path())?;
+            let rel = match segment.stream() {
+                StreamLocation::Direct => format!("chronicle/{day}/{name}"),
+                StreamLocation::Named(stream) => {
+                    format!("chronicle/{day}/{}/{name}", utf8(stream, segment.path())?)
+                }
+            };
+            // A recording on its way out, or only the marker one left, isn't
+            // the wipe's to take.
+            if !crate::speakers_trash::live_segment(journal_root, &rel) {
                 continue;
             }
-            record_path(journal_root, &entry, mode, &mut report.segment_embeddings)?;
-        }
-        for directory in ["agents", "talents"] {
-            let root = segment.join(directory);
-            record_path(
-                journal_root,
-                &root.join("speaker_labels.json"),
-                mode,
-                &mut report.speaker_labels,
-            )?;
-            record_path(
-                journal_root,
-                &root.join("speaker_corrections.json"),
-                mode,
-                &mut report.speaker_corrections,
-            )?;
+            for (child, file_type) in directory_children(segment.path())? {
+                let child = utf8(&child, segment.path())?;
+                if file_type.is_file() && child.ends_with(".npz") {
+                    paths.push(format!("{rel}/{child}"));
+                }
+            }
+            for directory in ["agents", "talents"] {
+                for name in ["speaker_labels.json", "speaker_corrections.json"] {
+                    let path = format!("{rel}/{directory}/{name}");
+                    if is_file(journal_root, &path) {
+                        paths.push(path);
+                    }
+                }
+            }
         }
     }
-    for entity_id in entity_ids(journal_root)? {
-        record_entry(
-            journal_root,
-            &format!("entities/{entity_id}/voiceprints.npz"),
-            mode,
-            &mut report.entity_voiceprints,
-        )?;
-        record_entry(
-            journal_root,
-            &format!("entities/{entity_id}/owner_centroid.npz"),
-            mode,
-            &mut report.owner_centroids,
-        )?;
-    }
-    record_entry(
-        journal_root,
-        "awareness/owner_candidate.npz",
-        mode,
-        &mut report.owner_candidate,
-    )?;
-    report.total_files = report.segment_embeddings.count
-        + report.speaker_labels.count
-        + report.speaker_corrections.count
-        + report.entity_voiceprints.count
-        + report.owner_centroids.count
-        + report.owner_candidate.count;
-    report.total_bytes = report.segment_embeddings.bytes
-        + report.speaker_labels.bytes
-        + report.speaker_corrections.bytes
-        + report.entity_voiceprints.bytes
-        + report.owner_centroids.bytes
-        + report.owner_candidate.bytes;
-    Ok(report)
+    Ok(())
 }
 
-fn entity_ids(journal_root: &Path) -> Result<Vec<String>, ArtifactWipeError> {
-    let directory = journal_root.join("entities");
-    let mut entity_ids = Vec::new();
-    for entry in directory_entries(&directory)? {
-        if let Some(entity_id) = entry.file_name().and_then(|value| value.to_str()) {
-            entity_ids.push(entity_id.to_owned());
-        }
-    }
-    entity_ids.sort();
-    Ok(entity_ids)
+fn utf8<'a>(name: &'a std::ffi::OsStr, at: &Path) -> Result<&'a str, ArtifactWipeError> {
+    name.to_str().ok_or_else(|| ArtifactWipeError::NotUtf8 {
+        path: at.display().to_string(),
+    })
 }
 
-fn chronicle_segments(journal_root: &Path) -> Result<Vec<std::path::PathBuf>, ArtifactWipeError> {
-    let mut segments = Vec::new();
-    for day in directory_entries(&journal_root.join("chronicle"))? {
-        for stream in directory_entries(&day)? {
-            segments.extend(directory_entries(&stream)?);
-        }
-    }
-    segments.sort();
-    Ok(segments)
-}
-
-fn directory_entries(directory: &Path) -> Result<Vec<std::path::PathBuf>, ArtifactWipeError> {
-    Ok(directory_children(directory)?
+/// Every folder under `entities/`, whether or not it holds a live entity.
+fn entity_dirs(journal_root: &Path) -> Result<Vec<String>, ArtifactWipeError> {
+    let mut dirs: Vec<String> = directory_children(&journal_root.join("entities"))?
         .into_iter()
-        .filter_map(|(path, file_type)| file_type.is_dir().then_some(path))
-        .collect())
+        .filter(|(_, file_type)| file_type.is_dir())
+        .filter_map(|(name, _)| name.to_str().map(str::to_owned))
+        .collect();
+    dirs.sort();
+    Ok(dirs)
 }
 
-fn directory_files(directory: &Path) -> Result<Vec<std::path::PathBuf>, ArtifactWipeError> {
-    Ok(directory_children(directory)?
-        .into_iter()
-        .filter_map(|(path, file_type)| file_type.is_file().then_some(path))
-        .collect())
+/// A regular file, not followed through a link.
+fn is_file(journal_root: &Path, relative: &str) -> bool {
+    fs::symlink_metadata(journal_root.join(relative)).is_ok_and(|metadata| metadata.is_file())
 }
 
 fn directory_children(
     directory: &Path,
-) -> Result<Vec<(std::path::PathBuf, fs::FileType)>, ArtifactWipeError> {
+) -> Result<Vec<(std::ffi::OsString, fs::FileType)>, ArtifactWipeError> {
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -200,171 +204,20 @@ fn directory_children(
             });
         }
     };
-    let mut paths = Vec::new();
+    let mut children = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|source| ArtifactWipeError::Read {
             path: directory.display().to_string(),
             source,
         })?;
-        let path = entry.path();
         let file_type = entry
             .file_type()
             .map_err(|source| ArtifactWipeError::Read {
-                path: path.display().to_string(),
+                path: entry.path().display().to_string(),
                 source,
             })?;
-        paths.push((path, file_type));
+        children.push((entry.file_name(), file_type));
     }
-    paths.sort_by(|left, right| left.0.cmp(&right.0));
-    Ok(paths)
-}
-
-fn record_path(
-    journal_root: &Path,
-    path: &Path,
-    mode: &Mode<'_>,
-    category: &mut WipeCategory,
-) -> Result<(), ArtifactWipeError> {
-    let relative = path
-        .strip_prefix(journal_root)
-        .expect("wipe paths are constructed under the journal root")
-        .to_string_lossy();
-    record_entry(journal_root, &relative, mode, category)
-}
-
-fn record_entry(
-    journal_root: &Path,
-    relative: &str,
-    mode: &Mode<'_>,
-    category: &mut WipeCategory,
-) -> Result<(), ArtifactWipeError> {
-    let path = journal_root.join(relative);
-    if !path_lexists(&path)? || !path.is_file() {
-        return Ok(());
-    }
-    let bytes = fs::metadata(&path)
-        .map_err(|source| ArtifactWipeError::Read {
-            path: path.display().to_string(),
-            source,
-        })?
-        .len();
-    category.count += 1;
-    category.bytes += bytes;
-    category.paths.push(relative.to_owned());
-    let Mode::Commit(io) = mode else {
-        return Ok(());
-    };
-    let _lock = hold_lock(&path, LockOptions::default())?;
-    if matches!(io.remove_file(relative)?, Removed::AlreadyAbsent) {
-        category.count -= 1;
-        category.bytes -= bytes;
-        category.paths.pop();
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    use super::*;
-
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-
-    fn test_root() -> std::path::PathBuf {
-        std::env::temp_dir().join(format!(
-            "solstone-core-speaker-wipe-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed),
-        ))
-    }
-
-    fn write(root: &Path, relative: &str) {
-        let path = root.join(relative);
-        fs::create_dir_all(path.parent().expect("fixture path has parent"))
-            .expect("create fixture parent");
-        fs::write(path, b"fixture").expect("write fixture");
-    }
-
-    #[test]
-    fn wipe_covers_all_legacy_speaker_artifact_categories() {
-        let root = test_root();
-        let paths = [
-            "chronicle/20260809/main/120000_1/audio.npz",
-            "chronicle/20260809/main/120000_1/agents/speaker_labels.json",
-            "chronicle/20260809/main/120000_1/talents/speaker_labels.json",
-            "chronicle/20260809/main/120000_1/agents/speaker_corrections.json",
-            "chronicle/20260809/main/120000_1/talents/speaker_corrections.json",
-            "entities/person/voiceprints.npz",
-            "entities/person/owner_centroid.npz",
-            "awareness/owner_candidate.npz",
-        ];
-        for path in paths {
-            write(&root, path);
-        }
-
-        let dry_run = wipe_speaker_artifacts(&root, None).expect("dry-run wipe");
-        assert_eq!(solstone_core_removals::history(&root, 10).unwrap().total, 0);
-        assert!(dry_run.dry_run);
-        assert_eq!(dry_run.segment_embeddings.count, 1);
-        assert_eq!(dry_run.speaker_labels.count, 2);
-        assert_eq!(dry_run.speaker_corrections.count, 2);
-        assert_eq!(dry_run.entity_voiceprints.count, 1);
-        assert_eq!(dry_run.owner_centroids.count, 1);
-        assert_eq!(dry_run.owner_candidate.count, 1);
-        assert_eq!(dry_run.total_files, paths.len());
-        assert!(paths.iter().all(|path| root.join(path).is_file()));
-
-        let committed = wipe_speaker_artifacts(
-            &root,
-            Some(&solstone_core_removals::Removal::begin(
-                &root,
-                solstone_core_removals::Action::SpeakersWipe,
-                solstone_core_removals::Surface::Cli,
-            )),
-        )
-        .expect("commit wipe");
-        assert!(!committed.dry_run);
-        let history = solstone_core_removals::history(&root, 10).unwrap();
-        assert_eq!(history.total, 1, "one wipe, one entry");
-        assert_eq!(
-            history.entries[0].unit,
-            solstone_core_removals::Unit::Speakers
-        );
-        assert_eq!(committed.segment_embeddings.count, 1);
-        assert_eq!(committed.speaker_labels.count, 2);
-        assert_eq!(committed.speaker_corrections.count, 2);
-        assert_eq!(committed.entity_voiceprints.count, 1);
-        assert_eq!(committed.owner_centroids.count, 1);
-        assert_eq!(committed.owner_candidate.count, 1);
-        assert_eq!(committed.total_files, paths.len());
-        assert!(paths.iter().all(|path| !root.join(path).exists()));
-
-        fs::remove_dir_all(root).expect("remove fixture root");
-    }
-
-    #[test]
-    fn wipe_leaves_the_owners_line_answers_in_place() {
-        let root = test_root();
-        let answers = "chronicle/20260809/main/120000_1/talents/owner_line_labels.json";
-        write(&root, answers);
-        write(
-            &root,
-            "chronicle/20260809/main/120000_1/talents/speaker_labels.json",
-        );
-
-        let committed = wipe_speaker_artifacts(
-            &root,
-            Some(&solstone_core_removals::Removal::begin(
-                &root,
-                solstone_core_removals::Action::SpeakersWipe,
-                solstone_core_removals::Surface::Cli,
-            )),
-        )
-        .expect("commit wipe");
-        assert_eq!(committed.total_files, 1);
-        assert_eq!(fs::read(root.join(answers)).unwrap(), b"fixture");
-
-        fs::remove_dir_all(root).expect("remove fixture root");
-    }
+    children.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(children)
 }

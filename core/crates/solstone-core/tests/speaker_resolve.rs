@@ -415,17 +415,28 @@ fn clear_and_wipe_speaker_artifact_verbs_are_mechanical_and_strict() {
     )
     .1;
     assert_eq!(dry_run["total_files"], 3);
-    assert_eq!(
-        run(
-            "wipe-speaker-artifacts",
-            json!({
-                "schema":"solstone-speaker-resolve-wipe-speaker-artifacts-request-v1",
-                "journal_root":journal, "dry_run":false,
-            }),
-        )
-        .1["total_files"],
-        3
-    );
+    let trashed = run(
+        "wipe-speaker-artifacts",
+        json!({
+            "schema":"solstone-speaker-resolve-wipe-speaker-artifacts-request-v1",
+            "journal_root":journal, "dry_run":false,
+        }),
+    )
+    .1;
+    assert_eq!(trashed["total_files"], 3);
+    assert!(trashed["trash"]["id"].is_string(), "{trashed}");
+    assert!(!entity_dir.join("voiceprints.npz").exists());
+    std::fs::write(entity_dir.join("voiceprints.npz"), b"voiceprints").expect("write voiceprints");
+    let erased = run(
+        "wipe-speaker-artifacts",
+        json!({
+            "schema":"solstone-speaker-resolve-wipe-speaker-artifacts-request-v1",
+            "journal_root":journal, "dry_run":false, "erase":true,
+        }),
+    )
+    .1;
+    assert_eq!(erased["total_files"], 1);
+    assert_eq!(erased["erased"], true, "{erased}");
     assert!(!entity_dir.join("voiceprints.npz").exists());
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
