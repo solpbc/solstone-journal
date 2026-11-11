@@ -232,7 +232,7 @@ test('folds stay on the device that named the key', () => {
   assert.strictEqual(cell(root, 'browsers', 'phone'), sources.relative(NOW - 5 * MIN, NOW, ZONE));
 });
 
-test('an unnamed accept is the device time and not a source cell', () => {
+test('an unnamed accept that says nothing it carried is the device time and not a source cell', () => {
   for (const key of ['', 'mobile-segment']) {
     const root = render(ok([client('studio', {
       last_accepted_ingest_at: iso(NOW - 5 * MIN),
@@ -245,6 +245,47 @@ test('an unnamed accept is the device time and not a source cell', () => {
     assert.strictEqual(rowLabels(root).indexOf('screen'), -1);
     assert.strictEqual(rowLabels(root).indexOf('location'), -1);
   }
+});
+
+test('a device\'s own capture fills the rows its latest upload carried', () => {
+  const root = render(ok([
+    client('studio', {
+      last_accepted_ingest_at: iso(NOW - 2 * MIN),
+      source_delivery: {
+        '': at(NOW - 2 * MIN, { carried: ['audio', 'screen'] }),
+        browser: at(NOW - 30 * MIN),
+      },
+      reported: { platform: 'macos', device_type: 'desktop' },
+    }),
+    client('phone', {
+      last_accepted_ingest_at: iso(NOW - 6 * MIN),
+      source_delivery: { 'mobile-segment': at(NOW - 6 * MIN, { carried: ['audio', 'location'] }) },
+      reported: { platform: 'ios', device_type: 'phone' },
+    }),
+  ]));
+  assert.deepStrictEqual(rowLabels(root), ['audio', 'screen', 'browsers', 'location']);
+  assert.strictEqual(cell(root, 'screen', 'studio'), '2 min ago');
+  assert.strictEqual(cell(root, 'audio', 'studio'), '2 min ago');
+  assert.strictEqual(cell(root, 'location', 'studio'), '');
+  assert.strictEqual(cell(root, 'audio', 'phone'), '6 min ago');
+  assert.strictEqual(cell(root, 'location', 'phone'), '6 min ago');
+  assert.strictEqual(cell(root, 'screen', 'phone'), '');
+  // The device time equals its newest cell, so the heading does not repeat it.
+  assert.strictEqual(deviceBox(root, 'studio').querySelector('.sources-device-time'), null);
+  assert.strictEqual(count(root, 'nothing added yet'), 0);
+});
+
+test('a named source newer than the own capture keeps its own time', () => {
+  const root = render(ok([client('studio', {
+    last_accepted_ingest_at: iso(NOW - 1 * MIN),
+    source_delivery: {
+      '': at(NOW - 20 * MIN, { carried: ['audio'] }),
+      audio: at(NOW - 1 * MIN),
+      share: at(NOW - 1 * MIN, { carried: ['screen'] }),
+    },
+  })]));
+  assert.strictEqual(cell(root, 'audio', 'studio'), '1 min ago');
+  assert.strictEqual(rowLabels(root).indexOf('screen'), -1);
 });
 
 test('another device does not blank this device time', () => {

@@ -1127,6 +1127,33 @@ asyncCase('store: an ended mount\'s reads are aborted and never answer', async (
   assert.strictEqual(page.server.of('/app/x/api/state').length, 1, 'nothing more is asked after the end');
 });
 
+asyncCase('store: two reads cut off by an ended mount are different promises, and the store exports no shared one', async () => {
+  const page = makePage({ pathname: '/app/entities/' });
+  const abort = page.window.SolStore.createAbort();
+  const scope = page.window.SolStore.scope(abort.signal);
+  abort.abort();
+  const first = scope.read('/app/x/api/one');
+  const second = scope.read('/app/x/api/two');
+  let settled = 0;
+  first.then(() => { settled += 1; }, () => { settled += 1; });
+  second.then(() => { settled += 1; }, () => { settled += 1; });
+  await flush();
+  assert.notStrictEqual(first, second);
+  assert.strictEqual(settled, 0, 'neither answers');
+  assert.strictEqual(page.server.of('/app/x/api/one').length, 0, 'nothing is asked');
+  assert.strictEqual(page.server.of('/app/x/api/two').length, 0, 'nothing is asked');
+  const shared = Object.values(page.window.SolStore).filter((value) => value && typeof value.then === 'function');
+  assert.deepStrictEqual(shared, []);
+  assert.strictEqual(page.window.SolStore.NEVER, undefined);
+  assert.strictEqual(typeof page.window.SolStore.never, 'function');
+  const made = page.window.SolStore.never();
+  assert.notStrictEqual(made, page.window.SolStore.never());
+  let madeSettled = false;
+  made.then(() => { madeSettled = true; }, () => { madeSettled = true; });
+  await flush();
+  assert.strictEqual(madeSettled, false);
+});
+
 asyncCase('store: moving between views writes nothing to web storage', async () => {
   const page = makePage();
   page.answerAll();

@@ -468,3 +468,67 @@ fn simultaneous_writers_share_one_verified_publication() {
     assert_eq!(fetched, [false, true]);
     assert_eq!(server.finish().len(), 1);
 }
+
+// A slow download used to die once the header timeout lapsed mid-body. The
+// bound is per wait: a transfer that keeps sending runs past it, and a silence
+// longer than it fails resumably.
+#[test]
+fn a_flowing_transfer_outlasts_the_idle_bound_and_a_silence_does_not() {
+    for stall in [true, false] {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("model");
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/file", listener.local_addr().unwrap());
+        let gap = IDLE_BOUND * 6 / 10;
+        let server = thread::spawn(move || {
+            let (mut connection, _) = listener.accept().unwrap();
+            connection
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                connection.read_exact(&mut byte).unwrap();
+                request.push(byte[0]);
+            }
+            connection
+                .write_all(&response("200 OK", "Content-Length: 4\r\n", b""))
+                .unwrap();
+            for (index, byte) in b"abcd".iter().enumerate() {
+                if stall && index == 2 {
+                    // Hold the connection open well past the bound.
+                    thread::sleep(IDLE_BOUND * 4);
+                    return;
+                }
+                connection.write_all(&[*byte]).unwrap();
+                thread::sleep(gap);
+            }
+        });
+        let started = Instant::now();
+        let result = download_verified_url_internal(
+            &url,
+            &digest(b"abcd"),
+            Some(4),
+            &target,
+            &DownloadHostPolicy {
+                allowed_hosts: &["127.0.0.1"],
+                allow_http: true,
+            },
+            &mut |_, _| {},
+            None,
+        );
+        let elapsed = started.elapsed();
+        server.join().unwrap();
+        if stall {
+            assert!(result.is_err());
+            // The client gave up on its own bound, not when the server closed.
+            assert!(elapsed < gap * 2 + IDLE_BOUND * 2, "{elapsed:?}");
+            assert_eq!(retained_prefix_bytes(&target, &digest(b"abcd"), 4), 2);
+            assert!(!target.exists());
+        } else {
+            assert!(result.unwrap());
+            assert!(elapsed > IDLE_BOUND, "{elapsed:?}");
+            assert_eq!(fs::read(&target).unwrap(), b"abcd");
+        }
+    }
+}

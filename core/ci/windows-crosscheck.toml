@@ -38,10 +38,10 @@ expected_stderr = ["failed to run custom build command for `ring v0.17.14`", "fa
 
 [[exclusions]]
 package = "libsqlite3-sys"
-version = "0.38.2"
+version = "0.39.1"
 class = "native-msvc-build-oracle"
 reason = "Bundled SQLite requires the MSVC compiler and librarian; native Windows CI must compile this C root."
-expected_stderr = ["failed to run custom build command for `libsqlite3-sys v0.38.2`", "failed to find tool \"lib.exe\""]
+expected_stderr = ["failed to run custom build command for `libsqlite3-sys v0.39.1`", "failed to find tool \"lib.exe\""]
 
 [[exclusions]]
 package = "ffmpeg-sys-next"

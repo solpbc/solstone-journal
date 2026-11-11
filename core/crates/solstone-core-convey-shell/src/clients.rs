@@ -457,7 +457,7 @@ async fn list(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         | ClientInspection::Ready { clients, activity } => Json(json!({
             "clients": clients
                 .iter()
-                .map(|client| client_json(client, activity, descriptions.get(&client.cid)))
+                .map(|client| client_json(&root.0, client, activity, descriptions.get(&client.cid)))
                 .collect::<Vec<_>>(),
         }))
         .into_response(),
@@ -498,6 +498,7 @@ async fn delete_client(
 }
 
 fn client_json(
+    journal: &std::path::Path,
     client: &ClientAssessment,
     activity: ClientActivityState,
     stored_desc: Option<&StoredClientDescription>,
@@ -574,13 +575,20 @@ fn client_json(
                 .as_ref()
                 .map_or(Value::Null, |rejection| json!(rejection)),
         ),
-        ("source_delivery".to_owned(), source_delivery_json(client)),
+        (
+            "source_delivery".to_owned(),
+            source_delivery_json(journal, client),
+        ),
     ]);
     debug_assert_eq!(value.len(), CLIENT_ENTRY_FIELDS.len());
     Value::Object(value)
 }
 
-fn source_delivery_json(client: &ClientAssessment) -> Value {
+/// Uploads that are the device's own capture and name no single kind: a
+/// computer's unnamed screen and audio, and a phone's segment upload.
+const OWN_CAPTURE_SOURCES: [&str; 3] = ["", "mobile", "mobile-segment"];
+
+fn source_delivery_json(journal: &std::path::Path, client: &ClientAssessment) -> Value {
     if client.source_delivery.is_empty() {
         return Value::Null;
     }
@@ -589,21 +597,37 @@ fn source_delivery_json(client: &ClientAssessment) -> Value {
             .source_delivery
             .iter()
             .map(|(source, row)| {
-                (
-                    source.clone(),
-                    json!({
-                        "state": source_delivery_state(row.state),
-                        "elapsed_ms": row.elapsed_ms,
-                        "last_accepted_ingest_at": row.last_accepted_ingest_at,
-                        "ingest_rejection": row
-                            .ingest_rejection
-                            .as_ref()
-                            .map_or(Value::Null, |rejection| json!(rejection)),
-                    }),
-                )
+                let mut value = json!({
+                    "state": source_delivery_state(row.state),
+                    "elapsed_ms": row.elapsed_ms,
+                    "last_accepted_ingest_at": row.last_accepted_ingest_at,
+                    "ingest_rejection": row
+                        .ingest_rejection
+                        .as_ref()
+                        .map_or(Value::Null, |rejection| json!(rejection)),
+                });
+                if OWN_CAPTURE_SOURCES.contains(&source.as_str()) {
+                    value["carried"] = carried_json(journal, &client.cid, source, row);
+                }
+                (source.clone(), value)
             })
             .collect(),
     )
+}
+
+/// What the latest accepted upload under this own-capture source carried.
+fn carried_json(
+    journal: &std::path::Path,
+    cid: &str,
+    source: &str,
+    row: &solstone_core_sol_link::client_status::SourceDeliveryRow,
+) -> Value {
+    let Some(segment) = row.last_accepted_segment.as_ref() else {
+        return json!([]);
+    };
+    let kinds =
+        solstone_core_ingest::carried_kinds(journal, cid, source, &segment.day, &segment.name);
+    Value::Array(kinds.into_iter().map(|kind| json!(kind.as_str())).collect())
 }
 
 fn source_delivery_state(state: SourceDelivery) -> &'static str {
@@ -1124,6 +1148,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn api_clients_says_what_only_the_own_capture_carried() {
+        let cid = "sha256:0123456789abcdef0123456789abcdef";
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([client(cid, "mac")]));
+        journal.write_activity(json!({
+            cid: {
+                "last_seen_at": "2026-08-13T00:01:00Z",
+                "last_accepted_ingest_at": "2026-08-13T00:02:00Z",
+                "sources": {
+                    "": {
+                        "last_accepted_ingest_at": "2026-08-13T00:02:00Z",
+                        "last_accepted_segment": {"day": "20260813", "name": "000000_300"}
+                    },
+                    "browser": {"last_accepted_ingest_at": "2026-08-13T00:00:00Z"}
+                }
+            }
+        }));
+        let (status, body) = request(
+            crate::router(journal.0.path().to_path_buf()),
+            Request::get("/app/network/api/clients")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let delivery = &body["clients"][0]["source_delivery"];
+        // No receipt for that segment on disk: nothing is claimed.
+        assert_eq!(delivery[""]["carried"], json!([]));
+        assert!(delivery["browser"].get("carried").is_none());
+    }
+
+    #[tokio::test]
     async fn api_clients_projects_each_source_time_separately_from_the_device_time() {
         let named = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
         let empty = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -1184,9 +1240,14 @@ mod tests {
         ];
         for source in ["", "browser", "calendar", "audio", "location"] {
             let object = delivery[source].as_object().expect(source);
+            // The device's own capture also says what its latest upload carried.
+            let expected = keys
+                .into_iter()
+                .chain(source.is_empty().then_some("carried"))
+                .collect::<BTreeSet<_>>();
             assert_eq!(
                 object.keys().map(String::as_str).collect::<BTreeSet<_>>(),
-                keys.into_iter().collect::<BTreeSet<_>>()
+                expected
             );
         }
         assert_eq!(
