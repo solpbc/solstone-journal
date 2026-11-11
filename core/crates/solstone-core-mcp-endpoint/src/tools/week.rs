@@ -1028,7 +1028,7 @@ mod tests {
         assert_eq!(value["activities"], json!([]));
         assert_eq!(
             probe(root.path(), json!({"week": "20260309"})).unwrap(),
-            json!({"week": null})
+            json!({"week": null, "note": EMPTY_NOTE})
         );
     }
 
@@ -1216,13 +1216,13 @@ mod tests {
         whole(mon_root.path());
         assert_eq!(
             probe(mon_root.path(), json!({"week": "20260309"})).unwrap(),
-            json!({"week": null})
+            json!({"week": null, "note": EMPTY_NOTE})
         );
         let mon_out = dispatch_week(mon_root.path(), json!({"week": "20260309"})).unwrap();
         assert_eq!(mon_out.value, json!({"week": null}));
         assert_eq!(mon_out.empty_note.as_deref(), Some(EMPTY_NOTE));
         let rendered = tool_result(mon_out.value, mon_out.empty_note.as_deref());
-        assert_eq!(rendered["content"][1]["text"], EMPTY_NOTE);
+        assert_eq!(rendered["structuredContent"]["note"], EMPTY_NOTE);
 
         assert_eq!(validate(None).unwrap().week, None);
         assert_eq!(validate(Some(&Value::Null)).unwrap().week, None);
@@ -1239,7 +1239,7 @@ mod tests {
             r#"{"version":1,"sentinel":"SENTINEL_MONDAY"}"#,
         );
         let value = probe(root.path(), json!({"week": "20260309"})).unwrap();
-        assert_eq!(value, json!({"week": null}));
+        assert_eq!(value, json!({"week": null, "note": EMPTY_NOTE}));
         assert!(!value.to_string().contains("SENTINEL_MONDAY"));
         assert_eq!(page(root.path()).entries[0].outcome, RecordedOutcome::Empty);
     }

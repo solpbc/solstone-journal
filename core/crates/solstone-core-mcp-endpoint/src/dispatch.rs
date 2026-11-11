@@ -189,7 +189,7 @@ pub fn run_mcp_probe(
         Some(arguments),
         Utc::now(),
     )
-    .map(|output| output.value)
+    .map(|output| crate::jsonrpc::with_note(output.value, output.empty_note.as_deref()))
     .map_err(|error| match error {
         DispatchError::InvalidInput
         | DispatchError::Tool(

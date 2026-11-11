@@ -543,8 +543,13 @@ fn an_empty_result_says_so_in_words_and_a_served_one_does_not() {
     assert!(note.starts_with("No results"), "{note}");
 
     let rendered = crate::jsonrpc::tool_result(empty.value, empty.empty_note.as_deref());
-    assert_eq!(rendered["content"][1]["text"], note);
-    assert!(rendered["structuredContent"].get("note").is_none());
+    // The note rides in the typed result: a client reading structuredContent
+    // alone drops any further text block.
+    assert_eq!(rendered["structuredContent"]["note"], note);
+    assert_eq!(rendered["content"].as_array().unwrap().len(), 1);
+    let text: Value =
+        serde_json::from_str(rendered["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(text, rendered["structuredContent"]);
 
     let served = dispatch_output(&journal, "list_facets", json!({}));
     assert!(!served.value["facets"].as_array().unwrap().is_empty());
@@ -12580,7 +12585,8 @@ fn get_week_empty_sunday() {
 fn get_week_non_sunday_returns_null_week() {
     let journal = base_activity_journal();
     let res = probe(&journal, "get_week", json!({"week": "20260309"})).unwrap();
-    assert_eq!(res, json!({"week": null}));
+    assert!(res["week"].is_null());
+    assert!(res["note"].as_str().unwrap().starts_with("no week to read"));
 }
 
 #[test]

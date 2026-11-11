@@ -244,18 +244,26 @@ pub(crate) fn initialize_result() -> Value {
 /// a client display the response while consuming its typed JSON without
 /// inferring a response type from a journal-specific object.
 ///
-/// An empty result adds a second text block that says in plain words what the
-/// zero means (see [`crate::dispatch::ToolOutput`]). `structuredContent` is
-/// unchanged by it.
+/// An empty result carries a top-level `note` that says in plain words what
+/// the zero means (see [`crate::dispatch::ToolOutput`]), in both forms. ⚠ Not
+/// a second text block: a client that reads `structuredContent` treats the
+/// text as its copy and drops the rest (Claude Code does), so the note never
+/// reached the agent.
 pub(crate) fn tool_result(value: Value, empty_note: Option<&str>) -> Value {
-    let mut content = vec![json!({ "type": "text", "text": value.to_string() })];
-    if let Some(note) = empty_note {
-        content.push(json!({ "type": "text", "text": note }));
-    }
+    let value = with_note(value, empty_note);
     json!({
-        "content": content,
+        "content": [{ "type": "text", "text": value.to_string() }],
         "structuredContent": value,
     })
+}
+
+/// The typed result an agent receives: the tool's value, with an empty
+/// result's note as its top-level `note`. Wire and probe both serve this.
+pub(crate) fn with_note(mut value: Value, empty_note: Option<&str>) -> Value {
+    if let (Some(note), Some(object)) = (empty_note, value.as_object_mut()) {
+        object.insert("note".to_owned(), Value::String(note.to_owned()));
+    }
+    value
 }
 
 /// A read tool's result. Its text channel is the whole response as JSON, so

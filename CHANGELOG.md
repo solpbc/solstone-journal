@@ -26,6 +26,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- when a connected agent asks your journal for something it has none of, such as a transcript of time in your terminal, the answer now always carries the note saying where to look. some agents, Claude Code among them, never saw that note before. thanks @dvanduzer for the report (#415).
 - a journal on a mac or linux computer that had been running for a long while could fail to start again after you stopped it, updated it or restarted the computer. that no longer happens, but the restart that installs this update can still hit it, and this doesn't repair a journal that's already failing to start.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - since 2.0.74, restoring your journal from encrypted backup operated by sol pbc while you set up a new journal left the backup page showing an error, even though the restore had worked. it now shows the restore finished.
