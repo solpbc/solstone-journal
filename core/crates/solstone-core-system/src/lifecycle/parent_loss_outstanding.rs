@@ -1166,6 +1166,8 @@ fn fold_census(
         }
     }
     let recovery = ledger.closure_recovery_dir(generation);
+    let admissions = admission_directory(ledger, generation);
+    let authoritative: HashSet<String> = merged.keys().cloned().collect();
     if let Ok(children) = fs::read_dir(recovery.join("live")) {
         for child in children.flatten() {
             let path = child.path();
@@ -1177,18 +1179,33 @@ fn fold_census(
             else {
                 continue;
             };
-            if let Ok(DurableRead::Present(live)) = read_json_durable_validated::<LiveRecoveryFile>(
+            let Ok(DurableRead::Present(live)) = read_json_durable_validated::<LiveRecoveryFile>(
                 ArtifactId::ParentLossClosureRecovery,
                 &path,
                 |_| Ok(()),
-            ) {
-                merge_obligation(&mut merged, launch_id, live);
+            ) else {
+                continue;
+            };
+            // A cache the census does not hold names a root only its own
+            // launch's drops can authorize; anything else is never signalled.
+            if !authoritative.contains(&launch_id)
+                && !read_entry(&admissions, &launch_id).is_ok_and(|entry| {
+                    entry
+                        .identities
+                        .iter()
+                        .any(|identity| identity.instance == live.root && identity.uid == live.uid)
+                })
+            {
+                notes.push(format!(
+                    "a recovery cache for {launch_id} named a process its admission does not; it was discarded"
+                ));
+                continue;
             }
+            merge_obligation(&mut merged, launch_id, live);
         }
     }
     // Every obligation carries the drops its root came from, so a released
     // binary can still authorize it.
-    let admissions = admission_directory(ledger, generation);
     for (launch_id, live) in merged.iter_mut() {
         if live.sources.is_none()
             && let Ok(entry) = read_entry(&admissions, launch_id)
@@ -1704,8 +1721,10 @@ fn settle_listing(
     let admissions = admission_directory(ledger, generation);
     let mut held: HashMap<String, OutstandingEntry> = HashMap::new();
     let mut unverifiable = 0usize;
-    for window in names.chunks(READ_WINDOW) {
-        if Instant::now() >= authority.deadline {
+    for (index, window) in names.chunks(READ_WINDOW).enumerate() {
+        // Every start settles at least one window, so even a start whose
+        // budget is gone strictly shrinks the set.
+        if index > 0 && Instant::now() >= authority.deadline {
             return Ok(Some(BootstrapRecoveryReason::CoordinatorNotLive));
         }
         for entry in read_entries(&admissions, window) {
@@ -2148,5 +2167,2277 @@ pub(crate) fn prune_settled_generations(ledger: &ParentLossLedger) {
         ] {
             remove_tree_gently(&path, &mut removed);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{HashMap, HashSet};
+    use std::path::Path;
+    use std::sync::{Arc, Mutex};
+
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::lifecycle::parent_loss_admission::{
+        AdmissionIdentity, AdmissionIntent, AdmissionResult, acknowledge_parent_loss_admission,
+        write_parent_loss_admission_intent, write_parent_loss_admission_result,
+        write_parent_loss_admission_spawn_identity,
+    };
+    use crate::lifecycle::parent_loss_ledger::{CoordinatorLease, read_json_optional};
+    use crate::lifecycle::{
+        HEARTBEAT_SCHEMA_V2, HeartbeatV2, RunId, WriterId, v2_heartbeat_filename,
+    };
+    use crate::process::{CensusRow, ExecutionState, InspectResult, InstanceCensus, ProcessBirth};
+
+    fn instance(pid: u32, birth: u64) -> ProcessInstance {
+        ProcessInstance {
+            pid,
+            birth: ProcessBirth::linux(birth, 1, 100),
+        }
+    }
+
+    #[derive(Default)]
+    struct FakeTable {
+        live: HashMap<u32, (ProcessInstance, u32)>,
+        unverifiable: HashSet<u32>,
+        incomplete_census: bool,
+        owners: HashMap<u32, ProcessOwner>,
+        table_births: HashMap<u32, TableBirth>,
+        /// Children of a pid, as the census reports them.
+        children: HashMap<u32, Vec<u32>>,
+    }
+
+    #[derive(Clone, Default)]
+    struct FakeSource(Arc<Mutex<FakeTable>>);
+
+    impl ProcessInstanceSource for FakeSource {
+        fn inspect(&self, pid: u32) -> InspectResult {
+            let table = self.0.lock().expect("fake table");
+            if table.unverifiable.contains(&pid) {
+                return InspectResult::Unverifiable;
+            }
+            match table.live.get(&pid) {
+                Some((instance, uid)) => InspectResult::Present {
+                    instance: *instance,
+                    uid: *uid,
+                    execution: ExecutionState::Running,
+                    ppid: Some(1),
+                    pgid: Some(1),
+                },
+                None => InspectResult::Absent,
+            }
+        }
+
+        fn census(&self) -> InstanceCensus {
+            let table = self.0.lock().expect("fake table");
+            let parent_of: HashMap<u32, u32> = table
+                .children
+                .iter()
+                .flat_map(|(parent, kids)| kids.iter().map(move |kid| (*kid, *parent)))
+                .collect();
+            let rows = table
+                .live
+                .values()
+                .map(|(instance, uid)| CensusRow {
+                    instance: *instance,
+                    uid: *uid,
+                    ppid: parent_of.get(&instance.pid).copied().unwrap_or(1),
+                    pgid: 1,
+                    execution: ExecutionState::Running,
+                })
+                .collect();
+            if table.incomplete_census {
+                InstanceCensus::Incomplete(rows)
+            } else {
+                InstanceCensus::Complete(rows)
+            }
+        }
+    }
+
+    struct FakeRetirer {
+        table: Arc<Mutex<FakeTable>>,
+        signals: Mutex<Vec<(u32, &'static str)>>,
+        obeys_terminate: HashSet<u32>,
+        immortal: HashSet<u32>,
+        boot: Option<Option<String>>,
+    }
+
+    impl AdmissionRetirer for FakeRetirer {
+        fn signal(
+            &self,
+            instance: ProcessInstance,
+            signal: SignalKind,
+        ) -> Result<(), TerminationError> {
+            let name = match signal {
+                SignalKind::Terminate => "term",
+                SignalKind::Kill => "kill",
+            };
+            self.signals
+                .lock()
+                .expect("signals")
+                .push((instance.pid, name));
+            let exits = match signal {
+                SignalKind::Terminate => self.obeys_terminate.contains(&instance.pid),
+                SignalKind::Kill => !self.immortal.contains(&instance.pid),
+            };
+            if exits {
+                self.table
+                    .lock()
+                    .expect("fake table")
+                    .live
+                    .remove(&instance.pid);
+            }
+            Ok(())
+        }
+
+        fn owner(&self, pid: u32) -> ProcessOwner {
+            let table = self.table.lock().expect("fake table");
+            if let Some(owner) = table.owners.get(&pid) {
+                return *owner;
+            }
+            match table.live.get(&pid) {
+                Some((_, uid)) => ProcessOwner::Uid(*uid),
+                None => ProcessOwner::Absent,
+            }
+        }
+
+        fn table_birth(&self, pid: u32) -> TableBirth {
+            let table = self.table.lock().expect("fake table");
+            table
+                .table_births
+                .get(&pid)
+                .copied()
+                .unwrap_or(TableBirth::Unknown)
+        }
+
+        fn boot_id(&self) -> Option<String> {
+            match &self.boot {
+                Some(boot) => boot.clone(),
+                None => current_boot_id(),
+            }
+        }
+    }
+
+    impl FakeRetirer {
+        fn signals(&self) -> Vec<(u32, &'static str)> {
+            let mut signals = self.signals.lock().expect("signals").clone();
+            signals.sort_unstable();
+            signals
+        }
+    }
+
+    fn fake(
+        live: &[(ProcessInstance, u32)],
+        obeys_terminate: &[u32],
+        immortal: &[u32],
+    ) -> (FakeSource, FakeRetirer) {
+        let table = Arc::new(Mutex::new(FakeTable {
+            live: live.iter().map(|(i, uid)| (i.pid, (*i, *uid))).collect(),
+            ..FakeTable::default()
+        }));
+        let retirer = FakeRetirer {
+            table: Arc::clone(&table),
+            signals: Mutex::new(Vec::new()),
+            obeys_terminate: obeys_terminate.iter().copied().collect(),
+            immortal: immortal.iter().copied().collect(),
+            boot: None,
+        };
+        (FakeSource(table), retirer)
+    }
+
+    fn open_generation(directory: &TempDir) -> (ParentLossLedger, ActiveGeneration) {
+        let ledger = ParentLossLedger::open(directory.path()).expect("ledger");
+        let active = ledger
+            .reserve_generation(instance(10, 1), [HostedServiceKind::Sense])
+            .expect("reserve generation");
+        ledger.initialize_record(&active).expect("record");
+        let coordinator = instance(20, 2);
+        let active = ledger
+            .persist_coordinator_identity(active.generation, coordinator)
+            .expect("coordinator identity");
+        let active = ledger
+            .mark_admitting(active.generation, coordinator)
+            .expect("admitting state");
+        (ledger, active)
+    }
+
+    fn identity(
+        generation: ParentLossGeneration,
+        launch_id: &str,
+        instance: ProcessInstance,
+    ) -> AdmissionIdentity {
+        AdmissionIdentity {
+            generation,
+            launch_id: launch_id.to_owned(),
+            instance,
+            uid: 501,
+            parent_launch_id: None,
+        }
+    }
+
+    fn admit(
+        journal: &Path,
+        generation: ParentLossGeneration,
+        launch_id: &str,
+        service: Option<HostedServiceKind>,
+        child: Option<ProcessInstance>,
+    ) {
+        write_parent_loss_admission_intent(
+            journal,
+            &AdmissionIntent::new(generation, launch_id, service, None),
+        )
+        .expect("intent");
+        if let Some(child) = child {
+            let id = identity(generation, launch_id, child);
+            acknowledge_parent_loss_admission(journal, id.clone()).expect("ack");
+            write_parent_loss_admission_result(
+                journal,
+                generation,
+                launch_id,
+                &AdmissionResult {
+                    schema: 1,
+                    identity: Some(id),
+                    state: AdmissionResultState::Admitted,
+                },
+            )
+            .expect("result");
+        }
+    }
+
+    fn acquire_lease(ledger: &ParentLossLedger) -> CoordinatorLease {
+        ledger
+            .acquire_coordinator_lease()
+            .expect("lease acquisition")
+            .expect("lease free")
+    }
+
+    /// Bounds a hang only; tests about the deadline pass their own.
+    const AMPLE_BUDGET: Duration = Duration::from_secs(60);
+
+    fn authority<'a>(
+        source: &'a dyn ProcessInstanceSource,
+        retirer: &'a dyn AdmissionRetirer,
+        budget: Duration,
+    ) -> ClosingAuthority<'a> {
+        ClosingAuthority {
+            closed_by: instance(30, 3),
+            source,
+            retirer,
+            deadline: Instant::now() + budget,
+        }
+    }
+
+    fn start(
+        ledger: &ParentLossLedger,
+        lease: &CoordinatorLease,
+        source: &dyn ProcessInstanceSource,
+        retirer: &dyn AdmissionRetirer,
+        budget: Duration,
+    ) -> Result<ActiveGeneration, ParentLossLedgerError> {
+        ledger.reserve_generation_closing_abandoned(
+            instance(11, 3),
+            [],
+            lease,
+            &authority(source, retirer, budget),
+        )
+    }
+
+    fn closure_of(
+        ledger: &ParentLossLedger,
+        generation: ParentLossGeneration,
+    ) -> AbandonedGenerationClosure {
+        ledger
+            .record(generation)
+            .expect("record readable")
+            .expect("record exists")
+            .closure
+            .expect("closure recorded")
+    }
+
+    fn summary_of(ledger: &ParentLossLedger, generation: ParentLossGeneration) -> ClosureSummary {
+        closure_of(ledger, generation).summary.expect("summary")
+    }
+
+    fn finding(closure: &AbandonedGenerationClosure, launch_id: &str) -> Option<AdmissionFinding> {
+        closure
+            .admissions
+            .iter()
+            .find(|admission| admission.launch_id == launch_id)
+            .map(|admission| admission.finding)
+    }
+
+    fn census(ledger: &ParentLossLedger, generation: ParentLossGeneration) -> Obligations {
+        read_json_optional::<CensusObligationFile>(&ledger.census_obligation_path(generation))
+            .expect("census readable")
+            .map(|file| file.obligations)
+            .unwrap_or_default()
+    }
+
+    fn entries(ledger: &ParentLossLedger, generation: ParentLossGeneration) -> Vec<String> {
+        list_entries(&admission_directory(ledger, generation))
+            .expect("listing")
+            .map(|listing| listing.names)
+            .unwrap_or_default()
+    }
+
+    fn refused(
+        result: &Result<ActiveGeneration, ParentLossLedgerError>,
+        reason: BootstrapRecoveryReason,
+    ) -> bool {
+        matches!(result, Err(ParentLossLedgerError::RecoveryRequired(r)) if *r == reason)
+    }
+
+    fn with_stop<T>(point: Stop, run: impl FnOnce() -> T) -> T {
+        STOP.with(|stop| stop.set(Some(point)));
+        let out = run();
+        STOP.with(|stop| stop.set(None));
+        out
+    }
+
+    fn with_fault<T>(which: Fault, run: impl FnOnce() -> T) -> T {
+        FAULT.with(|fault| fault.set(Some(which)));
+        let out = run();
+        FAULT.with(|fault| fault.set(None));
+        out
+    }
+
+    /// A persisted retirement obligation, as either binary writes it.
+    fn obligation(
+        generation: ParentLossGeneration,
+        launch_id: &str,
+        root: ProcessInstance,
+        descendants: Vec<LiveDescendantIdentity>,
+        term_requested: bool,
+    ) -> LiveRecoveryFile {
+        LiveRecoveryFile {
+            sources: None,
+            schema: RECOVERY_SCHEMA_V1,
+            kind: RecoveryArtifactKind::Live,
+            generation,
+            sealed_phase: ParentLossPhase::Sealed,
+            launch_id: launch_id.to_owned(),
+            service: None,
+            root,
+            uid: 501,
+            parent_launch_id: None,
+            binding_digest: compute_live_binding_digest(root, 501, &descendants).unwrap(),
+            descendants,
+            escalate_at_unix_ms: if term_requested {
+                unix_millis() + TERM_GRACE_MS
+            } else {
+                0
+            },
+            reap_deadline_unix_ms: None,
+            term_requested,
+            escalated: false,
+        }
+    }
+
+    fn descendant(
+        child: ProcessInstance,
+        uid: u32,
+        term_requested: bool,
+    ) -> LiveDescendantIdentity {
+        LiveDescendantIdentity {
+            instance: child,
+            uid,
+            ppid: 0,
+            pgid: 0,
+            escalate_at_unix_ms: if term_requested {
+                unix_millis() + TERM_GRACE_MS
+            } else {
+                0
+            },
+            reap_deadline_unix_ms: None,
+            term_requested,
+            escalated: false,
+        }
+    }
+
+    fn write_census(
+        ledger: &ParentLossLedger,
+        generation: ParentLossGeneration,
+        obligations: &[LiveRecoveryFile],
+    ) {
+        let map: Obligations = obligations
+            .iter()
+            .map(|live| (live.launch_id.clone(), live.clone()))
+            .collect();
+        persist_census(ledger, generation, &map).expect("census");
+    }
+
+    // ---- the 09-16 safety line, ported ----
+
+    #[test]
+    fn an_open_generation_whose_authorities_are_gone_is_closed_and_the_successor_boots() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        admit(
+            directory.path(),
+            active.generation,
+            "sense-a",
+            Some(HostedServiceKind::Sense),
+            Some(instance(4242, 42)),
+        );
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+
+        let successor = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET)
+            .expect("an abandoned generation must not brick the journal");
+
+        assert_eq!(successor.generation, active.generation + 1);
+        let record = ledger.record(active.generation).unwrap().unwrap();
+        assert_eq!(
+            record.terminal,
+            Some(ParentLossTerminalDisposition::Unresolved {
+                reason: ParentLossUnresolvedReason::AuthoritiesLost,
+            })
+        );
+        let closure = record.closure.expect("closure");
+        assert_eq!(closure.successor_generation, successor.generation);
+        assert_eq!(closure.supervisor, AuthorityObservation::Exited);
+        assert_eq!(closure.coordinator, AuthorityObservation::Exited);
+        assert_eq!(closure.summary.as_ref().map(|s| s.exited), Some(1));
+        assert!(
+            closure.admissions.is_empty(),
+            "an exited row is a count only"
+        );
+        assert!(retirer.signals().is_empty());
+        let sealed = fs::read(ledger.sealed_ledger_path(active.generation)).expect("ledger");
+        assert_eq!(record.sealed_ledger_digest, Some(digest_bytes(&sealed)));
+        assert!(entries(&ledger, active.generation).is_empty());
+    }
+
+    fn a_live_peer_refuses(peer_is_supervisor: bool) -> Result<(), String> {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let live_child = instance(4343, 43);
+        admit(
+            directory.path(),
+            active.generation,
+            "child",
+            None,
+            Some(live_child),
+        );
+        let peer = if peer_is_supervisor {
+            active.supervisor
+        } else {
+            active.coordinator.expect("coordinator")
+        };
+        let (source, retirer) = fake(&[(peer, 501), (live_child, 501)], &[live_child.pid], &[]);
+        let lease = acquire_lease(&ledger);
+        let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+        let expected = if peer_is_supervisor {
+            BootstrapRecoveryReason::SupervisorLive
+        } else {
+            BootstrapRecoveryReason::ActiveCoordinator
+        };
+        if !refused(&result, expected) {
+            return Err(format!("a live peer did not refuse: {result:?}"));
+        }
+        if !retirer.signals().is_empty() {
+            return Err("a live peer's admission was signalled".to_owned());
+        }
+        if ledger
+            .record(active.generation)
+            .unwrap()
+            .unwrap()
+            .closure
+            .is_some()
+        {
+            return Err("the generation was closed under a live peer".to_owned());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_live_coordinator_still_refuses_the_closer() {
+        a_live_peer_refuses(false).unwrap();
+    }
+
+    #[test]
+    fn a_live_supervisor_still_refuses_the_closer() {
+        a_live_peer_refuses(true).unwrap();
+    }
+
+    #[test]
+    fn skipping_the_veto_turns_the_live_peer_tests_red() {
+        with_fault(Fault::SkipVeto, || {
+            assert!(a_live_peer_refuses(true).is_err());
+            assert!(a_live_peer_refuses(false).is_err());
+        });
+    }
+
+    #[test]
+    fn an_admission_that_outlives_the_deadline_refuses_this_start_and_leaves_the_generation_open() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let stubborn = instance(5000, 50);
+        admit(
+            directory.path(),
+            active.generation,
+            "stubborn",
+            None,
+            Some(stubborn),
+        );
+        let (source, retirer) = fake(&[(stubborn, 501)], &[], &[stubborn.pid]);
+        let lease = acquire_lease(&ledger);
+
+        let result = start(
+            &ledger,
+            &lease,
+            &source,
+            &retirer,
+            Duration::from_millis(50),
+        );
+
+        assert!(refused(
+            &result,
+            BootstrapRecoveryReason::AbandonedAdmissionLive
+        ));
+        assert_eq!(
+            ledger.active_generation().unwrap().unwrap().generation,
+            active.generation
+        );
+        assert!(
+            ledger
+                .record(active.generation)
+                .unwrap()
+                .unwrap()
+                .closure
+                .is_none()
+        );
+        assert_eq!(entries(&ledger, active.generation), vec!["stubborn"]);
+        assert!(census(&ledger, active.generation).contains_key("stubborn"));
+    }
+
+    #[test]
+    fn a_child_that_obeys_sigterm_is_not_escalated_and_the_signals_are_recorded() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let obedient = instance(6000, 60);
+        admit(
+            directory.path(),
+            active.generation,
+            "obedient",
+            None,
+            Some(obedient),
+        );
+        let (source, retirer) = fake(&[(obedient, 501)], &[obedient.pid], &[]);
+        let lease = acquire_lease(&ledger);
+
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("closed");
+
+        assert_eq!(retirer.signals(), vec![(obedient.pid, "term")]);
+        let closure = closure_of(&ledger, active.generation);
+        assert_eq!(
+            finding(&closure, "obedient"),
+            Some(AdmissionFinding::Retired { escalated: false })
+        );
+        assert!(!ledger.census_obligation_path(active.generation).exists());
+        assert!(
+            !ledger
+                .generation_path(active.generation)
+                .join("census-started.json")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn retirement_is_concurrent_against_one_deadline() {
+        // Five stubborn roots: TERM goes to all at once, KILL to each at its
+        // own escalation, all inside one deadline, not one grace per root.
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let roots: Vec<_> = (0..5).map(|i| instance(7100 + i, 71)).collect();
+        for (i, root) in roots.iter().enumerate() {
+            admit(
+                directory.path(),
+                active.generation,
+                &format!("r{i}"),
+                None,
+                Some(*root),
+            );
+        }
+        let mut map = Obligations::new();
+        for (i, root) in roots.iter().enumerate() {
+            let mut live = obligation(active.generation, &format!("r{i}"), *root, Vec::new(), true);
+            live.escalate_at_unix_ms = unix_millis() + 200;
+            map.insert(live.launch_id.clone(), live);
+        }
+        persist_census(&ledger, active.generation, &map).unwrap();
+        let live: Vec<_> = roots.iter().map(|r| (*r, 501)).collect();
+        let (source, retirer) = fake(&live, &[], &[]);
+        let lease = acquire_lease(&ledger);
+        let began = Instant::now();
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("closed");
+        assert!(
+            began.elapsed() < Duration::from_secs(3),
+            "five escalations took {:?}",
+            began.elapsed()
+        );
+        let signals = retirer.signals.lock().unwrap().clone();
+        let first_kill = signals
+            .iter()
+            .position(|(_, s)| *s == "kill")
+            .expect("kills");
+        assert!(signals[..first_kill].iter().all(|(_, s)| *s == "term"));
+        assert_eq!(first_kill, 5, "every TERM is sent before any KILL");
+        assert_eq!(summary_of(&ledger, active.generation).escalated, 5);
+    }
+
+    #[test]
+    fn incomplete_descendant_coverage_refuses_without_retiring_the_root() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let parent = instance(7000, 70);
+        admit(
+            directory.path(),
+            active.generation,
+            "parent",
+            None,
+            Some(parent),
+        );
+        let (source, retirer) = fake(&[(parent, 501)], &[parent.pid], &[]);
+        source.0.lock().unwrap().incomplete_census = true;
+        let lease = acquire_lease(&ledger);
+
+        let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+
+        assert!(refused(
+            &result,
+            BootstrapRecoveryReason::AbandonedAdmissionUnverifiable
+        ));
+        assert!(retirer.signals().is_empty());
+    }
+
+    #[test]
+    fn an_uninspectable_pid_is_settled_by_its_owner_or_refuses() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let (gone, foreign, mine) = (instance(8001, 80), instance(8002, 80), instance(8003, 80));
+        for (id, child) in [("gone", gone), ("foreign", foreign), ("mine", mine)] {
+            admit(directory.path(), active.generation, id, None, Some(child));
+        }
+        let (source, retirer) = fake(&[], &[], &[]);
+        {
+            let mut table = source.0.lock().unwrap();
+            table.unverifiable.extend([gone.pid, foreign.pid, mine.pid]);
+            table.owners.insert(gone.pid, ProcessOwner::Absent);
+            table.owners.insert(foreign.pid, ProcessOwner::Uid(9999));
+            table.owners.insert(mine.pid, ProcessOwner::Uid(501));
+        }
+        let lease = acquire_lease(&ledger);
+
+        let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+
+        assert!(refused(
+            &result,
+            BootstrapRecoveryReason::AbandonedAdmissionUnverifiable
+        ));
+        // The two settled ones left the outstanding set; "can't tell" stayed.
+        assert_eq!(entries(&ledger, active.generation), vec!["mine"]);
+    }
+
+    fn close_one_unreadable_admission_of_this_user(
+        owner: ProcessOwner,
+        table: TableBirth,
+    ) -> (
+        TempDir,
+        Result<ActiveGeneration, ParentLossLedgerError>,
+        usize,
+    ) {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let mine = instance(8101, 81);
+        admit(
+            directory.path(),
+            active.generation,
+            "mine",
+            None,
+            Some(mine),
+        );
+        let (source, retirer) = fake(&[], &[], &[]);
+        {
+            let mut fake = source.0.lock().unwrap();
+            fake.unverifiable.insert(mine.pid);
+            fake.owners.insert(mine.pid, owner);
+            fake.table_births.insert(mine.pid, table);
+        }
+        let lease = acquire_lease(&ledger);
+        let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+        let signals = retirer.signals().len();
+        (directory, result, signals)
+    }
+
+    #[test]
+    fn an_unreadable_pid_of_this_user_holding_another_birth_is_settled_as_exited() {
+        let (directory, result, signals) = close_one_unreadable_admission_of_this_user(
+            ProcessOwner::Uid(501),
+            TableBirth::Live(ProcessBirth::linux(99, 1, 100)),
+        );
+        let successor = result.expect("a different birth settles the pid");
+        let ledger = ParentLossLedger::open(directory.path()).unwrap();
+        assert_eq!(summary_of(&ledger, successor.generation - 1).exited, 1);
+        assert_eq!(signals, 0);
+    }
+
+    #[test]
+    fn an_unreadable_live_admission_of_this_user_or_an_unreadable_owner_keeps_the_generation_pending()
+     {
+        // The safety line: what the closer cannot prove gone is never adopted,
+        // abandoned or closed, and is never signalled blind.
+        for (owner, table) in [
+            (
+                ProcessOwner::Uid(501),
+                TableBirth::Live(instance(8101, 81).birth),
+            ),
+            (ProcessOwner::Uid(501), TableBirth::Unknown),
+            (ProcessOwner::Unknown, TableBirth::Absent),
+        ] {
+            let (directory, result, signals) =
+                close_one_unreadable_admission_of_this_user(owner, table);
+            assert!(
+                refused(
+                    &result,
+                    BootstrapRecoveryReason::AbandonedAdmissionUnverifiable
+                ),
+                "{owner:?} {table:?} must refuse, got {result:?}"
+            );
+            assert_eq!(signals, 0, "{owner:?} {table:?} was signalled");
+            let ledger = ParentLossLedger::open(directory.path()).unwrap();
+            let pointer = ledger.active_generation().unwrap().unwrap();
+            assert_eq!(pointer.generation, 1, "{owner:?} {table:?} advanced");
+            assert!(ledger.record(1).unwrap().unwrap().closure.is_none());
+            assert_eq!(
+                entries(&ledger, 1),
+                vec!["mine"],
+                "{owner:?} {table:?} discharged"
+            );
+        }
+    }
+
+    fn the_pointer_is_sealed_before_any_launch_can_admit() -> Result<(), String> {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        admit(
+            directory.path(),
+            active.generation,
+            "a",
+            None,
+            Some(instance(4242, 42)),
+        );
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        // Stop once the terminal is written, as a closer killed there.
+        let _ = with_stop(Stop::TerminalWritten, || {
+            start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET)
+        });
+        let phase = ledger.active_generation().unwrap().unwrap().phase;
+        if phase == ParentLossPhase::Sealed {
+            Ok(())
+        } else {
+            Err(format!("the pointer was left {phase:?}"))
+        }
+    }
+
+    #[test]
+    fn the_pointer_is_sealed_before_the_admissions_are_settled() {
+        the_pointer_is_sealed_before_any_launch_can_admit().unwrap();
+    }
+
+    #[test]
+    fn unfreezing_the_seal_turns_the_seal_test_red() {
+        with_fault(Fault::SkipSeal, || {
+            assert!(the_pointer_is_sealed_before_any_launch_can_admit().is_err());
+        });
+    }
+
+    #[test]
+    fn an_intent_without_acknowledgement_is_recorded_never_acknowledged() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        admit(
+            directory.path(),
+            active.generation,
+            "unacknowledged",
+            Some(HostedServiceKind::Sense),
+            None,
+        );
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("closed");
+        let closure = closure_of(&ledger, active.generation);
+        assert_eq!(
+            finding(&closure, "unacknowledged"),
+            Some(AdmissionFinding::NeverAcknowledged)
+        );
+    }
+
+    #[test]
+    fn a_drop_torn_by_the_kill_closes_and_retires_the_live_child() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let g = active.generation;
+        let torn = |launch_id: &str, drop: &str| {
+            let path = admission_directory(&ledger, g).join(launch_id).join(drop);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::File::create(path).unwrap();
+        };
+        let intent = |launch_id: &str| {
+            write_parent_loss_admission_intent(
+                directory.path(),
+                &AdmissionIntent::new(g, launch_id, None, None),
+            )
+            .unwrap();
+        };
+        let spawn_torn = instance(4301, 43);
+        intent("spawn-torn");
+        torn("spawn-torn", "spawn-identity.json");
+        acknowledge_parent_loss_admission(directory.path(), identity(g, "spawn-torn", spawn_torn))
+            .unwrap();
+        let ack_torn = instance(4302, 43);
+        intent("ack-torn");
+        write_parent_loss_admission_spawn_identity(
+            directory.path(),
+            &identity(g, "ack-torn", ack_torn),
+        )
+        .unwrap();
+        torn("ack-torn", "acknowledgement.json");
+        let result_torn = instance(4303, 43);
+        intent("result-torn");
+        write_parent_loss_admission_spawn_identity(
+            directory.path(),
+            &identity(g, "result-torn", result_torn),
+        )
+        .unwrap();
+        torn("result-torn", "result.json");
+        torn("intent-torn", "intent.json");
+        let (source, retirer) = fake(&[(spawn_torn, 501), (ack_torn, 501)], &[4301, 4302], &[]);
+        let lease = acquire_lease(&ledger);
+
+        let successor = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET)
+            .expect("a drop torn by the kill must not brick the journal");
+
+        assert_eq!(successor.generation, g + 1);
+        assert_eq!(
+            retirer.signals(),
+            vec![(spawn_torn.pid, "term"), (ack_torn.pid, "term")]
+        );
+        let closure = closure_of(&ledger, g);
+        assert!(matches!(
+            finding(&closure, "spawn-torn"),
+            Some(AdmissionFinding::Retired { .. })
+        ));
+        assert!(matches!(
+            finding(&closure, "ack-torn"),
+            Some(AdmissionFinding::Retired { .. })
+        ));
+        let summary = closure.summary.unwrap();
+        assert_eq!(summary.exited, 1, "result-torn exited");
+        assert_eq!(
+            summary.never_acknowledged, 1,
+            "intent-torn never had a child"
+        );
+    }
+
+    #[test]
+    fn a_missing_record_is_created_and_closed() {
+        let directory = TempDir::new().unwrap();
+        let ledger = ParentLossLedger::open(directory.path()).unwrap();
+        let active = ledger.reserve_generation(instance(10, 1), []).unwrap();
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        let successor = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).unwrap();
+        assert_eq!(successor.generation, active.generation + 1);
+        let closure = closure_of(&ledger, active.generation);
+        assert_eq!(closure.coordinator, AuthorityObservation::NeverRecorded);
+        assert_eq!(closure.supervisor, AuthorityObservation::Exited);
+    }
+
+    #[test]
+    fn a_malformed_record_is_set_aside_and_closed() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        fs::write(ledger.record_path(active.generation), b"not valid json").unwrap();
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).unwrap();
+        assert!(!closure_of(&ledger, active.generation).set_aside.is_empty());
+    }
+
+    #[test]
+    fn a_set_aside_pointer_closes_the_open_generation_on_disk() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let live = instance(9191, 91);
+        admit(
+            directory.path(),
+            active.generation,
+            "cortex-live",
+            None,
+            Some(live),
+        );
+        fs::write(ledger.active_path(), b"{ this is not json").unwrap();
+        let (source, retirer) = fake(&[(live, 501)], &[live.pid], &[]);
+        let lease = acquire_lease(&ledger);
+        let successor = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).unwrap();
+        assert!(successor.generation > active.generation);
+        assert_eq!(
+            finding(&closure_of(&ledger, active.generation), "cortex-live"),
+            Some(AdmissionFinding::Retired { escalated: false })
+        );
+    }
+
+    #[test]
+    fn the_dead_supervisors_heartbeat_is_retired_with_the_generation() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let writer_id = WriterId::parse("0123456789abcdef0123456789abcdef").unwrap();
+        let run_id = RunId::parse("fedcba9876543210fedcba9876543210").unwrap();
+        let filename = v2_heartbeat_filename(&writer_id, &run_id);
+        let sync_dir = directory.path().join("health").join("sync");
+        fs::create_dir_all(&sync_dir).unwrap();
+        let heartbeat_path = sync_dir.join(&filename);
+        let supervisor = instance(10, 1);
+        let mut record = ledger.record(active.generation).unwrap().unwrap();
+        record.supervisor_heartbeat = Some(filename);
+        write_json(
+            ledger.record_path(active.generation),
+            &record,
+            json_options(),
+        )
+        .unwrap();
+        let heartbeat = HeartbeatV2::new(
+            writer_id,
+            run_id,
+            "lost-supervisor".to_owned(),
+            supervisor.pid,
+            "1.0".to_owned(),
+            "test".to_owned(),
+            15,
+            directory.path().display().to_string(),
+        );
+        assert_eq!(heartbeat.schema, HEARTBEAT_SCHEMA_V2);
+        write_json(&heartbeat_path, &heartbeat, json_options()).unwrap();
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).unwrap();
+        assert_eq!(
+            closure_of(&ledger, active.generation).heartbeat,
+            HeartbeatRetirement::Removed
+        );
+        assert!(!heartbeat_path.exists());
+    }
+
+    #[test]
+    fn a_record_without_a_heartbeat_name_records_that_nothing_was_retired() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).unwrap();
+        assert_eq!(
+            closure_of(&ledger, active.generation).heartbeat,
+            HeartbeatRetirement::NotRecorded
+        );
+    }
+
+    #[test]
+    fn a_sealed_unresolved_generation_is_closed_keeping_its_bound_ledger() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let coordinator = active.coordinator.unwrap();
+        admit(
+            directory.path(),
+            active.generation,
+            "sense-a",
+            None,
+            Some(instance(4242, 42)),
+        );
+        admit(
+            directory.path(),
+            active.generation,
+            "task-worker-a",
+            None,
+            None,
+        );
+        ledger.seal(active.generation, coordinator).unwrap();
+        let rows = vec![SealedAdmission {
+            launch_id: "sense-a".to_owned(),
+            service: None,
+            identity: identity(active.generation, "sense-a", instance(4242, 42)),
+        }];
+        let digest = ledger
+            .write_sealed_ledger(active.generation, &rows)
+            .unwrap();
+        ledger
+            .write_terminal_with_digest(
+                active.generation,
+                coordinator,
+                ParentLossTerminalDisposition::Unresolved {
+                    reason: ParentLossUnresolvedReason::AdmissionUnconfirmed,
+                },
+                Some(digest.clone()),
+            )
+            .unwrap();
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        let successor = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).unwrap();
+        assert_eq!(successor.generation, active.generation + 1);
+        let record = ledger.record(active.generation).unwrap().unwrap();
+        assert_eq!(
+            record.terminal,
+            Some(ParentLossTerminalDisposition::Unresolved {
+                reason: ParentLossUnresolvedReason::AdmissionUnconfirmed,
+            }),
+            "the coordinator's own terminal is kept"
+        );
+        assert_eq!(
+            record.sealed_ledger_digest,
+            Some(digest),
+            "the bound pair is kept"
+        );
+        let summary = record.closure.unwrap().summary.unwrap();
+        assert_eq!((summary.exited, summary.never_acknowledged), (1, 1));
+    }
+
+    #[test]
+    fn a_completed_predecessor_is_not_touched_by_the_closer() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let coordinator = active.coordinator.unwrap();
+        ledger.seal(active.generation, coordinator).unwrap();
+        let digest = ledger
+            .write_sealed_ledger(active.generation, &Vec::<String>::new())
+            .unwrap();
+        ledger
+            .write_terminal_with_digest(
+                active.generation,
+                coordinator,
+                ParentLossTerminalDisposition::CancelledBeforeAdmission,
+                Some(digest),
+            )
+            .unwrap();
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).unwrap();
+        assert!(
+            ledger
+                .record(active.generation)
+                .unwrap()
+                .unwrap()
+                .closure
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn the_coordinator_lease_is_exclusive_while_held() {
+        let directory = TempDir::new().unwrap();
+        let ledger = ParentLossLedger::open(directory.path()).unwrap();
+        let lease = ledger.acquire_coordinator_lease().unwrap().unwrap();
+        assert!(ledger.acquire_coordinator_lease().unwrap().is_none());
+        drop(lease);
+        assert!(ledger.acquire_coordinator_lease().unwrap().is_some());
+    }
+
+    #[test]
+    fn a_live_descendant_owned_by_another_user_refuses_without_signalling() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let root = instance(9901, 100);
+        let alien = instance(9902, 200);
+        admit(
+            directory.path(),
+            active.generation,
+            "alien-descendant",
+            None,
+            Some(root),
+        );
+        write_census(
+            &ledger,
+            active.generation,
+            &[obligation(
+                active.generation,
+                "alien-descendant",
+                root,
+                vec![descendant(alien, 9, false)],
+                true,
+            )],
+        );
+        let (source, retirer) = fake(&[(alien, 9)], &[], &[alien.pid]);
+        let lease = acquire_lease(&ledger);
+        let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+        assert!(refused(
+            &result,
+            BootstrapRecoveryReason::AbandonedAdmissionLive
+        ));
+        assert!(retirer.signals().is_empty());
+        assert!(
+            ledger
+                .record(active.generation)
+                .unwrap()
+                .unwrap()
+                .closure
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_recovery_cache_naming_a_root_its_drops_do_not_is_never_signalled() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let real = instance(5001, 100);
+        let stranger = instance(5002, 200);
+        admit(
+            directory.path(),
+            active.generation,
+            "admitted-target",
+            None,
+            Some(real),
+        );
+        let live = obligation(
+            active.generation,
+            "admitted-target",
+            stranger,
+            Vec::new(),
+            false,
+        );
+        let path = ledger
+            .closure_recovery_dir(active.generation)
+            .join("live/admitted-target.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        write_json(&path, &live, json_options()).unwrap();
+        let (source, retirer) = fake(&[(stranger, 501)], &[stranger.pid], &[]);
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("closed");
+        assert!(
+            retirer.signals().is_empty(),
+            "an unauthorized cache root was signalled"
+        );
+    }
+
+    #[test]
+    fn a_retained_census_retires_descendants_after_root_exit_and_survives_a_lost_cache() {
+        for corrupt_cache in [false, true] {
+            let directory = TempDir::new().unwrap();
+            let (ledger, active) = open_generation(&directory);
+            let root = instance(8801, 100);
+            let child = instance(8802, 200);
+            admit(
+                directory.path(),
+                active.generation,
+                "lost-live-cache",
+                None,
+                Some(root),
+            );
+            write_census(
+                &ledger,
+                active.generation,
+                &[obligation(
+                    active.generation,
+                    "lost-live-cache",
+                    root,
+                    vec![descendant(child, 501, false)],
+                    true,
+                )],
+            );
+            if corrupt_cache {
+                let live = ledger
+                    .closure_recovery_dir(active.generation)
+                    .join("live/lost-live-cache.json");
+                fs::create_dir_all(live.parent().unwrap()).unwrap();
+                fs::write(&live, b"broken cache").unwrap();
+            }
+            let (source, retirer) = fake(&[(child, 501)], &[child.pid], &[]);
+            let lease = acquire_lease(&ledger);
+            start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).unwrap();
+            assert_eq!(retirer.signals(), vec![(child.pid, "term")]);
+            assert!(census(&ledger, active.generation).is_empty());
+            let closure = closure_of(&ledger, active.generation);
+            assert_eq!(closure.admissions[0].instance, Some(root));
+            assert!(!ledger.closure_recovery_dir(active.generation).exists());
+        }
+    }
+
+    #[test]
+    fn the_first_reap_grace_starts_after_a_slow_kill_is_sent() {
+        struct SlowKill {
+            inner: FakeRetirer,
+            killed_at_ms: Mutex<Option<u64>>,
+        }
+        impl AdmissionRetirer for SlowKill {
+            fn owner(&self, pid: u32) -> ProcessOwner {
+                self.inner.owner(pid)
+            }
+            fn signal(
+                &self,
+                target: ProcessInstance,
+                signal: SignalKind,
+            ) -> Result<(), TerminationError> {
+                if matches!(signal, SignalKind::Kill) {
+                    thread::sleep(Duration::from_millis(100));
+                    *self.killed_at_ms.lock().unwrap() = Some(unix_millis());
+                }
+                self.inner.signal(target, signal)
+            }
+        }
+        for on_descendant in [false, true] {
+            let directory = TempDir::new().unwrap();
+            let (ledger, active) = open_generation(&directory);
+            let root = instance(8830, 100);
+            let child = instance(8831, 200);
+            admit(
+                directory.path(),
+                active.generation,
+                "slow-kill",
+                None,
+                Some(root),
+            );
+            let mut live = obligation(
+                active.generation,
+                "slow-kill",
+                root,
+                if on_descendant {
+                    vec![descendant(child, 501, true)]
+                } else {
+                    Vec::new()
+                },
+                true,
+            );
+            live.escalate_at_unix_ms = unix_millis() - 1;
+            if let Some(d) = live.descendants.first_mut() {
+                d.escalate_at_unix_ms = unix_millis() - 1;
+            }
+            write_census(&ledger, active.generation, &[live]);
+            let stubborn = if on_descendant { child } else { root };
+            let (source, inner) = fake(&[(stubborn, 501)], &[], &[stubborn.pid]);
+            let retirer = SlowKill {
+                inner,
+                killed_at_ms: Mutex::new(None),
+            };
+            let lease = acquire_lease(&ledger);
+            let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+            assert!(refused(
+                &result,
+                BootstrapRecoveryReason::AbandonedAdmissionLive
+            ));
+            let killed_at = retirer.killed_at_ms.lock().unwrap().expect("killed");
+            let saved = &census(&ledger, active.generation)["slow-kill"];
+            let reap = if on_descendant {
+                saved.descendants[0].reap_deadline_unix_ms
+            } else {
+                saved.reap_deadline_unix_ms
+            }
+            .expect("the reap deadline is stored");
+            assert!(
+                reap >= killed_at + REAP_GRACE_MS,
+                "on_descendant={on_descendant}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_descendant_that_loses_observability_or_uid_after_term_cannot_be_discharged_or_killed() {
+        struct Changing {
+            inner: FakeRetirer,
+            lose_observability: bool,
+        }
+        impl AdmissionRetirer for Changing {
+            fn owner(&self, pid: u32) -> ProcessOwner {
+                self.inner.owner(pid)
+            }
+            fn signal(
+                &self,
+                target: ProcessInstance,
+                signal: SignalKind,
+            ) -> Result<(), TerminationError> {
+                self.inner.signal(target, signal)?;
+                if matches!(signal, SignalKind::Terminate) {
+                    let mut table = self.inner.table.lock().unwrap();
+                    if self.lose_observability {
+                        table.unverifiable.insert(target.pid);
+                    } else {
+                        table.owners.insert(target.pid, ProcessOwner::Uid(9));
+                    }
+                }
+                Ok(())
+            }
+        }
+        for lose_observability in [true, false] {
+            let directory = TempDir::new().unwrap();
+            let (ledger, active) = open_generation(&directory);
+            let root = instance(8810, 100);
+            let child = instance(8811, 200);
+            admit(
+                directory.path(),
+                active.generation,
+                "changing",
+                None,
+                Some(root),
+            );
+            let mut d = descendant(child, 501, true);
+            d.escalate_at_unix_ms = unix_millis() - 1;
+            write_census(
+                &ledger,
+                active.generation,
+                &[obligation(
+                    active.generation,
+                    "changing",
+                    root,
+                    vec![d],
+                    true,
+                )],
+            );
+            let (source, inner) = fake(&[(child, 501)], &[], &[child.pid]);
+            let retirer = Changing {
+                inner,
+                lose_observability,
+            };
+            let lease = acquire_lease(&ledger);
+            assert!(
+                start(
+                    &ledger,
+                    &lease,
+                    &source,
+                    &retirer,
+                    Duration::from_millis(100)
+                )
+                .is_err()
+            );
+            assert_eq!(
+                ledger.active_generation().unwrap().unwrap().generation,
+                active.generation
+            );
+            assert!(!census(&ledger, active.generation).is_empty());
+            assert_eq!(retirer.inner.signals(), vec![(child.pid, "term")]);
+        }
+    }
+
+    #[test]
+    fn the_first_term_gets_its_full_grace_even_if_the_census_was_captured_earlier() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let root = instance(8813, 400);
+        admit(
+            directory.path(),
+            active.generation,
+            "unstarted",
+            None,
+            Some(root),
+        );
+        let mut live = obligation(active.generation, "unstarted", root, Vec::new(), false);
+        live.escalate_at_unix_ms = unix_millis() - 1;
+        write_census(&ledger, active.generation, &[live]);
+        let (source, retirer) = fake(&[(root, 501)], &[], &[root.pid]);
+        let lease = acquire_lease(&ledger);
+        let before = unix_millis();
+        let result = start(
+            &ledger,
+            &lease,
+            &source,
+            &retirer,
+            Duration::from_millis(50),
+        );
+        assert!(refused(
+            &result,
+            BootstrapRecoveryReason::AbandonedAdmissionLive
+        ));
+        assert_eq!(retirer.signals(), vec![(root.pid, "term")]);
+        let saved = &census(&ledger, active.generation)["unstarted"];
+        assert!(saved.escalate_at_unix_ms >= before + TERM_GRACE_MS);
+        assert!(!saved.escalated);
+    }
+
+    #[test]
+    fn stored_timing_clamps_downward_and_a_past_reap_refuses_live() {
+        assert_eq!((TERM_GRACE_MS, REAP_GRACE_MS), (12_500, 500));
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let root = instance(9001, 100);
+        admit(
+            directory.path(),
+            active.generation,
+            "timing",
+            None,
+            Some(root),
+        );
+        let now_ms = unix_millis();
+        let mut live = obligation(active.generation, "timing", root, Vec::new(), true);
+        live.escalate_at_unix_ms = now_ms + 999_999;
+        write_census(&ledger, active.generation, &[live]);
+        let (source, retirer) = fake(&[(root, 501)], &[], &[root.pid]);
+        let lease = acquire_lease(&ledger);
+        let result = start(
+            &ledger,
+            &lease,
+            &source,
+            &retirer,
+            Duration::from_millis(50),
+        );
+        let ended = unix_millis();
+        assert!(refused(
+            &result,
+            BootstrapRecoveryReason::AbandonedAdmissionLive
+        ));
+        assert!(
+            census(&ledger, active.generation)["timing"].escalate_at_unix_ms
+                <= ended + TERM_GRACE_MS
+        );
+
+        let mut past = obligation(active.generation, "timing", root, Vec::new(), true);
+        past.escalate_at_unix_ms = now_ms - 1000;
+        past.reap_deadline_unix_ms = Some(now_ms - 100);
+        write_census(&ledger, active.generation, &[past]);
+        let began = Instant::now();
+        let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+        assert!(refused(
+            &result,
+            BootstrapRecoveryReason::AbandonedAdmissionLive
+        ));
+        assert!(
+            began.elapsed() < Duration::from_secs(5),
+            "a past reap is not waited out again"
+        );
+        assert_eq!(
+            census(&ledger, active.generation)["timing"].escalate_at_unix_ms,
+            now_ms - 1000,
+            "a retry keeps the stored escalation instead of granting a fresh grace"
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    fn spawn_test_child(ignore_sigterm: bool) -> (std::process::Child, ProcessInstance) {
+        let fixture = option_env!("CARGO_BIN_EXE_solstone-system-test-child")
+            .map(PathBuf::from)
+            .filter(|path| path.is_file())
+            .or_else(|| {
+                let current = std::env::current_exe().ok()?;
+                let dir = current.parent()?.to_path_buf();
+                [
+                    dir.join("solstone-system-test-child"),
+                    dir.parent()?.join("solstone-system-test-child"),
+                ]
+                .into_iter()
+                .find(|candidate| candidate.is_file())
+            })
+            .unwrap_or_else(|| PathBuf::from("solstone-system-test-child"));
+        let ready = std::env::temp_dir().join(format!(
+            "solstone-outstanding-stubborn-{}-{}",
+            std::process::id(),
+            unique_suffix()
+        ));
+        let mut command = std::process::Command::new(fixture);
+        if ignore_sigterm {
+            command.args(["block-term-sleep", ready.to_str().unwrap()]);
+        } else {
+            command.arg("sleep");
+        }
+        let child = command
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn child");
+        if ignore_sigterm {
+            for _ in 0..500 {
+                if ready.exists() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            assert!(ready.exists(), "stubborn child installed its SIGTERM mask");
+            let _ = fs::remove_file(&ready);
+        }
+        let instance = match SystemProcessInstanceSource.inspect(child.id()) {
+            InspectResult::Present { instance, .. } => instance,
+            other => panic!("own child must be inspectable: {other:?}"),
+        };
+        (child, instance)
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn a_real_term_blocking_child_gets_its_grace_then_is_killed() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let (mut child, inst) = spawn_test_child(true);
+        let mut id = identity(active.generation, "stubborn-child", inst);
+        id.uid = nix::unistd::getuid().as_raw();
+        write_parent_loss_admission_intent(
+            directory.path(),
+            &AdmissionIntent::new(active.generation, "stubborn-child", None, None),
+        )
+        .unwrap();
+        acknowledge_parent_loss_admission(directory.path(), id).unwrap();
+        // Reap the child as soon as it dies, so the exact identity goes away.
+        let reaper = thread::spawn(move || child.wait());
+        let lease = acquire_lease(&ledger);
+        let began = Instant::now();
+        let outcome = start(
+            &ledger,
+            &lease,
+            &SystemProcessInstanceSource,
+            &SystemAdmissionRetirer,
+            AMPLE_BUDGET,
+        );
+        let elapsed = began.elapsed();
+        let _ = reaper.join();
+        assert!(outcome.is_ok(), "the eventual KILL retires it: {outcome:?}");
+        assert!(
+            elapsed >= Duration::from_millis(12_000),
+            "waited out the grace: {elapsed:?}"
+        );
+        assert_eq!(
+            finding(&closure_of(&ledger, active.generation), "stubborn-child"),
+            Some(AdmissionFinding::Retired { escalated: true })
+        );
+    }
+
+    #[test]
+    fn a_retained_descendant_stays_an_obligation_while_it_lives() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let root = instance(9911, 100);
+        let child = instance(9912, 200);
+        admit(
+            directory.path(),
+            active.generation,
+            "census-obligation",
+            None,
+            Some(root),
+        );
+        let mut d = descendant(child, 501, true);
+        d.escalate_at_unix_ms = 1;
+        d.reap_deadline_unix_ms = Some(1);
+        d.escalated = true;
+        write_census(
+            &ledger,
+            active.generation,
+            &[obligation(
+                active.generation,
+                "census-obligation",
+                root,
+                vec![d],
+                true,
+            )],
+        );
+        let (source, retirer) = fake(&[(child, 501)], &[], &[child.pid]);
+        let lease = acquire_lease(&ledger);
+        let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+        assert!(refused(
+            &result,
+            BootstrapRecoveryReason::AbandonedAdmissionLive
+        ));
+        assert!(census(&ledger, active.generation).contains_key("census-obligation"));
+        assert_eq!(
+            entries(&ledger, active.generation),
+            vec!["census-obligation"]
+        );
+    }
+
+    // ---- descendants before signal ----
+
+    /// A live root with a live descendant, the closer killed right after its
+    /// TERM wave; then the root exits and the descendant ignores TERM. The
+    /// next start must still retire the descendant.
+    fn descendants_persisted_before_signal_survive_a_closer_crash() -> Result<(), String> {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let root = instance(9301, 100);
+        let child = instance(9302, 200);
+        admit(
+            directory.path(),
+            active.generation,
+            "parent",
+            None,
+            Some(root),
+        );
+        let (source, retirer) = fake(&[(root, 501), (child, 501)], &[root.pid], &[]);
+        source
+            .0
+            .lock()
+            .unwrap()
+            .children
+            .insert(root.pid, vec![child.pid]);
+        let lease = acquire_lease(&ledger);
+        let crashed = with_stop(Stop::TermSent, || {
+            start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET)
+        });
+        if crashed.is_ok() {
+            return Err("the stop point did not stop the closer".to_owned());
+        }
+        retirer.signals.lock().unwrap().clear();
+        // The root obeyed TERM; the descendant, reparented, still lives.
+        let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+        let child_signalled = retirer.signals().iter().any(|(pid, _)| *pid == child.pid);
+        match result {
+            Ok(_) if child_signalled => Ok(()),
+            Err(_) => Ok(()),
+            Ok(_) => Err("the next start closed while a descendant lived unsignalled".to_owned()),
+        }
+    }
+
+    #[test]
+    fn the_descendant_census_is_durable_before_the_first_signal() {
+        descendants_persisted_before_signal_survive_a_closer_crash().unwrap();
+    }
+
+    #[test]
+    fn skipping_the_descendant_persist_turns_the_crash_test_red() {
+        with_fault(Fault::SkipDescendantPersist, || {
+            assert!(descendants_persisted_before_signal_survive_a_closer_crash().is_err());
+        });
+    }
+
+    // ---- write orderings, at each crash point ----
+
+    #[test]
+    fn a_crash_after_an_obligation_leaves_the_census_keeps_its_entry_outstanding() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let root = instance(9401, 100);
+        admit(
+            directory.path(),
+            active.generation,
+            "retired",
+            None,
+            Some(root),
+        );
+        let (source, retirer) = fake(&[(root, 501)], &[root.pid], &[]);
+        let lease = acquire_lease(&ledger);
+        assert!(
+            with_stop(Stop::ObligationOut, || start(
+                &ledger,
+                &lease,
+                &source,
+                &retirer,
+                AMPLE_BUDGET
+            ))
+            .is_err()
+        );
+        // ⛔ Never an entry discharged while its obligation is still held.
+        assert!(census(&ledger, active.generation).is_empty());
+        assert_eq!(entries(&ledger, active.generation), vec!["retired"]);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("converges");
+        assert!(entries(&ledger, active.generation).is_empty());
+    }
+
+    #[test]
+    fn a_crash_between_the_terminal_and_the_census_deletes_never_strands_a_started_census() {
+        for point in [Stop::TerminalWritten, Stop::StartedDeleted] {
+            let directory = TempDir::new().unwrap();
+            let (ledger, active) = open_generation(&directory);
+            let root = instance(9501, 100);
+            admit(
+                directory.path(),
+                active.generation,
+                "retired",
+                None,
+                Some(root),
+            );
+            let (source, retirer) = fake(&[(root, 501)], &[root.pid], &[]);
+            let lease = acquire_lease(&ledger);
+            assert!(
+                with_stop(point, || start(
+                    &ledger,
+                    &lease,
+                    &source,
+                    &retirer,
+                    AMPLE_BUDGET
+                ))
+                .is_err()
+            );
+            let dir = ledger.generation_path(active.generation);
+            let started = dir.join("census-started.json").exists();
+            let obligation_file = ledger.census_obligation_path(active.generation).exists();
+            assert!(
+                !started || obligation_file,
+                "{point:?}: a started census without its file"
+            );
+            assert!(
+                ledger
+                    .record(active.generation)
+                    .unwrap()
+                    .unwrap()
+                    .closure
+                    .is_some()
+            );
+            let successor =
+                start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("converges");
+            assert_eq!(successor.generation, active.generation + 1);
+        }
+    }
+
+    #[test]
+    fn the_fold_is_persisted_before_any_legacy_cache_moves() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let root = instance(9601, 100);
+        let child = instance(9602, 200);
+        admit(
+            directory.path(),
+            active.generation,
+            "legacy",
+            None,
+            Some(root),
+        );
+        // The released closer's shape: the obligation in its census and the
+        // descendant only in the live cache (one write ahead of the census).
+        write_census(
+            &ledger,
+            active.generation,
+            &[obligation(
+                active.generation,
+                "legacy",
+                root,
+                Vec::new(),
+                true,
+            )],
+        );
+        let cache = obligation(
+            active.generation,
+            "legacy",
+            root,
+            vec![descendant(child, 501, true)],
+            true,
+        );
+        let live = ledger
+            .closure_recovery_dir(active.generation)
+            .join("live/legacy.json");
+        fs::create_dir_all(live.parent().unwrap()).unwrap();
+        write_json(&live, &cache, json_options()).unwrap();
+        let (source, retirer) = fake(&[(child, 501)], &[child.pid], &[]);
+        let lease = acquire_lease(&ledger);
+        assert!(
+            with_stop(Stop::FoldPersisted, || start(
+                &ledger,
+                &lease,
+                &source,
+                &retirer,
+                AMPLE_BUDGET
+            ))
+            .is_err()
+        );
+        assert_eq!(
+            census(&ledger, active.generation)["legacy"]
+                .descendants
+                .len(),
+            1
+        );
+        assert!(
+            live.exists(),
+            "the cache moves only after the fold is durable"
+        );
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("converges");
+        assert_eq!(retirer.signals(), vec![(child.pid, "term")]);
+        assert!(!ledger.closure_recovery_dir(active.generation).exists());
+    }
+
+    /// An entry that appears after the first listing, still live. Closing on
+    /// the end of that listing would abandon it.
+    fn a_fresh_listing_decides_the_close() -> Result<(), String> {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        admit(
+            directory.path(),
+            active.generation,
+            "early",
+            None,
+            Some(instance(4242, 42)),
+        );
+        let late = instance(9701, 97);
+        let journal = directory.path().to_path_buf();
+        let generation = active.generation;
+        AFTER_FIRST_LISTING.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move || {
+                admit(&journal, generation, "late", None, Some(late));
+            }));
+        });
+        let (source, retirer) = fake(&[(late, 501)], &[late.pid], &[]);
+        let lease = acquire_lease(&ledger);
+        let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+        AFTER_FIRST_LISTING.with(|hook| hook.borrow_mut().take());
+        let signalled = retirer.signals().iter().any(|(pid, _)| *pid == late.pid);
+        match result {
+            Ok(_) if signalled => Ok(()),
+            Err(_) => Ok(()),
+            Ok(_) => Err("closed with a live entry the first listing missed".to_owned()),
+        }
+    }
+
+    #[test]
+    fn the_close_waits_for_a_fresh_empty_listing() {
+        a_fresh_listing_decides_the_close().unwrap();
+    }
+
+    #[test]
+    fn inferring_empty_from_the_end_of_iteration_turns_the_listing_test_red() {
+        with_fault(Fault::InferEmpty, || {
+            assert!(a_fresh_listing_decides_the_close().is_err());
+        });
+    }
+
+    // ---- the census and its legacy markers ----
+
+    #[test]
+    fn a_lost_census_refuses_with_a_named_reason() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        admit(
+            directory.path(),
+            active.generation,
+            "a",
+            None,
+            Some(instance(4242, 42)),
+        );
+        let dir = ledger.generation_path(active.generation);
+        write_json(
+            dir.join("census-started.json"),
+            &serde_json::json!({"schema": 1}),
+            json_options(),
+        )
+        .unwrap();
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        for _ in 0..2 {
+            let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+            assert!(refused(
+                &result,
+                BootstrapRecoveryReason::AbandonedAdmissionUnverifiable
+            ));
+        }
+        assert!(parent_loss_census_is_lost(&dir));
+    }
+
+    #[test]
+    fn a_live_cache_one_write_behind_never_stands_in_for_a_lost_census() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let root = instance(9801, 100);
+        admit(
+            directory.path(),
+            active.generation,
+            "legacy",
+            None,
+            Some(root),
+        );
+        let dir = ledger.generation_path(active.generation);
+        write_json(
+            dir.join("census-started.json"),
+            &serde_json::json!({"schema": 1}),
+            json_options(),
+        )
+        .unwrap();
+        // The census held a descendant the cache never got; then it was damaged.
+        fs::write(
+            ledger.census_obligation_path(active.generation),
+            b"{\"schema\":1,",
+        )
+        .unwrap();
+        let cache = obligation(active.generation, "legacy", root, Vec::new(), true);
+        let live = ledger
+            .closure_recovery_dir(active.generation)
+            .join("live/legacy.json");
+        fs::create_dir_all(live.parent().unwrap()).unwrap();
+        write_json(&live, &cache, json_options()).unwrap();
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+        assert!(refused(
+            &result,
+            BootstrapRecoveryReason::AbandonedAdmissionUnverifiable
+        ));
+        assert!(live.exists(), "nothing is discarded from a lost census");
+    }
+
+    #[test]
+    fn a_recoverable_legacy_refusal_marker_clears_and_an_unrecoverable_one_refuses() {
+        for recoverable in [true, false] {
+            let directory = TempDir::new().unwrap();
+            let (ledger, active) = open_generation(&directory);
+            let root = instance(9851, 100);
+            let child = instance(9852, 200);
+            admit(
+                directory.path(),
+                active.generation,
+                "marked",
+                None,
+                Some(root),
+            );
+            let dir = ledger.generation_path(active.generation);
+            write_census(
+                &ledger,
+                active.generation,
+                &[obligation(
+                    active.generation,
+                    "marked",
+                    root,
+                    vec![descendant(child, 501, true)],
+                    true,
+                )],
+            );
+            fs::write(
+                dir.join("census-refusal.json"),
+                serde_json::to_vec(&serde_json::json!({
+                    "schema": 1, "generation": active.generation, "sealed_phase": "sealed",
+                    "reason": "retirement root is not authorized by its source evidence",
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            if !recoverable {
+                fs::write(ledger.census_obligation_path(active.generation), b"{ torn").unwrap();
+            }
+            let (source, retirer) = fake(&[(child, 501)], &[child.pid], &[]);
+            let lease = acquire_lease(&ledger);
+            let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+            if recoverable {
+                result.expect("a recoverable marker clears");
+                assert_eq!(retirer.signals(), vec![(child.pid, "term")]);
+                assert!(!dir.join("census-refusal.json").exists());
+            } else {
+                assert!(refused(
+                    &result,
+                    BootstrapRecoveryReason::AbandonedAdmissionUnverifiable
+                ));
+                assert!(retirer.signals().is_empty());
+                assert!(dir.join("census-refusal.json").exists());
+            }
+        }
+    }
+
+    #[test]
+    fn a_set_aside_census_copy_is_authoritative_and_folded() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let root = instance(9861, 100);
+        let child = instance(9862, 200);
+        admit(
+            directory.path(),
+            active.generation,
+            "copied",
+            None,
+            Some(root),
+        );
+        write_census(
+            &ledger,
+            active.generation,
+            &[obligation(
+                active.generation,
+                "copied",
+                root,
+                vec![descendant(child, 501, true)],
+                true,
+            )],
+        );
+        let dir = ledger.generation_path(active.generation);
+        fs::rename(
+            ledger.census_obligation_path(active.generation),
+            dir.join("census-obligation.wedged-1700000000.json"),
+        )
+        .unwrap();
+        let (source, retirer) = fake(&[(child, 501)], &[child.pid], &[]);
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("folded and closed");
+        assert_eq!(retirer.signals(), vec![(child.pid, "term")]);
+        assert!(
+            !dir.join("census-obligation.wedged-1700000000.json")
+                .exists()
+        );
+    }
+
+    // ---- every unsettled generation, and the boot ----
+
+    #[test]
+    fn a_spurious_higher_generation_and_an_older_open_one_are_both_closed() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let live = instance(5555, 55);
+        admit(
+            directory.path(),
+            active.generation,
+            "live-worker",
+            None,
+            Some(live),
+        );
+        fs::create_dir_all(ledger.generation_path(active.generation + 3)).unwrap();
+        fs::write(ledger.root_path().join("generations/not-a-number"), b"x").unwrap();
+        let (source, retirer) = fake(&[(live, 501)], &[live.pid], &[]);
+        let lease = acquire_lease(&ledger);
+        let successor = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).unwrap();
+        assert_eq!(successor.generation, active.generation + 4);
+        assert_eq!(retirer.signals(), vec![(live.pid, "term")]);
+        assert!(
+            closure_of(&ledger, active.generation)
+                .summary
+                .unwrap()
+                .retired
+                == 1
+        );
+        assert!(
+            ledger
+                .record(active.generation + 3)
+                .unwrap()
+                .unwrap()
+                .closure
+                .is_some()
+        );
+    }
+
+    fn boot_case(
+        boot: Option<Option<String>>,
+        supervisor_boot: Option<u128>,
+    ) -> (
+        Vec<(u32, &'static str)>,
+        Result<ActiveGeneration, ParentLossLedgerError>,
+        Option<ClosureSummary>,
+    ) {
+        let directory = TempDir::new().unwrap();
+        let ledger = ParentLossLedger::open(directory.path()).unwrap();
+        let mut supervisor = instance(10, 1);
+        supervisor.birth = supervisor.birth.on_linux_boot(supervisor_boot);
+        let active = ledger.reserve_generation(supervisor, []).unwrap();
+        ledger.initialize_record(&active).unwrap();
+        let coordinator = instance(20, 2);
+        let active = ledger
+            .persist_coordinator_identity(active.generation, coordinator)
+            .unwrap();
+        let active = ledger
+            .mark_admitting(active.generation, coordinator)
+            .unwrap();
+        if supervisor_boot.is_some() {
+            let _ = fs::remove_file(boot_path(&ledger, active.generation));
+        }
+        let live = instance(5656, 56);
+        admit(
+            directory.path(),
+            active.generation,
+            "live",
+            None,
+            Some(live),
+        );
+        let (source, mut retirer) = fake(&[(live, 501)], &[live.pid], &[]);
+        retirer.boot = boot;
+        let lease = acquire_lease(&ledger);
+        let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+        let summary = ledger
+            .record(active.generation)
+            .unwrap()
+            .and_then(|record| record.closure)
+            .and_then(|closure| closure.summary);
+        (retirer.signals(), result, summary)
+    }
+
+    #[test]
+    fn a_changed_boot_settles_the_whole_generation_at_once() {
+        if current_boot_id().is_none() {
+            return;
+        }
+        let (signals, result, summary) = boot_case(
+            Some(Some("0123456789abcdef0123456789abcdef".to_owned())),
+            None,
+        );
+        result.expect("closed");
+        assert!(signals.is_empty(), "nothing from another boot is signalled");
+        let summary = summary.unwrap();
+        assert!(summary.boot_changed);
+        assert_eq!(summary.total(), 0, "entries were never read");
+    }
+
+    #[test]
+    fn an_unreadable_boot_id_settles_nothing() {
+        let (signals, result, summary) = boot_case(Some(None), None);
+        result.expect("closed entry by entry");
+        assert_eq!(signals, vec![(5656, "term")]);
+        assert!(!summary.unwrap().boot_changed);
+    }
+
+    #[test]
+    fn a_linux_supervisor_birth_from_another_boot_settles_the_generation() {
+        let current = "8b9f3c1e77a24d0b9e612f4c05aad317";
+        let other = parse_linux_boot_id("0123456789abcdef0123456789abcdef");
+        let (signals, result, summary) = boot_case(Some(Some(current.to_owned())), other);
+        result.expect("closed");
+        assert!(signals.is_empty());
+        assert!(summary.unwrap().boot_changed);
+        let (signals, _, _) =
+            boot_case(Some(Some(current.to_owned())), parse_linux_boot_id(current));
+        assert_eq!(
+            signals,
+            vec![(5656, "term")],
+            "the same boot is observed entry by entry"
+        );
+    }
+
+    #[test]
+    fn reservation_records_its_boot_only_from_a_successful_read() {
+        let directory = TempDir::new().unwrap();
+        let ledger = ParentLossLedger::open(directory.path()).unwrap();
+        let active = ledger.reserve_generation(instance(10, 1), []).unwrap();
+        let path = boot_path(&ledger, active.generation);
+        match current_boot_id() {
+            Some(boot) => {
+                let record: BootRecord = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+                assert_eq!((record.schema, record.boot), (1, boot));
+            }
+            None => assert!(!path.exists()),
+        }
+    }
+
+    // ---- what stays flat ----
+
+    fn write_exited_history(
+        ledger: &ParentLossLedger,
+        generation: ParentLossGeneration,
+        count: usize,
+    ) {
+        let root = admission_directory(ledger, generation);
+        for index in 0..count {
+            let launch_id = format!("worker-{index:08x}");
+            let dir = root.join(&launch_id);
+            fs::create_dir_all(&dir).unwrap();
+            let id = identity(
+                generation,
+                &launch_id,
+                instance(100_000 + index as u32, 1_000 + index as u64),
+            );
+            let intent = AdmissionIntent::new(generation, launch_id.clone(), None, None);
+            fs::write(
+                dir.join("intent.json"),
+                serde_json::to_vec(&intent).unwrap(),
+            )
+            .unwrap();
+            fs::write(
+                dir.join("spawn-identity.json"),
+                serde_json::to_vec(&AdmissionSpawnIdentity {
+                    schema: 1,
+                    identity: id.clone(),
+                })
+                .unwrap(),
+            )
+            .unwrap();
+            fs::write(
+                dir.join("result.json"),
+                serde_json::to_vec(&AdmissionResult {
+                    schema: 1,
+                    identity: Some(id),
+                    state: AdmissionResultState::Admitted,
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        }
+    }
+
+    /// Close a synthetic legacy-shaped generation of `completed` exited
+    /// entries and 3 live ones, then time the start after it.
+    fn close_then_restart(completed: usize) -> (Duration, Duration) {
+        let directory = tempfile::Builder::new()
+            .prefix("pl-outstanding-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let (ledger, active) = open_generation_at(directory.path());
+        write_exited_history(&ledger, active.generation, completed);
+        let live: Vec<_> = (0..3)
+            .map(|i| (instance(900_001 + i, 9_000 + u64::from(i)), 501))
+            .collect();
+        for (i, (child, _)) in live.iter().enumerate() {
+            admit(
+                directory.path(),
+                active.generation,
+                &format!("live-{i}"),
+                None,
+                Some(*child),
+            );
+        }
+        let pids: Vec<u32> = live.iter().map(|(i, _)| i.pid).collect();
+        let (source, retirer) = fake(&live, &pids, &[]);
+        let lease = acquire_lease(&ledger);
+        let began = Instant::now();
+        start(&ledger, &lease, &source, &retirer, Duration::from_secs(600))
+            .expect("one start closes it");
+        let closing = began.elapsed();
+        assert_eq!(
+            summary_of(&ledger, active.generation).exited,
+            completed as u64
+        );
+        // The next generation dies too, empty; its start must not re-pay the first.
+        let began = Instant::now();
+        start(&ledger, &lease, &source, &retirer, Duration::from_secs(600)).expect("restart");
+        (closing, began.elapsed())
+    }
+
+    fn open_generation_at(path: &Path) -> (ParentLossLedger, ActiveGeneration) {
+        let ledger = ParentLossLedger::open(path).unwrap();
+        let active = ledger.reserve_generation(instance(10, 1), []).unwrap();
+        ledger.initialize_record(&active).unwrap();
+        let coordinator = instance(20, 2);
+        let active = ledger
+            .persist_coordinator_identity(active.generation, coordinator)
+            .unwrap();
+        let active = ledger
+            .mark_admitting(active.generation, coordinator)
+            .unwrap();
+        (ledger, active)
+    }
+
+    #[test]
+    fn a_closed_history_costs_the_next_start_nothing() {
+        let (small_close, small_next) = close_then_restart(1_000);
+        let (large_close, large_next) = close_then_restart(100_000);
+        eprintln!(
+            "outstanding: close K=1k {small_close:?}, K=100k {large_close:?}; \
+             next start K=1k {small_next:?}, K=100k {large_next:?}"
+        );
+        assert!(
+            large_next <= small_next * 3 + Duration::from_millis(50),
+            "the start after a closed 100k history grew: {small_next:?} vs {large_next:?}"
+        );
+        // A legacy-shaped set is still outstanding work, read once: linear,
+        // and closed by one start (`close_then_restart` asserts the one).
+    }
+
+    // ---- the prune ----
+
+    #[test]
+    fn the_prune_deletes_only_what_settled_generations_below_the_highest_left() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, first) = open_generation(&directory);
+        admit(
+            directory.path(),
+            first.generation,
+            "a",
+            None,
+            Some(instance(4242, 42)),
+        );
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        let second = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).unwrap();
+        ledger.initialize_record(&second).unwrap();
+        admit(
+            directory.path(),
+            second.generation,
+            "b",
+            None,
+            Some(instance(4343, 43)),
+        );
+        let old = ledger.generation_path(first.generation);
+        fs::create_dir_all(old.join("admissions/leftover")).unwrap();
+        assert!(old.join("discharged/a").is_dir());
+        prune_settled_generations(&ledger);
+        assert!(!old.join("discharged").exists());
+        assert!(!old.join("admissions").exists());
+        assert!(
+            ledger.record_path(first.generation).is_file(),
+            "the record stays"
+        );
+        assert_eq!(
+            entries(&ledger, second.generation),
+            vec!["b"],
+            "the highest generation is never pruned"
+        );
     }
 }
