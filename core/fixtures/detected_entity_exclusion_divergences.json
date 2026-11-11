@@ -1,6 +1,6 @@
 {
   "cause": "Measured agreement and divergence between the Python detected-entity exclusion path and the native read model.",
-  "counts": {"agree": 4, "now_hidden": 0, "now_offered": 0, "total": 4},
+  "counts": {"agree": 3, "now_hidden": 1, "now_offered": 0, "total": 4},
   "entries": [
     {
       "fixture_index": 0,
@@ -29,8 +29,8 @@
       "detected_type": "Person",
       "attached_setup": {"kind": "blocked", "entity_id": "bob", "identity_name": "Bob"},
       "reference_outcome": {"excluded": false, "tier": null},
-      "native_outcome": {"excluded": false, "tier": null},
-      "reason": "Blocked identities are omitted from both attached candidate sets."
+      "native_outcome": {"excluded": true, "tier": 1},
+      "reason": "A hidden entity's name leaves the detected list, so it is reached through the entity and never offered as an unattached detection; Python omitted blocked identities from the attached candidate set."
     },
     {
       "fixture_index": 3,

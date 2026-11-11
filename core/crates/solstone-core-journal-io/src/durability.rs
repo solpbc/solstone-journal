@@ -107,6 +107,7 @@ pub enum ArtifactId {
     TaskQueueHolds,
     WorkIntent,
     OwnerAsks,
+    FacetHiddenNames,
     WorkInventory,
     IndexTodo,
     IndexAttempts,
@@ -175,6 +176,13 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::MustBeValid,
         parser: ParserKind::WholeJson,
         rationale: "the places worked out from the owner's stays, with the names they gave them and the ones they hid, written under a lock with atomic replace and read strictly by PlaceStore::read_strict; the names and hides can't be rebuilt, so a damaged one is kept as it is, no day's location words are rendered and nothing is described beside an activity",
+    },
+    DurableArtifact {
+        id: ArtifactId::FacetHiddenNames,
+        path: "facets/*/hidden-names.json",
+        class: DurabilityClass::MustBeValid,
+        parser: ParserKind::WholeJson,
+        rationale: "the names the owner hid in a facet, written under the facet trust lock with atomic replace; nothing can rebuild what the owner hid, so a damaged one is kept as it is, its facet's detections are shown and indexed as none, and a hide or unhide refuses",
     },
     // Healable
     DurableArtifact {
@@ -1126,6 +1134,8 @@ mod tests {
                 "health/owner-asks.json",
                 "config/week-left-out.json",
                 "solstone/apps/map/places.json",
+                // Names the owner hid in a facet.
+                "facets/*/hidden-names.json",
                 "health/parent-loss/generations/*/census-obligation.json",
                 "health/parent-loss/generations/*/census-started.json",
                 "health/parent-loss/generations/*/census-refusal.json",

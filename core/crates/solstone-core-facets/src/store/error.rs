@@ -380,6 +380,9 @@ pub enum FacetEntityWriteError {
     SameFacet {
         facet: String,
     },
+    /// What the facet keeps hidden can't be read, so nothing is shown or
+    /// changed.
+    HiddenUndecidable(solstone_core_entity::hidden_names::HideUndecidable),
     Io(io::Error),
 }
 
@@ -427,6 +430,7 @@ impl fmt::Display for FacetEntityWriteError {
             Self::SameFacet { facet } => {
                 write!(formatter, "'{facet}' is already the facet it's moving from")
             }
+            Self::HiddenUndecidable(error) => error.fmt(formatter),
             Self::Io(error) => error.fmt(formatter),
         }
     }
@@ -444,6 +448,7 @@ impl Error for FacetEntityWriteError {
             Self::EntityWrite(error) => Some(error),
             Self::Io(error) => Some(error),
             Self::LinkFolders(error) => Some(error),
+            Self::HiddenUndecidable(error) => Some(error),
             Self::EntityExists { .. }
             | Self::EntityBlocked { .. }
             | Self::EntityNotFound { .. }
@@ -459,6 +464,12 @@ impl Error for FacetEntityWriteError {
 impl From<solstone_core_entity::facet_links::LinkFolderError> for FacetEntityWriteError {
     fn from(value: solstone_core_entity::facet_links::LinkFolderError) -> Self {
         Self::LinkFolders(value)
+    }
+}
+
+impl From<solstone_core_entity::hidden_names::HideUndecidable> for FacetEntityWriteError {
+    fn from(value: solstone_core_entity::hidden_names::HideUndecidable) -> Self {
+        Self::HiddenUndecidable(value)
     }
 }
 

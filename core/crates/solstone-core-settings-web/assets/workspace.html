@@ -7676,6 +7676,8 @@ const TRASH_COPY = {
   cleared: 'cleared {day}',
   mergedInto: 'merged into {title}',
   entitySameName: 'another entity with this name is in your journal now. recovering puts this one back beside it.',
+  entityHidden: 'hidden',
+  entityHiddenBack: 'recovering puts it back hidden.',
   facetReplaces: 'another facet with this name is in your journal now. recovering erases it, with everything in it, and puts this one back.',
   speakersReplaces: "recovering puts back what was cleared, replacing what's been redone since for the same segments and people, including speakers you named.",
   speakersKept: 'people and segments that were in the trash when it was cleared kept theirs.',
@@ -7808,7 +7810,7 @@ function trashRowBody(item, stoppedState) {
       qualifiers = [item.day && removalDay(item.day), trashClock(item.start), removalSourceName(item.source)];
       break;
     case 'entity':
-      qualifiers = [item.label, item.entity_type && String(item.entity_type).toLowerCase()];
+      qualifiers = [item.label, item.entity_type && String(item.entity_type).toLowerCase(), item.hidden === true ? TRASH_COPY.entityHidden : null];
       break;
     case 'facet':
       qualifiers = [item.label];
@@ -7855,7 +7857,8 @@ function trashRowBody(item, stoppedState) {
 function trashRowLines(item) {
   switch (item.kind) {
     case 'entity':
-      return item.same_name === true ? [TRASH_COPY.entitySameName] : [];
+      // A hidden one comes back hidden, after the same-name line when both apply.
+      return [item.same_name === true && TRASH_COPY.entitySameName, item.hidden === true && TRASH_COPY.entityHiddenBack].filter(Boolean);
     case 'facet':
       return item.replaces ? [TRASH_COPY.facetReplaces] : [];
     case 'speakers':

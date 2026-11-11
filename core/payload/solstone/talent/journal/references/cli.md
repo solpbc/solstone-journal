@@ -166,7 +166,7 @@ solstone call journal facet unmute personal
 solstone call journal facet delete <name> --yes [--consent]
 ```
 
-Delete a facet directory and all its data. Its name can't be given to a new facet afterwards. Run it only after the owner has approved this delete.
+Move a facet and everything in it to the trash, where it can be recovered until it is erased. Run it only after the owner has approved this delete.
 
 - `--yes`: required. Without it the command refuses.
 - `--consent`: accepted but changes nothing. Every delete is logged with `"consent": true` in the audit log entry.

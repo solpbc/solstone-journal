@@ -37,7 +37,6 @@ use crate::model::{
     ATTENDANCE_KINDS, ENTITIES_COPY, ENTITY_TYPES, ReasonCode, compose_connections_horizon_note,
     refusal, refusal_with_status,
 };
-use solstone_core_removals::{Action, Page, Removal, Surface, Unit};
 
 #[derive(Clone)]
 pub(crate) struct RouterState {
@@ -243,17 +242,19 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
         )
         .route(
             "/app/entities/api/{facet_name}/detected",
-            get(detected_route)
-                .post(detect_entity_route)
-                .delete(delete_detected_route),
+            get(detected_route).post(detect_entity_route),
+        )
+        .route(
+            "/app/entities/api/{facet_name}/detected/hide",
+            post(hide_detected_route),
+        )
+        .route(
+            "/app/entities/api/{facet_name}/detected/unhide",
+            post(unhide_detected_route),
         )
         .route(
             "/app/entities/api/{facet_name}/update-detected",
             post(update_detected_route),
-        )
-        .route(
-            "/app/entities/api/{facet_name}/detected/preview",
-            get(detected_preview_route),
         )
         .route("/app/entities/api/{facet_name}/attach", post(attach_route))
         .route("/app/entities/api/{facet_name}/aka", post(aka_route))
@@ -1085,17 +1086,64 @@ async fn facet_route(
             insert_activity(object, activity_ts, zone);
             attached.push(value);
         }
-        let detected = solstone_core_facets::load_detected_entities_recent(&root, &f, 30)?;
-        Ok::<_, solstone_core_facets::FacetEntityWriteError>((attached, detected))
+        // When what the facet hides can't be read, no detection is listed
+        // and the answer says so; attached entities still are.
+        let recent = match solstone_core_facets::load_detected_entities_recent(&root, &f, 30) {
+            Ok(recent) => Some(recent),
+            Err(solstone_core_facets::FacetEntityWriteError::HiddenUndecidable(error)) => {
+                log::warn!("detections not listed facet={f}: {error}");
+                None
+            }
+            Err(error) => return Err(error),
+        };
+        Ok::<_, solstone_core_facets::FacetEntityWriteError>((attached, recent))
     })
     .await
     {
-        Ok(Ok((attached, detected))) => {
-            Json(json!({"attached":attached,"detected":detected})).into_response()
-        }
+        Ok(Ok((attached, Some(recent)))) => Json(json!({
+            "attached": attached,
+            "detected": recent.detected,
+            "hidden": recent.hidden,
+            "hidden_unreadable": false,
+        }))
+        .into_response(),
+        Ok(Ok((attached, None))) => Json(json!({
+            "attached": attached,
+            "detected": [],
+            "hidden": [],
+            "hidden_unreadable": true,
+        }))
+        .into_response(),
         _ => refusal(ReasonCode::EntityOperationFailed, "facet read failed"),
     }
 }
+/// Mark each detected row a hide covers: `hidden: true`, and `hidden_by`
+/// naming the owner or the hidden entity.
+fn mark_hidden_rows(
+    rows: &mut [serde_json::Value],
+    keys: &solstone_core_entity::hidden_names::HiddenKeys,
+) {
+    use solstone_core_entity::hidden_names::HiddenBy;
+    for row in rows {
+        let name = row
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let hidden_by = match keys.hidden_by(&name) {
+            Some(HiddenBy::Owner) => json!({"kind": "owner"}),
+            Some(HiddenBy::Entity(entity)) => {
+                json!({"kind": "entity", "id": entity.id, "name": entity.name})
+            }
+            None => continue,
+        };
+        if let Some(object) = row.as_object_mut() {
+            object.insert("hidden".to_owned(), serde_json::Value::Bool(true));
+            object.insert("hidden_by".to_owned(), hidden_by);
+        }
+    }
+}
+
 async fn detected_route(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
@@ -1110,57 +1158,18 @@ async fn detected_route(
         return refusal(ReasonCode::MissingRequiredField, "day is required");
     }
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_facets::read_detected_entities(&root, &f, &day)
+        let mut rows = solstone_core_facets::read_detected_entities(&root, &f, &day)?;
+        let keys = solstone_core_entity::hidden_names::facet_hidden_keys(&root, &f)?;
+        mark_hidden_rows(&mut rows, &keys);
+        Ok::<_, solstone_core_facets::FacetEntityWriteError>(rows)
     })
     .await
     {
         Ok(Ok(v)) => Json(json!({"total":v.len(),"items":v})).into_response(),
-        _ => refusal(ReasonCode::EntityOperationFailed, "detected read failed"),
-    }
-}
-
-async fn detected_preview_route(
-    Extension(b): Extension<AccessBasis>,
-    State(root): State<Arc<RouterState>>,
-    RoutePath(facet): RoutePath<String>,
-    Query(q): Query<std::collections::HashMap<String, String>>,
-) -> Response {
-    if let Some(r) = admitted(&b) {
-        return r;
-    }
-    let Some(name) = q
-        .get("name")
-        .map(String::as_str)
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-    else {
-        return refusal(ReasonCode::MissingRequiredField, "Entity name is required");
-    };
-    let entities_dir = root.join("facets").join(&facet).join("entities");
-    if !entities_dir.exists() {
-        return Json(json!({"success":true,"days":[]})).into_response();
-    }
-    let name = name.to_owned();
-    match solstone_core_serving::seam::run_blocking(move || {
-        let days = detected_day_stems(&entities_dir)
-            .map_err(solstone_core_facets::FacetEntityWriteError::Io)?;
-        let mut entries = Vec::new();
-        for day in days {
-            for entity in solstone_core_facets::read_detected_entities(&root, &facet, &day)? {
-                if entity.get("name").and_then(serde_json::Value::as_str) == Some(name.as_str()) {
-                    entries.push(json!({
-                        "day": day,
-                        "type": entity.get("type").and_then(serde_json::Value::as_str).unwrap_or(""),
-                        "description": entity.get("description").and_then(serde_json::Value::as_str).unwrap_or(""),
-                    }));
-                }
-            }
-        }
-        Ok::<_, solstone_core_facets::FacetEntityWriteError>(entries)
-    })
-    .await
-    {
-        Ok(Ok(days)) => Json(json!({"success":true,"days":days})).into_response(),
+        Ok(Err(solstone_core_facets::FacetEntityWriteError::HiddenUndecidable(_))) => refusal(
+            ReasonCode::EntityRecordDamaged,
+            "detections can't be shown here: which names are hidden can't be read",
+        ),
         _ => refusal(ReasonCode::EntityOperationFailed, "detected read failed"),
     }
 }
@@ -2726,6 +2735,10 @@ async fn update_journal_entity_route(
                 solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        Ok(Err(solstone_core_entity::EntityWriteError::EntityHidden { .. })) => refusal(
+            ReasonCode::EntityBlocked,
+            "this entity is hidden, so its names can't change until it is unhidden",
+        ),
         _ => refusal(ReasonCode::EntityOperationFailed, "entity update failed"),
     }
 }
@@ -2822,7 +2835,10 @@ async fn block_journal_entity_route(
         return r;
     }
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_facets::block_journal_entity(&root, &entity_id)
+        let result = solstone_core_facets::block_journal_entity(&root, &entity_id);
+        // Queued on every call, refused or unchanged too, so a retry heals.
+        solstone_core_facets::queue_linked_facet_detections(&root, &[entity_id]);
+        result
     })
     .await
     {
@@ -2858,7 +2874,10 @@ async fn unblock_journal_entity_route(
         return r;
     }
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_facets::unblock_journal_entity(&root, &entity_id)
+        let result = solstone_core_facets::unblock_journal_entity(&root, &entity_id);
+        // Queued on every call, refused or unchanged too, so a retry heals.
+        solstone_core_facets::queue_linked_facet_detections(&root, &[entity_id]);
+        result
     })
     .await
     {
@@ -2952,7 +2971,10 @@ async fn block_journal_entities_route(
     }
 
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_facets::block_journal_entities(&root, &operation, &ids)
+        let result = solstone_core_facets::block_journal_entities(&root, &operation, &ids);
+        // Queued on every call, refused or unchanged too, so a retry heals.
+        solstone_core_facets::queue_linked_facet_detections(&root, &ids);
+        result
     })
     .await
     {
@@ -3034,7 +3056,11 @@ async fn unblock_journal_operation_route(
     };
 
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_facets::unblock_journal_operation(&root, &operation, limit)
+        let result = solstone_core_facets::unblock_journal_operation(&root, &operation, limit);
+        // Which entities the undo reaches isn't known before it runs, and a
+        // refused one reaches none, so every facet is queued on every call.
+        solstone_core_facets::queue_every_facet_detections(&root);
+        result
     })
     .await
     {
@@ -4428,23 +4454,44 @@ async fn observe_route(
     }
 }
 
-fn detected_day_stems(entities_dir: &Path) -> std::io::Result<Vec<String>> {
-    let mut days = std::fs::read_dir(entities_dir)?
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let path = entry.path();
-            (path
-                .extension()
-                .is_some_and(|extension| extension == "jsonl"))
-            .then(|| path.file_stem()?.to_str().map(str::to_owned))
-            .flatten()
-        })
-        .collect::<Vec<_>>();
-    days.sort();
-    Ok(days)
+/// Read a `{name}` body for a detected-name hide or unhide.
+async fn detected_name_body(request: Request) -> Result<String, Response> {
+    let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
+        Ok(bytes) if !bytes.is_empty() => bytes,
+        _ => return Err(refusal(ReasonCode::MissingRequestBody, "No data provided")),
+    };
+    let body = serde_json::from_slice::<serde_json::Value>(&bytes).unwrap_or_default();
+    body.get("name")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| refusal(ReasonCode::MissingRequiredField, "name is required"))
 }
 
-async fn delete_detected_route(
+fn hidden_names_refusal(error: &solstone_core_facets::HiddenNamesError) -> Response {
+    match error {
+        error if error.is_busy() => refusal(ReasonCode::EntityBusy, "entity busy"),
+        solstone_core_facets::HiddenNamesError::EmptyName => {
+            refusal(ReasonCode::MissingRequiredField, "name is required")
+        }
+        solstone_core_facets::HiddenNamesError::Damaged { .. } => refusal(
+            ReasonCode::EntityRecordDamaged,
+            "the names hidden in this facet can't be read, so nothing changed",
+        ),
+        solstone_core_facets::HiddenNamesError::Facet(_) => {
+            refusal(ReasonCode::EntityNotFound, "facet not found")
+        }
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            "the name couldn't be changed, so nothing changed",
+        ),
+    }
+}
+
+/// Hide a name's detections in a facet. They stay in the journal, marked
+/// hidden, however often the name is detected again.
+async fn hide_detected_route(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
     RoutePath(facet): RoutePath<String>,
@@ -4453,75 +4500,78 @@ async fn delete_detected_route(
     if let Some(r) = admitted(&b) {
         return r;
     }
-    let surface = Surface::of_request(
-        Page::Entities,
-        request
-            .headers()
-            .get(axum::http::header::USER_AGENT)
-            .and_then(|value| value.to_str().ok()),
-    );
-    let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
-        Ok(bytes) if !bytes.is_empty() => bytes,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+    let name = match detected_name_body(request).await {
+        Ok(name) => name,
+        Err(response) => return response,
     };
-    let body: serde_json::Value = match serde_json::from_slice::<serde_json::Value>(&bytes) {
-        Ok(body) if body.as_object().is_some_and(|body| !body.is_empty()) => body,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
-    };
-    let Some(name) = body
-        .get("name")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-    else {
-        return refusal(ReasonCode::MissingRequiredField, "Entity name is required");
-    };
-    let entities_dir = root.join("facets").join(&facet).join("entities");
-    if !entities_dir.exists() {
-        return Json(json!({"success":true,"days_modified":[]})).into_response();
+    #[cfg(test)]
+    if let Some(ForcedWriteOutcome::Contended) = FORCED_WRITE_OUTCOME.with(|cell| cell.get()) {
+        return hidden_names_refusal(&solstone_core_facets::HiddenNamesError::TrustLock(
+            solstone_core_facets::FacetTrustLockError::Lock(forced_lock_timeout()),
+        ));
     }
-    let days = match detected_day_stems(&entities_dir) {
-        Ok(days) => days,
-        Err(_) => {
-            return refusal(
-                ReasonCode::EntityOperationFailed,
-                "detected entity scan failed",
-            );
-        }
-    };
-    let name = name.to_owned();
-    let journal_root = root.as_path().to_path_buf();
-    match run_facet_entity_write(move || {
-        let mut days_modified = Vec::new();
-        for day in days {
-            let entities = solstone_core_facets::read_detected_entities(&root, &facet, &day)?;
-            if entities
-                .iter()
-                .any(|entity| entity.get("name").and_then(serde_json::Value::as_str) == Some(&name))
-            {
-                solstone_core_facets::delete_detected_entity(&root, &facet, &day, &name)?;
-                days_modified.push(day);
-            }
-        }
-        Ok::<_, solstone_core_facets::FacetEntityWriteError>(days_modified)
+    match solstone_core_serving::seam::run_blocking(move || {
+        solstone_core_facets::hide_detected_name(&root, &facet, &name)
     })
     .await
     {
-        Ok(Ok(days_modified)) => {
-            if !days_modified.is_empty() {
-                Removal::begin(&journal_root, Action::DetectedEntitiesDelete, surface)
-                    .record(Unit::DetectedEntities);
-            }
-            Json(json!({"success":true,"days_modified":days_modified})).into_response()
-        }
-        Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
-            solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_entity::LockError::Timeout(_),
-            ),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
-        _ => refusal(
+        Ok(Ok(write)) => Json(json!({
+            "success": true,
+            "changed": write.changed,
+            "search_queued": write.search_queued,
+        }))
+        .into_response(),
+        Ok(Err(error)) => hidden_names_refusal(&error),
+        Err(_) => refusal(
             ReasonCode::EntityOperationFailed,
-            "detected entity delete failed",
+            "the name couldn't be changed, so nothing changed",
+        ),
+    }
+}
+
+/// Unhide a name in a facet. When a hidden entity linked here still matches
+/// it, the answer names that entity: the name stays out of the list until
+/// the entity is unhidden.
+async fn unhide_detected_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+    RoutePath(facet): RoutePath<String>,
+    request: Request,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let name = match detected_name_body(request).await {
+        Ok(name) => name,
+        Err(response) => return response,
+    };
+    match solstone_core_serving::seam::run_blocking(move || {
+        let write = solstone_core_facets::unhide_detected_name(&root, &facet, &name)?;
+        let still_hidden_by = solstone_core_entity::hidden_names::facet_hidden_keys(&root, &facet)
+            .ok()
+            .and_then(|keys| {
+                keys.hidden_by_entity(&name)
+                    .map(|entity| json!({"id": entity.id, "name": entity.name}))
+            });
+        Ok((write, still_hidden_by))
+    })
+    .await
+    {
+        Ok(Ok((write, still_hidden_by))) => {
+            let mut body = json!({
+                "success": true,
+                "changed": write.changed,
+                "search_queued": write.search_queued,
+            });
+            if let Some(entity) = still_hidden_by {
+                body["still_hidden_by"] = entity;
+            }
+            Json(body).into_response()
+        }
+        Ok(Err(error)) => hidden_names_refusal(&error),
+        Err(_) => refusal(
+            ReasonCode::EntityOperationFailed,
+            "the name couldn't be changed, so nothing changed",
         ),
     }
 }
@@ -4580,6 +4630,12 @@ async fn aka_route(
                 solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityWrite(
+            solstone_core_entity::EntityWriteError::EntityHidden { .. },
+        ))) => refusal(
+            ReasonCode::EntityBlocked,
+            "this entity is hidden, so its names can't change until it is unhidden",
+        ),
         _ => refusal(
             ReasonCode::EntityOperationFailed,
             "entity alias update failed",
@@ -4675,6 +4731,12 @@ async fn update_entity_route(
                 solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityWrite(
+            solstone_core_entity::EntityWriteError::EntityHidden { .. },
+        ))) => refusal(
+            ReasonCode::EntityBlocked,
+            "this entity is hidden, so its names can't change until it is unhidden",
+        ),
         _ => refusal(ReasonCode::EntityOperationFailed, "entity update failed"),
     }
 }

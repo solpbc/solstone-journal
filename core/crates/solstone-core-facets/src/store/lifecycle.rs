@@ -55,7 +55,7 @@ use super::write::{
     write_facet_entity_link_raw,
 };
 
-pub(crate) const HIDE_DETACHED_BY: &str = "hide";
+pub(crate) use solstone_core_entity::hidden_names::HIDE_DETACHED_BY;
 
 static UNDONE_OPERATIONS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 

@@ -209,14 +209,23 @@ pub async fn link_import(
             "updated_at".to_owned(),
             json!(Utc::now().timestamp_millis()),
         );
-        if let Err(error) =
-            solstone_core_entity::save_entity_identity(&root.0, entity_id, &identity, None)
-        {
-            return err(
-                "entity_operation_failed",
-                &error.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
+        match solstone_core_entity::save_entity_identity(&root.0, entity_id, &identity, None) {
+            Ok(_) => {}
+            // A hidden entity keeps the names it was hidden with: the link is
+            // skipped, and nothing was written.
+            Err(solstone_core_entity::EntityWriteError::EntityHidden { .. }) => {
+                return Json(
+                    json!({"linked":false,"entity_id":entity_id,"skipped":"entity_hidden"}),
+                )
+                .into_response();
+            }
+            Err(error) => {
+                return err(
+                    "entity_operation_failed",
+                    &error.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+            }
         }
     }
     Json(json!({"linked":true,"entity_id":entity_id,"name_added":name,"already_present":already_present})).into_response()

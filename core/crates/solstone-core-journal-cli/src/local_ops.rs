@@ -2203,6 +2203,10 @@ fn facet_merge_transaction_in_journal(
             source_removed,
         });
     }
+    // The destination's detected days are rendered again under the hidden
+    // names it now holds. This writes a hint for the indexer and runs none,
+    // so the doctor queues it too.
+    let detections_queued = solstone_core_facets::queue_facet_detections(journal, destination);
     // The doctor runs its merges under its own facet trust lock and brings
     // search up to date once, after releasing it; reconciling here would wait
     // on another process's reconcile while holding that lock.
@@ -2233,6 +2237,7 @@ fn facet_merge_transaction_in_journal(
     }
     let post_commit_failure = crate::facet_names::enqueue_facet_classifications(journal)
         .err()
+        .or_else(|| (!detections_queued).then(|| "its detections were not queued".to_owned()))
         .map(|error| {
             failure(
                 "facet merge",
@@ -2280,15 +2285,29 @@ fn facet_merge_commit_locked(
         mode == FacetMergeMode::DoctorOrphan,
     )
     .map_err(|message| failure("facet merge", &message, EXIT_DATA))?;
+    // The owner's hidden names travel with a merge; a damaged record on
+    // either side would be lost or misread, so the merge refuses.
+    for facet in [source, destination] {
+        if let Err(error) = solstone_core_facets::check_hidden_names_readable(journal, facet) {
+            return Err(failure("facet merge", &error.to_string(), EXIT_DATA));
+        }
+    }
     let transaction = transaction_id();
     let facets = journal.join("facets");
-    let stage = facets.join(format!(".facet-merge-{transaction}.stage"));
+    let stage_name = format!(".facet-merge-{transaction}.stage");
+    let stage = facets.join(&stage_name);
     let backup = facets.join(format!(".facet-merge-{transaction}.dest"));
     let source_backup = facets.join(format!(".facet-merge-{transaction}.source"));
     if let Err(error) = require_missing(&backup).and_then(|()| require_missing(&source_backup)) {
         return Err(failure("facet merge", &error, EXIT_IO));
     }
     let report = stage_facet_merge(&source_path, &destination_path, &stage)?;
+    if let Err(error) =
+        solstone_core_facets::merge_hidden_names_locked(journal, source, &stage_name)
+    {
+        let _ = fs::remove_dir_all(&stage);
+        return Err(failure("facet merge", &error.to_string(), EXIT_IO));
+    }
     if let Err(error) = fs::rename(&destination_path, &backup) {
         let _ = fs::remove_dir_all(&stage);
         return Err(failure("facet merge", &error.to_string(), EXIT_IO));
@@ -3084,6 +3103,88 @@ mod facet_merge_tests {
         assert_eq!(events, expected);
     }
 
+    fn hidden_names(root: &Path, facet: &str) -> Vec<(String, String)> {
+        match solstone_core_facets::hidden_names::read_hidden_names(root, facet) {
+            solstone_core_facets::hidden_names::HiddenNames::Present(names) => names
+                .into_iter()
+                .map(|entry| (entry.name, entry.hidden_at))
+                .collect(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn facet_merge_unions_hidden_names_and_queues_the_destinations_detections() {
+        let journal = TempJournal::new();
+        let root = journal.path();
+        // Written directly, so the only hint queued is the merge's own.
+        use solstone_core_facets::hidden_names::{HiddenName, encode_hidden_names};
+        let entry = |name: &str, at: &str| HiddenName {
+            name: name.to_owned(),
+            hidden_at: at.to_owned(),
+        };
+        fs::write(
+            root.join("facets/source/hidden-names.json"),
+            encode_hidden_names(&[
+                entry("Bob Smith", "2026-11-02T00:00:00Z"),
+                entry("Alice", "2026-11-03T00:00:00Z"),
+            ]),
+        )
+        .expect("source hides");
+        fs::write(
+            root.join("facets/destination/hidden-names.json"),
+            encode_hidden_names(&[entry("bob smith", "2026-11-01T00:00:00Z")]),
+        )
+        .expect("destination hides");
+        let outcome = facet_merge_in_journal(root, "source", "destination", false);
+        assert!(
+            matches!(outcome, Outcome::LocalSuccess { .. }),
+            "{outcome:?}"
+        );
+        assert_eq!(
+            hidden_names(root, "destination"),
+            vec![
+                ("bob smith".to_owned(), "2026-11-01T00:00:00Z".to_owned()),
+                ("Alice".to_owned(), "2026-11-03T00:00:00Z".to_owned()),
+            ]
+        );
+        assert!(
+            solstone_core_indexer_store::todo::inspect(root)
+                .expect("queue")
+                .keys
+                .contains(&"facets/destination/entities".to_owned())
+        );
+        // Combined, not a collision: nothing of it waits in the trash.
+        assert!(solstone_core_trash::list(root).expect("trash").is_empty());
+    }
+
+    #[test]
+    fn facet_merge_refuses_when_either_facets_hidden_names_are_damaged() {
+        for damaged in ["source", "destination"] {
+            let journal = TempJournal::new();
+            let root = journal.path();
+            solstone_core_facets::hide_detected_name_at(
+                root,
+                "source",
+                "Alice",
+                "2026-11-03T00:00:00Z",
+            )
+            .expect("hide");
+            fs::write(
+                root.join(format!("facets/{damaged}/hidden-names.json")),
+                b"{",
+            )
+            .expect("damage");
+            let before = tree_bytes(&root.join("facets"));
+            let outcome = facet_merge_in_journal(root, "source", "destination", false);
+            assert!(
+                matches!(outcome, Outcome::LocalFailure { .. }),
+                "{damaged}: {outcome:?}"
+            );
+            assert_eq!(tree_bytes(&root.join("facets")), before, "{damaged}");
+        }
+    }
+
     #[test]
     fn a_merge_with_nothing_in_common_puts_nothing_in_the_trash() {
         let journal = TempJournal::new();
@@ -3614,8 +3715,13 @@ fn merge_tree_into(
         .map_err(|error| error.to_string())?;
     entries.sort_by_key(fs::DirEntry::file_name);
     for entry in entries {
-        // The facet's own settings record lives only at its root.
-        if relative.as_os_str().is_empty() && entry.file_name() == OsStr::new("facet.json") {
+        // The facet's own settings record lives only at its root. Its hidden
+        // names are combined by the facets store, not copied as a file.
+        if relative.as_os_str().is_empty()
+            && (entry.file_name() == OsStr::new("facet.json")
+                || entry.file_name()
+                    == OsStr::new(solstone_core_facets::hidden_names::HIDDEN_NAMES_FILE))
+        {
             continue;
         }
         let name = entry.file_name();
@@ -4359,6 +4465,8 @@ mod tests {
             .keys;
         assert!(keys.contains(&"@scan-full".into()));
         assert!(keys.contains(&"@reclassify".into()));
+        // A hint for the destination's detections, written while no indexer ran.
+        assert!(keys.contains(&"facets/work/entities".into()));
         drop(writer);
         let report =
             solstone_core_indexer_store::todo::drain(&journal, Default::default()).unwrap();

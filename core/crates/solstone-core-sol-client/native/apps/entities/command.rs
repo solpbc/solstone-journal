@@ -87,8 +87,14 @@ fn list_output(ctx: CommandContext<'_>) -> CommandOutput {
     );
     lines.push(format!("{} {label} entities:", entities.len()));
     for entity in entities {
+        // A hidden detection is listed, and marked.
+        let hidden = if entity.get("hidden") == Some(&Value::Bool(true)) {
+            " hidden"
+        } else {
+            ""
+        };
         lines.push(format!(
-            "  - {} ({}): {}",
+            "  - {}{hidden} ({}): {}",
             value_or_empty(entity.get("name")),
             value_or_empty(entity.get("type")),
             value_or_default(entity.get("description"), "")

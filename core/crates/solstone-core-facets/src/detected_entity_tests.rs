@@ -13,10 +13,10 @@ use crate::store_tests::{
     TempDir, create_test_facet, write_facet_relationship, write_journal_entity,
 };
 use crate::{
-    DetectedEntityInput, FacetEntityWriteError, delete_detected_entity,
-    iter_detected_entity_names_since, iter_detected_entity_names_since_strict,
-    load_detected_entities_recent, read_detected_entities, read_detected_entity_names_strict,
-    save_detected_entity, update_detected_entity, upsert_detection_segment,
+    DetectedEntityInput, FacetEntityWriteError, iter_detected_entity_names_since,
+    iter_detected_entity_names_since_strict, load_detected_entities_recent, read_detected_entities,
+    read_detected_entity_names_strict, save_detected_entity, update_detected_entity,
+    upsert_detection_segment,
 };
 
 fn write_detected(root: &std::path::Path, facet: &str, day: &str, rows: &[Value]) {
@@ -69,7 +69,7 @@ fn attach_entity(
 }
 
 #[test]
-fn detected_save_is_fold_insensitive_but_update_and_delete_are_exact() {
+fn detected_save_is_fold_insensitive_but_update_is_exact() {
     let temporary = TempDir::new();
     create_test_facet(temporary.path(), "scope");
     save_detected_entity(
@@ -97,21 +97,11 @@ fn detected_save_is_fold_insensitive_but_update_and_delete_are_exact() {
         Err(FacetEntityWriteError::EntityNotFound { .. })
     ));
     update_detected_entity(temporary.path(), "scope", "20260101", "Straße", "two").unwrap();
-    assert!(
-        delete_detected_entity(temporary.path(), "scope", "20260101", "STRASSE")
-            .unwrap()
-            .is_empty()
-    );
     assert_eq!(
-        delete_detected_entity(temporary.path(), "scope", "20260101", "Straße")
+        read_detected_entities(temporary.path(), "scope", "20260101")
             .unwrap()
             .len(),
         1
-    );
-    assert!(
-        read_detected_entities(temporary.path(), "scope", "20260101")
-            .unwrap()
-            .is_empty()
     );
 }
 
@@ -230,7 +220,9 @@ fn recent_detections_keep_the_newest_description_and_count_every_day() {
         "20260102",
         &[json!({"type":"Person","name":"Alice","description":"new"})],
     );
-    let rows = load_detected_entities_recent(temporary.path(), "scope", 36500).unwrap();
+    let rows = load_detected_entities_recent(temporary.path(), "scope", 36500)
+        .unwrap()
+        .detected;
     assert_eq!(
         rows,
         vec![
@@ -261,6 +253,7 @@ fn recent_detections_exclude_matched_attached_twins() {
     assert!(
         load_detected_entities_recent(temporary.path(), "scope", 36500)
             .unwrap()
+            .detected
             .is_empty()
     );
 }
@@ -298,6 +291,7 @@ fn recent_detections_exclude_ambiguous_attached_name_and_keep_its_tier() {
     assert!(
         load_detected_entities_recent(temporary.path(), "scope", 36500)
             .unwrap()
+            .detected
             .is_empty()
     );
     assert_eq!(
@@ -328,6 +322,7 @@ fn recent_detections_keep_unmatched_names() {
     assert_eq!(
         load_detected_entities_recent(temporary.path(), "scope", 36500)
             .unwrap()
+            .detected
             .len(),
         1
     );
@@ -355,36 +350,52 @@ fn detached_attached_entities_do_not_exclude_detected_twins() {
     assert_eq!(
         load_detected_entities_recent(temporary.path(), "scope", 36500)
             .unwrap()
+            .detected
             .len(),
         1
     );
 }
 
 #[test]
-fn blocked_attached_entities_do_not_exclude_detected_twins() {
-    let temporary = TempDir::new();
-    create_test_facet(temporary.path(), "scope");
-    attach_entity(
-        temporary.path(),
-        "scope",
-        "alice",
-        "Alice",
-        true,
-        false,
-        json!({}),
-    );
-    write_detected(
-        temporary.path(),
-        "scope",
-        "20260101",
-        &[json!({"type":"Person","name":"Alice","description":"seen"})],
-    );
-    assert_eq!(
-        load_detected_entities_recent(temporary.path(), "scope", 36500)
-            .unwrap()
-            .len(),
-        1
-    );
+fn hidden_entities_exclude_their_detected_twins() {
+    // A hidden entity is reached through the entity, so its name never shows
+    // as an unattached detection: attached, detached by the hide, or detached
+    // earlier by the owner.
+    for (blocked, relationship) in [
+        (true, json!({})),
+        (true, json!({"detached": true, "detached_by": "hide"})),
+        (true, json!({"detached": true})),
+        (false, json!({"detached": true, "detached_by": "hide"})),
+    ] {
+        let temporary = TempDir::new();
+        create_test_facet(temporary.path(), "scope");
+        attach_entity(
+            temporary.path(),
+            "scope",
+            "alice",
+            "Alice",
+            blocked,
+            false,
+            relationship.clone(),
+        );
+        write_detected(
+            temporary.path(),
+            "scope",
+            "20260101",
+            &[
+                json!({"type":"Person","name":"Alice","description":"seen"}),
+                json!({"type":"Person","name":"Bob","description":"seen"}),
+            ],
+        );
+        let recent = load_detected_entities_recent(temporary.path(), "scope", 36500).unwrap();
+        let names: Vec<_> = recent
+            .detected
+            .iter()
+            .map(|row| row["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, vec!["Bob"], "{relationship}");
+        assert!(recent.hidden.is_empty());
+    }
 }
 
 #[test]
@@ -409,6 +420,7 @@ fn exclusion_candidates_merge_identity_name_with_relationship_email() {
     assert!(
         load_detected_entities_recent(temporary.path(), "scope", 36500)
             .unwrap()
+            .detected
             .is_empty()
     );
 }
@@ -435,6 +447,7 @@ fn exclusion_candidates_preserve_relationship_emails() {
     assert!(
         load_detected_entities_recent(temporary.path(), "scope", 36500)
             .unwrap()
+            .detected
             .is_empty()
     );
 }

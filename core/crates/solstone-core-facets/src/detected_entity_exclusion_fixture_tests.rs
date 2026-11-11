@@ -109,6 +109,7 @@ fn native(entry: &Entry) -> Outcome {
     write_detection(temporary.path(), &entry.detected_name, &entry.detected_type);
     let excluded = load_detected_entities_recent(temporary.path(), "scope", 36500)
         .unwrap()
+        .detected
         .is_empty();
     let tier = exclusion_tier(temporary.path(), "scope", &entry.detected_name)
         .unwrap()

@@ -462,12 +462,18 @@ fn merge_email(
         "emails".to_owned(),
         Value::Array(emails.iter().cloned().map(Value::String).collect()),
     );
-    save_entity_identity(
+    match save_entity_identity(
         journal_root,
         entity_id,
         &updated,
         Some(&operation(EntityOperationKind::Update, facet_dir, day)),
-    )?;
+    ) {
+        Ok(_) => {}
+        // A hidden entity keeps the emails it was hidden with; the new one is
+        // skipped, and the name still resolves to it.
+        Err(solstone_core_entity::EntityWriteError::EntityHidden { .. }) => return Ok(()),
+        Err(error) => return Err(error.into()),
+    }
     resolution_entity.emails = emails.clone();
     candidate.emails = emails;
     Ok(())

@@ -25,6 +25,7 @@ pub use solstone_core_journal_io::LockError;
 pub use solstone_core_journal_io::LockTimeout;
 pub use solstone_core_journal_io::MalformedPolicy;
 pub use store::facet_links;
+pub use store::hidden_names;
 pub use store::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityGroupResolveRequest,
     AmbiguityObservation, CanonicalKeyField, CensusEntity, ENTITY_REVIEW_POLICY_VERSION,
@@ -118,6 +119,8 @@ pub(crate) use store::{
 mod facet_links_tests;
 #[cfg(test)]
 mod fixture_tests;
+#[cfg(test)]
+mod hidden_names_tests;
 #[cfg(test)]
 mod lifecycle_tests;
 #[cfg(test)]
