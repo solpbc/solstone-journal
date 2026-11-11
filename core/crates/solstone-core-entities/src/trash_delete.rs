@@ -24,7 +24,7 @@ use solstone_core_facets::entity_trash::{
 };
 use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_removals::{Action, Page, Surface};
-use solstone_core_trash::{SetResult, TrashError};
+use solstone_core_trash::{Item, SetResult, TrashError};
 
 use crate::router::{RouterState, admitted};
 
@@ -85,16 +85,27 @@ fn refused(code: &str) -> Response {
         .into_response()
 }
 
-fn moved(id: &str, erase_at: &str, asked: bool, erased: bool) -> Value {
+/// The answer for a thing moved to the trash. `erase_day` is the owner's day
+/// it is erased on, for a command line that says the day rather than the time.
+fn moved(root: &Path, item: &Item, asked: bool, erased: bool) -> Value {
+    let trash = || {
+        json!({
+            "id": item.id,
+            "erase_at": item.erase_at,
+            "erase_day": item
+                .erase_at()
+                .map(|at| solstone_core_journal_config::owner_day(root, at)),
+        })
+    };
     match (asked, erased) {
         (true, true) => json!({"success": true, "erased": true}),
         (true, false) => json!({
             "success": true,
             "erased": false,
             "erase_failed": true,
-            "trash": {"id": id, "erase_at": erase_at},
+            "trash": trash(),
         }),
-        (false, _) => json!({"success": true, "trash": {"id": id, "erase_at": erase_at}}),
+        (false, _) => json!({"success": true, "trash": trash()}),
     }
 }
 
@@ -141,15 +152,11 @@ pub(crate) async fn delete_entity(
                 Err(error) => return Err(error),
             };
         let erased = request.erase && erase_now(&root, &item.id, surface);
-        Ok((item, erased))
+        Ok(moved(&root, &item, request.erase, erased))
     })
     .await;
     match outcome {
-        Ok(Ok((item, erased))) => (
-            StatusCode::OK,
-            Json(moved(&item.id, &item.erase_at, request.erase, erased)),
-        )
-            .into_response(),
+        Ok(Ok(moved)) => (StatusCode::OK, Json(moved)).into_response(),
         Ok(Err(error)) => refused(&refusal_code(&error)),
         Err(_) => refused("failed"),
     }
@@ -212,7 +219,7 @@ pub(crate) async fn delete_set(
                 match result {
                     SetResult::Moved { item, erased } => done.push(json!({
                         "id": id,
-                        "result": moved(&item.id, &item.erase_at, erase, erased),
+                        "result": moved(&root, &item, erase, erased),
                     })),
                     SetResult::Refused(error) => {
                         failed.push(refusal_row(&id, &refusal_code(&error)));

@@ -71,9 +71,9 @@ pub struct Speakers<'a> {
 pub struct Wiped {
     /// What it took, by category.
     pub report: WipeReport,
-    /// Its item in the trash: id and erase date. None when there was nothing
-    /// to take.
-    pub trash: Option<(String, String)>,
+    /// Its item in the trash: id, erase time, and the owner's day it is
+    /// erased on. None when there was nothing to take.
+    pub trash: Option<(String, String, Option<String>)>,
     /// Erased at once, as the owner asked.
     pub erased: bool,
     /// The owner asked it erased at once and the erase was refused; it waits
@@ -82,15 +82,18 @@ pub struct Wiped {
 }
 
 impl Wiped {
-    /// The report's fields, with `trash` (`id`, `erase_at`) while it waits in
-    /// the trash, or `erased`.
+    /// The report's fields, with `trash` (`id`, `erase_at`, `erase_day`)
+    /// while it waits in the trash, or `erased`.
     pub fn to_json(&self) -> Value {
         let mut value = serde_json::to_value(&self.report).unwrap_or_else(|_| json!({}));
         if let Some(object) = value.as_object_mut() {
             if self.erased {
                 object.insert("erased".to_owned(), Value::Bool(true));
-            } else if let Some((id, erase_at)) = &self.trash {
-                object.insert("trash".to_owned(), json!({"id": id, "erase_at": erase_at}));
+            } else if let Some((id, erase_at, erase_day)) = &self.trash {
+                object.insert(
+                    "trash".to_owned(),
+                    json!({"id": id, "erase_at": erase_at, "erase_day": erase_day}),
+                );
                 if self.erase_failed {
                     object.insert("erased".to_owned(), Value::Bool(false));
                     object.insert("erase_failed".to_owned(), Value::Bool(true));
@@ -148,7 +151,7 @@ impl<'a> Speakers<'a> {
                     solstone_core_trash::item(journal, &id)?.ok_or(TrashError::NotInTrash)?;
                 return Ok(Wiped {
                     report: held_report(journal, &item),
-                    trash: Some((item.id, item.erase_at)),
+                    trash: Some(waiting(journal, item)),
                     erased: false,
                     erase_failed: erase,
                 });
@@ -166,11 +169,19 @@ impl<'a> Speakers<'a> {
             };
         Ok(Wiped {
             report,
-            trash: Some((item.id, item.erase_at)),
+            trash: Some(waiting(journal, item)),
             erased,
             erase_failed: erase && !erased,
         })
     }
+}
+
+/// An item's id, erase time and the owner's day it is erased on.
+fn waiting(journal: &Path, item: solstone_core_trash::Item) -> (String, String, Option<String>) {
+    let day = item
+        .erase_at()
+        .map(|at| solstone_core_journal_config::owner_day(journal, at));
+    (item.id, item.erase_at, day)
 }
 
 fn nothing() -> Wiped {

@@ -5970,6 +5970,11 @@ fn seed_linked(root: &Path, id: &str, name: &str) {
 async fn deleting_an_entity_moves_it_and_its_links_to_the_trash() {
     let j = Journal::new();
     seed_linked(j.path(), "target", "Target");
+    write(
+        j.path(),
+        "config/journal.json",
+        json!({"identity": {"timezone": "America/Denver"}}),
+    );
     let (status, preview) = call(j.path(), "/app/entities/api/journal/entity/target/delete").await;
     assert_eq!(status, 200, "{preview}");
     assert_eq!(preview["facets"], 1);
@@ -5984,6 +5989,11 @@ async fn deleting_an_entity_moves_it_and_its_links_to_the_trash() {
     assert!(!j.path().join("facets/work/entities/target").exists());
     let held = solstone_core_trash::item(j.path(), item).unwrap().unwrap();
     assert_eq!(held.unit, solstone_core_removals::Unit::Entity);
+    // The day it is erased on, in the owner's zone, beside the time.
+    assert_eq!(
+        response["trash"]["erase_day"],
+        solstone_core_journal_config::owner_day(j.path(), held.erase_at().unwrap())
+    );
     assert_eq!(
         held.surface,
         solstone_core_removals::Surface::Web {

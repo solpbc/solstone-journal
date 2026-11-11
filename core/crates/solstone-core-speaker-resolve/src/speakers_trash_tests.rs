@@ -311,6 +311,10 @@ fn the_wipe_takes_every_layouts_voice_files_and_the_pool_and_leaves_the_owners_d
     let value = wiped.to_json();
     assert_eq!(value["trash"]["id"], item.id.as_str());
     assert_eq!(value["trash"]["erase_at"], item.erase_at.as_str());
+    assert_eq!(
+        value["trash"]["erase_day"],
+        solstone_core_journal_config::owner_day(root.path(), item.erase_at().unwrap())
+    );
     assert!(value.get("erased").is_none());
 }
 

@@ -442,20 +442,29 @@ pub async fn delete(
                     false
                 }
             };
-        Ok((item, erased))
+        // The owner's day it is erased on, for a command line that says the
+        // day rather than the time.
+        let trash = json!({
+            "id": item.id,
+            "erase_at": item.erase_at,
+            "erase_day": item
+                .erase_at()
+                .map(|at| solstone_core_journal_config::owner_day(&root, at)),
+        });
+        Ok((trash, erased))
     })
     .await;
     match outcome {
         Ok(Ok((_, true))) => json_response(json!({"success": true, "erased": true})),
-        Ok(Ok((item, false))) if erase => json_response(json!({
+        Ok(Ok((trash, false))) if erase => json_response(json!({
             "success": true,
             "erased": false,
             "erase_failed": true,
-            "trash": {"id": item.id, "erase_at": item.erase_at},
+            "trash": trash,
         })),
-        Ok(Ok((item, false))) => json_response(json!({
+        Ok(Ok((trash, false))) => json_response(json!({
             "success": true,
-            "trash": {"id": item.id, "erase_at": item.erase_at},
+            "trash": trash,
         })),
         Ok(Err(error)) => match solstone_core_facets::facet_trash::failure_key(&error).as_str() {
             "gone" => delete_refused(StatusCode::NOT_FOUND, "gone"),

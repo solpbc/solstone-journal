@@ -805,6 +805,11 @@ async fn ac6_facet_delete_requires_consent_for_a_real_facet() {
         .expect("trash")
         .expect("item");
     assert_eq!(item.unit, solstone_core_removals::Unit::Facet);
+    // The day it is erased on, in the owner's zone, beside the time.
+    assert_eq!(
+        body["trash"]["erase_day"],
+        solstone_core_journal_config::owner_day(root.path(), item.erase_at().expect("erase at"))
+    );
     // Gone now: a second delete says so.
     let (status, body) = request(
         crate::test_support::shell_router(root.path()),
