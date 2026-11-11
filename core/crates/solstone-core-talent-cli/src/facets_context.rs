@@ -180,7 +180,14 @@ fn render_capped_entities(
     } else {
         None
     };
-    others.extend(leftover_principals);
+    // The names-only roster (every facet at once, as Sense reads it) leaves the
+    // owner out: prompts name the owner as `$preferred` and tell the model never
+    // to list them, so a roster slot for them only contradicts that. A focused
+    // render keeps a principal that formed no role line, so the owner is still
+    // described there.
+    if include_descriptions {
+        others.extend(leftover_principals);
+    }
     let mut ranked = others
         .into_iter()
         .map(|entity| {
@@ -1027,7 +1034,7 @@ mod tests {
     }
 
     #[test]
-    fn all_facets_omits_principal_role_description() {
+    fn all_facets_leaves_the_principal_out_of_the_roster() {
         let root = tempfile::tempdir().expect("root");
         declaration(root.path(), "work", r#"{"title":"Work"}"#);
         fs::create_dir_all(root.path().join("config")).expect("config");
@@ -1059,8 +1066,8 @@ mod tests {
         );
         assert!(rendered.contains("Ada"), "{rendered}");
         assert!(
-            rendered.contains("Sam"),
-            "principal should stay in the names-only roster when no role line is rendered: {rendered}"
+            !rendered.contains("Sam"),
+            "the owner should not take a names-only roster slot: {rendered}"
         );
     }
 
