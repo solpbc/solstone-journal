@@ -8,6 +8,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- you can now delete a facet in settings. it waits in the trash with everything in it, and recovering it puts it back. segments sorted into it stay in your journal, and a new facet you give its name holds them. what came into your journal while it was in the trash isn't sorted into it when it comes back.
+- `solstone call entities delete` moves a person or topic to the trash from the command line, and `--erase` erases it at once.
 - when your journal runs on a computer, once a day it reads a short notice, signed by sol pbc, that names the versions missing a security fix. if your journal, or the solstone app on a computer paired with it, is on one of them, you get a notification and a banner on your journal's home page that says which version to update to and links to what it fixes. the check is a plain request for a public file, like visiting a web page, and nothing about you, your journal or your devices goes with it.
 - you can now bring an Apple Health export in from the Apple Health card on the import page, when your journal runs on a computer. the card shows what the export holds and how much space the import needs before you start, and the import keeps running if you close the page.
 - you can bring Oura into your journal through an app you register with Oura yourself. `solstone journal importer --connect oura` asks for the app's client ID and secret the first time, then `--sync oura --save` brings Oura in. its workouts, sleep and readings land on their own days, the same way as Apple Health's. how to register it: [connecting Oura](https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md#connecting-oura).
@@ -19,6 +21,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- deleting a person or topic on the entities page now moves it to the trash, with its notes in every facet and its voice, in place of a delete you could cancel for 10 seconds. you can select several and delete them together. if someone you deleted turns up again in what you share, they come back as someone new, and recovering the one in the trash puts them back beside the new one.
+- clearing what your journal keeps about voices (`solstone call speakers wipe --commit`) now moves it to the trash as one item, which you can recover until it's erased. it now also reaches recordings it used to miss and the voices your journal was still grouping. voices you turned down, groups you dismissed and lines you marked as yours stay. people and recordings already in the trash keep theirs.
+- when `solstone journal facet merge` finds a file of the same name in both facets, the copy from the facet merged away now waits in the trash. recovering it puts that copy in place of the one the merge kept.
+- the trash page now shows anything that stopped part way into the trash or back out of it.
+- `solstone journal entities doctor` is gone. it only recorded old deletes, and a name you delete is no longer kept from coming back.
 - the areas on the month map keep their places. before, a stop far from the others could shift every area in that month.
 - you can now delete a Strava, Apple Health or Oura import, from its page or by selecting several on the import page. it waits in the trash like any other import, and erase removes it. this now covers every import except journal archives. a delete takes only what that import was the first to bring in, and anything an earlier import brought in stays.
 - deleting a Strava workout on the body page now moves it to the trash, where you can recover it, in place of a delete you could cancel for 10 seconds.
@@ -34,6 +41,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `solstone call journal facet delete` no longer refuses with "consent is required". it now moves the facet to the trash.
 - security fix: updated the journal's database library to fix a flaw that could expose memory when opening specially crafted database files.
 - security fix: new Apple Health and Oura entries could inherit an earlier import's facet, making them readable to an agent limited to that facet. new entries now use the import's chosen facet. earlier entries filed elsewhere stay there unless you agree to move them, and the summary names any updated entries that kept their earlier facet.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
