@@ -144,7 +144,7 @@ impl fmt::Display for ObservationWriteError {
             Self::Conflict { message } => write!(formatter, "{message}"),
             Self::Retired { entity_id } => write!(
                 formatter,
-                "'{entity_id}' was merged away, so no notes are added for it"
+                "'{entity_id}' was merged away or isn't in your journal, so no notes are added for it"
             ),
         }
     }

@@ -820,3 +820,15 @@ fn the_trash_view_and_preview_say_what_the_entity_holds() {
     journal.person("bobby", "BOB");
     assert!(trash_view(journal.root(), &item).same_name);
 }
+
+#[test]
+fn a_link_comes_back_to_a_facet_whose_declaration_cant_be_read() {
+    let journal = bob_and_ann();
+    let told = Told::default();
+    let item = trash(&journal, &told, "bob").unwrap();
+    // The facet is still there, its declaration damaged: still a home.
+    std::fs::write(journal.root().join("facets/work/facet.json"), b"{not json").unwrap();
+    recover(&journal, &told, &item.id).unwrap();
+    assert!(journal.root().join("facets/work/entities/bob").is_dir());
+    assert!(!journal.events().contains(&Event::Erased));
+}

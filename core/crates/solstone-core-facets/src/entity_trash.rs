@@ -298,11 +298,12 @@ impl Kind for Entities<'_> {
     fn returns(&self, journal: &Path, _item: &Item, path: &str) -> bool {
         // A link comes back only to a facet still in the journal.
         match link_of(path) {
-            Some((facet, _)) => match crate::read_facet_declaration(journal, facet) {
-                Ok(declaration) => declaration.is_some(),
-                // A declaration that can't be read is still a facet's.
-                Err(_) => journal.join("facets").join(facet).is_dir(),
-            },
+            // Asked of the declaration's file, not its reading: a declaration
+            // that can't be read, or was set aside, is still a facet's.
+            Some((facet, _)) => {
+                std::fs::symlink_metadata(journal.join("facets").join(facet).join("facet.json"))
+                    .is_ok()
+            }
             None => true,
         }
     }
@@ -388,7 +389,21 @@ fn hold_returning(journal: &Path, item: &Item) -> Result<(), String> {
     let Some(dir) = item.paths.first().and_then(|path| entity_dir_of(path)) else {
         return Err(GONE.to_owned());
     };
-    let (id, _) = item_identity(journal, item).ok_or_else(|| GONE.to_owned())?;
+    // Its own identity, from the copy it holds: a different entity sitting in
+    // its folder now is never taken for it. Once its files are back (a
+    // recovery that stopped after the move) the copy in the journal is its own.
+    let Some((id, _)) = held_identity(journal, item).or_else(|| {
+        (item.state == solstone_core_trash::State::Attaching)
+            .then(|| item_identity(journal, item))
+            .flatten()
+    }) else {
+        // A stopped recovery whose files have all left the trash has nothing
+        // left to move: let it finish rather than wait for good.
+        if item.state == solstone_core_trash::State::Attaching {
+            return Ok(());
+        }
+        return Err(GONE.to_owned());
+    };
     match live_entity(journal, &id) {
         Ok(Some((live, _))) if live != dir => return Err(TAKEN.to_owned()),
         Ok(_) => {}

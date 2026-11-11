@@ -199,7 +199,10 @@ impl Kind for Facets<'_> {
                 .entries_for_write()
                 .map_err(|_| RECORD_DAMAGED.to_owned())?
                 .remove(&name);
-            if entry.is_some_and(|entry| entry.redirects() && entry.id != own) {
+            // Two facets with no id can't be told apart, so one counts as another.
+            if entry
+                .is_some_and(|entry| entry.redirects() && (entry.id.is_none() || entry.id != own))
+            {
                 return Err(NAME_REDIRECTED.to_owned());
             }
         }
