@@ -141,11 +141,19 @@ The configured logical provider remains `local`, so the same readiness and
 safety boundary applies without maintaining vendor-specific adapters. Native
 Generate owns endpoint requests and holds governed local admission during the
 request. After saving in thinking settings, the journal checks whether the
-endpoint reads images.
+endpoint answers in structured output and whether it reads images, and warns
+without blocking when it doesn't.
+
+Almost every talent asks for structured output (`response_format` with a JSON
+schema), so an endpoint that refuses it fails nearly all processing even when
+it answers text and reads images. Whether a server supports it can depend on the
+model's runtime as well as the server: Ollama 0.40's MLX runner refused every
+`response_format`, while the same model on its llama.cpp runner accepted them.
 
 Bundled and configured local endpoints can use different JSON grammar engines.
 Shipped talent schemas therefore stay inside the measured regex subset shared
-by the pinned llama-server and the supported endpoint engine. The ordinary test
+by the two engines they are checked against: llama.cpp's `llama-server` (the
+pinned build the journal bundles on Linux and Windows) and SGLang with XGrammar. The ordinary test
 suite checks the known incompatible shapes and schema semantics. Schema
 preparation also omits `minLength` or `maxLength` at 2,000 and above because the
 pinned llama-server rejects those repetition bounds; canonical response
@@ -179,10 +187,10 @@ Anthropic and Google presets and on a configured endpoint. Bundled local and
 confidential processing always run with thinking off (`enable_thinking: false`)
 and never read it.
 
-Off still sends each cloud provider its lowest setting, because a model that
-reasons by default can spend a small talent's whole ceiling before it writes
-anything. Which values a model accepts differs from model to model, so each
-preset sends the first value below and moves to the next only when the provider
+Off still sends each cloud provider its lowest setting, and asks a configured
+endpoint not to think, because a model that reasons by default can spend a small
+talent's whole ceiling before it writes anything. Which values a model accepts
+differs from model to model, so each preset sends the first value below and moves to the next only when the provider
 refuses that field:
 
 | | off | on, at the chosen budget |
@@ -190,7 +198,7 @@ refuses that field:
 | OpenAI | `reasoning.effort` `none`, then `low`, then none; ceiling + 1,024 | `medium`, `high` or `xhigh`, stepping down one level if refused; ceiling + budget |
 | Anthropic | `output_config.effort` `low`, then none; ceiling + 1,024 | adaptive thinking at `medium`, `high` or `xhigh`, or a fixed `budget_tokens` on a model without effort; ceiling + budget |
 | Google | `thinkingLevel` `MINIMAL`, then `LOW` if that level value is rejected; if the level control itself is refused, `thinkingBudget` `0`, then `128`, then `512`; ceiling + 1,024 | `thinkingLevel` `LOW` at 8192, `MEDIUM` then `LOW` at 16384, or `HIGH` at 32768; a rejected level value steps only to the next listed level and never starts budgets; if the level control is refused, `thinkingBudget` equal to the budget, with `24576` after `32768`; ceiling + budget, limited to 65,535 unless the visible ceiling is already larger |
-| configured endpoint | nothing sent | nothing sent; ceiling + budget as room for a model that thinks on its own |
+| configured endpoint | `reasoning_effort` `none` and `chat_template_kwargs` `{"enable_thinking": false}`, dropping either one the endpoint refuses by name; ceiling unchanged | nothing sent; ceiling + budget as room for a model that thinks on its own |
 
 The 1,024 covers the reasoning a current cloud model still does at its lowest
 setting, since that reasoning shares the ceiling.

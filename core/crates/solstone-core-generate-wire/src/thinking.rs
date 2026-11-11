@@ -91,10 +91,66 @@ pub(crate) fn google_ceiling(visible: u64, thinking: Thinking) -> u64 {
     visible.saturating_add(cloud_thinking_room(thinking).min(room))
 }
 
-/// Headroom on the owner's own endpoint, where no thinking field is ever sent: a
-/// model that thinks on its own gets the chosen budget as room to finish.
+/// Headroom on the owner's own endpoint. With thinking on, no thinking field is
+/// sent, so a model that thinks on its own gets the chosen budget as room to finish.
 pub(crate) fn endpoint_headroom(thinking: Thinking) -> u64 {
     thinking.budget()
+}
+
+/// The fields that ask the owner's own endpoint not to think. Servers read
+/// different ones: Ollama and OpenAI-style servers read `reasoning_effort`, and
+/// llama.cpp's server, vLLM and SGLang read the chat template's `enable_thinking`.
+/// With thinking on, neither is sent and the model is left to think as it does.
+pub(crate) fn endpoint_off_fields(thinking: Thinking) -> Vec<&'static str> {
+    match thinking {
+        Thinking::Off => vec!["reasoning_effort", "chat_template_kwargs"],
+        Thinking::Budget(_) => Vec::new(),
+    }
+}
+
+/// Set exactly `fields` of the endpoint's thinking-off fields on `body`.
+pub(crate) fn set_endpoint_off(body: &mut Value, fields: &[&str]) {
+    let Some(object) = body.as_object_mut() else {
+        return;
+    };
+    object.remove("reasoning_effort");
+    object.remove("chat_template_kwargs");
+    for field in fields {
+        match *field {
+            "reasoning_effort" => {
+                object.insert("reasoning_effort".into(), json!("none"));
+            }
+            "chat_template_kwargs" => {
+                object.insert(
+                    "chat_template_kwargs".into(),
+                    json!({"enable_thinking": false}),
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The thinking-off fields to send again after the endpoint refused a request
+/// that carried `fields`, or `None` when the refusal names none of them. As on the
+/// cloud presets, the step-down keys on the server naming the field, so any other
+/// refusal stays the request's own failure.
+pub(crate) fn endpoint_off_after_refusal(
+    fields: &[&'static str],
+    body: &str,
+) -> Option<Vec<&'static str>> {
+    let body = body.to_ascii_lowercase();
+    let named = |field: &str| {
+        body.contains(field)
+            || (field == "chat_template_kwargs" && body.contains("enable_thinking"))
+    };
+    fields.iter().any(|field| named(field)).then(|| {
+        fields
+            .iter()
+            .copied()
+            .filter(|field| !named(field))
+            .collect()
+    })
 }
 
 /// OpenAI Responses `reasoning.effort`, in the order to try. `None` sends no

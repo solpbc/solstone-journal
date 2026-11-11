@@ -666,8 +666,9 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                 ),
             ),
             // One thinking setting for the whole "your own model" lane. The key
-            // lanes ask the provider to think; the owner's own endpoint gets no
-            // thinking field, so there it only leaves room, and its words say so.
+            // lanes ask the provider to think. On the owner's own endpoint, off
+            // asks the model not to think and on sends nothing and leaves room,
+            // and its words say so.
             (
                 "tuning",
                 CopyValue::Object(&[
@@ -704,7 +705,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                             (
                                 "note",
                                 CopyValue::String(
-                                    "processing doesn't switch thinking on or off at your endpoint. if your model thinks on its own, turn this on to give it room to think. processing is tuned to work well without thinking.",
+                                    "while this is off, processing asks your model not to think, though some models think anyway. turn it on to let your model think, with room to finish. processing is tuned to work well without thinking.",
                                 ),
                             ),
                         ]),
@@ -751,6 +752,12 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                 "endpoint_image_not_read",
                 CopyValue::String(
                     "endpoint saved, but {model} didn't name the color of a test image, so screen and photo descriptions may fail or come out wrong. if it's meant to read images, try another model, then save again.",
+                ),
+            ),
+            (
+                "endpoint_schema_not_followed",
+                CopyValue::String(
+                    "endpoint saved, but {model} didn't answer in the structured form processing asks for, so most processing will fail. some servers can't do this with every model: try another model or server, then save again.",
                 ),
             ),
             (

@@ -4599,8 +4599,12 @@
       const check =
         checkResult && typeof checkResult === 'object' ? checkResult.image_check : null;
       const status = check?.status;
+      const schemaLine =
+        checkResult?.schema_check?.status === 'not_followed'
+          ? formatCopy(copy.byo_setup?.endpoint_schema_not_followed, {model})
+          : '';
 
-      if (status === 'read' || status === 'not_applicable') {
+      if ((status === 'read' || status === 'not_applicable') && !schemaLine) {
         if (unlogged) {
           setMessage('localEndpointStatus', unlogged, 'error');
         } else {
@@ -4611,7 +4615,9 @@
       }
 
       let checkLine = '';
-      if (status === 'not_read') {
+      if (status === 'read' || status === 'not_applicable') {
+        checkLine = '';
+      } else if (status === 'not_read') {
         checkLine = formatCopy(copy.byo_setup?.endpoint_image_not_read, {model});
       } else {
         let reasonKey = 'endpoint_reason_other';
@@ -4630,7 +4636,7 @@
         });
       }
 
-      const statusText = unlogged ? `${unlogged}\n${checkLine}` : checkLine;
+      const statusText = [unlogged, schemaLine, checkLine].filter(Boolean).join('\n');
       setMessage('localEndpointStatus', statusText, 'error');
       // The line sits at the foot of the form; on a short window it would be cut off.
       $('localEndpointStatus')?.scrollIntoView?.({block: 'nearest'});
