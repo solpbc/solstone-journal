@@ -89,9 +89,6 @@ pub fn refusal_code(error: &TrashError) -> String {
 /// Where entity folders live.
 const ENTITIES: &str = "entities";
 
-/// The identity file in an entity folder.
-const IDENTITY_FILE: &str = "entity.json";
-
 /// What the ambiguity rewrite took, kept with the item under this name and a
 /// number, one per detach run that took something.
 const KEPT_AMBIGUITIES: &str = "ambiguities";
@@ -130,11 +127,8 @@ pub fn preview(journal: &Path, entity_id: &str) -> Result<Option<EntityPreview>,
     };
     let identity = solstone_core_entity::read_entity_identity(journal, &dir)
         .map_err(|error| error.to_string())?;
-    let voice = journal
-        .join(ENTITIES)
-        .join(&dir)
-        .join("voiceprints.npz")
-        .is_file();
+    let voice = solstone_core_entity::entity_voiceprints_path(journal, &dir)
+        .is_ok_and(|path| path.is_file());
     Ok(Some(EntityPreview {
         entity_type: identity.as_ref().and_then(|identity| {
             identity
@@ -292,10 +286,11 @@ impl Kind for Entities<'_> {
 
     fn present(&self, journal: &Path, path: &str) -> bool {
         if let Some(dir) = entity_dir_of(path) {
-            return solstone_core_journal_io::path_lexists(
-                &journal.join(ENTITIES).join(dir).join(IDENTITY_FILE),
-            )
-            .unwrap_or(true);
+            // An identity that can't be placed is no entity; one whose presence
+            // can't be read counts as there, so it is never taken for gone.
+            return solstone_core_entity::entity_identity_path(journal, dir).is_ok_and(
+                |identity| solstone_core_journal_io::path_lexists(&identity).unwrap_or(true),
+            );
         }
         link_of(path).is_some() && journal.join(path).is_dir()
     }
@@ -303,11 +298,11 @@ impl Kind for Entities<'_> {
     fn returns(&self, journal: &Path, _item: &Item, path: &str) -> bool {
         // A link comes back only to a facet still in the journal.
         match link_of(path) {
-            Some((facet, _)) => journal
-                .join("facets")
-                .join(facet)
-                .join("facet.json")
-                .is_file(),
+            Some((facet, _)) => match crate::read_facet_declaration(journal, facet) {
+                Ok(declaration) => declaration.is_some(),
+                // A declaration that can't be read is still a facet's.
+                Err(_) => journal.join("facets").join(facet).is_dir(),
+            },
             None => true,
         }
     }
@@ -535,9 +530,11 @@ fn item_identity(journal: &Path, item: &Item) -> Option<(String, Value)> {
 fn held_identity(journal: &Path, item: &Item) -> Option<(String, Value)> {
     let first = item.paths.first()?;
     let dir = entity_dir_of(first)?;
+    // The item's files sit at their journal names below this root.
     let held = solstone_core_trash::held_file(journal, &item.id, first).ok()?;
-    let value: Value =
-        serde_json::from_slice(&std::fs::read(held.join(IDENTITY_FILE)).ok()?).ok()?;
+    let root = held.parent()?.parent()?;
+    let identity = solstone_core_entity::entity_identity_path(root, dir).ok()?;
+    let value: Value = serde_json::from_slice(&std::fs::read(identity).ok()?).ok()?;
     let id = value
         .get("id")
         .and_then(Value::as_str)
