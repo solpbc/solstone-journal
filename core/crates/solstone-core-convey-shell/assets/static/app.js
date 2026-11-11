@@ -1114,6 +1114,31 @@ window.AppServices = {
       writeSessionList(SESSION_NOTIFICATION_HISTORY_KEY, this._history);
     },
 
+    // The card's own listeners are what keep it after it has left the page.
+    _listen(card, type, fn, options) {
+      card.addEventListener(type, fn, options);
+      if (!card._handlers) card._handlers = [];
+      card._handlers.push([type, fn, options]);
+    },
+
+    // The card's listeners close over the card. Take the references off before
+    // it leaves, or the card stays in memory after it has gone.
+    _releaseCard(card) {
+      if (!card || card._released) return;
+      card._released = true;
+      const handlers = card._handlers;
+      card._handlers = null;
+      if (handlers) handlers.forEach(([type, fn, options]) => card.removeEventListener(type, fn, options));
+      card.onclick = null;
+      // The close control's handler is an attribute, so clearing the property
+      // is not enough. An attribute handler left on the card keeps the card.
+      card.querySelectorAll('button').forEach((button) => {
+        button.onclick = null;
+        button.removeAttribute('onclick');
+      });
+      card.remove();
+    },
+
     /**
      * Render notification cards
      * @private
@@ -1137,9 +1162,13 @@ window.AppServices = {
         const id = parseInt(card.getAttribute('data-id'));
         if (!visibleIds.includes(id) && !card.classList.contains('notification-card--dismissing')) {
           card.classList.add('notification-card--dismissing');
-          const onEnd = () => card.remove();
-          card.addEventListener('transitionend', onEnd, { once: true });
-          setTimeout(onEnd, 250);
+          let timer = 0;
+          const onEnd = () => {
+            clearTimeout(timer);
+            this._releaseCard(card);
+          };
+          timer = setTimeout(onEnd, 250);
+          this._listen(card, 'transitionend', onEnd, { once: true });
         }
       });
 
@@ -1275,14 +1304,14 @@ window.AppServices = {
 
       if (n.autoDismiss) {
         const self = this;
-        card.addEventListener('mouseenter', () => self._pauseDismissTimer(n.id));
-        card.addEventListener('focusin', () => self._pauseDismissTimer(n.id));
-        card.addEventListener('mouseleave', () => {
+        this._listen(card, 'mouseenter', () => self._pauseDismissTimer(n.id));
+        this._listen(card, 'focusin', () => self._pauseDismissTimer(n.id));
+        this._listen(card, 'mouseleave', () => {
           if (card.matches(':focus-within')) return;
           const notif = self._stack.find(s => s.id === n.id);
           if (notif) self._startDismissTimer(notif);
         });
-        card.addEventListener('focusout', (e) => {
+        this._listen(card, 'focusout', (e) => {
           if (!card.contains(e.relatedTarget) && !card.matches(':hover')) {
             const notif = self._stack.find(s => s.id === n.id);
             if (notif) self._startDismissTimer(notif);
