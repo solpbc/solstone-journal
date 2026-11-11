@@ -7,7 +7,7 @@ use crate::freshness::{
     SourceLock, compute_contract_hash, compute_protected_hash, compute_source_hash,
 };
 use crate::history::{HistoryRegistry, validate_message_id};
-use crate::locale::{LocaleRegistry, validate_locale_tag};
+use crate::locale::{LocaleRegistry, resolve_namespace_owner, validate_locale_tag};
 use crate::metadata::MessageMetadata;
 use crate::vocab::Channel;
 use serde::{Deserialize, Serialize};
@@ -168,10 +168,7 @@ impl LoadedCatalog {
             if let Err(rule) = validate_message_id(id, ns) {
                 faults.push(Fault::new(rule, "*", id));
             }
-            if !namespace_owners
-                .get(ns)
-                .is_some_and(|owner| !owner.trim().is_empty())
-            {
+            if resolve_namespace_owner(&namespace_owners, ns).is_none() {
                 faults.push(Fault::new("owner-conflict", "*", id));
             }
         }

@@ -24,6 +24,7 @@ mod observations;
 mod paths;
 mod publication;
 mod strava_converted;
+pub mod stretch;
 mod superseded;
 pub use publication::queue_body_entries_once;
 mod recent_names;

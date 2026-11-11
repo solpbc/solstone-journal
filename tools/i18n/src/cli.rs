@@ -15,7 +15,7 @@ use crate::history::{
     validate_message_id, verify_history_record_against_metadata,
 };
 use crate::ir::build_ir;
-use crate::locale::LocaleRegistry;
+use crate::locale::{LocaleRegistry, resolve_namespace_owner};
 use crate::metadata::MessageMetadata;
 use crate::pseudo::write_pseudo_locales;
 use crate::publish::atomic_write_file;
@@ -286,8 +286,8 @@ pub fn update_history(catalog_dir: &Path) -> Result<(), Vec<Fault>> {
         }
         if let Some(meta) = meta_map.get(&rec.id) {
             let ns = rec.id.rsplit_once('.').map(|(p, _)| p).unwrap_or("");
-            let owner = namespace_owners.get(ns).cloned().unwrap_or_default();
-            verify_history_record_against_metadata(rec, meta, &owner, &mut faults);
+            let owner = resolve_namespace_owner(&namespace_owners, ns).unwrap_or_default();
+            verify_history_record_against_metadata(rec, meta, owner, &mut faults);
         }
     }
 
@@ -301,10 +301,7 @@ pub fn update_history(catalog_dir: &Path) -> Result<(), Vec<Fault>> {
         if let Err(rule) = validate_message_id(id, ns) {
             faults.push(Fault::new(rule, "*", id));
         }
-        if !namespace_owners
-            .get(ns)
-            .is_some_and(|owner| !owner.trim().is_empty())
-        {
+        if resolve_namespace_owner(&namespace_owners, ns).is_none() {
             faults.push(Fault::new("owner-conflict", "*", id));
         }
         if let Err(mut admission) = crate::admit::validate_admitted_message(
@@ -329,7 +326,9 @@ pub fn update_history(catalog_dir: &Path) -> Result<(), Vec<Fault>> {
         if !existing_ids.contains(id) {
             let meta = &meta_map[id];
             let ns = id.rsplit_once('.').map(|(p, _)| p).unwrap_or("");
-            let owner = namespace_owners.get(ns).cloned().unwrap_or_default();
+            let owner = resolve_namespace_owner(&namespace_owners, ns)
+                .unwrap_or_default()
+                .to_string();
             let resource = compute_resource_key(id);
             existing_reg.records.push(HistoryRecord {
                 id: id.clone(),

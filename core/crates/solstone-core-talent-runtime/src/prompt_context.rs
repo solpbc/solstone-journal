@@ -223,16 +223,122 @@ pub(crate) fn owner_account(activity: &Map<String, Value>) -> Option<&str> {
         .filter(|account| !account.trim().is_empty())
 }
 
+/// When the owner's correction of `field` came from another activity over
+/// part of this one's time, the part it speaks for, as "2:00 PM to 2:30 PM".
+fn covered_time(activity: &Map<String, Value>, field: &str) -> Option<String> {
+    let segments = solstone_core_facets::stretch::correction_segments(activity, field)?;
+    let bounds = segments
+        .iter()
+        .filter_map(|segment| segment_bounds(segment))
+        .collect::<Vec<_>>();
+    let start = bounds.iter().map(|(start, _)| *start).min()?;
+    let end = bounds.iter().map(|(_, end)| *end).max()?;
+    Some(format!("{} to {}", format_time(start), format_time(end)))
+}
+
+/// The owner's words told to them, as everything else in a story is: "I",
+/// "me", "my" become "you", "your", outside anything they quote. A small model
+/// writing "you" keeps who did what straight far more often when the account
+/// already says "you" than when it has to work out that "I" is the owner.
+pub(crate) fn as_you(account: &str) -> String {
+    let mut out = String::with_capacity(account.len() + 16);
+    let mut quoted = false;
+    let mut word = String::new();
+    // Whether the next word starts a sentence, so "you" is "You" there.
+    let mut sentence_start = true;
+    let flush = |word: &mut String, out: &mut String, sentence_start: &mut bool, quoted: bool| {
+        if word.is_empty() {
+            return;
+        }
+        let told = if quoted {
+            None
+        } else {
+            match word.as_str() {
+                "I" => Some("you"),
+                "I'm" | "I’m" => Some("you're"),
+                "I've" | "I’ve" => Some("you've"),
+                "I'll" | "I’ll" => Some("you'll"),
+                "I'd" | "I’d" => Some("you'd"),
+                "me" | "Me" => Some("you"),
+                "my" | "My" => Some("your"),
+                "mine" | "Mine" => Some("yours"),
+                "myself" | "Myself" => Some("yourself"),
+                _ => None,
+            }
+        };
+        match told {
+            Some(you) if *sentence_start => {
+                let mut chars = you.chars();
+                if let Some(first) = chars.next() {
+                    out.extend(first.to_uppercase());
+                    out.push_str(chars.as_str());
+                }
+            }
+            Some(you) => out.push_str(you),
+            None => out.push_str(word),
+        }
+        *sentence_start = false;
+        word.clear();
+    };
+    for c in account.chars() {
+        if c.is_alphanumeric() || c == '\'' || c == '’' {
+            word.push(c);
+            continue;
+        }
+        flush(&mut word, &mut out, &mut sentence_start, quoted);
+        if matches!(c, '"' | '“' | '”') {
+            quoted = !quoted;
+        }
+        if matches!(c, '.' | '!' | '?' | '\n') {
+            sentence_start = true;
+        }
+        out.push(c);
+    }
+    flush(&mut word, &mut out, &mut sentence_start, quoted);
+    // "you am", "you was" and "you wasn't" read as they should.
+    out.replace("you am ", "you are ")
+        .replace("You am ", "You are ")
+        .replace("you was ", "you were ")
+        .replace("You was ", "You were ")
+        .replace("you wasn't", "you weren't")
+        .replace("You wasn't", "You weren't")
+        .replace("you wasn’t", "you weren’t")
+        .replace("You wasn’t", "You weren’t")
+}
+
+/// What the owner's correction says, in the words both its places use.
+fn account_words(activity: &Map<String, Value>) -> Option<String> {
+    let account = as_you(owner_account(activity)?);
+    let account = account.as_str();
+    Some(match covered_time(activity, "details") {
+        Some(time) => format!("About {time}, part of this activity:\n\n{account}"),
+        None => account.to_owned(),
+    })
+}
+
+/// A recording, and the owner's own voice in it.
+fn recording_words(activity: &Map<String, Value>) -> Option<String> {
+    if activity.get("playback") != Some(&Value::Bool(true)) {
+        return None;
+    }
+    let when = match covered_time(activity, "playback") {
+        Some(time) => {
+            format!("From {time}, part of this activity, a recording or video was playing")
+        }
+        None => "This was a recording or video playing".to_owned(),
+    };
+    Some(format!(
+        "{when}. You watched or listened to it; you were not at the event, and no one in it was with you. A line under `You:` in it is your own recorded voice playing back, not you talking with anyone."
+    ))
+}
+
 fn owner_correction(activity: &Map<String, Value>) -> Option<String> {
     let mut parts = Vec::new();
-    if let Some(account) = owner_account(activity) {
+    if let Some(account) = account_words(activity) {
         parts.push(format!("## What you told the journal\n\n{account}"));
     }
-    if activity.get("playback") == Some(&Value::Bool(true)) {
-        parts.push(
-            "## A recording\n\nThis was a recording or video playing. You watched or listened to it; you were not at the event, and no one in it was with you."
-                .to_owned(),
-        );
+    if let Some(recording) = recording_words(activity) {
+        parts.push(format!("## A recording\n\n{recording}"));
     }
     (!parts.is_empty()).then(|| parts.join("\n\n"))
 }
@@ -309,19 +415,18 @@ fn activity_context(
     )];
     // What the owner said about the activity outranks what the journal made
     // of it. Both read the record exactly as stored.
-    if let Some(account) = activity
-        .get("details")
-        .and_then(Value::as_str)
-        .filter(|account| !account.trim().is_empty())
-    {
+    if let Some(account) = account_words(activity) {
         parts.push(format!(
-            "## Your Account\nThe owner's own account of this activity, in their words. Where the transcript, the screen or the description disagrees, follow the owner. Keep quoted words exactly as they were said.\n\n{account}"
+            "## Your Account\nThe owner's own account of this activity, told to them. Where the transcript, the screen or the description disagrees, follow the owner. Keep quoted words exactly as they were said.\n\n{account}"
         ));
     }
     if activity.get("playback") == Some(&Value::Bool(true)) {
-        parts.push(
-            "## A Recording\nThe owner says this was a recording or video playing. No one heard or seen in it was present with the owner. Tell it as the owner watching or listening.".to_owned(),
-        );
+        let when = covered_time(activity, "playback")
+            .map(|time| format!(" from {time}, part of this activity"))
+            .unwrap_or_default();
+        parts.push(format!(
+            "## A Recording\nThe owner says a recording or video was playing{when}. No one heard or seen in it was present with the owner. Tell it as the owner watching or listening. Lines under `You:` in it are the owner's own recorded voice playing back."
+        ));
     }
 
     let state_lines = span
@@ -604,6 +709,23 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn the_owners_account_is_told_to_them_and_their_quotes_stay_as_said() {
+        assert_eq!(
+            as_you("I'm doing the architecture overview. Juliet has the live demo, not me."),
+            "You're doing the architecture overview. Juliet has the live demo, not you."
+        );
+        assert_eq!(
+            as_you("I wasn't alone. I was on the phone with Juliet and my notes are hers."),
+            "You weren't alone. You were on the phone with Juliet and your notes are hers."
+        );
+        assert_eq!(
+            as_you("Juliet said \"I will wait for the board\" and I agreed."),
+            "Juliet said \"I will wait for the board\" and you agreed."
+        );
+        assert_eq!(as_you("Mina ran the slides."), "Mina ran the slides.");
+    }
 
     #[test]
     fn weekly_window_ends_six_calendar_days_after_the_requested_start() {

@@ -181,15 +181,15 @@ pub struct ConfidentialRuntimeOverride {
     pub access: Option<Arc<dyn ConfidentialAccess + Send + Sync>>,
 }
 
-/// Runs one image check against the journal at the given root. `Err` means the
-/// check could not be started.
-pub type EndpointImageCheckFn = dyn Fn(&std::path::Path) -> Result<solstone_core_thinking::endpoint_image::ImageCheck, ()>
+/// Runs the endpoint save checks against the journal at the given root. `Err`
+/// means the checks could not be started.
+pub type EndpointCheckFn = dyn Fn(&std::path::Path) -> Result<solstone_core_thinking::endpoint_schema::EndpointCheck, ()>
     + Send
     + Sync;
 
 #[derive(Clone)]
-pub struct EndpointImageCheckOverride {
-    pub check: Arc<EndpointImageCheckFn>,
+pub struct EndpointCheckOverride {
+    pub check: Arc<EndpointCheckFn>,
 }
 
 #[derive(Clone)]
@@ -1799,7 +1799,7 @@ async fn clear_endpoint(Extension(journal): Extension<Arc<JournalRoot>>) -> Resp
 
 async fn check_local_endpoint_image(
     Extension(journal): Extension<Arc<JournalRoot>>,
-    image_check_override: Option<Extension<EndpointImageCheckOverride>>,
+    check_override: Option<Extension<EndpointCheckOverride>>,
 ) -> Response {
     let config = match solstone_core_thinking::read_config(&journal.0) {
         Ok(value) => value,
@@ -1816,10 +1816,10 @@ async fn check_local_endpoint_image(
     }
     let journal_root = journal.0.clone();
     let check = tokio::task::spawn_blocking(move || {
-        if let Some(Extension(custom)) = image_check_override {
+        if let Some(Extension(custom)) = check_override {
             (custom.check)(&journal_root)
         } else {
-            solstone_core_thinking::endpoint_image::check_endpoint_images(&journal_root)
+            solstone_core_thinking::endpoint_schema::check_endpoint(&journal_root)
         }
     })
     .await;
@@ -2666,6 +2666,7 @@ mod tests {
             "tuning",
             "endpoint_image_checking",
             "endpoint_image_not_read",
+            "endpoint_schema_not_followed",
             "endpoint_image_unchecked",
             "endpoint_reason_unreachable",
             "endpoint_reason_timeout",
@@ -3734,7 +3735,7 @@ mod tests {
         let mode_for_override = mode.clone();
         let roots_seen = Arc::new(std::sync::Mutex::new(Vec::<std::path::PathBuf>::new()));
         let roots_for_override = roots_seen.clone();
-        let image_override = super::EndpointImageCheckOverride {
+        let image_override = super::EndpointCheckOverride {
             check: Arc::new(move |journal_root: &std::path::Path| {
                 roots_for_override
                     .lock()
@@ -3742,7 +3743,10 @@ mod tests {
                     .push(journal_root.to_path_buf());
                 counter_for_override.fetch_add(1, Ordering::SeqCst);
                 match mode_for_override.load(Ordering::SeqCst) {
-                    MODE_SUCCESS => Ok(solstone_core_thinking::endpoint_image::ImageCheck::Read),
+                    MODE_SUCCESS => Ok(solstone_core_thinking::endpoint_schema::EndpointCheck {
+                        schema: solstone_core_thinking::endpoint_schema::SchemaCheck::Followed,
+                        image: solstone_core_thinking::endpoint_image::ImageCheck::Read,
+                    }),
                     MODE_ERROR => Err(()),
                     _ => {
                         panic!("secret-credential-value leaked from http://endpoint.example:9/v1");
@@ -3780,6 +3784,7 @@ mod tests {
         let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let body: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(body["image_check"]["status"], "read");
+        assert_eq!(body["schema_check"]["status"], "followed");
         assert_eq!(counter.load(Ordering::SeqCst), 1);
         assert_eq!(
             roots_seen.lock().unwrap().as_slice(),

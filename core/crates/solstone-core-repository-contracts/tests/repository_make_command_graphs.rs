@@ -87,8 +87,8 @@ fn make_ci_never_executes_forbidden_interpreters() {
         "ci",
         &[
             "run", "metadata", "fmt", "run", "clippy", "clippy", "clippy", "test", "test",
-            // The screen OCR helper keeps its own lockfile, so it gets its own lane.
-            "fmt", "clippy", "test",
+            // Standalone lockfiles with routine gates run in their own lanes.
+            "fmt", "clippy", "test", "fmt", "clippy", "test",
         ],
     );
 }
@@ -369,6 +369,7 @@ fn ci_entrypoints_override_hostile_cargo_disk_settings() {
             // subtree of that target, as the release producer does.
             let expected = format!("0|0|{}", target.display());
             let helper_expected = format!("0|0|{}", target.join("screen-ocr-helper").display());
+            let i18n_expected = format!("0|0|{}", target.join("i18n-catalog").display());
             let invocations = fs::read_to_string(&cargo_log)
                 .expect("CI entry point must record its Cargo invocations");
             let observed = fs::read_to_string(&environment_log)
@@ -391,6 +392,8 @@ fn ci_entrypoints_override_hostile_cargo_disk_settings() {
                             || (invocation
                                 .contains("--manifest-path core/screen-ocr-helper/Cargo.toml")
                                 && line == helper_expected)
+                            || (invocation.contains("--manifest-path tools/i18n/Cargo.toml")
+                                && line == i18n_expected)
                     }),
                 "make {gate} under {channel:?} leaked hostile Cargo settings or lost the configured target:\n{observed}"
             );

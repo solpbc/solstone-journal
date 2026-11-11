@@ -38,6 +38,12 @@ pub struct DigestActivity {
     /// What the owner's calendar had scheduled while the activity ran.
     #[serde(default)]
     pub scheduled: Vec<String>,
+    /// The owner says a recording or video was playing.
+    #[serde(default)]
+    pub playback: bool,
+    /// For only part of the activity's time.
+    #[serde(default)]
+    pub playback_part: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -392,11 +398,22 @@ fn load_digest_activities(
                         .and_then(Value::as_str)
                         .filter(|s| !s.is_empty())
                         .map(str::to_owned);
+                    // A correction made on another activity over only part of
+                    // this one's time says so, here as where it is written.
+                    let partial = |field: &str| {
+                        solstone_core_facets::stretch::correction_segments(&record, field).is_some()
+                    };
                     let details = record
                         .get("details")
                         .and_then(Value::as_str)
                         .filter(|s| !s.is_empty())
-                        .map(str::to_owned);
+                        .map(|details| {
+                            if partial("details") {
+                                format!("(about part of this activity) {details}")
+                            } else {
+                                details.to_owned()
+                            }
+                        });
                     let start = record
                         .get("start")
                         .and_then(Value::as_str)
@@ -470,6 +487,8 @@ fn load_digest_activities(
                             source_limitation,
                             story_body,
                             scheduled,
+                            playback: record.get("playback") == Some(&Value::Bool(true)),
+                            playback_part: partial("playback"),
                         },
                     ));
                 }
@@ -600,8 +619,22 @@ fn render_digest_activity(act: &DigestActivity, include_story: bool) -> String {
     {
         lines.push(format!("- description: {desc}"));
     }
+    // The owner's own word on the activity outranks everything else here.
     if let Some(ref det) = act.details {
-        lines.push(format!("- details: {det}"));
+        lines.push(format!(
+            "- what you told the journal about it, which is what happened: {}",
+            crate::prompt_context::as_you(det)
+        ));
+    }
+    if act.playback {
+        let part = if act.playback_part {
+            "part of it was "
+        } else {
+            ""
+        };
+        lines.push(format!(
+            "- {part}a recording or video you watched or listened to; no one in it was with you"
+        ));
     }
     if !act.participants.is_empty() {
         lines.push(format!("- participants: {}", act.participants.join(", ")));
@@ -1273,6 +1306,8 @@ mod tests {
                 "title": "design review", "start": "10:00", "end": "11:00",
                 "people": ["Alex Rivera", "Dana Ortiz"],
             }))],
+            playback: false,
+            playback_part: false,
         };
         let rendered = render_digest_activity(&act, false);
         let line = rendered
@@ -1304,6 +1339,8 @@ mod tests {
             source_limitation: false,
             story_body: Some(story.into()),
             scheduled: vec![],
+            playback: false,
+            playback_part: false,
         };
 
         let agent = act("Your agent fixed the build on v2.0.1. You reviewed it.");
@@ -1383,6 +1420,8 @@ mod tests {
             source_limitation: false,
             story_body: Some(huge_story),
             scheduled: vec![],
+            playback: false,
+            playback_part: false,
         };
         let initial_gap = "activities from Work, which couldn't be read".to_string();
         let values = Map::from_iter([
@@ -1807,5 +1846,36 @@ mod tests {
         .unwrap();
         let values3 = build_packet("20261019", date, "test", &context).unwrap();
         assert_ne!(values1, values3);
+    }
+    #[test]
+    fn the_owners_word_and_a_recording_reach_the_briefing_as_theirs() {
+        let act = |details: Option<&str>, playback: bool, playback_part: bool| DigestActivity {
+            facet: "work".into(),
+            day: "20261019".into(),
+            id: "act".into(),
+            start: None,
+            end: None,
+            target_date: None,
+            duration: None,
+            title: Some("Run-through".into()),
+            description: None,
+            details: details.map(str::to_owned),
+            participants: vec![],
+            entities: vec![],
+            source_limitation: false,
+            story_body: None,
+            scheduled: vec![],
+            playback,
+            playback_part,
+        };
+        let told = render_digest_activity(&act(Some("I gave the overview."), false, false), false);
+        assert!(told.contains(
+            "- what you told the journal about it, which is what happened: You gave the overview."
+        ));
+        let whole = render_digest_activity(&act(None, true, false), false);
+        assert!(whole.contains("\n- a recording or video you watched"));
+        let part = render_digest_activity(&act(None, true, true), false);
+        assert!(part.contains("\n- part of it was a recording or video you watched"));
+        assert!(!render_digest_activity(&act(None, false, false), false).contains("recording"));
     }
 }

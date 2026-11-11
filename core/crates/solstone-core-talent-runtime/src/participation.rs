@@ -120,8 +120,10 @@ pub(crate) fn apply_result_cancellable(
         return Err("activity no longer exists".to_owned());
     };
     // Read as it stands under the write lock, so a correction made while the
-    // talent ran still counts.
-    let playback = stored.get("playback") == Some(&Value::Bool(true));
+    // talent ran still counts. A recording that played through only part of
+    // this activity's time leaves the people of the rest as they were.
+    let playback = stored.get("playback") == Some(&Value::Bool(true))
+        && solstone_core_facets::stretch::correction_segments(&stored, "playback").is_none();
     let entities = detected_resolution_entities(journal, facet, day)?;
     let journal_entities = solstone_core_entity::load_all_journal_entities(journal)
         .map_err(|error| error.to_string())?;

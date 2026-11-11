@@ -6,7 +6,7 @@ use crate::catalog::LoadedCatalog;
 use crate::cli::update_history;
 use crate::coverage::{CoverageCell, CoverageReport};
 use crate::ir::build_ir;
-use crate::locale::LocaleRegistry;
+use crate::locale::{LocaleRegistry, NamespaceEntry, resolve_namespace_owner};
 use crate::metadata::MessageMetadata;
 use crate::model::{
     ArgumentSpec, Branch, ElementKind, PatternElement, ProtectedSlotSpec, SelectorSpec,
@@ -110,6 +110,40 @@ fn ownership_is_checked_even_without_history() {
     .unwrap();
     let faults = crate::compile(&root, Channel::Production, None).unwrap_err();
     assert!(faults.iter().any(|fault| fault.rule == "owner-conflict"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn root_prefix_ownership_covers_descendant_namespaces_and_respects_overrides() {
+    let root = unique_temp_dir("root-prefix-owner");
+    copy_dir_recursive(&fixture_dir(), &root);
+    let mut registry = LocaleRegistry::embedded().unwrap();
+    registry.namespaces = vec![
+        NamespaceEntry {
+            namespace: "synth".into(),
+            owner: "synth".into(),
+        },
+        NamespaceEntry {
+            namespace: "synth.override".into(),
+            owner: "override-owner".into(),
+        },
+    ];
+    let owners = registry.get_namespace_owners();
+    assert_eq!(resolve_namespace_owner(&owners, "synth"), Some("synth"));
+    assert_eq!(
+        resolve_namespace_owner(&owners, "synth.notes"),
+        Some("synth")
+    );
+    assert_eq!(
+        resolve_namespace_owner(&owners, "synth.notes.deep"),
+        Some("synth")
+    );
+    assert_eq!(
+        resolve_namespace_owner(&owners, "synth.override.leaf"),
+        Some("override-owner")
+    );
+    assert_eq!(resolve_namespace_owner(&owners, "foreign.notes"), None);
+    LoadedCatalog::load_with_registry(&root, Channel::Production, None, registry).unwrap();
     fs::remove_dir_all(root).unwrap();
 }
 

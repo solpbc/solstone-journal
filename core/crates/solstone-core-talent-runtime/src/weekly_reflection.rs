@@ -158,12 +158,17 @@ pub struct KeptSelection {
 /// The reason a remade week whose every slot is kept makes no model call.
 pub const ALL_KEPT: &str = "all_kept";
 
-/// The memory key each day of a week's existing page shows, and the
-/// selection it recorded. A page that cannot be trusted keeps nothing.
-fn existing_page(
-    journal: &Path,
-    start_day: &str,
-) -> Option<(Vec<(String, String)>, KeptSelection)> {
+/// One day of a week's existing page: its state, and the key and words of
+/// the memory it shows, if any.
+struct ExistingDay {
+    day: String,
+    state: String,
+    memory: Option<(String, String)>,
+}
+
+/// Each day of a week's existing page, and the selection it recorded. A page
+/// that cannot be trusted keeps nothing.
+fn existing_page(journal: &Path, start_day: &str) -> Option<(Vec<ExistingDay>, KeptSelection)> {
     let solstone_core_home::weekly::WeekJudgment::Page(page) =
         solstone_core_home::weekly::judge(journal, start_day)
     else {
@@ -189,12 +194,54 @@ fn existing_page(
             .and_then(Value::as_str)
             .map(str::to_owned),
     };
-    let keys = page
-        .memories
-        .into_iter()
-        .map(|memory| (memory.day, memory.key))
+    let days = page
+        .days
+        .iter()
+        .map(|day| ExistingDay {
+            day: day.day.clone(),
+            state: day.state.clone(),
+            memory: day
+                .memory_id
+                .as_deref()
+                .and_then(|id| page.memories.iter().find(|memory| memory.id == id))
+                .map(|memory| (memory.key.clone(), memory.text.clone())),
+        })
         .collect();
-    Some((keys, kept))
+    Some((days, kept))
+}
+
+/// The days of a week the owner's open corrections ask to re-make. `None`
+/// when no correction asks for it: then every day is weighed as it stands.
+fn asked_days(journal: &Path, start_day: &str, end_day: &str) -> Option<BTreeSet<String>> {
+    let asks = solstone_core_system::owner_ask::read(journal).ok()?;
+    let days = asks
+        .values()
+        .filter(|ask| ask.week.ended.is_none())
+        .filter(|ask| ask.day.as_str() >= start_day && ask.day.as_str() <= end_day)
+        .map(|ask| ask.day.clone())
+        .collect::<BTreeSet<_>>();
+    (!days.is_empty()).then_some(days)
+}
+
+/// The candidate that is a changed day's shown memory told again: the one
+/// that clearly shares the most words with it. A correction rewrites the
+/// day's briefing, and its memory should come back corrected, not as another.
+fn successor<'a>(shown: &str, candidates: &'a [Candidate]) -> Option<&'a Candidate> {
+    let texts = candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate,
+                solstone_core_home::weekly::content_words(&candidate.text),
+            )
+        })
+        .collect::<Vec<_>>();
+    solstone_core_home::weekly::clearest_match(
+        &solstone_core_home::weekly::content_words(shown),
+        &texts,
+        |_, _| false,
+    )
+    .copied()
 }
 
 pub fn build(
@@ -256,40 +303,58 @@ pub fn build(
     // Every entity is read to name voices; once for the week, not per record.
     let voices = crate::transcript::voice_names(&context.journal);
     // A remade week keeps each day whose shown memory is still among its
-    // candidates at the same day, position and text; only other days are
-    // picked again.
-    let existing = existing_page(&context.journal, &start_date.format("%Y%m%d").to_string());
+    // candidates at the same day, position and text. A day whose memory
+    // changed shows that memory told again, when one candidate clearly is.
+    // When the owner's corrections ask for the remake, a day they don't name
+    // stays as the page had it; only the days they name are picked again.
+    let existing = existing_page(&context.journal, &start_day);
+    let asked = existing
+        .as_ref()
+        .and_then(|_| asked_days(&context.journal, &start_day, &end_day));
     let mut kept_slots = 0usize;
 
     let mut curr = start_date;
     while curr <= end_date {
         let curr_str = curr.format("%Y%m%d").to_string();
-        let (classif, candidates) = assess_day(&context.journal, &curr_str);
+        let (mut classif, candidates) = assess_day(&context.journal, &curr_str);
         said.extend(said_on_day(
             &context.journal,
             &facets,
             &curr_str,
             voices.as_ref(),
         ));
+
+        let prior = existing
+            .as_ref()
+            .and_then(|(days, _)| days.iter().find(|day| day.day == curr_str));
+        let untouched = asked.as_ref().is_some_and(|days| !days.contains(&curr_str));
+        let kept = prior.and_then(|prior| {
+            let (key, shown) = prior.memory.as_ref()?;
+            candidates
+                .iter()
+                .find(|c| compute_memory_key(&c.day, c.position, &c.text) == *key)
+                .or_else(|| successor(shown, &candidates))
+                .cloned()
+        });
+        let candidates = match (kept, prior) {
+            (Some(candidate), _) => {
+                kept_slots += 1;
+                vec![candidate]
+            }
+            (None, Some(prior)) if untouched && prior.memory.is_none() => {
+                if let Ok(state) =
+                    serde_json::from_value::<DayClassification>(Value::String(prior.state.clone()))
+                {
+                    classif = state;
+                }
+                Vec::new()
+            }
+            (None, _) => candidates,
+        };
         day_reports.push(DayReport {
             day: curr_str.clone(),
             classification: classif,
         });
-
-        let kept = existing.as_ref().and_then(|(keys, _)| {
-            let (_, key) = keys.iter().find(|(day, _)| *day == curr_str)?;
-            candidates
-                .iter()
-                .find(|c| compute_memory_key(&c.day, c.position, &c.text) == *key)
-                .cloned()
-        });
-        let candidates = match kept {
-            Some(candidate) => {
-                kept_slots += 1;
-                vec![candidate]
-            }
-            None => candidates,
-        };
 
         if !candidates.is_empty() {
             let slot_id = format!("S{:02}", slot_counter);
@@ -2059,15 +2124,84 @@ mod tests {
     }
 
     #[test]
-    fn a_moved_bullet_picks_its_day_again() {
-        let journal = keep_stable_week(&FIRST, &SECOND);
-        first_page(journal.path());
-        // The same words, now first: a different position is a different memory.
+    fn a_corrected_day_shows_its_memory_told_again_and_no_other_day_moves() {
+        let journal = keep_stable_week(
+            &[
+                "You fixed the fence with Benvolio.",
+                "Walked the long trail.",
+            ],
+            &SECOND,
+        );
+        // Tuesday has activity but no briefing yet, so it wasn't ready.
+        fs::create_dir_all(journal.path().join("chronicle/20260310/default/120000_60")).unwrap();
+        let before = {
+            let _guard = pin_stage_now("2026-03-16T18:00:00Z");
+            let (prepared, state) = weekly_state(journal.path());
+            publish(
+                journal.path(),
+                commit(
+                    // Candidates come shortest first: M001 is the fence.
+                    ParsedOutput::Json(json!({"S00": "M001", "S01": "M003"})),
+                    &prepared,
+                    &state,
+                )
+                .unwrap(),
+            )
+        };
+        assert_eq!(
+            memory_keys(&before)[0].2,
+            "You fixed the fence with Benvolio."
+        );
+        assert_eq!(before["days"][2]["state"], "not_ready");
+        // The owner corrects Sunday; its briefing is written again. By the
+        // remake, Tuesday's briefing has arrived too, but nobody asked for it.
+        solstone_core_system::owner_ask::record(journal.path(), "20260308", &[], true, 1).unwrap();
         fs::write(
             journal
                 .path()
                 .join("chronicle/20260308/talents/morning_briefing.json"),
-            json!({"yesterday": ["Walked the long trail.", "Planted the tomatoes."]}).to_string(),
+            json!({"yesterday": ["Walked the long trail.", "Benvolio fixed the fence while you held the ladder."]})
+                .to_string(),
+        )
+        .unwrap();
+        fs::create_dir_all(journal.path().join("chronicle/20260310/talents")).unwrap();
+        fs::write(
+            journal
+                .path()
+                .join("chronicle/20260310/talents/morning_briefing.json"),
+            json!({"yesterday": ["Swam laps."]}).to_string(),
+        )
+        .unwrap();
+        let _guard = pin_stage_now("2026-03-17T18:00:00Z");
+        let (prepared, state) = weekly_state(journal.path());
+        // Every day is decided without the model: Sunday by its memory told
+        // again, Monday kept, Tuesday as the page had it.
+        assert_eq!(unavailable_before_generate(&state), Some(ALL_KEPT));
+        let after = publish(
+            journal.path(),
+            unavailable_commit(ALL_KEPT, &prepared, &state).unwrap(),
+        );
+        let keys = memory_keys(&after);
+        assert_eq!(keys.len(), 2);
+        assert_eq!(
+            keys[0].2,
+            "Benvolio fixed the fence while you held the ladder."
+        );
+        assert_eq!(keys[1], memory_keys(&before)[1]);
+        assert_eq!(after["days"][2]["state"], "not_ready");
+        assert_eq!(after["selection"], before["selection"]);
+    }
+
+    #[test]
+    fn a_memory_with_no_clear_successor_picks_its_day_again() {
+        let journal = keep_stable_week(&FIRST, &SECOND);
+        first_page(journal.path());
+        solstone_core_system::owner_ask::record(journal.path(), "20260308", &[], true, 1).unwrap();
+        fs::write(
+            journal
+                .path()
+                .join("chronicle/20260308/talents/morning_briefing.json"),
+            json!({"yesterday": ["Painted the shed.", "Read by the window."]}).to_string(),
         )
         .unwrap();
         let _guard = pin_stage_now("2026-03-17T18:00:00Z");
@@ -2078,6 +2212,30 @@ mod tests {
         };
         assert_eq!(weekly.slots[0].memory_ids.len(), 2);
         assert_eq!(weekly.slots[1].memory_ids.len(), 1);
+    }
+
+    #[test]
+    fn a_moved_bullet_keeps_its_day_under_its_new_place() {
+        let journal = keep_stable_week(&FIRST, &SECOND);
+        let before = first_page(journal.path());
+        // The same words, now first: told again, so the day keeps them.
+        fs::write(
+            journal
+                .path()
+                .join("chronicle/20260308/talents/morning_briefing.json"),
+            json!({"yesterday": ["Walked the long trail.", "Planted the tomatoes."]}).to_string(),
+        )
+        .unwrap();
+        let _guard = pin_stage_now("2026-03-17T18:00:00Z");
+        let (prepared, state) = weekly_state(journal.path());
+        assert_eq!(unavailable_before_generate(&state), Some(ALL_KEPT));
+        let after = publish(
+            journal.path(),
+            unavailable_commit(ALL_KEPT, &prepared, &state).unwrap(),
+        );
+        let (before, after) = (memory_keys(&before), memory_keys(&after));
+        assert_eq!(after[0].2, before[0].2);
+        assert_eq!(after[1], before[1]);
     }
 
     #[test]

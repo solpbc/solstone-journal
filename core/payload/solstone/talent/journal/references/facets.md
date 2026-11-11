@@ -128,6 +128,24 @@ Daily detection files (`facets/<facet>/entities/YYYYMMDD.jsonl`) contain entitie
 
 The same entity can be attached to multiple facets with independent descriptions and timestamps. When loading entities across all facets, the alphabetically-first facet wins for duplicates during aggregation.
 
+## What processing reads from a facet
+
+Each segment's `sense` step reads a short summary of each facet that isn't muted. Run `solstone journal talent show sense --prompt` to see it.
+
+**The description** is how the model tells the facets apart when it decides which ones a segment belongs to. A facet with no description is known by its title alone. A useful description is one plain sentence about what goes in the facet and what doesn't, such as "Client work for Acme: meetings, code review, invoices; not personal email". Set it with `solstone call journal facet update <name> --description "..."`.
+
+**The attached entities.** Under each facet, the summary lists up to 20 of that facet's attached entities, by name only. They are ranked by how many notes the journal has saved about each one (what `solstone call entities observations` lists), then by how recently it last saved one. The rest are counted as "and N more". Detached and hidden entities are never listed. The list gives the model each facet's known names. An entity from the list is kept for a segment only when that segment itself shows or says the name.
+
+**The owner is not in this list.** Prompts name the owner directly and tell the model never to list them as an entity.
+
+A step that runs for one facet reads that facet alone. It sees the facet's description, the owner's role in that facet when the owner's entry there has a description, and up to 20 entities with each one's description for that facet. An owner entry with no description stays among those entities.
+
+**Curating it:**
+- **Detach** an entity from a facet on its entities page when it doesn't belong there. It leaves that facet's list and keeps its history, and re-attaching restores it.
+- **Hide** an entity that shouldn't be offered anywhere. It leaves every facet's list. You can't hide yourself.
+- **Describe** an entity in a facet with `solstone call entities update <entity> "<description>" -f <facet>`. `sense` doesn't read it. A step that runs for that one facet does, and so does the step that notes each name `sense` found in a segment of that facet. It doesn't change the ranking.
+- Which entities make the top 20 follows how many notes are saved for each one. To make room for one that ranks lower, detach the ones above it that don't belong in the facet.
+
 ## Facet News
 
 The `news/` directory may hold owner markdown files. The product no longer writes, shows, or indexes files here; do not create files there.

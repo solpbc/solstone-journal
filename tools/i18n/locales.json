@@ -140,6 +140,10 @@
     {
       "namespace": "push.proof",
       "owner": "journal"
+    },
+    {
+      "namespace": "link",
+      "owner": "link-host"
     }
   ],
   "bundles": [
@@ -188,6 +192,12 @@
       "locales": [
         "en-US",
         "en-GB"
+      ]
+    },
+    {
+      "id": "link-host",
+      "locales": [
+        "en-US"
       ]
     }
   ]

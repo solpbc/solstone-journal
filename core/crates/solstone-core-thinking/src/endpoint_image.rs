@@ -157,19 +157,6 @@ impl ImageProbe for OneShotClient {
     }
 }
 
-#[allow(clippy::result_unit_err)]
-pub fn check_endpoint_images(journal: &Path) -> Result<ImageCheck, ()> {
-    let mut client = OneShotClient::sibling().map_err(|_| ())?;
-    let mut byte = [0u8; 1];
-    if getrandom::fill(&mut byte).is_err() {
-        return Ok(ImageCheck::Unchecked {
-            reason: CheckReason::Unavailable,
-        });
-    }
-    let hue = hue_from_byte(byte[0]);
-    Ok(check_with_hue(&mut client, journal, hue))
-}
-
 pub fn check_with_hue<P: ImageProbe>(probe: &mut P, journal: &Path, hue: Hue) -> ImageCheck {
     // The child learns its journal from an environment variable, which can only
     // carry valid UTF-8. A root it cannot carry must not silently fall back to
@@ -270,26 +257,26 @@ pub fn classify_image_reply(
                 ImageCheck::NotRead
             }
         }
-        GenerateResponse::Refused(refusal) => {
-            let reason = match refusal.reason_code.as_ref().map(|code| code.as_wire()) {
-                Some("local_endpoint_unreachable") => CheckReason::Unreachable,
-                Some("local_capacity_exhausted") => CheckReason::Timeout,
-                Some("local_queue_timeout") => CheckReason::Busy,
-                Some("provider_key_invalid" | "provider_key_missing") => CheckReason::Key,
-                Some("provider_request_rejected" | "context_window_exceeded") => {
-                    CheckReason::Rejected
-                }
-                Some("thinking_consumed_budget" | "provider_response_invalid") => {
-                    CheckReason::Unusable
-                }
-                None => CheckReason::Unusable,
-                _ => CheckReason::Other,
-            };
-            ImageCheck::Unchecked { reason }
-        }
+        GenerateResponse::Refused(refusal) => ImageCheck::Unchecked {
+            reason: refusal_reason(refusal.reason_code.as_ref().map(|code| code.as_wire())),
+        },
         GenerateResponse::Cancelled => ImageCheck::Unchecked {
             reason: CheckReason::Other,
         },
+    }
+}
+
+/// Why a check could not be made, from the reason code of a refused probe.
+pub(crate) fn refusal_reason(code: Option<&str>) -> CheckReason {
+    match code {
+        Some("local_endpoint_unreachable") => CheckReason::Unreachable,
+        Some("local_capacity_exhausted") => CheckReason::Timeout,
+        Some("local_queue_timeout") => CheckReason::Busy,
+        Some("provider_key_invalid" | "provider_key_missing") => CheckReason::Key,
+        Some("provider_request_rejected" | "context_window_exceeded") => CheckReason::Rejected,
+        Some("thinking_consumed_budget" | "provider_response_invalid") => CheckReason::Unusable,
+        None => CheckReason::Unusable,
+        _ => CheckReason::Other,
     }
 }
 
