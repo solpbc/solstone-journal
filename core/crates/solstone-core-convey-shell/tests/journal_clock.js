@@ -266,6 +266,27 @@ if (!isReverse) {
     assert.strictEqual(logErrorCount, 1);
   }
 
+  // 8. A zone this browser cannot read uses the day the shell sent.
+  {
+    const ctx = createBaseContext();
+    const Clock = ctx.window.JournalClock;
+    Clock.setNow(() => fixedInstant);
+    Clock.seed({ tz: 'Not/AZone', label: 'Nope', today: '20261001' });
+    assert.strictEqual(Clock.zone(), null);
+    assert.strictEqual(Clock.today(), '20261001');
+    Clock.seed({ tz: 'Not/AZone', label: 'Nope' });
+    assert.strictEqual(Clock.today(), '20260930');
+  }
+
+  // 9. A zone this browser can read is read fresh, even when the sent day is old.
+  {
+    const ctx = createBaseContext();
+    const Clock = ctx.window.JournalClock;
+    Clock.setNow(() => fixedInstant);
+    Clock.seed({ tz: 'Asia/Tokyo', label: 'Tokyo', today: '19990101' });
+    assert.strictEqual(Clock.today(), '20261001');
+  }
+
   // 7. span
   {
     const ctx = createBaseContext();

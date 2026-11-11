@@ -6,6 +6,9 @@
   let _label = '';
   let _nowFn = null;
   let _hasLoggedError = false;
+  // The day the shell sent. Used only when this browser cannot read the
+  // journal's zone, so today still matches the journal's own day.
+  let _serverToday = '';
 
   function setNow(fn) {
     _nowFn = typeof fn === 'function' ? fn : null;
@@ -26,7 +29,10 @@
   function seed(payload) {
     const tz = payload && payload.tz;
     const lbl = payload && payload.label;
+    const sent = payload && payload.today;
+    const serverToday = typeof sent === 'string' && /^\d{8}$/.test(sent) ? sent : '';
     if (!tz) {
+      _serverToday = serverToday;
       _zone = null;
       _label = '';
       return;
@@ -35,11 +41,13 @@
       new Intl.DateTimeFormat('en-US', { timeZone: tz }).format(now());
       _zone = tz;
       _label = typeof lbl === 'string' ? lbl : '';
+      _serverToday = serverToday;
       _hasLoggedError = false;
     } catch (err) {
       if (err instanceof RangeError || (err && err.name === 'RangeError')) {
         _zone = null;
         _label = '';
+        _serverToday = serverToday;
         if (!_hasLoggedError) {
           _hasLoggedError = true;
           if (typeof window.logError === 'function') {
@@ -133,6 +141,11 @@
   }
 
   function today() {
+    // A zone this browser can read is read now, so a page left open past
+    // midnight still matches a redirect asked now. The sent day is only the
+    // fallback for a zone this browser has no table for.
+    if (_zone) return dayKey(now());
+    if (_serverToday) return _serverToday;
     return dayKey(now());
   }
 
