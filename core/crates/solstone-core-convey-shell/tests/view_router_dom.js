@@ -552,6 +552,10 @@ const VIEW_CODE = {
           ctx.route = window.SolViews.routeOf(window.location);
         }
         let day = ctx.route.day;
+        ctx.on(window, 'popstate', () => {
+          if (window.location.pathname === '/app/activities/' + day) views.pops += 1;
+        });
+        window.__openActivity = () => ctx.history.push(window.location.pathname + window.location.search + '#work/standup');
         const read = () => {
           const asked = day;
           ctx.read('/app/activities/api/day/' + asked + '/view').then((answer) => {
@@ -713,7 +717,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       transcripts: { mounts: 0, disposes: 0, updates: [], draws: [], pops: 0 },
       more: { mounts: 0, disposes: 0 },
       body: { mounts: 0, disposes: 0, updates: [], draws: [] },
-      activities: { mounts: 0, disposes: 0, updates: [], draws: [] },
+      activities: { mounts: 0, disposes: 0, updates: [], draws: [], pops: 0 },
     },
     __scriptErrors: [],
     __consoleErrors: [],
@@ -1315,6 +1319,52 @@ asyncCase('router: back and forward restore activities and where the page was', 
   assert.strictEqual(page.location.pathname, '/app/activities/20260103');
   assert.strictEqual(page.window.scrollY, 40);
   assert.deepStrictEqual(page.record.assigned, []);
+});
+
+asyncCase('router: an undated activities arrival becomes that day, and an own entry stays the view\'s', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerActivities(page);
+  await page.boot('home');
+  page.click('/app/activities/');
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/activities/20260102');
+  assert.strictEqual(page.window.solRouter.held().mountedPath, '/app/activities/20260102');
+  const views = page.window.__views.activities;
+  assert.strictEqual(views.mounts, 1);
+  page.window.__openActivity();
+  assert.strictEqual(page.location.hash, '#work/standup');
+  assert.strictEqual(page.location.pathname, '/app/activities/20260102');
+  await page.history.back();
+  await page.clock.advance(400);
+  assert.strictEqual(views.mounts, 1, 'back from the view\'s own entry is not a new mount');
+  assert.strictEqual(views.pops, 1, 'the view got its own entry');
+  assert.strictEqual(page.location.pathname, '/app/activities/20260102');
+  assert.strictEqual(page.location.hash, '');
+  assert.ok(page.view('activities'));
+  await page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+  await page.history.forward();
+  await page.clock.advance(400);
+  assert.ok(page.view('activities'));
+  assert.strictEqual(page.location.pathname, '/app/activities/20260102', 'forward lands on the dated address');
+});
+
+asyncCase('router: a history call to another view does not retarget the mounted path', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerActivities(page);
+  await page.boot('home');
+  page.click('/app/activities/');
+  await page.clock.advance(400);
+  const held = page.window.solRouter.held().mountedPath;
+  assert.strictEqual(held, '/app/activities/20260102');
+  page.window.solRouter.viewEntry('replace', '/app/home/');
+  assert.strictEqual(page.window.solRouter.held().mountedPath, held);
+  assert.strictEqual(page.location.pathname, '/app/home/');
+  page.window.solRouter.viewEntry('push', '/app/transcripts/20260102');
+  assert.strictEqual(page.window.solRouter.held().mountedPath, held);
 });
 
 asyncCase('router: back and forward between pilot entries restore view and scroll', async () => {

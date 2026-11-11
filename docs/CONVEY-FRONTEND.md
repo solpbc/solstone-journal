@@ -171,7 +171,9 @@ aborted when it goes and never answer after that, so a view that has gone
 can't draw. Each read that does not answer is its own promise. Never return
 or await one promise kept for the life of the page that does not settle, and
 abort with a reason built once. Writes go out unchanged and are never cut
-short. Memory only.
+short. Memory only. A function nested inside the mount, even one that
+names only an id, keeps the whole mount reachable for as long as something
+holds that function.
 
 **Moving between two contract views stays in the page** (`static/router.js`).
 A click on a link, or a day step, between two contract views swaps `<main>`;
@@ -181,7 +183,10 @@ the page has learned the journal is another build (`appEvents.buildChanged()`)
 or doesn't know the destination's app. Each history entry has one owner: an
 entry that changes the address path is the router's; one that keeps the path
 and changes only the query or the hash is the view's (a transcript segment),
-and the router leaves it to the view. A move starts the next view's declared
+and the router leaves it to the view. A view may replace its own address
+with another address of the same view through `ctx.history.replace`, and the
+router follows. An address of another view is the router's, and `ctx.history`
+does not retarget the mounted path to it. A move starts the next view's declared
 first reads at once, in a table of their own, adopted as the head's are. The
 swap runs in a view transition once those reads answer or 300 ms pass. Focus
 moves to the first heading in the view's own markup, or to `<main>` when the
