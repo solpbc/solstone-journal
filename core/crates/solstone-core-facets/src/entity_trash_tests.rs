@@ -263,11 +263,10 @@ fn an_entity_goes_to_the_trash_with_its_links_and_comes_back_exactly() {
     assert!(!journal.root().join("facets/work/entities/bob").exists());
     assert!(journal.root().join("facets/work/entities/ann").exists());
     assert!(
-        solstone_core_entity::read_identity_map(journal.root())
+        !solstone_core_entity::read_identity_map(journal.root())
             .unwrap()
             .resolved
-            .get("bob")
-            .is_none()
+            .contains_key("bob")
     );
     assert!(
         told.removed

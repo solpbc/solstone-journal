@@ -1801,9 +1801,8 @@ fn describe_link_issue(
     } else {
         "; --fix leaves it as it is"
     };
-    let needs_decision = fix
-        && issue.note.is_none()
-        && matches!(issue.kind, LinkIssueKind::Unreadable);
+    let needs_decision =
+        fix && issue.note.is_none() && matches!(issue.kind, LinkIssueKind::Unreadable);
     let described = match &issue.kind {
         LinkIssueKind::Duplicate => {
             format!("{facet}: '{id}' {is} linked from more than one folder ({folders})")
