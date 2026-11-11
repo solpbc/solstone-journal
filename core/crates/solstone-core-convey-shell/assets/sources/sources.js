@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-// A cell is the time a device named for that source. An upload that did not
-// name a source stays on the device. A blank cell is not a claim that the
-// source added nothing.
+// A cell is the time a device last added something for that source: either an
+// upload that named it, or the device's own capture upload (one that names no
+// source, or the phone's segment upload) whose latest delivery carried it. A
+// blank cell is not a claim that the source added nothing.
 
 (function (global) {
   'use strict';
@@ -23,12 +24,12 @@
   const CLIENTS = '/app/network/api/clients';
 
   const NAMED = [
-    { label: 'audio', keys: ['audio'] },
-    { label: 'screen', keys: ['screen'] },
+    { label: 'audio', keys: ['audio'], carried: 'audio' },
+    { label: 'screen', keys: ['screen'], carried: 'screen' },
     { label: 'terminal', keys: ['terminal', 'tmux'] },
     { label: 'browsers', keys: ['browser', 'browsers'] },
     { label: 'Obsidian', keys: ['obsidian'] },
-    { label: 'location', keys: ['location'] },
+    { label: 'location', keys: ['location'], carried: 'location' },
     { label: 'calendar', keys: ['calendar'] },
     { label: 'camera', keys: ['camera'] },
     // S1 / J4 in the design system's screenshots copy file.
@@ -37,6 +38,9 @@
   ];
 
   const NOT_ROWS = { '': true, mobile: true, 'mobile-segment': true, share: true };
+
+  // The device's own capture. Its delivery says what its latest upload carried.
+  const OWN_CAPTURE = ['', 'mobile', 'mobile-segment'];
 
   const MONTHS = [
     'january', 'february', 'march', 'april', 'may', 'june',
@@ -54,21 +58,30 @@
     return value && typeof value === 'object' ? value : {};
   }
 
-  function sourceTime(client, keys) {
+  function carries(row, kind) {
+    return Boolean(row && Array.isArray(row.carried) && row.carried.indexOf(kind) !== -1);
+  }
+
+  function sourceTime(client, spec) {
     let best = null;
     const rows = delivery(client);
-    for (let i = 0; i < keys.length; i += 1) {
-      const row = rows[keys[i]];
-      if (!row) continue;
+    const consider = (row) => {
+      if (!row) return;
       const parsed = parseTime(row.last_accepted_ingest_at);
       if (parsed !== null && (best === null || parsed > best)) best = parsed;
+    };
+    spec.keys.forEach((key) => consider(rows[key]));
+    if (spec.carried) {
+      OWN_CAPTURE.forEach((key) => {
+        if (carries(rows[key], spec.carried)) consider(rows[key]);
+      });
     }
     return best;
   }
 
   function rowsFor(clients) {
     const list = Array.isArray(clients) ? clients : [];
-    const named = NAMED.filter((spec) => list.some((client) => sourceTime(client, spec.keys) !== null));
+    const named = NAMED.filter((spec) => list.some((client) => sourceTime(client, spec) !== null));
     const namedKeys = {};
     NAMED.forEach((spec) => spec.keys.forEach((key) => { namedKeys[key] = true; }));
     const extra = [];
@@ -90,7 +103,7 @@
   function headingTime(client, rows) {
     const device = parseTime(client && client.last_accepted_ingest_at);
     const sourceTimes = rows
-      .map((row) => sourceTime(client, row.keys))
+      .map((row) => sourceTime(client, row))
       .filter((time) => time !== null);
     if (device === null) return sourceTimes.length === 0 ? { kind: 'nothing' } : { kind: 'omit' };
     if (sourceTimes.length === 0 || device > Math.max.apply(null, sourceTimes)) {
@@ -248,7 +261,7 @@
         label.setAttribute('scope', 'row');
         row.appendChild(label);
         clients.forEach((client) => {
-          const parsed = sourceTime(client, spec.keys);
+          const parsed = sourceTime(client, spec);
           const cell = text(doc, 'td', 'sources-cell', parsed === null ? '' : relative(parsed, opts.now, opts.timeZone));
           cell.setAttribute('data-device', heading(client));
           row.appendChild(cell);
@@ -270,7 +283,7 @@
           const item = el(doc, 'li', null);
           item.setAttribute('data-source', spec.label);
           item.appendChild(text(doc, 'span', 'sources-row-label', spec.label));
-          const parsed = sourceTime(client, spec.keys);
+          const parsed = sourceTime(client, spec);
           item.appendChild(text(doc, 'span', 'sources-cell', parsed === null ? '' : relative(parsed, opts.now, opts.timeZone)));
           items.appendChild(item);
         });

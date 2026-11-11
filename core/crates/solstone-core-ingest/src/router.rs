@@ -3514,6 +3514,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_unnamed_upload_says_what_it_carried() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let app = api_router_with_notifier(&root, SpyNotifier::succeeding());
+        let request = envelope(
+            "20260804",
+            "120000_1",
+            json!([{"submitted":"audio.flac"},{"submitted":"center_screen.webm"}]),
+        );
+        let (status, _) = call_upload_files(
+            &app,
+            request,
+            &[
+                ("audio.flac", b"sound".as_slice()),
+                ("center_screen.webm", b"pixels"),
+            ],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let carried = crate::carried_kinds(&root, CID_A, "", "20260804", "120000_1");
+        assert_eq!(
+            carried.into_iter().collect::<Vec<_>>(),
+            [crate::CarriedKind::Audio, crate::CarriedKind::Screen]
+        );
+        // Another device, another source, or another segment reads nothing.
+        assert!(crate::carried_kinds(&root, CID_B, "", "20260804", "120000_1").is_empty());
+        assert!(crate::carried_kinds(&root, CID_A, "browser", "20260804", "120000_1").is_empty());
+        assert!(crate::carried_kinds(&root, CID_A, "", "20260804", "130000_1").is_empty());
+    }
+
+    #[tokio::test]
     async fn partial_apply_appends_event_for_written_file_only() {
         let dir = root();
         let root = dir.path().to_path_buf();
