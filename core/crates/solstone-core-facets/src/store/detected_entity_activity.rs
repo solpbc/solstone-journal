@@ -3,7 +3,7 @@
 
 //! Read models derived from day-scoped detected-entity records.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 use solstone_core_entity_matching::EntityNameMatchOutcome;
 #[cfg(all(test, feature = "full-tests"))]
 use solstone_core_entity_matching::MatchTier;
-use solstone_core_entity_matching::{EntityNameCandidate, entity_slug, normalize_resolution_query};
+use solstone_core_entity_matching::{EntityNameCandidate, ExclusionKeys};
 #[cfg(all(test, feature = "full-tests"))]
 use solstone_core_entity_matching::{EntityNameMatchOutcome, find_matching_entity_detailed};
 use solstone_core_journal_io::{DirEntryKind, contained_path, list_dir_entries};
@@ -49,70 +49,6 @@ fn suppresses_detection(outcome: &EntityNameMatchOutcome) -> bool {
         EntityNameMatchOutcome::Matched { tier, .. }
         | EntityNameMatchOutcome::Ambiguous { tier, .. } => tier.is_high_confidence(),
         EntityNameMatchOutcome::NoMatch => false,
-    }
-}
-
-/// The review list only suppresses tiers 1-4. Index those keys once rather
-/// than rebuilding every matcher tier for every distinct detected name.
-struct ExclusionKeys {
-    exact: HashSet<String>,
-    normalized: HashSet<String>,
-    email: HashSet<String>,
-    slug: HashSet<String>,
-}
-
-impl ExclusionKeys {
-    fn from_candidates(candidates: &[EntityNameCandidate]) -> Self {
-        let mut keys = Self {
-            exact: HashSet::new(),
-            normalized: HashSet::new(),
-            email: HashSet::new(),
-            slug: HashSet::new(),
-        };
-        for candidate in candidates {
-            if candidate.name.is_empty() {
-                continue;
-            }
-            keys.add_exact(&candidate.name);
-            for alias in &candidate.aka {
-                if !alias.is_empty() {
-                    keys.add_exact(alias);
-                }
-            }
-            match candidate.id.as_deref().filter(|id| !id.is_empty()) {
-                Some(id) => {
-                    keys.add_exact(id);
-                    keys.slug.insert(id.to_owned());
-                }
-                None => {
-                    let slug = entity_slug(&candidate.name);
-                    if !slug.is_empty() {
-                        keys.slug.insert(slug);
-                    }
-                }
-            }
-            for email in &candidate.emails {
-                if !email.is_empty() {
-                    keys.email.insert(normalize_resolution_query(email));
-                }
-            }
-        }
-        keys
-    }
-
-    fn add_exact(&mut self, value: &str) {
-        self.exact.insert(value.to_owned());
-        self.normalized.insert(normalize_resolution_query(value));
-    }
-
-    fn contains(&self, name: &str) -> bool {
-        if self.exact.contains(name) {
-            return true;
-        }
-        let normalized = normalize_resolution_query(name);
-        self.normalized.contains(&normalized)
-            || (name.contains('@') && self.email.contains(&normalized))
-            || self.slug.contains(&entity_slug(name))
     }
 }
 

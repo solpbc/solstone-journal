@@ -20,6 +20,7 @@ mod merge_rollback;
 #[cfg(all(test, unix))]
 pub(crate) use merge_rollback::with_source_sync_failure;
 pub mod facet_links;
+pub mod hidden_names;
 pub mod observations;
 mod paths;
 mod reconcile;

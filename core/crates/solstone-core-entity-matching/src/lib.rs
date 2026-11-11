@@ -2,11 +2,13 @@
 // Copyright (c) 2026 sol pbc
 
 mod batch;
+mod exclusion;
 mod matcher;
 mod normalize;
 mod slug;
 
 pub use batch::{build_name_resolution_map, find_entity_by_email, is_name_variant_match};
+pub use exclusion::{ExclusionKeys, NameProbe};
 pub use matcher::{
     ConfidentMatcher, EntityNameCandidate, EntityNameMatch, EntityNameMatchOutcome, MatchTier,
     NameMatcher, char_len, find_matching_entity, find_matching_entity_detailed, first_word_match,

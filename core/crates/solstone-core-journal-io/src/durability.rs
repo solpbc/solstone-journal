@@ -106,6 +106,7 @@ pub enum ArtifactId {
     TaskQueueHolds,
     WorkIntent,
     OwnerAsks,
+    FacetHiddenNames,
     WorkInventory,
     IndexTodo,
     IndexAttempts,
@@ -160,6 +161,13 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::MustBeValid,
         parser: ParserKind::WholeJson,
         rationale: "the owner's pending asks to think a corrected day again, written under a lock with atomic replace and read strictly by owner_ask::read; nothing can rebuild what the owner asked, so a damaged one is kept as it is, no ask is worked and recording a new one refuses",
+    },
+    DurableArtifact {
+        id: ArtifactId::FacetHiddenNames,
+        path: "facets/*/hidden-names.json",
+        class: DurabilityClass::MustBeValid,
+        parser: ParserKind::WholeJson,
+        rationale: "the names the owner hid in a facet, written under the facet trust lock with atomic replace; nothing can rebuild what the owner hid, so a damaged one is kept as it is, its facet's detections are shown and indexed as none, and a hide or unhide refuses",
     },
     // Healable
     DurableArtifact {
@@ -1116,6 +1124,8 @@ mod tests {
             vec![
                 "config/journal.json",
                 "health/owner-asks.json",
+                // Names the owner hid in a facet.
+                "facets/*/hidden-names.json",
                 "health/parent-loss/generations/*/census-obligation.json",
                 "health/parent-loss/generations/*/census-started.json",
                 "health/parent-loss/generations/*/census-refusal.json",
