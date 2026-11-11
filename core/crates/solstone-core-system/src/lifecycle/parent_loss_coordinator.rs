@@ -1501,6 +1501,180 @@ mod tests {
         assert!(coordinator._lease.is_none());
     }
 
+    /// Answers per pid; any other pid is absent.
+    struct PerPid(std::collections::HashMap<u32, InspectResult>);
+
+    impl ProcessInstanceSource for PerPid {
+        fn inspect(&self, pid: u32) -> InspectResult {
+            self.0.get(&pid).copied().unwrap_or(InspectResult::Absent)
+        }
+
+        fn census(&self) -> InstanceCensus {
+            InstanceCensus::Complete(Vec::new())
+        }
+    }
+
+    fn outstanding(coordinator: &ParentLossCoordinator) -> Vec<String> {
+        list_entries(&admission_directory(
+            &coordinator.ledger,
+            coordinator.generation(),
+        ))
+        .expect("listing")
+        .map(|listing| listing.names)
+        .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_clean_stop_discharges_what_it_proved_gone() {
+        let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
+        write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
+        let (sealed, digest) = coordinator.seal_for_test().expect("sealed");
+        assert_eq!(outstanding(&coordinator), vec!["sense"]);
+        let terminal = coordinator
+            .wait_for_retirement_with_deadline_and_source(
+                &sealed,
+                digest,
+                false,
+                Instant::now() + Duration::from_secs(1),
+                &gone_process_source(),
+                &UnknownOwner,
+            )
+            .expect("terminal");
+        assert!(matches!(
+            terminal,
+            ParentLossTerminalDisposition::Completed { .. }
+        ));
+        assert!(
+            outstanding(&coordinator).is_empty(),
+            "a clean stop leaves nothing owed"
+        );
+    }
+
+    #[test]
+    fn a_witness_is_matched_to_the_sealed_root_it_names() {
+        for old_root_live in [false, true] {
+            let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
+            // An earlier root of the same service, sorted ahead of the one
+            // the witness names.
+            let old = AdmissionIdentity {
+                launch_id: "a-sense-before-restart".to_owned(),
+                instance: instance(4040, 40),
+                ..admitted_identity(&coordinator, HostedServiceKind::Sense)
+            };
+            write_parent_loss_admission_intent(
+                journal.path(),
+                &AdmissionIntent::new(
+                    coordinator.generation(),
+                    old.launch_id.clone(),
+                    Some(HostedServiceKind::Sense),
+                    None,
+                ),
+            )
+            .expect("intent");
+            write_parent_loss_admission_result(
+                journal.path(),
+                coordinator.generation(),
+                &old.launch_id,
+                &AdmissionResult {
+                    schema: 1,
+                    identity: Some(old.clone()),
+                    state: AdmissionResultState::Admitted,
+                },
+            )
+            .expect("result");
+            write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
+            let (sealed, digest) = coordinator.seal_for_test().expect("sealed");
+            let mut table = std::collections::HashMap::new();
+            if old_root_live {
+                table.insert(
+                    old.instance.pid,
+                    InspectResult::Present {
+                        instance: old.instance,
+                        uid: old.uid,
+                        execution: crate::process::ExecutionState::Running,
+                        ppid: Some(1),
+                        pgid: Some(1),
+                    },
+                );
+            }
+            let terminal = coordinator
+                .wait_for_retirement_with_deadline_and_source(
+                    &sealed,
+                    digest,
+                    false,
+                    Instant::now() + Duration::from_millis(100),
+                    &PerPid(table),
+                    &UnknownOwner,
+                )
+                .expect("terminal");
+            if old_root_live {
+                assert!(matches!(
+                    terminal,
+                    ParentLossTerminalDisposition::Unresolved {
+                        reason: ParentLossUnresolvedReason::RetirementDeadlineExceeded { .. }
+                    }
+                ));
+                assert_eq!(outstanding(&coordinator), vec!["a-sense-before-restart"]);
+            } else {
+                assert!(
+                    matches!(terminal, ParentLossTerminalDisposition::Completed { .. }),
+                    "the witness names the newer root: {terminal:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_empty_admissions_directory_is_an_ordinary_completed_stop() {
+        let (_journal, mut coordinator, _, _) = bootstrap([]);
+        std::fs::create_dir_all(admission_directory(
+            &coordinator.ledger,
+            coordinator.generation(),
+        ))
+        .expect("admissions directory");
+        assert!(matches!(
+            coordinator
+                .handle_confirmed_parent_loss()
+                .expect("terminal"),
+            ParentLossTerminalDisposition::Completed { .. }
+        ));
+    }
+
+    #[test]
+    fn a_seal_that_cannot_take_the_admission_lock_still_publishes_a_terminal() {
+        let (_journal, mut coordinator, _, _) = bootstrap([]);
+        let _held = hold_lock(
+            coordinator
+                .ledger
+                .admission_lock_path(coordinator.generation()),
+            LockOptions {
+                timeout: Duration::from_secs(1),
+                poll_interval: Duration::from_millis(5),
+                mode: Some(FILE_MODE),
+            },
+        )
+        .expect("an in-flight launch holds the lock");
+        let began = Instant::now();
+        assert_eq!(
+            coordinator
+                .handle_confirmed_parent_loss()
+                .expect("terminal"),
+            ParentLossTerminalDisposition::Unresolved {
+                reason: ParentLossUnresolvedReason::ArtifactFailure,
+            }
+        );
+        assert!(began.elapsed() >= ADMISSION_SEAL_LOCK_TIMEOUT);
+        let record = coordinator
+            .ledger
+            .record(coordinator.generation())
+            .expect("record")
+            .expect("record exists");
+        assert!(
+            record.sealed_ledger_digest.is_some(),
+            "bound to the empty-set ledger"
+        );
+    }
+
     #[test]
     fn a_reused_pid_is_a_retired_admission() {
         let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
