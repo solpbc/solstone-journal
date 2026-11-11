@@ -5586,7 +5586,6 @@ dependencies = [
  "chrono-tz",
  "log",
  "rapidfuzz",
- "ring",
  "serde",
  "serde_json",
  "solstone-core-convey-http",
@@ -5595,9 +5594,11 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-indexer",
  "solstone-core-indexer-query",
+ "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-removals",
  "solstone-core-serving",
+ "solstone-core-trash",
  "tokio",
 ]
 
@@ -5650,7 +5651,9 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-removals",
+ "solstone-core-retention",
  "solstone-core-segment",
+ "solstone-core-trash",
 ]
 
 [[package]]
@@ -5841,6 +5844,7 @@ dependencies = [
  "solstone-core-removals",
  "solstone-core-retention",
  "solstone-core-segment",
+ "solstone-core-speaker-resolve",
  "solstone-core-trash",
  "tempfile",
  "tokio",
@@ -6128,6 +6132,7 @@ dependencies = [
  "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-thinking-copy",
+ "solstone-core-trash",
  "windows-sys 0.61.2",
 ]
 
@@ -6652,13 +6657,6 @@ dependencies = [
 name = "solstone-core-serving"
 version = "2.0.74"
 dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "solstone-core-entity",
- "solstone-core-facets",
- "solstone-core-journal-io",
- "solstone-core-removals",
  "tokio",
 ]
 
@@ -6827,10 +6825,12 @@ dependencies = [
  "solstone-core-npy",
  "solstone-core-processing-record",
  "solstone-core-removals",
+ "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-speaker-id",
  "solstone-core-system",
  "solstone-core-transcripts",
+ "solstone-core-trash",
  "thiserror 2.0.21",
  "zip",
 ]

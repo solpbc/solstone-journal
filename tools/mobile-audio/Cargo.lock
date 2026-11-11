@@ -1993,7 +1993,9 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-removals",
+ "solstone-core-retention",
  "solstone-core-segment",
+ "solstone-core-trash",
 ]
 
 [[package]]
@@ -2333,10 +2335,12 @@ dependencies = [
  "solstone-core-npy",
  "solstone-core-processing-record",
  "solstone-core-removals",
+ "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-speaker-id",
  "solstone-core-system",
  "solstone-core-transcripts",
+ "solstone-core-trash",
  "thiserror 2.0.21",
  "zip",
 ]
