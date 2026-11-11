@@ -332,6 +332,10 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
             },
         )
         .collect::<Vec<_>>();
+    // A name the owner hid here, or that a hidden entity linked here
+    // matches, is never promoted behind the owner's back.
+    let hides = solstone_core_entity::hidden_names::facet_hidden_keys(journal, facet)
+        .map_err(|error| error.to_string())?;
     let mut names = BTreeSet::new();
     for review_day in review_days(day) {
         for entity in solstone_core_facets::read_detected_entities(journal, facet, &review_day)
@@ -360,6 +364,9 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
             if solstone_core_entity::is_placeholder_query(
                 &solstone_core_entity_matching::normalize_resolution_query(name),
             ) {
+                continue;
+            }
+            if hides.is_hidden(name) {
                 continue;
             }
             // Every name the owner answers to is one person: the owner. Saving
@@ -712,6 +719,14 @@ pub fn gate(
     else {
         return Ok(GateDecision::Skip("no_facet".to_owned()));
     };
+    // A facet whose hides can't be read is not reviewed: any name in it
+    // might be hidden.
+    if let Err(error) =
+        solstone_core_entity::hidden_names::facet_hidden_keys(&context.journal, facet)
+    {
+        log::warn!("entity review skipped facet={facet}: {error}");
+        return Ok(GateDecision::Skip("hidden_unreadable".to_owned()));
+    }
     let inputs = build_review_inputs(&context.journal, facet, day)
         .map_err(|detail| stage_error("gate", "entities:entities_review", prepared, detail))?;
     if inputs.eligible.is_empty() && inputs.hints.is_empty() {
@@ -1654,6 +1669,90 @@ mod tests {
                 .iter()
                 .any(|candidate| candidate["name"] == "Ada")
         );
+    }
+
+    fn eligible_names(root: &Path, day: &str) -> Vec<String> {
+        build_review_inputs(root, "work", day)
+            .unwrap()
+            .eligible
+            .iter()
+            .map(|candidate| candidate["name"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn a_name_the_owner_hid_is_not_promoted_and_comes_back_on_unhide() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        for day in ["20260101", "20260102"] {
+            detect(root.path(), day, "Ada Lovelace");
+            detect(root.path(), day, "Grace Hopper");
+        }
+        solstone_core_facets::hide_detected_name(root.path(), "work", "ada lovelace").unwrap();
+        assert_eq!(
+            eligible_names(root.path(), "20260103"),
+            vec!["Grace Hopper"]
+        );
+        solstone_core_facets::unhide_detected_name(root.path(), "work", "Ada Lovelace").unwrap();
+        assert_eq!(
+            eligible_names(root.path(), "20260103"),
+            vec!["Ada Lovelace", "Grace Hopper"]
+        );
+    }
+
+    #[test]
+    fn a_name_a_hidden_entity_matches_is_not_promoted() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        for day in ["20260101", "20260102"] {
+            detect(root.path(), day, "Ada L.");
+            detect(root.path(), day, "Grace Hopper");
+        }
+        let entity = root.path().join("entities/ada");
+        fs::create_dir_all(&entity).unwrap();
+        fs::write(
+            entity.join("entity.json"),
+            serde_json::json!({"id":"ada","name":"Ada Lovelace","aka":["Ada L."],"type":"Person","blocked":true})
+                .to_string(),
+        )
+        .unwrap();
+        let link = root.path().join("facets/work/entities/ada");
+        fs::create_dir_all(&link).unwrap();
+        fs::write(
+            link.join("entity.json"),
+            serde_json::json!({"entity_id":"ada","detached":true,"detached_by":"hide"}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            eligible_names(root.path(), "20260103"),
+            vec!["Grace Hopper"]
+        );
+    }
+
+    #[test]
+    fn a_facet_whose_hidden_names_cant_be_read_is_not_reviewed() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        for day in ["20260101", "20260102"] {
+            detect(root.path(), day, "Grace Hopper");
+        }
+        let context = ExecutionContext {
+            journal: root.path().to_path_buf(),
+        };
+        let prepared = PreparedTalent::new(
+            "entities:entities_review".into(),
+            serde_json::json!({"day":"20260103","facet":"work"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        assert_eq!(gate(&prepared, &context).unwrap(), GateDecision::Proceed);
+        fs::write(root.path().join("facets/work/hidden-names.json"), "{").unwrap();
+        assert!(build_review_inputs(root.path(), "work", "20260103").is_err());
+        assert!(matches!(
+            gate(&prepared, &context).unwrap(),
+            GateDecision::Skip(_)
+        ));
     }
 
     #[test]
