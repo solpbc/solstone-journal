@@ -27,7 +27,7 @@ use super::HostedServiceKind;
 use super::parent::DeclaredParent;
 use super::parent_loss_admission::{
     AdmissionIdentity, AdmissionIntent, AdmissionResult, AdmissionResultState,
-    AdmissionSpawnIdentity, acknowledge_parent_loss_admission, write_parent_loss_admission_intent,
+    acknowledge_parent_loss_admission, write_parent_loss_admission_intent,
     write_parent_loss_admission_result, write_parent_loss_admission_spawn_identity,
 };
 use super::parent_loss_coordinator::{
@@ -671,59 +671,41 @@ fn a_task_launch_cannot_spawn_after_the_seal() {
 
 // ---- 11. recovery cost vs. launch history ----
 
-/// Write `count` exited task-worker admissions directly (no per-file fsync,
-/// so fixture time stays small), in the exact shape `launch_generation_child`
-/// leaves: intent, spawn-identity, admitted result.
-fn write_history(ledger: &ParentLossLedger, generation: ParentLossGeneration, count: usize) {
-    let root = admissions(ledger, generation);
-    for index in 0..count {
-        let launch_id = format!("worker-{index:08x}");
-        let dir = root.join(&launch_id);
-        fs::create_dir_all(&dir).expect("admission dir");
-        let id = identity(
-            generation,
-            &launch_id,
-            instance(100_000 + index as u32, 1_000 + index as u64),
-        );
-        let intent = AdmissionIntent::new(generation, launch_id.clone(), None, None);
-        let spawn = AdmissionSpawnIdentity {
-            schema: 1,
-            identity: id.clone(),
-        };
-        let result = AdmissionResult {
-            schema: 1,
-            identity: Some(id),
-            state: AdmissionResultState::Admitted,
-        };
-        let mut bytes = serde_json::to_vec_pretty(&intent).expect("intent json");
-        bytes.push(b'\n');
-        fs::write(dir.join("intent.json"), &bytes).expect("intent");
-        let mut bytes = serde_json::to_vec_pretty(&spawn).expect("spawn json");
-        bytes.push(b'\n');
-        fs::write(dir.join("spawn-identity.json"), &bytes).expect("spawn identity");
-        let mut bytes = serde_json::to_vec_pretty(&result).expect("result json");
-        bytes.push(b'\n');
-        fs::write(dir.join("result.json"), &bytes).expect("result");
-    }
-}
-
 /// Time to close an abandoned generation holding `completed` exited launches
 /// plus 3 live (fake) ones that obey TERM. Retries a refused start, summing
 /// time, so a budget-sliced closer is measured whole.
-fn recovery_time(completed: usize) -> (Duration, usize) {
-    let directory = tempfile::Builder::new()
-        .prefix("pl-regress-")
-        .tempdir_in("/var/tmp")
-        .expect("disk-backed temporary root");
+/// Launch `completed` real children through the generation-child launch path
+/// and reap each one, as the queue does, then abandon the generation with 3
+/// admitted processes still alive. Returns the outstanding entries the dead
+/// run left and what its successor's start cost.
+#[cfg(feature = "full-tests")]
+fn recovery_after_real_launches(completed: usize) -> (usize, Duration, usize) {
+    let directory = TempDir::new().expect("temporary root");
     let (ledger, active) = open_generation(directory.path());
     let g = active.generation;
-    write_history(&ledger, g, completed);
+    for i in 0..completed {
+        let mut child = crate::process::launch_generation_child(
+            crate::process::Disposition::InheritedParentScope,
+            directory.path(),
+            format!("worker-{i}"),
+            || Command::new("/bin/true").spawn(),
+            Box::new(|child: &mut std::process::Child, _| {
+                let _ = child.kill();
+                Ok(())
+            }),
+        )
+        .expect("generation child");
+        child.wait().expect("reap");
+    }
     let live: Vec<ProcessInstance> = (0..3)
         .map(|i| instance(900_001 + i, 9_000 + i as u64))
         .collect();
     for (i, pid) in live.iter().enumerate() {
         admit_task_worker(directory.path(), g, &format!("live-{i}"), *pid);
     }
+    let outstanding = fs::read_dir(ledger.generation_path(g).join("admissions"))
+        .expect("admissions")
+        .count();
     let pids: Vec<u32> = live.iter().map(|i| i.pid).collect();
     let (source, retirer) = fake(&live, &pids);
     let lease = acquire_lease(&ledger);
@@ -732,28 +714,32 @@ fn recovery_time(completed: usize) -> (Duration, usize) {
         let began = Instant::now();
         let outcome = start(&ledger, &lease, &source, &retirer, Duration::from_secs(600));
         total += began.elapsed();
-        match outcome {
-            Ok(_) => return (total, attempt),
-            Err(error) => eprintln!("  K={completed} attempt {attempt} refused: {error:?}"),
+        if outcome.is_ok() {
+            return (outstanding, total, attempt);
         }
     }
     panic!("K={completed}: no start succeeded in 20 attempts ({total:?})");
 }
 
+/// At `a211a4d5b` every launch stayed in `admissions/`, so a successor's
+/// recovery grew with the run's launch history: on extro (debug build), a
+/// synthetic 1,000-launch history closed in 1.35 s and 100,000 in 42.4 s.
+/// Now a reaped launch leaves the outstanding set, so the dead run owes only
+/// what was alive and the start costs the same however many launches came
+/// before.
+#[cfg(feature = "full-tests")]
 #[test]
-/// Measured on extro (debug build, nvme /var/tmp) at a211a4d5b: K=1,000 closed
-/// in 1.35 s and K=100,000 in 42.4 s, one start each (31x). Under the 60 s
-/// line, so it runs by default; the whole test takes about 56 s.
 fn recovery_cost_does_not_grow_with_completed_launches() {
-    let (small, small_attempts) = recovery_time(1_000);
-    let (large, large_attempts) = recovery_time(100_000);
+    let (small_left, small, small_attempts) = recovery_after_real_launches(50);
+    let (large_left, large, large_attempts) = recovery_after_real_launches(1_000);
     eprintln!(
-        "recovery: K=1,000 -> {small:?} ({small_attempts} start(s)); \
-         K=100,000 -> {large:?} ({large_attempts} start(s)); ratio {:.1}x",
-        large.as_secs_f64() / small.as_secs_f64().max(1e-9)
+        "recovery: 50 launches -> {small_left} outstanding, {small:?} ({small_attempts} start(s)); \
+         1,000 launches -> {large_left} outstanding, {large:?} ({large_attempts} start(s))"
     );
+    assert_eq!(small_left, 3, "only the live admissions are outstanding");
+    assert_eq!(large_left, 3, "only the live admissions are outstanding");
     assert!(
-        large <= small * 3,
-        "recovery with 3 alive grew with launch history: 1k={small:?}, 100k={large:?}"
+        large <= small * 3 + Duration::from_millis(250),
+        "recovery with 3 alive grew with launch history: 50={small:?}, 1,000={large:?}"
     );
 }

@@ -70,7 +70,6 @@ const SETTLE_WINDOW: Duration = Duration::from_millis(500);
 /// A hosted launch holds the admission lock through its child's
 /// acknowledgement (up to 5 s); a seal waits a little longer than that.
 pub(crate) const ADMISSION_SEAL_LOCK_TIMEOUT: Duration = Duration::from_secs(6);
-const DISCHARGE_LOCK_TIMEOUT: Duration = Duration::from_secs(2);
 /// Entries read ahead of observation, and by how many threads. Reading drops
 /// is most of what settling a large legacy set costs.
 const READ_WINDOW: usize = 1024;
@@ -903,33 +902,25 @@ fn unique_suffix() -> u128 {
         .unwrap_or_default()
 }
 
-/// Move an entry out of the outstanding set, under the admission lock. A
-/// rename, no fsync: a crash only re-observes it, and dead stays dead
-/// because identity is exact. An entry already gone is already discharged.
-// replaced by admission::discharge at merge
+/// Move an entry out of the outstanding set as the sealing authority, through
+/// the one discharge choke point. A rename, no fsync: a crash only re-observes
+/// it, and dead stays dead because identity is exact. An entry already gone is
+/// already discharged; any other kept outcome is an error, so the caller never
+/// treats the entry as settled while it is still listed.
 pub(crate) fn discharge_sealed(
     ledger: &ParentLossLedger,
     generation: ParentLossGeneration,
     launch_id: &str,
 ) -> Result<(), ParentLossLedgerError> {
-    let _lock = admission_lock(ledger, generation, DISCHARGE_LOCK_TIMEOUT)?;
-    let from = admission_directory(ledger, generation).join(launch_id);
-    let trash = discharged_dir(ledger, generation);
-    fs::create_dir_all(&trash)?;
-    match fs::rename(&from, trash.join(launch_id)) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(_) => {
-            // The trash already holds this name: keep both.
-            match fs::rename(
-                &from,
-                trash.join(format!("{launch_id}.{}", unique_suffix())),
-            ) {
-                Ok(()) => Ok(()),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-                Err(error) => Err(error.into()),
-            }
-        }
+    use super::parent_loss_admission::{DischargeKept, Discharged, Discharger, discharge};
+    match discharge(ledger, generation, launch_id, Discharger::Sealing) {
+        Ok(Discharged::Moved | Discharged::Kept(DischargeKept::EntryMissing)) => Ok(()),
+        Ok(Discharged::Kept(kept)) => Err(ParentLossLedgerError::Io(io::Error::other(format!(
+            "admission {launch_id} was not discharged: {kept:?}"
+        )))),
+        Err(error) => Err(ParentLossLedgerError::Io(io::Error::other(
+            error.to_string(),
+        ))),
     }
 }
 
@@ -4618,12 +4609,14 @@ mod tests {
         let directory = TempDir::new().unwrap();
         let (ledger, active) = open_generation(&directory);
         let g = active.generation;
+        // The entry directory exists before any drop but the intent, as a
+        // launch makes it; a directory then squats where the intent belongs.
+        fs::create_dir_all(admission_directory(&ledger, g).join("odd/intent.json")).unwrap();
         write_parent_loss_admission_spawn_identity(
             directory.path(),
             &identity(g, "odd", instance(4242, 42)),
         )
         .unwrap();
-        fs::create_dir_all(admission_directory(&ledger, g).join("odd/intent.json")).unwrap();
         let (source, retirer) = fake(&[], &[], &[]);
         let lease = acquire_lease(&ledger);
         start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("closed");

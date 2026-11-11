@@ -34,6 +34,7 @@ const FILE_MODE: u32 = 0o600;
 /// How long a reaper or launcher waits for the admission lock before leaving
 /// the entry for the seal. Contention costs speed, never safety.
 pub const DISCHARGE_LOCK_TIMEOUT: Duration = Duration::from_millis(100);
+const SEALING_DISCHARGE_LOCK_TIMEOUT: Duration = Duration::from_secs(2);
 pub const HOSTED_GENERATION_ENV: &str = "SOL_PARENT_LOSS_GENERATION";
 pub const HOSTED_LAUNCH_ID_ENV: &str = "SOL_PARENT_LOSS_LAUNCH_ID";
 pub const HOSTED_PARENT_LAUNCH_ID_ENV: &str = "SOL_PARENT_LOSS_PARENT_LAUNCH_ID";
@@ -349,7 +350,6 @@ pub fn write_parent_loss_service_witness(
     write_immutable_json(&path, witness, DropParent::Create)
 }
 
-#[cfg(test)]
 pub(crate) fn read_parent_loss_admission_intent(
     ledger: &ParentLossLedger,
     generation: ParentLossGeneration,
@@ -357,6 +357,15 @@ pub(crate) fn read_parent_loss_admission_intent(
 ) -> Result<Option<AdmissionIntent>, ParentLossAdmissionError> {
     validate_launch_id(launch_id)?;
     read_json_optional(&intent_path(ledger, generation, launch_id))
+}
+
+pub(crate) fn read_parent_loss_admission_result(
+    ledger: &ParentLossLedger,
+    generation: ParentLossGeneration,
+    launch_id: &str,
+) -> Result<Option<AdmissionResult>, ParentLossAdmissionError> {
+    validate_launch_id(launch_id)?;
+    read_json_optional(&result_path(ledger, generation, launch_id))
 }
 
 pub(crate) fn read_parent_loss_admission_spawn_identity_in(
@@ -422,7 +431,13 @@ pub fn discharge(
     let Ok(lock) = hold_lock(
         ledger.admission_lock_path(generation),
         LockOptions {
-            timeout: DISCHARGE_LOCK_TIMEOUT,
+            // After the seal only the sealing authority discharges, so its wait
+            // is contended only by reapers that are about to give up.
+            timeout: if discharger == Discharger::Sealing {
+                SEALING_DISCHARGE_LOCK_TIMEOUT
+            } else {
+                DISCHARGE_LOCK_TIMEOUT
+            },
             poll_interval: Duration::from_millis(10),
             mode: Some(FILE_MODE),
         },
@@ -478,8 +493,29 @@ pub fn discharge_holding_lock(
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             Ok(Discharged::Kept(DischargeKept::EntryMissing))
         }
+        // The trash can still hold this name from an interrupted earlier
+        // discharge the prune has not reached: keep both.
+        Err(_) if target.join(launch_id).exists() => {
+            match fs::rename(
+                &entry,
+                target.join(format!("{launch_id}.{}", trash_suffix())),
+            ) {
+                Ok(()) => Ok(Discharged::Moved),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    Ok(Discharged::Kept(DischargeKept::EntryMissing))
+                }
+                Err(_) => Ok(Discharged::Kept(DischargeKept::RenameFailed)),
+            }
+        }
         Err(_) => Ok(Discharged::Kept(DischargeKept::RenameFailed)),
     }
+}
+
+fn trash_suffix() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or_default()
 }
 
 /// The admission entry a launched child belongs to, carried by the object
