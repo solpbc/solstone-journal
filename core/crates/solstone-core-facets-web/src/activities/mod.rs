@@ -711,6 +711,48 @@ fn set_hidden(
     if facet.is_empty() {
         return not_found(span_id);
     }
+    let response = set_hidden_in_facet(
+        root, clock, &facet, &day, &span_id, body, hidden, actor, log_source, log_actor,
+    );
+    // Every call queues the activity's outputs and its day, changed, unchanged
+    // or refused, before answering, so a retry after a lost queue puts search
+    // right.
+    queue_hidden_activity(root, &facet, &day, &span_id);
+    response
+}
+
+/// Queue for search what a hide or unhide of one activity changes: its
+/// outputs folder and its day file.
+fn queue_hidden_activity(root: &Path, facet: &str, day: &str, span_id: &str) {
+    let day_dir = Path::new("facets").join(facet).join("activities");
+    for path in [
+        day_dir.join(day).join(span_id),
+        day_dir.join(format!("{day}.jsonl")),
+    ] {
+        if let Err(error) = solstone_core_indexer_todo::enqueue_path(root, &path) {
+            log::warn!(
+                target: "solstone::indexer",
+                "activity hide not queued for search path={} cause={error}",
+                path.display()
+            );
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn set_hidden_in_facet(
+    root: &Path,
+    clock: &Clock,
+    facet: &str,
+    day: &str,
+    span_id: &str,
+    body: Bytes,
+    hidden: bool,
+    actor: &str,
+    log_source: &str,
+    log_actor: &str,
+) -> Response {
+    let (facet, day, span_id) = (facet.to_owned(), day.to_owned(), span_id.to_owned());
     let body = object_body(&body);
     let reason = body.get("reason").and_then(Value::as_str);
     let timestamp = clock
@@ -1196,6 +1238,71 @@ mod tests {
         assert_eq!(edits[1]["fields"], json!(["title", "details"]));
         assert_eq!(edits[1]["note"], "corrected");
         assert_eq!(body["record"]["title"], "Retitled");
+    }
+
+    /// The activity paths search has been asked to read again; the hints go
+    /// with it, as a drain takes them.
+    fn take_queued(root: &Path) -> Vec<String> {
+        let todo = root.join("indexer/todo");
+        let Ok(entries) = std::fs::read_dir(&todo) else {
+            return Vec::new();
+        };
+        let mut keys: Vec<String> = entries
+            .flatten()
+            .filter_map(|entry| std::fs::read(entry.path()).ok())
+            .filter_map(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .filter_map(|entry| entry["key"].as_str().map(str::to_owned))
+            .filter(|key| key.contains("/activities/"))
+            .collect();
+        keys.sort();
+        std::fs::remove_dir_all(todo).unwrap();
+        keys
+    }
+
+    #[tokio::test]
+    async fn every_mute_and_unmute_queues_the_activity_outputs_and_day_even_unchanged() {
+        let root = phase_root("populated");
+        let base = "/app/activities/api/day/20260510/record/meeting_100000_300";
+        let queued = [
+            "facets/work/activities/20260510.jsonl".to_owned(),
+            "facets/work/activities/20260510/meeting_100000_300".to_owned(),
+        ];
+        take_queued(root.path());
+        for (verb, hidden) in [
+            ("mute", true),
+            ("mute", true),
+            ("unmute", false),
+            ("unmute", false),
+        ] {
+            let (status, body) = request(
+                gated(root.path(), fixed_clock()),
+                "POST",
+                &format!("{base}/{verb}?facet=work"),
+                Some(json!({})),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{verb}: {body}");
+            assert_eq!(body["record"]["hidden"], hidden, "{verb}");
+            // A repeat changes nothing and still queues both, so a retry
+            // after a lost queue puts search right.
+            assert_eq!(take_queued(root.path()), queued, "{verb}");
+        }
+        // A record that isn't there is refused, and queued all the same.
+        let (status, _) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            "/app/activities/api/day/20260510/record/not_here/mute?facet=work",
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(
+            take_queued(root.path()),
+            [
+                "facets/work/activities/20260510.jsonl".to_owned(),
+                "facets/work/activities/20260510/not_here".to_owned(),
+            ]
+        );
     }
 
     #[tokio::test]
