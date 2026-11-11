@@ -1670,6 +1670,31 @@ test('a date step does not move focus', async () => {
   assert.ok(viewed.elements['map-view-root'].innerHTML.includes('the day, in order'));
 });
 
+test('a date step from the focused day heading focuses the new day heading, never the document', async () => {
+  const viewed = await run({
+    pathname: '/app/map/20261002',
+    responses: {
+      '/app/map/api/day/20261002': day,
+      '/app/map/api/day/20261003': { ...day, day: '20261003' },
+    },
+  });
+  // An arrival left focus on the heading. A tap on date-nav's arrow that
+  // doesn't focus the arrow (mobile WebKit, Safari) leaves it there.
+  const before = viewed.elements['map-view-root'].querySelector('h2');
+  assert.ok(before, 'the day has its heading');
+  before.focus();
+  viewed.handle.update({ day: '20261003' });
+  assert.strictEqual(viewed.document.activeElement, viewed.elements['main-content'],
+    'focus leaves the heading before it is removed');
+  await flush();
+  await flush();
+  const heading = viewed.elements['map-view-root'].querySelector('h2');
+  assert.strictEqual(heading && heading.textContent, 'the day, in order');
+  assert.notStrictEqual(heading, before, 'the step drew a new heading');
+  assert.strictEqual(viewed.document.activeElement, heading, 'the new day heading takes focus');
+  assert.notStrictEqual(viewed.document.activeElement, viewed.document.body);
+});
+
 test('a week that fails to become a day leaves focus on the workspace', async () => {
   const week = { start: '20260928', previous: null, next: null, days: [
     { day: '20261002', readings: 1, devices: ['iphone'], items: [] },

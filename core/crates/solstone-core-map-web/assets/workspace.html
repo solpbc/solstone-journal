@@ -1257,13 +1257,25 @@ button.map-month-row:hover { background: var(--cream); }
     }
   }
 
+  // Whether focus sits on something the next draw replaces: the day's
+  // heading, a marker or a control in the view, or the gate's retry.
+  function focusInView() {
+    for (let node = document.activeElement; node; node = node.parentNode) {
+      if (node === root || node === gate) return true;
+    }
+    return false;
+  }
+
   async function loadDay(day, arrive) {
     if (!alive() || !DAY_RE.test(String(day || ""))) return;
+    // The link that opened this day, or what had focus in the day a step
+    // leaves, is about to leave the page. Focus moves before that, or it
+    // falls to the document. A step that started outside the view, from
+    // date-nav's arrow, leaves focus where it is.
+    const refocus = arrive || focusInView();
     const mine = beginPage();
     showDayChrome();
-    // The link that opened this day is about to leave the page. Focus moves
-    // before that, or it falls to the document.
-    if (arrive) focusNode(document.getElementById("main-content"));
+    if (refocus) focusNode(document.getElementById("main-content"));
     setGate(window.SurfaceState.loading({ text: "loading this day's location…" }));
     try {
       const data = await readJson(`/app/map/api/day/${day}`);
@@ -1271,17 +1283,17 @@ button.map-month-row:hover { background: var(--cream); }
       if (!asArray(data.entries).length && !asArray(data.devices).length) {
         if (data.journal_has_location) renderDayEmpty(data, day);
         else renderJournalEmpty();
-        if (arrive) focusArrived();
+        if (refocus) focusArrived();
         reportMapReady("empty");
         return;
       }
       renderDay(data);
-      if (arrive) focusArrived();
+      if (refocus) focusArrived();
       reportMapReady("content");
     } catch (err) {
       if (mine !== epoch || !alive()) return;
       showError(err, () => loadDay(day, arrive));
-      if (arrive) focusArrived();
+      if (refocus) focusArrived();
       reportMapReady("error");
     }
   }
