@@ -1524,7 +1524,7 @@ mod tests {
         keys.insert("b359922341f75193".to_string());
         write(
             root.path(),
-            "config/week-left-out.json",
+            "health/week-left-out.json",
             &String::from_utf8(left_out_bytes(&keys)).unwrap(),
         );
 
@@ -1544,7 +1544,7 @@ mod tests {
         keys.insert("f85648d077c433ce".to_string());
         write(
             root.path(),
-            "config/week-left-out.json",
+            "health/week-left-out.json",
             &String::from_utf8(left_out_bytes(&keys)).unwrap(),
         );
         let model_all_out = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
@@ -1557,14 +1557,14 @@ mod tests {
         keys.remove("83bb27460e2148f3");
         write(
             root.path(),
-            "config/week-left-out.json",
+            "health/week-left-out.json",
             &String::from_utf8(left_out_bytes(&keys)).unwrap(),
         );
         let model_n1 = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
         assert_eq!(model_n1["intro"], "your week, a memory from one day.");
 
         // Unreadable left-out file
-        write(root.path(), "config/week-left-out.json", "garbage bytes");
+        write(root.path(), "health/week-left-out.json", "garbage bytes");
         let model_unreadable = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
         assert_eq!(
             model_unreadable["left_out_notice"],
@@ -1578,7 +1578,7 @@ mod tests {
         key_set.insert("k_shared".to_string());
         write(
             root.path(),
-            "config/week-left-out.json",
+            "health/week-left-out.json",
             &String::from_utf8(left_out_bytes(&key_set)).unwrap(),
         );
 
@@ -1713,7 +1713,7 @@ mod tests {
         keys.insert("k0".to_string());
         write(
             root.path(),
-            "config/week-left-out.json",
+            "health/week-left-out.json",
             &String::from_utf8(left_out_bytes(&keys)).unwrap(),
         );
         let card_all_out = card(&ctx);
@@ -2396,7 +2396,7 @@ mod tests {
         keys.insert("kd".to_string());
         write(
             root.path(),
-            "config/week-left-out.json",
+            "health/week-left-out.json",
             &String::from_utf8(left_out_bytes(&keys)).unwrap(),
         );
         let partial = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
@@ -2413,7 +2413,7 @@ mod tests {
         keys.insert("kb".to_string());
         write(
             root.path(),
-            "config/week-left-out.json",
+            "health/week-left-out.json",
             &String::from_utf8(left_out_bytes(&keys)).unwrap(),
         );
         let none_showing = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
@@ -2428,7 +2428,7 @@ mod tests {
             "reflections/weekly/20260308.json",
             &format!(r#"{{"version":1,"days":{days},"memories":[],"said":null}}"#),
         );
-        fs::remove_file(root.path().join("config/week-left-out.json")).unwrap();
+        fs::remove_file(root.path().join("health/week-left-out.json")).unwrap();
         let unreadable = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
         assert_eq!(
             unreadable["intro"],
@@ -2472,14 +2472,14 @@ mod tests {
         hidden.insert("said-key".to_string());
         write(
             root.path(),
-            "config/week-left-out.json",
+            "health/week-left-out.json",
             &String::from_utf8(left_out_bytes(&hidden)).unwrap(),
         );
         let card_hidden = card(&ctx);
         assert!(card_hidden["memory"].is_null());
         assert_eq!(card_hidden["empty"], "nothing from this week is showing.");
 
-        write(root.path(), "config/week-left-out.json", "garbage bytes");
+        write(root.path(), "health/week-left-out.json", "garbage bytes");
         let card_unreadable = card(&ctx);
         assert!(card_unreadable["memory"].is_null());
         assert!(card_unreadable["empty"].is_null());
@@ -2505,15 +2505,15 @@ mod tests {
         fs::remove_file(&target_symlink).unwrap();
 
         // 2. Leave-out path symlinked outside: LeftOut::Unreadable, sentinel not observed as keys
-        let config_dir = root.path().join("config");
-        fs::create_dir_all(&config_dir).unwrap();
+        let health_dir = root.path().join("health");
+        fs::create_dir_all(&health_dir).unwrap();
         let outside_left_out = outside.path().join("outside_left_out.json");
         fs::write(
             &outside_left_out,
             r#"{"keys":["SENTINEL_LEFT_OUT_KEY_98765"]}"#,
         )
         .unwrap();
-        symlink(&outside_left_out, config_dir.join("week-left-out.json")).unwrap();
+        symlink(&outside_left_out, health_dir.join("week-left-out.json")).unwrap();
         let left_out = read_left_out(root.path());
         assert_eq!(left_out, LeftOut::Unreadable);
 

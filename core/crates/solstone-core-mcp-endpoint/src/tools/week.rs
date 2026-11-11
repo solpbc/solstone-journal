@@ -739,7 +739,7 @@ mod tests {
             .collect::<BTreeSet<_>>();
         write_raw(
             root,
-            "config/week-left-out.json",
+            "health/week-left-out.json",
             &String::from_utf8(left_out_bytes(&keys)).unwrap(),
         );
     }
@@ -1667,10 +1667,10 @@ mod tests {
                 "[]",
             ),
         );
-        fs::create_dir_all(linked_leave_out.path().join("config")).unwrap();
+        fs::create_dir_all(linked_leave_out.path().join("health")).unwrap();
         symlink(
             outside.path().join("secret.json"),
-            linked_leave_out.path().join("config/week-left-out.json"),
+            linked_leave_out.path().join("health/week-left-out.json"),
         )
         .unwrap();
         let res = probe(linked_leave_out.path(), json!({"week": "20260308"})).unwrap();

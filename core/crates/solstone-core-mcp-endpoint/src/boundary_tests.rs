@@ -12901,10 +12901,10 @@ fn get_week_trusted_page_and_left_out() {
     assert_eq!(mems.len(), 1);
     assert_eq!(mems[0]["text"], "My Trusted Activity");
 
-    let config_dir = journal.path().join("config");
-    fs::create_dir_all(&config_dir).unwrap();
+    let health_dir = journal.path().join("health");
+    fs::create_dir_all(&health_dir).unwrap();
     fs::write(
-        config_dir.join("week-left-out.json"),
+        health_dir.join("week-left-out.json"),
         json!({"keys": ["said-key-quote1"]}).to_string(),
     )
     .unwrap();
@@ -15107,10 +15107,10 @@ fn a_week_page_with_something_left_out_leaves_search_and_fetch() {
             .contains("kestrelweekneedle")
     );
 
-    fs::create_dir_all(root.join("config")).unwrap();
+    fs::create_dir_all(root.join("health")).unwrap();
     let leave_out = |keys: Value| {
         fs::write(
-            root.join("config/week-left-out.json"),
+            root.join("health/week-left-out.json"),
             json!({ "keys": keys }).to_string(),
         )
         .unwrap();

@@ -130,6 +130,13 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
         "derived: resolves facet directory to id below the facets crate, which depends on it",
     ),
     (
+        "core/crates/solstone-core-indexer-store/src/hide.rs",
+        "HideCache::decide",
+        "observations.jsonl",
+        1,
+        "derived: matches a notes file's indexed path to decide whether its link folder is hidden; reads no notes",
+    ),
+    (
         "core/crates/solstone-core-indexer-store/src/scan.rs",
         "index_entity_search_build",
         "entity.json",
