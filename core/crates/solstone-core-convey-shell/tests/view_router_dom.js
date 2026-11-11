@@ -445,8 +445,74 @@ const ENTRY_TABLE = {
       ],
       contract: true,
     },
+    // Its code is inline in its fragment, as the real one's is. Its state is
+    // the address's query, so its own links keep the path.
+    search: {
+      fragment: '/app/search/workspace',
+      scripts: [],
+      styles: [],
+      reads: [],
+      contract: true,
+    },
   },
 };
+
+// Search's script, run inline from its fragment. Held answers live at the
+// script's top level, which runs once in the life of the page.
+const SEARCH_CODE = `
+    window.__searchRuns = (window.__searchRuns || 0) + 1;
+    const held = new Map();
+    window.SolViews.register('search', {
+      mount(ctx) {
+        const views = window.__views.search;
+        views.mounts += 1;
+        const path = window.location.pathname;
+        let shown = null;
+        const entry = () => (window.history.state && window.history.state.solRoute ? window.history.state.solRoute.id : null);
+        const show = (restore) => {
+          const search = window.location.search;
+          shown = search;
+          const q = new URLSearchParams(search).get('q') || '';
+          const root = document.getElementById('search-root');
+          if (!q) { if (root) root.textContent = 'empty'; ctx.ready('content'); return; }
+          const id = entry();
+          const kept = restore ? held.get(id) : null;
+          if (kept && kept.search === search) {
+            views.held += 1;
+            views.draws.push(kept.answer);
+            if (root) root.textContent = kept.answer;
+            ctx.ready('content');
+            return;
+          }
+          ctx.read('/app/search/api/search?q=' + q, { fresh: true }).then((answer) => {
+            if (window.location.pathname !== path || shown !== search) return;
+            held.set(id, { search, answer: answer.q });
+            views.draws.push(answer.q);
+            const now = document.getElementById('search-root');
+            if (now) now.textContent = answer.q;
+            ctx.ready('content');
+          }, () => ctx.ready('error'));
+        };
+        ctx.on(document, 'click', (event) => {
+          if (event.defaultPrevented || event.button !== 0) return;
+          const link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+          if (!link) return;
+          const url = new URL(link.href, window.location.href);
+          if (url.pathname !== path || window.location.pathname !== path || url.search === window.location.search) return;
+          event.preventDefault();
+          views.own.push(url.search);
+          ctx.history.push(path + url.search);
+          show(false);
+        });
+        ctx.on(window, 'popstate', () => {
+          if (window.location.pathname !== path || window.location.search === shown) return;
+          views.pops += 1;
+          show(true);
+        });
+        show(true);
+        return { dispose() { views.disposes += 1; } };
+      }
+    });`;
 
 const FRAGMENTS = {
   '/app/home/workspace': '<div class="home"><h2>your day</h2><div id="home-root"></div></div><script src="/h/home.js"></script>',
@@ -455,6 +521,11 @@ const FRAGMENTS = {
   '/app/body/workspace': '<link rel="stylesheet" href="/static/date-nav.css"><div class="body-shell"><h1 class="body-title">body</h1><div id="body-root"></div><a class="body-day-cell" href="/app/body/20260102">day</a></div><script src="/b/body.js"></script>',
   '/app/activities/workspace': '<div class="activities"><h1>activities</h1><div id="activities-root"></div><a href="/app/activities/20260103">day</a></div><script src="/a/activities.js"></script>',
   '/app/map/workspace': '<div class="map"><h1>map</h1><div id="map-root"></div><a href="/app/map/20261003">day</a><a href="/app/map/week/20261005">week</a><a href="/app/map/month/202610">month</a><a href="/app/map/places">places</a><a href="/app/map/place/0123456789ab">place</a></div><script src="/a/map.js"></script>',
+  '/app/search/workspace': '<section id="journal-search"><h1>search your journal</h1><div id="search-root"></div>'
+    + '<a href="/app/search/?q=alpha">alpha</a><a href="/app/search/?q=alpha&offset=20">older</a>'
+    + '<a href="/app/transcripts/20260102?stream=ja1r#090000_300">segment</a><a href="/app/map/20261003">place</a>'
+    + '<a href="/app/home/week/20260102">week</a><a href="/app/entities/#ada">entity</a></section>'
+    + '<script>' + SEARCH_CODE + '</script>',
   '/app/entities/workspace': '<div><h2>entities</h2></div>',
   '/app/settings/workspace': '<div><h2>settings</h2></div>',
 };
@@ -717,6 +788,14 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
   document.head = document.root.appendChild(new FakeNode(document, 'head'));
   document.body = document.root.appendChild(new FakeNode(document, 'body'));
   document.inserted = (node) => {
+    // An inline script runs when it goes into the page.
+    if (node.tagName === 'SCRIPT' && !node.hasAttribute('src') && node.text.trim()) {
+      try {
+        vm.runInContext(node.text, window, { filename: 'inline' });
+      } catch (error) {
+        window.__scriptErrors.push(error);
+      }
+    }
     if (node.tagName === 'SCRIPT' && node.hasAttribute('src')) {
       const src = node.getAttribute('src');
       setImmediate(() => {
@@ -755,7 +834,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
   document.querySelectorAll = (selector) => document.root.querySelectorAll(selector);
   document.body.innerHTML =
     '<nav id="app-rail"><a href="/app/home/" data-app-name="home">home</a><a href="/app/transcripts/" data-app-name="transcripts">transcripts</a>' +
-    '<a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/sources/" data-app-name="sources">sources</a><a href="/app/settings/" data-app-name="settings">settings</a>' +
+    '<a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/sources/" data-app-name="sources">sources</a><a href="/app/settings/" data-app-name="settings">settings</a><a href="/app/search/" data-app-name="search">search</a>' +
     '<div id="status-instrument"></div></nav><nav id="app-dock"><a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/home/" data-app-name="home">home</a></nav>' +
     '<div id="view-announcer" role="status" aria-live="polite"></div>' +
     '<main id="main-content" tabindex="-1"><div class="surface-state surface-state--loading" role="status" aria-busy="true"></div></main>';
@@ -820,11 +899,12 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       body: { mounts: 0, disposes: 0, updates: [], draws: [] },
       activities: { mounts: 0, disposes: 0, updates: [], draws: [], pops: 0 },
       map: { mounts: 0, disposes: 0, cleanups: 0, updates: [], draws: [], pages: [] },
+      search: { mounts: 0, disposes: 0, draws: [], own: [], pops: 0, held: 0 },
     },
     __scriptErrors: [],
     __consoleErrors: [],
     solShellData: {
-      apps: ['home', 'transcripts', 'more', 'body', 'activities', 'map', 'entities', 'sources', 'settings'].map((name) => ({
+      apps: ['home', 'transcripts', 'more', 'body', 'activities', 'map', 'search', 'entities', 'sources', 'settings'].map((name) => ({
         name, label: name, workspace_url: `/app/${name}/workspace`,
       })),
     },
@@ -1685,6 +1765,127 @@ asyncCase('router: an undated map arrival is the index day, and the map\'s other
   assert.strictEqual(views.mounts, 6, 'the undated address mounts again');
   assert.strictEqual(page.location.pathname, '/app/map/20261008');
   assert.deepStrictEqual(page.record.assigned, []);
+});
+
+function answerSearch(page) {
+  page.server.answers.set('/app/search/api/search?q=alpha', page.server.json({ q: 'alpha' }));
+  page.server.answers.set('/app/home/api/week/20260102', page.server.json({}));
+}
+
+asyncCase('router: search stays in the page with every contract view, and its own links are its entries', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  answerBody(page);
+  answerActivities(page);
+  answerMap(page);
+  answerSearch(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260102' }));
+  await page.boot('home');
+  const views = page.window.__views.search;
+
+  for (const name of ['home', 'transcripts', 'more', 'body', 'activities', 'map']) {
+    page.click('/app/search/');
+    await page.clock.advance(400);
+    assert.ok(page.view('search'), `to search from ${name === 'home' ? 'home' : 'the last view'}`);
+    assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'search');
+    assert.strictEqual(page.document.activeElement, page.main().querySelector('h1'), 'focus is on the heading search ships');
+    page.document.getElementById('app-rail').querySelector(`a[data-app-name="${name}"]`).click();
+    await page.clock.advance(400);
+    assert.ok(page.view(name), `search to ${name}`);
+  }
+  assert.deepStrictEqual(page.record.assigned, [], 'no page loads');
+  assert.strictEqual(page.window.__searchRuns, 1, 'the inline script ran once');
+
+  page.click('/app/search/');
+  await page.clock.advance(400);
+  const length = page.history.length;
+  const mounts = views.mounts;
+  const event = page.click('/app/search/?q=alpha');
+  await page.clock.advance(400);
+  assert.strictEqual(event.defaultPrevented, true, 'search takes its own link');
+  assert.strictEqual(page.history.length, length + 1, 'one entry');
+  assert.strictEqual(views.mounts, mounts, 'not a remount');
+  assert.deepStrictEqual(views.own, ['?q=alpha']);
+  assert.strictEqual(page.location.search, '?q=alpha');
+  assert.deepStrictEqual(views.draws, ['alpha']);
+
+  page.click('/app/search/?q=alpha&offset=20');
+  assert.strictEqual(page.history.length, length + 2, 'a page of results is one entry');
+  await page.clock.advance(400);
+  page.history.back();
+  await page.clock.advance(400);
+  assert.strictEqual(views.pops, 1, 'back between two searches is the view\'s');
+  assert.strictEqual(views.mounts, mounts);
+
+  // The rail's search on a results page: the view's empty search, not a move.
+  page.click('/app/search/');
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.href, ORIGIN + '/app/search/');
+  assert.strictEqual(views.mounts, mounts, 'the empty search is the view\'s entry');
+  assert.strictEqual(page.document.getElementById('search-root').textContent, 'empty');
+  // The same address again is a fresh mount, as for every view.
+  page.click('/app/search/');
+  await page.clock.advance(400);
+  assert.strictEqual(views.mounts, mounts + 1);
+
+  page.click('/app/search/?q=alpha');
+  await page.clock.advance(400);
+  page.click('/app/map/20261003');
+  await page.clock.advance(400);
+  assert.ok(page.view('map'), 'a location result opens the map day in the page');
+  page.history.back();
+  await page.clock.advance(400);
+  page.click('/app/home/week/20260102');
+  await page.clock.advance(400);
+  assert.ok(page.view('home'), 'a reflection result opens its week in the page');
+  page.history.back();
+  await page.clock.advance(400);
+  assert.deepStrictEqual(page.record.assigned, []);
+  page.click('/app/entities/#ada');
+  assert.deepStrictEqual(page.record.assigned, ['/app/entities/'], 'entities is off the contract: a page load');
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
+asyncCase('router: a result\'s transcripts segment, then back, draws the answer search held, with its scroll', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  answerSearch(page);
+  await page.boot('home');
+  const views = page.window.__views.search;
+  page.click('/app/search/');
+  await page.clock.advance(400);
+  page.click('/app/search/?q=alpha');
+  await page.clock.advance(400);
+  assert.strictEqual(page.server.of('/app/search/api/search?q=alpha').length, 1);
+  page.window.scrollY = 300;
+
+  page.click('/app/transcripts/20260102?stream=ja1r#090000_300');
+  await page.clock.advance(400);
+  assert.ok(page.view('transcripts'));
+  assert.strictEqual(page.location.pathname + page.location.search + page.location.hash, '/app/transcripts/20260102?stream=ja1r#090000_300',
+    'the segment address reaches transcripts whole');
+  assert.deepStrictEqual(page.record.assigned, []);
+
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('search'));
+  assert.strictEqual(views.mounts, 2, 'search is mounted again');
+  assert.strictEqual(page.window.__searchRuns, 1, 'from the script that ran once, so its held answers are still there');
+  assert.strictEqual(views.held, 1, 'the held answer is drawn');
+  assert.strictEqual(page.server.of('/app/search/api/search?q=alpha').length, 1, 'no search read on back');
+  assert.strictEqual(page.document.getElementById('search-root').textContent, 'alpha');
+  assert.strictEqual(page.window.scrollY, 300, 'and the scroll comes back');
+
+  // Forward again, then a forward arrival at the same address: a new entry, which reads.
+  page.history.forward();
+  await page.clock.advance(400);
+  assert.ok(page.view('transcripts'));
+  page.window.solRouter.navigate('/app/search/?q=alpha');
+  await page.clock.advance(400);
+  assert.strictEqual(page.server.of('/app/search/api/search?q=alpha').length, 2, 'a forward arrival reads');
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
 });
 
 asyncCase('router: a mount still waiting publishes nothing, is released once, and does not write over the page opened', async () => {
