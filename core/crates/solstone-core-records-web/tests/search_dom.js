@@ -87,6 +87,15 @@ class Node {
 }
 
 let cases = 0;
+async function asyncTest(name, fn) {
+  cases += 1;
+  try {
+    await fn();
+  } catch (err) {
+    console.error(`FAILED: ${name}`);
+    throw err;
+  }
+}
 function test(name, fn) {
   cases += 1;
   try {
@@ -99,7 +108,9 @@ function test(name, fn) {
 
 function createSearchEnvironment() {
   const location = { search: '' };
-  const windowObj = { createViewReady: () => () => {}, location, addEventListener() {} };
+  // The script only registers on the view contract; these cases call its
+  // helpers directly.
+  const windowObj = { SolViews: { register() {} }, location, addEventListener() {} };
   const doc = {
     createElement: (tag) => new Node(tag),
     createTextNode: (t) => {
@@ -226,4 +237,6 @@ test('screen-text continuation hits retain their segment citation and direct lin
   assert.strictEqual(ordinary.querySelectorAll('a')[0].href, '/app/transcripts/20260403?stream=ja1r#090000_300');
 });
 
-console.log(`DOM CASES: ${cases} passed`);
+require('./search_contract_dom.js')({ manifestDir, searchHtml, dateFormatSource, test: asyncTest })
+  .then(() => console.log(`DOM CASES: ${cases} passed`))
+  .catch((err) => { console.error(err); process.exit(1); });

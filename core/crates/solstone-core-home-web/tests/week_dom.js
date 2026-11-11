@@ -1002,8 +1002,10 @@ async function runTests() {
       }
     }
 
+    // Search's script only registers on the view contract; this case calls
+    // its renderHit directly.
     const searchWin = {
-      createViewReady: () => () => {},
+      SolViews: { register() {} },
       document: searchDoc,
       location: { search: '' },
       URLSearchParams: URLSearchParams,
