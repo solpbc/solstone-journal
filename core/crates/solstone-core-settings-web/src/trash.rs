@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use axum::body::Bytes;
 use axum::response::Response;
 use serde_json::{Value, json};
-use solstone_core_removals::{Action, Page, Surface, Unit};
+use solstone_core_removals::{Action, OperationId, Page, Surface, Unit};
 use solstone_core_retention::tombstone::TOMBSTONE_NAME;
 use solstone_core_trash::{Item, TrashError};
 
@@ -370,16 +370,17 @@ fn page_surface(page: Option<&str>) -> Surface {
     Surface::Web { page }
 }
 
-/// Put each selected item back where it was.
+/// Put each selected item back where it was, all under one operation.
 pub async fn recover(journal_root: PathBuf, body: Bytes) -> Response {
     let Some(selection) = parse(&body) else {
         return unreadable_selection();
     };
     let surface = page_surface(selection.page.as_deref());
     let ids = recover_order(&journal_root, selection.ids);
-    run(journal_root, ids, move |root, id| {
+    run(journal_root, ids, move |root, id, operation| {
         solstone_core_import::trash_kinds::with_kinds(root, |kinds| {
-            solstone_core_trash::attach(root, kinds, id, Action::Recover, surface).map(|_| ())
+            solstone_core_trash::attach_in(root, kinds, id, Action::Recover, surface, operation)
+                .map(|_| ())
         })
     })
     .await
@@ -405,13 +406,13 @@ fn recover_order(journal_root: &Path, ids: Vec<String>) -> Vec<String> {
     ranked.into_iter().map(|(_, id)| id).collect()
 }
 
-/// Erase each selected item now.
+/// Erase each selected item now, all under one operation.
 pub async fn erase(journal_root: PathBuf, body: Bytes) -> Response {
     let Some(selection) = parse(&body) else {
         return unreadable_selection();
     };
-    run(journal_root, selection.ids, |root, id| {
-        solstone_core_trash::erase(root, id, Action::Erase, page_surface(None))
+    run(journal_root, selection.ids, |root, id, operation| {
+        solstone_core_trash::erase_in(root, id, Action::Erase, page_surface(None), operation)
     })
     .await
 }
@@ -428,19 +429,21 @@ pub async fn empty(journal_root: PathBuf) -> Response {
         Ok(Err(error)) => return unreadable(error.to_string()),
         Err(error) => return unreadable(error.to_string()),
     };
-    run(journal_root, ids, |root, id| {
-        solstone_core_trash::erase(root, id, Action::EmptyTrash, page_surface(None))
+    run(journal_root, ids, |root, id, operation| {
+        solstone_core_trash::erase_in(root, id, Action::EmptyTrash, page_surface(None), operation)
     })
     .await
 }
 
 /// Run one act per id, each on its own: one that fails never stops the rest.
+/// The ids are one owner act, so every item records under one operation.
 async fn run(
     journal_root: PathBuf,
     ids: Vec<String>,
-    act: impl Fn(&Path, &str) -> Result<(), TrashError> + Send + 'static,
+    act: impl Fn(&Path, &str, &OperationId) -> Result<(), TrashError> + Send + 'static,
 ) -> Response {
     let outcome = tokio::task::spawn_blocking(move || {
+        let operation = OperationId::fresh(chrono::Utc::now());
         let mut done = Vec::new();
         let mut failed = Vec::new();
         let mut seen = std::collections::BTreeSet::new();
@@ -448,7 +451,7 @@ async fn run(
             if !seen.insert(id.clone()) {
                 continue;
             }
-            match act(&journal_root, &id) {
+            match act(&journal_root, &id, &operation) {
                 Ok(()) => done.push(id),
                 Err(error) => {
                     log::warn!("trash item {id}: {error}");
@@ -520,6 +523,10 @@ mod tests {
     }
 
     fn trash_one(root: &Path) -> String {
+        trash_segment(root, "090000_300")
+    }
+
+    fn trash_segment(root: &Path, key: &str) -> String {
         let index = RetentionIndex::new(root);
         Recordings::new(&index)
             .trash(
@@ -527,12 +534,12 @@ mod tests {
                 &Target {
                     day: "20260731".into(),
                     stream: "field".into(),
-                    dir: "090000_300".into(),
+                    dir: key.into(),
                 },
                 Unit::Segment {
                     day: "20260731".into(),
                     stream: "field".into(),
-                    segment: "090000_300".into(),
+                    segment: key.into(),
                 },
                 Action::SegmentDelete,
                 Surface::Web {
@@ -618,6 +625,42 @@ mod tests {
                 page: Page::Transcripts
             }
         );
+    }
+
+    #[tokio::test]
+    async fn a_selection_recovered_together_is_one_operation_in_the_history() {
+        let root = journal();
+        let other = "chronicle/20260731/field/091000_300";
+        fs::create_dir_all(root.path().join(other)).unwrap();
+        fs::write(root.path().join(other).join("audio.flac"), b"raw").unwrap();
+        let ids = [
+            trash_one(root.path()),
+            trash_segment(root.path(), "091000_300"),
+        ];
+        let (_, body) = call(
+            root.path(),
+            Method::POST,
+            "/app/settings/api/trash/recover",
+            &json!({"ids": ids}).to_string(),
+        )
+        .await;
+        assert_eq!(body["done"].as_array().unwrap().len(), 2);
+        let history = solstone_core_removals::history(root.path(), 10).unwrap();
+        let recovered: std::collections::BTreeSet<&str> = history
+            .entries
+            .iter()
+            .filter(|entry| entry.event == solstone_core_removals::Event::Recovered)
+            .map(|entry| entry.operation.as_str())
+            .collect();
+        assert_eq!(recovered.len(), 1);
+        // Each was trashed on its own, so the two moves are two operations.
+        let trashed: std::collections::BTreeSet<&str> = history
+            .entries
+            .iter()
+            .filter(|entry| entry.event == solstone_core_removals::Event::Trashed)
+            .map(|entry| entry.operation.as_str())
+            .collect();
+        assert_eq!(trashed.len(), 2);
     }
 
     #[test]
