@@ -18,7 +18,7 @@ use crate::{
 const AT: &str = "2026-11-11T07:00:00Z";
 
 fn journal() -> tempfile::TempDir {
-    let journal = tempfile::tempdir_in("/var/tmp").unwrap();
+    let journal = tempfile::tempdir().unwrap();
     create_facet(journal.path(), "work", "work", "", "blue", "💼", None).unwrap();
     journal
 }
