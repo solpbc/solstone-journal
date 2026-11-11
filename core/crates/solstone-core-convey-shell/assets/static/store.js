@@ -11,17 +11,39 @@
 // read in flight; the older one still answers whoever asked for it.
 // A read belongs to its mount: when the mount ends, the request is aborted and
 // its answer, or its failure, is never handed back, so a view that has gone
-// can't draw. Everything is kept in memory only; nothing goes to web storage.
+// can't draw. Each of those reads is its own pending promise. One promise
+// shared by every cut-off read would keep every caller for the life of the
+// page, and a caller keeps the view. Everything is kept in memory only;
+// nothing goes to web storage.
 //
 // Reads still go out through `apiJson` and `fetch`, so the read bounds, the
 // transport retries and the adoption of a read the page started early all
 // apply exactly as they do to any other read.
 (function () {
-  const NEVER = new Promise(() => {});
+  // Built once, while nothing is mid-move. Aborting with a fresh exception
+  // records the stack of whoever aborted, and that stack keeps the function
+  // that was replacing the view, and the view's fragment, for as long as the
+  // signal lives.
+  const ABORT_REASON = typeof DOMException === 'function'
+    ? new DOMException('The view has gone', 'AbortError')
+    : Object.assign(new Error('The view has gone'), { name: 'AbortError' });
+
+  // A fresh pending promise per call. One shared promise would keep every
+  // caller waiting on it for the life of the page.
+  function never() {
+    return new Promise(() => {});
+  }
 
   // A signal the page can abort, even in a host without AbortController.
   function createAbort() {
-    if (typeof AbortController === 'function') return new AbortController();
+    if (typeof AbortController === 'function') {
+      const controller = new AbortController();
+      const abort = controller.abort.bind(controller);
+      controller.abort = function (reason) {
+        return abort(reason === undefined ? ABORT_REASON : reason);
+      };
+      return controller;
+    }
     const listeners = new Set();
     const signal = {
       aborted: false,
@@ -106,7 +128,7 @@
       // A save is never cut short by a view going away: its outcome would be
       // unknown. It goes out exactly as it would without a scope.
       if (!isRead(opts)) return window.apiJson(url, withoutFresh(opts));
-      if (ended()) return NEVER;
+      if (ended()) return never();
       const key = keyFor(url);
       const fresh = !!opts?.fresh;
       opts = withoutFresh(opts);
@@ -119,12 +141,12 @@
         (value) => {
           if (inflight.get(key) === settled) inflight.delete(key);
           remember(key, { result: value, error: null });
-          return ended() ? NEVER : value;
+          return ended() ? never() : value;
         },
         (error) => {
           if (inflight.get(key) === settled) inflight.delete(key);
           remember(key, { result: null, error });
-          return ended() ? NEVER : Promise.reject(error);
+          return ended() ? never() : Promise.reject(error);
         }
       );
       if (share) inflight.set(key, settled);
@@ -138,7 +160,7 @@
       if (!isRead(init) || (typeof Request === 'function' && input instanceof Request)) {
         return target(input, init);
       }
-      if (ended()) return NEVER;
+      if (ended()) return never();
       const key = keyFor(input);
       const request = target(input, Object.assign({}, init, {
         signal: eitherSignal(init?.signal || null, signal)
@@ -146,11 +168,11 @@
       return request.then(
         (response) => {
           remember(key, { result: { status: response?.status }, error: null });
-          return ended() ? NEVER : response;
+          return ended() ? never() : response;
         },
         (error) => {
           remember(key, { result: null, error });
-          return ended() ? NEVER : Promise.reject(error);
+          return ended() ? never() : Promise.reject(error);
         }
       );
     }
@@ -163,7 +185,9 @@
   }
 
   window.SolStore = {
-    NEVER,
+    // Makes a fresh pending promise. A cut-off read returns one, and a later
+    // view uses this rather than a promise kept for the life of the page.
+    never,
     scope,
     createAbort,
     eitherSignal,

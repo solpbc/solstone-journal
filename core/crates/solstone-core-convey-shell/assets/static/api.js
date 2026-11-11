@@ -745,12 +745,22 @@
   // makes pass `scope: 'shell'` and outlive mounts.
   let viewGeneration = new Abort();
 
+  // Built once, while nothing is mid-move. Aborting with a fresh exception
+  // records the stack of whoever aborted, and that stack keeps the function
+  // that was replacing the view for as long as the signal lives.
+  const ABORT_REASON = typeof DOMException === 'function'
+    ? new DOMException('The view has gone', 'AbortError')
+    : null;
+
   function beginViewGeneration() {
-    viewGeneration.abort();
+    if (ABORT_REASON) viewGeneration.abort(ABORT_REASON);
+    else viewGeneration.abort();
     viewGeneration = new Abort();
   }
 
-  const NEVER = new Promise(() => {});
+  // A fresh pending promise per call. One shared promise would keep every
+  // caller waiting on it for the life of the page.
+  function never() { return new Promise(() => {}); }
 
   async function apiJson(url, opts) {
     const { fetchOptions, noAuthRedirect, scope, bounds, retry } = normalizeRequestOptions(opts);
@@ -768,7 +778,7 @@
         signals: [callerSignal, generation]
       });
     } catch (error) {
-      if (generation?.aborted && !callerSignal?.aborted) return NEVER;
+      if (generation?.aborted && !callerSignal?.aborted) return never();
       if (error instanceof ReadDeadlineError) {
         pushApiErrorToConsole(new ApiError({
           status: 0,
@@ -783,7 +793,7 @@
     }
     if (generation?.aborted && !callerSignal?.aborted) {
       request.discard();
-      return NEVER;
+      return never();
     }
     const { response } = request;
 
@@ -843,7 +853,7 @@
     try {
       text = await request.readText();
     } catch (error) {
-      if (generation?.aborted && !callerSignal?.aborted) return NEVER;
+      if (generation?.aborted && !callerSignal?.aborted) return never();
       if (error instanceof ReadDeadlineError) {
         pushApiErrorToConsole(new ApiError({
           status: response.status,
@@ -856,7 +866,7 @@
       }
       throw error;
     }
-    if (generation?.aborted && !callerSignal?.aborted) return NEVER;
+    if (generation?.aborted && !callerSignal?.aborted) return never();
 
     if (!response.ok) {
       let payload = null;

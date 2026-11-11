@@ -24,18 +24,20 @@
     const IntersectionObserver = scopedObserver(window.IntersectionObserver);
 
     // A read of the day on the page. After a day step its answer is never
-    // drawn, and it is aborted.
+    // drawn, and it is aborted. Each of those reads is its own pending
+    // promise, so one shared promise cannot keep every day that moved on.
     let dayScope = window.SolStore.createAbort();
     let dayEpoch = 0;
     let nowTimer = null;
     const dayInit = (init) => Object.assign({}, init, {
       signal: window.SolStore.eitherSignal(init?.signal || null, dayScope.signal)
     });
+    const unsettled = () => new Promise(() => {});
     const forTheDay = (request) => {
       const asked = dayEpoch;
       return request.then(
-        (value) => (asked === dayEpoch ? value : window.SolStore.NEVER),
-        (error) => (asked === dayEpoch ? Promise.reject(error) : window.SolStore.NEVER)
+        (value) => (asked === dayEpoch ? value : unsettled()),
+        (error) => (asked === dayEpoch ? Promise.reject(error) : unsettled())
       );
     };
     const dayFetch = (url, init) => forTheDay(fetch(url, dayInit(init)));

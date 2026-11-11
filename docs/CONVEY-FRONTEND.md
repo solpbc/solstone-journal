@@ -168,7 +168,10 @@ another view is shown.
 mount: a second ask while it is out shares it. A read asked because something
 changed passes `fresh: true` and is asked of its own. A view's reads are
 aborted when it goes and never answer after that, so a view that has gone
-can't draw. Writes go out unchanged and are never cut short. Memory only.
+can't draw. Each read that does not answer is its own promise. Never return
+or await one promise kept for the life of the page that does not settle, and
+abort with a reason built once. Writes go out unchanged and are never cut
+short. Memory only.
 
 **Moving between two contract views stays in the page** (`static/router.js`).
 A click on a link, or a day step, between two contract views swaps `<main>`;
