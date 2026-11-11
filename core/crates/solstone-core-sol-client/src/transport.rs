@@ -340,9 +340,21 @@ impl HttpTransport for UreqHttpTransport {
             }
             HttpMethod::Delete => {
                 let builder = add_headers(self.agent(policy).delete(&url), &request.headers);
-                builder
-                    .call()
-                    .map_err(|error| map_ureq_error(error, policy, request.method, &request.path))?
+                // A delete that carries a body (a facet's consent, an erase
+                // now) sends it, as a post does.
+                if let Some(value) = request.json.as_ref() {
+                    builder
+                        .force_send_body()
+                        .header("Content-Type", "application/json")
+                        .send(json_body(value)?)
+                        .map_err(|error| {
+                            map_ureq_error(error, policy, request.method, &request.path)
+                        })?
+                } else {
+                    builder.call().map_err(|error| {
+                        map_ureq_error(error, policy, request.method, &request.path)
+                    })?
+                }
             }
             HttpMethod::Post => {
                 let builder = add_headers(self.agent(policy).post(&url), &request.headers);
@@ -870,5 +882,114 @@ mod tests {
             ),
             ClientError::Timeout { .. }
         ));
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod delete_body_tests {
+    use std::collections::BTreeMap;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread::JoinHandle;
+
+    use serde_json::{Value, json};
+
+    use super::*;
+    use crate::seam::HttpTransport;
+
+    /// A local server that answers one request, handing back its request line
+    /// and body.
+    fn serve_once() -> (u16, JoinHandle<(String, Vec<u8>)>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let port = listener.local_addr().expect("address").port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("connection");
+            let mut received = Vec::new();
+            let mut chunk = [0_u8; 1024];
+            let head_end = loop {
+                let read = stream.read(&mut chunk).expect("read");
+                assert!(read > 0, "the request ended before its head");
+                received.extend_from_slice(&chunk[..read]);
+                if let Some(at) = received.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break at + 4;
+                }
+            };
+            let head = String::from_utf8_lossy(&received[..head_end]).into_owned();
+            let length = head
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())
+                        .flatten()
+                })
+                .unwrap_or(0);
+            let mut body = received[head_end..].to_vec();
+            while body.len() < length {
+                let read = stream.read(&mut chunk).expect("read body");
+                assert!(read > 0, "the request ended before its body");
+                body.extend_from_slice(&chunk[..read]);
+            }
+            let answer = br#"{"success":true,"trash":{"id":"t","erase_at":"later"}}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                answer.len()
+            )
+            .expect("answer head");
+            stream.write_all(answer).expect("answer");
+            let request_line = head.lines().next().unwrap_or_default().to_owned();
+            (request_line, body)
+        });
+        (port, server)
+    }
+
+    #[test]
+    fn a_delete_with_a_body_sends_it() {
+        let (port, server) = serve_once();
+        let transport = UreqHttpTransport::new(i64::from(port));
+        let response = transport
+            .request(ApiRequest {
+                method: HttpMethod::Delete,
+                path: "/app/settings/api/facet/work".to_owned(),
+                params: vec![],
+                json: Some(json!({"consent": true, "erase": true})),
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            })
+            .expect("response");
+        assert_eq!(response.status, 200);
+        let (line, body) = server.join().expect("server");
+        assert_eq!(line, "DELETE /app/settings/api/facet/work HTTP/1.1");
+        let body: Value = serde_json::from_slice(&body).expect("JSON body");
+        assert_eq!(body, json!({"consent": true, "erase": true}));
+    }
+
+    #[test]
+    fn journal_facet_delete_reaches_the_server_with_its_consent() {
+        let (port, server) = serve_once();
+        let transport = UreqHttpTransport::new(i64::from(port));
+        let args = vec!["work".to_owned(), "--yes".to_owned()];
+        let (_, handler) =
+            crate::aggregate::handler_for(&["journal", "facet", "delete"]).expect("command");
+        let output = handler(crate::command::CommandContext {
+            args: &args,
+            env: &BTreeMap::new(),
+            stdin: "".into(),
+            transport: &transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        });
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        let (line, body) = server.join().expect("server");
+        assert_eq!(line, "DELETE /app/settings/api/facet/work HTTP/1.1");
+        let body: Value = serde_json::from_slice(&body).expect("JSON body");
+        assert_eq!(body["consent"], true);
     }
 }
