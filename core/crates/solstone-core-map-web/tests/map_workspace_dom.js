@@ -123,10 +123,15 @@ class DOMNode {
 
   get elements() {
     const elMap = {};
-    for (const child of this.querySelectorAll('input, select, textarea, button')) {
-      const name = child.getAttribute('name');
-      if (name) elMap[name] = child;
-    }
+    const walk = (node) => {
+      for (const child of node.children || []) {
+        if (!child || child.nodeType === 3) continue;
+        const name = child.getAttribute && child.getAttribute('name');
+        if (name && !(name in elMap)) elMap[name] = child;
+        walk(child);
+      }
+    };
+    walk(this);
     return elMap;
   }
 
@@ -160,6 +165,13 @@ class DOMNode {
   addEventListener(type, handler) {
     if (!this.listeners[type]) this.listeners[type] = [];
     this.listeners[type].push(handler);
+  }
+
+  removeEventListener(type, handler) {
+    const list = this.listeners[type];
+    if (!list) return;
+    const at = list.indexOf(handler);
+    if (at >= 0) list.splice(at, 1);
   }
 
   click() {
@@ -337,13 +349,16 @@ function element(id) {
 
 class ResizeObserver {
   constructor(callback) {
+    ResizeObserver.made = (ResizeObserver.made || 0) + 1;
     this.callback = callback;
   }
   observe(target) {
     if (this.callback) this.callback([{ target }]);
   }
   unobserve() {}
-  disconnect() {}
+  disconnect() {
+    ResizeObserver.dropped = (ResizeObserver.dropped || 0) + 1;
+  }
 }
 
 function escapeHtml(value) {
@@ -356,7 +371,7 @@ function escapeHtml(value) {
 }
 
 function leafletRecorder() {
-  const calls = { polyline: [], polygon: [], circleMarker: [], circle: [], fitBounds: 0, tooltips: [] };
+  const calls = { polyline: [], polygon: [], circleMarker: [], circle: [], fitBounds: 0, tooltips: [], removed: 0 };
   const layer = (kind, args) => {
     const object = {
       kind,
@@ -370,7 +385,10 @@ function leafletRecorder() {
   };
   const L = {
     map() {
-      return { fitBounds() { calls.fitBounds += 1; } };
+      return {
+        fitBounds() { calls.fitBounds += 1; },
+        remove() { calls.removed += 1; },
+      };
     },
     control: { scale() { return { addTo() {} }; } },
     polyline(points, style) { calls.polyline.push(points); return layer('polyline', [points, style]); },
@@ -382,6 +400,65 @@ function leafletRecorder() {
   return { L, calls };
 }
 
+function createAbort() {
+  const listeners = new Set();
+  const signal = {
+    aborted: false,
+    addEventListener(type, fn) { if (type === 'abort') listeners.add(fn); },
+    removeEventListener(type, fn) { if (type === 'abort') listeners.delete(fn); },
+  };
+  return {
+    signal,
+    abort() {
+      if (signal.aborted) return;
+      signal.aborted = true;
+      [...listeners].forEach((fn) => fn());
+    },
+  };
+}
+
+function eitherSignal(first, second) {
+  const controller = createAbort();
+  const follow = (signal) => {
+    if (!signal) return;
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', () => controller.abort());
+  };
+  follow(first);
+  follow(second);
+  return controller.signal;
+}
+
+function routeOf(loc) {
+  const parts = String((loc && loc.pathname) || '').split('/');
+  const view = parts[1] === 'app' && parts[2] ? decodeURIComponent(parts[2]) : null;
+  const segment = view && parts[3] ? decodeURIComponent(parts[3]) : null;
+  return {
+    view,
+    pathname: (loc && loc.pathname) || '',
+    search: (loc && loc.search) || '',
+    hash: (loc && loc.hash) || '',
+    day: segment && /^\d{8}$/.test(segment) ? segment : null,
+  };
+}
+
+function listenBag() {
+  const bag = {};
+  return {
+    bag,
+    add(type, handler) {
+      if (!bag[type]) bag[type] = [];
+      bag[type].push(handler);
+    },
+    remove(type, handler) {
+      const list = bag[type];
+      if (!list) return;
+      const at = list.indexOf(handler);
+      if (at >= 0) list.splice(at, 1);
+    },
+  };
+}
+
 async function run({ pathname, responses, withLeaflet = false, withGrid = true }) {
   const elements = {
     'map-shell': element('map-shell'),
@@ -390,8 +467,11 @@ async function run({ pathname, responses, withLeaflet = false, withGrid = true }
     'map-canvas': element('map-canvas'),
   };
   const replaced = [];
+  const hard = [];
   const fetched = [];
   const leaflet = withLeaflet ? leafletRecorder() : null;
+  const windowListeners = listenBag();
+  const documentListeners = listenBag();
   const window = { createViewReady: () => () => {},
     AppServices: { escapeHtml },
     SurfaceState: {
@@ -402,30 +482,38 @@ async function run({ pathname, responses, withLeaflet = false, withGrid = true }
     ConveyIcons: { svg: () => '' },
     CONVEY_COPY: {},
     solPathContext: () => ({ day: /^\/app\/map\/(\d{8})$/.exec(pathname)?.[1] || null }),
-    apiJson: async (url) => {
-      fetched.push(url);
-      if (!(url in responses)) throw new Error(`unexpected fetch ${url}`);
-      return responses[url];
+    apiJson: async (url, opts) => {
+      const method = opts && opts.method ? String(opts.method).toUpperCase() : 'GET';
+      const key = method === 'GET' ? url : `${method} ${url}`;
+      fetched.push(key);
+      if (!(key in responses)) throw new Error(`unexpected fetch ${key}`);
+      return responses[key];
     },
-    location: { pathname, replace: (url) => replaced.push(url) },
+    location: {
+      pathname,
+      search: '',
+      hash: '',
+      replace: (url) => hard.push(url),
+    },
     getComputedStyle: () => ({ getPropertyValue: () => '' }),
     L: leaflet ? leaflet.L : undefined,
     h3: withGrid ? h3 : undefined,
-    addEventListener: (type, handler) => {
-      if (!window._listeners[type]) window._listeners[type] = [];
-      window._listeners[type].push(handler);
+    SolStore: { createAbort, eitherSignal },
+    SolViews: {
+      register(name, definition) { this.registered = { name, mount: definition.mount }; },
+      routeOf,
     },
-    _listeners: {},
+    addEventListener: (type, handler) => windowListeners.add(type, handler),
+    removeEventListener: (type, handler) => windowListeners.remove(type, handler),
+    _listeners: windowListeners.bag,
   };
   const document = {
     getElementById: (id) => elements[id] || null,
     documentElement: {},
     createElement: (tag = 'div') => new DOMNode(tag),
-    addEventListener: (type, handler) => {
-      if (!document._listeners[type]) document._listeners[type] = [];
-      document._listeners[type].push(handler);
-    },
-    _listeners: {},
+    addEventListener: (type, handler) => documentListeners.add(type, handler),
+    removeEventListener: (type, handler) => documentListeners.remove(type, handler),
+    _listeners: documentListeners.bag,
     querySelector: (sel) => document.querySelectorAll(sel)[0] || null,
     querySelectorAll: (sel) => {
       const results = [];
@@ -452,9 +540,74 @@ async function run({ pathname, responses, withLeaflet = false, withGrid = true }
     clearTimeout,
   });
   vm.runInContext(source, context);
+  const registered = window.SolViews.registered;
+  assert.ok(registered && registered.name === 'map' && typeof registered.mount === 'function', 'map registers a mount');
+  const timeouts = new Set();
+  const undo = [];
+  const abort = createAbort();
+  let disposed = false;
+  const ctx = {
+    route: routeOf(window.location),
+    signal: abort.signal,
+    get disposed() { return disposed; },
+    on(target, type, fn) {
+      target.addEventListener(type, fn);
+      const off = () => target.removeEventListener?.(type, fn);
+      return off;
+    },
+    setTimeout(fn, ms, ...args) {
+      const id = setTimeout(() => {
+        timeouts.delete(id);
+        fn(...args);
+      }, ms);
+      timeouts.add(id);
+      return id;
+    },
+    clearTimeout(id) {
+      timeouts.delete(id);
+      clearTimeout(id);
+    },
+    observe(observer) { return observer; },
+    ready() {},
+    global(name, value) {
+      const had = Object.prototype.hasOwnProperty.call(window, name);
+      const before = window[name];
+      window[name] = value;
+      undo.push(() => {
+        if (window[name] !== value) return;
+        if (had) window[name] = before;
+        else delete window[name];
+      });
+    },
+    history: {
+      replace(url) {
+        replaced.push(url);
+        window.location.pathname = String(url).split('?')[0].split('#')[0];
+      },
+    },
+    read(url) { return window.apiJson(url); },
+    onDispose(fn) { undo.push(fn); },
+    teardown() {
+      if (disposed) return;
+      disposed = true;
+      abort.abort();
+      while (undo.length) {
+        try { undo.pop()(); } catch (_) {}
+      }
+      timeouts.forEach((id) => clearTimeout(id));
+      timeouts.clear();
+    },
+  };
+  const handle = await registered.mount(ctx);
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
-  return { elements, replaced, fetched, calls: leaflet?.calls, workspace: window.__mapWorkspace };
+  return {
+    elements, replaced, hard, fetched, calls: leaflet?.calls, ctx,
+    listeners: { window: windowListeners.bag, document: documentListeners.bag },
+    workspace: window.__mapWorkspace,
+    page: window,
+    handle,
+  };
 }
 
 const time = (clock, day = '20261002') => ({ utc: 'x', clock, day });
@@ -537,10 +690,20 @@ test('a day without location offers the nearest days that have it', async () => 
 });
 
 test('the bare app opens the latest day with location, or says there is none', async () => {
-  const withDays = await run({ pathname: '/app/map/', responses: { '/app/map/api/index': { coverage: { start: '20260702', end: '20261005' }, months: {} } } });
+  const opened = { ...day, day: '20261005' };
+  const withDays = await run({
+    pathname: '/app/map/',
+    responses: {
+      '/app/map/api/index': { coverage: { start: '20260702', end: '20261005' }, months: {} },
+      '/app/map/api/day/20261005': opened,
+    },
+  });
   assert.deepStrictEqual(withDays.replaced, ['/app/map/20261005']);
+  assert.deepStrictEqual(withDays.hard, []);
+  assert.ok(withDays.elements['map-view-root'].innerHTML.includes('the day, in order'));
   const none = await run({ pathname: '/app/map/', responses: { '/app/map/api/index': { coverage: null, months: {} } } });
   assert.deepStrictEqual(none.replaced, []);
+  assert.deepStrictEqual(none.hard, []);
   assert.ok(none.elements['map-state-gate'].innerHTML.includes('<empty>'));
   assert.ok('data-map-empty' in none.elements['map-shell'].attributes);
 });
@@ -1292,6 +1455,187 @@ test('month with a stop and no location grid shows the month error', async () =>
   const gateText = elements['map-state-gate'].textContent.replaceAll('&#39;', "'");
   assert.ok(gateText.includes("couldn't open this month's location."));
   assert.strictEqual(elements['map-view-root'].hidden, true);
+});
+
+function flush() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+test('the script only registers, and a dispose removes the map', async () => {
+  assert.ok(source.includes('SolViews.register("map"'));
+  assert.ok(!source.includes('createViewReady'));
+  assert.ok(!source.includes('location.replace'));
+  const viewed = await run({
+    pathname: '/app/map/20261002',
+    responses: { '/app/map/api/day/20261002': day },
+    withLeaflet: true,
+  });
+  assert.strictEqual(viewed.calls.removed, 0);
+  assert.strictEqual(viewed.calls.fitBounds, 1);
+  assert.ok(viewed.workspace && typeof viewed.workspace.monthModel === 'function');
+  viewed.ctx.teardown();
+  assert.strictEqual(viewed.calls.removed, 1);
+  assert.strictEqual(viewed.page.__mapWorkspace, undefined);
+  assert.strictEqual((viewed.listeners.window.pointermove || []).length, 0);
+  assert.strictEqual((viewed.listeners.document.keydown || []).length, 0);
+});
+
+test('a month redraw does not add window listeners, and dispose drops them', async () => {
+  const p = makeMonth({
+    '20261001': {
+      items: [
+        { kind: 'visit', device: 0, arrival: { utc: '2026-10-01T10:00:00Z', clock: '10:00', day: '20261001' }, departure: { utc: '2026-10-01T11:00:00Z', clock: '11:00', day: '20261001' }, point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  const made = ResizeObserver.made || 0;
+  const month = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': p } });
+  assert.strictEqual(month.listeners.window.pointermove.length, 1);
+  assert.strictEqual(month.listeners.window.pointerup.length, 1);
+  assert.strictEqual(month.listeners.document.keydown.length, 1);
+  assert.strictEqual(ResizeObserver.made - made, 1);
+  const zoom = month.elements['map-view-root'].querySelector('[data-map-month-zoom="in"]');
+  assert.ok(zoom, 'the month has a zoom control');
+  zoom.click();
+  assert.strictEqual(month.listeners.window.pointermove.length, 1);
+  assert.strictEqual(month.listeners.document.keydown.length, 1);
+  assert.strictEqual(ResizeObserver.made - made, 1);
+  await month.workspace.renderMonth(p);
+  assert.strictEqual(month.listeners.window.pointermove.length, 1);
+  assert.strictEqual(month.listeners.window.pointerup.length, 1);
+  assert.strictEqual(month.listeners.document.keydown.length, 1);
+  assert.strictEqual(ResizeObserver.made - made, 2);
+  month.ctx.teardown();
+  assert.strictEqual(month.listeners.window.pointermove.length, 0);
+  assert.strictEqual(month.listeners.window.pointerup.length, 0);
+  assert.strictEqual(month.listeners.document.keydown.length, 0);
+});
+
+test('a day step drops the previous day, including a late answer', async () => {
+  let releaseOld;
+  const oldDay = new Promise((resolve) => { releaseOld = resolve; });
+  const next = {
+    ...day,
+    day: '20261003',
+    entries: [{ ...day.entries[1], area: { label: 'near Boulder, Colorado' } }],
+  };
+  const viewed = await run({
+    pathname: '/app/map/20261002',
+    responses: {
+      '/app/map/api/day/20261002': oldDay,
+      '/app/map/api/day/20261003': next,
+    },
+    withLeaflet: true,
+  });
+  assert.ok(!viewed.elements['map-view-root'].innerHTML.includes('the day, in order'));
+  const pending = viewed.handle.update({ day: '20261003' });
+  await flush();
+  await flush();
+  assert.ok(viewed.elements['map-view-root'].innerHTML.includes('near Boulder, Colorado'));
+  assert.ok(!('data-map-page' in viewed.elements['map-shell'].attributes));
+  releaseOld(day);
+  await oldDay;
+  await flush();
+  assert.ok(viewed.elements['map-view-root'].innerHTML.includes('near Boulder, Colorado'));
+  assert.ok(!viewed.elements['map-view-root'].innerHTML.includes('Golden'));
+  await pending;
+});
+
+test('leaving a week for a day removes the page shell and draws that day', async () => {
+  const week = { start: '20260928', previous: null, next: null, days: [
+    { day: '20261002', readings: 1, devices: ['iphone'], items: [] },
+  ] };
+  const viewed = await run({
+    pathname: '/app/map/week/20261002',
+    responses: {
+      '/app/map/api/week/20261002': week,
+      '/app/map/api/day/20261002': day,
+    },
+    withLeaflet: true,
+  });
+  assert.ok('data-map-page' in viewed.elements['map-shell'].attributes);
+  assert.strictEqual(viewed.calls.fitBounds, 0);
+  await viewed.handle.update({ day: '20261002' });
+  await flush();
+  await flush();
+  assert.ok(!('data-map-page' in viewed.elements['map-shell'].attributes));
+  assert.ok(viewed.elements['map-view-root'].innerHTML.includes('the day, in order'));
+  assert.strictEqual(viewed.calls.fitBounds, 1);
+});
+
+test('an accuracy poll stops when the day changes and when the view is disposed', async () => {
+  const downloading = {
+    ...day,
+    accuracy: { job: { state: 'downloading', received: 1, total: 2 }, installed: null, offered: null, current: false, attributions: [] },
+  };
+  const stepped = await run({
+    pathname: '/app/map/20261002',
+    responses: {
+      '/app/map/api/day/20261002': downloading,
+      '/app/map/api/day/20261003': { ...day, day: '20261003', accuracy: { job: { state: 'idle' } } },
+      '/app/map/api/accuracy': { job: { state: 'idle' }, installed: null },
+    },
+  });
+  const left = await run({
+    pathname: '/app/map/20261002',
+    responses: {
+      '/app/map/api/day/20261002': downloading,
+      '/app/map/api/accuracy': { job: { state: 'idle' }, installed: null },
+    },
+  });
+  await stepped.handle.update({ day: '20261003' });
+  await flush();
+  left.ctx.teardown();
+  await new Promise((resolve) => setTimeout(resolve, 2100));
+  assert.ok(!stepped.fetched.includes('/app/map/api/accuracy'), stepped.fetched.join(' '));
+  assert.ok(!left.fetched.includes('/app/map/api/accuracy'), left.fetched.join(' '));
+});
+
+test('a place save in flight is not drawn after a day step or after leaving', async () => {
+  const place = {
+    id: '0123456789ab', label: 'the reading room', owner_name: 'the reading room', name: 'the reading room',
+    alias: '', hidden: false, area: { label: 'near Denver, Colorado' }, words: null, dates: 1, first: '20261002',
+    last: '20261002', night_dates: 0, stays: [],
+  };
+  let releaseStep;
+  let releaseLeave;
+  const stepSave = new Promise((resolve) => { releaseStep = resolve; });
+  const leaveSave = new Promise((resolve) => { releaseLeave = resolve; });
+  const stepped = await run({
+    pathname: '/app/map/place/0123456789ab',
+    responses: {
+      '/app/map/api/place/0123456789ab': place,
+      'POST /app/map/api/place/0123456789ab': stepSave,
+      '/app/map/api/day/20261002': day,
+    },
+  });
+  const left = await run({
+    pathname: '/app/map/place/0123456789ab',
+    responses: {
+      '/app/map/api/place/0123456789ab': place,
+      'POST /app/map/api/place/0123456789ab': leaveSave,
+    },
+  });
+  const submit = (view, marker) => {
+    const form = view.elements['map-view-root'].querySelector('[data-place-form]');
+    const input = form.querySelector('input[name="name"]');
+    input.setAttribute('value', marker);
+    return form.listeners.submit[0]({ preventDefault() {} });
+  };
+  const stepPending = submit(stepped, 'step-marker-name');
+  const leavePending = submit(left, 'leave-marker-name');
+  await stepped.handle.update({ day: '20261002' });
+  await flush();
+  await flush();
+  left.ctx.teardown();
+  releaseStep({ ...place, label: 'step-drawn-label' });
+  releaseLeave({ ...place, label: 'leave-drawn-label' });
+  await stepPending;
+  await leavePending;
+  await flush();
+  assert.ok(stepped.elements['map-view-root'].innerHTML.includes('the day, in order'));
+  assert.ok(!stepped.elements['map-view-root'].innerHTML.includes('step-drawn-label'));
+  assert.ok(!left.elements['map-view-root'].innerHTML.includes('leave-drawn-label'));
 });
 
 (async () => {
