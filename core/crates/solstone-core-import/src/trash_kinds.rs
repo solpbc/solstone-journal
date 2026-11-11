@@ -8,6 +8,7 @@
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
+use solstone_core_facets::facet_trash::{FacetDrops, Facets};
 use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_retention::recording_trash::Recordings;
 use solstone_core_speaker_resolve::speakers_trash::Speakers;
@@ -21,7 +22,9 @@ pub fn with_kinds<T>(journal: &Path, act: impl FnOnce(&[&dyn Kind]) -> T) -> T {
     let recordings = Recordings::new(&index);
     let imports = Imports::new(&index);
     let speakers = Speakers::new(&index);
-    act(&[&recordings, &imports, &speakers])
+    let facets = Facets::new(&index);
+    let drops = FacetDrops::new(&index);
+    act(&[&recordings, &imports, &speakers, &facets, &drops])
 }
 
 /// Finish what a stop interrupted and erase what is due, for every kind.
