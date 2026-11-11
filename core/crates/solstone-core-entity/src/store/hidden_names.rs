@@ -449,3 +449,51 @@ fn strings(value: Option<&Value>) -> Vec<String> {
         _ => Vec::new(),
     }
 }
+
+/// Whether the link folder `folder` in `facet` belongs to a hidden entity, for
+/// that folder alone, by the same per-link rule as [`facet_hidden_keys`]: an
+/// attached link is visible, a detached link a hide marked is hidden, and a
+/// detached link without the mark is hidden when its entity is `blocked`.
+///
+/// Unlike [`facet_hidden_keys`], nothing else in the facet is read, so a
+/// damaged hidden-names file or another folder's damaged link leaves this
+/// answer standing. Undecidable when this folder's link can't be read, or when
+/// it is detached without the mark and its entity file exists but can't be
+/// read.
+pub fn link_folder_hidden(
+    journal: &Path,
+    facet: &str,
+    folder: &str,
+) -> Result<bool, HideUndecidable> {
+    let dirs = LinkDirs::for_facet(journal, facet);
+    let link_path = || journal.join(dirs.link_rel(folder));
+    let link = match dirs.read_link(folder) {
+        Ok(Some(link)) => link,
+        Ok(None) => return Ok(false),
+        Err(error) => {
+            return Err(HideUndecidable::Link {
+                path: link_path(),
+                detail: error.to_string(),
+            });
+        }
+    };
+    if !link.detached() {
+        return Ok(false);
+    }
+    if link.value.get("detached_by").and_then(Value::as_str) == Some(HIDE_DETACHED_BY) {
+        return Ok(true);
+    }
+    if !is_folder_name(&link.entity_id) {
+        return Err(HideUndecidable::Link {
+            path: link_path(),
+            detail: format!("'{}' can't be an entity id", link.entity_id),
+        });
+    }
+    Ok(
+        read_identity_strict(journal, &link.entity_id)?.is_some_and(|identity| {
+            identity
+                .get("blocked")
+                .is_some_and(super::lifecycle::value_is_truthy)
+        }),
+    )
+}

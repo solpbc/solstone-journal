@@ -124,6 +124,8 @@ mod hidden_names_tests;
 #[cfg(test)]
 mod lifecycle_tests;
 #[cfg(test)]
+mod link_folder_hidden_tests;
+#[cfg(test)]
 mod merge_tests;
 #[cfg(test)]
 mod resolution_tests;
