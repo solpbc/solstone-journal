@@ -591,7 +591,10 @@ fn name_is_taken(
         )
     })?;
     // A merged name redirects; one kept from a delete is created anew.
-    if matches!(retired, Some(solstone_core_entity::RetiredState::Merged { .. })) {
+    if matches!(
+        retired,
+        Some(solstone_core_entity::RetiredState::Merged { .. })
+    ) {
         return Ok(true);
     }
     if entity_type == "Person" {
@@ -916,8 +919,7 @@ pub fn prepare_review_promotion(
         } else {
             // A slug kept from a deleted entity gives way to the next free id.
             let id = new_entity_id(root, &slug)?;
-            let mut new_identity =
-                json!({"id":id,"name":name,"type":entity_type,"created_at":now});
+            let mut new_identity = json!({"id":id,"name":name,"type":entity_type,"created_at":now});
             if !batch_principal_taken
                 && entity_type == "Person"
                 && solstone_core_entity::becomes_journal_principal(root, name, None, &[])

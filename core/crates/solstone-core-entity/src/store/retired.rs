@@ -404,7 +404,7 @@ pub fn live_merge_successor(journal_root: &Path, successor: &str) -> Option<Stri
 /// Owner-facing explanation for a record that can't be used.
 pub fn damaged_record_detail(detail: &str) -> String {
     format!(
-        "your journal's record of merged and deleted entities ({RETIRED_ENTITIES_FILE}) can't be read: {detail}. moving that file aside deletes nothing and lets this go ahead, but names you deleted may reappear on their own."
+        "your journal's record of merged and deleted entities ({RETIRED_ENTITIES_FILE}) can't be read: {detail}."
     )
 }
 

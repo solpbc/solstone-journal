@@ -336,9 +336,10 @@ pub fn restore_entity_ambiguity_references(
             let Some(ambiguity_id) = record.get("ambiguity_id").and_then(Value::as_str) else {
                 continue;
             };
-            let Some(row) = rows.iter_mut().find(|row| {
-                row.get("ambiguity_id").and_then(Value::as_str) == Some(ambiguity_id)
-            }) else {
+            let Some(row) = rows
+                .iter_mut()
+                .find(|row| row.get("ambiguity_id").and_then(Value::as_str) == Some(ambiguity_id))
+            else {
                 continue;
             };
             let mut changed = row.clone();
@@ -351,9 +352,9 @@ pub fn restore_entity_ambiguity_references(
                 if let Some(candidates) = object
                     .get_mut("ranked_candidates")
                     .and_then(Value::as_array_mut)
-                    && !candidates
-                        .iter()
-                        .any(|existing| existing.get("id").and_then(Value::as_str) == Some(entity_id))
+                    && !candidates.iter().any(|existing| {
+                        existing.get("id").and_then(Value::as_str) == Some(entity_id)
+                    })
                 {
                     if let (Some(fields), Some(tier)) = (candidate.as_object_mut(), tier) {
                         fields.insert("tier".to_owned(), tier);

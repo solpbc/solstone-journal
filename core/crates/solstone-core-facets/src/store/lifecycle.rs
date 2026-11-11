@@ -369,12 +369,8 @@ pub enum FacetEntityLifecycleError {
     Entity(EntityLifecycleError),
     FacetStore(FacetStoreError),
     FacetWrite(FacetWriteError),
-    PrincipalEntityProtected {
-        entity_id: String,
-    },
-    RelationshipsUnreadable {
-        path: String,
-    },
+    PrincipalEntityProtected { entity_id: String },
+    RelationshipsUnreadable { path: String },
 }
 
 impl fmt::Display for FacetEntityLifecycleError {

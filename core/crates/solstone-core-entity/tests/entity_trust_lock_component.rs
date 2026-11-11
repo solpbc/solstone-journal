@@ -381,8 +381,7 @@ mod merge_recovery {
         {
             let _entity = solstone_core_entity::hold_entity_trust_lock(&journal).unwrap();
             solstone_core_entity::recover_interrupted_entity_merge(&journal).unwrap();
-            solstone_core_entity::record_deleted_entity(&journal, "other", "other")
-                .unwrap();
+            solstone_core_entity::record_deleted_entity(&journal, "other", "other").unwrap();
         }
         assert!(journal.join("entities/source").exists());
         assert!(!journal.join("health/entity-merge-recovery").exists());

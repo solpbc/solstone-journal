@@ -100,8 +100,7 @@ pub use retired::{
     EntityEdgeAlias, MergeLogRow, MergedEntity, RETIRED_ENTITIES_FILE, RetiredEntities,
     RetiredState, damaged_record_detail, entity_edge_aliases, fresh_entity_id,
     live_merge_successor, merged_away, merged_successor, parse_retired_entities, read_merge_log,
-    read_retired_entities, record_deleted_entity, retired_record_damage,
-    retired_state,
+    read_retired_entities, record_deleted_entity, retired_record_damage, retired_state,
 };
 pub use review_candidates::{
     EntityMergeOpenClass, EntityReviewCandidateError, PreparedMergeProposals,
