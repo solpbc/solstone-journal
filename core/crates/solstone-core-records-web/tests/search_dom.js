@@ -145,7 +145,7 @@ function createSearchEnvironment() {
   let script = searchHtml.slice(scriptStart, scriptEnd);
   script = script.replace(
     'function renderHit(hit,dayHref){',
-    'window.renderHit = renderHit;\n function renderHit(hit,dayHref){'
+    'window.renderHit = renderHit; window.matchesStatus = matchesStatus; window.COUNT_COPY = COUNT_COPY;\n function renderHit(hit,dayHref){'
   );
   vm.runInContext(script, context);
 
@@ -194,15 +194,27 @@ test('renderHit drops an agent label the stream label already says, and keeps an
   assert.strictEqual(agentShown({ stream: 'ja1r', agent_label: 'Describe' }), true);
 });
 
+test('the count line takes the one form for one match and one day, and the many form otherwise', () => {
+  const env = createSearchEnvironment();
+  const copy = env.window.COUNT_COPY;
+  const words = (line) => line.replace(/[0-9,.]/g, ' ').split(/\s+/).filter(Boolean);
+  const one = words(env.window.matchesStatus(1, 1));
+  assert.ok(one.includes(copy.match.one) && one.includes(copy.day.one), one.join(' '));
+  assert.ok(!one.includes(copy.match.other) && !one.includes(copy.day.other), one.join(' '));
+  const many = words(env.window.matchesStatus(1200, 3));
+  assert.ok(many.includes(copy.match.other) && many.includes(copy.day.other), many.join(' '));
+});
+
 test('screen-text continuation hits retain their segment citation and direct link', () => {
   const env = seededSearch();
   for (const prefix of ['', 'chronicle/']) {
     const card = env.window.renderHit({
       path: prefix + '20260403/ja1r/090000_300/talents/screen_text.md',
-      stream: 'ja1r', segment: '090000_300', minute: '02:05',
+      stream: 'ja1r', segment: '090000_300', minute: '02:05', time: '09:02:05',
       text: 'a continuation chunk without its original heading',
     }, '/app/transcripts/20260403');
-    assert.strictEqual(card.querySelector('.search-citation').textContent, '090000_300 · 02:05');
+    // The citation is the time the server names.
+    assert.strictEqual(card.querySelector('.search-citation').textContent, '09:02:05');
     const links = card.querySelectorAll('a');
     assert.strictEqual(links.length, 1);
     assert.strictEqual(links[0].href, '/app/transcripts/20260403?stream=ja1r#090000_300');

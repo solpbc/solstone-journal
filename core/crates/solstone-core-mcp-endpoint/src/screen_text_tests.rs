@@ -288,8 +288,18 @@ fn screen_text_two_groups_search_citations_and_replace_before_reindex() {
     let hit1 = &r1[0];
     assert_eq!(hit1["segment"], SEGMENT);
     assert_eq!(hit1["minute"], "00:10");
+    // When it was on screen: the segment's 09:00:00 start plus 10 s.
+    assert_eq!(hit1["time"], "09:00:10");
     assert!(hit1.get("group_offset_ms").is_none());
     let ref1 = hit1["reference"].as_str().unwrap().to_owned();
+    let fetched = probe(&journal, "fetch", json!({"reference": ref1})).unwrap();
+    assert_eq!(fetched["segment_start"], "09:00:00");
+    assert!(
+        fetched["text"]
+            .as_str()
+            .unwrap()
+            .contains("## 00:10 · code")
+    );
 
     // Search group 2
     let s2 = probe(&journal, "search", json!({"query": "marker beta"})).unwrap();
@@ -298,6 +308,7 @@ fn screen_text_two_groups_search_citations_and_replace_before_reindex() {
     let hit2 = &r2[0];
     assert_eq!(hit2["segment"], SEGMENT);
     assert_eq!(hit2["minute"], "00:25");
+    assert_eq!(hit2["time"], "09:00:25");
     assert!(hit2.get("group_offset_ms").is_none());
 
     // Replace file on disk before reindex
@@ -661,4 +672,36 @@ fn screen_text_word_crossing_chunk_limit_is_searchable_by_owner_and_agent() {
     assert_eq!(agent["results"].as_array().unwrap().len(), 1);
     assert_eq!(agent["results"][0]["segment"], SEGMENT);
     assert_eq!(agent["results"][0]["minute"], "00:12");
+}
+
+#[test]
+fn screen_text_snippet_is_literal_once_like_its_fetch() {
+    let journal = fixture();
+    let st_path = journal
+        .path()
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join(SEGMENT)
+        .join("talents/screen_text.md");
+    let mut record = "## 00:00 · reading\n".to_owned();
+    solstone_core_format::content::screen_text::append_screen_text_line(
+        &mut record,
+        "< Display & 10:25 snippetwitness",
+    );
+    fs::write(&st_path, &record).unwrap();
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+    grant_categories(&journal, &["screen_text"]);
+
+    let search = probe(&journal, "search", json!({"query": "snippetwitness"})).unwrap();
+    let hit = &search["results"][0];
+    let snippet = hit["snippet"].as_str().unwrap();
+    let fetched = probe(&journal, "fetch", json!({"reference": hit["reference"]})).unwrap();
+    let text = fetched["text"].as_str().unwrap();
+    // The stored line is literal Markdown already; the snippet carries it as
+    // fetch does, not escaped a second time.
+    let stored_line = record.lines().nth(1).unwrap();
+    assert!(text.contains(stored_line), "{text}");
+    assert!(snippet.contains(stored_line), "{snippet}");
+    assert!(!snippet.contains("&amp;lt"), "{snippet}");
 }

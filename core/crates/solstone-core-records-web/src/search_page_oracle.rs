@@ -269,13 +269,7 @@ mod tests {
         agent
             .split('_')
             .filter(|word| !word.is_empty())
-            .map(|word| {
-                let mut chars = word.chars();
-                chars
-                    .next()
-                    .map(|first| first.to_uppercase().collect::<String>() + chars.as_str())
-                    .unwrap_or_default()
-            })
+            .map(str::to_lowercase)
             .collect::<Vec<_>>()
             .join(" ")
     }

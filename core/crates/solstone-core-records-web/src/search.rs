@@ -236,13 +236,19 @@ pub(crate) fn search_response_with_index(
                     hit_obj["possible_name"] = Value::Bool(true);
                 }
                 if let Some(offset_ms) = hit.metadata.group_offset_ms {
-                    if let Some(segment) =
-                        solstone_core_format::content::screen_text::screen_text_segment(&hit.metadata.path)
-                    {
+                    let segment =
+                        solstone_core_format::content::screen_text::screen_text_segment(&hit.metadata.path);
+                    if let Some(segment) = segment {
                         hit_obj["segment"] = Value::String(segment.to_owned());
                     }
                     hit_obj["minute"] =
                         Value::String(solstone_core_format::content::screen_text::screen_text_minute(offset_ms));
+                    // When it was on screen, on the recording device's clock.
+                    if let Some(time) = segment.and_then(|segment| {
+                        solstone_core_format::content::screen_text::screen_text_clock(segment, offset_ms)
+                    }) {
+                        hit_obj["time"] = Value::String(time);
+                    }
                 }
                 if let Some((creation_label, origin)) = memory {
                     hit_obj["creation_label"] = Value::String(creation_label);
@@ -342,6 +348,7 @@ async fn entry_api(journal_root: PathBuf, Query(query): Query<EntryQuery>) -> Re
     if query.path.is_empty() || query.path.len() > 4096 || query.idx < 0 || query.entry_id <= 0 {
         return invalid_value("invalid entry reference");
     }
+    let path = query.path.clone();
     let result = tokio::task::spawn_blocking(move || {
         read_indexed_entry(
             &journal_root,
@@ -355,11 +362,13 @@ async fn entry_api(journal_root: PathBuf, Query(query): Query<EntryQuery>) -> Re
     .await;
     match result {
         Ok(Ok(IndexedEntry::Found(content))) => {
+            let content = search_display_text(&path, &content);
             axum::Json(json!({"content": content})).into_response()
         }
         // The file was indexed again after the search. What sits at the same
         // place now is served, marked so it is not taken for the search's text.
         Ok(Ok(IndexedEntry::Reindexed(content))) => {
+            let content = search_display_text(&path, &content);
             axum::Json(json!({"content": content, "reindexed_since_search": true})).into_response()
         }
         Ok(Ok(IndexedEntry::TooLarge)) => invalid_value("this entry is too long to display here."),
@@ -569,17 +578,12 @@ fn format_date(day: &str) -> String {
     )
 }
 
+/// A talent's name as the product writes it: lowercase words.
 fn agent_label(agent: &str) -> String {
     agent
         .split('_')
         .filter(|word| !word.is_empty())
-        .map(|word| {
-            let mut chars = word.chars();
-            chars
-                .next()
-                .map(|first| first.to_uppercase().collect::<String>() + chars.as_str())
-                .unwrap_or_default()
-        })
+        .map(str::to_lowercase)
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -812,6 +816,13 @@ fn search_display_text<'a>(path: &str, text: &'a str) -> Cow<'a, str> {
     if !solstone_core_format::content::screen_text::is_screen_text_path(path) {
         return Cow::Borrowed(text);
     }
+    // Each heading names the clock time it was seen, not its offset.
+    let clocked = solstone_core_format::content::screen_text::screen_text_segment(path)
+        .map(|segment| {
+            solstone_core_format::content::screen_text::screen_text_with_clock(text, segment)
+        })
+        .unwrap_or(Cow::Borrowed(text));
+    let text = clocked.as_ref();
     let mut visible = String::with_capacity(text.len());
     let mut remaining = text;
     while !remaining.is_empty() {
@@ -1551,10 +1562,12 @@ mod facet_reader_tests {
             .unwrap();
         assert_eq!(screen_hit["segment"], "100000_60");
         assert_eq!(screen_hit["minute"], "00:12");
+        // When it was on screen: the segment's 10:00:00 start plus 12 s.
+        assert_eq!(screen_hit["time"], "10:00:12");
         assert!(screen_hit.get("group_offset_ms").is_none());
         assert_eq!(
             screen_hit["text"],
-            "00:12 · terminal screen test <strong>content</strong>, &amp; &lt;img src=x&gt; &amp;lt;tag&amp;gt;"
+            "10:00:12 · terminal screen test <strong>content</strong>, &amp; &lt;img src=x&gt; &amp;lt;tag&amp;gt;"
         );
         assert_eq!(
             std::fs::read_to_string(&screen_file).unwrap(),
@@ -1572,8 +1585,12 @@ mod facet_reader_tests {
             .await,
         )
         .await;
-        // The indexed read remains literal Markdown; decoding is display-only.
-        assert_eq!(entry["content"], screen_record.trim_end());
+        // The owner reads the entry as text, with its clock time; the stored
+        // file stays literal Markdown with its offset (checked above).
+        assert_eq!(
+            entry["content"],
+            "## 10:00:12 · terminal\n- screen test content, & <img src=x> &lt;tag&gt;"
+        );
 
         let audio_hit = hits
             .iter()

@@ -13,6 +13,9 @@
 //!   retaining byte fidelity with no synthesized provenance.
 //! - **Chunks**: Derived on UTF-8 char boundaries (<= 65536 bytes) carrying the group offset.
 //! - **Fetch**: Returns exact file bytes without lossy conversions or Markdown chunk fallbacks.
+//!   A display for the owner may name each heading's clock time (`screen_text_with_clock`).
+
+use std::borrow::Cow;
 
 use unicode_normalization::UnicodeNormalization;
 
@@ -340,6 +343,73 @@ pub fn screen_text_minute(offset_ms: i64) -> String {
     }
 }
 
+/// The clock time a screen-text group was seen: its segment's start, read from
+/// the segment key (`HHMMSS_LEN`), plus the group's offset, as `HH:MM:SS` on the
+/// recording device's own clock, the clock the segment's times are on. `None`
+/// when the key carries no start or the offset is negative.
+///
+/// The stored text keeps offsets, which [`parse_heading_offset`] and citations
+/// read. This is for a reader: a screenshot's group is always at offset zero,
+/// so its offset alone reads as midnight.
+pub fn screen_text_clock(segment: &str, offset_ms: i64) -> Option<String> {
+    if offset_ms < 0 {
+        return None;
+    }
+    let start = segment.get(..6)?;
+    if !start.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let hours = start[..2].parse::<i64>().ok()?;
+    let minutes = start[2..4].parse::<i64>().ok()?;
+    let seconds = start[4..6].parse::<i64>().ok()?;
+    if hours > 23 || minutes > 59 || seconds > 59 {
+        return None;
+    }
+    let total = (hours * 3600 + minutes * 60 + seconds + offset_ms / 1000) % 86_400;
+    Some(format!(
+        "{:02}:{:02}:{:02}",
+        total / 3600,
+        (total % 3600) / 60,
+        total % 60
+    ))
+}
+
+/// Screen text for a reader: every group heading's offset rewritten as the
+/// clock time it was seen ([`screen_text_clock`]). Everything else is kept as
+/// it is, escapes included.
+pub fn screen_text_with_clock<'a>(text: &'a str, segment: &str) -> Cow<'a, str> {
+    let mut changed = false;
+    let mut out = String::with_capacity(text.len());
+    for line in text.split_inclusive('\n') {
+        let body = line.trim_end_matches(['\n', '\r']);
+        let clock =
+            parse_heading_offset(body).and_then(|offset| screen_text_clock(segment, offset));
+        let Some(clock) = clock else {
+            out.push_str(line);
+            continue;
+        };
+        let hashes = body.bytes().take_while(|&byte| byte == b'#').count();
+        let after_hashes = &body[hashes..];
+        let spaces = after_hashes.len() - after_hashes.trim_start_matches([' ', '\t']).len();
+        let start = hashes + spaces;
+        let rest = &body[start..];
+        let clock_len = if rest.as_bytes().get(5) == Some(&b':') {
+            8
+        } else {
+            5
+        };
+        out.push_str(&body[..start]);
+        out.push_str(&clock);
+        out.push_str(&line[start + clock_len..]);
+        changed = true;
+    }
+    if changed {
+        Cow::Owned(out)
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+
 /// Extract segment component (index 2) from a day-rooted path `YYYYMMDD/<stream>/<segment>/...`.
 pub fn screen_text_segment(rel: &str) -> Option<&str> {
     let normalized = rel.strip_prefix("chronicle/").unwrap_or(rel);
@@ -604,6 +674,33 @@ mod tests {
     #[test]
     fn screen_text_helpers() {
         assert_eq!(screen_text_minute(0), "00:00");
+        assert_eq!(
+            screen_text_clock("100630_1", 0).as_deref(),
+            Some("10:06:30")
+        );
+        assert_eq!(
+            screen_text_clock("235950_300", 15_000).as_deref(),
+            Some("00:00:05")
+        );
+        assert_eq!(
+            screen_text_clock("093000_300", 72_500).as_deref(),
+            Some("09:31:12")
+        );
+        assert_eq!(screen_text_clock("notakey", 0), None);
+        assert_eq!(screen_text_clock("100630_1", -1), None);
+        let text = "preamble\n## 00:00 · reading\n- 10\\:25 &lt; Display\n### 01:02:03 · window title\n- ## 00:12 · not a heading\n";
+        assert_eq!(
+            screen_text_with_clock(text, "100630_1"),
+            "preamble\n## 10:06:30 · reading\n- 10\\:25 &lt; Display\n### 11:08:33 · window title\n- ## 00:12 · not a heading\n"
+        );
+        assert!(matches!(
+            screen_text_with_clock("no headings", "100630_1"),
+            Cow::Borrowed(_)
+        ));
+        assert!(matches!(
+            screen_text_with_clock(text, "notakey"),
+            Cow::Borrowed(_)
+        ));
         assert_eq!(screen_text_minute(12_000), "00:12");
         assert_eq!(screen_text_minute(3_723_000), "01:02:03");
         assert_eq!(screen_text_minute(-1), "");

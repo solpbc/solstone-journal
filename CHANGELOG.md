@@ -61,6 +61,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when a day mentioned a person or topic you had removed from a facet or hidden, your journal could skip that day's notes for every other person and topic in that facet. it now leaves out only that one and keeps the rest.
 - in the frame viewer on transcripts, the left and right arrow keys now move between frames without also changing the day behind it, and the viewer's previous and next controls work from the keyboard.
 - what comes in from your ipad is now labeled "your ipad", as the sources page already shows it, instead of "your tablet".
+- search now shows when screen text was on screen as a time of day, such as 10:06:30, instead of a count from the start of its recording. so do the screen text tab on transcripts and an entry you open from search, which now reads without stray backslashes or codes like `&lt;`. connected agents get the same time with each screen-text result.
+- screen text in a search result now reaches connected agents as it reads when they open the entry, without the extra symbols it used to carry.
+- search says "1 match across 1 day" when there is one, and its labels and the app name on a dashboard notice are lowercase like the rest of the dashboard.
 
 ## [2.0.75] - 2026-11-11
 

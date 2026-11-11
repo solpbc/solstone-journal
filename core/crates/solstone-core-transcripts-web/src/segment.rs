@@ -438,6 +438,13 @@ fn prepare_segment(
     if data_state.contains_key("screen") {
         md_files.remove("screen");
     }
+    // Screen text names the clock time each group was seen, not its offset.
+    if let Some(text) = md_files.get_mut("screen_text") {
+        let clocked = solstone_core_format::content::screen_text::screen_text_with_clock(text, key);
+        if let std::borrow::Cow::Owned(clocked) = clocked {
+            *text = clocked;
+        }
+    }
     let reason_code = extract_modality_reason_codes(&records);
     let mut payload = json!({
         "chunks": chunks,
@@ -1495,6 +1502,9 @@ mod tests {
         let md_files = val["md_files"].as_object().unwrap();
         assert!(md_files.contains_key("screen_text"));
         assert!(md_files.contains_key("summary"));
+        // The group heading names its clock time: the segment's start plus 12 s.
+        let screen_text = md_files["screen_text"].as_str().unwrap();
+        assert!(screen_text.starts_with("## 10:00:12 · "), "{screen_text}");
     }
 
     #[test]

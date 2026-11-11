@@ -934,7 +934,6 @@ a.notification-card:active {
 .notification-app-name {
   font-size: 11px;
   color: var(--ink-faint);
-  text-transform: capitalize;
   letter-spacing: 0.03em;
   flex: 1;
   font-weight: 500;

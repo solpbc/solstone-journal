@@ -88,6 +88,10 @@
  // `ts`. The one exception is a row that matches only on a field the readable
  // sentences never carry: there the excerpt *is* the record, and the server
  // then sends no `record` so this card never prints it twice (FE3 #3).
+ // The count line's words, one and many, so one match reads as one.
+ const COUNT_COPY={match:{one:'match',other:'matches'},day:{one:'day',other:'days'}};
+ function counted(n,noun){return `${n.toLocaleString()} ${n===1?COUNT_COPY[noun].one:COUNT_COPY[noun].other}`;}
+ function matchesStatus(total,days){return `${counted(total,'match')} across ${counted(days,'day')}.`;}
  function renderHit(hit,dayHref){
   const card=node('article','search-result');const meta=node('div','search-meta');
   const recordTime=Number.isFinite(hit.ts)&&hit.ts>0?window.JournalFormat.time(hit.ts):'';
@@ -112,7 +116,8 @@
    meta.append(streamSpan);
   }
   if(recordTime)meta.append(node('span','',recordTime));
-  if(hit.segment)meta.append(node('span','search-citation',String(hit.segment)+(hit.minute?' · '+String(hit.minute):'')));
+  // Screen text names when it was on screen; the segment id and its offset stand in only when it can't.
+  if(hit.segment)meta.append(node('span','search-citation',hit.time?String(hit.time):String(hit.segment)+(hit.minute?' · '+String(hit.minute):'')));
   card.append(meta);const text=node('p','search-excerpt');
   text.append(excerpt(hit.text));
   card.append(text);
@@ -168,7 +173,7 @@
   if(from.value)p.set('day_from',from.value.replaceAll('-',''));if(to.value)p.set('day_to',to.value.replaceAll('-',''));
   try{
    const data=await window.apiJson('/app/search/api/search?'+p,{signal:controller.signal});if(!root.isConnected)return;
-   status.textContent=data.total?`${data.total.toLocaleString()} matches across ${data.total_days.toLocaleString()} ${data.total_days===1?'day':'days'}.`:'no matches. try fewer words or a wider date range.';
+   status.textContent=data.total?matchesStatus(data.total,data.total_days):'no matches. try fewer words or a wider date range.';
    if(data.rebuilding)status.append(node('p','','search is rebuilding, so older days may be missing for now.'));
    if(data.relaxed&&data.total)status.append(node('p','','nothing matched your exact search, so these are broader matches.'));
    for(const day of orderedDays(data.days)){

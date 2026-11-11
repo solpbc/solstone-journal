@@ -1539,7 +1539,11 @@ fn search(
             let mut value = json!({
                 "title": entry_title(&hit.metadata.day),
                 "date": hit.metadata.day,
-                "snippet": snippet(&served_text),
+                "snippet": if is_screen_text {
+                    screen_text_snippet(&served_text)
+                } else {
+                    snippet(&served_text)
+                },
                 "reference": reference,
             });
             if is_possible_name {
@@ -1547,16 +1551,24 @@ fn search(
                 value["possible_name"] = Value::Bool(true);
             }
             if let Some(offset_ms) = hit.metadata.group_offset_ms {
-                if let Some(segment) =
-                    solstone_core_format::content::screen_text::screen_text_segment(
-                        &hit.metadata.path,
-                    )
-                {
+                let segment = solstone_core_format::content::screen_text::screen_text_segment(
+                    &hit.metadata.path,
+                );
+                if let Some(segment) = segment {
                     value["segment"] = Value::String(segment.to_owned());
                 }
                 value["minute"] = Value::String(
                     solstone_core_format::content::screen_text::screen_text_minute(offset_ms),
                 );
+                // When it was on screen, on the recording device's clock: the
+                // offset alone reads as midnight for a screenshot.
+                if let Some(time) = segment.and_then(|segment| {
+                    solstone_core_format::content::screen_text::screen_text_clock(
+                        segment, offset_ms,
+                    )
+                }) {
+                    value["time"] = Value::String(time);
+                }
             }
             let is_story_activity = record
                 .as_ref()
@@ -1909,6 +1921,18 @@ fn fetch(
                     "date": entry.day,
                     "text": page.text,
                 });
+                // The text keeps its bytes, and its headings count from here: when
+                // its recording began, on the recording device's clock.
+                if let Some(start) =
+                    solstone_core_format::content::screen_text::screen_text_segment(&entry.path)
+                        .and_then(|segment| {
+                            solstone_core_format::content::screen_text::screen_text_clock(
+                                segment, 0,
+                            )
+                        })
+                {
+                    value["segment_start"] = Value::String(start);
+                }
                 if let Some(next_off) = page.next_offset {
                     let next_ref = codec()
                         .mint(
@@ -3309,6 +3333,24 @@ pub(crate) fn scope_ids(scope: &ConnectionScope) -> Vec<String> {
         ConnectionScope::WholeJournal => Vec::new(),
         ConnectionScope::ChosenFacets { ids } => ids.iter().cloned().collect(),
     }
+}
+
+/// Screen text is stored literal, so its snippet is cut, never escaped again.
+/// A cut never leaves half an escape.
+fn screen_text_snippet(value: &str) -> String {
+    let mut cut = value.chars().take(MAX_SNIPPET_CHARS).collect::<String>();
+    if cut.len() < value.len() {
+        if let Some(amp) = cut.rfind('&')
+            && !cut[amp..].contains(';')
+        {
+            cut.truncate(amp);
+        }
+        let trailing = cut.len() - cut.trim_end_matches('\\').len();
+        if trailing % 2 == 1 {
+            cut.pop();
+        }
+    }
+    cut
 }
 
 fn snippet(value: &str) -> String {

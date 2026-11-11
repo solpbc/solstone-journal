@@ -3977,6 +3977,10 @@
       return String(markdown || '').replace(/^\s*#{1,6}[ \t]+\d{1,2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?[ \t]*(?:\r?\n|$)/, '');
     }
 
+    // Each drawn screenshot label gets its own id: the same entry can be drawn
+    // in more than one tab.
+    let shotLabelSeq = 0;
+
     function renderScreenshotEntry(chunk, idx) {
       const shot = chunk.screenshot || {};
       const timeStr = chunk.time || '';
@@ -3992,15 +3996,18 @@
       let html = `<div class="tr-entry tr-entry-screen tr-entry-screenshot" data-idx="${idx}" data-frame-idx="${frameIdx}" data-type="screen" role="listitem">`;
       html += `<div class="tr-entry-time">${timeStr}</div>`;
       html += '<div class="tr-entry-content">';
-      html += `<span class="sr-only">${escapeHtml(SCREENSHOT_COPY.J1)}: </span>`;
+      // A screen reader hears J1 once: the visible label names the button that
+      // opens the viewer, and is not read again on its own. With no image the
+      // label is read where it stands.
+      shotLabelSeq += 1;
+      const labelId = `tr-shot-label-${shotLabelSeq}`;
       if (imageUrl) {
-        // A button, so a keyboard opens the viewer too; the image's alt names it.
-        html += '<button type="button" class="tr-entry-shot-open">'
+        html += `<button type="button" class="tr-entry-shot-open" aria-labelledby="${labelId}">`
           + `<img class="tr-entry-thumb tr-entry-shot" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(alt)}"${size} loading="lazy">`
           + '</button>';
       }
       html += '<div class="tr-entry-desc">';
-      html += `<div class="tr-shot-label">${escapeHtml(label)}</div>`;
+      html += `<div class="tr-shot-label" id="${labelId}"${imageUrl ? ' aria-hidden="true"' : ''}>${escapeHtml(label)}</div>`;
       if (searchable) {
         html += renderScreenChunkMarkdown(withoutLeadingTimeHeading(chunk.markdown));
       } else if (shot.text === 'no_processing') {

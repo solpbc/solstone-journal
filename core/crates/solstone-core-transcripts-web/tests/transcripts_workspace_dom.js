@@ -1311,7 +1311,13 @@ test('a screenshot opens the frame viewer from a button a keyboard reaches', asy
   assert.strictEqual(opener.getAttribute('type'), 'button');
   const image = opener.querySelector('img.tr-entry-shot');
   assert.ok(image, opener.innerHTML);
-  assert.ok(image.getAttribute('alt'), 'the image names the button');
+  assert.ok(image.getAttribute('alt'), 'the image keeps its alt');
+  // A screen reader hears the label once: it names the button and is not read again.
+  const label = entry.querySelector('.tr-shot-label');
+  assert.ok(label.id, 'the label has an id');
+  assert.strictEqual(opener.getAttribute('aria-labelledby'), label.id);
+  assert.strictEqual(label.getAttribute('aria-hidden'), 'true');
+  assert.strictEqual(entry.querySelectorAll('.sr-only').length, 0);
   opener.dispatchEvent({ type: 'click', stopPropagation() {} });
   assert.ok(env.doc.querySelector('.tr-screenshot-modal'), 'the viewer opened');
 });
