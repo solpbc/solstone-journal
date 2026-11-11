@@ -503,12 +503,19 @@ async fn ac13_populated_journal_tree_mutation_bytes_and_runtime_day_logs() {
     }
     assert!(!lifecycle.path().join("facets/temporary").exists());
     assert!(!lifecycle.path().join("facets/renamed").exists());
+    // The deleted facet waits in the trash and reserves nothing.
+    assert_eq!(
+        solstone_core_trash::list(lifecycle.path())
+            .expect("trash")
+            .len(),
+        1
+    );
     assert!(
         solstone_core_facets::retired_facet_entry(lifecycle.path(), "temporary")
             .expect("retired record")
-            .is_some()
+            .is_none()
     );
-    // Creating the same title again gives the new facet the next free name.
+    // Creating the same title again gives the new facet the same name.
     let (status, body) = request(
         lifecycle_router.clone(),
         "POST",
@@ -517,13 +524,13 @@ async fn ac13_populated_journal_tree_mutation_bytes_and_runtime_day_logs() {
     )
     .await;
     assert!(status.is_success(), "{status}");
-    assert_eq!(body["facet"], "temporary-2");
+    assert_eq!(body["facet"], "temporary");
     // A live facet's title keeps today's refusal.
     let (status, _) = request(
         lifecycle_router,
         "POST",
         "/app/settings/api/facet",
-        Some(&json!({"title":"Temporary 2"})),
+        Some(&json!({"title":"Temporary"})),
     )
     .await;
     assert!(status.is_client_error(), "{status}");
@@ -782,7 +789,7 @@ async fn ac6_facet_delete_requires_consent_for_a_real_facet() {
         assert_eq!(response["reason_code"], reason);
         assert!(path.exists(), "{reason} preserves facet");
     }
-    let (status, _) = request(
+    let (status, body) = request(
         crate::test_support::shell_router(root.path()),
         "DELETE",
         "/app/settings/api/facet/work-life",
@@ -791,6 +798,67 @@ async fn ac6_facet_delete_requires_consent_for_a_real_facet() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert!(!path.exists());
+    assert_eq!(body["success"], true);
+    let id = body["trash"]["id"].as_str().expect("trash id");
+    assert!(body["trash"]["erase_at"].is_string());
+    let item = solstone_core_trash::item(root.path(), id)
+        .expect("trash")
+        .expect("item");
+    assert_eq!(item.unit, solstone_core_removals::Unit::Facet);
+    // Gone now: a second delete says so.
+    let (status, body) = request(
+        crate::test_support::shell_router(root.path()),
+        "DELETE",
+        "/app/settings/api/facet/work-life",
+        Some(&json!({"consent": true})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["success"], false);
+    assert_eq!(body["reason"], "gone");
+}
+
+#[tokio::test]
+async fn a_facet_delete_can_erase_at_once_and_never_takes_the_last_facet() {
+    let root = tempfile::tempdir().expect("journal");
+    let seed = crate::test_support::populated_root();
+    fs::create_dir_all(root.path().join("config")).expect("config");
+    fs::copy(
+        seed.path().join("config/journal.json"),
+        root.path().join("config/journal.json"),
+    )
+    .expect("config");
+    for name in ["work", "home"] {
+        solstone_core_facets::create_facet(root.path(), name, name, "", "", "", None)
+            .expect("facet");
+    }
+    let (status, body) = request(
+        crate::test_support::shell_router(root.path()),
+        "DELETE",
+        "/app/settings/api/facet/work",
+        Some(&json!({"consent": true, "erase": true})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({"success": true, "erased": true}));
+    assert!(!root.path().join("facets/work").exists());
+    assert!(
+        solstone_core_trash::list(root.path())
+            .expect("trash")
+            .is_empty()
+    );
+
+    let (status, body) = request(
+        crate::test_support::shell_router(root.path()),
+        "DELETE",
+        "/app/settings/api/facet/home",
+        Some(&json!({"consent": true})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["success"], false);
+    assert_eq!(body["reason"], "last_facet");
+    assert!(root.path().join("facets/home/facet.json").is_file());
 }
 
 #[tokio::test]
