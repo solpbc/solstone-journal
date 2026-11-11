@@ -21,10 +21,13 @@ pub async fn list(journal_root: PathBuf) -> Response {
         let items = solstone_core_trash::list(&journal_root).map_err(|error| error.to_string())?;
         let unfinished =
             solstone_core_trash::unfinished(&journal_root).map_err(|error| error.to_string())?;
+        let stopped =
+            solstone_core_trash::stopped(&journal_root).map_err(|error| error.to_string())?;
         Ok::<_, String>(json!({
             "erase_after_days": solstone_core_trash::erase_after_days(&journal_root),
             "unfinished": unfinished,
             "items": items.iter().map(|item| view(&journal_root, item)).collect::<Vec<_>>(),
+            "stopped": stopped.iter().map(|item| stopped_view(&journal_root, item)).collect::<Vec<_>>(),
         }))
     })
     .await
@@ -69,6 +72,9 @@ fn view(journal_root: &Path, item: &Item) -> Value {
         (Unit::Workout { source, day, .. }, _) => {
             return workout_view(journal_root, item, source, day.as_deref());
         }
+        (Unit::Facet, _) => return facet_view(journal_root, item),
+        (Unit::FacetFile, _) => return facet_file_view(journal_root, item),
+        (Unit::Speakers, _) => return speakers_view(item),
         _ => ("other", String::new(), None, String::new()),
     };
     json!({
@@ -83,6 +89,100 @@ fn view(journal_root: &Path, item: &Item) -> Value {
         "surface": item.surface,
         "replaces": replaces(journal_root, item),
     })
+}
+
+/// An item stopped part way: what it is, and which way it was going.
+fn stopped_view(journal_root: &Path, item: &Item) -> Value {
+    let mut shown = view(journal_root, item);
+    if let Value::Object(fields) = &mut shown {
+        let state = match item.state {
+            solstone_core_trash::State::Detaching => "detaching",
+            solstone_core_trash::State::Attaching => "attaching",
+            solstone_core_trash::State::Erasing => "erasing",
+            solstone_core_trash::State::Trashed => "trashed",
+        };
+        fields.insert("state".to_owned(), json!(state));
+        fields.remove("replaces");
+    }
+    shown
+}
+
+/// The fields every row carries.
+fn common(item: &Item, kind: &str) -> serde_json::Map<String, Value> {
+    let mut fields = serde_json::Map::new();
+    fields.insert("id".to_owned(), json!(item.id));
+    fields.insert("kind".to_owned(), json!(kind));
+    fields.insert("trashed_at".to_owned(), json!(item.trashed_at));
+    fields.insert("erase_at".to_owned(), json!(item.erase_at));
+    fields.insert("bytes".to_owned(), json!(item.bytes));
+    fields.insert("surface".to_owned(), json!(item.surface));
+    fields
+}
+
+/// A facet as the page shows it: its title, its folder name, and whether a
+/// facet of that name is in the journal now, which recovering replaces.
+fn facet_view(journal_root: &Path, item: &Item) -> Value {
+    let name = item
+        .paths
+        .first()
+        .and_then(|path| path.strip_prefix("facets/"))
+        .unwrap_or_default();
+    let mut fields = common(item, "facet");
+    fields.insert("label".to_owned(), json!(item.label));
+    fields.insert("name".to_owned(), json!(name));
+    fields.insert(
+        "replaces".to_owned(),
+        json!(
+            !name.is_empty()
+                && journal_root
+                    .join("facets")
+                    .join(name)
+                    .join("facet.json")
+                    .is_file()
+        ),
+    );
+    Value::Object(fields)
+}
+
+/// What a facet merge dropped: the facet it was merged into and how many
+/// files, from the item's own manifest.
+fn facet_file_view(journal_root: &Path, item: &Item) -> Value {
+    let manifest = item.paths.first().and_then(|path| {
+        let held = solstone_core_trash::held_file(
+            journal_root,
+            &item.id,
+            &format!("{path}/manifest.json"),
+        )
+        .ok()?;
+        serde_json::from_slice::<Value>(&std::fs::read(held).ok()?).ok()
+    });
+    let mut fields = common(item, "facet_file");
+    fields.insert(
+        "dest".to_owned(),
+        manifest
+            .as_ref()
+            .and_then(|manifest| manifest.get("dest_name"))
+            .cloned()
+            .unwrap_or(Value::Null),
+    );
+    fields.insert(
+        "files".to_owned(),
+        json!(
+            manifest
+                .as_ref()
+                .and_then(|manifest| manifest.get("files"))
+                .and_then(Value::as_array)
+                .map(Vec::len)
+        ),
+    );
+    Value::Object(fields)
+}
+
+/// The speakers wipe: how many files it took.
+fn speakers_view(item: &Item) -> Value {
+    let mut fields = common(item, "speakers");
+    fields.insert("files".to_owned(), json!(item.paths.len()));
+    Value::Object(fields)
 }
 
 /// A workout as the page shows it: its day and the time it began, from where
