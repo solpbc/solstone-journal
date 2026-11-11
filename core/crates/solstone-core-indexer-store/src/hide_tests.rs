@@ -837,3 +837,112 @@ fn an_index_rebuilt_after_hides_made_since_it_was_built_leaves_each_out() {
     journal.scan(true);
     assert_every_hide_out_of_search(&journal);
 }
+
+/// Hides served by the drain: a directory hint, and a full pass taking turns.
+#[cfg(feature = "full-tests")]
+mod drained {
+    use super::*;
+    use crate::todo::{ScanLimits, TEST_SCAN_LIMITS, drain_now};
+    use solstone_core_indexer_todo::{Token, enqueue_path, enqueue_token};
+    use std::time::Duration;
+
+    #[test]
+    fn a_hint_with_a_damaged_hidden_names_file_still_reconciles_the_facets_notes() {
+        let journal = Journal::new("hint-damaged");
+        let day = journal.detected("work", "20260304", &["Bob Smith", "Alice Jones"]);
+        let notes = journal.notes("work", "ann", "annnoteneedle");
+        journal.scan(true);
+        journal.write("facets/work/hidden-names.json", "{ damaged");
+        // Saved after the damage, beside the days that wait on it.
+        let later = journal.notes("work", "cid", "cidnoteneedle");
+        enqueue_path(journal.path(), &journal.path().join("facets/work/entities")).unwrap();
+        let report = drain_now(journal.path()).unwrap();
+        assert_eq!(report.failed, 0, "{report:?}");
+        assert!(journal.rows(&day).is_empty());
+        assert_eq!(journal.stored_mtime(&day), Some(-1));
+        assert_eq!(journal.search("annnoteneedle"), [(notes, 0)]);
+        assert_eq!(journal.search("cidnoteneedle"), [(later, 0)]);
+    }
+
+    const TURNS: ScanLimits = ScanLimits {
+        turns_min: 4,
+        turn: Duration::from_secs(60),
+        run: Duration::from_secs(3_600),
+        min_turn_files: 2,
+        check_every_files: 2,
+    };
+
+    /// Strict entity reads of a full rebuild that takes turns, over a journal
+    /// of two facets with `days` detected days each, where `hidden` of the
+    /// linked people are hidden.
+    fn rebuild_reads(days: usize, hidden: usize) -> usize {
+        const ENTITIES: usize = 40;
+        const LINKED: usize = 8;
+        let journal = Journal::new(&format!("reads-{days}-{hidden}"));
+        for index in 0..ENTITIES {
+            let id = format!("person{index:02}");
+            journal.entity(&id, &format!("Person {index:02}"), index < hidden);
+        }
+        for facet in ["work", "home"] {
+            for index in 0..LINKED {
+                let id = format!("person{index:02}");
+                let link = if index < hidden {
+                    json!({"entity_id": id, "detached": true, "detached_by": "hide"})
+                } else {
+                    json!({"entity_id": id})
+                };
+                journal.link(facet, &id, link);
+                journal.notes(facet, &id, &format!("noteneedle{index:02}"));
+            }
+            for day in 0..days {
+                journal.detected(
+                    facet,
+                    &format!("202603{:02}", day + 1),
+                    &["Person 00", "Person 07", "Walker"],
+                );
+            }
+        }
+        TEST_SCAN_LIMITS.set(Some(TURNS));
+        solstone_core_entity::reset_test_counters();
+        enqueue_token(journal.path(), Token::ScanFull).unwrap();
+        let report = drain_now(journal.path());
+        let reads = solstone_core_entity::identity_read_count();
+        TEST_SCAN_LIMITS.set(None);
+        let report = report.unwrap();
+        assert_eq!(report.failed, 0, "{report:?}");
+        // The rebuild indexed every visible thing and nothing hidden.
+        assert_eq!(journal.search("Walker").len(), 2 * days);
+        assert_eq!(
+            journal.search("noteneedle07").len(),
+            2,
+            "a visible person's notes"
+        );
+        if hidden > 0 {
+            assert!(journal.search("noteneedle00").is_empty());
+            // Person 00 is hidden; Person 07 and Walker keep their positions.
+            let positions: Vec<i64> = journal
+                .rows("facets/home/entities/20260301.jsonl")
+                .iter()
+                .map(|row| row.0)
+                .collect();
+            assert_eq!(positions, [1, 2]);
+        }
+        reads
+    }
+
+    #[test]
+    fn a_rebuild_reads_each_hidden_entity_once_a_facet_however_many_days() {
+        const HIDDEN: usize = 6;
+        let hidden = rebuild_reads(4, HIDDEN);
+        // Twice the days read no entity more.
+        assert_eq!(rebuild_reads(8, HIDDEN), hidden);
+        // Over the same rebuild with nothing hidden, the hides add at most
+        // one read for each hidden person's link in each facet, and a few.
+        let baseline = rebuild_reads(4, 0);
+        let links = 2 * HIDDEN;
+        assert!(
+            hidden <= baseline + links + 4,
+            "{hidden} strict entity reads, {baseline} with nothing hidden, {links} hidden links"
+        );
+    }
+}

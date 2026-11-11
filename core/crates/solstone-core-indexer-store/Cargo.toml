@@ -27,6 +27,7 @@ solstone-core-journal-io.workspace = true
 solstone-core-segment.workspace = true
 
 [dev-dependencies]
+solstone-core-entity = { workspace = true, features = ["test-hooks"] }
 solstone-core-journal-config.workspace = true
 
 [features]
