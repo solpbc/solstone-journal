@@ -530,7 +530,14 @@ impl ParentLossCoordinator {
     /// is held no launch stands ahead of the seal. A seal that cannot finish
     /// still publishes a terminal, over the empty set.
     fn seal_admissions(&mut self) -> Result<Seal, ParentLossCoordinatorError> {
-        self.active = self.ledger.seal(self.active.generation, self.coordinator)?;
+        match self.ledger.seal(self.active.generation, self.coordinator) {
+            Ok(active) => self.active = active,
+            Err(_) => {
+                return self
+                    .terminal_unresolved(ParentLossUnresolvedReason::ArtifactFailure, None)
+                    .map(Seal::Published);
+            }
+        }
         let Ok(admission_lock) = hold_lock(
             self.ledger.admission_lock_path(self.active.generation),
             LockOptions {
@@ -580,10 +587,15 @@ impl ParentLossCoordinator {
                 })
             })
             .collect();
-        let digest = self
+        match self
             .ledger
-            .write_sealed_ledger(self.active.generation, &rows)?;
-        Ok(Seal::Sealed(sealed, digest))
+            .write_sealed_ledger(self.active.generation, &rows)
+        {
+            Ok(digest) => Ok(Seal::Sealed(sealed, digest)),
+            Err(_) => self
+                .terminal_unresolved(ParentLossUnresolvedReason::ArtifactFailure, None)
+                .map(Seal::Published),
+        }
     }
 
     fn validate_witnesses_with_source(
@@ -704,7 +716,10 @@ impl ParentLossCoordinator {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
             Err(error) => return Err(error.into()),
         };
-        let control: RetireExpectedControl = serde_json::from_slice(&bytes)?;
+        // A damaged instruction authorizes nothing; parent loss still applies.
+        let Ok(control) = serde_json::from_slice::<RetireExpectedControl>(&bytes) else {
+            return Ok(false);
+        };
         if control.schema != BOOTSTRAP_SCHEMA
             || control.generation != self.active.generation
             || control.supervisor != self.active.supervisor

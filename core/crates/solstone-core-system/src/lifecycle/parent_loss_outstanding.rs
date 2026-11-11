@@ -726,6 +726,11 @@ fn read_drop<T: DeserializeOwned>(
     let bytes = match fs::read(directory.join(name)) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        // A directory where a drop belongs is damage that never clears.
+        Err(error) if error.kind() == io::ErrorKind::IsADirectory => {
+            unreadable.push(name);
+            return Ok(None);
+        }
         Err(error) => return Err(error),
     };
     // Drops are created and then filled; a writer killed between the two
@@ -1302,35 +1307,41 @@ fn set_timing(live: &mut LiveRecoveryFile, which: Option<usize>, value: Timing) 
     }
 }
 
+/// Every descendant of one live identity. `Err` when the tree cannot be
+/// read completely; an identity gone since it was observed has none.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn snapshot_descendants(
     root: ProcessInstance,
     uid: u32,
     source: &dyn ProcessInstanceSource,
-) -> Option<Vec<LiveDescendantIdentity>> {
-    let snapshot = exact_descendant_tree(root, uid, source).ok()?;
-    Some(
-        snapshot
-            .descendants
-            .into_iter()
-            .filter_map(|d| {
-                let birth = snapshot.descendant_births.get(&d.pid).copied()?;
-                Some(LiveDescendantIdentity {
-                    instance: ProcessInstance {
-                        pid: u32::try_from(d.pid).ok()?,
-                        birth,
-                    },
-                    uid: d.uid,
-                    ppid: u32::try_from(d.ppid).unwrap_or(0),
-                    pgid: d.pgid.and_then(|g| u32::try_from(g).ok()).unwrap_or(0),
-                    escalate_at_unix_ms: 0,
-                    reap_deadline_unix_ms: None,
-                    term_requested: false,
-                    escalated: false,
-                })
+) -> Result<Vec<LiveDescendantIdentity>, ()> {
+    let snapshot = match exact_descendant_tree(root, uid, source) {
+        Ok(snapshot) => snapshot,
+        Err(crate::process::DescendantObservationFailure::RootNotSameOrExited) => {
+            return Ok(Vec::new());
+        }
+        Err(_) => return Err(()),
+    };
+    Ok(snapshot
+        .descendants
+        .into_iter()
+        .filter_map(|d| {
+            let birth = snapshot.descendant_births.get(&d.pid).copied()?;
+            Some(LiveDescendantIdentity {
+                instance: ProcessInstance {
+                    pid: u32::try_from(d.pid).ok()?,
+                    birth,
+                },
+                uid: d.uid,
+                ppid: u32::try_from(d.ppid).unwrap_or(0),
+                pgid: d.pgid.and_then(|g| u32::try_from(g).ok()).unwrap_or(0),
+                escalate_at_unix_ms: 0,
+                reap_deadline_unix_ms: None,
+                term_requested: false,
+                escalated: false,
             })
-            .collect(),
-    )
+        })
+        .collect())
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -1338,8 +1349,8 @@ fn snapshot_descendants(
     _root: ProcessInstance,
     _uid: u32,
     _source: &dyn ProcessInstanceSource,
-) -> Option<Vec<LiveDescendantIdentity>> {
-    Some(Vec::new())
+) -> Result<Vec<LiveDescendantIdentity>, ()> {
+    Ok(Vec::new())
 }
 
 #[derive(Debug, Default)]
@@ -1367,11 +1378,24 @@ fn retire(
     let source = authority.source;
     let retirer = authority.retirer;
     let mut blind: HashSet<String> = HashSet::new();
+    // Every live identity's subtree is read, root or descendant, from the
+    // observation that found it live. An identity inside a subtree already
+    // read is covered by it.
+    let mut covered: Vec<(String, ProcessInstance)> = Vec::new();
     for (launch_id, live) in obligations.iter_mut() {
-        if matches!(source.observe(&live.root), InstanceVerdict::SameLive { .. }) {
-            match snapshot_descendants(live.root, live.uid, source) {
-                Some(found) => {
+        let mut identities = vec![(live.root, live.uid)];
+        identities.extend(live.descendants.iter().map(|d| (d.instance, d.uid)));
+        for (instance, uid) in identities {
+            if covered.contains(&(launch_id.clone(), instance))
+                || settle(source, retirer, instance, uid) != Settlement::Live
+            {
+                continue;
+            }
+            match snapshot_descendants(instance, uid, source) {
+                Ok(found) => {
+                    covered.push((launch_id.clone(), instance));
                     for descendant in found {
+                        covered.push((launch_id.clone(), descendant.instance));
                         if descendant.instance != live.root
                             && !live
                                 .descendants
@@ -1382,7 +1406,7 @@ fn retire(
                         }
                     }
                 }
-                None => {
+                Err(()) => {
                     blind.insert(launch_id.clone());
                 }
             }
@@ -1401,6 +1425,14 @@ fn retire(
         .iter()
         .map(|target| (target.clone(), observe(obligations, target)))
         .collect();
+    // ⛔ A live identity whose subtree was not read this start is never
+    // signalled: its obligation waits for the next start.
+    for target in &targets {
+        let (instance, _) = target_identity(&obligations[&target.0], target.1);
+        if state[target] == Settlement::Live && !covered.contains(&(target.0.clone(), instance)) {
+            blind.insert(target.0.clone());
+        }
+    }
     // An obligation naming another user's live process is never signalled.
     let foreign: HashSet<String> = targets
         .iter()
@@ -1412,14 +1444,20 @@ fn retire(
         })
         .map(|(launch_id, _)| launch_id.clone())
         .collect();
-    let signalled = |launch_id: &String| !blind.contains(launch_id) && !foreign.contains(launch_id);
+    // Only what was live, read and ours at this observation is ever signalled.
+    let signalable: HashSet<Target> = targets
+        .iter()
+        .filter(|target| {
+            state[*target] == Settlement::Live
+                && !blind.contains(&target.0)
+                && !foreign.contains(&target.0)
+        })
+        .cloned()
+        .collect();
 
     let now_ms = unix_millis();
     let mut any_live = false;
-    for target in &targets {
-        if state[target] != Settlement::Live || !signalled(&target.0) {
-            continue;
-        }
+    for target in &signalable {
         any_live = true;
         let live = obligations.get_mut(&target.0).expect("target obligation");
         let mut t = timing(live, target.1);
@@ -1460,7 +1498,7 @@ fn retire(
     let _ = any_live;
 
     for target in &targets {
-        if state[target] == Settlement::Live && signalled(&target.0) {
+        if signalable.contains(target) {
             let (instance, uid) = target_identity(&obligations[&target.0], target.1);
             if retirer.owner(instance.pid) == ProcessOwner::Uid(uid) {
                 let _ = retirer.signal(instance, SignalKind::Terminate);
@@ -1469,6 +1507,9 @@ fn retire(
     }
     stop_at(Stop::TermSent)?;
 
+    // Each start sends KILL once to every identity past its escalation, so a
+    // KILL that never landed is sent again by the next start.
+    let mut killed: HashSet<Target> = HashSet::new();
     loop {
         let now_ms = unix_millis();
         let mut waiting = false;
@@ -1479,12 +1520,14 @@ fn retire(
             }
             let observed = observe(obligations, target);
             state.insert(target.clone(), observed);
-            if observed != Settlement::Live || !signalled(&target.0) {
+            if observed != Settlement::Live || !signalable.contains(target) {
                 continue;
             }
             let t = timing(&obligations[&target.0], target.1);
-            if now_ms >= t.escalate_at && (!t.escalated || t.reap_deadline.is_none()) {
-                due.push(target.clone());
+            if !killed.contains(target) {
+                if now_ms >= t.escalate_at {
+                    due.push(target.clone());
+                }
                 waiting = true;
             } else if !t.reap_deadline.is_some_and(|reap| now_ms >= reap) {
                 waiting = true;
@@ -1498,18 +1541,21 @@ fn retire(
                 set_timing(live, target.1, t);
             }
             persist_census(ledger, generation, obligations)?;
+            let mut sent = Vec::new();
             for target in &due {
+                killed.insert(target.clone());
                 let (instance, uid) = target_identity(&obligations[&target.0], target.1);
                 if matches!(source.observe(&instance), InstanceVerdict::SameLive { .. })
                     && retirer.owner(instance.pid) == ProcessOwner::Uid(uid)
+                    && retirer.signal(instance, SignalKind::Kill).is_ok()
                 {
-                    let _ = retirer.signal(instance, SignalKind::Kill);
+                    sent.push(target.clone());
                 }
             }
-            // The reap grace starts once the kills are sent, and a stored
+            // The reap grace starts once a KILL is sent, and a stored
             // deadline only ever moves earlier.
             let reap = unix_millis() + REAP_GRACE_MS;
-            for target in &due {
+            for target in &sent {
                 let live = obligations.get_mut(&target.0).expect("target obligation");
                 let mut t = timing(live, target.1);
                 t.reap_deadline = Some(t.reap_deadline.map_or(reap, |stored| stored.min(reap)));
@@ -1633,8 +1679,9 @@ fn load_record_for_closure(
     }
 }
 
-/// Seal the pointer under the admission lock, so no launch admits after
-/// this. `false` when a live launcher holds the lock past the wait.
+/// Seal the pointer, then drain the admission lock: launchers check the phase
+/// under that lock, so once it is taken no launch stands ahead of the seal.
+/// `false` when a live launcher still holds it past the wait.
 fn seal_pointer(
     ledger: &ParentLossLedger,
     generation: ParentLossGeneration,
@@ -1643,11 +1690,8 @@ fn seal_pointer(
     if fault(Fault::SkipSeal) {
         return Ok(true);
     }
-    let Ok(_lock) = admission_lock(ledger, generation, ADMISSION_SEAL_LOCK_TIMEOUT) else {
-        return Ok(false);
-    };
     ledger.mark_sealed_for_closure(generation)?;
-    Ok(true)
+    Ok(admission_lock(ledger, generation, ADMISSION_SEAL_LOCK_TIMEOUT).is_ok())
 }
 
 /// The obligation a live entry becomes: its first live identity is the root,
@@ -1725,11 +1769,13 @@ fn settle_listing(
     let admissions = admission_directory(ledger, generation);
     let mut held: HashMap<String, OutstandingEntry> = HashMap::new();
     let mut unverifiable = 0usize;
+    let mut out_of_time = false;
     for (index, window) in names.chunks(READ_WINDOW).enumerate() {
         // Every start settles at least one window, so even a start whose
         // budget is gone strictly shrinks the set.
         if index > 0 && Instant::now() >= authority.deadline {
-            return Ok(Some(BootstrapRecoveryReason::CoordinatorNotLive));
+            out_of_time = true;
+            break;
         }
         for entry in read_entries(&admissions, window) {
             let Ok(entry) = entry else {
@@ -1826,6 +1872,9 @@ fn settle_listing(
         return Ok(Some(
             BootstrapRecoveryReason::AbandonedAdmissionUnverifiable,
         ));
+    }
+    if out_of_time {
+        return Ok(Some(BootstrapRecoveryReason::CoordinatorNotLive));
     }
     Ok(None)
 }
@@ -2212,6 +2261,8 @@ mod tests {
         table_births: HashMap<u32, TableBirth>,
         /// Children of a pid, as the census reports them.
         children: HashMap<u32, Vec<u32>>,
+        /// The next this-many inspects of a pid read `Unverifiable`.
+        blind_reads: HashMap<u32, usize>,
     }
 
     #[derive(Clone, Default)]
@@ -2219,7 +2270,13 @@ mod tests {
 
     impl ProcessInstanceSource for FakeSource {
         fn inspect(&self, pid: u32) -> InspectResult {
-            let table = self.0.lock().expect("fake table");
+            let mut table = self.0.lock().expect("fake table");
+            if let Some(left) = table.blind_reads.get_mut(&pid)
+                && *left > 0
+            {
+                *left -= 1;
+                return InspectResult::Unverifiable;
+            }
             if table.unverifiable.contains(&pid) {
                 return InspectResult::Unverifiable;
             }
@@ -4443,6 +4500,140 @@ mod tests {
             entries(&ledger, second.generation),
             vec!["b"],
             "the highest generation is never pruned"
+        );
+    }
+
+    // ---- what the independent review found ----
+
+    #[test]
+    fn a_root_that_turns_live_after_a_blind_read_is_never_signalled_unread() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let root = instance(9871, 100);
+        write_census(
+            &ledger,
+            active.generation,
+            &[obligation(
+                active.generation,
+                "flicker",
+                root,
+                Vec::new(),
+                false,
+            )],
+        );
+        let (source, retirer) = fake(&[(root, 501)], &[root.pid], &[]);
+        source.0.lock().unwrap().blind_reads.insert(root.pid, 1);
+        let lease = acquire_lease(&ledger);
+        let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+        assert!(refused(
+            &result,
+            BootstrapRecoveryReason::AbandonedAdmissionUnverifiable
+        ));
+        assert!(
+            retirer.signals().is_empty(),
+            "signalled before its subtree was read"
+        );
+        assert!(census(&ledger, active.generation).contains_key("flicker"));
+        // Once it reads cleanly, the next start retires it.
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("converges");
+        assert_eq!(retirer.signals(), vec![(root.pid, "term")]);
+    }
+
+    #[test]
+    fn every_live_identity_of_an_entry_has_its_subtree_retired() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let g = active.generation;
+        let (acked, recorded, child) = (instance(9881, 1), instance(9882, 2), instance(9883, 3));
+        write_parent_loss_admission_intent(
+            directory.path(),
+            &AdmissionIntent::new(g, "split", None, None),
+        )
+        .unwrap();
+        acknowledge_parent_loss_admission(directory.path(), identity(g, "split", acked)).unwrap();
+        write_parent_loss_admission_result(
+            directory.path(),
+            g,
+            "split",
+            &AdmissionResult {
+                schema: 1,
+                identity: Some(identity(g, "split", recorded)),
+                state: AdmissionResultState::Admitted,
+            },
+        )
+        .unwrap();
+        let live = [(acked, 501), (recorded, 501), (child, 501)];
+        let (source, retirer) = fake(&live, &[acked.pid, recorded.pid, child.pid], &[]);
+        // The child hangs off the identity that is not the obligation's root.
+        source
+            .0
+            .lock()
+            .unwrap()
+            .children
+            .insert(acked.pid, vec![child.pid]);
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("closed");
+        assert_eq!(
+            retirer.signals(),
+            vec![
+                (acked.pid, "term"),
+                (recorded.pid, "term"),
+                (child.pid, "term")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_kill_that_never_landed_is_sent_again_by_the_next_start() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let root = instance(9891, 100);
+        admit(
+            directory.path(),
+            active.generation,
+            "unkilled",
+            None,
+            Some(root),
+        );
+        let mut live = obligation(active.generation, "unkilled", root, Vec::new(), true);
+        live.escalate_at_unix_ms = unix_millis() - 2_000;
+        live.escalated = true;
+        live.reap_deadline_unix_ms = Some(unix_millis() - 1_000);
+        write_census(&ledger, active.generation, &[live]);
+        let (source, retirer) = fake(&[(root, 501)], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("the KILL lands this time");
+        assert_eq!(
+            retirer.signals(),
+            vec![(root.pid, "kill"), (root.pid, "term")]
+        );
+        assert_eq!(
+            finding(&closure_of(&ledger, active.generation), "unkilled"),
+            Some(AdmissionFinding::Retired { escalated: true })
+        );
+    }
+
+    #[test]
+    fn a_directory_where_a_drop_belongs_is_damage_not_doubt() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let g = active.generation;
+        write_parent_loss_admission_spawn_identity(
+            directory.path(),
+            &identity(g, "odd", instance(4242, 42)),
+        )
+        .unwrap();
+        fs::create_dir_all(admission_directory(&ledger, g).join("odd/intent.json")).unwrap();
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("closed");
+        let closure = closure_of(&ledger, g);
+        assert_eq!(closure.summary.unwrap().exited, 1);
+        assert!(
+            closure
+                .notes
+                .iter()
+                .any(|note| note.contains("odd") && note.contains("intent.json"))
         );
     }
 }
