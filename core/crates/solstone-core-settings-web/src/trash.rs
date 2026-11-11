@@ -152,16 +152,81 @@ fn facet_file_view(journal_root: &Path, item: &Item) -> Value {
     let held = |rel: &str| {
         solstone_core_trash::held_file(journal_root, &item.id, &format!("{folder}/{rel}")).ok()
     };
-    let dest = held("manifest.json")
+    let manifest = held("manifest.json")
         .and_then(|path| std::fs::read(path).ok())
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .and_then(|manifest| manifest.get("dest_name").cloned())
-        .unwrap_or(Value::Null);
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+    let (state, title) = match manifest
+        .as_ref()
+        .and_then(|manifest| manifest.get("dest_id"))
+        .and_then(Value::as_str)
+    {
+        None => ("none", None),
+        Some(id) => dest_of(journal_root, id),
+    };
     let files = held("files").map_or(0, |dir| count_files(&dir));
     let mut fields = common(item, "facet_file");
-    fields.insert("dest".to_owned(), dest);
+    fields.insert(
+        "dest".to_owned(),
+        manifest
+            .as_ref()
+            .and_then(|manifest| manifest.get("dest_name"))
+            .cloned()
+            .unwrap_or(Value::Null),
+    );
+    fields.insert("dest_state".to_owned(), json!(state));
+    fields.insert("dest_title".to_owned(), json!(title));
     fields.insert("files".to_owned(), json!(files));
     Value::Object(fields)
+}
+
+/// Where the facet a merge's files belong to is now, by its id: in the
+/// journal (with its title), waiting in the trash (with the item's label), or
+/// gone.
+fn dest_of(journal_root: &Path, id: &str) -> (&'static str, Option<String>) {
+    let read = |path: &Path| {
+        std::fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+    };
+    let is_it = |facet: &Value| facet.get("id").and_then(Value::as_str) == Some(id);
+    if let Ok(entries) = std::fs::read_dir(journal_root.join("facets")) {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
+            if let Some(facet) = read(&entry.path().join("facet.json"))
+                && is_it(&facet)
+            {
+                let title = facet
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .or_else(|| Some(entry.file_name().to_string_lossy().into_owned()));
+                return ("live", title);
+            }
+        }
+    }
+    for waiting in solstone_core_trash::list(journal_root).unwrap_or_default() {
+        if waiting.unit != Unit::Facet {
+            continue;
+        }
+        let Some(folder) = waiting.paths.first() else {
+            continue;
+        };
+        let held = solstone_core_trash::held_file(
+            journal_root,
+            &waiting.id,
+            &format!("{folder}/facet.json"),
+        );
+        if held
+            .ok()
+            .and_then(|path| read(&path))
+            .is_some_and(|facet| is_it(&facet))
+        {
+            return ("trashed", waiting.label.clone());
+        }
+    }
+    ("gone", None)
 }
 
 fn count_files(dir: &Path) -> usize {
@@ -301,12 +366,33 @@ pub async fn recover(journal_root: PathBuf, body: Bytes) -> Response {
         return unreadable_selection();
     };
     let surface = page_surface(selection.page.as_deref());
-    run(journal_root, selection.ids, move |root, id| {
+    let ids = recover_order(&journal_root, selection.ids);
+    run(journal_root, ids, move |root, id| {
         solstone_core_import::trash_kinds::with_kinds(root, |kinds| {
             solstone_core_trash::attach(root, kinds, id, Action::Recover, surface).map(|_| ())
         })
     })
     .await
+}
+
+/// A set recovered together puts homes back before what waits on them: a
+/// facet before the people linked in it and a merge's files, and recordings,
+/// imports and people before the voice data a wipe took from them. Otherwise
+/// in the order given.
+fn recover_order(journal_root: &Path, ids: Vec<String>) -> Vec<String> {
+    let rank = |id: &String| match solstone_core_trash::item(journal_root, id) {
+        Ok(Some(item)) => match item.unit {
+            Unit::Facet => 0,
+            Unit::Entity => 2,
+            Unit::FacetFile => 3,
+            Unit::Speakers => 4,
+            _ => 1,
+        },
+        _ => 1,
+    };
+    let mut ranked: Vec<(usize, String)> = ids.into_iter().map(|id| (rank(&id), id)).collect();
+    ranked.sort_by_key(|(rank, _)| *rank);
+    ranked.into_iter().map(|(_, id)| id).collect()
 }
 
 /// Erase each selected item now.
@@ -356,7 +442,12 @@ async fn run(
                 Ok(()) => done.push(id),
                 Err(error) => {
                     log::warn!("trash item {id}: {error}");
-                    failed.push(json!({"id": id, "reason": owner_reason(&error)}));
+                    let mut row = json!({"id": id, "reason": owner_reason(&error)});
+                    if let Some(detail) = refusal(&error) {
+                        row["reason"] = detail.get("code").cloned().unwrap_or(Value::Null);
+                        row["detail"] = detail;
+                    }
+                    failed.push(row);
                 }
             }
         }
@@ -371,6 +462,17 @@ async fn run(
             error.to_string(),
         ),
     }
+}
+
+/// A kind's refusal, when it gave one as a code the page maps to its own
+/// words: a JSON object with `code` and what the words need.
+fn refusal(error: &TrashError) -> Option<Value> {
+    let TrashError::Held(text) = error else {
+        return None;
+    };
+    serde_json::from_str::<Value>(text)
+        .ok()
+        .filter(|value| value.get("code").is_some_and(Value::is_string))
 }
 
 /// The reason a page can show: the trash's own words, never a path.
