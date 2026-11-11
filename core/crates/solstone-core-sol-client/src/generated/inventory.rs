@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: 1c3fe576db55b3530cf1a316f953691cf2663ce6b4cc56ef35e313a7011a697c
+// authority-source-sha256: 0a57b36eb8972537470291263ce64da2dd0270a3b60b4043878dfcd8bafd7510
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -294,6 +294,21 @@ pub const ENTRIES: &[InventoryEntry] = &[
         route: Some("/app/entities/api/{facet_name}/attach"),
         contract_operation_id: Some("entities.attach"),
         handler: "attach",
+        resident: false,
+    },
+    InventoryEntry {
+        surface: "sol-call",
+        path: &["entities", "delete"],
+        kind: "command",
+        help: "Move an entity and its facet links to the trash; --erase erases it at once.",
+        authority_path: "core/native-sol/apps/entities/native/authority.toml",
+        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"entity_id\",\"nargs\":1,\"options\":[\"entity_id\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"yes\",\"nargs\":1,\"options\":[\"--yes\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"erase\",\"nargs\":1,\"options\":[\"--erase\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
+        entry_type: "http",
+        operation_id: "entities.delete",
+        method: Some("POST"),
+        route: Some("/app/entities/api/journal/delete"),
+        contract_operation_id: Some("entities.delete"),
+        handler: "delete_entity",
         resident: false,
     },
     InventoryEntry {
@@ -2416,6 +2431,7 @@ pub const HANDLERS: &[Handler] = &[
     apps_entities_native_command_rs::aka,
     apps_entities_native_command_rs::ambiguities,
     apps_entities_native_command_rs::attach,
+    apps_entities_native_command_rs::delete_entity,
     apps_entities_native_command_rs::detect,
     apps_entities_native_command_rs::dismiss_merge_candidate,
     apps_entities_native_command_rs::entity_history,

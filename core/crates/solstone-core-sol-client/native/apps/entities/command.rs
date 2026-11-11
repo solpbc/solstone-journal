@@ -20,6 +20,10 @@ const ENTITY_SEARCH_INDEX_STALE_MESSAGE: &str =
 const ENTITY_SEARCH_INDEX_UNAVAILABLE_MESSAGE: &str = "The entity search index is unavailable. Run `solstone journal indexer --reset --rescan-full` and try again.";
 const ENTITY_HISTORY_BASE_ROUTE: &str = "/app/entities/api/journal";
 
+/// A delete moves the entity to the trash, and erasing is permanent, so either
+/// takes an explicit confirmation.
+const DELETE_NEEDS_YES: &str = "Deleting moves the entity and its facet links to the trash; --erase erases it for good. Once the owner approves, run it again with --yes.";
+
 /// A merge is permanent, so committing one takes an explicit confirmation.
 const MERGE_NEEDS_YES: &str = "A merge can't be undone. Preview it without --commit, then, once the owner approves, run it again with --commit --yes.";
 
@@ -882,6 +886,64 @@ pub fn sweep_review(ctx: CommandContext<'_>) -> CommandOutput {
         return stdout_json(&body);
     }
     stdout_line("Completed entity review sweep.")
+}
+
+#[must_use]
+pub fn delete_entity(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(delete_entity_output(ctx))
+}
+
+fn delete_entity_output(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &[], &[("--yes", None), ("--erase", None)]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let Some(entity_id) = parsed.positionals.first() else {
+        return stderr("Error: missing argument ENTITY_ID");
+    };
+    if !parsed.bool_value("--yes").unwrap_or(false) {
+        return stderr(DELETE_NEEDS_YES);
+    }
+    let erase = parsed.bool_value("--erase").unwrap_or(false);
+    // The set route takes a body on POST, so one entity goes as a set of one.
+    let body = match request_json_with_policy(
+        ctx,
+        HttpMethod::Post,
+        &format!("{ENTITY_HISTORY_BASE_ROUTE}/delete"),
+        vec![],
+        Some(json!({"ids": [entity_id], "erase": erase})),
+        TimeoutPolicy::EntityMutation,
+    ) {
+        Ok(body) => body,
+        Err(error) => return entity_error(error, Some(entity_id), None),
+    };
+    if let Some(refused) = array_field(&body, "failed").first() {
+        let reason =
+            string_field(refused, "error").unwrap_or_else(|| "it wasn't deleted".to_owned());
+        return stderr(format!("Error: '{entity_id}' wasn't deleted: {reason}."));
+    }
+    let Some(result) = array_field(&body, "done")
+        .first()
+        .and_then(|done| done.get("result"))
+        .cloned()
+    else {
+        return stderr(MALFORMED_RESPONSE_MESSAGE);
+    };
+    if truthy(result.get("erased")) {
+        return stdout_line(format!("Erased '{entity_id}'."));
+    }
+    let erase_at = result
+        .get("trash")
+        .and_then(|trash| string_field(trash, "erase_at"))
+        .unwrap_or_default();
+    let failed = if truthy(result.get("erase_failed")) {
+        " It couldn't be erased now."
+    } else {
+        ""
+    };
+    stdout_line(format!(
+        "Moved '{entity_id}' to the trash.{failed} It's erased at {erase_at} unless it's recovered."
+    ))
 }
 
 #[must_use]
@@ -2334,6 +2396,8 @@ mod tests {
     fn committing_a_merge_needs_yes_and_sends_nothing_without_it() {
         for (path, args) in [
             (&["entities", "merge"][..], &["a", "b", "--commit"][..]),
+            (&["entities", "delete"][..], &["bob"][..]),
+            (&["entities", "delete"][..], &["bob", "--erase"][..]),
             (
                 &["entities", "accept-merge-candidate"][..],
                 &["a", "b", "--facet", "work", "--commit"][..],
@@ -2351,6 +2415,71 @@ mod tests {
             assert!(transport.recorded().is_empty(), "{path:?}");
         }
         assert!(crate::aggregate::handler_for(&["entities", "undo-merge"]).is_none());
+    }
+
+    fn run_delete(args: &[&str], json: Value, answer: Value) -> CommandOutput {
+        use crate::seam::ExpectedHttpCall;
+        use crate::transport::HttpResponse;
+        let transport = crate::seam::ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Post,
+                path: "/app/entities/api/journal/delete".to_owned(),
+                params: vec![],
+                json: Some(json),
+                headers: vec![],
+                policy: TimeoutPolicy::EntityMutation,
+            },
+            result: Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: answer.to_string().into_bytes(),
+                policy: TimeoutPolicy::EntityMutation,
+            }),
+        }]);
+        let (_, handler) =
+            crate::aggregate::handler_for(&["entities", "delete"]).expect("registered");
+        handler(CommandContext {
+            args: &args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
+            env: &BTreeMap::new(),
+            stdin: "".into(),
+            transport: &transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        })
+    }
+
+    #[test]
+    fn delete_sends_one_entity_as_a_set_and_erases_only_when_asked() {
+        let moved = run_delete(
+            &["bob", "--yes"],
+            json!({"ids": ["bob"], "erase": false}),
+            json!({"success": true, "done": [{"id": "bob", "result": {"success": true, "trash": {"id": "t1", "erase_at": "2026-11-17T00:00:00.000Z"}}}], "failed": []}),
+        );
+        assert_eq!(moved.exit, 0, "{}", moved.stderr);
+        assert!(moved.stdout.contains("trash"), "{}", moved.stdout);
+        assert!(moved.stdout.contains("2026-11-17"), "{}", moved.stdout);
+
+        let erased = run_delete(
+            &["bob", "--yes", "--erase"],
+            json!({"ids": ["bob"], "erase": true}),
+            json!({"success": true, "done": [{"id": "bob", "result": {"success": true, "erased": true}}], "failed": []}),
+        );
+        assert_eq!(erased.exit, 0, "{}", erased.stderr);
+        assert!(erased.stdout.contains("Erased"), "{}", erased.stdout);
+
+        let refused = run_delete(
+            &["me", "--yes"],
+            json!({"ids": ["me"], "erase": false}),
+            json!({"success": true, "done": [], "failed": [{"id": "me", "reason": "principal", "error": "you can't delete yourself"}]}),
+        );
+        assert_eq!(refused.exit, 1);
+        assert!(refused.stderr.contains("'me'"), "{}", refused.stderr);
     }
 
     fn rejected(reason_code: &str) -> ClientError {
