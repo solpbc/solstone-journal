@@ -497,6 +497,9 @@ async function entityDeleteCases(workspace) {
     check(byId('journal-pick-all-label').textContent === C.selectAll, 'one page: select all');
     byId('journal-pick-all').onchange();
     check(!api.entityPick.items.has('me') && api.entityPick.items.size === 3, 'select all leaves your own entity out');
+    api.setFolder('company');
+    api.renderJournalEntities();
+    check(api.entityPick.on === true && api.entityPick.items.size === 0, 'a folder changed by the browser clears the selection too');
     api.selectJournalFolder('ids');
     check(api.entityPick.on === false && byId('journal-pick-bar').hidden === true && byId('journal-select-btn').hidden === true,
       'a folder with its own ticks ends select mode');

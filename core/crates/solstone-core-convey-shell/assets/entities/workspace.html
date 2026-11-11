@@ -5023,7 +5023,7 @@ const ENTITY_REASONS = new Set(['principal', 'last_facet', 'record_damaged', 'bu
 // Select mode on the journal-wide list: whether it is on, the chosen entities
 // (kept across pages and searches inside a folder), and the note a refused
 // one carries.
-const entityPick = { on: false, items: new Map(), notes: new Map() };
+const entityPick = { on: false, folder: '', items: new Map(), notes: new Map() };
 // The open dialog: what it deletes, its step, and where focus goes back to.
 let entityDialog = null;
 
@@ -5574,6 +5574,14 @@ function clearEntityPick(endMode) {
   entityPick.items.clear();
   entityPick.notes.clear();
   if (endMode) entityPick.on = false;
+}
+
+// However the folder changed (a press, or the browser's back), what was
+// picked in another folder is let go.
+function syncEntityPickFolder() {
+  if (entityPick.folder === journalFolder) return;
+  clearEntityPick(journalFolder === 'ids' || journalFolder === 'duplicates');
+  entityPick.folder = journalFolder;
 }
 
 // The rows on this page; your own entity is never picked.
@@ -6417,6 +6425,7 @@ function renderJournalEntities() {
   const countEl = document.getElementById('journal-card-search-count');
   const noMatchEl = document.getElementById('no-journal-card-matches');
   if (!container || !journalSummary) return;
+  syncEntityPickFolder();
   renderJournalFolders();
   renderTidyBand();
   const groupFolder = journalFolder === 'ids' || journalFolder === 'duplicates';
@@ -6490,7 +6499,6 @@ function journalFolderCount(folder) {
 }
 
 function selectJournalFolder(folder) {
-  clearEntityPick(folder === 'ids' || folder === 'duplicates');
   journalFolder = folder;
   journalEntityType = ['', 'hidden', 'ids', 'duplicates'].includes(folder) ? '' : folder;
   journalEntitySearch = '';
