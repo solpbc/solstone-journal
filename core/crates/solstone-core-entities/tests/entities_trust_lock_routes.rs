@@ -80,7 +80,12 @@ fn detected(root: &Path) {
 
 fn prepare(root: &Path, kind: &str) -> String {
     match kind {
-        "delete_detected" | "update_detected" => {
+        "hide_detected" => {
+            detected(root);
+            write(root, "facets/work/facet.json", json!({"title": "Work"}));
+            String::new()
+        }
+        "update_detected" => {
             detected(root);
             String::new()
         }
@@ -147,11 +152,11 @@ async fn request(root: &Path, method: Method, uri: String, body: Option<Value>) 
 
 async fn drive(root: &Path, kind: &str, prepared: &str) -> (u16, Value) {
     match kind {
-        "delete_detected" => {
+        "hide_detected" => {
             request(
                 root,
-                Method::DELETE,
-                "/app/entities/api/work/detected".to_owned(),
+                Method::POST,
+                "/app/entities/api/work/detected/hide".to_owned(),
                 Some(json!({"name":"Alice"})),
             )
             .await
@@ -277,7 +282,7 @@ async fn prove_released(root: &Path, domain: &str) {
 #[tokio::test]
 async fn busy_routes_contend_on_their_real_trust_locks() {
     for (kind, domain) in [
-        ("delete_detected", "facet"),
+        ("hide_detected", "facet"),
         ("detach_entity", "facet"),
         ("detect_entity_route", "facet"),
         ("observe_entity", "facet"),

@@ -14,6 +14,7 @@ mod event_topic_migration;
 mod facet_entities;
 mod facet_entity_move;
 mod facet_id;
+mod hidden_names;
 mod identity;
 mod lifecycle;
 mod logs;
@@ -71,13 +72,14 @@ pub use declaration::{
     require_facet_write_identity, require_observed_facet_write_identity,
 };
 pub use detected_entities::{
-    DetectedEntityInput, DetectionUpsertReport, delete_detected_entity, read_detected_entities,
+    DetectedEntityInput, DetectionUpsertReport, read_detected_entities,
     read_detected_entities_strict, save_detected_entity, update_detected_entity,
     upsert_detection_segment,
 };
 pub use detected_entity_activity::{
-    DetectedLinkRef, iter_detected_entity_names_since, iter_detected_entity_names_since_strict,
-    load_detected_entities_recent, load_detected_link_days, read_detected_entity_names_strict,
+    DetectedLinkRef, DetectedRecent, iter_detected_entity_names_since,
+    iter_detected_entity_names_since_strict, load_detected_entities_recent,
+    load_detected_entities_recent_at, load_detected_link_days, read_detected_entity_names_strict,
 };
 #[cfg(all(test, feature = "full-tests"))]
 pub(crate) use detected_entity_activity::{cutoff_day, exclusion_tier};
@@ -102,6 +104,10 @@ pub use facet_id::{
     BackfillReport, allocate_facet_id, allocate_facet_id_locked, assign_new_facet_id,
     assign_new_facet_id_locked, backfill_facet_ids, ensure_daily_facet_id, is_well_formed_facet_id,
     resolve_facet_id, settle_imported_facet_id, strip_incoming_facet_id,
+};
+pub use hidden_names::{
+    HiddenNameWrite, HiddenNamesError, check_hidden_names_readable, hide_detected_name,
+    hide_detected_name_at, merge_hidden_names_locked, queue_facet_detections, unhide_detected_name,
 };
 pub use identity::{FacetEntityLinkSnapshot, read_facet_entity_link};
 pub use lifecycle::{

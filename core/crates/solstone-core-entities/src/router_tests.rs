@@ -228,6 +228,18 @@ async fn delete_json(root: &Path, uri: &str, body: Value) -> (u16, Value) {
     (status, serde_json::from_slice(&bytes).unwrap())
 }
 
+async fn delete_json_status(root: &Path, uri: &str, body: Value) -> (u16, Vec<u8>) {
+    let mut request = Request::delete(uri)
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    request.extensions_mut().insert(AccessBasis::Localhost);
+    let response = crate::router(root).oneshot(request).await.unwrap();
+    let status = response.status().as_u16();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    (status, bytes.to_vec())
+}
+
 async fn request_without_access_basis(
     router: &axum::Router,
     method: &str,
@@ -3797,88 +3809,227 @@ async fn observe_requires_content() {
     assert_eq!(response["reason_code"], "missing_required_field");
 }
 
+fn seed_work_facet(root: &Path) {
+    write(root, "facets/work/facet.json", json!({"title": "Work"}));
+}
+
+fn hidden_names_file(root: &Path) -> PathBuf {
+    root.join("facets/work/hidden-names.json")
+}
+
 #[tokio::test]
-async fn delete_detected_removes_matching_rows_from_every_day() {
+async fn hide_detected_moves_the_name_to_the_hidden_list_and_marks_its_rows() {
     let j = Journal::new();
-    let entities_dir = j.path().join("facets/work/entities");
-    fs::create_dir_all(&entities_dir).unwrap();
-    fs::write(
-        entities_dir.join("20260101.jsonl"),
-        "{\"type\":\"Person\",\"name\":\"Alice\"}\n",
-    )
-    .unwrap();
-    fs::write(
-        entities_dir.join("20260102.jsonl"),
-        "{\"type\":\"Person\",\"name\":\"Alice\"}\n",
-    )
-    .unwrap();
-    fs::write(
-        entities_dir.join("20260103.jsonl"),
-        "{\"type\":\"Person\",\"name\":\"Bob\"}\n",
-    )
-    .unwrap();
-    let (status, response) = delete_json(
+    seed_work_facet(j.path());
+    let today = chrono::Utc::now().format("%Y%m%d").to_string();
+    write_detected_day(
         j.path(),
-        "/app/entities/api/work/detected",
+        &today,
+        "{\"type\":\"Person\",\"name\":\"Alice\"}\n{\"type\":\"Person\",\"name\":\"Bob\"}\n",
+    );
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/work/detected/hide",
         json!({"name":"Alice"}),
     )
     .await;
     assert_eq!(status, 200);
-    assert_eq!(response["days_modified"], json!(["20260101", "20260102"]));
-    for day in ["20260101", "20260102"] {
-        let (_, detected) = call(
+    assert_eq!(response["success"], true);
+    assert_eq!(response["changed"], true);
+    assert_eq!(response["search_queued"], true);
+
+    let (_, facet) = call(j.path(), "/app/entities/api/work").await;
+    assert_eq!(facet["hidden_unreadable"], false);
+    let shown: Vec<_> = facet["detected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["name"].clone())
+        .collect();
+    assert_eq!(shown, vec![json!("Bob")]);
+    assert_eq!(facet["hidden"][0]["name"], "Alice");
+    assert_eq!(facet["hidden"][0]["count"], 1);
+    assert_eq!(facet["hidden"][0]["last_seen"], json!(today));
+
+    let (_, day) = call(
+        j.path(),
+        &format!("/app/entities/api/work/detected?day={today}"),
+    )
+    .await;
+    let alice = day["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "Alice")
+        .unwrap()
+        .clone();
+    assert_eq!(alice["hidden"], true);
+    assert_eq!(alice["hidden_by"]["kind"], "owner");
+    let bob = day["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "Bob")
+        .unwrap()
+        .clone();
+    assert!(bob.get("hidden").is_none());
+
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/work/detected/unhide",
+        json!({"name":"alice"}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(response["changed"], true);
+    assert!(response.get("still_hidden_by").is_none());
+    let (_, facet) = call(j.path(), "/app/entities/api/work").await;
+    assert_eq!(facet["detected"].as_array().unwrap().len(), 2);
+    assert_eq!(facet["hidden"], json!([]));
+}
+
+#[tokio::test]
+async fn a_repeat_hide_and_an_unhide_of_nothing_succeed_unchanged() {
+    let j = Journal::new();
+    seed_work_facet(j.path());
+    post(
+        j.path(),
+        "/app/entities/api/work/detected/hide",
+        json!({"name":"Alice"}),
+    )
+    .await;
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/work/detected/hide",
+        json!({"name":"ALICE"}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(response["changed"], false);
+    assert_eq!(response["search_queued"], true);
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/work/detected/unhide",
+        json!({"name":"Carol"}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(response["changed"], false);
+    assert_eq!(response["search_queued"], true);
+}
+
+#[tokio::test]
+async fn an_unhide_says_which_hidden_entity_still_matches_the_name() {
+    let j = Journal::new();
+    seed_work_facet(j.path());
+    write(
+        j.path(),
+        "entities/bob/entity.json",
+        json!({"id":"bob","name":"Bob Smith","type":"Person","blocked":true}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/bob/entity.json",
+        json!({"entity_id":"bob","detached":true,"detached_by":"hide"}),
+    );
+    write_detected_day(
+        j.path(),
+        "20260101",
+        "{\"type\":\"Person\",\"name\":\"Bob Smith\"}\n",
+    );
+    post(
+        j.path(),
+        "/app/entities/api/work/detected/hide",
+        json!({"name":"Bob Smith"}),
+    )
+    .await;
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/work/detected/unhide",
+        json!({"name":"Bob Smith"}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        response["still_hidden_by"],
+        json!({"id":"bob","name":"Bob Smith"})
+    );
+    let (_, day) = call(j.path(), "/app/entities/api/work/detected?day=20260101").await;
+    assert_eq!(day["items"][0]["hidden"], true);
+    assert_eq!(
+        day["items"][0]["hidden_by"],
+        json!({"kind":"entity","id":"bob","name":"Bob Smith"})
+    );
+    let (_, facet) = call(j.path(), "/app/entities/api/work").await;
+    assert_eq!(facet["detected"], json!([]));
+    assert_eq!(facet["hidden"], json!([]));
+}
+
+#[tokio::test]
+async fn an_unreadable_hidden_names_store_refuses_and_lists_no_detections() {
+    let j = Journal::new();
+    seed_work_facet(j.path());
+    seed_entity(j.path(), "a", "Ada");
+    seed_facet_entity(j.path(), "work", "a");
+    write_detected_day(
+        j.path(),
+        "20260101",
+        "{\"type\":\"Person\",\"name\":\"Alice\"}\n",
+    );
+    fs::write(hidden_names_file(j.path()), b"{\"names\": [").unwrap();
+    for route in ["hide", "unhide"] {
+        let (status, response) = post(
             j.path(),
-            &format!("/app/entities/api/work/detected?day={day}"),
+            &format!("/app/entities/api/work/detected/{route}"),
+            json!({"name":"Alice"}),
         )
         .await;
-        assert_eq!(detected["items"], json!([]));
+        assert_ne!(status, 200, "{route}");
+        assert_eq!(response["reason_code"], "entity_record_damaged", "{route}");
     }
-    let (_, untouched) = call(j.path(), "/app/entities/api/work/detected?day=20260103").await;
-    assert_eq!(untouched["items"][0]["name"], "Bob");
+    assert_eq!(
+        fs::read(hidden_names_file(j.path())).unwrap(),
+        b"{\"names\": ["
+    );
+    let (status, facet) = call(j.path(), "/app/entities/api/work").await;
+    assert_eq!(status, 200);
+    assert_eq!(facet["hidden_unreadable"], true);
+    assert_eq!(facet["detected"], json!([]));
+    assert_eq!(facet["hidden"], json!([]));
+    assert_eq!(facet["attached"][0]["id"], "a");
+    let (status, _) = call(j.path(), "/app/entities/api/work/detected?day=20260101").await;
+    assert_ne!(status, 200);
 }
 
 #[tokio::test]
-async fn delete_detected_without_match_succeeds_unchanged() {
+async fn hide_detected_requires_a_name() {
     let j = Journal::new();
-    fs::create_dir_all(j.path().join("facets/work/entities")).unwrap();
-    fs::write(
-        j.path().join("facets/work/entities/20260101.jsonl"),
-        "{\"type\":\"Person\",\"name\":\"Bob\"}\n",
-    )
-    .unwrap();
-    let (status, response) = delete_json(
+    seed_work_facet(j.path());
+    for body in [json!({"other":"value"}), json!({"name":"  "})] {
+        let (_, response) = post(j.path(), "/app/entities/api/work/detected/hide", body).await;
+        assert_eq!(response["reason_code"], "missing_required_field");
+    }
+    assert!(!hidden_names_file(j.path()).exists());
+}
+
+#[tokio::test]
+async fn detections_can_no_longer_be_deleted() {
+    let j = Journal::new();
+    seed_work_facet(j.path());
+    write_detected_day(
+        j.path(),
+        "20260101",
+        "{\"type\":\"Person\",\"name\":\"Alice\"}\n",
+    );
+    let (status, _) = delete_json_status(
         j.path(),
         "/app/entities/api/work/detected",
         json!({"name":"Alice"}),
     )
     .await;
-    assert_eq!(status, 200);
-    assert_eq!(response, json!({"success":true,"days_modified":[]}));
-}
-
-#[tokio::test]
-async fn delete_detected_without_entities_directory_succeeds() {
-    let j = Journal::new();
-    let (status, response) = delete_json(
-        j.path(),
-        "/app/entities/api/work/detected",
-        json!({"name":"Alice"}),
-    )
-    .await;
-    assert_eq!(status, 200);
-    assert_eq!(response, json!({"success":true,"days_modified":[]}));
-}
-
-#[tokio::test]
-async fn delete_detected_requires_name() {
-    let j = Journal::new();
-    let (_, response) = delete_json(
-        j.path(),
-        "/app/entities/api/work/detected",
-        json!({"other":"value"}),
-    )
-    .await;
-    assert_eq!(response["reason_code"], "missing_required_field");
+    assert_ne!(status, 200);
+    let (_, day) = call(j.path(), "/app/entities/api/work/detected?day=20260101").await;
+    assert_eq!(day["items"][0]["name"], "Alice");
 }
 
 #[tokio::test]
@@ -6292,23 +6443,6 @@ async fn refusal_sites_batch_1_validation_are_exact() {
         "invalid_entity_type",
         400,
     );
-    assert_oracle_refusal(
-        "delete_detected:1656",
-        delete(journal.path(), "/app/entities/api/work/detected").await,
-        "missing_request_body",
-        400,
-    );
-    assert_oracle_refusal(
-        "delete_detected:1660",
-        delete_json(
-            journal.path(),
-            "/app/entities/api/work/detected",
-            json!({"other":"value"}),
-        )
-        .await,
-        "missing_required_field",
-        400,
-    );
 }
 
 #[tokio::test]
@@ -6466,25 +6600,6 @@ async fn refusal_sites_batch_1_unexpected_store_failures_are_exact() {
         .await,
         "entity_record_damaged",
         409,
-    );
-
-    let bad_scan = Journal::new();
-    fs::create_dir_all(bad_scan.path().join("facets/work")).unwrap();
-    fs::write(
-        bad_scan.path().join("facets/work/entities"),
-        "not a directory",
-    )
-    .unwrap();
-    assert_oracle_refusal(
-        "delete_detected:1705",
-        delete_json(
-            bad_scan.path(),
-            "/app/entities/api/work/detected",
-            json!({"name":"Alice"}),
-        )
-        .await,
-        "entity_operation_failed",
-        500,
     );
 
     let bad_identity = Journal::new();
@@ -7074,7 +7189,12 @@ async fn refusal_sites_batch_6_forced_write_outcomes_cover_busy_and_success() {
 
     fn prepare(root: &Path, kind: &str) -> String {
         match kind {
-            "delete_detected" | "update_detected" => {
+            "hide_detected" => {
+                detected(root);
+                write(root, "facets/work/facet.json", json!({"title": "Work"}));
+                String::new()
+            }
+            "update_detected" => {
                 detected(root);
                 String::new()
             }
@@ -7131,10 +7251,10 @@ async fn refusal_sites_batch_6_forced_write_outcomes_cover_busy_and_success() {
 
     async fn drive(root: &Path, kind: &str, prepared: &str) -> (u16, Value) {
         match kind {
-            "delete_detected" => {
-                delete_json(
+            "hide_detected" => {
+                post(
                     root,
-                    "/app/entities/api/work/detected",
+                    "/app/entities/api/work/detected/hide",
                     json!({"name":"Alice"}),
                 )
                 .await
@@ -7209,7 +7329,7 @@ async fn refusal_sites_batch_6_forced_write_outcomes_cover_busy_and_success() {
     }
 
     for kind in [
-        "delete_detected",
+        "hide_detected",
         "detach_entity",
         "detect_entity_route",
         "observe_entity",
@@ -7240,10 +7360,15 @@ async fn refusal_sites_batch_6_forced_write_outcomes_cover_busy_and_success() {
         let (status, body) = drive(journal.path(), kind, &prepared).await;
         assert_eq!(status, 200, "{kind} acquired status: {body}");
         match kind {
-            "delete_detected" => {
-                assert_eq!(body, json!({"success":true,"days_modified":["20260101"]}));
+            "hide_detected" => {
+                assert_eq!(body["changed"], true);
                 assert!(
-                    !fs::read_to_string(journal.path().join("facets/work/entities/20260101.jsonl"))
+                    fs::read_to_string(journal.path().join("facets/work/hidden-names.json"))
+                        .unwrap()
+                        .contains("Alice")
+                );
+                assert!(
+                    fs::read_to_string(journal.path().join("facets/work/entities/20260101.jsonl"))
                         .unwrap()
                         .contains("Alice")
                 );
@@ -7463,132 +7588,6 @@ fn write_detected_day(root: &Path, day: &str, contents: &str) {
 }
 
 #[tokio::test]
-async fn detected_preview_lists_matching_days_sorted() {
-    let j = Journal::new();
-    write_detected_day(
-        j.path(),
-        "20260102",
-        "{\"type\":\"Person\",\"name\":\"Ada\",\"description\":\"second\"}\n",
-    );
-    write_detected_day(
-        j.path(),
-        "20260101",
-        "{\"type\":\"Person\",\"name\":\"Ada\",\"description\":\"first\"}\n",
-    );
-    let (status, body) = call(j.path(), "/app/entities/api/work/detected/preview?name=Ada").await;
-    assert_eq!(status, 200);
-    assert_eq!(
-        body,
-        json!({
-            "success":true,
-            "days":[
-                {"day":"20260101","type":"Person","description":"first"},
-                {"day":"20260102","type":"Person","description":"second"}
-            ]
-        })
-    );
-}
-
-#[tokio::test]
-async fn detected_preview_without_entities_directory_returns_empty_days() {
-    let j = Journal::new();
-    let (status, body) = call(j.path(), "/app/entities/api/work/detected/preview?name=Ada").await;
-    assert_eq!(status, 200);
-    assert_eq!(body, json!({"success":true,"days":[]}));
-}
-
-#[tokio::test]
-async fn detected_preview_requires_name() {
-    let j = Journal::new();
-    for uri in [
-        "/app/entities/api/work/detected/preview",
-        "/app/entities/api/work/detected/preview?name=",
-        "/app/entities/api/work/detected/preview?name=%20",
-    ] {
-        let (status, body) = call(j.path(), uri).await;
-        assert_eq!(status, 400, "{uri}");
-        assert_eq!(body["reason_code"], "missing_required_field", "{uri}");
-        assert_eq!(body["detail"], "Entity name is required", "{uri}");
-    }
-}
-
-#[tokio::test]
-async fn detected_preview_emits_one_entry_per_matching_row() {
-    let j = Journal::new();
-    write_detected_day(
-        j.path(),
-        "20260101",
-        "{\"type\":\"Person\",\"name\":\"Ada\",\"description\":\"one\"}\n{\"type\":\"Tool\",\"name\":\"Ada\",\"description\":\"two\"}\n",
-    );
-    let (status, body) = call(j.path(), "/app/entities/api/work/detected/preview?name=Ada").await;
-    assert_eq!(status, 200);
-    assert_eq!(
-        body["days"],
-        json!([
-            {"day":"20260101","type":"Person","description":"one"},
-            {"day":"20260101","type":"Tool","description":"two"}
-        ])
-    );
-}
-
-#[tokio::test]
-async fn detected_preview_skips_invalid_type_and_matches_delete_day_set() {
-    let j = Journal::new();
-    write_detected_day(j.path(), "20260101", "{\"name\":\"Ada\"}\n");
-    write_detected_day(
-        j.path(),
-        "20260102",
-        "{\"type\":\"Person\",\"name\":\"Ada\",\"description\":\"ok\"}\n",
-    );
-    let (status, preview) =
-        call(j.path(), "/app/entities/api/work/detected/preview?name=Ada").await;
-    assert_eq!(status, 200);
-    assert_eq!(
-        preview["days"],
-        json!([{"day":"20260102","type":"Person","description":"ok"}])
-    );
-    let (delete_status, deleted) = delete_json(
-        j.path(),
-        "/app/entities/api/work/detected",
-        json!({"name":"Ada"}),
-    )
-    .await;
-    assert_eq!(delete_status, 200);
-    assert_eq!(deleted["days_modified"], json!(["20260102"]));
-}
-
-#[tokio::test]
-async fn detected_preview_without_match_returns_empty_days() {
-    let j = Journal::new();
-    write_detected_day(
-        j.path(),
-        "20260101",
-        "{\"type\":\"Person\",\"name\":\"Bob\",\"description\":\"other\"}\n",
-    );
-    let (status, body) = call(j.path(), "/app/entities/api/work/detected/preview?name=Ada").await;
-    assert_eq!(status, 200);
-    assert_eq!(body, json!({"success":true,"days":[]}));
-}
-
-#[tokio::test]
-async fn detected_preview_ignores_directory_at_day_file_path() {
-    let j = Journal::new();
-    let entities_dir = j.path().join("facets/work/entities");
-    fs::create_dir_all(entities_dir.join("20260101.jsonl")).unwrap();
-    write_detected_day(
-        j.path(),
-        "20260102",
-        "{\"type\":\"Person\",\"name\":\"Ada\",\"description\":\"ok\"}\n",
-    );
-    let (status, body) = call(j.path(), "/app/entities/api/work/detected/preview?name=Ada").await;
-    assert_eq!(status, 200);
-    assert_eq!(
-        body["days"],
-        json!([{"day":"20260102","type":"Person","description":"ok"}])
-    );
-}
-
-#[tokio::test]
 async fn every_success_envelope_branch_sets_success_true() {
     {
         let j = Journal::new();
@@ -7783,34 +7782,15 @@ async fn every_success_envelope_branch_sets_success_true() {
     }
     {
         let j = Journal::new();
-        let (status, body) = delete_json(
+        seed_work_facet(j.path());
+        let (status, body) = post(
             j.path(),
-            "/app/entities/api/work/detected",
+            "/app/entities/api/work/detected/hide",
             json!({"name":"Alice"}),
         )
         .await;
-        assert_eq!(status, 200, "delete-detected-empty: status");
-        assert_success_envelope("delete-detected-empty", &body, &json!({"days_modified":[]}));
-    }
-    {
-        let j = Journal::new();
-        write_detected_day(
-            j.path(),
-            "20260101",
-            "{\"type\":\"Person\",\"name\":\"Alice\"}\n",
-        );
-        let (status, body) = delete_json(
-            j.path(),
-            "/app/entities/api/work/detected",
-            json!({"name":"Alice"}),
-        )
-        .await;
-        assert_eq!(status, 200, "delete-detected: status");
-        assert_success_envelope(
-            "delete-detected",
-            &body,
-            &json!({"days_modified":["20260101"]}),
-        );
+        assert_eq!(status, 200, "hide-detected: status");
+        assert_success_envelope("hide-detected", &body, &json!({"changed":true}));
     }
     {
         let j = Journal::new();

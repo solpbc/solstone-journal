@@ -7,7 +7,11 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
+use solstone_core_entity::hidden_names::{
+    HiddenBy, HiddenName, HiddenNames, HideUndecidable, facet_hidden_keys, hidden_name_key,
+    read_hidden_names,
+};
 #[cfg(all(test, not(feature = "full-tests")))]
 use solstone_core_entity_matching::EntityNameMatchOutcome;
 #[cfg(all(test, feature = "full-tests"))]
@@ -52,30 +56,55 @@ fn suppresses_detection(outcome: &EntityNameMatchOutcome) -> bool {
     }
 }
 
-/// Load recent detections, excluding names matched by attached facet entities.
+/// A facet's recent detections, as the Entities page lists them.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DetectedRecent {
+    /// Names no attached or hidden entity covers and the owner hasn't hidden,
+    /// one row per type and name, newest first.
+    pub detected: Vec<Value>,
+    /// Every name the owner hid in the facet, in the order they were hidden,
+    /// with its type, count and last day from the recent rows (null when it
+    /// wasn't detected recently). Names a hidden entity keeps hidden are not
+    /// here: they are reached through the entity.
+    pub hidden: Vec<Value>,
+}
+
+/// Load recent detections: names attached and hidden entities cover leave
+/// the list, and the owner's hidden names come back separately. When what
+/// the facet hides can't be read, nothing is listed and the error says so.
 pub fn load_detected_entities_recent(
     journal_root: &Path,
     facet_dir: &str,
     days: i64,
-) -> Result<Vec<Value>, FacetEntityWriteError> {
+) -> Result<DetectedRecent, FacetEntityWriteError> {
     load_detected_entities_recent_at(journal_root, facet_dir, days, Utc::now())
 }
 
-/// Load recent detections relative to an explicit instant, excluding names matched by attached facet entities.
+/// [`load_detected_entities_recent`] relative to an explicit instant.
 pub fn load_detected_entities_recent_at(
     journal_root: &Path,
     facet_dir: &str,
     days: i64,
     now: DateTime<Utc>,
-) -> Result<Vec<Value>, FacetEntityWriteError> {
+) -> Result<DetectedRecent, FacetEntityWriteError> {
+    let hidden_names = match read_hidden_names(journal_root, facet_dir) {
+        HiddenNames::Damaged { path, detail } => {
+            return Err(HideUndecidable::HiddenNames { path, detail }.into());
+        }
+        HiddenNames::Absent => Vec::new(),
+        HiddenNames::Present(names) => names,
+    };
+    let hides = facet_hidden_keys(journal_root, facet_dir)?;
     let keys = ExclusionKeys::from_candidates(&exclusion_candidates(journal_root, facet_dir)?);
     let today = now
         .with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
         .date_naive();
     let cutoff = cutoff_day(today, days);
-    let mut exclusion_cache = HashMap::new();
+    let mut verdicts: HashMap<String, Verdict> = HashMap::new();
     let mut detected: Vec<Value> = Vec::new();
     let mut detected_indices: HashMap<(String, String), usize> = HashMap::new();
+    let hidden_keys: Vec<String> = hidden_names.iter().map(HiddenName::key).collect();
+    let mut hidden_seen: Vec<Option<(String, u64, String)>> = vec![None; hidden_names.len()];
 
     for day in detected_days(journal_root, facet_dir)?.into_iter().rev() {
         if day < cutoff {
@@ -87,16 +116,33 @@ pub fn load_detected_entities_recent_at(
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_owned();
-            let excluded = *exclusion_cache
-                .entry(name.clone())
-                .or_insert_with(|| keys.contains(&name));
-            if excluded {
-                continue;
-            }
             let entity_type = entity
                 .get("type")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
+            let verdict = *verdicts.entry(name.clone()).or_insert_with(|| {
+                if keys.contains(&name) {
+                    return Verdict::Covered;
+                }
+                match hides.hidden_by(&name) {
+                    Some(HiddenBy::Owner) => Verdict::OwnerHidden,
+                    Some(HiddenBy::Entity(_)) => Verdict::Covered,
+                    None => Verdict::Shown,
+                }
+            });
+            match verdict {
+                Verdict::Covered => continue,
+                Verdict::OwnerHidden => {
+                    let key = hidden_name_key(&name);
+                    if let Some(index) = hidden_keys.iter().position(|hidden| *hidden == key) {
+                        let seen = hidden_seen[index]
+                            .get_or_insert_with(|| (entity_type.to_owned(), 0, day.clone()));
+                        seen.1 += 1;
+                    }
+                    continue;
+                }
+                Verdict::Shown => {}
+            }
             if let Some(&index) = detected_indices.get(&(entity_type.to_owned(), name.clone())) {
                 let existing = &mut detected[index];
                 let count = existing
@@ -122,7 +168,37 @@ pub fn load_detected_entities_recent_at(
             ])));
         }
     }
-    Ok(detected)
+    let hidden = hidden_names
+        .into_iter()
+        .zip(hidden_seen)
+        .map(|(entry, seen)| {
+            let (entity_type, count, last_seen) = match seen {
+                Some((entity_type, count, day)) => (
+                    Value::String(entity_type),
+                    Value::from(count),
+                    Value::String(day),
+                ),
+                None => (Value::Null, Value::Null, Value::Null),
+            };
+            json!({
+                "name": entry.name,
+                "type": entity_type,
+                "count": count,
+                "last_seen": last_seen,
+                "hidden_at": entry.hidden_at,
+            })
+        })
+        .collect();
+    Ok(DetectedRecent { detected, hidden })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Verdict {
+    /// An attached entity, or a hidden one, covers the name.
+    Covered,
+    /// The owner hid the name.
+    OwnerHidden,
+    Shown,
 }
 
 /// Return every detected name at or after `since`, preserving duplicate rows.
@@ -242,7 +318,10 @@ fn exclusion_candidates(
     facet_dir: &str,
 ) -> Result<Vec<EntityNameCandidate>, FacetEntityWriteError> {
     let mut candidates = Vec::new();
-    for entity in list_scoped_facet_entities(journal_root, facet_dir, false, false)? {
+    // Every attached link covers its entity's names, a hidden one included: a
+    // hidden entity is reached through the entity, never as a detection.
+    // Hidden entities' detached links are covered by `facet_hidden_keys`.
+    for entity in list_scoped_facet_entities(journal_root, facet_dir, false, true)? {
         let enriched =
             enrich_relationship_with_journal(&entity.relationship, Some(&entity.identity));
         let Some(name) = enriched

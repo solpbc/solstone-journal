@@ -301,29 +301,6 @@ pub fn update_detected_entity(
     Ok(updated.expect("update set result"))
 }
 
-/// Delete all detections selected by raw display-name equality.
-pub fn delete_detected_entity(
-    journal_root: &Path,
-    facet_dir: &str,
-    day: &str,
-    name: &str,
-) -> Result<Vec<Value>, FacetEntityWriteError> {
-    let mut removed = Vec::new();
-    modify_detected_entities(journal_root, facet_dir, day, |rows| {
-        let mut retained = Vec::with_capacity(rows.len());
-        for row in rows.drain(..) {
-            if row.get("name").and_then(Value::as_str) == Some(name) {
-                removed.push(row);
-            } else {
-                retained.push(row);
-            }
-        }
-        *rows = retained;
-        Ok(())
-    })?;
-    Ok(removed)
-}
-
 fn modify_detected_entities<F>(
     journal_root: &Path,
     facet_dir: &str,
