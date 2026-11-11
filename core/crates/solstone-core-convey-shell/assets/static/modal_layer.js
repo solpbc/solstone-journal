@@ -349,7 +349,10 @@
     });
     document.addEventListener('focusin', handleFocusIn, true);
     document.addEventListener('keydown', handleKeyDown, true);
-    document.addEventListener('workspace:mounted', reconcile);
+    // The rest of the shell can load after the first mount. Hear that mount
+    // too; reconcile below still covers a page that has not mounted.
+    if (typeof global.bindWorkspaceMount === 'function') global.bindWorkspaceMount(reconcile);
+    else document.addEventListener('workspace:mounted', reconcile);
     reconcile();
   }
 

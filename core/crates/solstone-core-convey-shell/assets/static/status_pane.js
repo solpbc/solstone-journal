@@ -113,20 +113,6 @@ window.whenShellReady(() => {
     }, 700);
   });
 
-  document.addEventListener('workspace:mounted', () => {
-    const host = document.getElementById('healthSystemDetails');
-    statusPaneOpen = Boolean(host);
-    if (statusPaneOpen) startPaneTick();
-    if (host && statusPane) {
-      host.appendChild(statusPane);
-      statusPane.hidden = false;
-      renderQuietNotifs();
-      syncNotificationBlocks();
-      updateStatusPane();
-      fetchSystemStatus();
-      revealInitialDestination();
-    }
-  });
   statusConsoleLink?.addEventListener('click', (event) => {
     event.preventDefault();
     window.convey?.diagnosticConsole?.open?.();
@@ -671,6 +657,25 @@ window.whenShellReady(() => {
       }
     });
   }
+
+  // Health's first mount can happen before this file arrives. Adopt that
+  // mount now, and each one after it.
+  function onWorkspaceMounted() {
+    const host = document.getElementById('healthSystemDetails');
+    statusPaneOpen = Boolean(host);
+    if (statusPaneOpen) startPaneTick();
+    if (host && statusPane) {
+      host.appendChild(statusPane);
+      statusPane.hidden = false;
+      renderQuietNotifs();
+      syncNotificationBlocks();
+      updateStatusPane();
+      fetchSystemStatus();
+      revealInitialDestination();
+    }
+  }
+  if (window.bindWorkspaceMount) window.bindWorkspaceMount(onWorkspaceMounted);
+  else document.addEventListener('workspace:mounted', onWorkspaceMounted);
 
   fetchSystemStatus();
   // The capture rollup, the quiet-device count and the version come from this

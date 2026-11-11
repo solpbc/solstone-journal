@@ -691,6 +691,7 @@ function createHarness(options = {}) {
   return {
     document,
     window,
+    context,
     chrome: window.__shellChrome,
     shell,
     boot: options.boot ? () => window.__shellBoot() : null,
@@ -2352,6 +2353,44 @@ for (const [pathname, expected] of [
     assert.deepStrictEqual(ran, expected, 'a script for another route never runs');
   });
 }
+
+asyncCase('the status pane adopts the workspace already on the page when its script arrives', async () => {
+  const harness = createHarness({});
+  const pane = harness.document.getElementById('status-pane');
+  pane.hidden = true;
+  harness.window.setInterval = () => 0;
+  harness.context.setTimeout = () => 0;
+  await harness.window.mountWorkspaceFragment('/app/health/workspace', {
+    appName: 'health',
+    fragmentText: '<section id="healthSystemDetails"></section>',
+  });
+  assert.strictEqual(pane.parentElement, harness.document.body);
+  assert.strictEqual(pane.hidden, true);
+
+  vm.runInContext(
+    fs.readFileSync(path.join(crateDir, 'assets/static/status_pane.js'), 'utf8'),
+    harness.context,
+    { filename: 'status_pane.js' },
+  );
+  assert.strictEqual(pane.parentElement, harness.document.getElementById('healthSystemDetails'));
+  assert.strictEqual(pane.hidden, false);
+
+  pane.hidden = true;
+  harness.document.body.appendChild(pane);
+  await harness.window.mountWorkspaceFragment('/app/home/workspace', {
+    appName: 'home',
+    fragmentText: '<section id="home-root"></section>',
+  });
+  assert.strictEqual(pane.parentElement, harness.document.body);
+  assert.strictEqual(pane.hidden, true);
+
+  await harness.window.mountWorkspaceFragment('/app/health/workspace', {
+    appName: 'health',
+    fragmentText: '<section id="healthSystemDetails"></section>',
+  });
+  assert.strictEqual(pane.parentElement.id, 'healthSystemDetails');
+  assert.strictEqual(pane.hidden, false);
+});
 
 async function runAsyncCases() {
   for (const runCase of asyncCases) {
