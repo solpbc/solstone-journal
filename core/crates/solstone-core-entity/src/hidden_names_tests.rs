@@ -182,7 +182,7 @@ fn a_hide_marked_link_hides_its_entitys_keys_and_a_visible_link_does_not() {
 }
 
 #[test]
-fn blocked_alone_does_not_hide_and_another_detach_does_not_either() {
+fn an_attached_link_is_visible_without_reading_its_entity() {
     let journal = Journal::new();
     journal.entity(
         "dana",
@@ -191,6 +191,22 @@ fn blocked_alone_does_not_hide_and_another_detach_does_not_either() {
             .as_bytes(),
     );
     journal.link("dana", json!({"entity_id": "dana"}));
+    journal.entity("mark", b"{broken");
+    journal.link("mark", json!({"entity_id": "mark", "detached_by": "hide"}));
+    let keys = facet_hidden_keys(&journal.0, "work").unwrap();
+    assert!(keys.is_empty());
+}
+
+#[test]
+fn a_detached_link_without_the_mark_hides_only_a_blocked_entity() {
+    let journal = Journal::new();
+    journal.entity(
+        "dana",
+        json!({"id": "dana", "name": "Dana Ruiz", "aka": ["DR"], "blocked": true})
+            .to_string()
+            .as_bytes(),
+    );
+    journal.link("dana", json!({"entity_id": "dana", "detached": true}));
     journal.entity(
         "eve",
         json!({"id": "eve", "name": "Eve"}).to_string().as_bytes(),
@@ -199,8 +215,29 @@ fn blocked_alone_does_not_hide_and_another_detach_does_not_either() {
         "eve",
         json!({"entity_id": "eve", "detached": true, "detached_by": "owner"}),
     );
+    journal.link("gone", json!({"entity_id": "gone", "detached": true}));
     let keys = facet_hidden_keys(&journal.0, "work").unwrap();
-    assert!(keys.is_empty());
+    let entity = keys.hidden_by_entity("dana ruiz").expect("hidden by Dana");
+    assert_eq!(entity.id, "dana");
+    assert!(keys.is_hidden("DR"));
+    assert!(keys.hides_folder("dana"));
+    assert!(!keys.is_hidden("Eve"));
+    assert!(!keys.hides_folder("eve"));
+    assert!(!keys.is_hidden("gone"));
+    assert_eq!(keys.entities().len(), 1);
+}
+
+#[test]
+fn a_detached_link_without_the_mark_whose_entity_is_damaged_is_undecidable() {
+    let journal = Journal::new();
+    journal.entity("eve", b"{broken");
+    journal.link(
+        "eve",
+        json!({"entity_id": "eve", "detached": true, "detached_by": "owner"}),
+    );
+    let error = facet_hidden_keys(&journal.0, "work").unwrap_err();
+    assert!(matches!(error, HideUndecidable::Entity { .. }), "{error}");
+    assert!(error.path().ends_with("entities/eve/entity.json"));
 }
 
 #[test]
@@ -208,7 +245,7 @@ fn a_hide_marked_link_without_an_entity_hides_by_its_own_id_and_name() {
     let journal = Journal::new();
     journal.link(
         "ghost",
-        json!({"entity_id": "ghost", "name": "Ghost Writer", "detached_by": "hide"}),
+        json!({"entity_id": "ghost", "name": "Ghost Writer", "detached": true, "detached_by": "hide"}),
     );
     let keys = facet_hidden_keys(&journal.0, "work").unwrap();
     let entity = keys

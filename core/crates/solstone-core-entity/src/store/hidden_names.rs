@@ -15,8 +15,8 @@
 //! every read and never stored. The facets store is the only writer.
 //!
 //! [`facet_hidden_keys`] adds the names a hidden entity keeps hidden in the
-//! facet: the keys of every link folder the hide marked (`detached_by:
-//! "hide"`). It reads links and entities strictly, and when something it needs
+//! facet: the keys of every detached link folder that a hide marked
+//! (`detached_by: "hide"`) or whose entity is hidden (`blocked`). It reads links and entities strictly, and when something it needs
 //! can't be read it answers [`HideUndecidable`] rather than guessing.
 
 use std::collections::{HashMap, HashSet};
@@ -31,6 +31,7 @@ use solstone_core_journal_io::durability::{ArtifactId, DurableObservation, obser
 
 use super::facet_links::{LinkDirs, is_folder_name};
 use super::identity::{IdentityObservation, observe_entity_identity};
+use super::lifecycle::value_is_truthy;
 
 /// The file name of a facet's hidden names, in the facet's folder.
 pub const HIDDEN_NAMES_FILE: &str = "hidden-names.json";
@@ -306,16 +307,19 @@ impl HiddenKeys {
 }
 
 /// Everything `facet` keeps hidden: the names in its `hidden-names.json` and
-/// the keys of each link folder a hide marked (`detached_by: "hide"`).
+/// the keys of each hidden entity's link folder there.
 ///
-/// A hide-marked link's keys are its entity's name, aliases, emails and id,
-/// read straight from `entities/<id>/entity.json`; when that file is absent the
-/// link's own id and name stand in. `blocked` is not read: every hide marks
-/// the entity's links.
+/// Per link folder: an attached link is visible and its entity isn't read. A
+/// detached link marked by a hide (`detached_by: "hide"`) hides. A detached
+/// link without the mark hides when its entity is `blocked`. A hiding link's
+/// keys are its entity's name, aliases, emails and id, read straight from
+/// `entities/<id>/entity.json`; when that file is absent the link's own id and
+/// name stand in (and an unmarked link then stays visible).
 ///
 /// Undecidable when the hidden-names file is damaged, when any link file in
-/// the facet can't be read (it might be a hide), or when a hide-marked link's
-/// entity file exists but can't be read (its keys are unknown).
+/// the facet can't be read (it might be a hide), or when a detached link's
+/// entity file exists but can't be read (whether it hides, or what, is
+/// unknown).
 pub fn facet_hidden_keys(journal: &Path, facet: &str) -> Result<HiddenKeys, HideUndecidable> {
     let owner = match read_hidden_names(journal, facet) {
         HiddenNames::Absent => HashSet::new(),
@@ -345,15 +349,18 @@ pub fn facet_hidden_keys(journal: &Path, facet: &str) -> Result<HiddenKeys, Hide
                 });
             }
         };
+        // An attached link shows its entity, whatever its entity says.
+        if !link.detached() {
+            continue;
+        }
         if !is_folder_name(&link.entity_id) {
             return Err(HideUndecidable::Link {
                 path: link_path(),
                 detail: format!("'{}' can't be an entity id", link.entity_id),
             });
         }
-        if link.value.get("detached_by").and_then(Value::as_str) != Some(HIDE_DETACHED_BY) {
-            continue;
-        }
+        let marked =
+            link.value.get("detached_by").and_then(Value::as_str) == Some(HIDE_DETACHED_BY);
         let identity = match identities.get(&link.entity_id) {
             Some(identity) => identity.clone(),
             None => {
@@ -362,6 +369,15 @@ pub fn facet_hidden_keys(journal: &Path, facet: &str) -> Result<HiddenKeys, Hide
                 identity
             }
         };
+        // A detached link without the hide's mark hides only when its entity
+        // is hidden: the owner detached it before the hide, the hide came
+        // before the mark existed, or a block was interrupted after saving.
+        let blocked = identity
+            .as_ref()
+            .is_some_and(|identity| identity.get("blocked").is_some_and(value_is_truthy));
+        if !marked && !blocked {
+            continue;
+        }
         entities.push(hiding_entity(
             folder,
             &link.entity_id,
