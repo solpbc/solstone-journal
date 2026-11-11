@@ -151,6 +151,432 @@ function findById(root, id) {
   return null;
 }
 
+// Deleting entities: the pane's button, the dialog, select mode and the
+// receipts. Asserts which copy key reaches which element and which state
+// renders; no assertion pins the words.
+class PickNode {
+  constructor(doc, tag) {
+    this.ownerDocument = doc;
+    this.tagName = String(tag).toUpperCase();
+    this.children = [];
+    this.parentElement = null;
+    this.listeners = {};
+    this.attributes = {};
+    this.dataset = {};
+    this.style = {};
+    this.hidden = false;
+    this.disabled = false;
+    this.checked = false;
+    this.value = '';
+    this._text = '';
+    this._class = '';
+    const node = this;
+    this.classList = {
+      toggle(name, force) {
+        const set = new Set(node._class.split(/\s+/).filter(Boolean));
+        const on = force === undefined ? !set.has(name) : Boolean(force);
+        if (on) set.add(name); else set.delete(name);
+        node._class = [...set].join(' ');
+        return on;
+      },
+      contains(name) { return node._class.split(/\s+/).includes(name); },
+      add(name) { this.toggle(name, true); },
+      remove(name) { this.toggle(name, false); },
+    };
+  }
+  get className() { return this._class; }
+  set className(value) { this._class = String(value || ''); }
+  get id() { return this.attributes.id || ''; }
+  set id(value) { this.attributes.id = String(value); }
+  set textContent(value) { this._text = String(value); this.children = []; }
+  get textContent() { return this._text + this.children.map((child) => child.textContent).join(''); }
+  set innerHTML(value) { this._text = ''; this.children = []; this.html = String(value); }
+  get innerHTML() { return this.html || ''; }
+  appendChild(child) { child.parentElement = this; this.children.push(child); return child; }
+  append(...nodes) { nodes.forEach((node) => this.appendChild(node)); }
+  replaceChildren(...nodes) { this.children = []; this._text = ''; this.append(...nodes); }
+  remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter((c) => c !== this); this.parentElement = null; }
+  contains(node) { return node === this || this.children.some((child) => child.contains(node)); }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  getAttribute(name) { return Object.hasOwn(this.attributes, name) ? this.attributes[name] : null; }
+  removeAttribute(name) { delete this.attributes[name]; }
+  addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); }
+  fire(name, extra = {}) {
+    const event = { target: this, currentTarget: this, key: extra.key, preventDefault() {}, stopPropagation() {}, ...extra };
+    if (typeof this['on' + name] === 'function') this['on' + name](event);
+    (this.listeners[name] || []).forEach((fn) => fn(event));
+    return event;
+  }
+  focus() { this.ownerDocument.activeElement = this; }
+  scrollIntoView() {}
+  walk(fn) { this.children.forEach((child) => { fn(child); child.walk(fn); }); }
+  matches(selector) {
+    if (selector === 'input[data-entity-pick]') return this.tagName === 'INPUT' && this.dataset.entityPick === 'true';
+    if (selector.startsWith('.')) return this.classList.contains(selector.slice(1));
+    return false;
+  }
+  querySelector(selector) { let found = null; this.walk((node) => { if (!found && node.matches(selector)) found = node; }); return found; }
+  all(cls) { const out = []; this.walk((node) => { if (node.classList.contains(cls)) out.push(node); }); return out; }
+}
+
+function pickHarness() {
+  const doc = { activeElement: null, listeners: {}, registry: new Map() };
+  doc.createElement = (tag) => new PickNode(doc, tag);
+  doc.body = new PickNode(doc, 'body');
+  doc.getElementById = (id) => doc.registry.get(id) || null;
+  doc.contains = () => true;
+  doc.addEventListener = (name, fn) => { (doc.listeners[name] ||= []).push(fn); };
+  const make = (id, tag = 'div') => { const node = new PickNode(doc, tag); node.id = id; doc.registry.set(id, node); return node; };
+  [
+    'entityDeleteModal', 'entityDeleteModalHeader', 'entityDeleteModalTitle', 'entityDeleteModalBody',
+    'entityDeleteModalMoveFoot', 'entityDeleteModalEraseFoot', 'entityDeleteModalClose', 'entityDeleteModalErase',
+    'entityDeleteModalCancel', 'entityDeleteModalConfirm', 'entityDeleteModalBack', 'entityDeleteModalEraseConfirm',
+    'journal-detail-delete-btn', 'journal-detail-delete-help', 'journal-detail-delete-help-name', 'journal-detail-delete-help-text',
+    'journal-select-btn', 'journal-pick-bar', 'journal-pick-idle', 'journal-pick-some', 'journal-pick-all', 'journal-pick-all-label',
+    'journal-pick-count', 'journal-pick-delete', 'journal-pick-done-idle', 'journal-pick-done-some',
+    'journal-entity-cards-content', 'no-journal-entities', 'journal-card-search-count', 'no-journal-card-matches',
+    'journal-list-panel', 'journal-ids-panel', 'journal-dups-panel', 'journal-entity-card-search', 'journal-list-pager', 'journal-folders',
+  ].forEach((id) => make(id, id.endsWith('-btn') || /Modal(Close|Erase|Cancel|Confirm|Back|EraseConfirm)$/.test(id) || id.startsWith('journal-pick-d') ? 'button' : id === 'journal-pick-all' ? 'input' : 'div'));
+  const log = { fetches: [], receipts: [], navigated: [], toList: 0, reloads: 0 };
+  const answers = {};
+  const fetchStub = async (url, options = {}) => {
+    log.fetches.push({ url, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : undefined });
+    const answer = answers[`${options.method || 'GET'} ${url}`];
+    if (answer instanceof Error) throw answer;
+    const value = typeof answer === 'function' ? await answer() : answer;
+    if (!value) return { ok: false, status: 500, json: async () => null };
+    return { ok: (value.status || 200) < 400, status: value.status || 200, json: async () => value.body };
+  };
+  const context = {
+    document: doc, console, Promise, Map, Set, Number, String, Array, Object, JSON, Date, URLSearchParams,
+    fetch: fetchStub,
+    window: {
+      AppServices: { notifications: { show: (notice) => { log.receipts.push(notice); return log.receipts.length; } } },
+      JournalClock: { dayKey: (instant) => instant.toISOString().slice(0, 10).replace(/-/g, '') },
+      JournalFormat: { day: (key) => `day:${key}` },
+      location: { href: '' },
+      SurfaceState: { loading: () => '' },
+    },
+    journalSummary: null,
+    journalFolder: '',
+    journalEntitySearch: '',
+    journalEntityPage: 0,
+    journalSearchDebounce: null,
+    scopeMetadataDirty: false,
+    facetRoster: [],
+    tidyState: { data: null },
+    JOURNAL_ENTITY_PAGE_SIZE: 50,
+  };
+  vm.createContext(context);
+  return { context, doc, log, answers };
+}
+
+async function entityDeleteCases(workspace) {
+  const start = workspace.indexOf('// ========== ENTITY DELETE ==========');
+  const end = workspace.indexOf('// ========== END ENTITY DELETE ==========');
+  check(start !== -1 && end > start, 'the entity delete block is marked');
+  const listStart = workspace.indexOf('function renderJournalEntities()');
+  const listEnd = workspace.indexOf('function appendTypeIndicator(');
+  check(listStart !== -1 && listEnd > listStart, 'the journal list rendering is reachable');
+  check(!workspace.includes('deleteJournalEntityModal') && !workspace.includes('cancelJournalEntityDelete')
+    && !workspace.includes('watchEntityDeleteOutcome') && !workspace.includes('reportUnfinishedEntityDeletes')
+    && !workspace.includes('api/delete-status') && !workspace.includes('api/cancel-delete'),
+  'the old permanent delete, its cancel window and its outcome polling are gone');
+  check(workspace.includes('id="deleteModal"'), 'the detections delete stays');
+  const pageButton = /<button[^>]*id="journal-detail-delete-btn"[^>]*>/.exec(workspace);
+  check(pageButton && pageButton[0].includes('btn-secondary') && !pageButton[0].includes('btn-danger'), 'the pane delete is secondary: it leads to the reversible act');
+
+  const flush = async () => { for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setImmediate(resolve)); };
+  const setup = () => {
+    const h = pickHarness();
+    vm.runInContext(`
+      function groupedCount(n) { return String(n); }
+      function formatDateShort() { return ''; }
+      function formatMentionedDate() { return ''; }
+      function renderTidyBand() {}
+      function renderIdsPanel() {}
+      function renderDupsPanel() {}
+      function captureIdSelection() {}
+      function loadTidyGroups() {}
+      function writeJournalListState() {}
+      async function loadJournalEntities() { renderJournalEntities(); }
+      function navigateToEntity(id) { __log.navigated.push(id); }
+      function navigateToList() { __log.toList += 1; }
+      async function refreshEntitiesAfterMutation() {
+        __log.reloads += 1;
+        if (__nextSummary) { journalSummary = __nextSummary; __nextSummary = null; renderJournalEntities(); }
+        else scopeMetadataDirty = true;
+      }
+      var __nextSummary = null;
+      ${workspace.slice(listStart, listEnd)}
+      ${workspace.slice(start, end)}
+      this.api = { ENTITY_DELETE_COPY, entityPick, entitySetOutcome, entityOneListLines, renderEntityDeleteAction, renderJournalEntities,
+        selectJournalFolder, deleteSetFromEntityList, deleteEntityFromPane, setSummary(s) { journalSummary = s; }, setNext(s) { __nextSummary = s; },
+        setFolder(f) { journalFolder = f; }, dirty(v) { scopeMetadataDirty = v; } };
+    `.replace(/__log/g, 'this.__log'), h.context);
+    h.context.__log = h.log;
+    return h;
+  };
+  const ent = (id, extra = {}) => ({ id, name: `name-${id}`, type: 'Person', type_bucket: 'person', facets: [], ...extra });
+  const summary = (items, total = items.length) => ({ items, total, entity_total: total, offset: 0 });
+  const bodyKeys = (node) => node.children.map((child) => child.textContent);
+
+  // The pane: none for you; for anyone else, the button and its helper sentence.
+  {
+    const h = setup();
+    const C = h.context.api.ENTITY_DELETE_COPY;
+    h.context.api.renderEntityDeleteAction(ent('me', { is_principal: true }));
+    check(h.doc.getElementById('journal-detail-delete-btn').hidden === true && h.doc.getElementById('journal-detail-delete-help').hidden === true,
+      'your own entity has no delete and no delete sentence');
+    h.context.api.renderEntityDeleteAction(ent('a'));
+    const button = h.doc.getElementById('journal-detail-delete-btn');
+    check(button.hidden === false && button.disabled === false && button.textContent === C.button, 'another entity has the delete button');
+    check(h.doc.getElementById('journal-detail-delete-help').hidden === false
+      && h.doc.getElementById('journal-detail-delete-help-text').textContent === C.paneHelp, 'the helper says delete moves it to the trash');
+    h.context.api.renderEntityDeleteAction(null);
+    check(button.hidden === true, 'nothing to delete while the entity loads');
+  }
+
+  // One entity's dialog: opens at once; the preview fills only true lines.
+  {
+    const h = setup();
+    const C = h.context.api.ENTITY_DELETE_COPY;
+    const L = C.list;
+    const lines = (preview) => Array.from(h.context.api.entityOneListLines(preview));
+    check(lines(undefined).length === 0, 'the list waits for the preview');
+    check(JSON.stringify(lines(null)) === JSON.stringify([L.details, L.facetUnknown, L.voiceUnknown]), 'a failed preview falls back to words without counts');
+    check(JSON.stringify(lines({ type: 'person', facets: 0, voice: false })) === JSON.stringify([L.details]), 'no facets and no voice: only the true line');
+    check(JSON.stringify(lines({ type: 'person', facets: 1, voice: true })) === JSON.stringify([L.details, L.facetOne, L.voice]), 'one facet and a voice');
+    check(lines({ facets: 3 })[1] === L.facetMany.replace('{n}', 3), 'several facets carry their count');
+
+    let release;
+    h.answers['GET /app/entities/api/journal/entity/a/delete'] = () => new Promise((resolve) => { release = resolve; });
+    h.context.api.deleteEntityFromPane({ id: 'a', name: 'Ada', type: 'person' });
+    const modal = h.doc.getElementById('entityDeleteModal');
+    const body = h.doc.getElementById('entityDeleteModalBody');
+    check(modal.style.display === 'flex' && h.doc.activeElement === h.doc.getElementById('entityDeleteModalConfirm'),
+      'the dialog opens without waiting, focus on move to trash');
+    check(h.doc.getElementById('entityDeleteModalTitle').textContent === C.move.title, 'the move title');
+    const metaText = body.children[0].textContent;
+    check(metaText.includes('Ada') && metaText.includes('person'), 'the meta names it and its type');
+    check(JSON.stringify(bodyKeys(body).slice(1)) === JSON.stringify([C.move.reach, C.move.lead, '', C.move.stays, C.again]), 'reach, lead, an empty list, what stays, found again');
+    release({ body: { type: 'person', facets: 2, voice: true } });
+    await flush();
+    check(body.children[3].children.length === 3, 'the preview fills the list when it arrives');
+    h.doc.getElementById('entityDeleteModalErase').fire('click');
+    check(h.doc.getElementById('entityDeleteModalTitle').textContent === C.erase.title && h.doc.getElementById('entityDeleteModalHeader').classList.contains('danger'),
+      'erase now swaps to the erase step');
+    check(JSON.stringify(bodyKeys(body).slice(1, 3)) === JSON.stringify([C.erase.reach, C.erase.lead]) && bodyKeys(body)[5] === C.again,
+      'the erase step has its own words and the found-again line');
+    check(h.doc.activeElement === h.doc.getElementById('entityDeleteModalBack'), 'focus goes to back on the erase step');
+
+    // Erase now: the body asks for it; the page goes to the list and the receipt shows.
+    h.answers['DELETE /app/entities/api/journal/entity/a'] = { body: { success: true, erased: true } };
+    h.doc.getElementById('entityDeleteModalEraseConfirm').fire('click');
+    await flush();
+    const del = h.log.fetches.find((f) => f.method === 'DELETE');
+    check(del && del.body && del.body.erase === true, 'erase now sends erase');
+    check(h.log.toList === 1 && h.log.reloads === 1, 'after an erase the page goes to the list and reloads it');
+    check(h.log.receipts.at(-1).title === C.receipt.erased.title.replace('{noun}', C.noun), 'the erased receipt');
+    check(modal.style.display === 'none', 'the dialog closed');
+  }
+
+  // A move: no body; the receipt offers recover, which posts the trash id from this page.
+  {
+    const h = setup();
+    const C = h.context.api.ENTITY_DELETE_COPY;
+    h.answers['GET /app/entities/api/journal/entity/b/delete'] = null;
+    h.answers['DELETE /app/entities/api/journal/entity/b'] = { body: { success: true, trash: { id: 'T1', erase_at: '2099-11-17T00:00:00Z' } } };
+    h.context.api.deleteEntityFromPane({ id: 'b', name: 'Bo', type: 'person' });
+    await flush();
+    check(h.doc.getElementById('entityDeleteModalBody').children[3].children.length === 3, 'a failed preview never blocks the dialog');
+    h.doc.getElementById('entityDeleteModalConfirm').fire('click');
+    await flush();
+    const del = h.log.fetches.find((f) => f.method === 'DELETE');
+    check(del.body === undefined, 'a move sends no body');
+    const receipt = h.log.receipts.at(-1);
+    check(receipt.title === C.receipt.moved.title && receipt.message.includes('day:20991117'), 'the moved receipt carries the erase date');
+    check(receipt.buttons.map((b) => b.label).join() === [C.buttons.recover, C.buttons.openTrash].join(), 'recover and open trash');
+    h.answers['POST /app/settings/api/trash/recover'] = { body: { done: ['T1'], failed: [] } };
+    await receipt.buttons[0].onClick();
+    const recover = h.log.fetches.find((f) => f.url === '/app/settings/api/trash/recover');
+    check(JSON.stringify(recover.body) === JSON.stringify({ ids: ['T1'], page: 'entities' }), 'recover posts the trash id and this page');
+    check(h.log.reloads === 2 && h.log.receipts.at(-1).title === C.receipt.recovered.title.replace('{noun}', C.noun), 'recover reloads the list and says so');
+  }
+
+  // Refusals: each code reaches its own words; the server's own words never show.
+  {
+    const C = (setup()).context.api.ENTITY_DELETE_COPY;
+    const refusedWith = async (reason, erase) => {
+      const h = setup();
+      h.answers['GET /app/entities/api/journal/entity/c/delete'] = null;
+      h.answers['DELETE /app/entities/api/journal/entity/c'] = { status: 409, body: { success: false, reason, error: 'SERVER WORDS' } };
+      h.context.api.deleteEntityFromPane({ id: 'c', name: 'Cy', type: 'person' });
+      await flush();
+      if (erase) h.doc.getElementById('entityDeleteModalErase').fire('click');
+      h.doc.getElementById(erase ? 'entityDeleteModalEraseConfirm' : 'entityDeleteModalConfirm').fire('click');
+      await flush();
+      check(h.log.toList === 0, `a refusal (${reason}) stays on the pane`);
+      return h.log.receipts.at(-1);
+    };
+    for (const reason of ['busy', 'record_damaged', 'gone', 'principal', 'last_facet']) {
+      const receipt = await refusedWith(reason, false);
+      check(receipt.title === C.receipt.moveRefused.title && receipt.message === C.refused[reason], `a refused move keyed ${reason}`);
+      check(!JSON.stringify(receipt).includes('SERVER WORDS'), 'no server reason reaches the owner');
+    }
+    const odd = await refusedWith('something-new', false);
+    check(odd.message === C.receipt.moveRefused.message, 'an unknown code is other');
+    const damagedErase = await refusedWith('record_damaged', true);
+    check(damagedErase.title === C.receipt.eraseRefused.title.replace('{noun}', C.noun) && damagedErase.message === C.eraseRefused.record_damaged,
+      'a refused erase has its own title and its own record line');
+    const busyErase = await refusedWith('busy', true);
+    check(busyErase.message === C.refused.busy, 'a refused erase shares the other messages');
+  }
+
+  // No answer at all: it may have happened.
+  {
+    const h = setup();
+    const C = h.context.api.ENTITY_DELETE_COPY;
+    h.answers['GET /app/entities/api/journal/entity/d/delete'] = null;
+    h.answers['DELETE /app/entities/api/journal/entity/d'] = new TypeError('Failed to fetch');
+    h.context.api.deleteEntityFromPane({ id: 'd', name: 'Di', type: 'person' });
+    await flush();
+    h.doc.getElementById('entityDeleteModalConfirm').fire('click');
+    await flush();
+    check(h.log.receipts.at(-1).title === C.receipt.noAnswerMove.title && h.log.receipts.at(-1).message === C.receipt.noAnswerMove.message,
+      'no answer says it may already be in the trash');
+  }
+
+  // Select mode on the journal-wide list.
+  {
+    const h = setup();
+    const api = h.context.api;
+    const C = api.ENTITY_DELETE_COPY;
+    const byId = (id) => h.doc.getElementById(id);
+    const page1 = [ent('me', { is_principal: true }), ent('a'), ent('b'), ent('c')];
+    api.setSummary(summary(page1, 120));
+    api.renderJournalEntities();
+    const container = byId('journal-entity-cards-content');
+    check(byId('journal-select-btn').hidden === false && byId('journal-select-btn').textContent === C.select, 'select ends the list head');
+    check(byId('journal-pick-bar').hidden === true && container.classList.contains('journal-rows-plain'), 'no strip and no ticks outside select mode');
+    byId('journal-select-btn').onclick();
+    const rows = () => container.children;
+    check(byId('journal-pick-bar').hidden === false && byId('journal-select-btn').hidden === true, 'select mode shows the strip');
+    check(!container.classList.contains('journal-rows-plain'), 'the rows take the tick column');
+    check(rows()[0].children[0].classList.contains('journal-row-tick') && !rows()[0].querySelector('input[data-entity-pick]'),
+      'your own entity keeps the column with no box');
+    check(rows()[1].querySelector('input[data-entity-pick]') !== null, 'another entity has a box');
+    check(byId('journal-pick-idle').hidden === false && byId('journal-pick-all-label').textContent === C.selectAllPage, 'more than one page: select all on this page');
+    rows()[0].fire('click');
+    check(h.log.navigated.at(-1) === 'me', 'your own entity still opens its page');
+    rows()[1].fire('click');
+    check(api.entityPick.items.has('a') && rows()[1].classList.contains('journal-row--picked'), 'pressing a row picks it');
+    check(byId('journal-pick-some').hidden === false && byId('journal-pick-count').textContent === C.selected.replace('{n}', 1), 'the strip counts what is picked');
+    rows()[2].fire('keydown', { key: ' ' });
+    check(api.entityPick.items.has('b'), 'Space on a row picks it');
+    rows()[2].fire('keydown', { key: 'Enter' });
+    check(!api.entityPick.items.has('b') && h.log.navigated.length === 1, 'Enter toggles it back instead of opening it');
+    const box = rows()[3].querySelector('input[data-entity-pick]');
+    box.checked = true;
+    box.fire('change');
+    rows()[3].fire('click', { target: box });
+    check(api.entityPick.items.has('c'), 'a press on the box itself picks once');
+
+    // The selection holds across pages and searches inside a folder.
+    api.setSummary(summary([ent('x'), ent('y')], 120));
+    api.renderJournalEntities();
+    check(byId('journal-pick-count').textContent === C.selected.replace('{n}', 2), 'a new page keeps what was picked');
+    byId('journal-pick-all').onchange();
+    check(api.entityPick.items.size === 4 && h.doc.activeElement === byId('journal-pick-delete'), 'select all adds this page and moves focus to delete');
+
+    // A single page says select all.
+    api.setSummary(summary(page1, 4));
+    api.renderJournalEntities();
+    api.selectJournalFolder('person');
+    check(api.entityPick.on === true && api.entityPick.items.size === 0, 'changing the folder clears the selection');
+    check(byId('journal-pick-all-label').textContent === C.selectAll, 'one page: select all');
+    byId('journal-pick-all').onchange();
+    check(!api.entityPick.items.has('me') && api.entityPick.items.size === 3, 'select all leaves your own entity out');
+    api.setFolder('company');
+    api.renderJournalEntities();
+    check(api.entityPick.on === true && api.entityPick.items.size === 0, 'a folder changed by the browser clears the selection too');
+    api.selectJournalFolder('ids');
+    check(api.entityPick.on === false && byId('journal-pick-bar').hidden === true && byId('journal-select-btn').hidden === true,
+      'a folder with its own ticks ends select mode');
+    api.setFolder('');
+    api.renderJournalEntities();
+    byId('journal-select-btn').onclick();
+    rows()[1].fire('click');
+    byId('journal-pick-done-some').onclick();
+    check(api.entityPick.on === false && api.entityPick.items.size === 0 && h.doc.activeElement === byId('journal-select-btn'), 'done clears and leaves select mode');
+  }
+
+  // A set: one confirm; what partly went keeps only the refused, each with its note.
+  {
+    const h = setup();
+    const api = h.context.api;
+    const C = api.ENTITY_DELETE_COPY;
+    const byId = (id) => h.doc.getElementById(id);
+    const items = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id) => ent(id));
+    api.setSummary(summary(items, 7));
+    api.renderJournalEntities();
+    byId('journal-select-btn').onclick();
+    // One picked on another page earlier.
+    api.entityPick.items.set('far', { id: 'far', name: 'Far', type: 'person' });
+    byId('journal-pick-all').onchange();
+    byId('journal-pick-delete').onclick();
+    const body = byId('entityDeleteModalBody');
+    check(byId('entityDeleteModalTitle').textContent === C.move.titleMany.replace('{n}', 8), 'the set title counts them');
+    const list = body.children[0];
+    check(list.children.length === 6 && list.children[5].textContent === C.more.replace('{n}', 3), 'up to five, then how many more');
+    check(JSON.stringify(bodyKeys(body).slice(1)) === JSON.stringify([C.move.reachMany, C.move.ownMany, C.move.staysMany, C.againMany]), 'the set has no counts');
+    byId('entityDeleteModalErase').fire('click');
+    check(JSON.stringify(bodyKeys(body).slice(1, 3)) === JSON.stringify([C.erase.reachMany, C.erase.ownMany]), 'the set erase step');
+    byId('entityDeleteModalBack').fire('click');
+    h.answers['POST /app/entities/api/journal/delete'] = { body: {
+      done: ['a', 'b', 'c', 'd'].map((id) => ({ id, trash: { id: `T-${id}`, erase_at: '2099-11-17T00:00:00Z' } })),
+      failed: [{ id: 'e', reason: 'busy' }, { id: 'f', reason: 'record_damaged' }, { id: 'g', reason: 'gone' }, { id: 'far', reason: 'weird' }],
+    } };
+    api.setNext(summary([ent('e'), ent('f')], 2));
+    byId('entityDeleteModalConfirm').fire('click');
+    await flush();
+    const post = h.log.fetches.find((f) => f.url === '/app/entities/api/journal/delete');
+    check(post.body.ids.length === 8 && post.body.erase === undefined, 'a set move posts its ids');
+    check(api.entityPick.on === true && JSON.stringify([...api.entityPick.items.keys()].sort()) === JSON.stringify(['e', 'f', 'far']),
+      'only the refused still in the journal stay picked; the gone one is dropped');
+    const rows = byId('journal-entity-cards-content').children;
+    check(rows[0].querySelector('.journal-row-note').textContent === C.notes.busy && rows[1].querySelector('.journal-row-note').textContent === C.notes.record_damaged,
+      'each refused row carries its own note');
+    check(api.entityPick.notes.get('far') && byId('journal-pick-count').textContent === C.selected.replace('{n}', 3), 'one picked elsewhere stays picked, counted');
+    const receipt = h.log.receipts.at(-1);
+    check(receipt.title === C.set.partMoved.title.replace('{done}', 4).replace('{n}', 8), 'the receipt says how many of how many moved');
+    check(receipt.message === C.set.markedMany.replace('{k}', 3) + ' ' + C.set.goneMoreOne.replace('{g}', 1), 'it counts the marked and the gone');
+    check(receipt.buttons[0].label === C.buttons.recover && receipt.autoDismiss === undefined, 'a partly done set offers recover and stays');
+  }
+
+  // The set outcome on its own: the gone, the unanswered and the erased.
+  {
+    const api = setup().context.api;
+    const C = api.ENTITY_DELETE_COPY;
+    const ids = ['a', 'b'];
+    const there = () => true;
+    const all = api.entitySetOutcome(false, ids, { done: ids.map((id) => ({ id, trash: { id: `T-${id}`, erase_at: '2099-11-17T00:00:00Z' } })), failed: [] }, there);
+    check(all.receipt === C.set.moved && all.settled === true && all.keep.length === 0 && all.moved.length === 2, 'all moved: settled, select mode ends');
+    const gone = api.entitySetOutcome(false, ids, { done: [], failed: [{ id: 'a', reason: 'gone' }, { id: 'b', reason: 'gone' }] }, there);
+    check(gone.receipt === C.set.noneMoved && gone.message === C.set.noneGoneMany && gone.keep.length === 0, 'refused because gone: nothing kept, no note');
+    const unanswered = api.entitySetOutcome(false, ids, null, (id) => id === 'a');
+    check(unanswered.receipt === C.set.noAnswerMove && JSON.stringify(unanswered.keep) === JSON.stringify([['a', null]]), 'no answer: what is still listed stays picked without a note');
+    const vanished = api.entitySetOutcome(false, ids, { done: [{ id: 'a', trash: { id: 'T-a' } }], failed: [{ id: 'b', reason: 'busy' }] }, (id) => id !== 'b');
+    check(vanished.keep.length === 0 && vanished.message === C.set.othersGoneOne, 'a refused one the reloaded list no longer shows is not counted and gets no note');
+    const noList = api.entitySetOutcome(false, ids, { done: [], failed: [{ id: 'a', reason: 'busy' }, { id: 'b', reason: 'busy' }] }, null);
+    check(noList.message === '' && noList.keep.length === 0, 'without a reloaded list nothing is said that needs it');
+    const erased = api.entitySetOutcome(true, ids, { done: ids.map((id) => ({ id })), failed: [] }, there);
+    check(erased.receipt === C.set.erased && erased.settled === true, 'an erased set');
+    const partErase = api.entitySetOutcome(true, ids, { done: [{ id: 'a', erased: true }], failed: [{ id: 'b', reason: 'busy' }] }, there);
+    check(partErase.receipt === C.set.partErased && partErase.keep[0][1] === 'erase:busy', 'a refused erase takes the erase note');
+  }
+}
+
 async function main() {
   const manifestDir = process.argv[2];
   if (!manifestDir) throw new Error('manifest directory required');
@@ -895,7 +1321,6 @@ async function main() {
       resetEntitiesLoading: noop, readJournalListState: noop, writeJournalListState: noop,
       journalListStateKey: () => 'key', hideJournalListError: noop, entityErrorMessage: () => '',
       reportEntitiesReady: noop, loadEntityTypes: noop, loadEntities: noop, loadTidyGroups: noop,
-      reportUnfinishedEntityDeletes: noop,
     };
     vm.runInNewContext(`
       var ENT_COPY = {}, ATTENDANCE_KINDS = new Set(), journalSummary = null, journalSummaryKey = '',
@@ -920,6 +1345,8 @@ async function main() {
     await started;
     check(restoredWith.length === 1 && restoredWith[0] === 'state copy', 'the scope is drawn with the state copy');
   }
+
+  await entityDeleteCases(workspace);
 
   console.log(`DOM CASES: ${cases} passed`);
 }

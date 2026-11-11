@@ -26,6 +26,7 @@ class El {
   addEventListener(name, fn) { this.listeners[name] = fn; }
   fire(name, event = {}) { return this.listeners[name]({ currentTarget: this, target: this, ...event }); }
   focus() { document.activeElement = this; }
+  setAttribute(name, value) { (this.attributes ||= {})[name] = String(value); }
   all(cls) { const out = []; for (const child of this.children) { if (child.className === cls) out.push(child); if (child.all) out.push(...child.all(cls)); } return out; }
 }
 const ids = ['trashBar', 'trashBarIdle', 'trashBarSome', 'trashCount', 'trashSelectAll', 'trashSelectAllLabel', 'trashEmptyBtn', 'trashRecoverBtn', 'trashEraseBtn', 'trashResult', 'trashList', 'trashEraseAfterDays', 'trashHeading', 'trashConfirmHeading', 'trashConfirmBody', 'trashConfirmCancel', 'trashConfirmErase', 'trashConfirmModal'];
@@ -66,7 +67,7 @@ const sandbox = {
   saveField: (el, section, key, value) => saves.push({ section, key, value }),
 };
 vm.createContext(sandbox);
-vm.runInContext(`${sourceNames}\n${html.slice(start, end)};this.api={TRASH_COPY,TRASH_WORDS,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,trashSelected,trashWord,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
+vm.runInContext(`${sourceNames}\n${html.slice(start, end)};this.api={TRASH_COPY,TRASH_WORDS,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,trashSelected,trashWord,trashRowNote,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
 const { api } = sandbox;
 const C = api.TRASH_COPY;
 api.setupTrash();
@@ -192,6 +193,182 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.deepStrictEqual(K('erase', [imp('i'), seg('a')]).paragraphs, [C.bodyMany, C.madeMany]);
   assert.deepStrictEqual(K('erase', [{ kind: 'workout' }, seg('a')]).paragraphs, [C.bodyMany, C.madeMany]);
 
+  // Entities, facets, the voices wipe and a merge's files: each row tells
+  // itself apart from its own record, and says what recovering does.
+  const ent = (id, extra = {}) => ({ id, kind: 'entity', label: 'Dana Ruiz', entity_type: 'Person', facets: 3, same_name: false, trashed_at: '2026-11-09T10:00:00Z', erase_at: LATER, bytes: 10, ...extra });
+  const fac = (id, extra = {}) => ({ id, kind: 'facet', label: 'work 2024', name: 'work-2024', replaces: false, trashed_at: '2026-11-09T10:00:00Z', erase_at: LATER, bytes: 10, ...extra });
+  const wipe = (id) => ({ id, kind: 'speakers', files: 12, trashed_at: '2026-11-05T10:00:00Z', erase_at: LATER, bytes: 5 * 1024 * 1024 });
+  const merge = (id, state, title) => ({ id, kind: 'facet_file', dest: 'work', dest_state: state, dest_title: title, files: 4, trashed_at: '2026-11-05T10:00:00Z', erase_at: LATER, bytes: 99 });
+  const rowOf = (item) => { answers['api/trash'] = { erase_after_days: 7, items: [item] }; return api.loadTrash().then(() => byId.trashList.children[0]); };
+  const lines = (row, cls) => row.all(cls).map((node) => node.textContent);
+  {
+    const row = await rowOf(ent('e1'));
+    assert.strictEqual(row.all('removal-what')[0].textContent, api.TRASH_KIND_LABEL.entity);
+    assert.deepStrictEqual(quals(row), ['Dana Ruiz', 'person'], 'an entity shows its name and its type, lowercased');
+    assert.ok(row.textContent.includes(C.facetMany.replace('{n}', 3)));
+    assert.deepStrictEqual(lines(row, 'trash-returned'), [], 'no other of its name: no line');
+    assert.ok(!(await rowOf(ent('e0', { facets: 0 }))).textContent.includes(C.facetOne), 'no facets: no count');
+    assert.ok((await rowOf(ent('e2', { facets: ['a'] }))).textContent.includes(C.facetOne));
+    assert.deepStrictEqual(lines(await rowOf(ent('e3', { same_name: true })), 'trash-returned'), [C.entitySameName], 'another of its name: both will be there');
+  }
+  {
+    const row = await rowOf(fac('f1'));
+    assert.strictEqual(row.all('removal-what')[0].textContent, api.TRASH_KIND_LABEL.facet);
+    assert.deepStrictEqual(quals(row), ['work 2024'], 'a facet shows its title');
+    assert.deepStrictEqual(lines(await rowOf(fac('f2', { replaces: true })), 'trash-returned'), [C.facetReplaces]);
+  }
+  {
+    const row = await rowOf(wipe('w1'));
+    assert.strictEqual(row.all('removal-what')[0].textContent, api.TRASH_KIND_LABEL.speakers);
+    assert.deepStrictEqual(quals(row), [C.cleared.replace('{day}', '20261105')], 'the wipe shows the day it was cleared');
+    assert.ok(row.textContent.includes('5.0 MB'), 'and its size');
+    assert.deepStrictEqual(lines(row, 'trash-returned'), [C.speakersReplaces, C.speakersKept], 'what recovering replaces, every time');
+  }
+  {
+    const live = await rowOf(merge('m1', 'live', 'work'));
+    assert.strictEqual(live.all('removal-what')[0].textContent, api.TRASH_KIND_LABEL.facet_file);
+    assert.deepStrictEqual(quals(live), [C.mergedInto.replace('{title}', 'work')]);
+    assert.deepStrictEqual(lines(live, 'trash-returned'), [C.mergeLive.split('{title}').join('work')], 'a live destination: what recovering erases');
+    const trashed = await rowOf(merge('m2', 'trashed', 'clients'));
+    assert.deepStrictEqual(quals(trashed), [C.mergedInto.replace('{title}', 'clients')]);
+    assert.deepStrictEqual(lines(trashed, 'trash-returned'), [C.mergeTrashed.replace('{title}', 'clients')], 'a destination in the trash: recover that first');
+    const gone = await rowOf(merge('m3', 'gone', null));
+    assert.deepStrictEqual(quals(gone), [], 'a gone destination has no qualifier');
+    assert.deepStrictEqual(lines(gone, 'trash-returned'), [C.mergeGone]);
+    const none = await rowOf(merge('m4', 'none', null));
+    assert.strictEqual(none.all('removal-what')[0].textContent, api.TRASH_KIND_LABEL.facet_file_unfinished, 'no manifest: its own kind words');
+    assert.deepStrictEqual(quals(none), []);
+    assert.deepStrictEqual(lines(none, 'trash-returned'), [C.mergeNoManifest]);
+    const tricky = await rowOf(merge('m5', 'live', "a$&b"));
+    assert.ok(lines(tricky, 'trash-returned')[0].includes('a$&b'), 'a title is filled in as it is');
+  }
+  assert.strictEqual(api.trashWord([ent('a')], 1), api.TRASH_WORDS.entity[0]);
+  assert.strictEqual(api.trashWord([ent('a'), ent('b')], 2), api.TRASH_WORDS.entity[1]);
+  assert.strictEqual(api.trashWord([fac('a'), fac('b')], 2), api.TRASH_WORDS.facet[1]);
+  assert.ok(!Object.values(api.TRASH_WORDS).flat().includes(api.trashWord([wipe('a')], 1)), 'the wipe takes thing');
+  assert.ok(!Object.values(api.TRASH_WORDS).flat().includes(api.trashWord([ent('a'), fac('b')], 2)), 'a mix takes things');
+
+  // Rows that stopped part way lead the list, with no box, and nothing counts them.
+  answers['api/trash'] = { erase_after_days: 7, items: [seg('a')], stopped: [{ ...ent('s1'), state: 'detaching' }, { ...fac('s2'), state: 'attaching' }, { ...seg('s3'), state: 'erasing' }] };
+  await api.loadTrash();
+  {
+    const [first, second, third] = byId.trashList.children;
+    assert.strictEqual(byId.trashList.children.length, 3, 'a stopped erase is not listed');
+    assert.strictEqual(first.className, 'trash-row trash-row--stopped');
+    assert.strictEqual(first.children[0].className, 'trash-row-gap', 'a spacer holds the column');
+    assert.strictEqual(lines(first, 'trash-stopped')[0], C.stopped.detaching);
+    assert.strictEqual(lines(second, 'trash-stopped')[0], C.stopped.attaching);
+    assert.ok(!first.textContent.includes(C.erasesOn.replace('{date}', '')), 'the sentence stands in place of the date');
+    assert.strictEqual(third.children[0].tag, 'input');
+    byId.trashSelectAll.fire('change');
+    assert.deepStrictEqual([...api.trashSelected], ['a'], 'select all leaves stopped rows out');
+  }
+  answers['api/trash'] = { erase_after_days: 7, items: [], stopped: [{ ...ent('s1'), state: 'attaching' }] };
+  await api.loadTrash();
+  assert.ok(!byId.trashList.children.some((row) => row.className === 'log-empty'), 'only stopped rows: the trash is not empty');
+  assert.strictEqual(byId.trashBar.hidden, true, 'and there is nothing to act on');
+
+  // A refused recover: the row says why, from the code and what it names.
+  {
+    const items = [ent('p1'), ent('p2'), wipe('w1'), fac('f1'), ent('p3'), merge('m1', 'gone', null), fac('f9')];
+    answers['api/trash'] = { erase_after_days: 7, items };
+    await api.loadTrash();
+    byId.trashSelectAll.fire('change');
+    answers['api/trash/recover'] = { done: [], failed: [
+      { id: 'p1', reason: 'waits_facets', detail: { code: 'waits_facets', title: 'clients', others: 0 } },
+      { id: 'p2', reason: 'waits_facets', detail: { code: 'waits_facets', title: 'clients', others: 2 } },
+      { id: 'w1', reason: 'waits_wipe', detail: { code: 'waits_wipe', segments: 3, imports: 0, people: 2, name: 'Ada' } },
+      { id: 'f1', reason: 'name_redirected', detail: { code: 'name_redirected' } },
+      { id: 'p3', reason: 'taken', detail: { code: 'taken' } },
+      { id: 'm1', reason: 'merge_dest_missing', detail: { code: 'merge_dest_missing' } },
+      { id: 'f9', reason: 'something the page has no words for' },
+    ] };
+    byId.trashRecoverBtn.fire('click');
+    await flush();
+    const N = C.notes;
+    const note = (id) => lines(byId.trashList.children[items.findIndex((item) => item.id === id)], 'trash-row-note');
+    assert.deepStrictEqual(note('p1'), [N.waitsFacetNone.replace('{title}', 'clients')]);
+    assert.deepStrictEqual(note('p2'), [N.waitsFacetMany.replace('{title}', 'clients').replace('{n}', 2)], 'the count is the rest');
+    assert.deepStrictEqual(note('w1'), [`${N.waitsSegmentMany.replace('{n}', 3)} ${N.waitsPersonOne.replace('{name}', 'Ada')}`]);
+    assert.deepStrictEqual(note('f1'), [N.redirected]);
+    assert.deepStrictEqual(note('p3'), [N.taken]);
+    assert.deepStrictEqual(note('m1'), [], "a merge's row already says why");
+    assert.deepStrictEqual(note('f9'), [], 'an unknown code adds no note');
+    assert.ok(!JSON.stringify(byId.trashList).includes('has no words'), 'no server reason shows');
+    assert.strictEqual(byId.trashResult.textContent, C.recoverFailedMany, 'something here could change: try again');
+    answers['api/trash/recover'] = { done: [], failed: [{ id: 'p3', reason: 'taken' }, { id: 'f1', reason: 'name_redirected' }] };
+    byId.trashSelectAll.fire('change');
+    byId.trashRecoverBtn.fire('click');
+    await flush();
+    assert.strictEqual(byId.trashResult.textContent, C.recoverStuckMany, 'nothing here can change: no try again');
+    assert.deepStrictEqual(note('p1'), [], 'notes are from the last act only');
+  }
+  {
+    const N = C.notes;
+    const wipeNote = (detail) => api.trashRowNote({ reason: 'waits_wipe', detail });
+    assert.strictEqual(wipeNote({ segments: 1, imports: 0, people: 0 }), N.waitsSegmentOne);
+    assert.strictEqual(wipeNote({ segments: 0, imports: 1, people: 0 }), N.waitsImportOne);
+    assert.strictEqual(wipeNote({ segments: 0, imports: 2, people: 0 }), N.waitsImportMany.replace('{n}', 2));
+    assert.strictEqual(wipeNote({ segments: 2, imports: 1, people: 0 }), N.waitsBoth);
+    assert.strictEqual(wipeNote({ segments: 0, imports: 0, people: 1, name: 'Bo' }), N.waitsPersonNone.replace('{name}', 'Bo'));
+    assert.strictEqual(wipeNote({ segments: 0, imports: 0, people: 4, name: 'Bo' }), N.waitsPersonMany.replace('{name}', 'Bo').replace('{n}', 3));
+    assert.strictEqual(api.trashRowNote({ reason: 'busy' }), N.busy);
+    assert.strictEqual(api.trashRowNote({ reason: 'waits_dest', detail: { title: 'work' } }), null);
+    assert.strictEqual(api.trashRowNote({ reason: 'waits_facets', detail: {} }), null, 'nothing to name: no note');
+  }
+
+  // A facet recovered over another of its name confirms first; nothing else does.
+  {
+    answers['api/trash'] = { erase_after_days: 7, items: [fac('f1', { replaces: true }), ent('e1'), fac('f2')] };
+    await api.loadTrash();
+    calls.length = 0;
+    byId.trashList.children[0].children[0].checked = true;
+    byId.trashList.children[0].children[0].fire('change');
+    byId.trashRecoverBtn.fire('click');
+    assert.strictEqual(modal.open, true, 'the replace confirm opens');
+    assert.strictEqual(calls.length, 0, 'nothing is recovered before the confirm');
+    assert.strictEqual(byId.trashConfirmHeading.textContent, C.replaceTitle);
+    assert.deepStrictEqual(byId.trashConfirmBody.children.map((p) => p.textContent), [C.replaceOne]);
+    assert.strictEqual(byId.trashConfirmErase.textContent, C.replaceConfirm);
+    byId.trashConfirmCancel.fire('click');
+    assert.strictEqual(calls.length, 0);
+    const K2 = (items) => Array.from(api.trashConfirmCopy('replace', items).paragraphs);
+    assert.deepStrictEqual(K2([fac('a', { replaces: true }), ent('b')]), [C.replaceSomeOne]);
+    assert.deepStrictEqual(K2([fac('a', { replaces: true }), fac('b', { replaces: true })]), [C.replaceSomeMany.replace('{k}', 2)]);
+    byId.trashSelectAll.fire('change');
+    byId.trashRecoverBtn.fire('click');
+    answers['api/trash/recover'] = { done: ['f1', 'e1', 'f2'], failed: [] };
+    answers['api/trash'] = { erase_after_days: 7, items: [] };
+    byId.trashConfirmErase.fire('click');
+    await flush();
+    const recover = calls.find((call) => call.url === 'api/trash/recover');
+    assert.deepStrictEqual(JSON.parse(recover.options.body).ids, ['f1', 'e1', 'f2'], 'the confirm recovers');
+    answers['api/trash'] = { erase_after_days: 7, items: [ent('e1'), ent('e2', { same_name: true })] };
+    await api.loadTrash();
+    byId.trashSelectAll.fire('change');
+    modal.open = false;
+    answers['api/trash/recover'] = { done: ['e1', 'e2'], failed: [] };
+    byId.trashRecoverBtn.fire('click');
+    assert.strictEqual(modal.open, false, 'people keep both, so no confirm');
+    await flush();
+    answers['api/trash'] = { erase_after_days: 7, items: [seg('a')] };
+    await api.loadTrash();
+    byId.trashSelectAll.fire('change');
+    byId.trashEraseBtn.fire('click');
+    assert.strictEqual(byId.trashConfirmErase.textContent, C.eraseNow, 'the erase confirm keeps its own button');
+    byId.trashConfirmCancel.fire('click');
+  }
+
+  // The erase confirm's what-stays lines follow what's picked.
+  assert.deepStrictEqual(K('erase', [ent('a')]).paragraphs, [C.bodyOne, C.mentionsOne]);
+  assert.deepStrictEqual(K('erase', [fac('a')]).paragraphs, [C.bodyOne, C.mentionsOne, C.sortedOne]);
+  assert.deepStrictEqual(K('erase', [fac('a'), seg('b')]).paragraphs, [C.bodyMany, C.mentionsMany, C.sortedMany]);
+  assert.deepStrictEqual(K('erase', [ent('a'), imp('b')]).paragraphs, [C.bodyMany, C.mentionsMany], 'an entity or facet picked takes the mentions line');
+  assert.deepStrictEqual(K('erase', [wipe('a')]).paragraphs, [C.bodyOne], 'the wipe alone adds none');
+  assert.deepStrictEqual(K('erase', [wipe('a'), merge('b', 'live', 'w')]).paragraphs, [C.bodyMany], "nor with a merge's files");
+  assert.deepStrictEqual(K('erase', [wipe('a'), seg('b')]).paragraphs, [C.bodyMany, C.staysMany]);
+  assert.deepStrictEqual(K('empty', [ent('a'), seg('b')]).paragraphs.slice(1), [C.mentionsMany]);
+
   // Results: what the answer says, checked against the reloaded list.
   const items = [seg('a'), seg('c')];
   const line = (act, answer, listed) => api.trashResultLine(act, items, answer, listed);
@@ -270,4 +447,41 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.deepStrictEqual(historyLine({ kind: 'workout', source: 'strava', day: '20261108' }).quals, ['d20261108', rows.REMOVAL_SOURCE.strava]);
   const group = rows.removalGroupWhat({ units: [{ unit: { kind: 'import', source: 'chatgpt', id: '20261102_161200' } }, { unit: { kind: 'import', source: 'document', id: '20261101_094000' } }] });
   assert.ok(group.all('removal-what')[0].textContent.endsWith(rows.REMOVAL_KIND.import[1]), 'a group of imports keeps the plural kind');
+
+  // A merge's files have a label of their own and no name to keep.
+  const mergeLine = historyLine({ kind: 'facet_file' });
+  assert.deepStrictEqual(mergeLine.what, [rows.REMOVAL_KIND.facet_file[0]]);
+  assert.deepStrictEqual(mergeLine.quals, [], "it isn't one of the nameless kinds");
+  assert.deepStrictEqual(historyLine({ kind: 'entity' }).quals.length, 1, 'an entity keeps its name-not-kept qualifier');
+
+  // What a recover erased in its way folds into the recover's how-line and
+  // leaves the group's count.
+  const fold = {};
+  vm.createContext(fold);
+  vm.runInContext(`
+    const REMOVAL_COPY = { foldErasing: '{how}+ERASING', foldExcept: '{how}+EXCEPT', foldBoth: '{how}+BOTH' };
+    function removalHow(entry) { return 'HOW:' + entry.event; }
+    ${html.slice(html.indexOf('function removalGroups(entries)'), html.indexOf('function removalGroupWhat'))}
+    this.removalGroups = removalGroups; this.removalGroupHow = removalGroupHow;
+  `, fold);
+  const at = (event, kind, operation) => ({ event, operation, unit: { kind } });
+  const groups = (entries) => Array.from(fold.removalGroups(entries));
+  {
+    const [one] = groups([at('erased', 'facet', 'op1'), at('recovered', 'facet', 'op1')]);
+    assert.strictEqual(one.units.length, 1, 'one facet recovered over another counts one');
+    assert.strictEqual(one.units[0].event, 'recovered');
+    assert.strictEqual(fold.removalGroupHow(one), 'HOW:recovered+ERASING');
+    const [person] = groups([at('recovered', 'entity', 'op2'), at('erased', 'entity', 'op2')]);
+    assert.strictEqual(fold.removalGroupHow(person), 'HOW:recovered+EXCEPT');
+    const [both] = groups([at('recovered', 'facet', 'op3'), at('erased', 'facet', 'op3'), at('recovered', 'entity', 'op3'), at('erased', 'entity', 'op3')]);
+    assert.strictEqual(both.units.length, 2);
+    assert.strictEqual(fold.removalGroupHow(both), 'HOW:recovered+BOTH');
+    const [wipeBack] = groups([at('recovered', 'speakers', 'op4'), at('erased', 'speakers', 'op4')]);
+    assert.strictEqual(fold.removalGroupHow(wipeBack), 'HOW:recovered+ERASING');
+    const [plain] = groups([at('erased', 'segment', 'op5'), at('erased', 'segment', 'op5')]);
+    assert.strictEqual(plain.units.length, 2, 'an erase on its own is not folded');
+    assert.strictEqual(fold.removalGroupHow(plain), 'HOW:erased');
+    const [loose] = groups([at('recovered', 'facet', undefined)]);
+    assert.strictEqual(fold.removalGroupHow(loose), 'HOW:recovered');
+  }
 })().catch((error) => { console.error(error); process.exit(1); });

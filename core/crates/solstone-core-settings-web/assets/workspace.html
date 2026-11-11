@@ -2189,9 +2189,52 @@ button:focus:not(:focus-visible) {
 .trash-soon { color: var(--ink); font-weight: 500; }
 .trash-returned { color: var(--ink-soft); font-size: .9em; margin-top: .2em; }
 .trash-setting { margin-top: 1.5em; }
+.trash-row--stopped { cursor: default; }
+.trash-row-gap { flex: none; width: 13px; }
+.trash-stopped { display: block; color: var(--ink); font-size: .9em; margin-top: .2em; }
+.trash-row-note { display: block; color: var(--ink-soft); font-size: .9em; margin-top: .2em; }
+@media (max-width: 480px) { .trash-row-gap { width: 20px; } }
 .trash-confirm h3 { color: var(--danger); margin-bottom: .75em; }
 .trash-confirm-body p { margin: 0 0 .75em; }
 .trash-confirm-actions { display: flex; gap: .75em; justify-content: flex-end; margin-top: 1em; }
+
+/* Deleting a facet: the button at the foot of its page, and the trash's own
+   three-button dialog. */
+.facet-delete { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--hairline); }
+.facet-delete[hidden], .facet-delete [hidden] { display: none; }
+.facet-delete-note { margin: 0; color: var(--ink-soft); font-size: .9em; }
+#facetDeleteModal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px; margin: 0; background: color-mix(in srgb, var(--surface-dark) 55%, transparent); z-index: 1100; }
+#facetDeleteModal .modal-content { width: min(520px, 100%); max-height: calc(100vh - 48px); margin: 0; padding: 0; background: var(--paper); border-radius: 16px; box-shadow: 0 24px 48px rgba(0, 0, 0, 0.22); overflow: hidden; display: flex; flex-direction: column; }
+/* Title and buttons stay put; only the body scrolls on a short screen. */
+#facetDeleteModal .modal-header, #facetDeleteModal .modal-footer { flex: none; }
+#facetDeleteModal .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 16px; border-bottom: 1px solid var(--hairline); }
+#facetDeleteModal .modal-header h3 { margin: 0; font-size: 20px; font-weight: 700; color: var(--ink); }
+#facetDeleteModal .modal-header.danger h3 { color: var(--danger); }
+#facetDeleteModal .close { position: static; color: var(--ink-faint); font-size: 28px; line-height: 1; background: none; border: 0; cursor: pointer; }
+#facetDeleteModal .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 20px 24px; }
+#facetDeleteModal .modal-footer { padding: 0 24px 24px; }
+#facetDeleteModal .trash-dlg-note { padding: 16px 18px; border-radius: 12px; background: var(--cream); border-left: 4px solid var(--hairline-2); color: var(--ink); }
+#facetDeleteModal .delete-warning { padding: 16px 18px; border-radius: 12px; background: var(--danger-wash); border-left: 4px solid var(--hairline-2); color: var(--danger); }
+#facetDeleteModal .trash-dlg-note p, #facetDeleteModal .delete-warning p { margin: 0 0 12px; }
+#facetDeleteModal .trash-dlg-note p:last-child, #facetDeleteModal .delete-warning p:last-child { margin-bottom: 0; }
+#facetDeleteModal .trash-dlg-meta { font-size: 14px; }
+#facetDeleteModal .trash-dlg-meta strong { white-space: nowrap; }
+#facetDeleteModal .trash-dlg-again { color: var(--ink); }
+#facetDeleteModal .facet-delete-list { margin: 0 0 12px; padding-left: 20px; }
+#facetDeleteModal .facet-delete-list li + li { margin-top: 6px; }
+#facetDeleteModal .trash-dlg-foot { display: flex; align-items: center; flex-wrap: wrap; gap: .5em; }
+#facetDeleteModal .trash-dlg-foot[hidden] { display: none; }
+#facetDeleteModal .trash-dlg-right { margin-left: auto; display: flex; gap: .5em; }
+#facetDeleteModal .trash-primary, #facetDeleteModal .trash-danger-outline, #facetDeleteModal .btn-secondary, #facetDeleteModal .btn-danger { border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+#facetDeleteModal .trash-primary { background: var(--orange); color: var(--ink-on-brand); border: 0; }
+#facetDeleteModal .trash-danger-outline { background: var(--paper); color: var(--danger); border: 1px solid var(--danger); }
+#facetDeleteModal .btn-secondary { background: var(--cream-bright); color: var(--ink-soft); border: 0; }
+#facetDeleteModal .btn-secondary:hover { background: var(--hairline); }
+#facetDeleteModal .btn-danger { background: var(--danger); color: var(--ink-on-danger); border: 0; }
+#facetDeleteModal .btn-danger:hover { background: color-mix(in srgb, var(--danger) 78%, var(--surface-dark)); }
+@media (max-width: 480px) {
+  #facetDeleteModal .trash-dlg-foot button { min-height: 44px; padding-left: 12px; padding-right: 12px; white-space: nowrap; }
+}
 @media (max-width: 480px) { .trash-row, .trash-all { min-height: 44px; } .trash-bar-actions button, .trash-confirm-actions button { min-height: 44px; } .trash-row input, .trash-all input { width: 20px; height: 20px; } }
 </style>
 
@@ -2767,7 +2810,7 @@ button:focus:not(:focus-visible) {
     <!-- Trash Section: what waits before it's erased, the setting, and the removal history -->
     <section class="settings-section" id="section-trash" role="tabpanel" aria-labelledby="tab-trash">
       <h2 id="trashHeading">trash</h2>
-      <p class="settings-section-desc">segments, imports, workouts and memories you delete wait here until the date beside them, then they're erased. recovering one puts it back exactly as it was.</p>
+      <p class="settings-section-desc">things you delete wait here until the date beside them, then they're erased. recovering one puts it back in your journal.</p>
       <div class="log-panel trash-panel">
         <div class="trash-bar" id="trashBar" tabindex="-1" hidden>
           <div class="trash-bar-group" id="trashBarIdle">
@@ -2918,6 +2961,11 @@ button:focus:not(:focus-visible) {
       </div>
     </section>
 
+    <section class="facet-delete" id="facetDeleteFoot" hidden>
+      <button type="button" class="btn-secondary" id="facetDeleteBtn" hidden></button>
+      <p class="facet-delete-note" id="facetDeleteNote" hidden></p>
+    </section>
+
     <div id="ownerVoiceConsentModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="ownerVoiceConsentHeading" aria-describedby="ownerVoiceConsentBody">
       <div class="color-modal-content" style="max-width: 440px;">
         <h3 id="ownerVoiceConsentHeading">turn on "leave out other voices"?</h3>
@@ -3024,6 +3072,32 @@ button:focus:not(:focus-visible) {
     <div style="display: flex; gap: 0.75em; justify-content: flex-end;">
       <button type="button" id="cleanupPreviewBtn" class="cleanup-preview-btn">build the list</button>
       <button type="button" id="cleanupConfirmBtn" class="cleanup-confirm-btn" disabled>done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Deleting a facet: the trash's own three-button dialog -->
+<div id="facetDeleteModal" class="facet-delete-modal" role="dialog" aria-modal="true" aria-labelledby="facetDeleteModalTitle">
+  <div class="modal-content">
+    <div class="modal-header" id="facetDeleteModalHeader">
+      <h3 id="facetDeleteModalTitle"></h3>
+      <button type="button" class="close" id="facetDeleteModalClose" aria-label="close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="facetDeleteModalBody" class="trash-dlg-note"></div>
+    </div>
+    <div class="modal-footer trash-dlg-foot" id="facetDeleteModalMoveFoot">
+      <button type="button" id="facetDeleteModalErase" class="trash-danger-outline"></button>
+      <span class="trash-dlg-right">
+        <button type="button" id="facetDeleteModalCancel" class="btn-secondary"></button>
+        <button type="button" id="facetDeleteModalConfirm" class="trash-primary"></button>
+      </span>
+    </div>
+    <div class="modal-footer trash-dlg-foot" id="facetDeleteModalEraseFoot" hidden>
+      <span class="trash-dlg-right">
+        <button type="button" id="facetDeleteModalBack" class="btn-secondary"></button>
+        <button type="button" id="facetDeleteModalEraseConfirm" class="btn-danger"></button>
+      </span>
     </div>
   </div>
 </div>
@@ -3979,6 +4053,7 @@ function hydrateFacetDetail(facet) {
   populateFacetForm(facetDetailSlugState, facetConfig);
   setupFacetEditing();
   switchFacetDetailTab('appearance');
+  loadFacetDeleteFoot();
 }
 
 function refreshFacetDetailHeader() {
@@ -4425,6 +4500,7 @@ function setupMutedAction() {
     action.disabled = true;
     await saveFacetField('muted', !Boolean(facetConfig?.muted), null);
     action.disabled = false;
+    noteFacetMuted(facetDetailSlugState, facetConfig?.muted);
   };
 }
 
@@ -4460,6 +4536,368 @@ async function saveFacetField(field, value, triggerEl) {
     notifyError( 'save failed', err.message);
   }
 }
+
+// ========== FACET DELETE ==========
+// Deleting a facet from its own page. The dialog, its erase step and the
+// receipts are the trash's own, as the transcripts and import pages have
+// them; what moves is everything in the facet's folder.
+const FACET_DELETE_COPY = {
+  noun: 'facet',
+  button: 'delete this facet',
+  last: "your journal needs at least one facet that isn't muted. to delete this one, unmute or add another facet first.",
+  move: {
+    title: 'delete this facet?',
+    reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
+    lead: 'this moves everything in the facet:',
+    stays: 'segments sorted into it, and the entities attached to it, stay in your journal. summaries elsewhere in your journal stay where they are and may still mention it.',
+  },
+  erase: {
+    title: 'erase this facet now?',
+    reach: "it leaves your journal now and can't be recovered.",
+    lead: 'this erases everything in the facet:',
+    stays: "segments sorted into it, and the entities attached to it, stay in your journal. summaries elsewhere in your journal aren't erased and may still mention it.",
+  },
+  list: [
+    'its settings and the activities it looks for',
+    'the activities it found, and what was written about them',
+    'the notes it keeps about its entities',
+    'its activity log',
+  ],
+  recovering: "if you recover it, what came into your journal while it was in the trash isn't sorted into it, and a segment it shared with another facet may not come back to it.",
+  buttons: {
+    eraseNow: 'erase now',
+    cancel: 'cancel',
+    moveToTrash: 'move to trash',
+    back: 'back',
+    recover: 'recover',
+    openTrash: 'open trash',
+  },
+  // What a refused one says, keyed by the journal's reason.
+  refused: {
+    busy: 'something else is changing it right now. try again in a minute.',
+    gone: "it's no longer in your journal.",
+    last_facet: "your journal needs at least one facet that isn't muted.",
+  },
+  receipt: {
+    moved: { title: 'moved to the trash', message: 'erases {date} unless you recover it.' },
+    recovered: { title: '{noun} recovered', message: "it's back in your journal." },
+    erased: { title: '{noun} erased from your journal' },
+    recoverFailed: { title: "couldn't recover that {noun}", message: "it's still in the trash. you can try again from there." },
+    moveRefused: { title: "couldn't move that to the trash", message: "it's still in your journal." },
+    eraseRefused: { title: "couldn't erase that {noun}", message: "it's still in your journal." },
+    eraseFailed: { title: "couldn't erase that {noun}", message: "it's in the trash. you can try again from there." },
+    noAnswerMove: { title: "your journal didn't answer", message: 'it may already be in the trash. reload to check.' },
+    noAnswerErase: { title: "your journal didn't answer", message: 'it may already be erased. reload to check.' },
+    noAnswerRecover: { title: "your journal didn't answer", message: 'it may already be back in your journal. reload to check.' },
+  },
+};
+const FACET_DELETE_REASONS = new Set(['last_facet', 'busy', 'gone']);
+const FACET_RECEIPT_KEY = 'journal-facet-delete-receipt';
+const FACET_RECEIPT_LIFE = 10000;
+const FACET_LIST_PAGE = '/app/settings#facets';
+// Every facet, muted or not, as the facet page last read them; null until read
+// or when the read failed.
+let facetDeleteRoster = null;
+// The open dialog: what it deletes, its step, and where focus goes back to.
+let facetDialog = null;
+
+function facetDeleteFill(template, values = {}) {
+  return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
+}
+
+function facetDeleteEl(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+// The erase date on the journal's own clock, worded as the trash page words it.
+function facetEraseDate(eraseAt) {
+  const instant = new Date(eraseAt);
+  if (!eraseAt || Number.isNaN(instant.getTime()) || !window.JournalClock) return '';
+  return window.JournalFormat.day(window.JournalClock.dayKey(instant)).toLowerCase();
+}
+
+// Whether this facet is the last one that isn't muted: the journal refuses
+// deleting it, and muting it, for the same reason.
+function facetIsLastUnmuted(slug, config, roster) {
+  if (!Array.isArray(roster) || (config && config.muted)) return false;
+  return !roster.some(facet => facet && facet.name !== slug && !facet.muted);
+}
+
+// The foot of the facet's page: the button, or in its place why there's none.
+function renderFacetDeleteFoot() {
+  const foot = document.getElementById('facetDeleteFoot');
+  if (!foot) return;
+  const button = document.getElementById('facetDeleteBtn');
+  const note = document.getElementById('facetDeleteNote');
+  const last = facetIsLastUnmuted(facetDetailSlugState, facetConfig, facetDeleteRoster);
+  button.textContent = FACET_DELETE_COPY.button;
+  button.hidden = last;
+  button.onclick = last ? null : () => deleteFacetFromPage();
+  note.textContent = FACET_DELETE_COPY.last;
+  note.hidden = !last;
+  foot.hidden = false;
+}
+
+// A failed read leaves the button: the journal still refuses the last one.
+async function loadFacetDeleteFoot() {
+  try {
+    const response = await fetch('/app/settings/api/facets?all=true');
+    const data = await response.json();
+    facetDeleteRoster = response.ok && Array.isArray(data && data.facets) ? data.facets : null;
+  } catch (_) {
+    facetDeleteRoster = null;
+  }
+  renderFacetDeleteFoot();
+}
+
+// A mute on this page changes which facet is the last one that isn't muted.
+function noteFacetMuted(slug, muted) {
+  if (Array.isArray(facetDeleteRoster)) {
+    const facet = facetDeleteRoster.find(entry => entry && entry.name === slug);
+    if (facet) facet.muted = Boolean(muted);
+  }
+  renderFacetDeleteFoot();
+}
+
+function facetDeleteBody(step, title) {
+  const copy = FACET_DELETE_COPY[step];
+  const meta = facetDeleteEl('p', 'trash-dlg-meta');
+  meta.append(facetDeleteEl('strong', null, title));
+  const list = facetDeleteEl('ul', 'facet-delete-list');
+  FACET_DELETE_COPY.list.forEach(line => list.append(facetDeleteEl('li', null, line)));
+  const nodes = [
+    meta,
+    facetDeleteEl('p', 'facet-delete-reach', copy.reach),
+    facetDeleteEl('p', 'facet-delete-lead', copy.lead),
+    list,
+    facetDeleteEl('p', 'facet-delete-stays', copy.stays),
+  ];
+  // Said once, where the owner decides: not on the erase step, nothing comes back.
+  if (step === 'move') nodes.push(facetDeleteEl('p', 'trash-dlg-again', FACET_DELETE_COPY.recovering));
+  return nodes;
+}
+
+function facetDialogNodes() {
+  const byId = id => document.getElementById(id);
+  return {
+    modal: byId('facetDeleteModal'), header: byId('facetDeleteModalHeader'), title: byId('facetDeleteModalTitle'),
+    body: byId('facetDeleteModalBody'), moveFoot: byId('facetDeleteModalMoveFoot'), eraseFoot: byId('facetDeleteModalEraseFoot'),
+    close: byId('facetDeleteModalClose'), erase: byId('facetDeleteModalErase'), cancel: byId('facetDeleteModalCancel'),
+    confirm: byId('facetDeleteModalConfirm'), back: byId('facetDeleteModalBack'), eraseConfirm: byId('facetDeleteModalEraseConfirm'),
+  };
+}
+
+function renderFacetDeleteStep(step) {
+  const nodes = facetDialogNodes();
+  const erasing = step === 'erase';
+  facetDialog.step = step;
+  nodes.title.textContent = FACET_DELETE_COPY[step].title;
+  nodes.header.classList.toggle('danger', erasing);
+  nodes.body.className = erasing ? 'delete-warning' : 'trash-dlg-note';
+  nodes.body.dataset.step = step;
+  nodes.moveFoot.hidden = erasing;
+  nodes.eraseFoot.hidden = !erasing;
+  nodes.body.replaceChildren(...facetDeleteBody(step, facetDialog.title));
+}
+
+function wireFacetDeleteDialog(nodes) {
+  if (nodes.modal.dataset.wired) return;
+  nodes.modal.dataset.wired = 'true';
+  const B = FACET_DELETE_COPY.buttons;
+  nodes.erase.textContent = B.eraseNow;
+  nodes.cancel.textContent = B.cancel;
+  nodes.confirm.textContent = B.moveToTrash;
+  nodes.back.textContent = B.back;
+  nodes.eraseConfirm.textContent = B.eraseNow;
+  nodes.close.addEventListener('click', () => closeFacetDeleteDialog());
+  nodes.cancel.addEventListener('click', () => closeFacetDeleteDialog());
+  nodes.erase.addEventListener('click', () => {
+    if (!facetDialog) return;
+    renderFacetDeleteStep('erase');
+    nodes.back.focus();
+  });
+  nodes.back.addEventListener('click', () => {
+    if (!facetDialog) return;
+    renderFacetDeleteStep('move');
+    nodes.erase.focus();
+  });
+  const act = erase => {
+    if (!facetDialog) return;
+    const { slug } = facetDialog;
+    closeFacetDeleteDialog(false);
+    runFacetDelete(slug, erase);
+  };
+  nodes.confirm.addEventListener('click', () => act(false));
+  nodes.eraseConfirm.addEventListener('click', () => act(true));
+  nodes.modal.addEventListener('click', event => {
+    if (event.target === nodes.modal) closeFacetDeleteDialog();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && facetDialog) {
+      event.preventDefault();
+      closeFacetDeleteDialog();
+    }
+  });
+}
+
+// There's no preview: the list is the facet folder's own, in fixed words.
+// Focus lands on the reversible act.
+function deleteFacetFromPage() {
+  const nodes = facetDialogNodes();
+  if (!nodes.modal || !facetDetailSlugState) return;
+  wireFacetDeleteDialog(nodes);
+  const title = (facetConfig && facetConfig.title) || facetDetailSlugState;
+  facetDialog = { slug: facetDetailSlugState, title, step: 'move', returnFocus: document.activeElement, overflow: document.body.style.overflow };
+  renderFacetDeleteStep('move');
+  nodes.modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  nodes.confirm.focus();
+}
+
+function closeFacetDeleteDialog(restoreFocus = true) {
+  if (!facetDialog) return;
+  const nodes = facetDialogNodes();
+  const { returnFocus, overflow } = facetDialog;
+  facetDialog = null;
+  nodes.modal.style.display = 'none';
+  nodes.body.replaceChildren();
+  document.body.style.overflow = overflow;
+  if (restoreFocus && returnFocus && typeof returnFocus.focus === 'function') returnFocus.focus();
+}
+
+// Moves the facet to the trash, or erases it now. A refusal or a non-200
+// answer means nothing changed; no answer at all means it may have.
+async function deleteOneFacet(slug, erase) {
+  let response;
+  try {
+    response = await fetch(`/app/settings/api/facet/${encodeURIComponent(slug)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(erase ? { consent: true, erase: true } : { consent: true }),
+    });
+  } catch (_) {
+    return { kind: 'noAnswer' };
+  }
+  const data = await response.json().catch(() => null);
+  if (!response.ok || (data && data.success === false)) {
+    const reason = data && data.reason;
+    return { kind: 'refused', reason: FACET_DELETE_REASONS.has(reason) ? reason : 'other' };
+  }
+  if (!data || data.success !== true) return { kind: 'noAnswer' };
+  if (data.erased === true) return { kind: 'erased' };
+  if (data.erase_failed === true) return { kind: 'eraseFailed' };
+  return { kind: 'moved', trashId: data.trash && data.trash.id, eraseAt: data.trash && data.trash.erase_at };
+}
+
+function facetReceipt(copy, fill = {}, buttons = [], options = {}) {
+  if (!window.AppServices || !window.AppServices.notifications) return;
+  const put = text => facetDeleteFill(text, { noun: FACET_DELETE_COPY.noun, ...fill });
+  const notice = {
+    app: 'settings',
+    icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
+    title: put(copy.title),
+    dismissible: true,
+    buttons,
+  };
+  const message = options.message !== undefined ? options.message : copy.message && put(copy.message);
+  if (message) notice.message = message;
+  // A refused or failed card stays until the owner dismisses it.
+  if (options.settled) notice.autoDismiss = FACET_RECEIPT_LIFE;
+  window.AppServices.notifications.show(notice);
+}
+
+function facetOpenTrashButton() {
+  return {
+    label: FACET_DELETE_COPY.buttons.openTrash,
+    onClick: () => { window.location.href = '/app/settings#trash'; },
+  };
+}
+
+function showFacetReceipt(outcome, erase) {
+  const R = FACET_DELETE_COPY.receipt;
+  switch (outcome.kind) {
+    case 'moved': {
+      const date = facetEraseDate(outcome.eraseAt);
+      facetReceipt(R.moved, { date }, [
+        { label: FACET_DELETE_COPY.buttons.recover, onClick: () => recoverFacet(outcome.trashId) },
+        facetOpenTrashButton(),
+      ], { settled: true, message: date ? undefined : '' });
+      return;
+    }
+    case 'erased':
+      facetReceipt(R.erased, {}, [], { settled: true });
+      return;
+    case 'eraseFailed':
+      facetReceipt(R.eraseFailed, {}, [facetOpenTrashButton()]);
+      return;
+    case 'refused': {
+      const fallback = erase ? R.eraseRefused : R.moveRefused;
+      facetReceipt({ title: fallback.title, message: FACET_DELETE_COPY.refused[outcome.reason] || fallback.message });
+      return;
+    }
+    default:
+      facetReceipt(erase ? R.noAnswerErase : R.noAnswerMove);
+  }
+}
+
+// After a move or an erase the page goes to the facet list, which reloads and
+// shows the receipt; a refusal stays on the facet's page with its card.
+async function runFacetDelete(slug, erase) {
+  const outcome = await deleteOneFacet(slug, erase);
+  if (['moved', 'erased', 'eraseFailed'].includes(outcome.kind)) {
+    try {
+      window.sessionStorage.setItem(FACET_RECEIPT_KEY, JSON.stringify({ at: Date.now(), erase, outcome }));
+    } catch (_) { /* the receipt is a courtesy; the list still reloads */ }
+    window.location.href = FACET_LIST_PAGE;
+    return outcome;
+  }
+  showFacetReceipt(outcome, erase);
+  return outcome;
+}
+
+function showStashedFacetReceipt() {
+  let stashed = null;
+  try {
+    stashed = JSON.parse(window.sessionStorage.getItem(FACET_RECEIPT_KEY) || 'null');
+    window.sessionStorage.removeItem(FACET_RECEIPT_KEY);
+  } catch (_) {
+    stashed = null;
+  }
+  if (!stashed || !stashed.outcome || !(Date.now() - stashed.at < 60000)) return;
+  showFacetReceipt(stashed.outcome, stashed.erase === true);
+}
+
+// The receipt's recover is the trash page's recover; the facet list reloads.
+async function recoverFacet(trashId) {
+  const R = FACET_DELETE_COPY.receipt;
+  if (!trashId) return;
+  let response;
+  try {
+    response = await fetch('/app/settings/api/trash/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [trashId] }),
+    });
+  } catch (_) {
+    facetReceipt(R.noAnswerRecover);
+    return;
+  }
+  const data = response.ok ? await response.json().catch(() => null) : null;
+  if (response.ok && !data) {
+    facetReceipt(R.noAnswerRecover);
+    return;
+  }
+  await loadFacetsList();
+  if (Array.isArray(data && data.done) && data.done.includes(trashId)) {
+    facetReceipt(R.recovered, {}, [], { settled: true, icon: 'undo-2' });
+  } else {
+    facetReceipt(R.recoverFailed, {}, [facetOpenTrashButton()]);
+  }
+}
+// ========== END FACET DELETE ==========
 
 // ========== ACTIVITY LOG ==========
 function loadLogs(facetName, cursor = null) {
@@ -6885,6 +7323,10 @@ const REMOVAL_COPY = {
   nameNotKept: "its name isn't kept",
   mixed: '{n} things',
   erasedOnItsDate: 'erased on its date',
+  // A recover's how-line, with what it erased in its way or couldn't put back.
+  foldErasing: '{how}, erasing what was in the way',
+  foldExcept: '{how}, except notes in facets no longer in your journal',
+  foldBoth: '{how}, erasing what was in the way, except notes in facets no longer in your journal',
 };
 // A move into, out of or through the trash reads by what happened, not by why.
 const REMOVAL_EVENT = { trashed: 'moved to the trash', recovered: 'recovered', erased: 'erased' };
@@ -6897,12 +7339,12 @@ const REMOVAL_KIND = {
   entity: ['entity', 'entities'],
   facet: ['facet', 'facets'],
   detected_entities: ['detected entity', 'detected entities'],
-  facet_file: ['file from a facet', 'files from a facet'],
+  facet_file: ['files from a facet merge', 'files from a facet merge'],
   speakers: ['what your journal keeps about voices', 'what your journal keeps about voices'],
   backup: ['backup copies', 'backup copies'],
 };
 const REMOVAL_KIND_FALLBACK = ['something else', 'other things'];
-const REMOVAL_NAMELESS = new Set(['entity', 'facet', 'facet_file', 'detected_entities']);
+const REMOVAL_NAMELESS = new Set(['entity', 'facet', 'detected_entities']);
 // The Import page's own name for each source, for the trash page and this
 // history alike. A source not listed here shows no qualifier.
 // ========== SOURCE NAMES ==========
@@ -7017,7 +7459,34 @@ function removalGroups(entries) {
     if (last && entry.operation && last.operation === entry.operation) last.units.push(entry);
     else groups.push({ operation: entry.operation, units: [entry] });
   }
-  return groups;
+  return groups.map(removalFold);
+}
+
+// What a recover set aside in its way, or couldn't put back, is recorded as
+// erased in the recover's own operation. Shown on its own it would read as the
+// recovered thing erased again, so it folds into the recover's how-line and
+// leaves the group's count: an entity's is notes it couldn't put back, any
+// other kind's is what was in the way.
+function removalFold(group) {
+  if (!group.operation || !group.units.some(entry => entry.event === 'recovered')) return group;
+  const folded = group.units.filter(entry => entry.event === 'erased');
+  if (!folded.length) return group;
+  return {
+    operation: group.operation,
+    units: group.units.filter(entry => entry.event !== 'erased'),
+    fold: {
+      erasing: folded.some(entry => entry.unit && entry.unit.kind !== 'entity'),
+      except: folded.some(entry => entry.unit && entry.unit.kind === 'entity'),
+    },
+  };
+}
+
+function removalGroupHow(group) {
+  const how = removalHow(group.units[0]);
+  const fold = group.fold;
+  if (!fold || (!fold.erasing && !fold.except)) return how;
+  const template = fold.erasing && fold.except ? REMOVAL_COPY.foldBoth : fold.erasing ? REMOVAL_COPY.foldErasing : REMOVAL_COPY.foldExcept;
+  return template.replace('{how}', how);
 }
 
 function removalGroupWhat(group) {
@@ -7075,7 +7544,7 @@ function renderRemovalHistory(history) {
       const row = removalEl('div', 'log-row removal-row');
       row.dataset.operation = group.operation || '';
       const body = removalEl('div', 'removal-body');
-      const how = removalEl('div', 'removal-how', `${removalHow(newest)} · `);
+      const how = removalEl('div', 'removal-how', `${removalGroupHow(group)} · `);
       how.append(removalEl('span', 'removal-time', window.JournalFormat.time(newest.at)));
       if (group.units.length === 1) {
         const what = removalEl('div');
@@ -7147,6 +7616,9 @@ const TRASH_COPY = {
   partialEraseMany: "erased {done} of {n}. the others couldn't be erased and are still in the trash.",
   recoverFailedOne: "couldn't recover that, so it's still in the trash. try again.",
   recoverFailedMany: "couldn't recover those, so they're still in the trash. try again.",
+  // Every refusal one that won't change by trying again.
+  recoverStuckOne: "couldn't recover that, so it's still in the trash.",
+  recoverStuckMany: "couldn't recover those, so they're still in the trash.",
   eraseFailedOne: "couldn't erase that, so it's still in the trash. try again.",
   eraseFailedMany: "couldn't erase those, so they're still in the trash. try again.",
   emptyFailed: "couldn't empty the trash. what's listed here is still in it. try again.",
@@ -7166,13 +7638,66 @@ const TRASH_COPY = {
   agentMany: 'anything an agent already read stays with them.',
   madeOne: "activities, summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.",
   madeMany: "activities, summaries and entities made from them elsewhere in your journal aren't erased and may still mention them.",
+  mentionsOne: "anything elsewhere in your journal that mentions it isn't erased.",
+  mentionsMany: "anything elsewhere in your journal that mentions them isn't erased.",
+  sortedOne: 'segments sorted into it stay in your journal.',
+  sortedMany: 'segments sorted into them stay in your journal.',
+  facetOne: 'in 1 facet',
+  facetMany: 'in {n} facets',
+  cleared: 'cleared {day}',
+  mergedInto: 'merged into {title}',
+  entitySameName: 'another entity with this name is in your journal now. recovering puts this one back beside it.',
+  facetReplaces: 'another facet with this name is in your journal now. recovering erases it, with everything in it, and puts this one back.',
+  speakersReplaces: "recovering puts back what was cleared, replacing what's been redone since for the same segments and people, including speakers you named.",
+  speakersKept: 'people and segments that were in the trash when it was cleared kept theirs.',
+  mergeLive: "where both facets had a file of the same name, the merge kept {title}'s. recovering erases {title}'s and puts the other facet's in its place.",
+  mergeTrashed: 'the facet these were merged into, {title}, is in the trash. recover that first, then this.',
+  mergeNoManifest: 'recovering puts these back where the merge left them, outside any facet.',
+  mergeGone: "the facet these were merged into is no longer in your journal, so they can't be recovered.",
+  stopped: {
+    detaching: 'this stopped part way into the trash. your journal keeps trying to finish moving it.',
+    attaching: 'this stopped part way through being recovered. your journal keeps trying to finish putting it back.',
+  },
+  replaceTitle: 'recover and replace?',
+  replaceOne: 'another facet with this name is in your journal now. recovering erases it, with everything in it, and puts this one back.',
+  replaceSomeOne: '1 facet you picked has another with the same name in your journal now. recovering erases that one, with everything in it, and puts this one back.',
+  replaceSomeMany: '{k} facets you picked each have another with the same name in your journal now. recovering erases those, with everything in them, and puts these back.',
+  replaceConfirm: 'recover and replace',
+  // A refused row's note, keyed by the journal's code; the words come from its detail.
+  notes: {
+    waitsFacetNone: 'recover {title} from the trash first, then this.',
+    waitsFacetOne: 'recover {title} and 1 other from the trash first, then this.',
+    waitsFacetMany: 'recover {title} and {n} others from the trash first, then this.',
+    waitsSegmentOne: "recover the segment it cleared voice data from first. it's in the trash.",
+    waitsSegmentMany: "recover the {n} segments it cleared voice data from first. they're in the trash.",
+    waitsImportOne: "recover the import it cleared voice data from first. it's in the trash.",
+    waitsImportMany: "recover the {n} imports it cleared voice data from first. they're in the trash.",
+    waitsBoth: "recover the segments and imports it cleared voice data from first. they're in the trash.",
+    waitsPersonNone: 'recover {name} from the trash first, then this.',
+    waitsPersonOne: 'recover {name} and 1 other from the trash first, then this.',
+    waitsPersonMany: 'recover {name} and {n} others from the trash first, then this.',
+    redirected: "this facet's name now leads to another facet, so it can't be recovered.",
+    taken: "this can't be recovered, because another entity in your journal is in its place.",
+    busy: 'something else is changing this right now. try again in a minute.',
+  },
 };
-const TRASH_KIND_LABEL = { segment: 'segment', memory: 'memory an agent saved', import: 'import', workout: 'workout' };
-const TRASH_WORDS = { segment: ['segment', 'segments'], memory: ['memory', 'memories'], import: ['import', 'imports'], workout: ['workout', 'workouts'] };
+const TRASH_KIND_LABEL = {
+  segment: 'segment', memory: 'memory an agent saved', import: 'import', workout: 'workout',
+  entity: 'entity', facet: 'facet', speakers: 'what your journal keeps about voices',
+  facet_file: 'files a facet merge left out', facet_file_unfinished: "files from a facet merge that didn't finish",
+};
+const TRASH_WORDS = {
+  segment: ['segment', 'segments'], memory: ['memory', 'memories'], import: ['import', 'imports'], workout: ['workout', 'workouts'],
+  entity: ['entity', 'entities'], facet: ['facet', 'facets'],
+};
+// Refusals that trying again won't change: the result line drops its "try again".
+const TRASH_STUCK = new Set(['merge_dest_missing', 'taken', 'name_redirected']);
 
 let trashItems = [];
 let trashConfirmed = null;
 const trashSelected = new Set();
+// The note a refused row carries after an act, by id.
+const trashNotes = new Map();
 
 function trashWord(items, count) {
   const kinds = new Set(items.map(item => item.kind));
@@ -7180,8 +7705,9 @@ function trashWord(items, count) {
   return pair[count === 1 ? 0 : 1];
 }
 
+// Fills each {key}; a journal value is taken as it is, never as a pattern.
 function trashFill(template, values) {
-  return Object.entries(values).reduce((text, [key, value]) => text.replace(`{${key}}`, value), template);
+  return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
 }
 
 function trashSize(bytes) {
@@ -7219,6 +7745,115 @@ function trashClock(start) {
   return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(at);
 }
 
+// A count of facets an entity was in, from a number or a list.
+function trashFacetCount(facets) {
+  if (Array.isArray(facets)) return facets.length;
+  const n = Number(facets);
+  return Number.isInteger(n) && n > 0 ? n : 0;
+}
+
+// What a row says: its kind and what tells it apart, when it erases, and what
+// recovering it does. Words come from the item's own record, never its files.
+function trashRowBody(item, stoppedState) {
+  const body = removalEl('span', 'trash-row-body');
+  const what = removalEl('span', 'removal-line');
+  const isImport = item.kind === 'import';
+  const unfinished = item.kind === 'facet_file' && item.dest_state === 'none';
+  what.append(removalEl('span', 'removal-what', unfinished
+    ? TRASH_KIND_LABEL.facet_file_unfinished
+    : TRASH_KIND_LABEL[item.kind] || TRASH_KIND_LABEL.segment));
+  // An import shows the owner's own file name: two imports of one source on one
+  // day are otherwise the same row. It comes from the item's own record.
+  // A workout shows its day and the time it began, and no title: those tell two apart.
+  // A body import shows the days of its own it holds: every Apple and Strava
+  // file has the same kind of name, and Oura's has none.
+  // An entity shows its name and type, and a facet its title, from the item's
+  // own label: every one would otherwise read the same.
+  const bodyImport = isImport && TRASH_BODY_SOURCES.has(item.source);
+  let qualifiers;
+  switch (item.kind) {
+    case 'import':
+      qualifiers = [removalSourceName(item.source), bodyImport ? trashSpan(item.days) : item.label, item.imported_day && REMOVAL_IMPORTED.replace('{day}', removalDay(item.imported_day))];
+      break;
+    case 'workout':
+      qualifiers = [item.day && removalDay(item.day), trashClock(item.start), removalSourceName(item.source)];
+      break;
+    case 'entity':
+      qualifiers = [item.label, item.entity_type && String(item.entity_type).toLowerCase()];
+      break;
+    case 'facet':
+      qualifiers = [item.label];
+      break;
+    case 'speakers':
+      qualifiers = [trashClearedDay(item.trashed_at)];
+      break;
+    case 'facet_file':
+      qualifiers = [!unfinished && item.dest_state !== 'gone' && item.dest_title ? trashFill(TRASH_COPY.mergedInto, { title: item.dest_title }) : null];
+      break;
+    default:
+      qualifiers = [item.day && removalDay(item.day), removalSegmentTime(item.segment)];
+  }
+  if (item.kind === 'segment' && item.stream) qualifiers.push(window.JournalFormat.stream(item.stream));
+  qualifiers.filter(Boolean).forEach(text => what.append(removalEl('span', 'removal-qual', text)));
+  body.append(what);
+  // A row that stopped part way says which way, in place of its date.
+  if (stoppedState) {
+    body.append(removalEl('span', 'trash-stopped', TRASH_COPY.stopped[stoppedState]));
+    return body;
+  }
+  const when = removalEl('span', 'removal-how');
+  const date = trashEraseDate(item.erase_at, new Date());
+  when.append(removalEl('span', date.soon ? 'trash-soon' : '', date.text));
+  const extra = [];
+  if (isImport && !bodyImport && Number.isInteger(item.segments)) {
+    extra.push(trashFill(item.segments === 1 ? TRASH_COPY.segmentOne : TRASH_COPY.segmentMany, { n: item.segments }));
+  }
+  if (item.kind === 'entity') {
+    const facets = trashFacetCount(item.facets);
+    if (facets) extra.push(facets === 1 ? TRASH_COPY.facetOne : trashFill(TRASH_COPY.facetMany, { n: facets }));
+  }
+  const size = item.kind === 'segment' || isImport || item.kind === 'speakers' ? trashSize(item.bytes) : '';
+  if (size) extra.push(size);
+  if (extra.length) when.append(document.createTextNode(` · ${extra.join(' · ')}`));
+  body.append(when);
+  trashRowLines(item).forEach(text => body.append(removalEl('span', 'trash-returned', text)));
+  const note = trashNotes.get(item.id);
+  if (note) body.append(removalEl('span', 'trash-row-note', note));
+  return body;
+}
+
+// What recovering a row does, said before anyone presses it.
+function trashRowLines(item) {
+  switch (item.kind) {
+    case 'entity':
+      return item.same_name === true ? [TRASH_COPY.entitySameName] : [];
+    case 'facet':
+      return item.replaces ? [TRASH_COPY.facetReplaces] : [];
+    case 'speakers':
+      // Transcription redoes labels and voiceprints soon after a wipe, so
+      // this is said every time.
+      return [TRASH_COPY.speakersReplaces, TRASH_COPY.speakersKept];
+    case 'facet_file':
+      switch (item.dest_state) {
+        case 'none': return [TRASH_COPY.mergeNoManifest];
+        case 'trashed': return item.dest_title ? [trashFill(TRASH_COPY.mergeTrashed, { title: item.dest_title })] : [];
+        case 'gone': return [TRASH_COPY.mergeGone];
+        case 'live': return item.dest_title ? [trashFill(TRASH_COPY.mergeLive, { title: item.dest_title })] : [];
+        default: return [];
+      }
+    default:
+      if (!item.replaces) return [];
+      return [item.kind === 'import' ? TRASH_COPY.returnedImport : item.kind === 'workout' ? TRASH_COPY.returnedWorkout : TRASH_COPY.returned];
+  }
+}
+
+// The day the speakers wipe ran, on the journal's clock.
+function trashClearedDay(trashedAt) {
+  const instant = new Date(trashedAt);
+  if (!trashedAt || Number.isNaN(instant.getTime()) || !window.JournalClock) return null;
+  return trashFill(TRASH_COPY.cleared, { day: removalDay(window.JournalClock.dayKey(instant)) });
+}
+
 function trashRow(item) {
   const row = removalEl('label', 'trash-row');
   const box = document.createElement('input');
@@ -7229,40 +7864,49 @@ function trashRow(item) {
     if (box.checked) trashSelected.add(item.id); else trashSelected.delete(item.id);
     paintTrashBar();
   });
-  const body = removalEl('span', 'trash-row-body');
-  const what = removalEl('span', 'removal-line');
-  what.append(removalEl('span', 'removal-what', TRASH_KIND_LABEL[item.kind] || TRASH_KIND_LABEL.segment));
-  const isImport = item.kind === 'import';
-  // An import shows the owner's own file name: two imports of one source on one
-  // day are otherwise the same row. It comes from the item's own record.
-  // A workout shows its day and the time it began, and no title: those tell two apart.
-  // A body import shows the days of its own it holds: every Apple and Strava
-  // file has the same kind of name, and Oura's has none.
-  const bodyImport = isImport && TRASH_BODY_SOURCES.has(item.source);
-  const qualifiers = isImport
-    ? [removalSourceName(item.source), bodyImport ? trashSpan(item.days) : item.label, item.imported_day && REMOVAL_IMPORTED.replace('{day}', removalDay(item.imported_day))]
-    : item.kind === 'workout'
-      ? [item.day && removalDay(item.day), trashClock(item.start), removalSourceName(item.source)]
-      : [item.day && removalDay(item.day), removalSegmentTime(item.segment)];
-  if (item.kind === 'segment' && item.stream) qualifiers.push(window.JournalFormat.stream(item.stream));
-  qualifiers.filter(Boolean).forEach(text => what.append(removalEl('span', 'removal-qual', text)));
-  const when = removalEl('span', 'removal-how');
-  const date = trashEraseDate(item.erase_at, new Date());
-  when.append(removalEl('span', date.soon ? 'trash-soon' : '', date.text));
-  const extra = [];
-  if (isImport && !bodyImport && Number.isInteger(item.segments)) {
-    extra.push(trashFill(item.segments === 1 ? TRASH_COPY.segmentOne : TRASH_COPY.segmentMany, { n: item.segments }));
-  }
-  const size = item.kind === 'segment' || isImport ? trashSize(item.bytes) : '';
-  if (size) extra.push(size);
-  if (extra.length) when.append(document.createTextNode(` · ${extra.join(' · ')}`));
-  body.append(what, when);
-  if (item.replaces) {
-    const back = isImport ? TRASH_COPY.returnedImport : item.kind === 'workout' ? TRASH_COPY.returnedWorkout : TRASH_COPY.returned;
-    body.append(removalEl('span', 'trash-returned', back));
-  }
-  row.append(box, body);
+  row.append(box, trashRowBody(item));
   return row;
+}
+
+// A row that stopped part way: no box and no act, and a spacer holds the column.
+function trashStoppedRow(item) {
+  const row = removalEl('div', 'trash-row trash-row--stopped');
+  const gap = removalEl('span', 'trash-row-gap');
+  gap.setAttribute('aria-hidden', 'true');
+  row.append(gap, trashRowBody(item, item.state));
+  return row;
+}
+
+// The note a refused row carries, from the journal's code and what it names.
+// None for a code the row already explains or the page has no words for.
+function trashRowNote(entry) {
+  const N = TRASH_COPY.notes;
+  const detail = entry && entry.detail && typeof entry.detail === 'object' ? entry.detail : {};
+  const count = value => (Number.isInteger(Number(value)) && Number(value) > 0 ? Number(value) : 0);
+  const others = (title, n, none, one, many, key) => {
+    if (!title) return null;
+    const words = n === 0 ? none : n === 1 ? one : many;
+    return trashFill(words, { [key]: title, n });
+  };
+  switch (entry && entry.reason) {
+    case 'busy': return N.busy;
+    case 'taken': return N.taken;
+    case 'name_redirected': return N.redirected;
+    case 'waits_facets':
+      return others(detail.title, count(detail.others), N.waitsFacetNone, N.waitsFacetOne, N.waitsFacetMany, 'title');
+    case 'waits_wipe': {
+      const lines = [];
+      const segments = count(detail.segments);
+      const imports = count(detail.imports);
+      if (segments && imports) lines.push(N.waitsBoth);
+      else if (segments) lines.push(segments === 1 ? N.waitsSegmentOne : trashFill(N.waitsSegmentMany, { n: segments }));
+      else if (imports) lines.push(imports === 1 ? N.waitsImportOne : trashFill(N.waitsImportMany, { n: imports }));
+      const people = count(detail.people);
+      if (people) lines.push(others(detail.name, people - 1, N.waitsPersonNone, N.waitsPersonOne, N.waitsPersonMany, 'name'));
+      return lines.filter(Boolean).join(' ') || null;
+    }
+    default: return null;
+  }
 }
 
 function paintTrashBar() {
@@ -7290,8 +7934,14 @@ function renderTrash(payload) {
   }
   const listed = new Set(items.map(item => item.id));
   [...trashSelected].forEach(id => { if (!listed.has(id)) trashSelected.delete(id); });
+  [...trashNotes.keys()].forEach(id => { if (!listed.has(id)) trashNotes.delete(id); });
   paintTrashBar();
-  if (items.length === 0) list.append(removalEl('div', 'log-empty', TRASH_COPY.empty));
+  // Steps that stopped part way lead the list; a stopped erase is finished
+  // by the next sweep and isn't shown.
+  const stopped = (Array.isArray(payload.stopped) ? payload.stopped : [])
+    .filter(item => item && Object.prototype.hasOwnProperty.call(TRASH_COPY.stopped, item.state));
+  stopped.forEach(item => list.append(trashStoppedRow(item)));
+  if (items.length === 0 && stopped.length === 0) list.append(removalEl('div', 'log-empty', TRASH_COPY.empty));
   items.forEach(item => list.append(trashRow(item)));
   const input = document.getElementById('trashEraseAfterDays');
   if (Number.isInteger(payload.erase_after_days)) {
@@ -7331,7 +7981,8 @@ function trashResultLine(act, chosen, answer, listedIds) {
   } else if (still.length && act === 'empty') {
     lines.push(TRASH_COPY.emptyFailed);
   } else if (still.length) {
-    lines.push(TRASH_COPY[`${recovering ? 'recoverFailed' : 'eraseFailed'}${still.length === 1 ? 'One' : 'Many'}`]);
+    const stuck = recovering && still.every(entry => TRASH_STUCK.has(entry.reason));
+    lines.push(TRASH_COPY[`${stuck ? 'recoverStuck' : recovering ? 'recoverFailed' : 'eraseFailed'}${still.length === 1 ? 'One' : 'Many'}`]);
   }
   if (gone.length) {
     const key = `gone${lines.length ? 'More' : ''}${gone.length === 1 ? 'One' : 'Many'}`;
@@ -7346,6 +7997,13 @@ function trashConfirmCopy(act, items) {
   const one = n === 1;
   const paragraphs = [];
   let title;
+  if (act === 'replace') {
+    // Recovering a facet over another of its name erases that one.
+    const k = items.filter(trashReplacesFacet).length;
+    title = TRASH_COPY.replaceTitle;
+    paragraphs.push(one ? TRASH_COPY.replaceOne : k === 1 ? TRASH_COPY.replaceSomeOne : trashFill(TRASH_COPY.replaceSomeMany, { k }));
+    return { title, paragraphs, confirm: TRASH_COPY.replaceConfirm };
+  }
   if (act === 'empty') {
     title = TRASH_COPY.confirmEmpty;
     paragraphs.push(trashFill(TRASH_COPY.bodyEmpty, { n, things: trashWord(items, n) }));
@@ -7355,11 +8013,27 @@ function trashConfirmCopy(act, items) {
       : trashFill(TRASH_COPY.confirmMany, { n, things: trashWord(items, n) });
     paragraphs.push(one ? TRASH_COPY.bodyOne : TRASH_COPY.bodyMany);
   }
-  // What an import or a workout made elsewhere includes entities, not only summaries.
+  // What stays: anything that mentions an entity or a facet, and a facet's
+  // segments; what an import or a workout made elsewhere includes entities;
+  // a segment's or a memory's summaries. Nothing elsewhere mentions the
+  // voices wipe or a merge's files.
+  const named = items.some(item => item.kind === 'entity' || item.kind === 'facet');
   const made = items.some(item => item.kind === 'import' || item.kind === 'workout');
-  paragraphs.push(made ? (one ? TRASH_COPY.madeOne : TRASH_COPY.madeMany) : (one ? TRASH_COPY.staysOne : TRASH_COPY.staysMany));
+  const quiet = items.every(item => item.kind === 'speakers' || item.kind === 'facet_file');
+  if (named) {
+    paragraphs.push(one ? TRASH_COPY.mentionsOne : TRASH_COPY.mentionsMany);
+    if (items.some(item => item.kind === 'facet')) paragraphs.push(one ? TRASH_COPY.sortedOne : TRASH_COPY.sortedMany);
+  } else if (made) {
+    paragraphs.push(one ? TRASH_COPY.madeOne : TRASH_COPY.madeMany);
+  } else if (!quiet) {
+    paragraphs.push(one ? TRASH_COPY.staysOne : TRASH_COPY.staysMany);
+  }
   if (memory) paragraphs.push(one ? TRASH_COPY.agentOne : TRASH_COPY.agentMany);
-  return { title, paragraphs };
+  return { title, paragraphs, confirm: TRASH_COPY.eraseNow };
+}
+
+function trashReplacesFacet(item) {
+  return item.kind === 'facet' && item.replaces === true;
 }
 
 async function runTrashAct(act, chosen) {
@@ -7372,6 +8046,12 @@ async function runTrashAct(act, chosen) {
     answer = null;
   }
   trashSelected.clear();
+  // Each refused row says why, beside it, once the list reloads.
+  trashNotes.clear();
+  (answer && Array.isArray(answer.failed) ? answer.failed : []).forEach(entry => {
+    const note = entry && trashRowNote(entry);
+    if (note) trashNotes.set(entry.id, note);
+  });
   const loaded = await loadTrash();
   const listed = loaded ? new Set(trashItems.map(item => item.id)) : null;
   const result = document.getElementById('trashResult');
@@ -7386,7 +8066,10 @@ function openTrashConfirm(act, items, trigger) {
   const copy = trashConfirmCopy(act, items);
   document.getElementById('trashConfirmHeading').textContent = copy.title;
   document.getElementById('trashConfirmBody').replaceChildren(...copy.paragraphs.map(text => removalEl('p', '', text)));
-  trashConfirmed = () => runTrashAct(act, items);
+  const confirm = document.getElementById('trashConfirmErase');
+  confirm.textContent = copy.confirm;
+  confirm.className = act === 'replace' ? 'trash-danger-outline' : 'cleanup-confirm-btn';
+  trashConfirmed = () => runTrashAct(act === 'replace' ? 'recover' : act, items);
   const modal = document.getElementById('trashConfirmModal');
   modal.style.display = 'block';
   modal._openAccessible(trigger);
@@ -7426,7 +8109,12 @@ function setupTrash() {
     // The strip just swapped away the control that had focus.
     byId('trashRecoverBtn').focus();
   });
-  byId('trashRecoverBtn').addEventListener('click', () => runTrashAct('recover', trashChosen()));
+  // A facet recovered over another of its name erases that one, so it confirms first.
+  byId('trashRecoverBtn').addEventListener('click', (event) => {
+    const chosen = trashChosen();
+    if (chosen.some(trashReplacesFacet)) openTrashConfirm('replace', chosen, event.currentTarget);
+    else runTrashAct('recover', chosen);
+  });
   byId('trashEraseBtn').addEventListener('click', (event) => openTrashConfirm('erase', trashChosen(), event.currentTarget));
   byId('trashEmptyBtn').addEventListener('click', (event) => openTrashConfirm('empty', trashItems.slice(), event.currentTarget));
   byId('trashConfirmCancel').addEventListener('click', closeTrashConfirm);
@@ -7453,6 +8141,7 @@ function initSettings() {
   loadRemovalHistory();
   setupTrash();
   loadTrash();
+  showStashedFacetReceipt();
   loadLocalAccess();
   setupAutoSave();
   setupStorageListeners();

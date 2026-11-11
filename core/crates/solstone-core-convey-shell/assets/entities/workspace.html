@@ -2018,6 +2018,66 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   .journal-dup-facets { grid-area: meta; white-space: normal; }
   .journal-list-pager { margin-left: 0; }
 }
+
+/* Deleting entities: select mode on the journal-wide list, the strip, and the
+   trash's own three-button dialog. */
+.ent-select-btn { margin-left: auto; }
+.ent-select-btn[hidden] { display: none; }
+.trash-bar { position: sticky; top: 0; z-index: 1; min-height: 2.5em; padding: .5em 1em .5em .85em; border: 1px solid var(--hairline); border-bottom: 0; background: var(--cream); border-radius: 8px 8px 0 0; }
+.trash-bar[hidden], .trash-bar-group[hidden] { display: none; }
+.trash-bar:focus { outline: none; }
+.trash-bar-group { display: flex; align-items: center; flex-wrap: wrap; gap: .5em .75em; }
+.trash-count, .trash-all { color: var(--ink-soft); font-weight: 600; font-size: .9em; }
+.trash-all { display: inline-flex; align-items: center; gap: .5em; cursor: pointer; }
+.trash-bar-actions { margin-left: auto; display: flex; gap: .5em; }
+.journal-row--picked, .journal-row--picked:hover { background: var(--orange-wash); }
+.journal-row-tick { min-width: 1.1rem; }
+.journal-row-note { order: 2; grid-column: 2 / -1; color: var(--ink-soft); font-size: .85em; white-space: normal; }
+.trash-set-list { list-style: none; margin: 0 0 12px; padding: 0; font-size: 14px; }
+.trash-set-list li + li { margin-top: 2px; }
+.trash-set-more { color: var(--ink-soft); }
+@media (max-width: 700px) {
+  .journal-row-note { grid-row: 3; }
+  .journal-row-tick { grid-row: 1 / span 3; align-self: start; }
+}
+@media (max-width: 480px) {
+  .journal-row-tick { min-width: 20px; }
+  .trash-bar-actions button, .ent-select-btn { min-height: 44px; }
+  .journal-row-tick input, .trash-all input { width: 20px; height: 20px; }
+}
+
+#entityDeleteModal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px; margin: 0; width: auto; height: auto; background: color-mix(in srgb, var(--surface-dark) 55%, transparent); z-index: 1100; }
+#entityDeleteModal .modal-content { width: min(520px, 100%); max-width: none; max-height: calc(100vh - 48px); margin: 0; padding: 0; background: var(--paper); border-radius: 16px; box-shadow: 0 24px 48px rgba(0, 0, 0, 0.22); overflow: hidden; display: flex; flex-direction: column; }
+/* Title and buttons stay put; only the body scrolls on a short screen. */
+#entityDeleteModal .modal-header, #entityDeleteModal .modal-footer { flex: none; }
+#entityDeleteModal .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 16px; border-bottom: 1px solid var(--hairline); }
+#entityDeleteModal .modal-header h3 { margin: 0; font-size: 20px; font-weight: 700; color: var(--ink); }
+#entityDeleteModal .modal-header.danger h3 { color: var(--danger); }
+#entityDeleteModal .close { position: static; color: var(--ink-faint); font-size: 28px; line-height: 1; background: none; border: 0; }
+#entityDeleteModal .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 20px 24px; }
+#entityDeleteModal .modal-footer { padding: 0 24px 24px; border-top: 0; }
+#entityDeleteModal .trash-dlg-note { padding: 16px 18px; border-radius: 12px; background: var(--cream); border-left: 4px solid var(--hairline-2); color: var(--ink); }
+#entityDeleteModal .delete-warning { padding: 16px 18px; border-radius: 12px; background: var(--danger-wash); border-left: 4px solid var(--hairline-2); color: var(--danger); }
+#entityDeleteModal .trash-dlg-note p, #entityDeleteModal .delete-warning p { margin: 0 0 12px; }
+#entityDeleteModal .trash-dlg-note p:last-child, #entityDeleteModal .delete-warning p:last-child { margin-bottom: 0; }
+#entityDeleteModal .trash-dlg-meta { font-size: 14px; }
+#entityDeleteModal .trash-dlg-meta strong { white-space: nowrap; }
+#entityDeleteModal .entity-delete-list { margin: 0 0 12px; padding-left: 20px; }
+#entityDeleteModal .entity-delete-list:empty { display: none; }
+#entityDeleteModal .entity-delete-list li + li { margin-top: 6px; }
+#entityDeleteModal .trash-dlg-foot { display: flex; align-items: center; flex-wrap: wrap; gap: .5em; justify-content: flex-start; }
+#entityDeleteModal .trash-dlg-foot[hidden] { display: none; }
+#entityDeleteModal .trash-dlg-right { margin-left: auto; display: flex; gap: .5em; }
+#entityDeleteModal .trash-primary, #entityDeleteModal .trash-danger-outline, #entityDeleteModal .btn-secondary, #entityDeleteModal .btn-danger { border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+#entityDeleteModal .trash-primary { background: var(--orange); color: var(--ink-on-brand); border: 0; }
+#entityDeleteModal .trash-danger-outline { background: var(--paper); color: var(--danger); border: 1px solid var(--danger); }
+#entityDeleteModal .btn-secondary { background: var(--cream-bright); color: var(--ink-soft); border: 0; }
+#entityDeleteModal .btn-secondary:hover { background: var(--hairline); }
+#entityDeleteModal .btn-danger { background: var(--danger); color: var(--ink-on-danger); border: 0; }
+#entityDeleteModal .btn-danger:hover { background: color-mix(in srgb, var(--danger) 78%, var(--surface-dark)); }
+@media (max-width: 480px) {
+  #entityDeleteModal .trash-dlg-foot button { min-height: 44px; padding-left: 12px; padding-right: 12px; white-space: nowrap; }
+}
 </style>
 
 <div class="workspace-content">
@@ -2047,6 +2107,17 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
             <input type="text" id="journal-entity-card-search" class="entity-search-input" aria-label="search entities">
             <span id="journal-card-search-count" class="journal-list-range"></span>
             <span class="journal-list-pager" id="journal-list-pager"></span>
+            <button type="button" class="btn btn-secondary btn-sm ent-select-btn" id="journal-select-btn" hidden></button>
+          </div>
+          <div class="trash-bar ent-pick-bar" id="journal-pick-bar" tabindex="-1" hidden>
+            <div class="trash-bar-group" id="journal-pick-idle">
+              <label class="trash-all"><input type="checkbox" id="journal-pick-all"> <span id="journal-pick-all-label"></span></label>
+              <span class="trash-bar-actions"><button type="button" class="btn btn-secondary btn-sm" id="journal-pick-done-idle"></button></span>
+            </div>
+            <div class="trash-bar-group" id="journal-pick-some" hidden>
+              <span class="trash-count" id="journal-pick-count"></span>
+              <span class="trash-bar-actions"><button type="button" class="btn btn-secondary btn-sm" id="journal-pick-delete"></button><button type="button" class="btn btn-secondary btn-sm" id="journal-pick-done-some"></button></span>
+            </div>
           </div>
           <p class="entity-card-legend" id="journal-entity-legend"><span class="entity-facet-dot" aria-hidden="true"></span>dots are the facets a name appears in, plus its type.</p>
           <div id="journal-entity-cards-error" class="journal-entity-cards-error" hidden></div>
@@ -2141,12 +2212,12 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
     <div class="entity-action-section entity-detach-section">
       <div style="display: flex; gap: 0.5em; flex-wrap: wrap;">
         <button class="btn btn-secondary" id="journal-detail-block-btn" disabled>hide</button>
-        <button class="btn btn-danger" id="journal-detail-delete-btn" disabled>delete</button>
+        <button type="button" class="btn btn-secondary" id="journal-detail-delete-btn" hidden></button>
       </div>
       <div id="block-action-error" class="error-message" style="display: none;"></div>
       <p style="margin-top: 0.75em; font-size: 0.85em; color: var(--ink-faint);">
         <strong>hide</strong> removes the entity from all facets and keeps its data.
-        <strong>delete</strong> permanently removes the entity and all associated data.
+        <span id="journal-detail-delete-help" hidden><strong id="journal-detail-delete-help-name"></strong> <span id="journal-detail-delete-help-text"></span></span>
       </p>
     </div>
   </div>
@@ -2285,31 +2356,28 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   </div>
 </div>
 
-<!-- Delete Journal Entity Confirmation Modal -->
-<div id="deleteJournalEntityModal" class="modal">
+<!-- Deleting an entity: the trash's own three-button dialog -->
+<div id="entityDeleteModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="entityDeleteModalTitle">
   <div class="modal-content">
-    <div class="modal-header danger">
-      <h3>delete entity permanently</h3>
-      <button class="close" aria-label="close" onclick="closeDeleteJournalEntityModal()">&times;</button>
+    <div class="modal-header" id="entityDeleteModalHeader">
+      <h3 id="entityDeleteModalTitle"></h3>
+      <button type="button" class="close" id="entityDeleteModalClose" aria-label="close">&times;</button>
     </div>
     <div class="modal-body">
-      <div class="delete-warning">
-        ⚠️ this will permanently delete this entity and all associated data. this action cannot be undone.
-      </div>
-      <p>entity: <strong id="deleteJournalEntityName"></strong></p>
-      <div id="deleteJournalEntityInfo">
-        <p>this will remove:</p>
-        <ul style="margin: 0.5em 0; padding-left: 1.5em; color: var(--ink-soft);">
-          <li>the entity record</li>
-          <li id="deleteJournalEntityFacets"></li>
-          <li id="deleteJournalEntityObs"></li>
-        </ul>
-      </div>
-      <div id="delete-modal-error" class="error-message" style="display: none; margin-top: 0.5em;"></div>
+      <div id="entityDeleteModalBody" class="trash-dlg-note"></div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeDeleteJournalEntityModal()">cancel</button>
-      <button id="confirmDeleteJournalEntityBtn" class="btn btn-danger" onclick="confirmDeleteJournalEntity()">delete permanently</button>
+    <div class="modal-footer trash-dlg-foot" id="entityDeleteModalMoveFoot">
+      <button type="button" id="entityDeleteModalErase" class="trash-danger-outline"></button>
+      <span class="trash-dlg-right">
+        <button type="button" id="entityDeleteModalCancel" class="btn-secondary"></button>
+        <button type="button" id="entityDeleteModalConfirm" class="trash-primary"></button>
+      </span>
+    </div>
+    <div class="modal-footer trash-dlg-foot" id="entityDeleteModalEraseFoot" hidden>
+      <span class="trash-dlg-right">
+        <button type="button" id="entityDeleteModalBack" class="btn-secondary"></button>
+        <button type="button" id="entityDeleteModalEraseConfirm" class="btn-danger"></button>
+      </span>
     </div>
   </div>
 </div>
@@ -4055,6 +4123,7 @@ function showJournalDetailView(entityId) {
   document.getElementById('journal-detail-indicators').innerHTML = '';
   document.getElementById('journal-detail-facets').innerHTML = '<span class="observations-empty">loading…</span>';
   document.getElementById('journal-detail-connections').innerHTML = '<span class="observations-empty">loading…</span>';
+  renderEntityDeleteAction(null);
   resetJournalTrustSurface();
 
   // Fetch journal entity details
@@ -4134,36 +4203,27 @@ function renderJournalDetailView(entity) {
 
   // Update action buttons based on state
   const blockBtn = document.getElementById('journal-detail-block-btn');
-  const deleteBtn = document.getElementById('journal-detail-delete-btn');
 
   if (isPrincipal) {
-    // Principal cannot be blocked or deleted
+    // Principal cannot be hidden; it has no delete at all.
     blockBtn.disabled = true;
     blockBtn.textContent = 'hide';
     blockBtn.title = 'cannot hide yourself';
     blockBtn.onclick = null;
-    deleteBtn.disabled = true;
-    deleteBtn.title = 'cannot delete yourself';
-    deleteBtn.onclick = null;
   } else if (isBlocked) {
     // Show unblock option
     blockBtn.disabled = false;
     blockBtn.textContent = 'unhide';
     blockBtn.title = 'unhide this entity';
     blockBtn.onclick = unblockJournalEntity;
-    deleteBtn.disabled = false;
-    deleteBtn.title = '';
-    deleteBtn.onclick = showDeleteJournalEntityModal;
   } else {
     // Normal state
     blockBtn.disabled = false;
     blockBtn.textContent = 'hide';
     blockBtn.title = '';
     blockBtn.onclick = blockJournalEntity;
-    deleteBtn.disabled = false;
-    deleteBtn.title = '';
-    deleteBtn.onclick = showDeleteJournalEntityModal;
   }
+  renderEntityDeleteAction(entity);
 
   // AKAs
   const akaEl = document.getElementById('journal-detail-aka');
@@ -4832,318 +4892,764 @@ function unblockJournalEntity() {
   });
 }
 
-function showDeleteJournalEntityModal() {
-  const entity = currentDetailEntity;
-  if (!entity) return;
+// ========== ENTITY DELETE ==========
+// Deleting entities: one from its own page, or a set chosen on the
+// journal-wide list. The dialog, its erase step and the receipts are the
+// trash's own, as the import and transcripts pages have them; what moves is
+// the entity's own.
+const ENTITY_DELETE_COPY = {
+  noun: 'entity',
+  things: 'entities',
+  button: 'delete',
+  paneHelp: "moves it to the trash, where you can recover it until it's erased.",
+  select: 'select',
+  selectAll: 'select all',
+  selectAllPage: 'select all on this page',
+  selected: '{n} selected',
+  delete: 'delete',
+  done: 'done',
+  pickLabel: 'select {name}',
+  more: 'and {n} more',
+  move: {
+    title: 'delete this entity?',
+    titleMany: 'delete {n} entities?',
+    reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
+    reachMany: "they leave your journal now and wait in the trash, then they're erased. you can recover each one until then.",
+    lead: "this moves the entity's own:",
+    ownMany: "this moves each one's own details, version history, place and notes in each facet, and what your journal keeps about its voice, if anything.",
+    stays: 'transcripts, summaries and activities elsewhere in your journal stay where they are and may still mention it.',
+    staysMany: 'transcripts, summaries and activities elsewhere in your journal stay where they are and may still mention them.',
+  },
+  erase: {
+    title: 'erase this entity now?',
+    titleMany: 'erase {n} entities now?',
+    reach: "it leaves your journal now and can't be recovered.",
+    reachMany: "they leave your journal now and can't be recovered.",
+    lead: "this erases the entity's own:",
+    ownMany: "this erases each one's own details, version history, place and notes in each facet, and what your journal keeps about its voice, if anything.",
+    stays: "transcripts, summaries and activities elsewhere in your journal aren't erased and may still mention it.",
+    staysMany: "transcripts, summaries and activities elsewhere in your journal aren't erased and may still mention them.",
+  },
+  again: "if your journal finds it again later, it's added as a new entity.",
+  againMany: 'any of them your journal finds again later is added as a new entity.',
+  list: {
+    details: 'its details and version history',
+    facetOne: 'its place and notes in 1 facet',
+    facetMany: 'its place and notes in {n} facets',
+    voice: 'what your journal keeps about its voice',
+    facetUnknown: "its place and notes in each facet it's in",
+    voiceUnknown: 'what your journal keeps about its voice, if anything',
+  },
+  buttons: {
+    eraseNow: 'erase now',
+    cancel: 'cancel',
+    moveToTrash: 'move to trash',
+    back: 'back',
+    recover: 'recover',
+    openTrash: 'open trash',
+  },
+  // A refused entity in a set, keyed by the journal's reason.
+  notes: {
+    busy: "something else is changing this right now, so it wasn't moved. try again in a minute.",
+    record_damaged: "your journal couldn't update its record of entities, so this wasn't moved.",
+    other: "this wasn't moved. try again.",
+  },
+  eraseNotes: {
+    busy: "something else is changing this right now, so it wasn't erased. try again in a minute.",
+    record_damaged: "your journal couldn't update its record of entities, so this wasn't erased.",
+    other: "this wasn't erased. try again.",
+  },
+  // What a refused one says, keyed by the journal's reason.
+  refused: {
+    busy: 'something else is changing it right now. try again in a minute.',
+    record_damaged: "your journal couldn't update its record of entities. nothing moved.",
+    gone: "it's no longer in your journal.",
+    last_facet: "your journal needs at least one facet that isn't muted.",
+    principal: "this is you, so it can't be deleted.",
+  },
+  eraseRefused: {
+    record_damaged: "your journal couldn't update its record of entities. nothing was erased.",
+  },
+  receipt: {
+    moved: { title: 'moved to the trash', message: 'erases {date} unless you recover it.' },
+    recovered: { title: '{noun} recovered', message: "it's back in your journal." },
+    erased: { title: '{noun} erased from your journal' },
+    recoverFailed: { title: "couldn't recover that {noun}", message: "it's still in the trash. you can try again from there." },
+    moveRefused: { title: "couldn't move that to the trash", message: "it's still in your journal." },
+    eraseRefused: { title: "couldn't erase that {noun}", message: "it's still in your journal." },
+    eraseFailed: { title: "couldn't erase that {noun}", message: "it's in the trash. you can try again from there." },
+    noAnswerMove: { title: "your journal didn't answer", message: 'it may already be in the trash. reload to check.' },
+    noAnswerErase: { title: "your journal didn't answer", message: 'it may already be erased. reload to check.' },
+    noAnswerRecover: { title: "your journal didn't answer", message: 'it may already be back in your journal. reload to check.' },
+  },
+  set: {
+    moved: { title: 'moved {n} {things} to the trash', message: 'they erase {date} unless you recover them.' },
+    partMoved: { title: 'moved {done} of {n} to the trash' },
+    stillOne: "{k} couldn't be moved and is still in your journal, marked below.",
+    stillMany: "{k} couldn't be moved and are still in your journal, marked below.",
+    markedOne: "{k} couldn't be moved and is marked below.",
+    markedMany: "{k} couldn't be moved and are marked below.",
+    goneMoreOne: '{g} more is no longer listed.',
+    goneMoreMany: '{g} more are no longer listed.',
+    othersGoneOne: 'the other is no longer listed here.',
+    othersGoneMany: 'the others are no longer listed here.',
+    noneMoved: { title: "couldn't move those to the trash" },
+    noneStillOne: '{k} is still in your journal, marked below.',
+    noneStillMany: '{k} are still in your journal, marked below.',
+    noneGoneOne: "it's no longer listed here.",
+    noneGoneMany: "they're no longer listed here.",
+    erased: { title: 'erased {n} {things} from your journal' },
+    partErased: { title: 'erased {done} of {n}' },
+    partErasedOne: "the other wasn't erased. look for it below or in the trash.",
+    partErasedMany: "the others weren't erased. look for them below or in the trash.",
+    noneErased: { title: "couldn't erase those" },
+    noneErasedOne: 'look for it below or in the trash.',
+    noneErasedMany: 'look for them below or in the trash.',
+    recovered: { title: '{n} {things} recovered', message: "they're back in your journal." },
+    partRecovered: { title: 'recovered {done} of {n}' },
+    partRecoveredOne: 'the other is still in the trash. you can try again from there.',
+    partRecoveredMany: 'the others are still in the trash. you can try again from there.',
+    recoverFailed: { title: "couldn't recover those", message: "they're still in the trash. you can try again from there." },
+    noAnswerMove: { title: "your journal didn't answer", message: 'they may already be in the trash. reload to check.' },
+    noAnswerErase: { title: "your journal didn't answer", message: 'they may already be erased. reload to check.' },
+    noAnswerRecover: { title: "your journal didn't answer", message: 'they may already be back in your journal. reload to check.' },
+  },
+};
+const ENTITY_TRASH_PAGE = '/app/settings#trash';
+const ENTITY_SET_SHOWN = 5;
+const ENTITY_RECEIPT_LIFE = 10000;
+// The reasons the journal gives that the page has words for; any other is `other`.
+const ENTITY_REASONS = new Set(['principal', 'last_facet', 'record_damaged', 'busy', 'gone']);
+// Select mode on the journal-wide list: whether it is on, the chosen entities
+// (kept across pages and searches inside a folder), and the note a refused
+// one carries.
+const entityPick = { on: false, folder: '', items: new Map(), notes: new Map() };
+// The open dialog: what it deletes, its step, and where focus goes back to.
+let entityDialog = null;
 
-  document.getElementById('deleteJournalEntityName').textContent = entity.name;
-
-  // Show facet and observation counts
-  const facetCount = entity.facets?.length || 0;
-  const obsCount = entity.total_observation_count || 0;
-
-  document.getElementById('deleteJournalEntityFacets').textContent =
-    `${facetCount} facet relationship${facetCount !== 1 ? 's' : ''}`;
-  document.getElementById('deleteJournalEntityObs').textContent =
-    `${obsCount} observation${obsCount !== 1 ? 's' : ''} and any voiceprints`;
-
-  document.getElementById('deleteJournalEntityModal').style.display = 'flex';
+function entityDeleteFill(template, values = {}) {
+  return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
 }
 
-function closeDeleteJournalEntityModal() {
-  hideInlineError('delete-modal-error');
-  const btn = document.getElementById('confirmDeleteJournalEntityBtn');
-  btn.disabled = false;
-  btn.textContent = 'delete permanently';
-  document.getElementById('deleteJournalEntityModal').style.display = 'none';
+function entityDeleteEl(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
 }
 
-function confirmDeleteJournalEntity() {
-  const entityId = currentDetailEntity?.id;
-  if (!entityId) return;
+// The erase date on the journal's own clock, worded as the trash page words it.
+function entityEraseDate(eraseAt) {
+  const instant = new Date(eraseAt);
+  if (!eraseAt || Number.isNaN(instant.getTime())) return '';
+  const day = window.JournalClock ? window.JournalClock.dayKey(instant) : instant.toISOString().slice(0, 10).replace(/-/g, '');
+  return /^\d{8}$/.test(day) ? window.JournalFormat.day(day).toLowerCase() : '';
+}
 
-  const btn = document.getElementById('confirmDeleteJournalEntityBtn');
-  btn.disabled = true;
-  btn.textContent = 'deleting…';
+function entityReason(reason) {
+  return ENTITY_REASONS.has(reason) ? reason : 'other';
+}
 
-  // Set once the journal has answered, so a later error on this page is never
-  // reported as the journal not answering.
-  let answered = false;
-  // Set once the journal has accepted the delete: from then on it is under
-  // way, whatever else fails on this page.
-  let accepted = false;
-  fetch(`api/journal/entity/${encodeURIComponent(entityId)}`, {
-    method: 'DELETE'
-  })
-  .then(response => {
-    answered = true;
-    return response.json();
-  })
-  .then(data => {
-    if (data.error) {
-      throw new Error(data.detail || data.error);
+// An entity as the dialog and the strip name it: its name and its type,
+// lowercased as the list writes it.
+function entityDeleteItem(entity) {
+  return {
+    id: entity.id,
+    name: entity.name || '',
+    type: String(entity.type_bucket || entity.type || 'other').toLowerCase(),
+  };
+}
+
+function entityMetaNodes(item, strongType) {
+  return [
+    entityDeleteEl('strong', null, item.name),
+    entityDeleteEl('span', null, ' · '),
+    entityDeleteEl(strongType ? 'strong' : 'span', null, item.type),
+  ];
+}
+
+// What one entity's dialog lists, from its preview: nothing yet while it
+// loads, words without counts if it couldn't load, and only lines that are true.
+function entityOneListLines(preview) {
+  const L = ENTITY_DELETE_COPY.list;
+  if (preview === undefined) return [];
+  if (!preview) return [L.details, L.facetUnknown, L.voiceUnknown];
+  const lines = [L.details];
+  const facets = Array.isArray(preview.facets) ? preview.facets.length : Number(preview.facets) || 0;
+  if (facets === 1) lines.push(L.facetOne);
+  else if (facets > 1) lines.push(entityDeleteFill(L.facetMany, { n: facets }));
+  if (preview.voice === true) lines.push(L.voice);
+  return lines;
+}
+
+function entityOneBody(step, item, preview) {
+  const copy = ENTITY_DELETE_COPY[step];
+  const meta = entityDeleteEl('p', 'trash-dlg-meta');
+  meta.append(...entityMetaNodes(item, true));
+  const list = entityDeleteEl('ul', 'entity-delete-list');
+  entityOneListLines(preview).forEach(line => list.append(entityDeleteEl('li', null, line)));
+  return [
+    meta,
+    entityDeleteEl('p', 'entity-delete-reach', copy.reach),
+    entityDeleteEl('p', 'entity-delete-lead', copy.lead),
+    list,
+    entityDeleteEl('p', 'entity-delete-stays', copy.stays),
+    entityDeleteEl('p', 'entity-delete-again', ENTITY_DELETE_COPY.again),
+  ];
+}
+
+// A set: up to five by name and type, then how many more, and no counts.
+function entitySetBody(step, items) {
+  const copy = ENTITY_DELETE_COPY[step];
+  const list = entityDeleteEl('ul', 'trash-set-list');
+  items.slice(0, ENTITY_SET_SHOWN).forEach(item => {
+    const line = entityDeleteEl('li');
+    line.append(...entityMetaNodes(item, false));
+    list.append(line);
+  });
+  if (items.length > ENTITY_SET_SHOWN) {
+    list.append(entityDeleteEl('li', 'trash-set-more', entityDeleteFill(ENTITY_DELETE_COPY.more, { n: items.length - ENTITY_SET_SHOWN })));
+  }
+  return [
+    list,
+    entityDeleteEl('p', 'entity-delete-reach', copy.reachMany),
+    entityDeleteEl('p', 'entity-delete-own', copy.ownMany),
+    entityDeleteEl('p', 'entity-delete-stays', copy.staysMany),
+    entityDeleteEl('p', 'entity-delete-again', ENTITY_DELETE_COPY.againMany),
+  ];
+}
+
+function entityDialogNodes() {
+  const byId = id => document.getElementById(id);
+  return {
+    modal: byId('entityDeleteModal'), header: byId('entityDeleteModalHeader'), title: byId('entityDeleteModalTitle'),
+    body: byId('entityDeleteModalBody'), moveFoot: byId('entityDeleteModalMoveFoot'), eraseFoot: byId('entityDeleteModalEraseFoot'),
+    close: byId('entityDeleteModalClose'), erase: byId('entityDeleteModalErase'), cancel: byId('entityDeleteModalCancel'),
+    confirm: byId('entityDeleteModalConfirm'), back: byId('entityDeleteModalBack'), eraseConfirm: byId('entityDeleteModalEraseConfirm'),
+  };
+}
+
+function renderEntityDeleteStep(step) {
+  const nodes = entityDialogNodes();
+  const erasing = step === 'erase';
+  entityDialog.step = step;
+  nodes.title.textContent = entityDialog.spec.title(step);
+  nodes.header.classList.toggle('danger', erasing);
+  nodes.body.className = erasing ? 'delete-warning' : 'trash-dlg-note';
+  nodes.body.dataset.step = step;
+  nodes.moveFoot.hidden = erasing;
+  nodes.eraseFoot.hidden = !erasing;
+  nodes.body.replaceChildren(...entityDialog.spec.body(step));
+}
+
+function wireEntityDeleteDialog(nodes) {
+  if (nodes.modal.dataset.wired) return;
+  nodes.modal.dataset.wired = 'true';
+  const B = ENTITY_DELETE_COPY.buttons;
+  nodes.erase.textContent = B.eraseNow;
+  nodes.cancel.textContent = B.cancel;
+  nodes.confirm.textContent = B.moveToTrash;
+  nodes.back.textContent = B.back;
+  nodes.eraseConfirm.textContent = B.eraseNow;
+  nodes.close.addEventListener('click', () => closeEntityDeleteDialog());
+  nodes.cancel.addEventListener('click', () => closeEntityDeleteDialog());
+  nodes.erase.addEventListener('click', () => {
+    if (!entityDialog) return;
+    renderEntityDeleteStep('erase');
+    nodes.back.focus();
+  });
+  nodes.back.addEventListener('click', () => {
+    if (!entityDialog) return;
+    renderEntityDeleteStep('move');
+    nodes.erase.focus();
+  });
+  const act = erase => {
+    if (!entityDialog) return;
+    const spec = entityDialog.spec;
+    closeEntityDeleteDialog(false);
+    spec.act(erase);
+  };
+  nodes.confirm.addEventListener('click', () => act(false));
+  nodes.eraseConfirm.addEventListener('click', () => act(true));
+  nodes.modal.addEventListener('click', event => {
+    if (event.target === nodes.modal) closeEntityDeleteDialog();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && entityDialog) {
+      event.preventDefault();
+      closeEntityDeleteDialog();
     }
-    accepted = true;
-    // Time the wait from this answer, not the journal's clock: a paired
-    // device's clock can be minutes off.
-    watchEntityDeleteOutcome(data.pending, Date.now() + (data.ttl_seconds ?? 10) * 1000);
-    hideInlineError('delete-modal-error');
-    if (journalSummary) {
-      const kept = (journalSummary.items || []).filter(entity => entity.id !== entityId);
-      journalSummary = Object.assign({}, journalSummary, {
-        items: kept,
-        total: Math.max(0, (journalSummary.total || 0) - 1),
-        entity_total: Math.max(0, (journalSummary.entity_total || 0) - 1),
-      });
-    }
-    closeDeleteJournalEntityModal();
-    navigateToList();
-    renderScopeControl();
-    renderJournalEntities();
+  });
+}
 
-    let pendingNotificationId = null;
-    pendingNotificationId = window.AppServices.notifications.show({
-      app: 'entities',
-      icon: 'trash-2',
-      title: 'Deleting entity…',
-      message: `Cancels in ${Math.ceil(data.ttl_seconds ?? 10)}s`,
-      dismissible: true,
-      autoDismiss: Math.max(1000, (data.ttl_seconds ?? 10) * 1000),
-      buttons: [{
-        label: 'Cancel',
-        dismiss: false,
-        onClick: () => cancelJournalEntityDelete(data.pending, pendingNotificationId)
-      }]
+// spec: { title(step), body(step), act(erase) }. Focus lands on the reversible act.
+function openEntityDeleteDialog(spec) {
+  const nodes = entityDialogNodes();
+  if (!nodes.modal) return;
+  wireEntityDeleteDialog(nodes);
+  if (entityDialog) closeEntityDeleteDialog(false);
+  entityDialog = { spec, step: 'move', returnFocus: document.activeElement, overflow: document.body.style.overflow };
+  renderEntityDeleteStep('move');
+  nodes.modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  nodes.confirm.focus();
+}
+
+function closeEntityDeleteDialog(restoreFocus = true) {
+  if (!entityDialog) return;
+  const nodes = entityDialogNodes();
+  const { returnFocus, overflow } = entityDialog;
+  entityDialog = null;
+  nodes.modal.style.display = 'none';
+  nodes.body.replaceChildren();
+  document.body.style.overflow = overflow;
+  if (restoreFocus && returnFocus && document.contains(returnFocus)) returnFocus.focus();
+}
+
+// One entity's dialog. The preview fills its list when it arrives; a preview
+// that fails leaves words without counts and never blocks the delete.
+function entityOneSpec(item, act) {
+  const spec = {
+    preview: undefined,
+    title: step => ENTITY_DELETE_COPY[step].title,
+    body: step => entityOneBody(step, item, spec.preview),
+    act,
+  };
+  fetch(`/app/entities/api/journal/entity/${encodeURIComponent(item.id)}/delete`)
+    .then(response => (response.ok ? response.json() : null))
+    .catch(() => null)
+    .then(preview => {
+      spec.preview = preview && typeof preview === 'object' ? preview : null;
+      if (entityDialog && entityDialog.spec === spec) renderEntityDeleteStep(entityDialog.step);
     });
-  })
-  .catch(error => {
-    console.error('Error deleting entity:', error);
-    if (accepted) {
-      // The delete is under way and its outcome is being watched.
-      closeDeleteJournalEntityModal();
-      return;
-    }
-    showInlineError('delete-modal-error', error instanceof TypeError && !answered
-      ? "your journal didn't answer, so the delete may still go ahead. reload to check."
-      : "couldn't delete entity");
-    btn.disabled = false;
-    btn.textContent = 'delete permanently';
-  });
+  return spec;
 }
 
-// Ids whose outcome this browser has already shown, so a reload does not
-// repeat them. Keyed by id and state: a delete reported as not finished yet
-// is reported again once the next start settles it.
-const REPORTED_ENTITY_DELETES_KEY = 'entities.reportedDeletes';
-// Ids whose outcome this page has already shown, so the watcher and the
-// cancel answer never both report one delete.
-const shownEntityDeleteOutcomes = new Set();
-
-function reportedEntityDeletes() {
-  try {
-    return JSON.parse(window.localStorage.getItem(REPORTED_ENTITY_DELETES_KEY) || '[]');
-  } catch (_) {
-    return [];
-  }
+function entitySetSpec(items, act) {
+  return {
+    title: step => entityDeleteFill(ENTITY_DELETE_COPY[step].titleMany, { n: items.length }),
+    body: step => entitySetBody(step, items),
+    act,
+  };
 }
 
-function markEntityDeleteReported(pendingId, state) {
-  const key = `${pendingId}:${state}`;
-  try {
-    const ids = reportedEntityDeletes().filter(id => id !== key);
-    ids.push(key);
-    window.localStorage.setItem(REPORTED_ENTITY_DELETES_KEY, JSON.stringify(ids.slice(-50)));
-  } catch (_) {
-    // Without storage a later page may show this outcome once more.
-  }
-}
-
-function entityDeleteSentence(text) {
-  const value = String(text || '').trim();
-  if (!value) return '';
-  const capitalized = value.charAt(0).toUpperCase() + value.slice(1);
-  return /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`;
-}
-
-// Not deleted or partly deleted: reload the list so it shows what is really
-// in the journal.
-function showEntityDeleteOutcome(pendingId, state, reason, label) {
-  if (shownEntityDeleteOutcomes.has(pendingId)) return;
-  shownEntityDeleteOutcomes.add(pendingId);
-  markEntityDeleteReported(pendingId, state);
-  if (state !== 'pending') refreshEntitiesAfterMutation();
-  const title = {
-    incomplete: 'Entity only partly deleted',
-    pending: 'Delete not finished yet'
-  }[state] || 'Entity not deleted';
-  const fallback = {
-    incomplete: 'Some of it may already be gone.',
-    pending: 'Your journal will try again the next time it starts.'
-  }[state] || 'It\'s still in your journal.';
-  const message = [label, entityDeleteSentence(reason) || fallback].filter(Boolean).join(' ');
-  window.AppServices.notifications.show({
+function entityReceipt(copy, fill = {}, buttons = [], options = {}) {
+  const put = text => entityDeleteFill(text, { noun: ENTITY_DELETE_COPY.noun, things: ENTITY_DELETE_COPY.things, ...fill });
+  const notice = {
     app: 'entities',
-    icon: 'triangle-alert',
-    title,
-    message,
+    icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
+    title: put(copy.title),
     dismissible: true,
-    autoDismiss: 10000
-  });
+    buttons,
+  };
+  const message = options.message !== undefined ? options.message : copy.message && put(copy.message);
+  if (message) notice.message = message;
+  // A refused or failed card stays until the owner dismisses it.
+  if (options.settled) notice.autoDismiss = ENTITY_RECEIPT_LIFE;
+  window.AppServices.notifications.show(notice);
 }
 
-// The delete runs after its cancel window, so the answer to the DELETE is
-// only that it was accepted. Ask what happened once the window has passed,
-// so a refusal reaches the page and not just the journal's log.
-async function watchEntityDeleteOutcome(pendingId, commitAtLocalMs) {
-  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-  await wait(Math.max(0, commitAtLocalMs - Date.now()) + 500);
-  let unknown = false;
-  for (let attempt = 0; attempt < 20; attempt++) {
-    let data = null;
-    try {
-      const response = await fetch(`api/delete-status/${pendingId}`);
-      data = await response.json().catch(() => null);
-      if (response.status === 404) {
-        unknown = true;
-        break;
-      }
-    } catch (_) {
-      data = null;
-    }
-    if (data?.state === 'cancelled') {
-      // The cancel landed even if its answer never reached this page.
-      if (!shownEntityDeleteOutcomes.has(pendingId)) {
-        shownEntityDeleteOutcomes.add(pendingId);
-        refreshEntitiesAfterMutation();
-        window.AppServices.notifications.show({
-          app: 'entities',
-          icon: 'undo-2',
-          title: 'Delete cancelled',
-          autoDismiss: 3000
-        });
-      }
-      return;
-    }
-    if (data?.state === 'deleted') {
-      if (shownEntityDeleteOutcomes.has(pendingId)) return;
-      shownEntityDeleteOutcomes.add(pendingId);
-      window.AppServices.notifications.show({
-        app: 'entities',
-        icon: 'trash-2',
-        title: 'Entity deleted',
-        autoDismiss: 3000
-      });
-      return;
-    }
-    if (data?.state === 'not_deleted' || data?.state === 'incomplete') {
-      showEntityDeleteOutcome(pendingId, data.state, data.reason, '');
-      return;
-    }
-    await wait(1000);
-  }
-  if (shownEntityDeleteOutcomes.has(pendingId)) return;
-  shownEntityDeleteOutcomes.add(pendingId);
-  window.AppServices.notifications.show({
-    app: 'entities',
-    icon: 'triangle-alert',
-    title: unknown ? 'Delete not confirmed' : 'Delete not confirmed yet',
-    message: unknown
-      ? 'Your journal has no record of this delete. Reload to see whether the entity is still there.'
-      : 'Your journal still holds this delete, even across a restart. Reload later to see whether it went through.',
-    dismissible: true,
-    autoDismiss: 10000
-  });
+function entityOpenTrashButton() {
+  return { label: ENTITY_DELETE_COPY.buttons.openTrash, onClick: () => { window.location.href = ENTITY_TRASH_PAGE; } };
 }
 
-// A delete that ended without removing its entity while no page was
-// watching, for example across a restart, is shown the next time one opens.
-async function reportUnfinishedEntityDeletes() {
-  let data = null;
+// Moves one entity to the trash, or erases it now. A refusal or a non-200
+// answer means nothing changed; no answer at all means it may have.
+async function deleteOneEntity(item, erase) {
+  let response;
   try {
-    const response = await fetch('api/delete-outcomes');
-    data = response.ok ? await response.json() : null;
+    response = await fetch(`/app/entities/api/journal/entity/${encodeURIComponent(item.id)}`, erase
+      ? { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ erase: true }) }
+      : { method: 'DELETE' });
   } catch (_) {
+    return { kind: 'noAnswer' };
+  }
+  const data = await response.json().catch(() => null);
+  if (!response.ok || (data && data.success === false)) return { kind: 'refused', reason: entityReason(data && data.reason) };
+  if (!data || data.success !== true) return { kind: 'noAnswer' };
+  if (data.erased === true) return { kind: 'erased' };
+  if (data.erase_failed === true) return { kind: 'eraseFailed' };
+  return { kind: 'moved', trashId: data.trash && data.trash.id, eraseAt: data.trash && data.trash.erase_at };
+}
+
+// A refused one's card: what the journal said, in the page's words.
+function entityRefusedReceipt(reason, erase) {
+  const C = ENTITY_DELETE_COPY;
+  const R = C.receipt;
+  const fallback = erase ? R.eraseRefused : R.moveRefused;
+  const message = (erase && C.eraseRefused[reason]) || C.refused[reason] || fallback.message;
+  entityReceipt({ title: fallback.title, message });
+}
+
+function showEntityOneReceipt(outcome, erase, reload) {
+  const R = ENTITY_DELETE_COPY.receipt;
+  switch (outcome.kind) {
+    case 'moved':
+      entityReceipt(R.moved, { date: entityEraseDate(outcome.eraseAt) }, [
+        { label: ENTITY_DELETE_COPY.buttons.recover, onClick: () => recoverEntities([outcome.trashId], reload) },
+        entityOpenTrashButton(),
+      ], { settled: true, message: entityEraseDate(outcome.eraseAt) ? undefined : '' });
+      return;
+    case 'erased':
+      entityReceipt(R.erased, {}, [], { settled: true });
+      return;
+    case 'eraseFailed':
+      entityReceipt(R.eraseFailed, {}, [entityOpenTrashButton()]);
+      return;
+    case 'refused':
+      entityRefusedReceipt(outcome.reason, erase);
+      return;
+    default:
+      entityReceipt(erase ? R.noAnswerErase : R.noAnswerMove);
+  }
+}
+
+// The receipt's recover is the trash page's recover: the same entity goes back.
+async function recoverEntities(trashIds, reload) {
+  const ids = trashIds.filter(Boolean);
+  if (!ids.length) return;
+  const one = ids.length === 1;
+  const R = ENTITY_DELETE_COPY.receipt;
+  const S = ENTITY_DELETE_COPY.set;
+  let response;
+  try {
+    response = await fetch('/app/settings/api/trash/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, page: 'entities' }),
+    });
+  } catch (_) {
+    entityReceipt(one ? R.noAnswerRecover : S.noAnswerRecover);
     return;
   }
-  const shown = new Set(reportedEntityDeletes());
-  for (const outcome of data?.outcomes || []) {
-    if (shown.has(`${outcome.pending}:${outcome.state}`)) continue;
-    const label = outcome.name ? `${outcome.name}.` : '';
-    showEntityDeleteOutcome(outcome.pending, outcome.state, outcome.reason, label);
+  const data = response.ok ? await response.json().catch(() => null) : null;
+  if (response.ok && !data) {
+    entityReceipt(one ? R.noAnswerRecover : S.noAnswerRecover);
+    return;
+  }
+  const done = Array.isArray(data && data.done) ? ids.filter(id => data.done.includes(id)) : [];
+  if (typeof reload === 'function') await reload();
+  if (done.length && done.length === ids.length) {
+    entityReceipt(one ? R.recovered : S.recovered, { n: ids.length }, [], { settled: true, icon: 'undo-2' });
+  } else if (done.length) {
+    const others = ids.length - done.length;
+    entityReceipt(S.partRecovered, { done: done.length, n: ids.length }, [entityOpenTrashButton()], { message: others === 1 ? S.partRecoveredOne : S.partRecoveredMany });
+  } else {
+    entityReceipt(one ? R.recoverFailed : S.recoverFailed, {}, [entityOpenTrashButton()]);
   }
 }
 
-async function cancelJournalEntityDelete(pendingId, notificationId) {
+function entityNoteKey(reason, erase) {
+  const key = ENTITY_DELETE_COPY.notes[reason] ? reason : 'other';
+  return `${erase ? 'erase:' : ''}${key}`;
+}
+
+function entityNoteText(key) {
+  const C = ENTITY_DELETE_COPY;
+  const erase = key.startsWith('erase:');
+  const notes = erase ? C.eraseNotes : C.notes;
+  return notes[erase ? key.slice(6) : key] || notes.other;
+}
+
+function entityDoneTrash(entry) {
+  return entry.trash || (entry.result && entry.result.trash) || null;
+}
+
+function entityDoneErased(entry, erase) {
+  if (entry.erased === true || (entry.result && entry.result.erased === true)) return true;
+  return erase && !entityDoneTrash(entry);
+}
+
+// What a set's answer says, checked against what the reloaded list still
+// holds. `stillThere(id)` says whether a refused one is still in the journal
+// as far as the page can tell, or is null when the list couldn't reload: then
+// nothing is said that needs it. A refused one that is gone gets no note and
+// isn't counted as still in the journal.
+function entitySetOutcome(erase, ids, answer, stillThere) {
+  const S = ENTITY_DELETE_COPY.set;
+  const n = ids.length;
+  const fill = (template, values) => entityDeleteFill(template, values);
+  const listed = typeof stillThere === 'function';
+  if (!answer || !Array.isArray(answer.done) || !Array.isArray(answer.failed)) {
+    return {
+      receipt: erase ? S.noAnswerErase : S.noAnswerMove, fill: {}, buttons: [], settled: false,
+      keep: listed ? ids.filter(id => stillThere(id)).map(id => [id, null]) : [], moved: [],
+    };
+  }
+  const done = answer.done.filter(entry => entry && ids.includes(entry.id));
+  const failed = answer.failed.filter(entry => entry && ids.includes(entry.id));
+  const moved = done
+    .filter(entry => entityDoneTrash(entry) && !entityDoneErased(entry, erase))
+    .map(entry => ({ trashId: entityDoneTrash(entry).id, eraseAt: entityDoneTrash(entry).erase_at }));
+  const still = listed ? failed.filter(entry => entityReason(entry.reason) !== 'gone' && stillThere(entry.id)) : [];
+  const k = still.length;
+  const g = failed.length - k;
+  const keep = still.map(entry => [entry.id, entityNoteKey(entityReason(entry.reason), erase)]);
+  const earliest = moved.map(entry => entry.eraseAt).filter(Boolean).sort((a, b) => new Date(a) - new Date(b))[0];
+  const out = { keep, moved, fill: { n, done: done.length, date: entityEraseDate(earliest) }, settled: false };
+  const R = ENTITY_DELETE_COPY.receipt;
+  if (erase) {
+    const erased = done.filter(entry => entityDoneErased(entry, true)).length;
+    if (erased === n) return { ...out, receipt: n === 1 ? R.erased : S.erased, buttons: [], settled: true };
+    out.buttons = ['openTrash'];
+    if (erased) {
+      out.receipt = S.partErased;
+      out.fill.done = erased;
+      out.message = listed ? (n - erased === 1 ? S.partErasedOne : S.partErasedMany) : '';
+    } else {
+      out.receipt = S.noneErased;
+      out.message = listed ? (n === 1 ? S.noneErasedOne : S.noneErasedMany) : '';
+    }
+    return out;
+  }
+  if (!failed.length) {
+    return { ...out, receipt: n === 1 ? R.moved : S.moved, buttons: ['recover', 'openTrash'], settled: true, message: out.fill.date ? undefined : '' };
+  }
+  const goneMore = g ? ` ${fill(g === 1 ? S.goneMoreOne : S.goneMoreMany, { g })}` : '';
+  if (done.length) {
+    out.receipt = S.partMoved;
+    out.buttons = ['recover', 'openTrash'];
+    if (!listed) out.message = '';
+    else if (k && !g) out.message = fill(k === 1 ? S.stillOne : S.stillMany, { k });
+    else if (k) out.message = fill(k === 1 ? S.markedOne : S.markedMany, { k }) + goneMore;
+    else out.message = failed.length === 1 ? S.othersGoneOne : S.othersGoneMany;
+    return out;
+  }
+  out.receipt = S.noneMoved;
+  if (!listed) {
+    out.message = '';
+    out.buttons = ['openTrash'];
+  } else if (k) {
+    out.message = fill(k === 1 ? S.noneStillOne : S.noneStillMany, { k }) + goneMore;
+    out.buttons = [];
+  } else {
+    out.message = failed.length === 1 ? S.noneGoneOne : S.noneGoneMany;
+    out.buttons = ['openTrash'];
+  }
+  return out;
+}
+
+// The detail pane's delete: none for you, and the helper line says what it does.
+function renderEntityDeleteAction(entity) {
+  const button = document.getElementById('journal-detail-delete-btn');
+  const help = document.getElementById('journal-detail-delete-help');
+  const offered = Boolean(entity) && entity.is_principal !== true;
+  if (button) {
+    button.textContent = ENTITY_DELETE_COPY.button;
+    button.hidden = !offered;
+    button.disabled = !offered;
+    button.onclick = offered ? () => deleteEntityFromPane(entityDeleteItem(entity)) : null;
+  }
+  if (help) {
+    help.hidden = !offered;
+    document.getElementById('journal-detail-delete-help-name').textContent = ENTITY_DELETE_COPY.button;
+    document.getElementById('journal-detail-delete-help-text').textContent = ENTITY_DELETE_COPY.paneHelp;
+  }
+}
+
+// Reloads the list and its counts. Answers the reloaded summary, or null when
+// it couldn't be read.
+async function reloadEntityList() {
+  const before = journalSummary;
+  await refreshEntitiesAfterMutation();
+  return journalSummary && journalSummary !== before && !scopeMetadataDirty ? journalSummary : null;
+}
+
+// From the detail pane: after a move or an erase the page goes back to the
+// list, which reloads and shows the receipt.
+function deleteEntityFromPane(item) {
+  openEntityDeleteDialog(entityOneSpec(item, async erase => {
+    const outcome = await deleteOneEntity(item, erase);
+    if (['moved', 'erased', 'eraseFailed'].includes(outcome.kind)) {
+      entityPick.items.delete(item.id);
+      entityPick.notes.delete(item.id);
+      navigateToList();
+      await reloadEntityList();
+    }
+    showEntityOneReceipt(outcome, erase, reloadEntityList);
+  }));
+}
+
+function entityListRows() {
+  const container = document.getElementById('journal-entity-cards-content');
+  return container ? Array.from(container.children).filter(row => row.dataset && row.dataset.entityId) : [];
+}
+
+function entityPageItems() {
+  return (journalSummary && journalSummary.items) || [];
+}
+
+// The tick cell select mode adds to a row. Your own entity has none, and its
+// empty cell keeps the names lined up.
+function entityPickTick(entity) {
+  const tick = entityDeleteEl('span', 'journal-row-tick');
+  if (entity.is_principal === true) return tick;
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.dataset.entityPick = 'true';
+  box.setAttribute('aria-label', entityDeleteFill(ENTITY_DELETE_COPY.pickLabel, { name: entity.name || '' }).trim());
+  box.checked = entityPick.items.has(entity.id);
+  box.addEventListener('change', () => setEntityPicked(entity, box.checked));
+  tick.append(box);
+  return tick;
+}
+
+function setEntityPicked(entity, picked) {
+  if (picked) entityPick.items.set(entity.id, entityDeleteItem(entity));
+  else entityPick.items.delete(entity.id);
+  entityPick.notes.delete(entity.id);
+  paintEntityPick();
+}
+
+// A press on a row in select mode toggles it; your own entity still opens.
+// Answers whether the press was taken.
+function toggleEntityPick(row, entity, event) {
+  if (!entityPick.on || entity.is_principal === true) return false;
+  if (event && event.target && event.target.tagName === 'INPUT') return true;
+  setEntityPicked(entity, !entityPick.items.has(entity.id));
+  return true;
+}
+
+function paintEntityPick() {
+  const byId = id => document.getElementById(id);
+  const C = ENTITY_DELETE_COPY;
+  const group = journalFolder === 'ids' || journalFolder === 'duplicates';
+  const selectBtn = byId('journal-select-btn');
+  if (selectBtn) {
+    selectBtn.textContent = C.select;
+    selectBtn.hidden = entityPick.on || group;
+    selectBtn.onclick = enterEntityPick;
+  }
+  const bar = byId('journal-pick-bar');
+  if (bar) {
+    const count = entityPick.items.size;
+    const pages = ((journalSummary && journalSummary.total) || 0) > JOURNAL_ENTITY_PAGE_SIZE;
+    bar.hidden = !entityPick.on || group;
+    byId('journal-pick-idle').hidden = count > 0;
+    byId('journal-pick-some').hidden = count === 0;
+    byId('journal-pick-all-label').textContent = pages ? C.selectAllPage : C.selectAll;
+    byId('journal-pick-all').checked = false;
+    byId('journal-pick-all').onchange = selectAllEntities;
+    byId('journal-pick-count').textContent = entityDeleteFill(C.selected, { n: count });
+    byId('journal-pick-delete').textContent = C.delete;
+    byId('journal-pick-delete').onclick = deleteChosenEntities;
+    for (const id of ['journal-pick-done-idle', 'journal-pick-done-some']) {
+      byId(id).textContent = C.done;
+      byId(id).onclick = exitEntityPick;
+    }
+  }
+  entityListRows().forEach(row => {
+    const id = row.dataset.entityId;
+    const picked = entityPick.on && entityPick.items.has(id);
+    const box = row.querySelector('input[data-entity-pick]');
+    if (box) box.checked = picked;
+    row.classList.toggle('journal-row--picked', picked);
+    const old = row.querySelector('.journal-row-note');
+    if (old) old.remove();
+    const note = entityPick.on ? entityPick.notes.get(id) : null;
+    if (note) row.append(entityDeleteEl('span', 'journal-row-note', entityNoteText(note)));
+  });
+}
+
+function enterEntityPick() {
+  entityPick.on = true;
+  entityPick.items.clear();
+  entityPick.notes.clear();
+  renderJournalEntities();
+  const bar = document.getElementById('journal-pick-bar');
+  if (bar) bar.focus();
+}
+
+function exitEntityPick() {
+  entityPick.on = false;
+  entityPick.items.clear();
+  entityPick.notes.clear();
+  renderJournalEntities();
+  const button = document.getElementById('journal-select-btn');
+  if (button) button.focus();
+}
+
+// Changing the folder clears what's picked; a folder with its own ticks ends select mode.
+function clearEntityPick(endMode) {
+  entityPick.items.clear();
+  entityPick.notes.clear();
+  if (endMode) entityPick.on = false;
+}
+
+// However the folder changed (a press, or the browser's back), what was
+// picked in another folder is let go.
+function syncEntityPickFolder() {
+  if (entityPick.folder === journalFolder) return;
+  clearEntityPick(journalFolder === 'ids' || journalFolder === 'duplicates');
+  entityPick.folder = journalFolder;
+}
+
+// The rows on this page; your own entity is never picked.
+function selectAllEntities() {
+  entityPageItems().filter(entity => entity.is_principal !== true).forEach(entity => {
+    entityPick.items.set(entity.id, entityDeleteItem(entity));
+  });
+  paintEntityPick();
+  // The strip just swapped away the control that had focus.
+  if (entityPick.items.size) document.getElementById('journal-pick-delete').focus();
+}
+
+function deleteChosenEntities() {
+  const chosen = [...entityPick.items.values()];
+  if (!chosen.length) return;
+  if (chosen.length === 1) {
+    openEntityDeleteDialog(entityOneSpec(chosen[0], erase => deleteOneFromEntityList(chosen[0], erase)));
+    return;
+  }
+  openEntityDeleteDialog(entitySetSpec(chosen, erase => deleteSetFromEntityList(chosen, erase)));
+}
+
+async function deleteOneFromEntityList(item, erase) {
+  const outcome = await deleteOneEntity(item, erase);
+  if (outcome.kind === 'refused' && outcome.reason !== 'gone') {
+    entityPick.notes.set(item.id, entityNoteKey(outcome.reason, erase));
+    paintEntityPick();
+  } else {
+    if (outcome.kind !== 'noAnswer') clearEntityPick(true);
+    await reloadEntityList();
+  }
+  showEntityOneReceipt(outcome, erase, reloadEntityList);
+}
+
+async function deleteSetFromEntityList(items, erase) {
+  const ids = items.map(item => item.id);
+  const shownBefore = new Set(entityPageItems().map(entity => entity.id));
+  let answer = null;
   try {
-    const response = await fetch(`api/cancel-delete/${pendingId}`, {
-      method: 'POST'
+    const response = await fetch('/app/entities/api/journal/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(erase ? { ids, erase: true } : { ids }),
     });
-    const data = await response.json().catch(() => ({}));
-
-    if (notificationId !== null) {
-      window.AppServices.notifications.dismiss(notificationId);
-    }
-
-    if (response.ok) {
-      shownEntityDeleteOutcomes.add(pendingId);
-      await refreshEntitiesAfterMutation();
-      window.AppServices.notifications.show({
-        app: 'entities',
-        icon: 'undo-2',
-        title: 'Delete cancelled',
-        autoDismiss: 3000
-      });
-      return;
-    }
-
-    // Each answer names what really happened; "already deleted" only when it was.
-    if (data.reason_code === 'entity_already_deleted') {
-      shownEntityDeleteOutcomes.add(pendingId);
-      window.AppServices.notifications.show({
-        app: 'entities',
-        icon: 'timer',
-        title: 'Too late: already deleted',
-        autoDismiss: 3000
-      });
-      return;
-    }
-    if (data.reason_code === 'entity_not_deleted' || data.reason_code === 'entity_delete_incomplete') {
-      const state = data.reason_code === 'entity_not_deleted' ? 'not_deleted' : 'incomplete';
-      showEntityDeleteOutcome(pendingId, state, data.detail, '');
-      return;
-    }
-    if (data.reason_code === 'entity_delete_in_progress') {
-      window.AppServices.notifications.show({
-        app: 'entities',
-        icon: 'timer',
-        title: 'Too late to cancel',
-        message: 'The delete is already under way.',
-        autoDismiss: 3000
-      });
-      return;
-    }
-    if (data.reason_code === 'entity_delete_not_cancelled') {
-      throw new Error('Your journal couldn\'t save the cancel, so the delete will still happen.');
-    }
-    if (response.status === 410) {
-      throw new Error('Your journal has no record of this delete. Reload to see whether the entity is still there.');
-    }
-
-    throw new Error('The delete may still go ahead. Reload to see whether the entity is still there.');
-  } catch (error) {
-    const unanswered = error instanceof TypeError;
-    window.AppServices.notifications.show({
-      app: 'entities',
-      icon: 'triangle-alert',
-      title: 'Couldn\'t cancel delete',
-      message: unanswered
-        ? 'Your journal didn\'t answer, so the cancel may not have gone through. Reload to see whether the entity is still there.'
-        : (error.message || 'Please try again.'),
-      dismissible: unanswered,
-      autoDismiss: unanswered ? 10000 : 3000
-    });
+    answer = response.ok ? await response.json().catch(() => null) : null;
+  } catch (_) {
+    answer = null;
   }
+  const reloaded = await reloadEntityList();
+  // One picked on another page or search can't be checked here; it stays picked.
+  const listed = reloaded ? new Set((reloaded.items || []).map(entity => entity.id)) : null;
+  const stillThere = listed ? id => listed.has(id) || !shownBefore.has(id) : null;
+  const outcome = entitySetOutcome(erase, ids, answer, stillThere);
+  const byId = new Map(items.map(item => [item.id, item]));
+  entityPick.on = outcome.keep.length > 0;
+  entityPick.items = new Map(outcome.keep.map(([id]) => [id, byId.get(id)]));
+  entityPick.notes = new Map(outcome.keep.filter(([, note]) => note));
+  renderJournalEntities();
+  const buttons = outcome.buttons.map(name => (name === 'recover'
+    ? { label: ENTITY_DELETE_COPY.buttons.recover, onClick: () => recoverEntities(outcome.moved.map(entry => entry.trashId), reloadEntityList) }
+    : entityOpenTrashButton()));
+  entityReceipt(outcome.receipt, outcome.fill, buttons, {
+    settled: outcome.settled,
+    icon: outcome.settled ? 'trash-2' : 'triangle-alert',
+    message: outcome.message,
+  });
 }
+// ========== END ENTITY DELETE ==========
 
 function renderDetailView(entity, observations, detailData) {
   const isDetached = entity.detached === true;
@@ -5627,7 +6133,6 @@ async function initEntities() {
   loadEntityTypes();  // Load entity types first for UI elements
   loadEntities();
   loadTidyGroups();
-  reportUnfinishedEntityDeletes();
 
   // Entity search
   const entitySearchInput = document.getElementById('entity-search');
@@ -5665,12 +6170,9 @@ async function initEntities() {
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
       const deleteModal = document.getElementById('deleteModal');
-      const deleteJournalModal = document.getElementById('deleteJournalEntityModal');
       const detachConfirmModal = document.getElementById('detachConfirmModal');
       if (deleteModal.style.display === 'flex') {
         closeDeleteModal();
-      } else if (deleteJournalModal.style.display === 'flex') {
-        closeDeleteJournalEntityModal();
       } else if (detachConfirmModal.style.display === 'flex') {
         closeDetachConfirmModal();
       }
@@ -5680,13 +6182,9 @@ async function initEntities() {
   // Modal close on outside click
   window.onclick = function(event) {
     const deleteModal = document.getElementById('deleteModal');
-    const deleteJournalModal = document.getElementById('deleteJournalEntityModal');
     const detachConfirmModal = document.getElementById('detachConfirmModal');
     if (event.target == deleteModal) {
       closeDeleteModal();
-    }
-    if (event.target == deleteJournalModal) {
-      closeDeleteJournalEntityModal();
     }
     if (event.target == detachConfirmModal) {
       closeDetachConfirmModal();
@@ -5927,12 +6425,14 @@ function renderJournalEntities() {
   const countEl = document.getElementById('journal-card-search-count');
   const noMatchEl = document.getElementById('no-journal-card-matches');
   if (!container || !journalSummary) return;
+  syncEntityPickFolder();
   renderJournalFolders();
   renderTidyBand();
   const groupFolder = journalFolder === 'ids' || journalFolder === 'duplicates';
   document.getElementById('journal-list-panel').hidden = groupFolder;
   document.getElementById('journal-ids-panel').hidden = journalFolder !== 'ids';
   document.getElementById('journal-dups-panel').hidden = journalFolder !== 'duplicates';
+  if (groupFolder) paintEntityPick();
   if (journalFolder === 'ids') { renderIdsPanel(); return; }
   if (journalFolder === 'duplicates') { renderDupsPanel(); return; }
   const items = journalSummary.items || [];
@@ -5947,7 +6447,7 @@ function renderJournalEntities() {
     searchInput.placeholder = `search ${groupedCount(journalFolderCount(journalFolder))} entities`;
   }
   container.replaceChildren();
-  container.classList.add('journal-rows-plain');
+  container.classList.toggle('journal-rows-plain', !entityPick.on);
   container.removeAttribute('aria-busy');
   noEntities.style.display = entityTotal ? 'none' : 'block';
   // `.no-card-matches` carries `display:none` in the stylesheet, so the
@@ -5977,6 +6477,7 @@ function renderJournalEntities() {
       pager.append(button);
     }
   }
+  paintEntityPick();
 }
 
 const JOURNAL_FOLDERS = [
@@ -6110,14 +6611,20 @@ function createJournalEntityRow(entity) {
   row.setAttribute('role', 'button');
   row.setAttribute('tabindex', '0');
   row.dataset.entityId = entity.id;
+  if (entityPick.on) row.append(entityPickTick(entity));
   appendJournalRowCells(row, entity, {
     notes: entity.total_observation_count,
     day: entity.last_active_ts ? entity.last_active_day : null,
   });
-  row.onclick = () => navigateToEntity(entity.id);
+  row.onclick = (e) => {
+    if (toggleEntityPick(row, entity, e)) return;
+    navigateToEntity(entity.id);
+  };
   row.addEventListener('keydown', (e) => {
+    if (e.target && e.target.tagName === 'INPUT') return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
+      if (toggleEntityPick(row, entity, e)) return;
       navigateToEntity(entity.id);
     }
   });

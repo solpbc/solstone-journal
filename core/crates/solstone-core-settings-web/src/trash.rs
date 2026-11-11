@@ -330,7 +330,7 @@ struct Selection {
     #[serde(default)]
     ids: Vec<String>,
     /// The page a recover came from, when not the trash page: the receipt on
-    /// the transcripts or agents page.
+    /// the transcripts, agents, import, body or entities page.
     #[serde(default)]
     page: Option<String>,
 }
@@ -355,6 +355,7 @@ fn page_surface(page: Option<&str>) -> Surface {
         Some("agents") => Page::Agents,
         Some("import") => Page::Import,
         Some("body") => Page::Body,
+        Some("entities") => Page::Entities,
         _ => Page::Settings,
     };
     Surface::Web { page }
@@ -606,6 +607,22 @@ mod tests {
             recovered.surface,
             Surface::Web {
                 page: Page::Transcripts
+            }
+        );
+    }
+
+    #[test]
+    fn a_recover_from_the_entities_page_is_recorded_there() {
+        assert_eq!(
+            page_surface(Some("entities")),
+            Surface::Web {
+                page: Page::Entities
+            }
+        );
+        assert_eq!(
+            page_surface(Some("nowhere")),
+            Surface::Web {
+                page: Page::Settings
             }
         );
     }
