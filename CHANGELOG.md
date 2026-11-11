@@ -16,6 +16,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- when you tell your journal what actually happened in an activity, or that it was a recording or video playing, that now holds for every activity your journal made from the same stretch of the same source, in each of your facets. each one shows your correction and is written again, and removing it from any of them removes it from all. an activity that only partly overlaps is told which part you corrected.
+- in an activity you've marked as a recording or video playing, lines in your saved voice are now told as your own recorded voice playing back, not you taking part.
+- your daily briefing now reads what you told your journal about an activity as what happened, and tells one you've marked as a recording as you watching or listening.
+- on your week, "open that moment" now opens the activity it's from, where you can say what's not right. "this isn't right" opens the activity a memory is about, including a memory from your daily briefing that names no activity. when your journal can't tell which activity it is, it opens that day's activities.
 - on the entities page, the button on a name in a facet's detected list now hides it instead of deleting it. a hidden name stays in your journal and stays hidden however often it's detected again: its detections there are left out of search, connected agents can't reach them, and your journal won't add it to that facet. you can see the names you hid in a facet and unhide them there.
 - hiding a person or topic now also leaves its notes, and its detections in its facets, out of search, and connected agents can't reach them. its name, other names and emails can't be changed while it's hidden.
 - a hidden activity and what your journal wrote for it, such as its story, are now left out of search, and connected agents can't reach them.
@@ -27,6 +31,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- after you correct an activity, your week is now remade only for the days you corrected. a corrected day's memory comes back corrected when the briefing still tells it, rather than being swapped for a different one, and your other days stay as they were.
 - when a connected agent asks your journal for something it has none of, such as a transcript of time in your terminal, the answer now always carries the note saying where to look. some agents, Claude Code among them, never saw that note before. thanks @dvanduzer for the report (#415).
 - a journal on a mac or linux computer that had been running for a long while could fail to start again after you stopped it, updated it or restarted the computer. that no longer happens, and a journal that's already failing to start this way now starts again on its own, including after the restart that installs this update.
 - stories of long terminal and agent sessions no longer leave out part of the session, or fail to be written, when one stretch of it has no screen description.
