@@ -834,7 +834,12 @@ impl Kind for Imports<'_> {
         }))
     }
 
-    fn current_paths(&self, journal: &Path, unit: &Unit) -> Option<Vec<String>> {
+    fn current_paths(
+        &self,
+        journal: &Path,
+        unit: &Unit,
+        _chosen: &[String],
+    ) -> Option<Vec<String>> {
         match unit {
             // Gone from the journal: nothing of it to move now.
             // The refs asked next, under the same hold, come from this one reading.

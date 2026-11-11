@@ -58,6 +58,9 @@ const FILES_DIR: &str = "files";
 /// What attach moved out of the way before it put the item back.
 const DISPLACED_DIR: &str = "displaced";
 
+/// What a kind kept with an item for its own attach ([`keep`]).
+const KEPT_DIR: &str = "kept";
+
 /// The lock every change to the trash takes: `TRASH_DIR/trash.lock`.
 const LOCK_STEM: &str = "trash";
 
@@ -207,8 +210,14 @@ pub trait Kind {
     /// The thing's paths as they are now, worked out under its hold when it
     /// moves: for a thing chosen earlier and moved later (a set the owner
     /// confirmed), and for one moved at once, so what changed since it was chosen
-    /// is what moves. `None` keeps the paths it was chosen with.
-    fn current_paths(&self, _journal: &Path, _unit: &Unit) -> Option<Vec<String>> {
+    /// is what moves. `None` keeps the paths it was chosen with. `chosen` are
+    /// those paths, for a kind whose unit doesn't say which thing it is.
+    fn current_paths(
+        &self,
+        _journal: &Path,
+        _unit: &Unit,
+        _chosen: &[String],
+    ) -> Option<Vec<String>> {
         None
     }
 
@@ -238,7 +247,9 @@ pub trait Kind {
     /// Whether one of the item's paths still has a home to come back to.
     /// One that doesn't stays with the item and goes when the item does: it
     /// belonged to a thing the owner removed since (a recording, an entity, a
-    /// facet), and putting it back would make a folder holding only it.
+    /// facet), and putting it back would make a folder holding only it. The
+    /// recover records it erased. A home still waiting in the trash is the
+    /// kind's hold to refuse, not this.
     fn returns(&self, _journal: &Path, _item: &Item, _path: &str) -> bool {
         true
     }
@@ -356,7 +367,7 @@ fn detach_as(
     hold.check().map_err(TrashError::Held)?;
     // What the thing holds is worked out again under its hold, so a writer that
     // changed it since it was chosen can't have its own work taken with it.
-    if let Some(paths) = kind.current_paths(journal, &item.unit) {
+    if let Some(paths) = kind.current_paths(journal, &item.unit, &item.paths) {
         if paths.is_empty() {
             return Err(TrashError::Missing(describe(&item.unit).to_owned()));
         }
@@ -507,11 +518,26 @@ pub fn list(journal: &Path) -> Result<Vec<Item>, TrashError> {
 /// Items part-way through a step: on their way in, back or out, or stopped
 /// there until the next sweep finishes them.
 pub fn unfinished(journal: &Path) -> Result<usize, TrashError> {
-    Ok(stopped(journal)?.len())
+    Ok(all_items(journal)?
+        .iter()
+        .filter(|item| item.state != State::Trashed)
+        .count())
 }
 
-/// The items [`unfinished`] counts, oldest first, for a page that shows each.
+/// Items stopped part way, oldest first, for a page that shows each: the
+/// ones [`unfinished`] counts, but only while no step is moving one now (a
+/// step holds the trash's lock while it moves), so an item a live request is
+/// moving isn't shown as stopped.
 pub fn stopped(journal: &Path) -> Result<Vec<Item>, TrashError> {
+    let Ok(_quiet) = hold_lock(
+        trash_root(journal).join(LOCK_STEM),
+        LockOptions {
+            timeout: std::time::Duration::ZERO,
+            ..LockOptions::default()
+        },
+    ) else {
+        return Ok(Vec::new());
+    };
     let mut items: Vec<Item> = all_items(journal)?
         .into_iter()
         .filter(|item| item.state != State::Trashed)
@@ -538,6 +564,41 @@ pub fn held_file(journal: &Path, id: &str, path: &str) -> Result<PathBuf, TrashE
         return Err(TrashError::NotInTrash);
     }
     trash_entry(journal, &files_rel(id, path))
+}
+
+/// Keep `bytes` with item `id` under `name`, for the kind's own attach: what a
+/// detach rewrote elsewhere, so attach can put it back. Written once: a
+/// resumed detach never replaces what the first one kept. Goes with the item.
+pub fn keep(journal: &Path, id: &str, name: &str, bytes: &[u8]) -> Result<(), TrashError> {
+    let path = kept_path(journal, id, name)?;
+    if path_lexists(&path)? {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| TrashError::Io(error.to_string()))?;
+    }
+    match write_bytes_exclusive(&path, bytes, AtomicWriteOptions::default()) {
+        Ok(()) => Ok(()),
+        Err(_) if path_lexists(&path).unwrap_or(false) => Ok(()),
+        Err(error) => Err(TrashError::Io(error.to_string())),
+    }
+}
+
+/// What [`keep`] kept with item `id` under `name`, if anything.
+pub fn kept(journal: &Path, id: &str, name: &str) -> Result<Option<Vec<u8>>, TrashError> {
+    let path = kept_path(journal, id, name)?;
+    match std::fs::read(&path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(TrashError::Io(error.to_string())),
+    }
+}
+
+fn kept_path(journal: &Path, id: &str, name: &str) -> Result<PathBuf, TrashError> {
+    if !valid_id(id) || name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+        return Err(TrashError::NotInTrash);
+    }
+    trash_entry(journal, &format!("{id}/{KEPT_DIR}/{name}"))
 }
 
 /// The journal-relative paths of everything that could still come back out of
@@ -820,7 +881,7 @@ fn settle(
                 }
             };
             let paths = kind
-                .current_paths(journal, &entry.chosen.unit)
+                .current_paths(journal, &entry.chosen.unit, &entry.chosen.paths)
                 .unwrap_or_else(|| entry.chosen.paths.clone());
             match detach_as(
                 journal,
@@ -1202,7 +1263,12 @@ fn finish_attach(
         let trashed = files_rel(&item.id, path);
         let held = trash_entry(journal, &trashed)?;
         if path_lexists(&held)? && !kind.returns(journal, item, path) {
-            // No home for it now: it goes with the item.
+            // No home for it now: it goes with the item, and the recover
+            // says so.
+            if !overwrote {
+                record_pending(journal, item, Event::Erased);
+                overwrote = true;
+            }
             continue;
         }
         if path_lexists(&held)? {
@@ -1880,7 +1946,51 @@ mod tests {
         assert!(root.join(SEGMENT).join("audio.flac").exists());
         assert!(!root.join("config/private-note.json").exists());
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
-        assert!(!events(&root).contains(&(Event::Erased, Action::Recover)));
+        // Nothing leaves without the record saying so.
+        assert!(events(&root).contains(&(Event::Erased, Action::Recover)));
+    }
+
+    #[test]
+    fn what_a_kind_keeps_is_written_once_and_goes_with_the_item() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let item = trash(&root, &kind);
+        keep(&root, &item.id, "before.json", b"first").unwrap();
+        keep(&root, &item.id, "before.json", b"second").unwrap();
+        assert_eq!(
+            kept(&root, &item.id, "before.json").unwrap().unwrap(),
+            b"first"
+        );
+        assert!(kept(&root, &item.id, "other.json").unwrap().is_none());
+        assert!(keep(&root, &item.id, "../escape", b"x").is_err());
+        erase(&root, &item.id, Action::Erase, web()).unwrap();
+        assert!(!root.join(TRASH_DIR).join(&item.id).exists());
+    }
+
+    #[test]
+    fn a_stopped_step_is_listed_only_while_nothing_is_moving() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        kind.fail_references.set(true);
+        let Err(TrashError::Unfinished(id)) = detach(
+            &root,
+            &kind,
+            unit(),
+            Action::SegmentDelete,
+            web(),
+            vec![SEGMENT.into()],
+        ) else {
+            panic!("the detach should stop after the move");
+        };
+        assert_eq!(unfinished(&root).unwrap(), 1);
+        let listed = stopped(&root).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, id);
+        assert_eq!(listed[0].state, State::Detaching);
+        // A step moving now holds the lock: nothing is shown as stopped.
+        let _moving = lock(&root).unwrap();
+        assert!(stopped(&root).unwrap().is_empty());
+        assert_eq!(unfinished(&root).unwrap(), 1);
     }
 
     #[test]
