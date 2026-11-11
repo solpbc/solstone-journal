@@ -43,7 +43,8 @@ pub use common::{
     KILL_REAP_GRACE, LaunchError, LaunchedProcessIdentity, ManagedLaunchRequest, ProcessBirth,
     ProcessInstance, ProcessInstanceSource, ProcessOwner, ProcessTreeSnapshot,
     SERVICE_SHUTDOWN_TIMEOUT, SESSION_END_DRAIN_TIMEOUT, SignalKind, SpawnError, SpawnOptions,
-    SystemProcessInstanceSource, TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,
+    SystemProcessInstanceSource, TASK_QUEUE_SHUTDOWN_TIMEOUT, TableBirth, TerminationError,
+    TerminationOutcome,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use common::{
@@ -64,13 +65,6 @@ pub(crate) use platform::hold_while_instance_live;
 pub(crate) use platform::launch_managed_generation_child;
 #[cfg(target_os = "macos")]
 pub(crate) use platform::macos_sweep_table;
-#[cfg(any(
-    target_os = "linux",
-    target_os = "macos",
-    target_os = "ios",
-    target_os = "android"
-))]
-pub use platform::process_owner;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use platform::signal_pid;
 #[cfg(windows)]
@@ -99,6 +93,13 @@ pub use platform::{
     launch_managed_request, launch_managed_with, launch_with, signal_exact_instance, terminate,
     terminate_descendants_exact, terminate_exact_instance,
 };
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "android"
+))]
+pub use platform::{process_owner, process_table_birth};
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use platform::{
     windows_filetime_value_from_raw_for_test,

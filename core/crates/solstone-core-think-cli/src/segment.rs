@@ -165,6 +165,10 @@ pub(crate) fn publish_saved_outputs(
     if (context.cancel_checkpoint)() {
         return Err("cancelled before publication".into());
     }
+    // A deleted segment publishes nothing.
+    if is_deleted_segment(segment_dir) {
+        return Ok(());
+    }
     // Taken so a run thinking this segment does not change it underneath.
     let _turn = segment_turn(context, segment_dir);
     let before = newest_segment_input_ms(segment_dir).map_err(|error| error.to_string())?;
@@ -237,6 +241,12 @@ fn think(
             ..ModeResult::default()
         });
     };
+    // A segment the owner deleted keeps only its tombstone. Nothing is thought
+    // about it, and nothing, not even this run's turn, is written for it.
+    if is_deleted_segment(&segment_dir) {
+        log_skip(log, context, "*", segment, "deleted", stream);
+        return Ok(ModeResult::default());
+    }
     let stream = stream.or_else(|| named_stream(&segment_dir, &context.day));
     // Held to the end of the run, so a second run on this segment starts from
     // this one's finished work rather than beside it.
@@ -641,6 +651,12 @@ fn think(
 
     complete(log, context, segment, stream, total.clone());
     Ok(total)
+}
+
+/// Whether the owner deleted this segment: its directory keeps only its
+/// tombstone, whatever else a late writer left beside it.
+fn is_deleted_segment(segment_dir: &std::path::Path) -> bool {
+    std::fs::symlink_metadata(segment_dir.join("tombstone.json")).is_ok()
 }
 
 /// Take this segment's thinking turn, shared by every process on this journal.

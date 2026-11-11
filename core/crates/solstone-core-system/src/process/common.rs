@@ -537,6 +537,24 @@ pub enum ProcessOwner {
     Unknown,
 }
 
+/// The birth of whatever holds a pid, read from the kernel's process table:
+/// the instrument behind [`ProcessOwner`], which answers for every pid the
+/// kernel will name.
+///
+/// `inspect` can be blind to a live process this user owns (on macOS
+/// `proc_pidinfo` is refused for it). This is the positive observation that
+/// settles it: a different birth at the pid means the remembered process has
+/// exited and the number was reused. The same birth is that process, still
+/// live, and settles nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableBirth {
+    /// No live process has this pid (a zombie counts as exited).
+    Absent,
+    Live(ProcessBirth),
+    /// The instrument itself failed; treat as unknown, never as absent.
+    Unknown,
+}
+
 /// A descendant's exact identity and provenance observed before signaling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Descendant {
