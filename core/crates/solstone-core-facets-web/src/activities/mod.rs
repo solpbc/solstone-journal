@@ -724,7 +724,7 @@ fn set_hidden(
 /// Queue for search what a hide or unhide of one activity changes: its
 /// outputs folder and its day file.
 fn queue_hidden_activity(root: &Path, facet: &str, day: &str, span_id: &str) {
-    let day_dir = Path::new("facets").join(facet).join("activities");
+    let day_dir = root.join("facets").join(facet).join("activities");
     for path in [
         day_dir.join(day).join(span_id),
         day_dir.join(format!("{day}.jsonl")),
