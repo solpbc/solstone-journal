@@ -9,13 +9,17 @@ every backend. The smaller input
 holds chronological saved Sense summaries and topics, plus Screen narratives.
 Kept native text stays whole: transcripts, voice labels and private memory are
 never trimmed within a segment. Missing or
-unusable Screen results leave that segment's raw percepts in place. Identity,
-facet context, history and instructions are unchanged.
+unusable Screen results leave that segment's raw percepts in place as its own
+text. Identity, facet context, history and instructions are unchanged.
 
-Work shows every segment's own text or none. Conversation keeps whole segments
-of its own text, as many as fit, spread evenly across the activity, so who said
-what, and in what order, survives inside each kept segment. Every other segment
-is told by its reports alone. When the reports alone do not fit, one length cap, the
+Work keeps every segment's own text while it fits beside the reports, capping
+Screen narratives as below. A segment's own text is not bounded by any report:
+one terminal segment that Screen did not tell can hold more raw frames than any
+window. So when the segments' own text alone would not fit, Work does what
+Conversation always does: it keeps whole segments of their own text, as many as
+fit, spread evenly across the activity, so who said what, and in what order,
+survives inside each kept segment. Every other segment is told by its reports
+alone. When the reports alone do not fit, one length cap, the
 largest that fits, applies to every Screen narrative: short ones stay whole, and
 a long one is cut at a sentence. Sense summaries and
 topics stay whole. Past that, the Generate boundary's ordinary fitting is the

@@ -325,14 +325,16 @@ fn assemble(
     (text, sources)
 }
 
-/// Fit the packet to the floor window's input budget. Work shows every
-/// segment's own text or none (a single terminal segment can exceed the
-/// floor). Conversation keeps whole segments' own text, as many as fit, spread
-/// evenly across the activity, so who said what and in what order survives
-/// inside each, and every other segment is told by its report. When the
-/// reports alone do not fit, every Screen narrative shares one cap, cut at a
-/// sentence; Sense summaries and topics stay whole. Past that, the generic
-/// fitter is the last-resort guard.
+/// Fit the packet to the floor window's input budget. Work keeps every
+/// segment's own text and shares one cap on the Screen narratives while that
+/// fits. Conversation, and Work once its segments' own text alone would
+/// overflow (a segment Screen did not tell keeps its raw percepts, and one
+/// terminal segment's frames can fill any window), keeps whole segments' own
+/// text, as many as fit, spread evenly across the activity, so who said what
+/// and in what order survives inside each, and every other segment is told by
+/// its report. When the reports alone do not fit, every Screen narrative
+/// shares one cap, cut at a sentence; Sense summaries and topics stay whole.
+/// Past that, the generic fitter is the last-resort guard.
 fn fit_to_floor(config: &Map<String, Value>, parts: &[Part]) -> Fit {
     let all = vec![true; parts.len()];
     let whole = Fit {
@@ -348,7 +350,8 @@ fn fit_to_floor(config: &Map<String, Value>, parts: &[Part]) -> Fit {
     if fits(&all, None) {
         return whole;
     }
-    let by_segment = config.get("name").and_then(Value::as_str) == Some("conversation");
+    let by_segment =
+        config.get("name").and_then(Value::as_str) == Some("conversation") || !fits(&all, Some(0));
     let keep = if by_segment {
         let candidates: Vec<usize> = (0..parts.len())
             .filter(|i| parts[*i].native.is_some())
@@ -996,6 +999,56 @@ mod tests {
             candidate
                 .compact_transcript
                 .contains("narrative_cut_to_fit")
+        );
+    }
+
+    #[test]
+    fn work_over_the_floor_leaves_out_a_segment_whose_raw_screen_cannot_fit() {
+        let root = TempDir::new().unwrap();
+        let keys: Vec<String> = (0..3).map(key).collect();
+        for (i, key) in keys.iter().enumerate() {
+            long_segment(root.path(), key, &format!("R{i}"), 20, "Screen view.");
+        }
+        // Screen never told the middle segment, so its raw frames are its own
+        // text, and they alone are past the floor.
+        let middle = root
+            .path()
+            .join("chronicle/20260101/desktop")
+            .join(&keys[1]);
+        fs::remove_file(middle.join("talents/screen.json")).unwrap();
+        let frames = (0..400)
+            .map(|i| {
+                json!({"timestamp": i, "content": {"window": format!("RAWFRAME{i} {}", "pane text ".repeat(60))}})
+                    .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(middle.join("screen.jsonl"), frames).unwrap();
+        let keys = keys.iter().map(String::as_str).collect::<Vec<_>>();
+        let config = floor_config("work", &keys);
+        let candidate = prepare(root.path(), &config).unwrap().unwrap();
+        assert!(
+            solstone_core_tokens::count(&candidate.compact_transcript)
+                <= floor_budget(&config).unwrap()
+        );
+        assert!(!candidate.compact_transcript.contains("RAWFRAME"));
+        assert_eq!(
+            candidate.compact_transcript.matches(DROPPED_NOTE).count(),
+            1
+        );
+        for i in 0..3 {
+            assert!(
+                candidate
+                    .compact_transcript
+                    .contains(&format!("SUMMARY_R{i}"))
+            );
+        }
+        assert!(candidate.compact_transcript.contains("R0 w0"));
+        assert!(candidate.compact_transcript.contains("R2 w0"));
+        assert_eq!(candidate.metadata["segments"][1]["native_shown"], false);
+        assert_eq!(
+            candidate.metadata["screen_narrative_cap_chars"],
+            Value::Null
         );
     }
 
