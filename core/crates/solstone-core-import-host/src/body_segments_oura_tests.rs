@@ -12,6 +12,21 @@ use solstone_core_retention::tombstone::RemovalReason;
 
 use super::*;
 
+/// Every run here, and in the modules under this one, reads the one test clock
+/// for when a record arrived, unless a test names another.
+fn run_oura_segments(
+    journal: &Path,
+    request: &OuraSegmentsRequest<'_>,
+) -> Result<OuraSegmentsOutcome, String> {
+    super::run_oura_segments(
+        journal,
+        &OuraSegmentsRequest {
+            clock: Some(request.clock.unwrap_or(&crate::body_activity::test_clock)),
+            ..*request
+        },
+    )
+}
+
 const STREAM: &str = "import.oura";
 
 #[cfg(feature = "full-tests")]

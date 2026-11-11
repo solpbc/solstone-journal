@@ -715,16 +715,24 @@ fn write_stream_records_at(
     counts
 }
 
-/// [`write_records_at`] on the wall clock.
+/// The one clock tests read a record's arrival from: noon in Denver, 2026-11-04.
+/// The wall clock would move a record's arrival day when a run crosses midnight.
 #[cfg(test)]
-pub(crate) fn write_records(journal: &Path, source: &BodySource, day: &str) -> RecordCounts {
-    write_records_at(journal, source, day, chrono::Utc::now(), false)
+pub(crate) fn test_clock() -> chrono::DateTime<chrono::Utc> {
+    use chrono::TimeZone as _;
+    chrono::Utc.with_ymd_and_hms(2026, 11, 4, 19, 0, 0).unwrap()
 }
 
-/// [`write_strava_records_at`] on the wall clock.
+/// [`write_records_at`] on [`test_clock`].
+#[cfg(test)]
+pub(crate) fn write_records(journal: &Path, source: &BodySource, day: &str) -> RecordCounts {
+    write_records_at(journal, source, day, test_clock(), false)
+}
+
+/// [`write_strava_records_at`] on [`test_clock`].
 #[cfg(test)]
 pub(crate) fn write_strava_records(journal: &Path, day: &str) -> RecordCounts {
-    write_strava_records_at(journal, day, chrono::Utc::now(), &BTreeSet::new())
+    write_strava_records_at(journal, day, test_clock(), &BTreeSet::new())
 }
 
 #[cfg(test)]

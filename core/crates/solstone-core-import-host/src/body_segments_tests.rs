@@ -14,6 +14,21 @@ use solstone_core_retention::tombstone::RemovalReason;
 
 use super::*;
 
+/// Every run here, and in the modules under this one, reads the one test clock
+/// for when a record arrived, unless a test names another.
+fn run_apple_health_segments(
+    journal: &Path,
+    request: &AppleSegmentsRequest<'_>,
+) -> Result<AppleSegmentsOutcome, String> {
+    super::run_apple_health_segments(
+        journal,
+        &AppleSegmentsRequest {
+            clock: Some(request.clock.unwrap_or(&crate::body_activity::test_clock)),
+            ..*request
+        },
+    )
+}
+
 const SOURCE: &str = r#"sourceName="Synthetic Watch" creationDate="2026-10-10 08:00:00 -0600""#;
 
 #[cfg(feature = "full-tests")]

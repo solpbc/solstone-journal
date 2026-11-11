@@ -107,6 +107,8 @@ pub struct AppleSegmentsRequest<'a> {
     /// The import a page start runs under, exactly. It never resumes another
     /// import's run: one it finds is taken over, and this import holds what it writes.
     pub import_id: Option<&'a str>,
+    /// Test seam: the clock the run reads for when a record arrived.
+    pub clock: Option<&'a dyn Fn() -> DateTime<Utc>>,
 }
 
 impl<'a> AppleSegmentsRequest<'a> {
@@ -121,6 +123,7 @@ impl<'a> AppleSegmentsRequest<'a> {
             spill_bytes: DEFAULT_SPILL_BYTES,
             stop_at: None,
             import_id: None,
+            clock: None,
         }
     }
 }
@@ -150,6 +153,8 @@ pub struct OuraSegmentsRequest<'a> {
     /// Test seam: called at each named point, and the run stops there, as if
     /// killed, when it returns true.
     pub stop_at: Option<&'a dyn Fn(&str) -> bool>,
+    /// Test seam: the clock the run reads for when a record arrived.
+    pub clock: Option<&'a dyn Fn() -> DateTime<Utc>>,
 }
 
 impl<'a> OuraSegmentsRequest<'a> {
@@ -163,6 +168,7 @@ impl<'a> OuraSegmentsRequest<'a> {
             earlier_waiting: 0,
             spill_bytes: DEFAULT_SPILL_BYTES,
             stop_at: None,
+            clock: None,
         }
     }
 }
@@ -2184,7 +2190,7 @@ pub fn run_apple_health_segments(
         earlier_waiting: request.earlier_waiting,
         spill_bytes: request.spill_bytes,
         stop_at: request.stop_at,
-        clock: None,
+        clock: request.clock,
         exact_import: request.import_id,
         comes_back: true,
     };
@@ -2227,7 +2233,7 @@ pub fn run_oura_segments(
         earlier_waiting: request.earlier_waiting,
         spill_bytes: request.spill_bytes,
         stop_at: request.stop_at,
-        clock: None,
+        clock: request.clock,
         exact_import: None,
         // Staged pages stand in for what an ordinary sync fetched.
         comes_back: false,
