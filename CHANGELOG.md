@@ -27,6 +27,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
+- since 2.0.74, restoring your journal from encrypted backup operated by sol pbc while you set up a new journal left the backup page showing an error, even though the restore had worked. it now shows the restore finished.
+- after a restore during setup, from either kind of backup, or after you retried an interrupted restore, your backup's status could read "backup status is unavailable right now." it now shows your backup's status again.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.

@@ -33,6 +33,7 @@
   const operationKinds = {
     enable: 'backup setup', enable_hosted: 'backup setup', rotate: 'recovery key change',
     teardown: 'turning backup off', restore: 'restore', restore_hosted: 'restore',
+    restore_recovery: 'restore',
     offload: 'copy preparation', offload_restore: 'restore', offload_approve: 'archive approval',
   };
   const operationPhases = {

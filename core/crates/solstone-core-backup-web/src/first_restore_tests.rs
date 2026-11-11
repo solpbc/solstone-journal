@@ -826,6 +826,62 @@ async fn hosted_restore_receiving_mode_write_cannot_touch_a_replacement_root() {
     );
 }
 
+#[tokio::test]
+async fn setup_hosted_restore_publishes_operated_mode_once_the_journal_resumes() {
+    let mut fixture = Fixture::new(false, false, 0);
+    fixture.deps.http = Arc::new(HttpScript::with_responses(vec![Ok(credentials_response())]));
+    solstone_core_backup_runtime::restore_sweep::mark_init_restore(fixture.root.path()).unwrap();
+    *fixture.deps.init_hosted_choice.lock().unwrap() = Some(crate::init_restore::HostedChoice {
+        binding: crate::test_support::hosted_binding(),
+        recovery_key: crate::test_support::RECOVERY_KEY.into(),
+        backups: vec![solstone_core_backup_runtime::restore::JournalBackup {
+            id: JOURNAL_SNAPSHOT_ID.into(),
+            time: "2026-01-01T00:00:00+00:00".into(),
+            subtree: "/original".into(),
+        }],
+    });
+    // The drain setup uses on every desktop: it holds the journal for the
+    // restore until the paused attempt resumes.
+    let retained = fixture.retained.clone();
+    let drain: crate::init_restore::Drain = Box::new(move || {
+        pause_admitted_work(retained.clone())
+            .map(|phase| Box::new(Phase(phase)) as Box<dyn crate::PausedRestore>)
+    });
+    let response = crate::init_restore::api(
+        fixture.deps.clone(),
+        "hosted/choose".into(),
+        axum::body::Bytes::from(
+            serde_json::to_vec(&json!({"snapshot_id": JOURNAL_SNAPSHOT_ID})).unwrap(),
+        ),
+        drain,
+    )
+    .await;
+    assert_eq!(response.status().as_u16(), 200);
+    let view = fixture
+        .deps
+        .operations
+        .lock()
+        .unwrap()
+        .current
+        .as_ref()
+        .map(|slot| slot.view.clone())
+        .unwrap();
+    assert_eq!(view.kind, "restore_recovery");
+    assert_eq!(view.phase, "done", "{:?}", view.report);
+    assert_eq!(view.reason_code, None);
+    assert_eq!(
+        view.report.as_ref().unwrap()["configuration_publication"]["confirmed"],
+        true
+    );
+    assert_eq!(fixture.runner.copies.load(Ordering::SeqCst), 1);
+    assert_eq!(fixture.resumes.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        solstone_core_backup::get_backup_config(fixture.root.path()).unwrap()["mode"],
+        "operated"
+    );
+    fixture.stop().await;
+}
+
 #[test]
 fn mode_receiving_preserves_real_restore_and_published_uncertainty() {
     use solstone_core_backup_runtime::restore::MobileRestoreIdentity;

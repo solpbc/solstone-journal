@@ -1395,7 +1395,7 @@ pub fn recover_recorded_journal_with(
 }
 
 /// One restore on the recorded path, in its own operation frame. `after` runs
-/// on a restore that reached the journal, before the frame closes.
+/// on a restore that reached the journal and resumed it, before the frame closes.
 pub(crate) fn run_recorded(
     deps: &BackupWebDeps,
     destination: Destination,
@@ -1435,7 +1435,6 @@ pub(crate) fn run_recorded(
     };
     let mut terminal = map_restore(outcome);
     if result.is_ok() {
-        terminal = after(terminal, root);
         result = if runner
             .cancellation()
             .is_some_and(|stop| stop.is_cancelled())
@@ -1451,9 +1450,12 @@ pub(crate) fn run_recorded(
                 None => Err("restore couldn't confirm your journal was paused".into()),
             }
         };
-        if result.is_err() {
-            terminal = Terminal::error("destination_admission_failed");
-        }
+        // `after` writes through ordinary admission, which the paused
+        // attempt's hold refuses, so it runs once the journal has resumed.
+        terminal = match result {
+            Ok(()) => after(terminal, root),
+            Err(_) => Terminal::error("destination_admission_failed"),
+        };
     }
     drop(paused);
     frame.finish(terminal);

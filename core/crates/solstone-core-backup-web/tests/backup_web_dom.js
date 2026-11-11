@@ -2322,6 +2322,21 @@ asyncCase('detached workspaces dispose subscriptions and ignore an in-flight res
   assert.strictEqual(replacement.subscriptions(), 2);
 });
 
+testCase('a restore from setup or a retried restore reads as a restore, never as unavailable', () => {
+  const harness = createHarness();
+  const backedUp = { ...status(), enabled: true, last_backup: { status: 'ok', time: 1770000600 } };
+  const done = harness.window.BackupStatus.select({
+    ...backedUp, operation: { kind: 'restore_recovery', phase: 'done', reason_code: null },
+  });
+  assert.notStrictEqual(done.tone, 'unavailable', done.text);
+  assert.strictEqual(done.text, harness.window.BackupStatus.select(backedUp).text);
+  const failed = harness.window.BackupStatus.select({
+    ...backedUp, operation: { kind: 'restore_recovery', phase: 'error', reason_code: 'restore_failed' },
+  });
+  assert.strictEqual(failed.tone, 'attention');
+  assert.ok(failed.text.includes("restore: couldn't finish."), failed.text);
+});
+
 testCase('a paused backup reads as the owner\'s choice, never as failing', () => {
   const harness = createHarness();
   const view = harness.window.BackupStatus.select({
