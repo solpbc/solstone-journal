@@ -5,20 +5,16 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
-mod action_log;
-mod deferred_delete;
 mod id_shape;
 mod model;
 mod router;
 mod tidy;
+mod trash_delete;
 
 pub use model::{ATTENDANCE_KINDS, ENTITIES_COPY, compose_connections_horizon_note, edge_aliases};
+pub use router::api_router;
 #[cfg(test)]
-#[allow(unused_imports)]
-pub(crate) use router::router_with_delete_window;
-pub use router::{api_router, api_router_with_delete_window};
-#[cfg(test)]
-pub(crate) use router::{router, router_with_delete_window_and_registry};
+pub(crate) use router::router;
 
 #[cfg(test)]
 mod router_tests;

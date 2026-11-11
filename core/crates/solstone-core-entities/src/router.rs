@@ -7,7 +7,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::{Extension, Path as RoutePath, Query, RawQuery, Request, State};
 use axum::http::StatusCode;
@@ -15,7 +15,6 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use chrono::{DateTime, NaiveDate, Utc};
-use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::{ErrorEnvelope, not_found_fallback};
@@ -34,21 +33,15 @@ use solstone_core_indexer_query::{
     network_bound_detail, search,
 };
 
-use crate::deferred_delete::{DeleteRecord, EntityTarget, STORE as DELETES};
 use crate::model::{
     ATTENDANCE_KINDS, ENTITIES_COPY, ENTITY_TYPES, ReasonCode, compose_connections_horizon_note,
     refusal, refusal_with_status,
 };
 use solstone_core_removals::{Action, Page, Removal, Surface, Unit};
-use solstone_core_serving::held_delete::{
-    DeleteState, Record, Registry, Settled, valid_pending_id,
-};
 
 #[derive(Clone)]
-struct RouterState {
-    journal_root: PathBuf,
-    deferred_deletes: Registry,
-    delete_window: Duration,
+pub(crate) struct RouterState {
+    pub(crate) journal_root: PathBuf,
 }
 
 fn unresolved_voiceprint_encoder() -> solstone_core_entity::EncoderIdentity {
@@ -143,30 +136,8 @@ impl Deref for RouterState {
 
 /// Build the mergeable entity and facet-curation API route surface.
 pub fn api_router(journal_root: impl AsRef<Path>) -> Router {
-    api_router_with_delete_window(journal_root, Duration::from_secs_f64(10.0))
-}
-
-/// Build the mergeable entity routes with an injectable deferred-delete cancellation window.
-pub fn api_router_with_delete_window(
-    journal_root: impl AsRef<Path>,
-    delete_window: Duration,
-) -> Router {
-    api_router_with_registry(journal_root, delete_window, Registry::new())
-}
-
-/// Every construction resumes the deletes a previous run confirmed and never
-/// finished.
-fn api_router_with_registry(
-    journal_root: impl AsRef<Path>,
-    delete_window: Duration,
-    deferred_deletes: Registry,
-) -> Router {
-    let journal_root = journal_root.as_ref().to_path_buf();
-    crate::deferred_delete::resume_pending(&journal_root, &deferred_deletes);
     api_router_from_state(Arc::new(RouterState {
-        journal_root,
-        deferred_deletes,
-        delete_window,
+        journal_root: journal_root.as_ref().to_path_buf(),
     }))
 }
 
@@ -191,7 +162,15 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
             "/app/entities/api/journal/entity/{entity_id}",
             get(journal_entity_route)
                 .put(update_journal_entity_route)
-                .delete(deferred_delete_journal_entity_route),
+                .delete(crate::trash_delete::delete_entity),
+        )
+        .route(
+            "/app/entities/api/journal/entity/{entity_id}/delete",
+            get(crate::trash_delete::preview),
+        )
+        .route(
+            "/app/entities/api/journal/delete",
+            post(crate::trash_delete::delete_set),
         )
         .route(
             "/app/entities/api/journal/entity/{entity_id}/history",
@@ -216,18 +195,6 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
         .route(
             "/app/entities/api/journal/unblock",
             post(unblock_journal_operation_route),
-        )
-        .route(
-            "/app/entities/api/cancel-delete/{pending_id}",
-            post(cancel_deferred_delete_route),
-        )
-        .route(
-            "/app/entities/api/delete-status/{pending_id}",
-            get(delete_status_route),
-        )
-        .route(
-            "/app/entities/api/delete-outcomes",
-            get(delete_outcomes_route),
         )
         .route("/app/entities/api/merge", post(merge_route))
         .route(
@@ -333,29 +300,10 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
         .with_state(state)
 }
 
-// Kept for in-crate test use only (see router_tests.rs); deliberately excluded from the crate's public API — api_router()/api_router_with_delete_window() are the real external surface.
+// Kept for in-crate test use only (see router_tests.rs); deliberately excluded from the crate's public API — api_router() is the real external surface.
 #[allow(dead_code)]
 pub(crate) fn router(journal_root: impl AsRef<Path>) -> Router {
-    router_with_delete_window(journal_root, Duration::from_secs_f64(10.0))
-}
-
-#[allow(dead_code)]
-pub(crate) fn router_with_delete_window(
-    journal_root: impl AsRef<Path>,
-    delete_window: Duration,
-) -> Router {
-    api_router_with_delete_window(journal_root, delete_window).fallback(not_found_fallback)
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-pub(crate) fn router_with_delete_window_and_registry(
-    journal_root: impl AsRef<Path>,
-    delete_window: Duration,
-    deferred_deletes: Registry,
-) -> Router {
-    api_router_with_registry(journal_root, delete_window, deferred_deletes)
-        .fallback(not_found_fallback)
+    api_router(journal_root).fallback(not_found_fallback)
 }
 
 #[cfg(test)]
@@ -390,7 +338,7 @@ impl Drop for ForcedWriteGuard {
 fn forced_lock_timeout() -> solstone_core_entity::LockError {
     solstone_core_entity::LockError::Timeout(solstone_core_entity::LockTimeout {
         path: PathBuf::from("health/locks/test"),
-        timeout: Duration::from_millis(1),
+        timeout: std::time::Duration::from_millis(1),
     })
 }
 
@@ -1054,7 +1002,7 @@ async fn detect_entity_route(
     }
 }
 
-fn admitted(b: &AccessBasis) -> Option<Response> {
+pub(crate) fn admitted(b: &AccessBasis) -> Option<Response> {
     (!require_access(b)).then(|| refusal(ReasonCode::AgentUnavailable, "access denied"))
 }
 
@@ -2649,274 +2597,6 @@ async fn journal_entity_route(
         },
         _ => refusal(ReasonCode::EntityOperationFailed, "entity read failed"),
     }
-}
-
-fn random_pending_id() -> Option<String> {
-    let mut bytes = [0_u8; 16];
-    SystemRandom::new().fill(&mut bytes).ok()?;
-    Some(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
-}
-
-enum Held {
-    Accepted(Box<DeleteRecord>, bool),
-    NotFound,
-    Principal,
-    ReadFailed,
-    NotSaved(String),
-    RecordDamaged(String),
-    MergePending,
-}
-
-/// Write the delete down before answering: a delete the page reports as under
-/// way must survive the journal stopping inside its window.
-fn hold_delete(state: &RouterState, entity_id: &str, surface: Surface) -> Held {
-    let root = &state.journal_root;
-    // An entity merge that stopped partway is settled first, as the delete
-    // itself does: it may restore this entity or its principal mark.
-    // Without a recovery record the delete is held at once, even while an
-    // import runs; a merge under way has one, so the request waits for it.
-    // The commit settles anything left then.
-    if solstone_core_entity::entity_merge_recovery_pending(root) {
-        let Ok(_entity) = solstone_core_entity::hold_entity_trust_lock(root) else {
-            return Held::NotSaved("your journal is busy. try again in a moment.".to_owned());
-        };
-        if crate::deferred_delete::settle_interrupted_merge(root).is_err() {
-            return Held::MergePending;
-        }
-    }
-    // The delete records the id before it removes anything; a record that
-    // can't be read refuses now, not after the cancel window.
-    if let Some(detail) = solstone_core_entity::retired_record_damage(root) {
-        return Held::RecordDamaged(detail);
-    }
-    let (target, identity) = match crate::deferred_delete::current_target(root, entity_id) {
-        Ok(Some(found)) => found,
-        Ok(None) => return Held::NotFound,
-        Err(_) => return Held::ReadFailed,
-    };
-    if identity.get("is_principal") == Some(&Value::Bool(true)) {
-        return Held::Principal;
-    }
-    // One request at a time decides whether this entity already has a delete
-    // waiting, so two tabs or a double submit cannot both create one.
-    let Ok(_create) = DELETES.create_lock(root) else {
-        return Held::NotSaved("the delete lock could not be taken".to_owned());
-    };
-    // Only the same entity joins. A waiting delete of an earlier entity under
-    // this id is not the one the owner is deleting now: it is settled as kept
-    // before this one is written.
-    while let Some(stale) = DELETES.waiting_for(root, |waiting: &EntityTarget| {
-        waiting.entity_id == target.entity_id
-            && (waiting.entity_dir != target.entity_dir || waiting.created_at != target.created_at)
-    }) {
-        if !crate::deferred_delete::settle_superseded(root, &state.deferred_deletes, &stale) {
-            break;
-        }
-    }
-    // A delete of this entity whose removal has not started is joined, and
-    // re-armed if this process holds no timer for it: one a commit gave up on
-    // (a busy journal) runs again now rather than at the next start.
-    if let Some(existing) = DELETES.unremoved_for(root, |waiting: &EntityTarget| {
-        waiting.entity_id == target.entity_id
-            && waiting.entity_dir == target.entity_dir
-            && waiting.created_at == target.created_at
-    }) {
-        // A timer this process no longer holds is armed again rather than
-        // swallowed.
-        if !state.deferred_deletes.contains(&existing.pending_id) {
-            let remaining = existing
-                .commit_at_ms
-                .saturating_sub(chrono::Utc::now().timestamp_millis());
-            let delay = Duration::from_millis(u64::try_from(remaining).unwrap_or(0).max(1));
-            crate::deferred_delete::schedule(
-                &state.deferred_deletes,
-                root,
-                existing.pending_id.clone(),
-                delay,
-            );
-        }
-        return Held::Accepted(Box::new(existing), true);
-    }
-    let Some(pending_id) = random_pending_id() else {
-        return Held::NotSaved("unable to create a pending delete id".to_owned());
-    };
-    let record = Record::pending(pending_id, target, state.delete_window).with_surface(surface);
-    if let Err(error) = DELETES.write(root, &record) {
-        return Held::NotSaved(error);
-    }
-    let _ = crate::action_log::pending(root, entity_id, &record.pending_id);
-    crate::deferred_delete::schedule(
-        &state.deferred_deletes,
-        root,
-        record.pending_id.clone(),
-        state.delete_window,
-    );
-    Held::Accepted(Box::new(record), false)
-}
-
-async fn deferred_delete_journal_entity_route(
-    Extension(b): Extension<AccessBasis>,
-    State(state): State<Arc<RouterState>>,
-    RoutePath(entity_id): RoutePath<String>,
-    headers: axum::http::HeaderMap,
-) -> Response {
-    if let Some(response) = admitted(&b) {
-        return response;
-    }
-    let surface = Surface::of_request(
-        Page::Entities,
-        headers
-            .get(axum::http::header::USER_AGENT)
-            .and_then(|value| value.to_str().ok()),
-    );
-    let held_state = Arc::clone(&state);
-    let held = solstone_core_serving::seam::run_blocking(move || {
-        hold_delete(&held_state, &entity_id, surface)
-    })
-    .await;
-    match held {
-        Ok(Held::Accepted(record, joined)) => {
-            // A joined request is shown what is left of the first one's window.
-            let ttl_seconds = if joined {
-                record.remaining_seconds() as f64
-            } else {
-                state.delete_window.as_secs_f64()
-            };
-            Json(json!({
-                "success": true,
-                "pending": record.pending_id,
-                "commit_at_ms": record.commit_at_ms.max(0),
-                "ttl_seconds": ttl_seconds,
-            }))
-            .into_response()
-        }
-        Ok(Held::NotFound) => refusal_with_status(
-            ReasonCode::EntityNotFound,
-            "entity not found",
-            StatusCode::BAD_REQUEST,
-        ),
-        Ok(Held::Principal) => refusal(
-            ReasonCode::PrincipalEntityProtected,
-            "Cannot delete the principal (self) entity",
-        ),
-        Ok(Held::NotSaved(error)) => refusal(
-            ReasonCode::EntityDeleteNotSaved,
-            format!("the pending delete was not saved, so nothing was deleted: {error}"),
-        ),
-        Ok(Held::RecordDamaged(detail)) => refusal(ReasonCode::EntityRecordDamaged, detail),
-        Ok(Held::MergePending) => refusal(
-            ReasonCode::EntityMergeRecoveryPending,
-            crate::deferred_delete::MERGE_PENDING_REASON,
-        ),
-        Ok(Held::ReadFailed) | Err(_) => {
-            refusal(ReasonCode::EntityOperationFailed, "entity read failed")
-        }
-    }
-}
-
-async fn cancel_deferred_delete_route(
-    Extension(b): Extension<AccessBasis>,
-    State(state): State<Arc<RouterState>>,
-    RoutePath(pending_id): RoutePath<String>,
-) -> Response {
-    if let Some(response) = admitted(&b) {
-        return response;
-    }
-    // An id this journal never issued changes nothing, not even a lock file.
-    if !valid_pending_id(&pending_id)
-        || DELETES
-            .read::<EntityTarget>(&state.journal_root, &pending_id)
-            .is_none()
-    {
-        return refusal(
-            ReasonCode::OperationNoLongerAvailable,
-            "already committed or unknown",
-        );
-    }
-    let root = state.journal_root.clone();
-    let id = pending_id.clone();
-    let settled = solstone_core_serving::seam::run_blocking(move || {
-        DELETES.settle_cancel::<EntityTarget>(&root, &id, || {
-            let _ = crate::action_log::cancelled(&root, &id);
-        })
-    })
-    .await;
-    let record = match settled {
-        Ok(Settled::Record(record)) => record,
-        Ok(Settled::Busy) => return delete_in_progress(),
-        Ok(Settled::Failed(error)) => return cancel_failed(&error),
-        Err(_) => return cancel_failed("the cancellation did not finish"),
-    };
-    // Too late to cancel: say what actually happened, never a guess.
-    match record.state {
-        DeleteState::Cancelled => {
-            // Only now drop this process's timer; the record already says
-            // cancelled, so a timer that fires first finds it and stops.
-            state.deferred_deletes.cancel(&pending_id);
-            Json(json!({"cancelled":pending_id})).into_response()
-        }
-        DeleteState::Deleted => refusal(ReasonCode::EntityAlreadyDeleted, "already committed"),
-        DeleteState::NotDeleted => refusal(
-            ReasonCode::EntityNotDeleted,
-            record.reason.unwrap_or_default(),
-        ),
-        DeleteState::Incomplete => refusal(
-            ReasonCode::EntityDeleteIncomplete,
-            record.reason.unwrap_or_default(),
-        ),
-        DeleteState::Pending => delete_in_progress(),
-    }
-}
-
-fn delete_in_progress() -> Response {
-    refusal(ReasonCode::EntityDeleteInProgress, "past the cancel window")
-}
-
-/// Nothing was settled, so the record is still pending and its timer or the
-/// next start still runs it.
-fn cancel_failed(detail: &str) -> Response {
-    refusal(
-        ReasonCode::EntityDeleteNotCancelled,
-        format!("the cancellation was not saved, so the delete will still happen: {detail}"),
-    )
-}
-
-/// What became of one delete, for the page to report once the window passes.
-async fn delete_status_route(
-    Extension(b): Extension<AccessBasis>,
-    State(state): State<Arc<RouterState>>,
-    RoutePath(pending_id): RoutePath<String>,
-) -> Response {
-    if let Some(response) = admitted(&b) {
-        return response;
-    }
-    let record = valid_pending_id(&pending_id)
-        .then(|| DELETES.read::<EntityTarget>(&state.journal_root, &pending_id))
-        .flatten();
-    match record {
-        Some(record) => Json(crate::deferred_delete::status_body(&record)).into_response(),
-        None => refusal(ReasonCode::EntityDeleteUnknown, "unknown pending id"),
-    }
-}
-
-/// Deletes from the last few days that did not remove their entity, so a page
-/// opened after a restart can still tell the owner.
-async fn delete_outcomes_route(
-    Extension(b): Extension<AccessBasis>,
-    State(state): State<Arc<RouterState>>,
-) -> Response {
-    if let Some(response) = admitted(&b) {
-        return response;
-    }
-    let outcomes = DELETES
-        .unfinished_outcomes::<EntityTarget>(&state.journal_root, chrono::Utc::now())
-        .iter()
-        .filter(|record| {
-            record.state != DeleteState::Pending || crate::deferred_delete::resumable(record)
-        })
-        .map(crate::deferred_delete::status_body)
-        .collect::<Vec<_>>();
-    Json(json!({ "outcomes": outcomes })).into_response()
 }
 
 async fn update_journal_entity_route(
