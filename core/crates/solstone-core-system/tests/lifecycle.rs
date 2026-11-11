@@ -1605,9 +1605,10 @@ mod abandoned_generation_closer {
         assert_eq!(authority.exact_identity(), None);
         assert_eq!(authority.poll().expect("poll"), Some(75));
 
-        let result_path = ledger
-            .generation_path(active.generation)
-            .join(format!("admissions/{launch_id}/result.json"));
+        // The launcher holds the confirmed reap, so it discharges the entry.
+        let generation_path = ledger.generation_path(active.generation);
+        assert!(!generation_path.join("admissions").join(launch_id).exists());
+        let result_path = generation_path.join(format!("discharged/{launch_id}/result.json"));
         let result: AdmissionResult =
             serde_json::from_slice(&std::fs::read(&result_path).expect("result JSON exists"))
                 .expect("parse result");
@@ -1623,34 +1624,21 @@ mod abandoned_generation_closer {
         );
 
         // The fixture `always-tempfail` writes its own acknowledgement file before exiting 75.
-        // Assert that the child's own acknowledgement is present on disk in the admissions layout.
-        let ack_path = ledger
-            .generation_path(active.generation)
-            .join(format!("admissions/{launch_id}/acknowledgement.json"));
+        // Its acknowledgement moved with the discharged entry.
+        let ack_path = generation_path.join(format!("discharged/{launch_id}/acknowledgement.json"));
         assert!(
             ack_path.is_file(),
             "fixture must have written its own acknowledgement"
         );
-        let child_ack =
-            solstone_core_system::lifecycle::read_parent_loss_admission_acknowledgement(
-                &bed.root,
-                active.generation,
-                launch_id,
-            )
-            .expect("read child acknowledgement")
-            .expect("child acknowledgement exists");
+        let child_ack: solstone_core_system::lifecycle::AdmissionAcknowledgement =
+            serde_json::from_slice(&std::fs::read(&ack_path).expect("child acknowledgement"))
+                .expect("parse acknowledgement");
         assert_eq!(child_ack.identity.generation, active.generation);
         assert_eq!(child_ack.identity.launch_id, launch_id);
 
-        // Even though the child wrote a valid acknowledgement file, the closer must still
-        // classify the generation finding as RejectedAndReaped without treating that child
-        // identity as live or blocking successor reservation.
+        // The child's valid acknowledgement is no longer outstanding, so it
+        // neither counts as live nor blocks successor reservation.
         let successor = close_generation(&ledger);
         assert_eq!(successor, active.generation + 1);
-
-        assert_eq!(
-            finding(&ledger, active.generation),
-            AdmissionFinding::RejectedAndReaped
-        );
     }
 }
