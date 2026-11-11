@@ -18,6 +18,7 @@ const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) 
 assert.strictEqual(scripts.length, 1, 'one inline workspace script');
 const source = scripts[0];
 
+let focusDocument = null;
 const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
 const BOOLEAN_ATTRS = new Set(['hidden', 'checked', 'selected', 'disabled', 'readonly', 'required', 'autofocus', 'multiple']);
 
@@ -160,7 +161,9 @@ class DOMNode {
     this.attributes['tabindex'] = String(val);
   }
 
-  focus() {}
+  focus() {
+    if (focusDocument) focusDocument.activeElement = this;
+  }
 
   addEventListener(type, handler) {
     if (!this.listeners[type]) this.listeners[type] = [];
@@ -210,6 +213,19 @@ class DOMNode {
   }
 
   querySelector(selector) {
+    const alts = String(selector).split(',').map((part) => part.trim()).filter(Boolean);
+    if (alts.length > 1 && alts.every((part) => !/\s/.test(part))) {
+      const walk = (node) => {
+        for (const child of node.children || []) {
+          if (!child || child.nodeType === 3) continue;
+          if (alts.some((part) => matchSelector(child, part))) return child;
+          const found = walk(child);
+          if (found) return found;
+        }
+        return null;
+      };
+      return walk(this);
+    }
     return this.querySelectorAll(selector)[0] || null;
   }
 
@@ -465,6 +481,7 @@ async function run({ pathname, responses, withLeaflet = false, withGrid = true }
     'map-view-root': element('map-view-root'),
     'map-state-gate': element('map-state-gate'),
     'map-canvas': element('map-canvas'),
+    'main-content': element('main-content'),
   };
   const replaced = [];
   const hard = [];
@@ -509,6 +526,8 @@ async function run({ pathname, responses, withLeaflet = false, withGrid = true }
   };
   const document = {
     getElementById: (id) => elements[id] || null,
+    body: new DOMNode('body'),
+    activeElement: null,
     documentElement: {},
     createElement: (tag = 'div') => new DOMNode(tag),
     addEventListener: (type, handler) => documentListeners.add(type, handler),
@@ -524,6 +543,8 @@ async function run({ pathname, responses, withLeaflet = false, withGrid = true }
       return results;
     },
   };
+  document.activeElement = document.body;
+  focusDocument = document;
   const context = vm.createContext({
     window,
     document,
@@ -602,7 +623,7 @@ async function run({ pathname, responses, withLeaflet = false, withGrid = true }
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
   return {
-    elements, replaced, hard, fetched, calls: leaflet?.calls, ctx,
+    elements, document, replaced, hard, fetched, calls: leaflet?.calls, ctx,
     listeners: { window: windowListeners.bag, document: documentListeners.bag },
     workspace: window.__mapWorkspace,
     page: window,
@@ -1561,6 +1582,111 @@ test('leaving a week for a day removes the page shell and draws that day', async
   assert.ok(!('data-map-page' in viewed.elements['map-shell'].attributes));
   assert.ok(viewed.elements['map-view-root'].innerHTML.includes('the day, in order'));
   assert.strictEqual(viewed.calls.fitBounds, 1);
+});
+
+// Opening a day from another page of the map removes the link that had
+// focus. Focus goes to the workspace at once, then to the day's heading.
+async function arrivalFocus(pathname, responses, linkOf) {
+  const viewed = await run({
+    pathname,
+    responses: { ...responses, '/app/map/api/day/20261002': day },
+  });
+  const link = linkOf(viewed);
+  assert.ok(link && link.tagName === 'A', 'the page has the link opening the day removes');
+  link.focus();
+  const main = viewed.elements['main-content'];
+  viewed.handle.update({ day: '20261002' });
+  assert.strictEqual(viewed.document.activeElement, main, 'focus leaves the link before it is removed');
+  assert.notStrictEqual(viewed.document.activeElement, viewed.document.body);
+  await flush();
+  await flush();
+  const heading = viewed.elements['map-view-root'].querySelector('h2');
+  assert.strictEqual(heading && heading.textContent, 'the day, in order');
+  assert.strictEqual(viewed.document.activeElement, heading, 'the day heading takes focus');
+  assert.notStrictEqual(viewed.document.activeElement, viewed.document.body);
+}
+
+test('leaving a week for a day focuses the day heading, never the document', async () => {
+  const week = { start: '20260928', previous: null, next: null, days: [
+    { day: '20261002', readings: 1, devices: ['iphone'], items: [] },
+  ] };
+  await arrivalFocus('/app/map/week/20261002', { '/app/map/api/week/20261002': week },
+    (viewed) => viewed.elements['map-view-root'].querySelector('a[href="/app/map/20261002"]'));
+});
+
+test('leaving a month for a day focuses the day heading, never the document', async () => {
+  const month = makeMonth({
+    '20261002': {
+      items: [
+        { kind: 'visit', device: 0, area: { label: 'near Denver, Colorado' },
+          arrival: { utc: '2026-10-02T16:00:00Z', clock: '10:00', day: '20261002' },
+          departure: { utc: '2026-10-02T17:00:00Z', clock: '11:00', day: '20261002' },
+          point: [39.75, -105.0, 40] },
+      ],
+    },
+  });
+  await arrivalFocus('/app/map/month/202610', { '/app/map/api/month/202610': month }, (viewed) => {
+    const button = viewed.elements['map-view-root'].querySelector('[data-map-month-cal] button[data-day="20261002"]');
+    assert.ok(button, 'the month has the day');
+    button.click();
+    return viewed.elements['map-view-root'].querySelector('a[href="/app/map/20261002"]');
+  });
+});
+
+test('leaving places for a day focuses the day heading, never the document', async () => {
+  const place = {
+    id: '0123456789ab', label: 'the reading room', owner_name: 'the reading room', name: 'the reading room',
+    alias: '', hidden: false, area: { label: 'near Denver, Colorado' }, words: null, dates: 1, first: '20261002',
+    last: '20261002', night_dates: 0, stays: [],
+  };
+  await arrivalFocus('/app/map/places', { '/app/map/api/places': { places: [place] } },
+    (viewed) => viewed.elements['map-view-root'].querySelector('a[href="/app/map/place/0123456789ab"]'));
+});
+
+test('leaving a place for a day focuses the day heading, never the document', async () => {
+  const place = {
+    id: '0123456789ab', label: 'the reading room', owner_name: 'the reading room', name: 'the reading room',
+    alias: '', hidden: false, area: { label: 'near Denver, Colorado' }, words: null, dates: 1, first: '20261002',
+    last: '20261002', night_dates: 0, stays: [{ day: '20261002', start: '21:00', end: '07:00', kind: 'reported' }],
+  };
+  await arrivalFocus('/app/map/place/0123456789ab', { '/app/map/api/place/0123456789ab': place },
+    (viewed) => viewed.elements['map-view-root'].querySelector('a[href="/app/map/20261002"]'));
+});
+
+test('a date step does not move focus', async () => {
+  const viewed = await run({
+    pathname: '/app/map/20261002',
+    responses: {
+      '/app/map/api/day/20261002': day,
+      '/app/map/api/day/20261003': { ...day, day: '20261003' },
+    },
+  });
+  const pin = new DOMNode('button');
+  pin.focus();
+  await viewed.handle.update({ day: '20261003' });
+  await flush();
+  await flush();
+  assert.strictEqual(viewed.document.activeElement, pin, 'a day step leaves focus alone');
+  assert.ok(viewed.elements['map-view-root'].innerHTML.includes('the day, in order'));
+});
+
+test('a week that fails to become a day leaves focus on the workspace', async () => {
+  const week = { start: '20260928', previous: null, next: null, days: [
+    { day: '20261002', readings: 1, devices: ['iphone'], items: [] },
+  ] };
+  const viewed = await run({
+    pathname: '/app/map/week/20261002',
+    responses: { '/app/map/api/week/20261002': week },
+  });
+  const link = viewed.elements['map-view-root'].querySelector('a[href="/app/map/20261002"]');
+  link.focus();
+  viewed.handle.update({ day: '20261002' });
+  assert.strictEqual(viewed.document.activeElement, viewed.elements['main-content']);
+  await flush();
+  await flush();
+  assert.strictEqual(viewed.document.activeElement, viewed.elements['main-content']);
+  assert.notStrictEqual(viewed.document.activeElement, viewed.document.body);
+  assert.ok(viewed.elements['map-state-gate'].innerHTML.includes('<error>'));
 });
 
 test('an accuracy poll stops when the day changes and when the view is disposed', async () => {

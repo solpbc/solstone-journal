@@ -609,6 +609,21 @@ button.map-month-row:hover { background: var(--cream); }
     shell?.removeAttribute("data-map-empty");
   }
 
+  function focusNode(node) {
+    if (!node || typeof node.focus !== "function") return;
+    if (!node.hasAttribute("tabindex")) node.setAttribute("tabindex", "-1");
+    try { node.focus({ preventScroll: true }); }
+    catch (_) { node.focus(); }
+  }
+
+  // The day's own heading once it is drawn; the workspace until then, and
+  // when the day has nothing to draw. Never the document.
+  function focusArrived() {
+    const heading = root && root.hidden !== true && root.querySelector ? root.querySelector("h1, h2") : null;
+    const visible = heading && !heading.closest("[hidden]") ? heading : null;
+    focusNode(visible || document.getElementById("main-content"));
+  }
+
   function removeMap() {
     if (mapState && mapState.map && typeof mapState.map.remove === "function") {
       try { mapState.map.remove(); } catch (_) {}
@@ -1242,10 +1257,13 @@ button.map-month-row:hover { background: var(--cream); }
     }
   }
 
-  async function loadDay(day) {
+  async function loadDay(day, arrive) {
     if (!alive() || !DAY_RE.test(String(day || ""))) return;
     const mine = beginPage();
     showDayChrome();
+    // The link that opened this day is about to leave the page. Focus moves
+    // before that, or it falls to the document.
+    if (arrive) focusNode(document.getElementById("main-content"));
     setGate(window.SurfaceState.loading({ text: "loading this day's location…" }));
     try {
       const data = await readJson(`/app/map/api/day/${day}`);
@@ -1253,15 +1271,18 @@ button.map-month-row:hover { background: var(--cream); }
       if (!asArray(data.entries).length && !asArray(data.devices).length) {
         if (data.journal_has_location) renderDayEmpty(data, day);
         else renderJournalEmpty();
-        reportMapReady('empty');
+        if (arrive) focusArrived();
+        reportMapReady("empty");
         return;
       }
       renderDay(data);
-      reportMapReady('content');
+      if (arrive) focusArrived();
+      reportMapReady("content");
     } catch (err) {
       if (mine !== epoch || !alive()) return;
-      showError(err, () => loadDay(day));
-      reportMapReady('error');
+      showError(err, () => loadDay(day, arrive));
+      if (arrive) focusArrived();
+      reportMapReady("error");
     }
   }
 
@@ -2802,8 +2823,12 @@ button.map-month-row:hover { background: var(--cream); }
 
   function showDay(day) {
     if (!DAY_RE.test(String(day || ""))) return;
+    // A week, a month, places or a place is a different page, so becoming a
+    // day is an arrival. A step from one day to the next is already the day
+    // and leaves focus where it is.
+    const arrive = !!(shell && (shell.hasAttribute("data-map-page") || shell.hasAttribute("data-map-empty")));
     if (window.DateNav && typeof window.DateNav.setDay === "function") window.DateNav.setDay(day);
-    loadDay(day);
+    loadDay(day, arrive);
   }
 
   async function openUndated() {

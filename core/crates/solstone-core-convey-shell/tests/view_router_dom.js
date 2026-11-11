@@ -610,6 +610,7 @@ const VIEW_CODE = {
       async mount(ctx) {
         const views = window.__views.map;
         views.mounts += 1;
+        ctx.onDispose(() => { views.cleanups += 1; });
         const parts = window.location.pathname.split('/').filter(Boolean);
         const digits = (value, n) => new RegExp('^[0-9]{' + n + '}$').test(value || '');
         const monthNumber = parts[3] ? Number(parts[3].slice(4, 6)) : 0;
@@ -818,7 +819,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       more: { mounts: 0, disposes: 0 },
       body: { mounts: 0, disposes: 0, updates: [], draws: [] },
       activities: { mounts: 0, disposes: 0, updates: [], draws: [], pops: 0 },
-      map: { mounts: 0, disposes: 0, updates: [], draws: [], pages: [] },
+      map: { mounts: 0, disposes: 0, cleanups: 0, updates: [], draws: [], pages: [] },
     },
     __scriptErrors: [],
     __consoleErrors: [],
@@ -1686,7 +1687,7 @@ asyncCase('router: an undated map arrival is the index day, and the map\'s other
   assert.deepStrictEqual(page.record.assigned, []);
 });
 
-asyncCase('router: leaving while the map is still finding its day does not write over the page opened', async () => {
+asyncCase('router: a mount still waiting publishes nothing, is released once, and does not write over the page opened', async () => {
   const page = makePage();
   page.answerAll();
   answerMap(page);
@@ -1712,6 +1713,9 @@ asyncCase('router: leaving while the map is still finding its day does not write
   assert.strictEqual(page.location.pathname, '/app/home/', 'the index day is not written over home');
   assert.deepStrictEqual(page.record.assigned, []);
   assert.deepStrictEqual(published, ['home'], 'a map the owner already left is not announced');
+  const left = page.window.__views.map;
+  assert.strictEqual(left.cleanups, 1, 'the mount still waiting was released once');
+  assert.strictEqual(left.disposes, 0, 'its dispose does not run again after the owner has left');
 });
 
 asyncCase('router: back and forward between pilot entries restore view and scroll', async () => {
