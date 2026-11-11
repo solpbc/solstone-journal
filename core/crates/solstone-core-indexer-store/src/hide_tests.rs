@@ -593,17 +593,17 @@ fn a_week_page_with_anything_left_out_leaves_search_whole() {
     assert_eq!(journal.search("kestrelmemory").len(), 1);
 
     // A key of another week leaves this page as it is.
-    journal.json("config/week-left-out.json", json!({"keys": ["elsewhere"]}));
+    journal.json("health/week-left-out.json", json!({"keys": ["elsewhere"]}));
     journal.rescan(WEEK);
     assert_eq!(journal.search("kestrelmemory").len(), 1);
 
-    journal.json("config/week-left-out.json", json!({"keys": ["s1"]}));
+    journal.json("health/week-left-out.json", json!({"keys": ["s1"]}));
     journal.rescan(WEEK);
     assert!(journal.rows(WEEK).is_empty());
     assert!(journal.stored_mtime(WEEK).is_some_and(|mtime| mtime > 0));
 
     // Undo puts the page back.
-    journal.json("config/week-left-out.json", json!({"keys": []}));
+    journal.json("health/week-left-out.json", json!({"keys": []}));
     journal.rescan(WEEK);
     assert_eq!(journal.search("kestrelmemory").len(), 1);
 }
@@ -611,13 +611,13 @@ fn a_week_page_with_anything_left_out_leaves_search_whole() {
 #[test]
 fn a_week_page_waits_while_what_is_left_out_of_it_cant_be_read() {
     let journal = week_journal("week-undecided");
-    journal.write("config/week-left-out.json", "{ damaged");
+    journal.write("health/week-left-out.json", "{ damaged");
     journal.scan(true);
     assert!(journal.rows(WEEK).is_empty());
     assert_eq!(journal.stored_mtime(WEEK), Some(-1));
 
     // Something is left out and the page's own keys can't be read.
-    journal.json("config/week-left-out.json", json!({"keys": ["m1"]}));
+    journal.json("health/week-left-out.json", json!({"keys": ["m1"]}));
     journal.write("reflections/weekly/20260301.json", "{ damaged");
     journal.scan(false);
     assert_eq!(journal.stored_mtime(WEEK), Some(-1));
@@ -626,7 +626,7 @@ fn a_week_page_waits_while_what_is_left_out_of_it_cant_be_read() {
     assert_eq!(journal.stored_mtime(WEEK), Some(-1));
 
     // Nothing left out: the page needs no keys.
-    fs::remove_file(journal.path().join("config/week-left-out.json")).unwrap();
+    fs::remove_file(journal.path().join("health/week-left-out.json")).unwrap();
     journal.scan(false);
     assert_eq!(journal.search("kestrelmemory").len(), 1);
 }
@@ -833,7 +833,7 @@ fn hide_everything(journal: &Journal) {
         json!({"entity_id": "bob", "detached": true, "detached_by": "hide"}),
     );
     journal.hide_names("work", &["Carol"]);
-    journal.json("config/week-left-out.json", json!({"keys": ["m1"]}));
+    journal.json("health/week-left-out.json", json!({"keys": ["m1"]}));
 }
 
 fn restore_journal(name: &str) -> Journal {

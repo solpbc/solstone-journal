@@ -165,7 +165,7 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
     },
     DurableArtifact {
         id: ArtifactId::WeekLeftOut,
-        path: "config/week-left-out.json",
+        path: "health/week-left-out.json",
         class: DurabilityClass::MustBeValid,
         parser: ParserKind::WholeJson,
         rationale: "the memories and quotes the owner left out of their week pages, written under a lock with atomic replace and read strictly by week_left_out::read_left_out; nothing can rebuild what the owner chose, so a damaged one is kept as it is, the page shows everything with a notice, further changes refuse and search leaves out every week page",
@@ -1132,7 +1132,7 @@ mod tests {
             vec![
                 "config/journal.json",
                 "health/owner-asks.json",
-                "config/week-left-out.json",
+                "health/week-left-out.json",
                 "solstone/apps/map/places.json",
                 // Names the owner hid in a facet.
                 "facets/*/hidden-names.json",

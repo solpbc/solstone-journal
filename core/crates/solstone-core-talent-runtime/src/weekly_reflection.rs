@@ -2036,7 +2036,7 @@ mod tests {
         let journal = keep_stable_week(&FIRST, &SECOND);
         let before = first_page(journal.path());
         let left_out = before["memories"][0]["key"].as_str().unwrap().to_owned();
-        fs::create_dir_all(journal.path().join("config")).unwrap();
+        fs::create_dir_all(journal.path().join("health")).unwrap();
         fs::write(
             solstone_core_format::content::week_left_out::left_out_path(journal.path()),
             json!({"keys": [left_out]}).to_string(),

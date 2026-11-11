@@ -20,7 +20,7 @@ use serde_json::Value;
 use solstone_core_journal_io::{JournalRoot, read_relative_file_bounded};
 
 /// Where the owner's week leave-outs live, relative to the journal.
-pub const LEFT_OUT_RELATIVE_PATH: &str = "config/week-left-out.json";
+pub const LEFT_OUT_RELATIVE_PATH: &str = "health/week-left-out.json";
 
 /// The largest leave-out store or week page json either reader accepts.
 pub const MAX_WEEK_FILE_BYTES: usize = 1_048_576;
@@ -162,7 +162,7 @@ mod tests {
         let journal = TempDir::new().unwrap();
         assert_eq!(
             left_out_path(journal.path()),
-            journal.path().join("config/week-left-out.json")
+            journal.path().join("health/week-left-out.json")
         );
     }
 
@@ -210,17 +210,6 @@ mod tests {
     }
 
     #[test]
-    fn a_store_at_the_old_place_is_not_read() {
-        let journal = TempDir::new().unwrap();
-        write(
-            journal.path(),
-            "health/week-left-out.json",
-            &left_out_bytes(&keys(&["k1"])),
-        );
-        assert_eq!(read_left_out(journal.path()), LeftOut::None);
-    }
-
-    #[test]
     fn a_store_too_large_reads_as_unreadable() {
         let journal = TempDir::new().unwrap();
         let mut bytes = br#"{"keys":[""#.to_vec();
@@ -237,7 +226,7 @@ mod tests {
         let target = outside.path().join("left-out.json");
         fs::write(&target, left_out_bytes(&keys(&["outside"]))).unwrap();
         let journal = TempDir::new().unwrap();
-        fs::create_dir_all(journal.path().join("config")).unwrap();
+        fs::create_dir_all(journal.path().join("health")).unwrap();
         std::os::unix::fs::symlink(&target, left_out_path(journal.path())).unwrap();
         assert_eq!(read_left_out(journal.path()), LeftOut::Unreadable);
     }
