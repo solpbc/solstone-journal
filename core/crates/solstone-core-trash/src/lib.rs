@@ -108,6 +108,10 @@ pub struct Pending {
     pub surface: Surface,
     /// When the owner asked.
     pub at: String,
+    /// The owner act's operation, when it spans several items (a selection
+    /// recovered or erased together); otherwise the item's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<String>,
 }
 
 /// One thing in the trash.
@@ -142,6 +146,10 @@ pub struct Item {
     /// journal held them too ([`Kind::refs`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refs: Vec<String>,
+    /// The owner act's operation, when it moved several things together (a
+    /// set); otherwise the item's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<String>,
 }
 
 impl Item {
@@ -314,11 +322,12 @@ pub fn detach_labelled(
         surface,
         paths,
         label,
+        None,
     )
 }
 
 /// [`detach_labelled`] under an item id the caller chose, so a set can write
-/// the id down before anything moves.
+/// the id down before anything moves, and under the set's operation.
 #[expect(
     clippy::too_many_arguments,
     reason = "one private step of the public detach, and of a set's"
@@ -332,6 +341,7 @@ fn detach_as(
     surface: Surface,
     paths: Vec<String>,
     label: Option<String>,
+    operation: Option<String>,
 ) -> Result<Item, TrashError> {
     if paths.is_empty() {
         return Err(TrashError::Missing(describe(&unit).to_owned()));
@@ -352,6 +362,7 @@ fn detach_as(
         pending: None,
         refs: Vec::new(),
         label,
+        operation,
     };
     let hold = kind.hold(journal, &item).map_err(TrashError::Held)?;
     hold.check().map_err(TrashError::Held)?;
@@ -441,6 +452,37 @@ pub fn attach(
     action: Action,
     surface: Surface,
 ) -> Result<Item, TrashError> {
+    attach_as(journal, kinds, id, action, surface, None)
+}
+
+/// [`attach`] as one of several items an owner act recovers together,
+/// recorded under that act's `operation`.
+pub fn attach_in(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    id: &str,
+    action: Action,
+    surface: Surface,
+    operation: &OperationId,
+) -> Result<Item, TrashError> {
+    attach_as(
+        journal,
+        kinds,
+        id,
+        action,
+        surface,
+        Some(operation.to_string()),
+    )
+}
+
+fn attach_as(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    id: &str,
+    action: Action,
+    surface: Surface,
+    operation: Option<String>,
+) -> Result<Item, TrashError> {
     let mut item = read_item(journal, id)?.ok_or(TrashError::NotInTrash)?;
     let kind = kind_for(kinds, &item.unit)?;
     let hold = kind.hold(journal, &item).map_err(TrashError::Held)?;
@@ -459,6 +501,7 @@ pub fn attach(
             action,
             surface,
             at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            operation,
         });
         publish(journal, &item)?;
     }
@@ -468,6 +511,28 @@ pub fn attach(
 
 /// Erase one item now. Records [`Event::Erased`].
 pub fn erase(journal: &Path, id: &str, action: Action, surface: Surface) -> Result<(), TrashError> {
+    erase_as(journal, id, action, surface, None)
+}
+
+/// [`erase`] as one of several items an owner act erases together, recorded
+/// under that act's `operation`.
+pub fn erase_in(
+    journal: &Path,
+    id: &str,
+    action: Action,
+    surface: Surface,
+    operation: &OperationId,
+) -> Result<(), TrashError> {
+    erase_as(journal, id, action, surface, Some(operation.to_string()))
+}
+
+fn erase_as(
+    journal: &Path,
+    id: &str,
+    action: Action,
+    surface: Surface,
+    operation: Option<String>,
+) -> Result<(), TrashError> {
     let lock = lock(journal)?;
     let mut item = read_item(journal, id)?.ok_or(TrashError::NotInTrash)?;
     match item.state {
@@ -477,6 +542,7 @@ pub fn erase(journal: &Path, id: &str, action: Action, surface: Surface) -> Resu
                 action,
                 surface,
                 at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+                operation,
             });
             publish(journal, &item)?;
         }
@@ -752,6 +818,10 @@ struct Set {
     /// Erase each now, as well as moving it.
     erase: bool,
     entries: Vec<Entry>,
+    /// The operation every item of the set records under, so the history
+    /// shows the set as the one act the owner confirmed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    operation: Option<String>,
 }
 
 /// Where sets wait, inside the trash.
@@ -779,9 +849,12 @@ pub fn detach_set(
     surface: Surface,
     erase: bool,
 ) -> Result<Vec<SetResult>, TrashError> {
+    let at = Utc::now();
+    let id = item_id(at);
     let mut set = Set {
         schema: SCHEMA,
-        id: item_id(Utc::now()),
+        operation: Some(OperationId::durable(at, &id).to_string()),
+        id,
         action,
         surface,
         erase,
@@ -909,6 +982,7 @@ fn settle(
                 set.surface,
                 paths,
                 entry.chosen.label.clone(),
+                set.operation.clone(),
             ) {
                 Ok(_) | Err(TrashError::Unfinished(_)) => {}
                 Err(error @ (TrashError::Held(_) | TrashError::InFlight)) if resuming => {
@@ -949,28 +1023,30 @@ fn settle(
         );
     }
     match item.state {
-        State::Trashed | State::Erasing => match erase(journal, &id, set.action, set.surface) {
-            Ok(()) => {
-                entry.settled = true;
-                (
-                    entry,
-                    Some(SetResult::Moved {
-                        item: Box::new(item),
-                        erased: true,
-                    }),
-                )
+        State::Trashed | State::Erasing => {
+            match erase_as(journal, &id, set.action, set.surface, set.operation.clone()) {
+                Ok(()) => {
+                    entry.settled = true;
+                    (
+                        entry,
+                        Some(SetResult::Moved {
+                            item: Box::new(item),
+                            erased: true,
+                        }),
+                    )
+                }
+                Err(error) => {
+                    log::warn!("trash item {id}: erase now was refused: {error}");
+                    (
+                        entry,
+                        Some(SetResult::Moved {
+                            item: Box::new(item),
+                            erased: false,
+                        }),
+                    )
+                }
             }
-            Err(error) => {
-                log::warn!("trash item {id}: erase now was refused: {error}");
-                (
-                    entry,
-                    Some(SetResult::Moved {
-                        item: Box::new(item),
-                        erased: false,
-                    }),
-                )
-            }
-        },
+        }
         // Still moving in, or being recovered: a sweep settles it later.
         State::Detaching | State::Attaching => (
             entry,
@@ -1227,9 +1303,11 @@ fn finish_detach(
     kind.references(journal, item, Change::Detached, &files)
         .map_err(TrashError::Io)?;
     let at = item.trashed_at().unwrap_or_else(Utc::now);
-    Removal::with_id(
+    removal(
         journal,
-        OperationId::durable(at, &item.id),
+        item,
+        item.operation.as_deref(),
+        at,
         item.action,
         item.surface,
     )
@@ -1303,13 +1381,35 @@ fn record_pending(journal: &Path, item: &Item, event: Event) {
         let at = DateTime::parse_from_rfc3339(&pending.at)
             .map(|at| at.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now());
-        Removal::with_id(
+        removal(
             journal,
-            OperationId::durable(at, &item.id),
+            item,
+            pending.operation.as_deref(),
+            at,
             pending.action,
             pending.surface,
         )
         .record_event(event, item.unit.clone());
+    }
+}
+
+/// The removal an item's step records through: under the owner act's
+/// operation when it spans several items, each entry then named by its item;
+/// otherwise under the item's own, which already names it.
+fn removal(
+    journal: &Path,
+    item: &Item,
+    shared: Option<&str>,
+    at: DateTime<Utc>,
+    action: Action,
+    surface: Surface,
+) -> Removal {
+    match shared {
+        Some(operation) => {
+            Removal::with_id(journal, OperationId::recorded(operation), action, surface)
+                .for_item(&item.id)
+        }
+        None => Removal::with_id(journal, OperationId::durable(at, &item.id), action, surface),
     }
 }
 
@@ -1319,14 +1419,17 @@ fn finish_erase(journal: &Path, item: &Item) -> Result<(), TrashError> {
         action: Action::Erase,
         surface: timer_surface(),
         at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+        operation: None,
     });
     let at = DateTime::parse_from_rfc3339(&pending.at)
         .map(|at| at.with_timezone(&Utc))
         .unwrap_or_else(|_| Utc::now());
     let files = trash_root(journal).join(&item.id).join(FILES_DIR);
-    Removal::with_id(
+    removal(
         journal,
-        OperationId::durable(at, &item.id),
+        item,
+        pending.operation.as_deref(),
+        at,
         pending.action,
         pending.surface,
     )
@@ -2098,6 +2201,7 @@ mod tests {
             pending: None,
             label: None,
             refs: Vec::new(),
+            operation: None,
         };
         fs::create_dir(root.join(TRASH_DIR).join(&stale.id)).unwrap();
         publish_new(&root, &stale).unwrap();
@@ -2203,6 +2307,7 @@ mod tests {
                 arrived: false,
                 settled: false,
             }],
+            operation: None,
         }
     }
 
@@ -2319,6 +2424,7 @@ mod tests {
             action: Action::Recover,
             surface: web(),
             at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            operation: None,
         });
         publish(&root, &item).unwrap();
         let mut set = set_of(true);
@@ -2428,6 +2534,237 @@ mod tests {
         assert!(waiting_sets(&root).is_empty());
     }
 
+    /// A kind whose unit says nothing of which thing it is, as an entity's.
+    #[derive(Default)]
+    struct Plain(std::cell::Cell<u32>);
+
+    impl Kind for Plain {
+        fn handles(&self, unit: &Unit) -> bool {
+            matches!(unit, Unit::Entity)
+        }
+        fn hold<'a>(&'a self, _: &Path, _: &Item) -> Result<Box<dyn Hold + 'a>, String> {
+            Ok(Box::new(Free(&self.0)))
+        }
+        fn present(&self, journal: &Path, path: &str) -> bool {
+            journal.join(path).exists()
+        }
+        fn references(&self, _: &Path, _: &Item, _: Change, _: &[String]) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    const PEOPLE: [&str; 2] = ["entities/alice", "entities/bob"];
+
+    fn people(root: &Path) -> Vec<Chosen> {
+        PEOPLE
+            .iter()
+            .map(|path| {
+                fs::create_dir_all(root.join(path)).unwrap();
+                fs::write(root.join(path).join("entity.json"), b"{}").unwrap();
+                Chosen {
+                    unit: Unit::Entity,
+                    paths: vec![(*path).into()],
+                    label: None,
+                }
+            })
+            .collect()
+    }
+
+    fn entries(root: &Path) -> Vec<solstone_core_removals::Entry> {
+        solstone_core_removals::history(root, 100).unwrap().entries
+    }
+
+    fn one_operation(entries: &[solstone_core_removals::Entry]) -> String {
+        let operations: std::collections::BTreeSet<&str> = entries
+            .iter()
+            .map(|entry| entry.operation.as_str())
+            .collect();
+        assert_eq!(operations.len(), 1, "{operations:?}");
+        operations.into_iter().next().unwrap().to_owned()
+    }
+
+    /// Two things whose units read the same, moved as one set: two entries,
+    /// under the set's one operation.
+    #[test]
+    fn a_set_records_each_thing_under_its_one_operation() {
+        let (_dir, root) = journal();
+        let kind = Plain::default();
+        let results = detach_set(
+            &root,
+            &[&kind],
+            people(&root),
+            Action::EntityDelete,
+            web(),
+            false,
+        )
+        .unwrap();
+        assert!(
+            results
+                .iter()
+                .all(|result| matches!(result, SetResult::Moved { .. }))
+        );
+        let found = entries(&root);
+        assert_eq!(found.len(), 2);
+        assert!(found.iter().all(|entry| entry.event == Event::Trashed));
+        let operation = one_operation(&found);
+        for item in list(&root).unwrap() {
+            assert_eq!(item.operation.as_deref(), Some(operation.as_str()));
+        }
+    }
+
+    /// A set asked erased now records its erases under the same operation.
+    #[test]
+    fn a_set_erased_now_records_its_erases_under_its_operation() {
+        let (_dir, root) = journal();
+        let kind = Plain::default();
+        detach_set(
+            &root,
+            &[&kind],
+            people(&root),
+            Action::EntityDelete,
+            web(),
+            true,
+        )
+        .unwrap();
+        let found = entries(&root);
+        assert_eq!(found.len(), 4);
+        assert_eq!(
+            found
+                .iter()
+                .filter(|entry| entry.event == Event::Erased)
+                .count(),
+            2
+        );
+        one_operation(&found);
+    }
+
+    /// A set's item stopped after its record and before it said so: the
+    /// sweep finishes it, and it is recorded once, under the set's operation.
+    #[test]
+    fn a_set_item_resumed_after_a_stop_records_once_under_the_set_operation() {
+        let (_dir, root) = journal();
+        let kind = Plain::default();
+        detach_set(
+            &root,
+            &[&kind],
+            people(&root),
+            Action::EntityDelete,
+            web(),
+            false,
+        )
+        .unwrap();
+        let mut item = list(&root).unwrap().remove(0);
+        item.state = State::Detaching;
+        publish(&root, &item).unwrap();
+        let swept = sweep(&root, &[&kind], Utc::now());
+        assert_eq!(swept.resumed, 1);
+        let found = entries(&root);
+        assert_eq!(found.len(), 2);
+        assert_eq!(
+            item.operation.as_deref(),
+            Some(one_operation(&found).as_str())
+        );
+    }
+
+    /// A set a stop left before anything moved: the sweep moves each thing
+    /// under the set's operation.
+    #[test]
+    fn a_set_finished_by_a_sweep_keeps_its_operation() {
+        let (_dir, root) = journal();
+        let kind = Plain::default();
+        let set = Set {
+            schema: SCHEMA,
+            id: item_id(Utc::now()),
+            action: Action::EntityDelete,
+            surface: web(),
+            erase: false,
+            entries: people(&root)
+                .into_iter()
+                .map(|chosen| Entry {
+                    chosen,
+                    item: None,
+                    arrived: false,
+                    settled: false,
+                })
+                .collect(),
+            operation: Some("20261111T000000000Z-20261111T000000000Zabcd1234".into()),
+        };
+        publish_set(&root, &set, true).unwrap();
+        sweep(&root, &[&kind], Utc::now());
+        let found = entries(&root);
+        assert_eq!(found.len(), 2);
+        assert_eq!(Some(one_operation(&found)), set.operation);
+    }
+
+    /// Several items recovered together, then several erased together: each
+    /// act's entries share its one operation.
+    #[test]
+    fn a_selection_recovered_or_erased_together_records_under_one_operation() {
+        let (_dir, root) = journal();
+        let kind = Plain::default();
+        let trash_people = |root: &Path| -> Vec<String> {
+            people(root)
+                .into_iter()
+                .map(|chosen| {
+                    detach(
+                        root,
+                        &kind,
+                        chosen.unit,
+                        Action::EntityDelete,
+                        web(),
+                        chosen.paths,
+                    )
+                    .unwrap()
+                    .id
+                })
+                .collect()
+        };
+        let recover = OperationId::fresh(Utc::now());
+        for id in trash_people(&root) {
+            attach_in(&root, &[&kind], &id, Action::Recover, web(), &recover).unwrap();
+        }
+        let recovered: Vec<_> = entries(&root)
+            .into_iter()
+            .filter(|entry| entry.event == Event::Recovered)
+            .collect();
+        assert_eq!(recovered.len(), 2);
+        assert_eq!(one_operation(&recovered), recover.as_str());
+
+        let erase = OperationId::fresh(Utc::now());
+        for id in trash_people(&root) {
+            erase_in(&root, &id, Action::Erase, web(), &erase).unwrap();
+        }
+        let erased: Vec<_> = entries(&root)
+            .into_iter()
+            .filter(|entry| entry.event == Event::Erased)
+            .collect();
+        assert_eq!(erased.len(), 2);
+        assert_eq!(one_operation(&erased), erase.as_str());
+    }
+
+    /// An item written before items carried an operation still recovers and
+    /// erases, each under its own.
+    #[test]
+    fn an_item_written_without_an_operation_still_recovers_and_erases() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let item = trash(&root, &kind);
+        let raw = fs::read_to_string(root.join(TRASH_DIR).join(&item.id).join(ITEM_FILE)).unwrap();
+        assert!(!raw.contains("operation"));
+        attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
+        let again = trash(&root, &kind);
+        erase(&root, &again.id, Action::Erase, web()).unwrap();
+        assert_eq!(
+            events(&root),
+            vec![
+                (Event::Erased, Action::Erase),
+                (Event::Recovered, Action::Recover),
+                (Event::Trashed, Action::SegmentDelete),
+                (Event::Trashed, Action::SegmentDelete),
+            ]
+        );
+    }
+
     /// The paths the trash could still give back: every item but one being
     /// erased.
     #[test]
@@ -2460,6 +2797,7 @@ mod tests {
             pending: None,
             label: None,
             refs: Vec::new(),
+            operation: None,
         };
         ensure_trash(&root).unwrap();
         fs::create_dir(root.join(TRASH_DIR).join(&item.id)).unwrap();
@@ -2484,6 +2822,7 @@ mod tests {
             action: Action::Recover,
             surface: web(),
             at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            operation: None,
         });
         publish(&root, &item).unwrap();
         let displaced = displaced_rel(&item.id, SEGMENT);
@@ -2518,6 +2857,7 @@ mod tests {
             action: Action::EmptyTrash,
             surface: web(),
             at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            operation: None,
         });
         publish(&root, &item).unwrap();
         fs::remove_file(
