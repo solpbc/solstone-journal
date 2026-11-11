@@ -7406,6 +7406,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_deleted_segment_is_neither_thought_nor_written_into() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, recorder) = floor_context(journal.path(), roots.path());
+        // What the trash leaves: the segment's directory holding its tombstone.
+        let dir = segment_dir(journal.path(), "20260813", "090000_300");
+        fs::write(dir.join("tombstone.json"), "{}").unwrap();
+        let mut log = test_log(&context, "segment");
+        let result = segment::run(
+            &context,
+            &mut log,
+            "090000_300",
+            false,
+            Some("default"),
+            2,
+            Some(std::time::Duration::from_secs(610)),
+            true,
+            &[],
+        )
+        .unwrap();
+        assert_eq!((result.success, result.failed), (0, 0));
+        assert!(recorder.requests.lock().unwrap().is_empty());
+        let left = fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(left, vec!["tombstone.json".to_owned()]);
+        assert!(
+            !journal
+                .path()
+                .join("chronicle/20260813/health/segment-think")
+                .exists()
+        );
+        segment::publish_saved_outputs(&context, &dir).unwrap();
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+    }
+
     /// A context whose recorded events sit an hour after every file the test writes.
     fn thought_after_input_context(
         journal: &Path,
