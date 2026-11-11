@@ -178,9 +178,11 @@ impl HideCache {
     }
 }
 
+/// A facet's detected names for a day, named as the index names them: any
+/// all-digit file name, not only a valid `YYYYMMDD`.
 fn is_detected_day(file: &str) -> bool {
     file.strip_suffix(".jsonl")
-        .is_some_and(|stem| stem.len() == 8 && stem.bytes().all(|byte| byte.is_ascii_digit()))
+        .is_some_and(|stem| !stem.is_empty() && stem.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 fn read_day_rows(journal: &Path, facet: &str, day: &str) -> DayRows {

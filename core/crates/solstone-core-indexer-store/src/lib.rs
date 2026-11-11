@@ -37,6 +37,8 @@ pub use screen_text::{
 };
 
 #[cfg(test)]
+mod hide_tests;
+#[cfg(test)]
 mod test_support;
 
 use std::fmt;
