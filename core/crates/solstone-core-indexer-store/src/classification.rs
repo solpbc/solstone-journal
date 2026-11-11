@@ -46,6 +46,9 @@ pub struct FacetDeclarationSet {
 struct RetiredName {
     id: Option<String>,
     successor: Option<String>,
+    /// Merged or renamed: the name leads to another facet. A deleted entry,
+    /// which builds before the trash wrote, leads nowhere and doesn't count.
+    redirects: bool,
 }
 
 const MAX_RETIRED_HOPS: usize = 16;
@@ -85,6 +88,7 @@ fn read_retired_names(journal: &Path) -> BTreeMap<String, RetiredName> {
                 RetiredName {
                     id: well_formed(entry.get("id")),
                     successor,
+                    redirects: matches!(state, Some("merged" | "renamed")),
                 },
             ))
         })
@@ -233,7 +237,7 @@ impl FacetDeclarationSet {
     /// Resolve a stored reference to a facet by name.
     fn lookup_reference(&self, name: &str) -> FacetResolution {
         let live = self.names.get(name).cloned();
-        let Some(retired) = self.retired.get(name) else {
+        let Some(retired) = self.retired.get(name).filter(|retired| retired.redirects) else {
             return live.unwrap_or(FacetResolution::Missing);
         };
         match live {
@@ -267,7 +271,9 @@ impl FacetDeclarationSet {
                 // its identity only when the entry is its own leftover.
                 return match self.retired.get(name) {
                     Some(entry)
-                        if entry.id.is_some() && entry.id.as_deref() != Some(id.as_str()) =>
+                        if entry.redirects
+                            && entry.id.is_some()
+                            && entry.id.as_deref() != Some(id.as_str()) =>
                     {
                         FacetResolution::Missing
                     }
@@ -937,9 +943,14 @@ mod tests {
         assert!(ids(&root, "20260107/default/123456_300/talents/work/brief.md").is_empty());
         assert_eq!(ids(&root, "facets/work/activities/20260107.jsonl"), vec![W]);
 
-        // The facet's own leftover entry is the same facet, with or without
-        // the id it has since been given.
-        for leftover in [format!(r#""id":"{W}""#), r#""id":null"#.to_owned()] {
+        // A deleted entry, the facet's own leftover or one an earlier build
+        // wrote for another facet of the name, doesn't count: the live facet
+        // is the one its references name.
+        for leftover in [
+            format!(r#""id":"{W}""#),
+            r#""id":null"#.to_owned(),
+            format!(r#""id":"{Z}""#),
+        ] {
             std::fs::write(
                 root.join("facets/retired.json"),
                 format!(r#"{{"names":{{"work":{{"state":"deleted",{leftover}}}}}}}"#),
@@ -981,7 +992,11 @@ mod tests {
                 case["input"].as_str().expect("input"),
             )
             .expect("input");
-            let parsed = read_retired_names(&root);
+            let parsed: BTreeMap<String, (Option<String>, Option<String>)> =
+                read_retired_names(&root)
+                    .into_iter()
+                    .map(|(name, entry)| (name, (entry.id, entry.successor)))
+                    .collect();
             let expected = match case["expected"].as_object() {
                 None => BTreeMap::new(),
                 Some(entries) => entries
@@ -989,10 +1004,10 @@ mod tests {
                     .map(|(name, entry)| {
                         (
                             name.clone(),
-                            RetiredName {
-                                id: entry["id"].as_str().map(str::to_owned),
-                                successor: entry["successor"].as_str().map(str::to_owned),
-                            },
+                            (
+                                entry["id"].as_str().map(str::to_owned),
+                                entry["successor"].as_str().map(str::to_owned),
+                            ),
                         )
                     })
                     .collect(),

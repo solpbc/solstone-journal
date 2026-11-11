@@ -1390,7 +1390,7 @@ fn a_merged_facet_name_reaches_the_survivor_in_search_and_transcripts_and_never_
 }
 
 #[test]
-fn a_deleted_facet_name_is_never_given_to_a_new_facet_and_a_forced_reuse_stays_closed() {
+fn a_deleted_facet_waits_in_the_trash_and_its_name_can_be_taken_again() {
     let journal = fixture();
     assert!(
         solstone_core_facets::delete_facet(
@@ -1403,29 +1403,31 @@ fn a_deleted_facet_name_is_never_given_to_a_new_facet_and_a_forced_reuse_stays_c
         )
         .unwrap()
     );
-    assert!(matches!(
-        solstone_core_facets::create_facet(journal.path(), "alpha", "Alpha", "", "", "", None),
-        Err(solstone_core_facets::FacetWriteError::NameRetired { .. })
-    ));
-    // A hand edit reuses the name anyway, with a new id.
-    let alpha = journal.path().join("facets/alpha");
-    fs::create_dir_all(&alpha).unwrap();
-    const FACET_C: &str = "123e4567-e89b-42d3-a456-426614174002";
-    fs::write(
-        alpha.join("facet.json"),
-        json!({"id": FACET_C, "title": "Alpha"}).to_string(),
-    )
-    .unwrap();
+    // While it waits, a grant for it reaches nothing.
     reconcile(&journal);
     grant(
         &journal,
         ReadScope::Facets {
-            ids: vec![FACET_C.to_owned()],
+            ids: vec![FACET_A.to_owned()],
         },
     );
     assert_eq!(reachable(&journal), (0, 0));
+    // A new facet may take the name; what names `alpha` is its now, as the
+    // name with no folder named no facet before.
+    solstone_core_facets::create_facet(journal.path(), "alpha", "Alpha", "", "", "", None).unwrap();
+    let new_id = solstone_core_facets::read_facet_declaration(journal.path(), "alpha")
+        .unwrap()
+        .unwrap()
+        .value()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_ne!(new_id, FACET_A);
+    reconcile(&journal);
+    grant(&journal, ReadScope::Facets { ids: vec![new_id] });
+    let scoped = reachable(&journal);
     grant(&journal, ReadScope::WholeJournal);
-    assert_eq!(reachable(&journal), (1, 1));
+    assert_eq!(scoped, reachable(&journal));
 }
 
 #[test]

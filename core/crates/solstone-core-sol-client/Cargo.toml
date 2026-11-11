@@ -8,6 +8,8 @@ publish = false
 
 [features]
 store-test-hooks = []
+# Tests that open a local socket.
+full-tests = []
 
 [dependencies]
 base64 = "0.22.1"

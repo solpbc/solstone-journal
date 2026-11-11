@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use solstone_core_removals::{Action, Page, Removal, Surface};
+use solstone_core_removals::{Action, Page, Surface};
+use solstone_core_trash::TrashError;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -9,7 +10,7 @@ use axum::{
     body::Bytes,
     extract::{Path, Query},
     http::StatusCode,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use serde_json::{Map, Value, json};
 
@@ -123,10 +124,13 @@ pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
     ) {
         return invalid_config_value("invalid or existing facet title");
     }
-    // Facet names are never reused. When this title's name belonged to a facet
-    // that was deleted or merged, the new facet takes the next free name; the
-    // title is what the owner sees, and it stays as asked.
-    let slug = match solstone_core_facets::retired_facet_entry(&journal_root, &slug) {
+    // A name that leads to a facet it was merged or renamed into is never
+    // given to a new facet: the new one takes the next free name. The title is
+    // what the owner sees, and it stays as asked. A deleted facet's name is
+    // free.
+    let slug = match solstone_core_facets::retired_facet_entry(&journal_root, &slug)
+        .map(|entry| entry.filter(|entry| entry.redirects()))
+    {
         Ok(None) => slug,
         Ok(Some(_)) => match solstone_core_facets::first_free_facet_name(&journal_root, &slug) {
             Ok(name) => name,
@@ -339,6 +343,22 @@ pub async fn update(
     json_response(json!({"success":true,"facet":facet_name,"config":config}))
 }
 
+/// A facet delete the journal refused: `reason` is the code the page turns
+/// into its words, `error` short words for a client that shows them.
+fn delete_refused(status: StatusCode, reason: &str) -> Response {
+    let error = match reason {
+        "last_facet" => "your journal needs at least one facet that isn't muted.",
+        "gone" => "that facet isn't in your journal.",
+        _ => "that facet couldn't be moved to the trash right now, so nothing was deleted.",
+    };
+    (
+        status,
+        axum::Json(json!({"success": false, "reason": reason, "error": error})),
+    )
+        .into_response()
+}
+
+/// Move a facet to the trash; `{"erase": true}` erases it at once.
 pub async fn delete(
     journal_root: PathBuf,
     Path(facet_name): Path<String>,
@@ -354,14 +374,20 @@ pub async fn delete(
     if consent != &Value::Bool(true) {
         return invalid_request_value("consent must be true");
     }
+    let erase = match data.get("erase") {
+        None => false,
+        Some(Value::Bool(erase)) => *erase,
+        Some(_) => return invalid_request_value("erase must be true or false"),
+    };
     if facet(&journal_root, &facet_name).is_none() {
-        return facet_not_found();
+        return delete_refused(StatusCode::NOT_FOUND, "gone");
     }
-    // Refuse before logging a delete that will not happen; the store re-checks under lock.
+    // Refuse before logging a delete that will not happen; the trash re-checks
+    // under the facet lock.
     if solstone_core_facets::observe_declared_facet_inventory(&journal_root)
         .is_ok_and(|inventory| inventory.enabled == [facet_name.as_str()])
     {
-        return last_enabled_facet();
+        return delete_refused(StatusCode::CONFLICT, "last_facet");
     }
     if solstone_core_facets::append_action_log(
         &journal_root,
@@ -375,19 +401,61 @@ pub async fn delete(
     {
         return settings_operation_failed();
     }
-    // No page calls this route; the command line does, so the surface is read
-    // from the request rather than assumed.
+    // No page calls this route yet; the command line does, so the surface is
+    // read from the request rather than assumed.
     let surface = Surface::of_request(
         Page::Settings,
         headers
             .get(axum::http::header::USER_AGENT)
             .and_then(|value| value.to_str().ok()),
     );
-    let removal = Removal::begin(&journal_root, Action::FacetDelete, surface);
-    match solstone_core_facets::delete_facet(&removal, &facet_name) {
-        Ok(true) => json_response(json!({"success":true,"facet":facet_name})),
-        Ok(false) => facet_not_found(),
-        Err(solstone_core_facets::FacetWriteError::LastEnabledFacet { .. }) => last_enabled_facet(),
+    let root = journal_root.clone();
+    let outcome = tokio::task::spawn_blocking(move || {
+        let index = solstone_core_indexer_store::RetentionIndex::new(&root);
+        let item = match solstone_core_facets::facet_trash::Facets::new(&index).trash(
+            &root,
+            &facet_name,
+            Action::FacetDelete,
+            surface,
+        ) {
+            Ok(item) => item,
+            // It left the journal; the trash finishes putting it away.
+            Err(TrashError::Unfinished(id)) => {
+                solstone_core_trash::item(&root, &id)?.ok_or(TrashError::Unfinished(id))?
+            }
+            Err(error) => return Err(error),
+        };
+        let erased = erase
+            && match solstone_core_trash::erase(&root, &item.id, Action::FacetDelete, surface) {
+                Ok(()) => true,
+                Err(error) => {
+                    log::warn!("trash item {}: erase now was refused: {error}", item.id);
+                    false
+                }
+            };
+        Ok((item, erased))
+    })
+    .await;
+    match outcome {
+        Ok(Ok((_, true))) => json_response(json!({"success": true, "erased": true})),
+        Ok(Ok((item, false))) if erase => json_response(json!({
+            "success": true,
+            "erased": false,
+            "erase_failed": true,
+            "trash": {"id": item.id, "erase_at": item.erase_at},
+        })),
+        Ok(Ok((item, false))) => json_response(json!({
+            "success": true,
+            "trash": {"id": item.id, "erase_at": item.erase_at},
+        })),
+        Ok(Err(error)) => match solstone_core_facets::facet_trash::failure_key(&error).as_str() {
+            "gone" => delete_refused(StatusCode::NOT_FOUND, "gone"),
+            key @ ("last_facet" | "busy") => delete_refused(StatusCode::CONFLICT, key),
+            _ => {
+                log::warn!("facet delete: {error}");
+                settings_operation_failed()
+            }
+        },
         Err(_) => settings_operation_failed(),
     }
 }

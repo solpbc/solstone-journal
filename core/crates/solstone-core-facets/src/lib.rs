@@ -10,6 +10,7 @@ mod activity_calendar;
 mod activity_placement;
 mod body_facet;
 pub mod entity_doctor;
+pub mod facet_trash;
 mod speculative_facets;
 mod store;
 mod trust_lock;

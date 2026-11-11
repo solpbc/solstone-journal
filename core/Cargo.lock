@@ -4950,7 +4950,9 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-removals",
+ "solstone-core-retention",
  "solstone-core-segment",
+ "solstone-core-trash",
  "tempfile",
 ]
 
@@ -5566,6 +5568,7 @@ dependencies = [
  "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-thinking-copy",
+ "solstone-core-trash",
  "windows-sys 0.61.2",
 ]
 

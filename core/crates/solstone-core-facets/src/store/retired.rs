@@ -3,12 +3,15 @@
 
 //! Facet names that no longer belong to a live facet.
 //!
-//! A facet's directory name is fixed when it is created and is never reused.
-//! When a facet is deleted or merged away, its name is recorded in
-//! `facets/retired.json` together with the facet's id and, for a merge, the id
-//! of the facet it was merged into. Stored references to the name (segment
-//! assignments and per-segment `talents/<name>/` output) resolve through that
-//! record, and creating a new facet under the name is refused.
+//! A facet's directory name is fixed when it is created. When a facet is
+//! merged or renamed away, its name is recorded in `facets/retired.json`
+//! together with the facet's id and the id of the facet it now leads to.
+//! Stored references to the name (segment assignments and per-segment
+//! `talents/<name>/` output) resolve through that record, and creating a new
+//! facet under the name is refused.
+//!
+//! A deleted facet waits in the trash and writes nothing here. Earlier builds
+//! wrote a `deleted` entry; it stays on disk, and no reader counts it.
 //!
 //! The file sits directly under `facets/` and is not a directory, so every
 //! reader that lists facet directories ignores it.
@@ -89,6 +92,16 @@ impl RetiredFacet {
             title: None,
             at: Some(Utc::now().to_rfc3339()),
         }
+    }
+
+    /// Whether the name leads to another facet: merged or renamed. A deleted
+    /// entry, which builds before the trash wrote, leads nowhere and reserves
+    /// nothing: every reader ignores it.
+    pub fn redirects(&self) -> bool {
+        matches!(
+            self.state,
+            RetiredFacetState::Merged | RetiredFacetState::Renamed
+        )
     }
 
     /// Entries are compared on what resolution depends on; title and time are
@@ -253,10 +266,11 @@ fn live_id(journal_root: &Path, name: &str) -> Result<Option<String>, FacetWrite
 /// that already hold it).
 ///
 /// Writing an entry with the same identity is a no-op. An existing entry may
-/// be replaced only when it is a leftover of an operation on the live facet
-/// at the same name that did not complete, and the new entry is written by
-/// that same facet: every other difference is refused, because a committed
-/// entry is permanent.
+/// be replaced when it is a deleted entry from an earlier build, which no
+/// reader counts, or a leftover of an operation on the live facet at the same
+/// name that did not complete, and the new entry is written by that same
+/// facet: every other difference is refused, because a committed redirect is
+/// permanent.
 pub fn record_retired_facet(
     journal_root: &Path,
     name: &str,
@@ -267,6 +281,10 @@ pub fn record_retired_facet(
     if let Some(existing) = entries.get(name) {
         if existing.same_identity(&entry) {
             return Ok(());
+        }
+        if !existing.redirects() {
+            entries.insert(name.to_owned(), entry);
+            return write_retired_facets(journal_root, &entries);
         }
         let live = live_id(journal_root, name)?;
         let leftover = match (&live, &existing.id) {
@@ -379,8 +397,9 @@ fn write_retired_facets(
     write_json(&path, &Value::Object(root), options).map_err(FacetWriteError::DeclarationWrite)
 }
 
-/// Whether `name` is free for a new facet: no directory of any kind and no
-/// retired entry. A damaged retired file refuses.
+/// Whether `name` is free for a new facet: no directory of any kind, and no
+/// merged or renamed entry leading it to another facet. A deleted entry from
+/// an earlier build doesn't count. A damaged retired file refuses.
 pub fn facet_name_is_free(journal_root: &Path, name: &str) -> Result<bool, FacetWriteError> {
     let dir = facets_dir(journal_root)
         .map_err(FacetWriteError::Read)?
@@ -390,7 +409,7 @@ pub fn facet_name_is_free(journal_root: &Path, name: &str) -> Result<bool, Facet
     {
         return Ok(false);
     }
-    Ok(retired_facet_entry(journal_root, name)?.is_none())
+    Ok(!retired_facet_entry(journal_root, name)?.is_some_and(|entry| entry.redirects()))
 }
 
 /// The first free name among `base`, `base-2`, `base-3`, ...

@@ -78,8 +78,10 @@ fn converted_keys_around(root: &Path, day: &str) -> BTreeSet<String> {
     let Ok(facets) = std::fs::read_dir(root.join("facets")) else {
         return keys;
     };
+    // A dot-named folder is a facet merge's scratch or leftover, never a facet.
     let folders = facets
         .flatten()
+        .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
         .map(|entry| entry.path().join("activities"))
         .collect::<Vec<_>>();
     for offset in -DAYS_AROUND..=DAYS_AROUND {

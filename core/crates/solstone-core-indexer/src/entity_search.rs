@@ -166,7 +166,9 @@ fn load_relationships(
     // entity on, not by its own folder: a folder can outlive a merge.
     let dirs_by_id = crate::edges::candidates::identity_dirs_by_id(journal)?;
     for (facet_name, facet_dir) in sorted_child_dirs(&journal.join("facets"))? {
-        if !facet_dir.join("entities").is_dir() {
+        // A dot-named folder is a facet merge's scratch or leftover, never a
+        // facet.
+        if facet_name.starts_with('.') || !facet_dir.join("entities").is_dir() {
             continue;
         }
         let links = solstone_core_entity::facet_links::LinkDirs::for_facet(journal, &facet_name);
@@ -418,6 +420,33 @@ mod tests {
         assert!(
             rows.iter()
                 .any(|(_, facet, content)| *facet == "work" && content.contains("own folder"))
+        );
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn a_facet_merges_hidden_folders_hold_no_links() {
+        let root = temp_root("hidden-merge-folders");
+        write(
+            &root,
+            "entities/ada/entity.json",
+            r#"{"id":"ada","name":"Ada"}"#,
+        );
+        write(
+            &root,
+            "facets/work/entities/ada/entity.json",
+            r#"{"entity_id":"ada","description":"live"}"#,
+        );
+        write(
+            &root,
+            "facets/.facet-merge-x.source/entities/ada/entity.json",
+            r#"{"entity_id":"ada","description":"hidden"}"#,
+        );
+        let build = build_entity_search(&root).expect("build entity search");
+        assert!(
+            build.rows.iter().all(|row| row.facet == "work"),
+            "{:?}",
+            build.rows.iter().map(|row| &row.facet).collect::<Vec<_>>()
         );
         fs::remove_dir_all(root).expect("cleanup");
     }

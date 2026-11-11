@@ -65,6 +65,20 @@ pub struct SourceProjection {
     pub sources: Vec<SourceEvidence>,
 }
 
+/// The facet folders under `facets/`. A dot-named folder is never a facet: a
+/// merge's scratch copy, its dropped files, or a leftover.
+fn facet_folders(journal: &Path) -> Result<Vec<fs::DirEntry>, String> {
+    let mut folders = Vec::new();
+    for entry in entries(&journal.join("facets"))? {
+        if entry.file_type().map_err(|e| e.to_string())?.is_dir()
+            && !entry.file_name().to_string_lossy().starts_with('.')
+        {
+            folders.push(entry);
+        }
+    }
+    Ok(folders)
+}
+
 fn entries(path: &Path) -> Result<Vec<fs::DirEntry>, String> {
     let values = match fs::read_dir(path) {
         Ok(values) => values,
@@ -258,10 +272,7 @@ pub fn capture_day_projection(journal: &Path, day: &str) -> Result<SourceProject
     let chronicle = journal.join("chronicle");
     let mut files = BTreeMap::new();
     collect(&chronicle, &chronicle.join(day), &mut files)?;
-    for facet in entries(&journal.join("facets"))? {
-        if !facet.file_type().map_err(|e| e.to_string())?.is_dir() {
-            continue;
-        }
+    for facet in facet_folders(journal)? {
         for kind in ["activities", "events", "entities"] {
             let path = facet.path().join(kind).join(format!("{day}.jsonl"));
             match fs::metadata(&path) {
@@ -467,10 +478,7 @@ fn capture_facet_day_sources(
     selected: Option<&str>,
 ) -> Result<SourceProjection, String> {
     let mut files = BTreeMap::new();
-    for facet in entries(&journal.join("facets"))? {
-        if !facet.file_type().map_err(|e| e.to_string())?.is_dir() {
-            continue;
-        }
+    for facet in facet_folders(journal)? {
         if selected.is_some_and(|name| facet.file_name() != std::ffi::OsStr::new(name)) {
             continue;
         }
@@ -612,10 +620,7 @@ pub fn compute_contract_digest(
 
 fn facet_declarations(journal: &Path) -> Result<BTreeMap<String, Value>, String> {
     let mut out = BTreeMap::new();
-    for facet in entries(&journal.join("facets"))? {
-        if !facet.file_type().map_err(|e| e.to_string())?.is_dir() {
-            continue;
-        }
+    for facet in facet_folders(journal)? {
         let path = facet.path().join("facet.json");
         match fs::read_to_string(&path) {
             Ok(text) => {
@@ -974,6 +979,42 @@ mod tests {
                 .any(|chunk| chunk.text.contains("an unrelated event"))
         );
         assert_eq!(fs::read_to_string(root.join(rel)).unwrap(), bytes);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn a_facet_merges_hidden_folders_are_never_facets_here() {
+        let root = root("daily-hidden-merge-folders");
+        write(&root, "facets/work/facet.json", r#"{"title":"Work"}"#);
+        write(
+            &root,
+            "facets/.facet-merge-x.source/facet.json",
+            "{not json",
+        );
+        write(
+            &root,
+            "facets/.facet-merge-x.source/activities/20261024.jsonl",
+            "{\"title\":\"hidden\"}\n",
+        );
+        write(
+            &root,
+            "facets/.facet-merge-x.dropped/files/activities/20261024.jsonl",
+            "{\"title\":\"hidden\"}\n",
+        );
+        let names: Vec<String> = facet_folders(&root)
+            .unwrap()
+            .iter()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["work"]);
+        let declarations = facet_declarations(&root).unwrap();
+        assert_eq!(declarations.keys().collect::<Vec<_>>(), vec!["work"]);
+        let sources = capture_facet_day_sources(&root, "20261024", "activities", None).unwrap();
+        assert!(
+            !sources
+                .chunks
+                .iter()
+                .any(|chunk| chunk.text.contains("hidden"))
+        );
         fs::remove_dir_all(root).unwrap();
     }
     fn root(name: &str) -> PathBuf {

@@ -141,10 +141,11 @@ pub fn apply_body_facet_answer(
 }
 
 /// Make the `body` facet, or the next free name when `body` belonged to a
-/// facet that was deleted or merged, as the settings page does.
+/// facet that was merged or renamed away, as the settings page does.
 fn make_body(root: &Path) -> Result<String, String> {
     let name = match crate::retired_facet_entry(root, PREFERRED_BODY_FACET)
         .map_err(|error| error.to_string())?
+        .filter(|entry| entry.redirects())
     {
         None => PREFERRED_BODY_FACET.to_owned(),
         Some(_) => crate::first_free_facet_name(root, PREFERRED_BODY_FACET)

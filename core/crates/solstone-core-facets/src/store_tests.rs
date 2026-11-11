@@ -676,7 +676,7 @@ fn plain_facet(root: &Path, name: &str) {
 }
 
 #[test]
-fn deleting_a_facet_retires_its_name_and_the_name_is_never_given_out_again() {
+fn deleting_a_facet_moves_it_to_the_trash_and_frees_its_name() {
     let temporary = TempDir::new();
     plain_facet(temporary.path(), "personal");
     plain_facet(temporary.path(), "work");
@@ -693,15 +693,19 @@ fn deleting_a_facet_retires_its_name_and_the_name_is_never_given_out_again() {
         .unwrap()
     );
 
-    let entry = crate::retired_facet_entry(temporary.path(), "work")
-        .unwrap()
-        .unwrap();
-    assert_eq!(entry.state, crate::RetiredFacetState::Deleted);
-    assert_eq!(entry.id.as_deref(), Some(id.as_str()));
-    assert!(matches!(
-        create_facet(temporary.path(), "work", "Work", "", "", "", None),
-        Err(crate::FacetWriteError::NameRetired { name }) if name == "work"
-    ));
+    // It waits in the trash, and nothing reserves its name.
+    assert!(!temporary.path().join("facets/work").exists());
+    assert_eq!(
+        solstone_core_trash::list(temporary.path()).unwrap().len(),
+        1
+    );
+    assert!(
+        crate::retired_facet_entry(temporary.path(), "work")
+            .unwrap()
+            .is_none()
+    );
+    create_facet(temporary.path(), "work", "Work", "", "", "", None).unwrap();
+    assert_ne!(facet_id_of(temporary.path(), "work"), id);
     assert_eq!(
         crate::first_free_facet_name(temporary.path(), "work").unwrap(),
         "work-2"
@@ -750,28 +754,27 @@ fn a_committed_retired_entry_is_never_replaced_by_another_facet() {
     plain_facet(temporary.path(), "personal");
     plain_facet(temporary.path(), "work");
     let work = facet_id_of(temporary.path(), "work");
-    crate::delete_facet(
-        &solstone_core_removals::Removal::begin(
-            temporary.path(),
-            solstone_core_removals::Action::FacetDelete,
-            solstone_core_removals::Surface::Cli,
-        ),
+    let personal = facet_id_of(temporary.path(), "personal");
+    // `work` is merged away: its folder is gone and its name leads on.
+    fs::remove_dir_all(temporary.path().join("facets/work")).unwrap();
+    crate::record_retired_facet(
+        temporary.path(),
         "work",
+        crate::RetiredFacet::merged(Some(work.clone()), personal.clone(), None),
     )
     .unwrap();
-    // A second live folder that happens to carry the deleted facet's id.
+    // A second live folder that happens to carry the merged facet's id.
     fs::create_dir_all(temporary.path().join("facets/x")).unwrap();
     fs::write(
         temporary.path().join("facets/x/facet.json"),
         format!(r#"{{"id":"{work}","title":"X"}}"#),
     )
     .unwrap();
-    let personal = facet_id_of(temporary.path(), "personal");
     assert!(matches!(
         crate::record_retired_facet(
             temporary.path(),
             "work",
-            crate::RetiredFacet::merged(Some(work.clone()), personal, None),
+            crate::RetiredFacet::renamed(Some(work.clone()), work.clone()),
         ),
         Err(crate::FacetWriteError::RetiredEntryConflict { .. })
     ));
@@ -779,7 +782,7 @@ fn a_committed_retired_entry_is_never_replaced_by_another_facet() {
     crate::record_retired_facet(
         temporary.path(),
         "work",
-        crate::RetiredFacet::deleted(Some(work), None),
+        crate::RetiredFacet::merged(Some(work), personal, None),
     )
     .unwrap();
 }
@@ -796,7 +799,8 @@ fn a_damaged_retired_record_is_never_overwritten_and_blocks_new_names() {
         create_facet(temporary.path(), "fresh", "Fresh", "", "", "", None),
         Err(crate::FacetWriteError::RetiredFileDamaged { .. })
     ));
-    assert!(matches!(
+    // A delete writes nothing there, so it goes ahead and leaves it as it is.
+    assert!(
         crate::delete_facet(
             &solstone_core_removals::Removal::begin(
                 temporary.path(),
@@ -804,25 +808,24 @@ fn a_damaged_retired_record_is_never_overwritten_and_blocks_new_names() {
                 solstone_core_removals::Surface::Cli
             ),
             "work"
-        ),
-        Err(crate::FacetWriteError::RetiredFileDamaged { .. })
-    ));
+        )
+        .unwrap()
+    );
     assert_eq!(fs::read(&path).unwrap(), b"{not json");
-    assert!(temporary.path().join("facets/work").exists());
+    assert!(!temporary.path().join("facets/work").exists());
 }
 
 #[test]
-fn the_default_facet_skips_a_retired_personal() {
+fn the_default_facet_skips_a_merged_personal() {
     let temporary = TempDir::new();
     plain_facet(temporary.path(), "personal");
     plain_facet(temporary.path(), "work");
-    crate::delete_facet(
-        &solstone_core_removals::Removal::begin(
-            temporary.path(),
-            solstone_core_removals::Action::FacetDelete,
-            solstone_core_removals::Surface::Cli,
-        ),
+    let personal = facet_id_of(temporary.path(), "personal");
+    fs::remove_dir_all(temporary.path().join("facets/personal")).unwrap();
+    crate::record_retired_facet(
+        temporary.path(),
         "personal",
+        crate::RetiredFacet::merged(Some(personal), facet_id_of(temporary.path(), "work"), None),
     )
     .unwrap();
     crate::set_facet_muted(temporary.path(), "work", true).unwrap_err();
@@ -872,16 +875,31 @@ fn listing_facets_ignores_the_retired_record_and_dot_folders() {
     )
     .unwrap();
     plain_facet(temporary.path(), "work-2");
-    let expected = listed(temporary.path());
-    // A merge scratch copy holding a live facet's declaration changes nothing.
-    fs::create_dir_all(temporary.path().join("facets/.facet-merge-x.dest")).unwrap();
-    fs::copy(
-        temporary.path().join("facets/personal/facet.json"),
-        temporary
-            .path()
-            .join("facets/.facet-merge-x.dest/facet.json"),
+    crate::record_retired_facet(
+        temporary.path(),
+        "gone",
+        crate::RetiredFacet::merged(None, facet_id_of(temporary.path(), "personal"), None),
     )
     .unwrap();
+    let expected = listed(temporary.path());
+    // A merge's scratch copies, its dropped files and its leftovers, each
+    // holding a facet declaration, change nothing.
+    for folder in [
+        ".facet-merge-x.dest",
+        ".facet-merge-x.source",
+        ".facet-merge-x.dropped/files",
+    ] {
+        fs::create_dir_all(temporary.path().join("facets").join(folder)).unwrap();
+        fs::copy(
+            temporary.path().join("facets/personal/facet.json"),
+            temporary
+                .path()
+                .join("facets")
+                .join(folder)
+                .join("facet.json"),
+        )
+        .unwrap();
+    }
     assert!(temporary.path().join("facets/retired.json").exists());
     assert_eq!(listed(temporary.path()), expected);
     assert_ne!(before, expected);

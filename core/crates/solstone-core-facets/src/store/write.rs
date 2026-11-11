@@ -5,7 +5,7 @@ use std::path::Path;
 
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{JsonWriteOptions, write_json};
-use solstone_core_removals::{Removal, Unit};
+use solstone_core_removals::Removal;
 
 use crate::hold_facet_trust_lock;
 
@@ -17,9 +17,7 @@ use super::error::FacetWriteError;
 use super::facet_id::allocate_facet_id_locked;
 use super::identity::read_facet_entity_link;
 use super::paths::{declaration_path, facet_entity_link_path};
-use super::retired::{
-    RetiredFacet, first_free_facet_name, record_retired_facet, retired_facet_entry,
-};
+use super::retired::{first_free_facet_name, retired_facet_entry};
 
 /// Create a facet declaration in its requested directory.
 pub fn create_facet(
@@ -50,7 +48,7 @@ pub fn create_facet(
             return Err(FacetWriteError::DeclarationUnreadable { detail });
         }
     }
-    if retired_facet_entry(journal_root, facet_dir)?.is_some() {
+    if retired_facet_entry(journal_root, facet_dir)?.is_some_and(|entry| entry.redirects()) {
         return Err(FacetWriteError::NameRetired {
             name: facet_dir.to_owned(),
         });
@@ -90,9 +88,11 @@ pub fn ensure_default_facet(journal_root: &Path) -> Result<bool, FacetWriteError
     if inventory.muted.iter().any(|facet| facet == DEFAULT_FACET) {
         set_facet_muted(journal_root, DEFAULT_FACET, false)?;
     } else {
-        // A retired `personal` is never recreated; the default takes the next
-        // free name and keeps the same title.
-        let name = if retired_facet_entry(journal_root, DEFAULT_FACET)?.is_none() {
+        // A `personal` merged or renamed away is never recreated; the default
+        // takes the next free name and keeps the same title.
+        let name = if !retired_facet_entry(journal_root, DEFAULT_FACET)?
+            .is_some_and(|entry| entry.redirects())
+        {
             DEFAULT_FACET.to_owned()
         } else {
             first_free_facet_name(journal_root, DEFAULT_FACET)?
@@ -113,40 +113,35 @@ fn refuse_last_enabled(journal_root: &Path, facet_dir: &str) -> Result<(), Facet
     Ok(())
 }
 
-/// Delete a facet directory when its declaration exists, as part of the
-/// owner's removal operation, which records it.
+/// Move a facet to the trash when its declaration exists, as the owner's
+/// removal operation's act; the trash records it. Returns whether it moved.
+/// Nothing is written to `facets/retired.json`: a name with no folder
+/// resolves to no facet, and a new facet may take it.
 pub fn delete_facet(removal: &Removal, facet_dir: &str) -> Result<bool, FacetWriteError> {
     let journal_root = removal.journal_root();
     let _trust = hold_facet_trust_lock(journal_root)?;
-    let path = declaration_path(journal_root, facet_dir)?;
     if read_facet_declaration(journal_root, facet_dir)?.is_none() {
         return Ok(false);
     }
     refuse_last_enabled(journal_root, facet_dir)?;
-    // The name is retired before the directory goes: a crash in between leaves
-    // the live facet with its own leftover entry, which resolves to the live
-    // facet and lets a retried delete complete.
-    let declaration = read_facet_declaration(journal_root, facet_dir)?;
-    let id = declaration.as_ref().and_then(|snapshot| {
-        snapshot
-            .value()
-            .get("id")
-            .and_then(Value::as_str)
-            .filter(|id| super::facet_id::is_well_formed_facet_id(id))
-            .map(str::to_owned)
-    });
-    let title = declaration
-        .as_ref()
-        .and_then(|snapshot| snapshot.value().get("title").and_then(Value::as_str))
-        .map(str::to_owned);
-    record_retired_facet(journal_root, facet_dir, RetiredFacet::deleted(id, title))?;
-    removal
-        .commit(Unit::Facet, |io| {
-            io.remove_tree(&format!("facets/{facet_dir}"))
-        })
-        .map_err(FacetWriteError::EntityLinkRemoval)?;
-    let _ = path;
-    Ok(true)
+    let index = solstone_core_indexer_store::RetentionIndex::new(journal_root);
+    match crate::facet_trash::Facets::new(&index).trash(
+        journal_root,
+        facet_dir,
+        removal.action(),
+        removal.surface(),
+    ) {
+        // In the trash, finishing on the next sweep.
+        Ok(_) | Err(solstone_core_trash::TrashError::Unfinished(_)) => Ok(true),
+        Err(solstone_core_trash::TrashError::Held(reason))
+            if reason == crate::facet_trash::LAST_FACET =>
+        {
+            Err(FacetWriteError::LastEnabledFacet {
+                facet: facet_dir.to_owned(),
+            })
+        }
+        Err(error) => Err(FacetWriteError::Trash(error)),
+    }
 }
 
 /// Update facet metadata while preserving identity and unknown declaration fields.

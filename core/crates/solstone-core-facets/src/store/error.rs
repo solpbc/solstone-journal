@@ -131,8 +131,8 @@ pub enum FacetWriteError {
     LastEnabledFacet {
         facet: String,
     },
-    /// The name belonged to a facet that was deleted or merged away; facet
-    /// names are never reused.
+    /// The name belonged to a facet that was merged or renamed away, and
+    /// leads to that facet now.
     NameRetired {
         name: String,
     },
@@ -145,6 +145,8 @@ pub enum FacetWriteError {
     RetiredEntryConflict {
         name: String,
     },
+    /// Moving the facet to the trash didn't happen, or didn't finish.
+    Trash(solstone_core_trash::TrashError),
 }
 
 pub use solstone_core_entity::{
@@ -187,7 +189,7 @@ impl fmt::Display for FacetWriteError {
             ),
             Self::NameRetired { name } => write!(
                 formatter,
-                "the facet name '{name}' belonged to a facet that was deleted or merged; facet names are never reused"
+                "the facet name '{name}' belonged to a facet that was merged or renamed, and leads to it now"
             ),
             Self::RetiredFileDamaged { detail } => write!(
                 formatter,
@@ -197,6 +199,7 @@ impl fmt::Display for FacetWriteError {
                 formatter,
                 "the facet name '{name}' is already recorded as retired with a different outcome"
             ),
+            Self::Trash(error) => error.fmt(formatter),
         }
     }
 }
@@ -211,6 +214,7 @@ impl Error for FacetWriteError {
             | Self::EntityLinkWrite(error)
             | Self::ContentWrite(error) => Some(error),
             Self::EntityLinkRemoval(error) => Some(error),
+            Self::Trash(error) => Some(error),
             Self::AlreadyExists { .. }
             | Self::DeclarationMissing { .. }
             | Self::DeclarationDamaged { .. }
