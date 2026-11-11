@@ -2038,10 +2038,10 @@ fn stage_entity(
     Ok(())
 }
 
-/// Facet names in this journal are never reused. Importing a facet under a
-/// name this journal retired would give that name back to a facet, so the
-/// whole import is refused. A retired name stays retired, so this is checked
-/// before anything is copied.
+/// A facet name this journal merged or renamed away leads to the facet it
+/// went into. Importing a facet under it would give that name back to another
+/// facet, so the whole import is refused, before anything is copied. A deleted
+/// facet's name leads nowhere and doesn't refuse.
 fn refuse_retired_facet_names(source: &Path, target: &Path) -> Result<(), ImportSourcesError> {
     let source_facets = source.join("facets");
     if !source_facets.is_dir() {
@@ -2060,11 +2060,11 @@ fn refuse_retired_facet_names(source: &Path, target: &Path) -> Result<(), Import
         })?
     {
         let facet = file_name(&facet_path)?;
-        if retired.contains_key(&facet) {
+        if retired.get(&facet).is_some_and(|entry| entry.redirects()) {
             return Err(ImportSourcesError::FacetMerge {
                 facet: facet.clone(),
                 detail: format!(
-                    "this journal had a facet named '{facet}' that was deleted or merged, and facet names are never reused, so this archive can't be imported"
+                    "this journal had a facet named '{facet}' that was merged or renamed into another, and that name leads there now, so this archive can't be imported"
                 ),
             });
         }
@@ -4835,24 +4835,32 @@ mod tests {
     }
 
     #[test]
-    fn a_retired_facet_name_refuses_the_import_before_anything_is_copied() {
+    fn a_merged_facet_name_refuses_the_import_before_anything_is_copied() {
         let _reset = FaultReset;
         let tree = PlanTree::new();
         let target = tree.path.join("target");
         fs::create_dir(&target).unwrap();
         solstone_core_facets::create_facet(&target, "kept", "Kept", "", "", "", None).unwrap();
-        solstone_core_facets::create_facet(&target, "gone", "Gone", "", "", "", None).unwrap();
-        assert!(
-            solstone_core_facets::delete_facet(
-                &solstone_core_removals::Removal::begin(
-                    &target,
-                    solstone_core_removals::Action::FacetDelete,
-                    solstone_core_removals::Surface::Cli
-                ),
-                "gone"
-            )
+        let kept = solstone_core_facets::read_facet_declaration(&target, "kept")
             .unwrap()
-        );
+            .unwrap()
+            .value()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        // `gone` was merged into `kept`; `old` was deleted by an earlier build.
+        fs::write(
+            target.join("facets/retired.json"),
+            serde_json::json!({"names": {
+                "gone": {"state": "merged", "id": null, "successor": kept},
+                "old": {"state": "deleted", "id": null},
+            }})
+            .to_string(),
+        )
+        .unwrap();
+        let source = tree.path.join("source-facets");
+        fs::create_dir_all(source.join("facets/old")).unwrap();
+        refuse_retired_facet_names(&source, &target).unwrap();
         let archive = write_zip(
             &tree.path,
             &[
@@ -4866,7 +4874,7 @@ mod tests {
         let error = merge_journal_archive(&archive, &target, &merge_options(&tree), None)
             .unwrap_err()
             .to_string();
-        assert!(error.contains("facet names are never reused"), "{error}");
+        assert!(error.contains("leads there now"), "{error}");
         assert!(!reached.get());
         assert!(!target.join("chronicle/20260311").exists());
     }
