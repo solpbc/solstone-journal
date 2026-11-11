@@ -2660,6 +2660,19 @@ button:focus:not(:focus-visible) {
 
       <form class="settings-form" onsubmit="return false;">
 
+      <div id="granolaSyncCard">
+        <h3 class="settings-subsection-title">Granola</h3>
+        <p class="settings-subsection-desc">your Granola meetings come into your journal, then update every hour.</p>
+        <div class="settings-field">
+          <label for="granolaKey">personal API key</label>
+          <input type="password" id="granolaKey" autocomplete="off" placeholder="grn_…" data-1p-ignore data-lpignore="true" data-bwignore="true">
+        </div>
+        <button type="button" class="btn" id="granolaConnect">connect</button>
+        <button type="button" class="btn" id="granolaDisconnect" hidden>disconnect</button>
+        <button type="button" class="btn" id="granolaRefresh">refresh</button>
+        <p id="granolaStatus" role="status" aria-live="polite">loading…</p>
+      </div>
+
       <div id="plaudSyncCard">
         <h3 class="settings-subsection-title">Plaud</h3>
         <p class="settings-subsection-desc">
@@ -5539,6 +5552,7 @@ document.getElementById('field-parakeet-cpp-device')?.addEventListener('change',
 
 // ========== SYNC ==========
 async function loadSync() {
+  loadGranola();
   try {
     const data = await window.apiJson('api/sync');
     setLoadState('syncLoadState');
@@ -5597,6 +5611,47 @@ document.getElementById('field-plaud-sync-enabled').addEventListener('change', a
   } catch (_) {
   }
 });
+
+async function loadGranola() {
+  const status = document.getElementById('granolaStatus');
+  try {
+    const data = await window.apiJson('api/granola');
+    document.getElementById('granolaDisconnect').hidden = !data.connected;
+    const lines = [data.connected ? 'on' : 'not connected'];
+    if (data.connected) {
+      if (data.attention) lines.push(data.attention);
+      if (data.last_added) lines.push('last added to your journal: ' + new Date(data.last_added).toLocaleString());
+      if (data.last_sync) lines.push('last checked: ' + new Date(data.last_sync).toLocaleString());
+      else lines.push('waiting for the first sync.');
+    }
+    status.textContent = lines.join(' · ');
+  } catch (_) {
+    status.textContent = "couldn't load Granola. reopen sync settings to try again.";
+  }
+}
+async function changeGranola(disconnect) {
+  const connect = document.getElementById('granolaConnect');
+  const remove = document.getElementById('granolaDisconnect');
+  const key = document.getElementById('granolaKey');
+  const status = document.getElementById('granolaStatus');
+  connect.disabled = remove.disabled = true;
+  try {
+    await window.apiJson('api/granola', {
+      method: disconnect ? 'DELETE' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      ...(disconnect ? {} : { body: JSON.stringify({ api_key: key.value.trim() }) }),
+    });
+    key.value = '';
+    await loadGranola();
+  } catch (error) {
+    status.textContent = error?.serverMessage || "couldn't change Granola. try again.";
+  } finally {
+    connect.disabled = remove.disabled = false;
+  }
+}
+document.getElementById('granolaRefresh').addEventListener('click', loadGranola);
+document.getElementById('granolaConnect').addEventListener('click', () => changeGranola(false));
+document.getElementById('granolaDisconnect').addEventListener('click', () => changeGranola(true));
 
 // ========== VISION ==========
 let visionData = null;

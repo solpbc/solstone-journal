@@ -11,6 +11,7 @@ pub use activities::{
 mod ai_chat;
 mod audio;
 pub mod body_records;
+pub mod granola;
 pub use audio::OTHER_VOICE;
 mod browser;
 mod day_accumulator;

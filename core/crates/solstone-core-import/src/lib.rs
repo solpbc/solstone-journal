@@ -22,6 +22,7 @@ pub mod detect;
 pub mod events;
 pub mod folder_admit;
 pub mod force_notice;
+pub mod granola;
 pub mod heartbeat;
 pub mod import_trash;
 pub mod metadata;

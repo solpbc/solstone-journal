@@ -379,6 +379,7 @@ pub fn project_public_config(mut config: Map<String, Value>) -> Result<Map<Strin
         .cloned();
     config.remove("service_key_validation");
     config.remove("support");
+    config.remove("granola");
     if let Some(value) = validation {
         config.insert("key_validation".to_owned(), json!({"plaud": value}));
     }

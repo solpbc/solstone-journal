@@ -16,6 +16,7 @@ mod assets;
 mod config;
 mod convey;
 mod facets;
+mod granola;
 mod http;
 mod icons;
 mod keys;
@@ -74,10 +75,19 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
     let storage_put_root = journal_root.clone();
     let purge_root = journal_root.clone();
     let prune_logs_root = journal_root.clone();
+    let granola_get_root = journal_root.clone();
+    let granola_connect_root = journal_root.clone();
+    let granola_disconnect_root = journal_root.clone();
     let sync_get_root = journal_root.clone();
     let sync_put_root = journal_root;
     Router::new()
         .route("/app/settings/", get(assets::shell))
+        .route(
+            "/app/settings/api/granola",
+            get(move || granola::get(granola_get_root.clone()))
+                .post(move |body| granola::connect(granola_connect_root.clone(), body))
+                .delete(move || granola::disconnect(granola_disconnect_root.clone())),
+        )
         .route("/app/settings/workspace", get(assets::workspace))
         .route("/app/settings/static/settings.js", get(assets::settings_js))
         .route("/app/settings/facets/{slug}", get(assets::shell))

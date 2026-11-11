@@ -97,7 +97,7 @@ pub const IMPORTERS: &[ImporterRow] = &[
     },
 ];
 
-pub const BACKENDS: &[&str] = &["plaud", "audio", "oura"];
+pub const BACKENDS: &[&str] = &["plaud", "audio", "oura", "granola"];
 
 /// What a retired notes-folder form tells the owner instead of importing.
 pub const NOTES_FOLDER_IMPORT_RETIRED: &str = "importing a folder of notes is gone; an Obsidian vault comes into your journal when you turn it on in the solstone app on the computer where the vault lives";

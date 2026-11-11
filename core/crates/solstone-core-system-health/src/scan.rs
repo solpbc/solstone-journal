@@ -297,7 +297,9 @@ pub(crate) fn detect_data_state(
             "audio",
             audio_jsonl
                 .iter()
-                .any(|path| jsonl_has_row_with_key(path, vocab::AUDIO_TRANSCRIPT_ROW_KEY))
+                .any(|path| jsonl_has_row_with_key(path, vocab::AUDIO_TRANSCRIPT_ROW_KEY)
+                    // A Granola note is ready even when it holds notes alone.
+                    || jsonl_has_row_with_key(path, solstone_core_format::content::granola::HEADER_KEY))
                 || markdown.iter().any(|path| has_nonempty_text(path)),
             !audio_jsonl.is_empty(),
             has_raw_media(&files, MediaKind::Audio),

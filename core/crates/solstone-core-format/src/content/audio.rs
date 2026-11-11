@@ -84,6 +84,12 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let metadata = records
         .first()
         .filter(|record| !record.contains_key("start"));
+    if let Some(metadata) = metadata.filter(|m| {
+        m.get(super::granola::HEADER_KEY)
+            .is_some_and(Value::is_object)
+    }) {
+        return super::granola::render(metadata, records);
+    }
     let mut skipped = 0usize;
     let mut chunks = Vec::new();
     let (base_timestamp, start_header) = base_timestamp_and_header(rel);
