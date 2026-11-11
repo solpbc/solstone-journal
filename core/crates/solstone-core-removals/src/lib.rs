@@ -264,7 +264,10 @@ pub enum RecordError {
 pub struct OperationId(String);
 
 impl OperationId {
-    fn fresh(at: DateTime<Utc>) -> Self {
+    /// A new operation that began at `at`: for one owner act that a durable
+    /// record carries across restarts and that spans several things, such as
+    /// a selection recovered together.
+    pub fn fresh(at: DateTime<Utc>) -> Self {
         let mut bytes = [0_u8; 4];
         // A failed random source still yields a unique id within this
         // process through the sequence, and the time prefix separates runs.
@@ -295,6 +298,11 @@ impl OperationId {
         ))
     }
 
+    /// An id a durable record wrote down earlier, read back as it was.
+    pub fn recorded(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -316,6 +324,9 @@ pub struct Removal {
     sequence: AtomicU32,
     /// Whether a durable record carries this operation across restarts.
     durable: bool,
+    /// The one thing of several in this operation that these entries are
+    /// about, when the operation spans more than one.
+    item: Option<String>,
 }
 
 impl Removal {
@@ -340,7 +351,22 @@ impl Removal {
             surface,
             sequence: AtomicU32::new(0),
             durable: true,
+            item: None,
         }
+    }
+
+    /// Name this operation's entries by `item` too: for a durable operation
+    /// that spans several things, whose units can read the same (two
+    /// entities, two facets), so each thing's entry has its own name and is
+    /// still found again when its step is resumed.
+    #[must_use]
+    pub fn for_item(mut self, item: &str) -> Self {
+        self.item = Some(
+            item.chars()
+                .filter(|character| character.is_ascii_alphanumeric() || *character == '-')
+                .collect(),
+        );
+        self
     }
 
     pub fn id(&self) -> &OperationId {
@@ -444,9 +470,20 @@ impl Removal {
         let id = if self.durable {
             // Stage 1's entries keep their names; the trash's events carry
             // theirs, so one operation can record a unit trashed and erased.
-            match event {
-                Event::Removed => format!("{}-u{}", self.id, unit_digest(&unit)?),
-                event => format!("{}-{}-u{}", self.id, event.as_str(), unit_digest(&unit)?),
+            // An operation over several things names each thing too, so two
+            // whose units read the same are two entries. Names already
+            // written stay as they are: entries are never renamed.
+            match (event, &self.item) {
+                (event, Some(item)) => format!(
+                    "{}-{}-{item}-u{}",
+                    self.id,
+                    event.as_str(),
+                    unit_digest(&unit)?
+                ),
+                (Event::Removed, None) => format!("{}-u{}", self.id, unit_digest(&unit)?),
+                (event, None) => {
+                    format!("{}-{}-u{}", self.id, event.as_str(), unit_digest(&unit)?)
+                }
             }
         } else {
             let sequence = self.sequence.fetch_add(1, Ordering::SeqCst);
@@ -767,6 +804,59 @@ mod tests {
         resumed.record(segment("080000_300"));
         resumed.record(segment("070000_300"));
         assert_eq!(history(&journal.0, 10).unwrap().total, 2);
+    }
+
+    #[test]
+    fn an_operation_over_several_things_records_each_once() {
+        // Two entities read the same as units: only the item tells them
+        // apart, so each is named by its item and a resumed one is found.
+        let journal = Journal::new("several");
+        let operation = OperationId::fresh(Utc::now());
+        let removal = |item: &str| {
+            Removal::with_id(
+                &journal.0,
+                operation.clone(),
+                Action::EntityDelete,
+                Surface::Cli,
+            )
+            .for_item(item)
+        };
+        removal("20261111T000000000Z-aaaaaaaa").record_event(Event::Trashed, Unit::Entity);
+        removal("20261111T000000000Z-bbbbbbbb").record_event(Event::Trashed, Unit::Entity);
+        // The first one's step resumed after a stop.
+        removal("20261111T000000000Z-aaaaaaaa").record_event(Event::Trashed, Unit::Entity);
+        let history = history(&journal.0, 10).unwrap();
+        assert_eq!(history.total, 2);
+        assert!(
+            history
+                .entries
+                .iter()
+                .all(|entry| entry.operation == operation.as_str())
+        );
+    }
+
+    #[test]
+    fn names_written_without_an_item_still_read_beside_those_with_one() {
+        let journal = Journal::new("names");
+        let requested = Utc::now();
+        Removal::with_id(
+            &journal.0,
+            OperationId::durable(requested, "20261111T000000000Z-aaaaaaaa"),
+            Action::EntityDelete,
+            Surface::Cli,
+        )
+        .record_event(Event::Trashed, Unit::Entity);
+        Removal::with_id(
+            &journal.0,
+            OperationId::fresh(requested),
+            Action::EntityDelete,
+            Surface::Cli,
+        )
+        .for_item("20261111T000000000Z-bbbbbbbb")
+        .record_event(Event::Trashed, Unit::Entity);
+        let history = history(&journal.0, 10).unwrap();
+        assert_eq!(history.total, 2);
+        assert_eq!(history.entries.len(), 2);
     }
 
     #[test]
