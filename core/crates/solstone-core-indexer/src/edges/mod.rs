@@ -1073,6 +1073,45 @@ mod tests {
     }
 
     #[test]
+    fn a_hidden_activity_keeps_no_edges_and_its_visible_sibling_keeps_its_own() {
+        let rel = "facets/work/activities/20260430.jsonl";
+        let context = edge_context(rel, "20260430", "work");
+        let record = |id: &str, hidden: bool| {
+            json!({
+                "id": id,
+                "title": id,
+                "created_at": 1777554000000_i64,
+                "hidden": hidden,
+                "participation": [
+                    {"role": "attendee", "entity_id": "edge_zoe"},
+                    {"role": "attendee", "entity_id": "edge_ada"}
+                ],
+            })
+            .as_object()
+            .expect("object")
+            .clone()
+        };
+        let rows = activity::extract_activity_edges(
+            &[record("shown", false), record("muted", true)],
+            &context,
+        )
+        .expect("activity edges");
+        assert!(!rows.is_empty());
+        assert!(
+            rows.iter()
+                .all(|row| row.anchor.as_deref() != Some("muted")),
+            "{rows:?}"
+        );
+        assert!(
+            rows.iter()
+                .any(|row| row.anchor.as_deref() == Some("shown"))
+        );
+        let none = activity::extract_activity_edges(&[record("muted", true)], &context)
+            .expect("hidden only");
+        assert!(none.is_empty(), "{none:?}");
+    }
+
+    #[test]
     fn activity_edges_cover_participation_story_relations_and_titles() {
         let rel = "facets/work/activities/20260430.jsonl";
         let context = edge_context(rel, "20260430", "work");

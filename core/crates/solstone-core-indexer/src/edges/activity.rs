@@ -16,9 +16,11 @@ pub(crate) fn extract_activity_edges(
 ) -> Result<Vec<EdgeRow>, EdgeError> {
     let mut rows = Vec::new();
 
+    // A hidden record keeps no connections: what it names is out of search.
     for entry in entries.iter().filter(|entry| {
         !solstone_core_format::content::is_retired_plan(entry)
             && !solstone_core_format::content::is_body_record(entry)
+            && !solstone_core_format::content::is_hidden_activity(entry)
     }) {
         let record_id = edge_str(entry.get("id"), "id")?;
         let title = fallback_activity_title(entry)?;
