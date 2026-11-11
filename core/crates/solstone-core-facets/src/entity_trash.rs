@@ -37,6 +37,7 @@ use serde::Serialize;
 use serde_json::Value;
 use solstone_core_entity::facet_links::LinkDirs;
 use solstone_core_entity_matching::entity_slug;
+use solstone_core_journal_io::MalformedPolicy;
 use solstone_core_removals::{Action, Surface, Unit};
 use solstone_core_retention::notify::IndexNotify;
 use solstone_core_retention::receipt::RemovedPath;
@@ -62,11 +63,16 @@ pub const GONE: &str = r#"{"code":"gone"}"#;
 /// A facet link couldn't be read, so what the entity holds can't be told.
 pub const LINK_UNREADABLE: &str = r#"{"code":"link_unreadable"}"#;
 
+/// The ambiguity rows can't be read, so the rewrite a move makes there can't
+/// be made or undone; nothing moves.
+pub const AMBIGUITIES_UNREADABLE: &str = r#"{"code":"ambiguities_unreadable"}"#;
+
 /// A recover waits: its id belongs to another entity in the journal now.
 pub const TAKEN: &str = r#"{"code":"taken"}"#;
 
 /// The code of a refusal from this kind: `principal`, `record_damaged`,
-/// `busy`, `gone`, `taken`, `waits_facets`, `link_unreadable`, or `failed`
+/// `busy`, `gone`, `taken`, `waits_facets`, `link_unreadable`,
+/// `ambiguities_unreadable`, or `failed`
 /// for anything that isn't a refusal.
 pub fn refusal_code(error: &TrashError) -> String {
     match error {
@@ -243,6 +249,11 @@ impl Kind for Entities<'_> {
         // owner's mark, so it is settled before anything is judged.
         if solstone_core_entity::recover_interrupted_entity_merge(journal).is_err() {
             return Err(BUSY.to_owned());
+        }
+        // The move rewrites ambiguity rows after its files have moved; rows
+        // that can't be read would stop it there, so it doesn't start.
+        if solstone_core_entity::read_ambiguities(journal, MalformedPolicy::Raise).is_err() {
+            return Err(AMBIGUITIES_UNREADABLE.to_owned());
         }
         if item.state == State::Detaching {
             hold_going(journal, item)?;

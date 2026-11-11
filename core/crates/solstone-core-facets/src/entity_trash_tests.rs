@@ -687,6 +687,13 @@ fn the_owner_and_a_damaged_record_are_refused_and_nothing_moves() {
     assert_eq!(refusal_code(&refused), "record_damaged");
     assert_eq!(journal.tree(), before);
 
+    fs::remove_file(journal.root().join("entities/retired.json")).unwrap();
+    fs::write(journal.root().join("entities/ambiguities.jsonl"), "{not json\n").unwrap();
+    let refused = trash(&journal, &told, "bob").unwrap_err();
+    assert_eq!(refusal_code(&refused), "ambiguities_unreadable");
+    assert_eq!(journal.tree(), before);
+    fs::remove_file(journal.root().join("entities/ambiguities.jsonl")).unwrap();
+
     let missing = trash(&journal, &told, "nobody").unwrap_err();
     assert_eq!(refusal_code(&missing), "gone");
 }

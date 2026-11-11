@@ -62,6 +62,7 @@ fn words(code: &str) -> &'static str {
         "busy" => "your journal is busy; try again in a moment",
         "gone" => "that entity isn't in your journal",
         "link_unreadable" => "a facet link couldn't be read",
+        "ambiguities_unreadable" => "your journal's ambiguity records couldn't be read",
         "bad_request" => "that delete couldn't be read",
         _ => "your journal couldn't move it to the trash",
     }
