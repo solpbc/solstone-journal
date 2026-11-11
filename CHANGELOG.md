@@ -21,6 +21,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- on the entities page, the button on a name in a facet's detected list now hides it instead of deleting it. a hidden name stays in your journal and stays hidden however often it's detected again: its detections there are left out of search, connected agents can't reach them, and your journal won't add it to that facet. you can see the names you hid in a facet and unhide them there.
+- hiding a person or topic now also leaves its notes, and its detections in its facets, out of search, and connected agents can't reach them. its name, other names and emails can't be changed while it's hidden.
+- a hidden activity and what your journal wrote for it, such as its story, are now left out of search, and connected agents can't reach them.
+- hiding a place on the map now also leaves it out of what your journal writes about where you were each day: in search, for connected agents and in activities. new daily briefings leave it out too.
+- when you leave a memory or a quote out of your week, that week's page is now left out of search. the memory itself stays in your journal and in search.
+- `solstone call entities delete`, `solstone call journal facet delete` and `solstone call speakers wipe --commit` now say the day something is erased in your own time zone, and `facet delete` now answers in a sentence instead of raw output.
+- things you delete together, and things you recover or erase together from the trash, now share one line in the removal history for each step.
 - deleting a person or topic on the entities page now moves it to the trash, with its notes in every facet and its voice, in place of a delete you could cancel for 10 seconds. you can select several and delete them together. if someone you deleted turns up again in what you share, they come back as someone new, and recovering the one in the trash puts them back beside the new one.
 - clearing what your journal keeps about voices (`solstone call speakers wipe --commit`) now moves it to the trash as one item, which you can recover until it's erased. it now also reaches recordings it used to miss and the voices your journal was still grouping. voices you turned down, groups you dismissed and lines you marked as yours stay. people and recordings already in the trash keep theirs.
 - when `solstone journal facet merge` finds a file of the same name in both facets, the copy from the facet merged away now waits in the trash. recovering it puts that copy in place of the one the merge kept.
