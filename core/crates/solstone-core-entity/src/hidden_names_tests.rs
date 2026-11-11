@@ -203,14 +203,8 @@ fn an_attached_link_hides_only_when_its_entity_is_blocked() {
     assert!(keys.is_hidden("Dana"));
     assert!(keys.hides_folder("dana"));
     assert!(!keys.is_hidden("Eve"));
-    assert_eq!(
-        link_folder_hidden(&journal.0, "work", "dana").unwrap(),
-        true
-    );
-    assert_eq!(
-        link_folder_hidden(&journal.0, "work", "eve").unwrap(),
-        false
-    );
+    assert!(link_folder_hidden(&journal.0, "work", "dana").unwrap());
+    assert!(!link_folder_hidden(&journal.0, "work", "eve").unwrap());
 }
 
 #[test]
@@ -220,10 +214,7 @@ fn an_attached_link_whose_entity_is_damaged_stays_visible() {
     journal.link("mark", json!({"entity_id": "mark"}));
     let keys = facet_hidden_keys(&journal.0, "work").unwrap();
     assert!(keys.is_empty());
-    assert_eq!(
-        link_folder_hidden(&journal.0, "work", "mark").unwrap(),
-        false
-    );
+    assert!(!link_folder_hidden(&journal.0, "work", "mark").unwrap());
 }
 
 #[test]

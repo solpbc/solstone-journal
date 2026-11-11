@@ -31,6 +31,11 @@ fn visit_line(iso_day: &str, h_acc: f64, (lat, lon): (f64, f64)) -> String {
 /// Readings near Golden 14:00 to 14:04, a visit near Denver 15:02 to 16:40
 /// and a stay near Boulder 18:00 to 18:09, all from the phone.
 fn seed(root: &Path, visit_accuracy: f64) {
+    // The segments below are named in the owner's local time, UTC-6 on this
+    // day; the owner's zone is set so the host's own zone doesn't matter.
+    let config = root.join("config/journal.json");
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(config, r#"{"identity":{"timezone":"America/Denver"}}"#).unwrap();
     let header = iphone_header("full", "full");
     write(
         root,
