@@ -194,6 +194,15 @@ pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
             {
                 return settings_operation_failed();
             }
+            // Segments name facets by name, so a new facet given an earlier
+            // facet's name holds that name's segments once their stored
+            // classifications are put right.
+            if let Err(error) = solstone_core_indexer_store::todo::enqueue_token(
+                &journal_root,
+                solstone_core_indexer_store::todo::Token::Reclassify,
+            ) {
+                log::warn!("facet {slug} was created but search was not queued: {error}");
+            }
             let mut config = [
                 ("title".to_owned(), json!(title)),
                 ("description".to_owned(), json!(description)),
@@ -715,6 +724,30 @@ mod tests {
             .expect("JSON");
             assert_eq!(body["reason_code"], "facet_not_found");
         }
+    }
+
+    #[tokio::test]
+    async fn creating_a_facet_asks_search_to_sort_segments_by_facet_again() {
+        let root = populated_root();
+        let reclassify = || {
+            solstone_core_indexer_store::todo::listed_attempts(
+                root.path(),
+                solstone_core_indexer_store::todo::Token::Reclassify,
+            )
+            .expect("read the work list")
+        };
+        assert_eq!(reclassify(), None);
+        let response = shell_router(root.path())
+            .oneshot(
+                Request::post("/app/settings/api/facet")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"title": "Garden"}).to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), 201);
+        assert!(reclassify().is_some());
     }
 
     #[tokio::test]
