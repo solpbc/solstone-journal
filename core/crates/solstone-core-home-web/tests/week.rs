@@ -858,13 +858,15 @@ async fn week_peek_moment_and_caption_resolution() {
         "/source?ref=sol%3A%2F%2F20260308%2F100000_300"
     );
     assert_eq!(rows[0]["peek_caption"], "from the daily briefing for sun 8");
-    assert_eq!(rows[0]["menu_href"], rows[0]["peek_href"]);
+    // No activity holds the moment, so "this isn't right" opens the day's
+    // activities, where each one can be corrected.
+    assert_eq!(rows[0]["menu_href"], "/app/activities/20260308");
 
-    // 2. Activity reference selected as moment
+    // 2. Activity reference selected as moment: it opens on the activity.
     assert_eq!(rows[1]["peek_label"], "open that moment →");
     assert_eq!(
         rows[1]["peek_href"],
-        "/source?ref=sol%3A%2F%2Ffacets%2Fwork%2Factivities%2F20260309%23act1"
+        "/app/activities/20260309?facet=work#work/act1"
     );
     assert_eq!(rows[1]["peek_caption"], "from the daily briefing for mon 9");
     // "this isn't right" opens the cited activity with its corrections open.
@@ -883,7 +885,123 @@ async fn week_peek_moment_and_caption_resolution() {
         rows[2]["peek_caption"],
         "from the daily briefing for tue 10"
     );
-    assert_eq!(rows[2]["menu_href"], rows[2]["peek_href"]);
+    assert_eq!(rows[2]["menu_href"], "/app/activities/20260310");
+}
+
+/// A week whose memories are a briefing bullet citing a moment inside an
+/// activity, and one citing nothing, beside that day's activities.
+#[tokio::test]
+async fn a_week_memory_opens_the_activity_it_is_about() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    for facet in ["work", "home"] {
+        fs::create_dir_all(root.join(format!("facets/{facet}/activities"))).unwrap();
+        fs::write(
+            root.join(format!("facets/{facet}/facet.json")),
+            format!(r#"{{"title":"{facet}"}}"#),
+        )
+        .unwrap();
+    }
+    let rows = |records: &[Value]| {
+        records
+            .iter()
+            .map(|record| format!("{record}\n"))
+            .collect::<String>()
+    };
+    fs::write(
+        root.join("facets/work/activities/20260308.jsonl"),
+        rows(&[
+            json!({"id":"standup","activity":"meeting","title":"Standup","segments":["090000_300"],"stream":"default","story":{"body":"You went over the release checklist with Mina."}}),
+            json!({"id":"demo","activity":"meeting","title":"Board demo rehearsal","segments":["140000_300"],"stream":"default","story":{"body":"Juliet ran the live demo and you gave the architecture overview."}}),
+        ]),
+    )
+    .unwrap();
+    // The demo's copy in another facet says the same thing; that is no doubt.
+    fs::write(
+        root.join("facets/home/activities/20260308.jsonl"),
+        rows(&[json!({"id":"demo_copy","activity":"video","title":"Board demo rehearsal","segments":["140000_300"],"stream":"default","story":{"body":"Juliet ran the live demo."}})]),
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("reflections/weekly")).unwrap();
+    let memory = |id: &str, day: &str, text: &str, refs: Value| json!({"id":id,"key":format!("k_{id}"),"day":day,"text":text,"source":{"kind":"briefing","uri":format!("sol://chronicle/{day}/talents/morning_briefing"),"briefing_day":day,"refs":refs}});
+    let page = json!({
+        "version": 1,
+        "days": [
+            {"day":"20260308","state":"memory","memory_id":"m_moment"},
+            {"day":"20260309","state":"nothing_shared"},
+            {"day":"20260310","state":"nothing_shared"},
+            {"day":"20260311","state":"nothing_shared"},
+            {"day":"20260312","state":"nothing_shared"},
+            {"day":"20260313","state":"nothing_shared"},
+            {"day":"20260314","state":"nothing_shared"}
+        ],
+        "memories": [memory("m_moment", "20260308", "You checked the release list.", json!(["sol://20260308/default/090000_300"]))],
+    });
+    fs::write(
+        root.join("reflections/weekly/20260308.json"),
+        page.to_string(),
+    )
+    .unwrap();
+    let model = |root: &Path| {
+        solstone_core_home::weekly::page_model(
+            root,
+            "20260308",
+            2026,
+            &solstone_core_convey_shell::source_link::reference_is_moment,
+        )
+        .unwrap()
+    };
+    let shown = model(root);
+    assert_eq!(shown["rows"][0]["peek_label"], "open that moment →");
+    assert_eq!(
+        shown["rows"][0]["peek_href"],
+        "/app/activities/20260308?facet=work#work/standup"
+    );
+    assert_eq!(
+        shown["rows"][0]["menu_href"],
+        "/app/activities/20260308?facet=work&correct=1#work/standup"
+    );
+
+    // A bullet that cites nothing is matched by the words it shares.
+    let mut page = page;
+    page["memories"] = json!([memory(
+        "m_moment",
+        "20260308",
+        "You gave the architecture overview while Juliet ran the live demo.",
+        json!([])
+    )]);
+    fs::write(
+        root.join("reflections/weekly/20260308.json"),
+        page.to_string(),
+    )
+    .unwrap();
+    let shown = model(root);
+    assert_eq!(
+        shown["rows"][0]["peek_href"],
+        "/source?ref=sol%3A%2F%2Fchronicle%2F20260308%2Ftalents%2Fmorning_briefing"
+    );
+    assert_eq!(
+        shown["rows"][0]["menu_href"],
+        "/app/activities/20260308?facet=work&correct=1#work/demo"
+    );
+
+    // Words two different activities share as much leave the choice to the
+    // owner, on the day's activities.
+    page["memories"] = json!([memory(
+        "m_moment",
+        "20260308",
+        "Juliet and Mina met.",
+        json!([])
+    )]);
+    fs::write(
+        root.join("reflections/weekly/20260308.json"),
+        page.to_string(),
+    )
+    .unwrap();
+    assert_eq!(
+        model(root)["rows"][0]["menu_href"],
+        "/app/activities/20260308"
+    );
 }
 
 #[tokio::test]

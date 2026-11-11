@@ -1395,6 +1395,45 @@ mod tests {
     }
 
     #[test]
+    fn a_correction_from_another_copy_names_the_part_of_the_time_it_covers() {
+        // This activity runs 9:00 to 9:10; the corrected copy covered 9:05 on.
+        let base = json!({"id":"video_090000_300","activity":"video","segments":["090000_300","090500_300"]});
+        let stretch = json!({"id":"work/rec/t/1","segments":["090500_300"]});
+        let mut copy = base.clone();
+        copy["details"] = json!("Juliet ran the demo.");
+        copy["playback"] = json!(true);
+        copy["edits"] = json!([
+            {"actor":"owner:update","timestamp":"t","fields":["details"],"set":{"details":"Juliet ran the demo."},"before":{},"stretch":stretch},
+            {"actor":"owner:update","timestamp":"t","fields":["playback"],"set":{"playback":true},"before":{},"stretch":stretch},
+        ]);
+        for talent in ["participation", "work", "conversation"] {
+            let told = render_shipped_talent(talent, copy.clone());
+            assert!(
+                told.contains(
+                    "About 9:05 AM to 9:10 AM, part of this activity:\n\nJuliet ran the demo."
+                ),
+                "{talent}"
+            );
+            assert!(
+                told.contains("From 9:05 AM to 9:10 AM, part of this activity, a recording or video was playing."),
+                "{talent}"
+            );
+            assert!(
+                told.contains("your own recorded voice playing back"),
+                "{talent}"
+            );
+        }
+        // Made on this activity itself, or covering all of it, it speaks for
+        // the whole activity.
+        let mut whole = copy.clone();
+        whole["edits"][0]["stretch"] = json!({"id":"x","segments":["090000_300","090500_300"]});
+        whole["edits"][1] = json!({"actor":"owner:update","timestamp":"t","fields":["playback"],"set":{"playback":true},"before":{},"stretch":{"id":"y"}});
+        let told = render_shipped_talent("work", whole);
+        assert!(!told.contains("part of this activity"));
+        assert!(told.contains("This was a recording or video playing."));
+    }
+
+    #[test]
     fn a_story_talent_repeats_the_owners_account_first() {
         let base = json!({"id":"coding_090000_60","activity":"coding","description":"Release work","segments":["090000_60"]});
         let fields = |talent: &str, activity: Value| -> (Vec<String>, Value) {

@@ -223,16 +223,51 @@ pub(crate) fn owner_account(activity: &Map<String, Value>) -> Option<&str> {
         .filter(|account| !account.trim().is_empty())
 }
 
+/// When the owner's correction of `field` came from another activity over
+/// part of this one's time, the part it speaks for, as "2:00 PM to 2:30 PM".
+fn covered_time(activity: &Map<String, Value>, field: &str) -> Option<String> {
+    let segments = solstone_core_facets::stretch::correction_segments(activity, field)?;
+    let bounds = segments
+        .iter()
+        .filter_map(|segment| segment_bounds(segment))
+        .collect::<Vec<_>>();
+    let start = bounds.iter().map(|(start, _)| *start).min()?;
+    let end = bounds.iter().map(|(_, end)| *end).max()?;
+    Some(format!("{} to {}", format_time(start), format_time(end)))
+}
+
+/// What the owner's correction says, in the words both its places use.
+fn account_words(activity: &Map<String, Value>) -> Option<String> {
+    let account = owner_account(activity)?;
+    Some(match covered_time(activity, "details") {
+        Some(time) => format!("About {time}, part of this activity:\n\n{account}"),
+        None => account.to_owned(),
+    })
+}
+
+/// A recording, and the owner's own voice in it.
+fn recording_words(activity: &Map<String, Value>) -> Option<String> {
+    if activity.get("playback") != Some(&Value::Bool(true)) {
+        return None;
+    }
+    let when = match covered_time(activity, "playback") {
+        Some(time) => {
+            format!("From {time}, part of this activity, a recording or video was playing")
+        }
+        None => "This was a recording or video playing".to_owned(),
+    };
+    Some(format!(
+        "{when}. You watched or listened to it; you were not at the event, and no one in it was with you. A line under `You:` in it is your own recorded voice playing back, not you talking with anyone."
+    ))
+}
+
 fn owner_correction(activity: &Map<String, Value>) -> Option<String> {
     let mut parts = Vec::new();
-    if let Some(account) = owner_account(activity) {
+    if let Some(account) = account_words(activity) {
         parts.push(format!("## What you told the journal\n\n{account}"));
     }
-    if activity.get("playback") == Some(&Value::Bool(true)) {
-        parts.push(
-            "## A recording\n\nThis was a recording or video playing. You watched or listened to it; you were not at the event, and no one in it was with you."
-                .to_owned(),
-        );
+    if let Some(recording) = recording_words(activity) {
+        parts.push(format!("## A recording\n\n{recording}"));
     }
     (!parts.is_empty()).then(|| parts.join("\n\n"))
 }
@@ -309,19 +344,18 @@ fn activity_context(
     )];
     // What the owner said about the activity outranks what the journal made
     // of it. Both read the record exactly as stored.
-    if let Some(account) = activity
-        .get("details")
-        .and_then(Value::as_str)
-        .filter(|account| !account.trim().is_empty())
-    {
+    if let Some(account) = account_words(activity) {
         parts.push(format!(
             "## Your Account\nThe owner's own account of this activity, in their words. Where the transcript, the screen or the description disagrees, follow the owner. Keep quoted words exactly as they were said.\n\n{account}"
         ));
     }
     if activity.get("playback") == Some(&Value::Bool(true)) {
-        parts.push(
-            "## A Recording\nThe owner says this was a recording or video playing. No one heard or seen in it was present with the owner. Tell it as the owner watching or listening.".to_owned(),
-        );
+        let when = covered_time(activity, "playback")
+            .map(|time| format!(" from {time}, part of this activity"))
+            .unwrap_or_default();
+        parts.push(format!(
+            "## A Recording\nThe owner says a recording or video was playing{when}. No one heard or seen in it was present with the owner. Tell it as the owner watching or listening. Lines under `You:` in it are the owner's own recorded voice playing back."
+        ));
     }
 
     let state_lines = span
