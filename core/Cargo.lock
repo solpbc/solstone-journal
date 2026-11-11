@@ -5002,8 +5002,10 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-journal",
+ "solstone-core-journal-io",
  "solstone-core-processing-record",
  "solstone-core-talent-config",
+ "tempfile",
  "unicode-normalization",
 ]
 

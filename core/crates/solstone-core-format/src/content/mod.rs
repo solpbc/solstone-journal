@@ -39,6 +39,7 @@ use crate::matcher::{PatternSpec, Resolver, patterns_for_root as filter_patterns
 
 pub mod possible_names;
 pub mod screen_text;
+pub mod week_left_out;
 
 pub use crate::matcher::PatternRoot;
 pub use projections::{render_browser_text, render_morning_briefing_text, render_raw_screen_text};
