@@ -626,7 +626,7 @@ test('a worked-out stay says so, and a hidden place stays off the map', async ()
   assert.ok(markup.includes('<p class="map-row-title">at the reading room</p>'), 'the owner name leads');
   assert.ok(markup.includes('a stay your journal worked out from readings from your iphone · 18 readings'));
   assert.ok(markup.includes('href="/app/map/place/0123456789ab"'));
-  assert.ok(markup.includes('hidden from the map'));
+  assert.ok(markup.includes(' · hidden<'), 'the hidden place is marked where its link shows');
   assert.ok(markup.includes('href="/app/map/week/20261002"'), 'the day links to its week');
   const townPoints = day.map.towns.length;
   assert.strictEqual(calls.circleMarker.length, 1 + 1 + townPoints, 'nothing near the hidden place is drawn');
@@ -656,7 +656,7 @@ test('the week, places and a place page render from their own data', async () =>
   const page = await run({ pathname: '/app/map/place/0123456789ab', responses: { '/app/map/api/place/0123456789ab': place } });
   const pageMarkup = page.elements['map-view-root'].innerHTML;
   assert.ok(pageMarkup.includes('<option value="home" selected>home</option>'));
-  assert.ok(pageMarkup.includes('hide from the map'));
+  assert.ok(pageMarkup.includes('<input type="checkbox" name="hidden">'), 'a place shown has its hide unchecked');
   assert.ok(pageMarkup.includes('21:00–07:00 · a visit your phone reported'));
 });
 
