@@ -25,7 +25,7 @@ pub(crate) use instance::macos_sweep_table;
     target_os = "ios",
     target_os = "android"
 ))]
-pub use instance::process_owner;
+pub use instance::{process_owner, process_table_birth};
 pub use pdeathsig::apply_parent_death_kill;
 pub use spawn::ManagedProcess;
 #[cfg(any(target_os = "linux", target_os = "macos"))]

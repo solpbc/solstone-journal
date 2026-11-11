@@ -26,6 +26,7 @@ use super::parent_loss_admission::{
 };
 use super::parent_loss_closure::{
     AdmissionRetirer, ClosingAuthority, HeartbeatRetirement, SystemAdmissionRetirer,
+    settle_by_process_table,
 };
 use super::parent_loss_ledger::{
     ActiveGeneration, BootstrapRecoveryReason, CoordinatorLease, ParentLossGeneration,
@@ -38,7 +39,7 @@ use super::{
     ParentLossReason, ParentWatch, ParentWatchStatus, PlatformParentExitWatcher,
 };
 use crate::process::{
-    InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource, ProcessOwner,
+    InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
     SystemProcessInstanceSource,
 };
 
@@ -614,19 +615,21 @@ impl ParentLossCoordinator {
         // now names another process is the admitted one having exited and the
         // pid being reused, which a long-running generation makes near certain;
         // reading that as a mismatch left every later start to audit the whole
-        // generation. A pid another user now holds is unreadable on macOS, so
-        // its owner settles it, as the successor's closer does.
+        // generation. A pid `inspect` cannot read is settled by the process
+        // table, as the successor's closer does.
         for admission in sealed {
             match source.observe(&admission.identity.instance) {
                 InstanceVerdict::NotSameOrExited => continue,
                 InstanceVerdict::SameLive { .. } => return Ok(RetirementValidation::Pending),
                 InstanceVerdict::Unverifiable => {
-                    match owners.owner(admission.identity.instance.pid) {
-                        ProcessOwner::Absent => continue,
-                        ProcessOwner::Uid(uid) if uid != admission.identity.uid => continue,
-                        ProcessOwner::Uid(_) | ProcessOwner::Unknown => {
-                            return Ok(RetirementValidation::Pending);
-                        }
+                    if settle_by_process_table(
+                        owners,
+                        admission.identity.instance,
+                        Some(admission.identity.uid),
+                    )
+                    .is_none()
+                    {
+                        return Ok(RetirementValidation::Pending);
                     }
                 }
             }
@@ -910,7 +913,9 @@ mod tests {
         Disposition, HostedAdmissionTestFault, HostedLaunchProvenance, ManagedLaunchRequest,
         SpawnOptions, launch_managed_hosted, set_hosted_admission_test_fault,
     };
-    use crate::process::{InstanceCensus, ProcessBirth, SignalKind, TerminationError};
+    use crate::process::{
+        InstanceCensus, ProcessBirth, ProcessOwner, SignalKind, TableBirth, TerminationError,
+    };
 
     /// Answers every owner lookup the same way and sends no signals.
     struct FixedOwner(ProcessOwner);
@@ -931,6 +936,27 @@ mod tests {
 
     #[allow(non_upper_case_globals)]
     const UnknownOwner: FixedOwner = FixedOwner(ProcessOwner::Unknown);
+
+    /// This user owns the pid, and the process table names `.0` there.
+    struct OwnedBirth(u32, TableBirth);
+
+    impl AdmissionRetirer for OwnedBirth {
+        fn signal(
+            &self,
+            _instance: ProcessInstance,
+            _signal: SignalKind,
+        ) -> Result<(), TerminationError> {
+            Ok(())
+        }
+
+        fn owner(&self, _pid: u32) -> ProcessOwner {
+            ProcessOwner::Uid(self.0)
+        }
+
+        fn table_birth(&self, _pid: u32) -> TableBirth {
+            self.1
+        }
+    }
 
     struct MutableInspectSource {
         result: Mutex<InspectResult>,
@@ -1433,6 +1459,44 @@ mod tests {
             validate(ProcessOwner::Unknown),
             RetirementValidation::Pending
         );
+    }
+
+    #[test]
+    fn an_unreadable_pid_of_this_user_is_settled_by_the_birth_at_it() {
+        let (journal, mut coordinator, _, _) = bootstrap([HostedServiceKind::Sense]);
+        let identity =
+            write_admitted_service(journal.path(), &coordinator, HostedServiceKind::Sense);
+        let (sealed, digest) = coordinator.seal_admissions().expect("sealed admissions");
+        let source = MutableInspectSource {
+            result: Mutex::new(InspectResult::Unverifiable),
+        };
+        let validate = |table: TableBirth| {
+            coordinator
+                .validate_witnesses_with_source(
+                    &sealed,
+                    &digest,
+                    false,
+                    &source,
+                    &OwnedBirth(identity.uid, table),
+                )
+                .expect("unreadable pid observation")
+        };
+
+        // Another birth at the pid, or none: the admitted process has exited.
+        assert!(matches!(
+            validate(TableBirth::Live(ProcessBirth::linux(9_999, 1, 100))),
+            RetirementValidation::Complete(ParentLossTerminalDisposition::Completed { .. })
+        ));
+        assert!(matches!(
+            validate(TableBirth::Absent),
+            RetirementValidation::Complete(ParentLossTerminalDisposition::Completed { .. })
+        ));
+        // The admitted process itself, or a table that cannot be read.
+        assert_eq!(
+            validate(TableBirth::Live(identity.instance.birth)),
+            RetirementValidation::Pending
+        );
+        assert_eq!(validate(TableBirth::Unknown), RetirementValidation::Pending);
     }
 
     #[test]

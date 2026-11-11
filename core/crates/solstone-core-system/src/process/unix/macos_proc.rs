@@ -46,13 +46,24 @@ fn classify_proc_pidinfo_failure(wrote: i32, errno: Option<i32>) -> MacosProcErr
 pub(crate) fn process_birth_from_macos_bsd_info(
     info: MacosBsdInfo,
 ) -> Result<ProcessBirth, MacosProcError> {
-    if info.start_tvusec >= 1_000_000 {
+    process_birth_from_macos_start(info.start_tvsec, info.start_tvusec)
+}
+
+/// The one conversion from Darwin's start time to a birth, shared by every
+/// instrument that reads it, so births from `proc_pidinfo` and from the
+/// `sysctl` process table compare equal for the same process.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn process_birth_from_macos_start(
+    start_tvsec: u64,
+    start_tvusec: u64,
+) -> Result<ProcessBirth, MacosProcError> {
+    if start_tvusec >= 1_000_000 {
         return Err(MacosProcError::InvalidBirth);
     }
-    let seconds = i64::try_from(info.start_tvsec).map_err(|_| MacosProcError::InvalidBirth)?;
+    let seconds = i64::try_from(start_tvsec).map_err(|_| MacosProcError::InvalidBirth)?;
     let micros = seconds
         .checked_mul(1_000_000)
-        .and_then(|value| value.checked_add(i64::try_from(info.start_tvusec).ok()?))
+        .and_then(|value| value.checked_add(i64::try_from(start_tvusec).ok()?))
         .ok_or(MacosProcError::InvalidBirth)?;
     Ok(ProcessBirth::macos(micros))
 }

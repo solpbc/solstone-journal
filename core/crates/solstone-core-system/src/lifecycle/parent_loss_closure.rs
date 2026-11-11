@@ -6,7 +6,7 @@
 //!
 //! Durability is established through discrete, immutable, whole-JSON artifacts
 //! under `health/parent-loss/generations/<gen>/closure-recovery/`:
-//! - `batches/<seq:06>.json`: lists completed rows up to `RECOVERY_BATCH_LIMIT` (256).
+//! - `batches/<seq:06>.json`: lists completed rows up to `RECOVERY_BATCH_LIMIT` (2048).
 //! - `ids/<seq:06>.json`: lists launch IDs certified by that batch.
 //! - `live/<launch_id>.json`: tracks live process state, census of descendants,
 //!   escalate_at, reap deadline, term_requested, and binding digest.
@@ -64,7 +64,8 @@ use crate::process::InspectResult;
 use crate::process::exact_descendant_tree;
 use crate::process::{
     InstanceVerdict, ProcessInstance, ProcessInstanceSource, ProcessOwner, SignalKind,
-    SystemProcessInstanceSource, TerminationError, process_owner, signal_exact_instance,
+    SystemProcessInstanceSource, TableBirth, TerminationError, process_owner, process_table_birth,
+    signal_exact_instance,
 };
 
 #[path = "parent_loss_closure_publication.rs"]
@@ -86,7 +87,12 @@ fn inject_finalization_ack(
 
 pub const PARENT_LOSS_CLOSURE_SCHEMA_V1: u32 = 1;
 pub(crate) const PARENT_LOSS_RECOVERY_SCHEMA_V1: u32 = 1;
-pub(crate) const RECOVERY_BATCH_LIMIT: usize = 256;
+/// Rows per batch, audited chunk, assembly run and merge segment. Each is one
+/// durable write, and on macOS a durable write is a full flush of the drive's
+/// cache (about 4 to 20 ms), so the count of writes, not their size, is what
+/// a large closure spends: at 256 rows, a 107,068-admission generation spent
+/// most of its publication time flushing.
+pub(crate) const RECOVERY_BATCH_LIMIT: usize = 2048;
 const OBSERVATION_SETTLE_WINDOW: Duration = Duration::from_millis(500);
 const OBSERVATION_POLL: Duration = Duration::from_millis(25);
 const ADMISSION_LOCK_TIMEOUT: Duration = Duration::from_secs(2);
@@ -609,6 +615,12 @@ pub trait AdmissionRetirer: Send + Sync {
     fn signal(&self, instance: ProcessInstance, signal: SignalKind)
     -> Result<(), TerminationError>;
     fn owner(&self, pid: u32) -> ProcessOwner;
+    /// The birth of whatever holds `pid`, from the same table as `owner`.
+    /// Without an instrument it settles nothing.
+    fn table_birth(&self, pid: u32) -> TableBirth {
+        let _ = pid;
+        TableBirth::Unknown
+    }
 }
 
 /// Production retirer: every signal is guarded by a fresh exact observation.
@@ -626,6 +638,10 @@ impl AdmissionRetirer for SystemAdmissionRetirer {
 
     fn owner(&self, pid: u32) -> ProcessOwner {
         process_owner(pid)
+    }
+
+    fn table_birth(&self, pid: u32) -> TableBirth {
+        process_table_birth(pid)
     }
 }
 
@@ -979,16 +995,14 @@ fn wait_single_for_exit(
                     return SingleExitVerdict::SameLive;
                 }
             }
-            InstanceVerdict::Unverifiable => {
-                match settle_unverifiable(authority, instance.pid, uid) {
-                    Some(finding) => return SingleExitVerdict::Settled(finding),
-                    None => {
-                        if Instant::now() >= until {
-                            return SingleExitVerdict::Unverifiable;
-                        }
+            InstanceVerdict::Unverifiable => match settle_unverifiable(authority, instance, uid) {
+                Some(finding) => return SingleExitVerdict::Settled(finding),
+                None => {
+                    if Instant::now() >= until {
+                        return SingleExitVerdict::Unverifiable;
                     }
                 }
-            }
+            },
         }
         thread::sleep(OBSERVATION_POLL.min(until.saturating_duration_since(Instant::now())));
     }
@@ -1363,7 +1377,7 @@ fn discharge_retained_descendants(
                 }
             }
             InstanceVerdict::Unverifiable => {
-                match settle_unverifiable(authority, inst.pid, Some(uid)) {
+                match settle_unverifiable(authority, inst, Some(uid)) {
                     Some(AdmissionFinding::Exited)
                     | Some(AdmissionFinding::PidReusedByAnotherUser) => {}
                     _ => {
@@ -1381,7 +1395,7 @@ fn discharge_retained_descendants(
             InstanceVerdict::SameLive { .. } => any_descendant_live = true,
             InstanceVerdict::Unverifiable => {
                 if !matches!(
-                    settle_unverifiable(authority, inst.pid, Some(uid)),
+                    settle_unverifiable(authority, inst, Some(uid)),
                     Some(AdmissionFinding::Exited | AdmissionFinding::PidReusedByAnotherUser)
                 ) {
                     return Ok(Some(ClosureOutcome::Refused(
@@ -1704,7 +1718,7 @@ fn run_live_state_machine(
             Ok(None)
         }
         InstanceVerdict::Unverifiable => {
-            match settle_unverifiable(authority, live_file.root.pid, Some(live_file.uid)) {
+            match settle_unverifiable(authority, live_file.root, Some(live_file.uid)) {
                 Some(finding) => {
                     let expected_digest = compute_live_binding_digest(
                         live_file.root,
@@ -2449,6 +2463,9 @@ pub(crate) fn close_abandoned_generation(
         };
 
         if let Some(entries) = dir_entries {
+            // The directory is listed first, refusing exactly as before, so its
+            // admissions' drop files can be read ahead in parallel.
+            let mut pending: Vec<String> = Vec::new();
             for entry in entries {
                 let entry = match entry {
                     Ok(e) => e,
@@ -2482,11 +2499,17 @@ pub(crate) fn close_abandoned_generation(
                     continue;
                 }
                 seen_admission_dirs.insert(launch_id_str.to_owned());
+                if !completed_ids.contains(launch_id_str) {
+                    pending.push(launch_id_str.to_owned());
+                }
+            }
+            let mut drops = DropPrefetch::new(ledger, generation, &pending);
 
-                if completed_ids.contains(launch_id_str) {
+            for (index, launch_id) in pending.iter().enumerate() {
+                if completed_ids.contains(launch_id) {
                     continue;
                 }
-                let launch_id = launch_id_str.to_owned();
+                let launch_id = launch_id.clone();
 
                 if Instant::now() >= authority.deadline {
                     if !current_batch_buffer.is_empty() {
@@ -2519,7 +2542,7 @@ pub(crate) fn close_abandoned_generation(
                     }
                 }
 
-                let derived = read_derived_admission_drops(ledger, generation, &launch_id)?;
+                let derived = drops.take(index)?;
 
                 match (derived.instance, derived.uid) {
                     (Some(instance), Some(uid)) => {
@@ -2589,7 +2612,7 @@ pub(crate) fn close_abandoned_generation(
                                 }
                             }
                             InstanceVerdict::Unverifiable => {
-                                match settle_unverifiable(authority, instance.pid, Some(uid)) {
+                                match settle_unverifiable(authority, instance, Some(uid)) {
                                     Some(finding) => {
                                         let binding_digest = compute_batch_row_binding_digest(
                                             &launch_id,
@@ -2802,7 +2825,7 @@ pub(crate) fn close_abandoned_generation(
                     provisional_map.remove(&launch_id);
                 }
                 InstanceVerdict::Unverifiable => {
-                    if let Some(finding) = settle_unverifiable(authority, instance.pid, Some(uid)) {
+                    if let Some(finding) = settle_unverifiable(authority, instance, Some(uid)) {
                         let binding_digest = compute_batch_row_binding_digest(
                             &launch_id,
                             derived.service,
@@ -3008,20 +3031,115 @@ fn find_live_process_by_launch_env(
     None
 }
 
-/// What a pid `inspect` cannot read may still be settled by: the process
-/// table's owner for that pid. Gone is exited; another user's is a reused
-/// pid; our own uid or an instrument failure settles nothing.
+/// How many admissions' drop files are read ahead of the scan, and by how
+/// many threads. Reading them is most of what closing a large generation
+/// costs, mostly waiting on the disk, and no admission's read depends on
+/// another's; the scan still observes and records each one in order.
+const DROP_PREFETCH_WINDOW: usize = 1024;
+const DROP_PREFETCH_THREADS: usize = 8;
+
+struct DropPrefetch<'a> {
+    ledger: &'a ParentLossLedger,
+    generation: ParentLossGeneration,
+    ids: &'a [String],
+    start: usize,
+    window: Vec<Option<Result<DerivedAdmissionDrops, ParentLossLedgerError>>>,
+}
+
+impl<'a> DropPrefetch<'a> {
+    fn new(
+        ledger: &'a ParentLossLedger,
+        generation: ParentLossGeneration,
+        ids: &'a [String],
+    ) -> Self {
+        Self {
+            ledger,
+            generation,
+            ids,
+            start: 0,
+            window: Vec::new(),
+        }
+    }
+
+    /// The derived drops of `ids[index]`, exactly as
+    /// `read_derived_admission_drops` returns them.
+    fn take(&mut self, index: usize) -> Result<DerivedAdmissionDrops, ParentLossLedgerError> {
+        if index < self.start || index >= self.start + self.window.len() {
+            self.fill(index);
+        }
+        match self.window[index - self.start].take() {
+            Some(derived) => derived,
+            None => read_derived_admission_drops(self.ledger, self.generation, &self.ids[index]),
+        }
+    }
+
+    fn fill(&mut self, start: usize) {
+        let end = (start + DROP_PREFETCH_WINDOW).min(self.ids.len());
+        let ids = &self.ids[start..end];
+        let threads = thread::available_parallelism()
+            .map_or(1, |n| n.get())
+            .clamp(1, DROP_PREFETCH_THREADS);
+        let chunk = ids.len().div_ceil(threads).max(1);
+        let (ledger, generation) = (self.ledger, self.generation);
+        self.window = thread::scope(|scope| {
+            let readers: Vec<_> = ids
+                .chunks(chunk)
+                .map(|part| {
+                    scope.spawn(move || {
+                        part.iter()
+                            .map(|id| Some(read_derived_admission_drops(ledger, generation, id)))
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect();
+            readers
+                .into_iter()
+                .flat_map(|reader| {
+                    reader
+                        .join()
+                        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+                })
+                .collect()
+        });
+        self.start = start;
+    }
+}
+
 fn settle_unverifiable(
     authority: &ClosingAuthority<'_>,
-    pid: u32,
+    instance: ProcessInstance,
     recorded_uid: Option<u32>,
 ) -> Option<AdmissionFinding> {
-    match authority.retirer.owner(pid) {
+    settle_by_process_table(authority.retirer, instance, recorded_uid)
+}
+
+/// What a pid `inspect` cannot read may still be settled by: the process
+/// table, which names every pid. Gone is exited; another user's is a reused
+/// pid; our own user's with a different birth is a reused pid too, so the
+/// remembered process has exited. Only that process itself, still live, or an
+/// instrument failure settles nothing.
+pub(crate) fn settle_by_process_table(
+    retirer: &dyn AdmissionRetirer,
+    instance: ProcessInstance,
+    recorded_uid: Option<u32>,
+) -> Option<AdmissionFinding> {
+    match retirer.owner(instance.pid) {
         ProcessOwner::Absent => Some(AdmissionFinding::Exited),
         ProcessOwner::Uid(uid) if recorded_uid.is_some_and(|recorded| recorded != uid) => {
             Some(AdmissionFinding::PidReusedByAnotherUser)
         }
-        ProcessOwner::Uid(_) | ProcessOwner::Unknown => None,
+        ProcessOwner::Uid(_) => match retirer.table_birth(instance.pid) {
+            TableBirth::Absent => Some(AdmissionFinding::Exited),
+            TableBirth::Live(birth)
+                if birth.is_verifiable()
+                    && instance.birth.is_verifiable()
+                    && birth != instance.birth =>
+            {
+                Some(AdmissionFinding::Exited)
+            }
+            TableBirth::Live(_) | TableBirth::Unknown => None,
+        },
+        ProcessOwner::Unknown => None,
     }
 }
 
@@ -3075,6 +3193,7 @@ mod tests {
         unverifiable: HashSet<u32>,
         incomplete_census: bool,
         owners: HashMap<u32, ProcessOwner>,
+        table_births: HashMap<u32, TableBirth>,
         observed: Vec<ProcessInstance>,
         observed_pids: Vec<u32>,
     }
@@ -3171,6 +3290,15 @@ mod tests {
                 None => ProcessOwner::Absent,
             }
         }
+
+        fn table_birth(&self, pid: u32) -> TableBirth {
+            let table = self.table.lock().expect("fake table");
+            table
+                .table_births
+                .get(&pid)
+                .copied()
+                .unwrap_or(TableBirth::Unknown)
+        }
     }
 
     fn fake(
@@ -3183,6 +3311,7 @@ mod tests {
             unverifiable: HashSet::new(),
             incomplete_census: false,
             owners: HashMap::new(),
+            table_births: HashMap::new(),
             observed: Vec::new(),
             observed_pids: Vec::new(),
         }));
@@ -3206,6 +3335,7 @@ mod tests {
             unverifiable: HashSet::new(),
             incomplete_census: false,
             owners: owners.iter().copied().collect(),
+            table_births: HashMap::new(),
             observed: Vec::new(),
             observed_pids: Vec::new(),
         }));
@@ -3584,6 +3714,110 @@ mod tests {
                 BootstrapRecoveryReason::AbandonedAdmissionUnverifiable
             )
         ));
+    }
+
+    /// One admission of this user's that `inspect` cannot read, settled only
+    /// by what the process table says is at its pid.
+    #[cfg(feature = "full-tests")]
+    fn close_one_unreadable_admission_of_this_user(
+        owner: ProcessOwner,
+        table: TableBirth,
+    ) -> (
+        TempDir,
+        Result<ActiveGeneration, ParentLossLedgerError>,
+        usize,
+    ) {
+        let directory = TempDir::new().expect("temporary root");
+        let (ledger, active) = open_generation(&directory);
+        let mine = instance(8101, 81);
+        admit(
+            directory.path(),
+            active.generation,
+            "mine",
+            Some(HostedServiceKind::Sense),
+            Some(mine),
+        );
+        let (source, retirer) = fake(&[], &[], &[]);
+        {
+            let mut fake = source.0.lock().expect("table");
+            fake.unverifiable.insert(mine.pid);
+            fake.owners.insert(mine.pid, owner);
+            fake.table_births.insert(mine.pid, table);
+        }
+        let lease = acquire_lease(&ledger);
+        let result = ledger.reserve_generation_closing_abandoned(
+            instance(11, 3),
+            [],
+            &lease,
+            &authority(&source, &retirer, AMPLE_BUDGET),
+        );
+        let signals = retirer.signals.lock().expect("signals").len();
+        (directory, result, signals)
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn an_unreadable_pid_of_this_user_holding_another_birth_is_settled_as_exited() {
+        // On macOS `inspect` can be refused a live process of this user. The
+        // process table still names the birth at the pid: a different one is
+        // another process, so the admitted one has exited.
+        let (directory, result, signals) = close_one_unreadable_admission_of_this_user(
+            ProcessOwner::Uid(501),
+            TableBirth::Live(ProcessBirth::linux(99, 1, 100)),
+        );
+        let successor = result.expect("a different birth settles the pid");
+        let ledger = ParentLossLedger::open(directory.path()).expect("ledger");
+        let closure = closure_of(&ledger, successor.generation - 1);
+        assert!(closure.admissions.iter().any(|admission| {
+            admission.launch_id == "mine" && admission.finding == AdmissionFinding::Exited
+        }));
+        assert_eq!(signals, 0);
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn an_unreadable_live_admission_of_this_user_or_an_unreadable_owner_keeps_the_generation_pending()
+     {
+        // The safety line: what the closer cannot prove gone is never adopted,
+        // abandoned or closed, and is never signalled blind.
+        for (owner, table) in [
+            // The admitted process itself, still live, unreadable to inspect.
+            (
+                ProcessOwner::Uid(501),
+                TableBirth::Live(instance(8101, 81).birth),
+            ),
+            // This user's process at the pid, and a table that cannot be read.
+            (ProcessOwner::Uid(501), TableBirth::Unknown),
+            // An owner that cannot be read.
+            (ProcessOwner::Unknown, TableBirth::Absent),
+        ] {
+            let (directory, result, signals) =
+                close_one_unreadable_admission_of_this_user(owner, table);
+            assert!(
+                matches!(
+                    result,
+                    Err(ParentLossLedgerError::RecoveryRequired(
+                        BootstrapRecoveryReason::AbandonedAdmissionUnverifiable
+                    ))
+                ),
+                "{owner:?} {table:?} must refuse, got {result:?}"
+            );
+            assert_eq!(signals, 0, "{owner:?} {table:?} was signalled");
+            let ledger = ParentLossLedger::open(directory.path()).expect("ledger");
+            let pointer = ledger
+                .active_generation()
+                .expect("pointer")
+                .expect("pointer");
+            assert_eq!(pointer.generation, 1, "{owner:?} {table:?} advanced");
+            assert!(
+                ledger
+                    .record(pointer.generation)
+                    .expect("record")
+                    .and_then(|record| record.closure)
+                    .is_none(),
+                "{owner:?} {table:?} closed the generation"
+            );
+        }
     }
 
     #[test]

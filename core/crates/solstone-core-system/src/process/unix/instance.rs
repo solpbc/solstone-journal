@@ -7,18 +7,18 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
+use super::super::{
+    CensusRow, InspectResult, InstanceCensus, ProcessInstanceSource, SystemProcessInstanceSource,
+};
+#[cfg(any(target_os = "linux", test))]
+use super::super::{ExecutionState, InstanceVerdict, ProcessBirth, ProcessInstance};
 #[cfg(any(
     target_os = "linux",
     target_os = "macos",
     target_os = "ios",
     target_os = "android"
 ))]
-use super::super::ProcessOwner;
-use super::super::{
-    CensusRow, InspectResult, InstanceCensus, ProcessInstanceSource, SystemProcessInstanceSource,
-};
-#[cfg(any(target_os = "linux", test))]
-use super::super::{ExecutionState, InstanceVerdict, ProcessBirth, ProcessInstance};
+use super::super::{ProcessOwner, TableBirth};
 
 #[cfg(target_os = "linux")]
 use nix::unistd::{SysconfVar, sysconf};
@@ -1445,26 +1445,135 @@ mod android_owner_tests {
     }
 }
 
-/// Owner uid of the process at `pid` through `/bin/ps`, which answers for
-/// every user's processes where `proc_pidinfo` is `EPERM`. The crate's macOS
-/// census already relies on `/bin/ps` for the same reason.
+/// Owner uid of the process at `pid`, from the kernel's process table
+/// (`sysctl(KERN_PROC_PID)`, the table `ps` reads), which answers for every
+/// user's processes where `proc_pidinfo` is `EPERM`.
 #[cfg(target_os = "macos")]
 pub fn process_owner(pid: u32) -> ProcessOwner {
-    let output = match std::process::Command::new("/bin/ps")
-        .args(["-o", "uid=", "-p", &pid.to_string()])
-        .env("LC_ALL", "C")
-        .output()
-    {
-        Ok(output) => output,
-        Err(_) => return ProcessOwner::Unknown,
-    };
-    let text = String::from_utf8_lossy(&output.stdout);
-    match text.trim().parse::<u32>() {
-        Ok(uid) => ProcessOwner::Uid(uid),
-        // `ps -p` exits 1 and prints nothing for a pid that does not exist.
-        Err(_) if text.trim().is_empty() && !output.status.success() => ProcessOwner::Absent,
-        Err(_) => ProcessOwner::Unknown,
+    match macos_table_row(pid) {
+        Ok(None) => ProcessOwner::Absent,
+        Ok(Some(row)) => ProcessOwner::Uid(row.uid),
+        Err(()) => ProcessOwner::Unknown,
     }
+}
+
+/// The birth of whatever holds `pid`, from the same process table as
+/// [`process_owner`]. See [`TableBirth`].
+#[cfg(target_os = "macos")]
+pub fn process_table_birth(pid: u32) -> TableBirth {
+    match macos_table_row(pid) {
+        Ok(None) => TableBirth::Absent,
+        Ok(Some(row)) if row.zombie => TableBirth::Absent,
+        Ok(Some(row)) => {
+            match super::macos_proc::process_birth_from_macos_start(row.start_sec, row.start_usec) {
+                Ok(birth) => TableBirth::Live(birth),
+                Err(_) => TableBirth::Unknown,
+            }
+        }
+        Err(()) => TableBirth::Unknown,
+    }
+}
+
+#[cfg(target_os = "macos")]
+struct MacosTableRow {
+    uid: u32,
+    zombie: bool,
+    start_sec: u64,
+    start_usec: u64,
+}
+
+/// One `struct kinfo_proc` from `sysctl(KERN_PROC_PID)`. `Ok(None)` is no
+/// process at `pid`; `Err` is an instrument failure.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn macos_table_row(pid: u32) -> Result<Option<MacosTableRow>, ()> {
+    // `struct kinfo_proc` from <sys/sysctl.h>, which the libc crate does not
+    // carry for Apple targets. The size and offsets are the same on arm64 and
+    // x86_64 (measured with `offsetof` against the macOS 27 SDK).
+    const KINFO_PROC_SIZE: usize = 648;
+    const P_STARTTIME_SEC: usize = 0; // kp_proc.p_starttime.tv_sec: i64
+    const P_STARTTIME_USEC: usize = 8; // kp_proc.p_starttime.tv_usec: i32
+    const P_STAT: usize = 36; // kp_proc.p_stat: char
+    const P_PID: usize = 40; // kp_proc.p_pid: pid_t
+    const CR_UID: usize = 420; // kp_eproc.e_ucred.cr_uid: the effective uid
+    const SZOMB: u8 = 5;
+
+    #[repr(C, align(8))]
+    struct Row([u8; KINFO_PROC_SIZE]);
+
+    let pid = i32::try_from(pid).map_err(|_| ())?;
+    let mut mib = [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid];
+    let mut row = Row([0; KINFO_PROC_SIZE]);
+    let mut len = KINFO_PROC_SIZE;
+    // SAFETY: `mib` names four integers, `row` is a writable buffer of `len`
+    // bytes, and the kernel writes at most `len` bytes and reports how many.
+    let rc = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            4,
+            row.0.as_mut_ptr().cast(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if rc != 0 {
+        return Err(());
+    }
+    // The kernel answers a pid no process holds with zero bytes.
+    if len == 0 {
+        return Ok(None);
+    }
+    if len != KINFO_PROC_SIZE {
+        return Err(());
+    }
+    let bytes = &row.0;
+    let field = |offset: usize| -> [u8; 4] {
+        let mut out = [0; 4];
+        out.copy_from_slice(&bytes[offset..offset + 4]);
+        out
+    };
+    if i32::from_ne_bytes(field(P_PID)) != pid {
+        return Err(());
+    }
+    let mut seconds = [0; 8];
+    seconds.copy_from_slice(&bytes[P_STARTTIME_SEC..P_STARTTIME_SEC + 8]);
+    let start_sec = u64::try_from(i64::from_ne_bytes(seconds)).map_err(|_| ())?;
+    let start_usec = u64::try_from(i32::from_ne_bytes(field(P_STARTTIME_USEC))).map_err(|_| ())?;
+    Ok(Some(MacosTableRow {
+        uid: u32::from_ne_bytes(field(CR_UID)),
+        zombie: bytes[P_STAT] == SZOMB,
+        start_sec,
+        start_usec,
+    }))
+}
+
+/// The birth of whatever holds `pid`, from `/proc/<pid>/stat`: the field
+/// `inspect` reads its birth from, without the `status` read that can make
+/// `inspect` report unverifiable. See [`TableBirth`].
+#[cfg(target_os = "linux")]
+pub fn process_table_birth(pid: u32) -> TableBirth {
+    let stat = match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        Ok(stat) => stat,
+        Err(error) if process_gone_during_read(&error) => return TableBirth::Absent,
+        Err(_) => return TableBirth::Unknown,
+    };
+    let Some((btime, clk_tck, boot)) = linux_boot_clock() else {
+        return TableBirth::Unknown;
+    };
+    match parse_linux_stat(&stat) {
+        None => TableBirth::Unknown,
+        Some(parsed) if parsed.zombie => TableBirth::Absent,
+        Some(parsed) => TableBirth::Live(
+            ProcessBirth::linux(parsed.start_ticks, btime, clk_tck).on_linux_boot(boot),
+        ),
+    }
+}
+
+// No by-pid process-table instrument on either mobile target.
+#[cfg(any(target_os = "ios", target_os = "android"))]
+pub fn process_table_birth(_pid: u32) -> TableBirth {
+    TableBirth::Unknown
 }
 
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
@@ -1492,5 +1601,23 @@ mod owner_tests {
     fn an_unused_pid_is_absent() {
         // pid_max is at most 2^22 on Linux and 99999 on macOS.
         assert_eq!(process_owner(4_194_303), ProcessOwner::Absent);
+        assert_eq!(process_table_birth(4_194_303), TableBirth::Absent);
+    }
+
+    #[test]
+    fn the_process_table_names_the_birth_inspect_reads() {
+        // The settlement compares these two births, so they must agree
+        // exactly for the same process.
+        let pid = std::process::id();
+        let InspectResult::Present { instance, .. } = SystemProcessInstanceSource.inspect(pid)
+        else {
+            panic!("inspect cannot read its own process");
+        };
+        assert_eq!(process_table_birth(pid), TableBirth::Live(instance.birth));
+    }
+
+    #[test]
+    fn the_process_table_names_a_birth_even_where_inspect_may_not_read_it() {
+        assert!(matches!(process_table_birth(1), TableBirth::Live(_)));
     }
 }
