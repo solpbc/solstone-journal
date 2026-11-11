@@ -117,9 +117,9 @@ impl Journal {
                         .strip_prefix(root)
                         .unwrap()
                         .to_string_lossy()
-                        .into_owned();
+                        .replace('\\', "/");
                     // Lock files and the map cache come and go with every write.
-                    if !rel.ends_with(".lock") && !rel.contains("identity_map") {
+                    if !rel.ends_with(".lock") && !rel.contains("identity-map-cache") {
                         out.insert(rel, fs::read(&path).unwrap());
                     }
                 }
@@ -151,7 +151,8 @@ impl Journal {
             .into_iter()
             .filter(|entry| entry.unit == Unit::Entity)
             .map(|entry| entry.event)
-            .collect()
+            .collect::<Vec<_>>()
+            .pipe_sorted()
     }
 
     fn observe(&self, query: &str, candidates: &[&str]) {
@@ -307,12 +308,13 @@ fn an_entity_goes_to_the_trash_with_its_links_and_comes_back_exactly() {
     assert!(!journal.root().join("entities/bob").exists());
     assert_eq!(
         journal.events(),
-        [
+        vec![
             Event::Trashed,
             Event::Recovered,
             Event::Trashed,
             Event::Erased
         ]
+        .pipe_sorted()
     );
     // After erase the record holds the id and its folder, and no name.
     let text = fs::read_to_string(journal.root().join("entities/retired.json")).unwrap();
@@ -409,7 +411,10 @@ fn a_detach_a_stop_interrupted_is_finished_by_the_sweep_and_recovers_exactly() {
             Some("bob".to_owned())
         )
     );
-    assert_eq!(journal.events(), [Event::Trashed, Event::Recovered]);
+    assert_eq!(
+        journal.events(),
+        vec![Event::Trashed, Event::Recovered].pipe_sorted()
+    );
 }
 
 #[test]
@@ -661,7 +666,7 @@ fn a_link_whose_facet_is_in_the_trash_waits_for_it_then_goes_once_it_is_erased()
     assert!(!journal.root().join("facets/work").exists());
     assert_eq!(
         journal.events(),
-        [Event::Trashed, Event::Erased, Event::Recovered]
+        vec![Event::Trashed, Event::Erased, Event::Recovered].pipe_sorted()
     );
 }
 
@@ -831,4 +836,17 @@ fn a_link_comes_back_to_a_facet_whose_declaration_cant_be_read() {
     recover(&journal, &told, &item.id).unwrap();
     assert!(journal.root().join("facets/work/entities/bob").is_dir());
     assert!(!journal.events().contains(&Event::Erased));
+}
+
+/// Entries written in the same moment come back in an order the history
+/// doesn't promise, so events are compared in a fixed order.
+trait PipeSorted {
+    fn pipe_sorted(self) -> Self;
+}
+
+impl PipeSorted for Vec<Event> {
+    fn pipe_sorted(mut self) -> Self {
+        self.sort_by_key(|event| format!("{event:?}"));
+        self
+    }
 }

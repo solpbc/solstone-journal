@@ -426,7 +426,9 @@ impl Kind for Speakers<'_> {
             return live_segment(journal, &segment);
         }
         if let Some(entity) = entity_of(path) {
-            return journal.join(entity).join("entity.json").is_file();
+            let dir = entity.strip_prefix("entities/").unwrap_or(&entity);
+            return solstone_core_entity::entity_identity_path(journal, dir)
+                .is_ok_and(|identity| identity.is_file());
         }
         true
     }

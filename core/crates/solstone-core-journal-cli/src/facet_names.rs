@@ -485,11 +485,13 @@ pub(crate) fn sort_merge_leftovers(
             .iter()
             .any(|suffix| name.ends_with(suffix));
         copy_kind
-            && fs::read(journal.join("facets").join(name).join("facet.json"))
-                .ok()
-                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-                .and_then(|value| value.get("id")?.as_str().map(str::to_owned))
-                .is_some_and(|id| live.contains(&id))
+            && fs::read(solstone_core_facets::facet_declaration_file(
+                &journal.join("facets").join(name),
+            ))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .and_then(|value| value.get("id")?.as_str().map(str::to_owned))
+            .is_some_and(|id| live.contains(&id))
     });
     Ok((copies, kept))
 }

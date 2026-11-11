@@ -148,11 +148,10 @@ fn facet_view(journal_root: &Path, item: &Item) -> Value {
         "replaces".to_owned(),
         json!(
             !name.is_empty()
-                && journal_root
-                    .join("facets")
-                    .join(name)
-                    .join("facet.json")
-                    .is_file()
+                && solstone_core_facets::facet_declaration_file(
+                    &journal_root.join("facets").join(name)
+                )
+                .is_file()
         ),
     );
     Value::Object(fields)
@@ -208,7 +207,7 @@ fn dest_of(journal_root: &Path, id: &str) -> (&'static str, Option<String>) {
             if entry.file_name().to_string_lossy().starts_with('.') {
                 continue;
             }
-            if let Some(facet) = read(&entry.path().join("facet.json"))
+            if let Some(facet) = read(&solstone_core_facets::facet_declaration_file(&entry.path()))
                 && is_it(&facet)
             {
                 let title = facet
@@ -227,14 +226,10 @@ fn dest_of(journal_root: &Path, id: &str) -> (&'static str, Option<String>) {
         let Some(folder) = waiting.paths.first() else {
             continue;
         };
-        let held = solstone_core_trash::held_file(
-            journal_root,
-            &waiting.id,
-            &format!("{folder}/facet.json"),
-        );
+        let held = solstone_core_trash::held_file(journal_root, &waiting.id, folder);
         if held
             .ok()
-            .and_then(|path| read(&path))
+            .and_then(|path| read(&solstone_core_facets::facet_declaration_file(&path)))
             .is_some_and(|facet| is_it(&facet))
         {
             return ("trashed", waiting.label.clone());

@@ -144,7 +144,7 @@ impl<'a> Facets<'a> {
             return Err(TrashError::Missing("facet".to_owned()));
         }
         let path = format!("facets/{name}");
-        let title = read_json(&journal.join(&path).join("facet.json"))
+        let title = read_json(&crate::facet_declaration_file(&journal.join(&path)))
             .and_then(|declaration| {
                 declaration
                     .get("title")
@@ -194,7 +194,7 @@ impl Kind for Facets<'_> {
         let held = solstone_core_trash::held_file(journal, &item.id, &format!("facets/{name}"))
             .map_err(|error| error.to_string())?;
         if held.is_dir() {
-            let own = declared_id(&held.join("facet.json"));
+            let own = declared_id(&crate::facet_declaration_file(&held));
             let entry = crate::read_retired_facets(journal)
                 .entries_for_write()
                 .map_err(|_| RECORD_DAMAGED.to_owned())?
@@ -210,7 +210,12 @@ impl Kind for Facets<'_> {
     }
 
     fn present(&self, journal: &Path, path: &str) -> bool {
-        name_of(path).is_some() && journal.join(path).join("facet.json").is_file()
+        name_of(path).is_some_and(|name| {
+            matches!(
+                crate::facet_declaration_entry(journal, name),
+                Ok(Some(solstone_core_journal_io::DirEntryKind::File))
+            )
+        })
     }
 
     fn references(
@@ -257,9 +262,9 @@ fn trashed_facet(journal: &Path, id: &str) -> Result<Option<String>, String> {
         let Some(path) = item.paths.first() else {
             continue;
         };
-        let held = solstone_core_trash::held_file(journal, &item.id, &format!("{path}/facet.json"))
+        let held = solstone_core_trash::held_file(journal, &item.id, path)
             .map_err(|error| error.to_string())?;
-        if declared_id(&held).as_deref() == Some(id) {
+        if declared_id(&crate::facet_declaration_file(&held)).as_deref() == Some(id) {
             let name = name_of(path).unwrap_or_default().to_owned();
             return Ok(Some(item.label.unwrap_or(name)));
         }
@@ -270,7 +275,10 @@ fn trashed_facet(journal: &Path, id: &str) -> Result<Option<String>, String> {
 /// The live facet whose `facet.json` declares `id`, by its name now.
 fn live_facet(journal: &Path, id: &str) -> Result<Option<String>, String> {
     for name in crate::list_declared_facet_names(journal).map_err(|error| error.to_string())? {
-        if declared_id(&journal.join("facets").join(&name).join("facet.json")).as_deref()
+        if declared_id(&crate::facet_declaration_file(
+            &journal.join("facets").join(&name),
+        ))
+        .as_deref()
             == Some(id)
         {
             return Ok(Some(name));

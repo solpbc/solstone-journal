@@ -3072,16 +3072,16 @@ mod facet_merge_tests {
             .into_iter()
             .map(|entry| (entry.event, entry.unit))
             .collect();
-        events.reverse();
+        // Entries written in the same moment come back in no promised order.
+        events.sort_by_key(|event| format!("{event:?}"));
         use solstone_core_removals::{Event, Unit};
-        assert_eq!(
-            events,
-            vec![
-                (Event::Trashed, Unit::FacetFile),
-                (Event::Erased, Unit::FacetFile),
-                (Event::Recovered, Unit::FacetFile),
-            ]
-        );
+        let mut expected = vec![
+            (Event::Trashed, Unit::FacetFile),
+            (Event::Erased, Unit::FacetFile),
+            (Event::Recovered, Unit::FacetFile),
+        ];
+        expected.sort_by_key(|event| format!("{event:?}"));
+        assert_eq!(events, expected);
     }
 
     #[test]

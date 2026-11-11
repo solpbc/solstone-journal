@@ -300,10 +300,7 @@ impl Kind for Entities<'_> {
         match link_of(path) {
             // Asked of the declaration's file, not its reading: a declaration
             // that can't be read, or was set aside, is still a facet's.
-            Some((facet, _)) => {
-                std::fs::symlink_metadata(journal.join("facets").join(facet).join("facet.json"))
-                    .is_ok()
-            }
+            Some((facet, _)) => !matches!(crate::facet_declaration_entry(journal, facet), Ok(None)),
             None => true,
         }
     }

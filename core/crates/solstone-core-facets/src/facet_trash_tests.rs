@@ -75,13 +75,22 @@ fn id_of(root: &Path, name: &str) -> String {
     value["id"].as_str().unwrap().to_owned()
 }
 
+/// What the history recorded, in a fixed order: entries written in the same
+/// moment come back in an order the history doesn't promise.
 fn events(root: &Path) -> Vec<(Event, Unit)> {
-    let mut entries = solstone_core_removals::history(root, 100).unwrap().entries;
-    entries.reverse();
-    entries
-        .into_iter()
-        .map(|entry| (entry.event, entry.unit))
-        .collect()
+    sorted(
+        solstone_core_removals::history(root, 100)
+            .unwrap()
+            .entries
+            .into_iter()
+            .map(|entry| (entry.event, entry.unit))
+            .collect(),
+    )
+}
+
+fn sorted(mut events: Vec<(Event, Unit)>) -> Vec<(Event, Unit)> {
+    events.sort_by_key(|event| format!("{event:?}"));
+    events
 }
 
 fn recover(
@@ -155,12 +164,12 @@ fn a_facet_moves_whole_comes_back_exactly_and_is_erased() {
     assert!(solstone_core_trash::list(root).unwrap().is_empty());
     assert_eq!(
         events(root),
-        vec![
+        sorted(vec![
             (Event::Trashed, Unit::Facet),
             (Event::Recovered, Unit::Facet),
             (Event::Trashed, Unit::Facet),
             (Event::Erased, Unit::Facet),
-        ]
+        ])
     );
 }
 
@@ -228,11 +237,11 @@ fn recovering_over_a_new_facet_of_the_same_name_replaces_it_and_says_so() {
     assert!(!root.join("facets/work/news/20260802.md").exists());
     assert_eq!(
         events(root),
-        vec![
+        sorted(vec![
             (Event::Trashed, Unit::Facet),
             (Event::Erased, Unit::Facet),
             (Event::Recovered, Unit::Facet),
-        ]
+        ])
     );
 }
 
@@ -389,11 +398,11 @@ fn a_merges_dropped_files_come_back_over_the_facet_they_were_merged_into() {
     // The facet's own copies went with the item, and the history says so.
     assert_eq!(
         events(root),
-        vec![
+        sorted(vec![
             (Event::Trashed, Unit::FacetFile),
             (Event::Erased, Unit::FacetFile),
             (Event::Recovered, Unit::FacetFile),
-        ]
+        ])
     );
 }
 

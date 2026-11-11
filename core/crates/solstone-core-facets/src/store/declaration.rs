@@ -203,6 +203,13 @@ pub fn observe_facet_destination(
     }
 }
 
+/// Where a facet folder at `folder` keeps its declaration: for a reader that
+/// holds a facet folder somewhere other than the journal's `facets/` (a copy
+/// in the trash, a merge's leftover).
+pub fn facet_declaration_file(folder: &Path) -> std::path::PathBuf {
+    folder.join("facet.json")
+}
+
 /// What occupies a facet's declaration name, without following a link at
 /// that name: `None` when nothing does. The facet folder itself is resolved,
 /// so a caller that must not follow a linked folder checks the folder first.
