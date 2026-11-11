@@ -82,12 +82,21 @@
   // A view's own history entry (`ctx.history`). A new entry gets an id of its
   // own; a replaced one keeps the entry's id.
   function viewEntry(kind, url) {
+    let next = null;
+    try { next = new URL(url, window.location.href); } catch (_) {}
     if (kind === 'push') {
       rememberScroll();
       entryId = newEntryId();
       window.history.pushState(stateWith(entryId, 'view'), '', url);
     } else {
       window.history.replaceState(stateWith(entryId || newEntryId(), window.history.state?.solRoute?.owner || 'view'), '', url);
+    }
+    // A view may replace an undated address with that day's address before
+    // it draws. The path is still this view's, so later entries on it stay
+    // the view's. The first load has no mounted path yet: start() reads the
+    // address after the view returns.
+    if (next && mountedPath && viewOf(next.pathname) === viewOf(mountedPath)) {
+      mountedPath = next.pathname;
     }
   }
 
