@@ -28,6 +28,7 @@ pub use body_facet::{
     body_facet_offer, default_for_unattended,
 };
 pub use solstone_core_entity::facet_links;
+pub use solstone_core_entity::hidden_names;
 pub use solstone_core_entity::{EntityIdentityMap, read_identity_map};
 pub use solstone_core_journal_io::AppendError;
 pub use speculative_facets::{
