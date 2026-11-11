@@ -701,14 +701,18 @@ impl OutstandingEntry {
 
     /// Whether the entry needs no process observed: it never had one.
     pub(crate) fn settled_without_process(&self) -> bool {
-        self.identities.is_empty()
-            && matches!(
-                self.result,
-                Some(
-                    AdmissionResultState::SpawnFailed { .. }
-                        | AdmissionResultState::RejectedAndReaped { .. }
-                )
+        self.identities.is_empty() && self.launcher_reaped()
+    }
+
+    /// The launcher recorded that no process outlived the launch.
+    pub(crate) fn launcher_reaped(&self) -> bool {
+        matches!(
+            self.result,
+            Some(
+                AdmissionResultState::SpawnFailed { .. }
+                    | AdmissionResultState::RejectedAndReaped { .. }
             )
+        )
     }
 }
 
@@ -1764,7 +1768,9 @@ fn settle_listing(
                 held.insert(entry.launch_id.clone(), entry);
                 continue;
             }
-            let finding = if entry.identities.is_empty() {
+            // A launcher that confirmed its own reap keeps its finding, even
+            // beside an acknowledgement the child left behind.
+            let finding = if entry.identities.is_empty() || entry.launcher_reaped() {
                 entry.without_identity()
             } else if reused {
                 AdmissionFinding::PidReusedByAnotherUser
