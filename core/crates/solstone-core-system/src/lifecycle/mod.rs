@@ -20,6 +20,8 @@ mod parent_loss_closure;
 mod parent_loss_coordinator;
 #[cfg(unix)]
 mod parent_loss_ledger;
+#[cfg(all(test, unix))]
+mod parent_loss_regressions;
 mod readiness;
 mod shutdown;
 #[cfg(unix)]
