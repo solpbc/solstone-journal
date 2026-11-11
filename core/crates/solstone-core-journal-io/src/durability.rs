@@ -53,6 +53,7 @@ pub enum ParserKind {
 pub enum ArtifactId {
     JournalConfig,
     WeekLeftOut,
+    MapPlaces,
     SchedulesConfig,
     ConveyConfig,
     ParentLossActive,
@@ -168,6 +169,20 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::MustBeValid,
         parser: ParserKind::WholeJson,
         rationale: "the names the owner hid in a facet, written under the facet trust lock with atomic replace; nothing can rebuild what the owner hid, so a damaged one is kept as it is, its facet's detections are shown and indexed as none, and a hide or unhide refuses",
+    },
+    DurableArtifact {
+        id: ArtifactId::WeekLeftOut,
+        path: "config/week-left-out.json",
+        class: DurabilityClass::MustBeValid,
+        parser: ParserKind::WholeJson,
+        rationale: "the memories and quotes the owner left out of their week pages, written under a lock with atomic replace and read strictly by week_left_out::read_left_out; nothing can rebuild what the owner chose, so a damaged one is kept as it is, the page shows everything with a notice, further changes refuse and search leaves out every week page",
+    },
+    DurableArtifact {
+        id: ArtifactId::MapPlaces,
+        path: "solstone/apps/map/places.json",
+        class: DurabilityClass::MustBeValid,
+        parser: ParserKind::WholeJson,
+        rationale: "the places worked out from the owner's stays, with the names they gave them and the ones they hid, written under a lock with atomic replace and read strictly by PlaceStore::read_strict; the names and hides can't be rebuilt, so a damaged one is kept as it is, no day's location words are rendered and nothing is described beside an activity",
     },
     // Healable
     DurableArtifact {
@@ -472,13 +487,6 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::Wipeable,
         parser: ParserKind::WholeJson,
         rationale: "segment speaker corrections input",
-    },
-    DurableArtifact {
-        id: ArtifactId::WeekLeftOut,
-        path: "health/week-left-out.json",
-        class: DurabilityClass::Wipeable,
-        parser: ParserKind::WholeJson,
-        rationale: "the memories the owner left out of weekly reflections, written under a lock with atomic replace; an unreadable one shows every memory with a notice and refuses further changes, and losing it costs the owner leaving them out again",
     },
     DurableArtifact {
         id: ArtifactId::SegmentStream,
@@ -1126,6 +1134,8 @@ mod tests {
                 "health/owner-asks.json",
                 // Names the owner hid in a facet.
                 "facets/*/hidden-names.json",
+                "config/week-left-out.json",
+                "solstone/apps/map/places.json",
                 "health/parent-loss/generations/*/census-obligation.json",
                 "health/parent-loss/generations/*/census-started.json",
                 "health/parent-loss/generations/*/census-refusal.json",

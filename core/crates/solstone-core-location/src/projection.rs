@@ -329,8 +329,40 @@ fn naming(area: &AreaName, place: Option<&StopWords>, owner: Option<String>) -> 
     Some(name)
 }
 
+/// How much of an entry lies within reach of a place the owner hid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Reach {
+    Clear,
+    /// Some of a run of readings, but not all of it.
+    Part,
+    Whole,
+}
+
+/// Whether an entry was recorded within reach of a hidden place: a visit or
+/// stay by its point, a run of readings by each of its readings.
+pub(crate) fn hidden_reach(store: &PlaceStore, entry: &Entry) -> Reach {
+    let hides = |point: &Point| store.hides(point.latitude, point.longitude);
+    match entry {
+        Entry::Readings { points, .. } => {
+            let within = points.iter().filter(|point| hides(point)).count();
+            if within == 0 {
+                Reach::Clear
+            } else if within == points.len() {
+                Reach::Whole
+            } else {
+                Reach::Part
+            }
+        }
+        Entry::Visit { point, .. } | Entry::Stay { point, .. } if hides(point) => Reach::Whole,
+        _ => Reach::Clear,
+    }
+}
+
 /// The day's search text. It names areas, places and times, never a
 /// coordinate. Names the owner gave a place are used where they apply.
+/// Nothing drawn from where the owner was within reach of a place they hid
+/// is written: a stay or visit there is left out, a run of readings all there
+/// is left out, and a run partly there keeps its times without its area.
 pub fn render_day_document(day: &DayLocation, store: &PlaceStore) -> String {
     let heading = NaiveDate::parse_from_str(&day.day, "%Y%m%d")
         .map(|date| date.format("%A, %B %-d, %Y").to_string())
@@ -338,6 +370,10 @@ pub fn render_day_document(day: &DayLocation, store: &PlaceStore) -> String {
     let mut text = format!("# location on {heading}\n\n");
     let mut lines = 0;
     for entry in &day.entries {
+        let reach = hidden_reach(store, entry);
+        if reach == Reach::Whole {
+            continue;
+        }
         match entry {
             Entry::Readings {
                 device,
@@ -350,6 +386,11 @@ pub fn render_day_document(day: &DayLocation, store: &PlaceStore) -> String {
             } => {
                 let Some(name) = long_name(area) else {
                     continue;
+                };
+                let name = if reach == Reach::Part {
+                    String::new()
+                } else {
+                    format!(" {name}")
                 };
                 let when = if first.utc == last.utc {
                     format!("at {}", moment(first, &day.day))
@@ -367,7 +408,7 @@ pub fn render_day_document(day: &DayLocation, store: &PlaceStore) -> String {
                     (count, true) => format!("{count} approximate readings"),
                 };
                 text.push_str(&format!(
-                    "- readings {name}, {when}: {count} from {}.\n",
+                    "- readings{name}, {when}: {count} from {}.\n",
                     day.device_phrase(*device)
                 ));
                 lines += 1;
@@ -584,7 +625,18 @@ impl Reconciler {
         let identity = packs
             .map(|packs| packs.identity().to_owned())
             .unwrap_or_default();
-        let store = PlaceStore::read(journal);
+        // The owner's names and hides decide what each day may say. A store
+        // that can't be read renders no day: the documents stay as they
+        // were until it reads again, and the fingerprint then rebuilds them.
+        let store = match PlaceStore::read_strict(journal) {
+            Ok(store) => store,
+            Err(error) => {
+                report
+                    .failures
+                    .push(format!("places unreadable, no day rendered: {error}"));
+                return report;
+            }
+        };
         let names = store.names_fingerprint();
         if identity != self.packs || names != self.names {
             // Downloading or removing the packs, or renaming a place,
@@ -1190,3 +1242,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "hidden_places_tests.rs"]
+mod hidden_places_tests;

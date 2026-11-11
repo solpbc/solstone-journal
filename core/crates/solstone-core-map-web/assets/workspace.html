@@ -662,7 +662,7 @@ button.map-month-row:hover { background: var(--cream); }
   function placeLink(ref) {
     if (!ref || !ref.id) return "";
     const name = ref.owner_name ? `a place you named "${escapeHtml(ref.owner_name)}"` : "a place in your journal";
-    const hidden = ref.hidden ? " · hidden from the map" : "";
+    const hidden = ref.hidden ? " · hidden" : "";
     return `<p class="map-muted"><a class="map-link" href="/app/map/place/${encodeURIComponent(ref.id)}">${name}</a>${hidden}</p>`;
   }
 
@@ -1186,14 +1186,14 @@ button.map-month-row:hover { background: var(--cream); }
         <p class="map-row-title"><a class="map-link" href="/app/map/place/${encodeURIComponent(place.id)}">${escapeHtml(place.label)}</a></p>
         ${place.owner_name && place.area?.label ? `<p class="map-row-where">${escapeHtml(place.area.label)}</p>` : ""}
         ${recorded(place).map((line) => `<p class="map-muted">${escapeHtml(line)}</p>`).join("")}
-        ${place.hidden ? '<p class="map-muted">hidden from the map</p>' : ""}</li>`).join("");
+        ${place.hidden ? '<p class="map-muted">hidden</p>' : ""}</li>`).join("");
     const body = places.length
       ? `<section class="map-card"><ol class="map-places">${items}</ol></section>`
       : `<section class="map-card"><p>no places yet.</p><p class="map-muted">a place is a spot your phone reported a visit at, or stayed at, on two different dates, close enough to be one spot. approximate location never makes a place.</p></section>`;
     pageShell("places", `${body}
       <section class="map-card"><details class="map-details"><summary>how places are worked out</summary>
         <p>a place starts from visits or stays on two or more dates, all within 50 m of each other and more than 100 m from any other place. later ones within 50 m of it join it. a stay or visit with a margin of error over 50 m never makes or joins one.</p>
-        <p>you can name a place, call it home or work, or hide it from the map. hiding keeps everything within 50 m of it off the map; the day's list still shows it.</p>
+        <p>you can name a place, call it home or work, or hide it. hiding keeps everything within 50 m of it off the map, and what your journal writes about where you were each day leaves it out. the day's list here still shows it.</p>
         <p>a place lasts as long as a segment it came from does. delete those segments in transcripts and the place, and its name, go too.</p>
       </details></section>`);
   }
@@ -1213,7 +1213,7 @@ button.map-month-row:hover { background: var(--cream); }
     const alias = place.alias || "";
     pageShell(place.label, `${where}
       <section class="map-card">${recorded(place).map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
-        ${place.hidden ? '<p class="map-muted">hidden from the map</p>' : ""}</section>
+        ${place.hidden ? '<p class="map-muted">hidden</p>' : ""}</section>
       <section class="map-card" aria-label="edit this place"><h2>edit this place</h2>
         <form class="map-edit" data-place-form>
           <label>name<input type="text" name="name" maxlength="80" value="${escapeHtml(place.name || "")}" placeholder="${escapeHtml(place.label)}"></label>
@@ -1223,7 +1223,8 @@ button.map-month-row:hover { background: var(--cream); }
             <option value="work"${alias === "work" ? " selected" : ""}>work</option>
           </select></label>
           <p class="map-muted">what you call a place, a name or home or work, is used in search and by your journal's own thinking, and an agent that may see transcripts across your whole journal can read it.</p>
-          <label class="map-check"><input type="checkbox" name="hidden"${place.hidden ? " checked" : ""}> hide from the map</label>
+          <label class="map-check"><input type="checkbox" name="hidden"${place.hidden ? " checked" : ""}> hide this place</label>
+          <p class="map-muted">a hidden place is off the map, and what your journal writes about where you were each day leaves it out: in search, for connected agents and in activities. new daily briefings leave it out too.</p>
           <div class="map-accuracy-actions"><button type="submit">save</button><span class="map-muted" role="status" data-place-status></span></div>
         </form></section>
       <section class="map-card"><h2>visits and stays here</h2><ul class="map-week-items">${visits}</ul></section>

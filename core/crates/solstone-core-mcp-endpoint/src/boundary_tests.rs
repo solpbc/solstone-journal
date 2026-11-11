@@ -12901,10 +12901,10 @@ fn get_week_trusted_page_and_left_out() {
     assert_eq!(mems.len(), 1);
     assert_eq!(mems[0]["text"], "My Trusted Activity");
 
-    let health_dir = journal.path().join("health");
-    fs::create_dir_all(&health_dir).unwrap();
+    let config_dir = journal.path().join("config");
+    fs::create_dir_all(&config_dir).unwrap();
     fs::write(
-        health_dir.join("week-left-out.json"),
+        config_dir.join("week-left-out.json"),
         json!({"keys": ["said-key-quote1"]}).to_string(),
     )
     .unwrap();

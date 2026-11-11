@@ -473,14 +473,52 @@ pub(super) fn locked_modify_day_records<T>(
         expected_facet_id,
         modify,
     )?;
-    if let Some(path) = written {
+    if let Some(Written {
+        path,
+        hidden_changed,
+    }) = written
+    {
         super::publication::publish_saved(root, &path);
+        // Whoever changed a row's hidden, its outputs are read again, so
+        // search leaves out what a hidden activity made, or takes it back.
+        for id in hidden_changed {
+            super::publication::publish_activity_outputs(root, facet, day, &id);
+        }
     }
     Ok(result)
 }
 
-/// The locked half of [`locked_modify_day_records`]: the day file's path when
-/// it was written.
+/// A day file [`write_day_records`] wrote, with the rows whose hidden it
+/// changed.
+struct Written {
+    path: PathBuf,
+    hidden_changed: Vec<String>,
+}
+
+/// The ids whose hidden differs between `before` and `after`. A row that is
+/// absent reads as not hidden, so a hidden row that arrives or leaves counts.
+fn hidden_changed(before: &[ActivityRecord], after: &[ActivityRecord]) -> Vec<String> {
+    let hidden_by_id = |rows: &[ActivityRecord]| {
+        let mut by_id = std::collections::BTreeMap::new();
+        for row in rows {
+            let entry = by_id.entry(id(row).to_owned()).or_insert(false);
+            *entry |= hidden(row);
+        }
+        by_id
+    };
+    let (before, after) = (hidden_by_id(before), hidden_by_id(after));
+    let ids: std::collections::BTreeSet<&String> = before.keys().chain(after.keys()).collect();
+    ids.into_iter()
+        .filter(|id| !id.is_empty())
+        .filter(|id| {
+            before.get(*id).copied().unwrap_or(false) != after.get(*id).copied().unwrap_or(false)
+        })
+        .cloned()
+        .collect()
+}
+
+/// The locked half of [`locked_modify_day_records`]: the day file when it was
+/// written.
 fn write_day_records<T>(
     root: &Path,
     facet: &str,
@@ -490,7 +528,7 @@ fn write_day_records<T>(
     modify: impl FnOnce(
         Vec<ActivityRecord>,
     ) -> Result<(Vec<ActivityRecord>, T), ActivityRecordStoreError>,
-) -> Result<(T, Option<PathBuf>), ActivityRecordStoreError> {
+) -> Result<(T, Option<Written>), ActivityRecordStoreError> {
     let _entity =
         solstone_core_entity::hold_entity_trust_lock(root).map_err(|error| match error {
             solstone_core_entity::EntityTrustLockError::Path(error) => {
@@ -519,7 +557,14 @@ fn write_day_records<T>(
         return Ok((result, None));
     }
     write_rows(&path, &updated, &kept)?;
-    Ok((result, Some(path)))
+    let hidden_changed = hidden_changed(&current, &updated);
+    Ok((
+        result,
+        Some(Written {
+            path,
+            hidden_changed,
+        }),
+    ))
 }
 
 /// Plan records the retired `schedule` talent inferred. They stay on disk as
@@ -2502,5 +2547,123 @@ mod kept_line_tests {
         let now = lines(&path);
         assert_eq!(now[0], HALF);
         assert!(now[1].contains("meet_0900"), "{now:?}");
+    }
+}
+
+#[cfg(test)]
+mod hidden_outputs_tests {
+    use super::*;
+
+    const DAY: &str = "20261016";
+
+    fn journal() -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        crate::create_facet(root.path(), "work", "Work", "Test", "#123456", "", None).unwrap();
+        let path = root
+            .path()
+            .join(format!("facets/work/activities/{DAY}.jsonl"));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let rows = [
+            r#"{"id":"standup","activity":"meeting","title":"Standup"}"#,
+            r#"{"id":"review","activity":"meeting","title":"Review"}"#,
+        ];
+        std::fs::write(&path, rows.join("\n") + "\n").unwrap();
+        root
+    }
+
+    /// The paths search has been asked to read again; the hints go with it,
+    /// as a drain takes them.
+    fn take_queued(root: &Path) -> Vec<String> {
+        let todo = root.join("indexer/todo");
+        let Ok(entries) = std::fs::read_dir(&todo) else {
+            return Vec::new();
+        };
+        let mut keys: Vec<String> = entries
+            .flatten()
+            .filter_map(|entry| std::fs::read(entry.path()).ok())
+            .filter_map(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .filter_map(|entry| entry["key"].as_str().map(str::to_owned))
+            .collect();
+        keys.sort();
+        std::fs::remove_dir_all(todo).unwrap();
+        keys
+    }
+
+    fn outputs(id: &str) -> String {
+        format!("facets/work/activities/{DAY}/{id}")
+    }
+
+    fn day_file() -> String {
+        format!("facets/work/activities/{DAY}.jsonl")
+    }
+
+    fn write(root: &Path, change: impl FnOnce(&mut Vec<ActivityRecord>)) {
+        let current_id = admit_activity_destination(root, "work").unwrap();
+        locked_modify_day_records(root, "work", DAY, false, &current_id, |mut rows| {
+            change(&mut rows);
+            Ok((rows, ()))
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn a_hide_the_journal_makes_queues_the_activity_outputs() {
+        let root = journal();
+        take_queued(root.path());
+        // The journal's own hide of a cancelled plan, not the owner's mute.
+        write(root.path(), |rows| {
+            let row = rows.iter_mut().find(|row| id(row) == "review").unwrap();
+            row.insert("hidden".to_owned(), Value::Bool(true));
+            row.insert("cancelled".to_owned(), Value::Bool(true));
+        });
+        assert_eq!(take_queued(root.path()), [day_file(), outputs("review")]);
+
+        // Twin: an edit that leaves hidden as it was queues only the day.
+        write(root.path(), |rows| {
+            let row = rows.iter_mut().find(|row| id(row) == "standup").unwrap();
+            row.insert("title".to_owned(), Value::from("Daily standup"));
+        });
+        assert_eq!(take_queued(root.path()), [day_file()]);
+    }
+
+    #[test]
+    fn an_owner_mute_and_unmute_queue_the_activity_outputs() {
+        let root = journal();
+        take_queued(root.path());
+        let mute = |hidden| {
+            set_activity_hidden(
+                root.path(),
+                "work",
+                DAY,
+                "standup",
+                hidden,
+                "owner:mute",
+                None,
+                "2026-10-16T12:00:00Z",
+            )
+            .unwrap()
+            .unwrap()
+        };
+        assert_eq!(mute(true)["hidden"], true);
+        assert_eq!(take_queued(root.path()), [day_file(), outputs("standup")]);
+        // A repeat writes nothing, so the store has nothing to queue.
+        mute(true);
+        assert_eq!(take_queued(root.path()), Vec::<String>::new());
+        assert_eq!(mute(false)["hidden"], false);
+        assert_eq!(take_queued(root.path()), [day_file(), outputs("standup")]);
+    }
+
+    #[test]
+    fn a_hidden_row_that_arrives_or_leaves_counts_as_a_change() {
+        let before: Vec<ActivityRecord> = vec![
+            serde_json::from_str(r#"{"id":"a","hidden":true}"#).unwrap(),
+            serde_json::from_str(r#"{"id":"b"}"#).unwrap(),
+        ];
+        let after: Vec<ActivityRecord> = vec![
+            serde_json::from_str(r#"{"id":"b"}"#).unwrap(),
+            serde_json::from_str(r#"{"id":"c","hidden":true}"#).unwrap(),
+            serde_json::from_str(r#"{"id":"d","hidden":false}"#).unwrap(),
+        ];
+        assert_eq!(hidden_changed(&before, &after), ["a", "c"]);
     }
 }

@@ -64,13 +64,15 @@ fn artifact_paths_are_unique_and_strict_artifacts_preserve_irreplaceable_evidenc
         vec![
             "config/journal.json",
             "health/owner-asks.json",
+            "config/week-left-out.json",
+            "solstone/apps/map/places.json",
             "health/parent-loss/generations/*/census-obligation.json",
             "health/parent-loss/generations/*/census-started.json",
             "health/parent-loss/generations/*/census-refusal.json",
             // Owner-authored line answers that can't be rebuilt.
             "chronicle/**/talents/owner_line_labels.json",
         ],
-        "MustBeValid artifacts must match the reviewed configuration, owner asks, retirement evidence and owner line answers; found: {:?}",
+        "MustBeValid artifacts must match the reviewed configuration, owner asks, week leave-outs, place names and hides, retirement evidence and owner line answers; found: {:?}",
         must_be_valid_paths
     );
 }
@@ -236,6 +238,10 @@ fn every_artifact_has_owning_production_mention_outside_durability() {
             }
             ArtifactId::SegmentStream => combined_source.contains("stream.json"),
             ArtifactId::WeekLeftOut => combined_source.contains("week-left-out.json"),
+            ArtifactId::MapPlaces => {
+                combined_source.contains(".join(\"places.json\")")
+                    && combined_source.contains("fn read_strict(")
+            }
             ArtifactId::ProcessingDisplay => combined_source.contains("fn read_display_snapshot("),
             ArtifactId::SegmentIngest => combined_source.contains("ingest.json"),
             ArtifactId::TalentProvenance => combined_source.contains("talent-provenance"),

@@ -132,7 +132,7 @@ fn invalid_edit(detail: &str) -> Response {
     .into_response()
 }
 
-/// Rename, call it home or work, or hide it from the map. A field left out
+/// Rename, call it home or work, or hide it. A field left out
 /// stays as it is; an empty name or a null clears it.
 pub(crate) async fn edit(
     State(state): State<Arc<AppState>>,

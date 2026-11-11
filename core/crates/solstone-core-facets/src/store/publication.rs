@@ -20,6 +20,23 @@ pub(super) fn publish_saved(journal_root: &Path, saved: &Path) {
     }
 }
 
+/// Queue an activity's outputs folder, `facets/<facet>/activities/<day>/<id>`,
+/// so search reads what the activity made again after its hidden changes.
+pub(super) fn publish_activity_outputs(journal_root: &Path, facet: &str, day: &str, id: &str) {
+    let outputs = Path::new("facets")
+        .join(facet)
+        .join("activities")
+        .join(day)
+        .join(id);
+    if let Err(error) = solstone_core_indexer_store::todo::enqueue_path(journal_root, &outputs) {
+        log::warn!(
+            target: "solstone::indexer",
+            "activity outputs not queued for search path={} cause={error}",
+            outputs.display()
+        );
+    }
+}
+
 /// Marks that [`queue_body_entries_once`] has run for this journal. It lives
 /// with the index it speaks for, so a journal export never carries it.
 const BODY_ENTRIES_QUEUED: &str = "indexer/body-entries-queued";

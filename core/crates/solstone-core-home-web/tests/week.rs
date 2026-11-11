@@ -43,6 +43,22 @@ fn copy_tree(source: &Path, destination: &Path) {
     }
 }
 
+/// The paths search has been asked to read again.
+fn queued_keys(root: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(root.join("indexer/todo")) else {
+        return Vec::new();
+    };
+    let mut keys: Vec<String> = entries
+        .flatten()
+        .filter_map(|entry| fs::read(entry.path()).ok())
+        .filter_map(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .filter(|entry| entry["kind"] == "path")
+        .filter_map(|entry| entry["key"].as_str().map(str::to_owned))
+        .collect();
+    keys.sort();
+    keys
+}
+
 fn test_router(root: &Path) -> Router {
     let clock = solstone_core_home_web::Clock::fixed(
         chrono::Utc
@@ -590,14 +606,16 @@ async fn week_leave_out_and_undo_cycle_updates_disk_atomically() {
     assert!(updated["left_out_notice"].is_null());
 
     // Verify disk state
-    let left_out_path = journal.path().join("health/week-left-out.json");
+    let left_out_path = journal.path().join("config/week-left-out.json");
     assert!(left_out_path.exists());
     assert!(
         journal
             .path()
-            .join("health/week-left-out.json.lock")
+            .join("config/week-left-out.json.lock")
             .exists()
     );
+    assert!(!journal.path().join("health/week-left-out.json").exists());
+    assert_eq!(updated["search_queued"], true);
     let left_out_disk: Value =
         serde_json::from_str(&fs::read_to_string(&left_out_path).unwrap()).unwrap();
     assert_eq!(left_out_disk["keys"][0], key);
@@ -613,6 +631,67 @@ async fn week_leave_out_and_undo_cycle_updates_disk_atomically() {
     let reverted: Value = serde_json::from_slice(&body).expect("json");
     assert_eq!(reverted["rows"][0]["left_out"], false);
     assert!(reverted["left_out_notice"].is_null());
+}
+
+#[tokio::test]
+async fn every_leave_out_call_queues_the_week_page_even_when_nothing_changes() {
+    let journal = seeded_root();
+    let router = test_router(journal.path());
+    let (_, _, _, body) = get(router.clone(), "/app/home/api/week/20260809").await;
+    let model: Value = serde_json::from_slice(&body).unwrap();
+    let key = model["rows"][0]["key"].as_str().unwrap().to_owned();
+    let page = "reflections/weekly/20260809.md";
+    let store = journal.path().join("config/week-left-out.json");
+    let drained = || fs::remove_dir_all(journal.path().join("indexer/todo")).unwrap();
+
+    let (status, _, _) = post(
+        router.clone(),
+        "/app/home/api/week/20260809/leave-out",
+        json!({ "key": key, "undo": false }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(queued_keys(journal.path()), [page]);
+    let stored = fs::read(&store).unwrap();
+
+    // The same leave-out again changes nothing and still queues the page, so
+    // a retry after a lost queue puts search right.
+    drained();
+    let (status, _, body) = post(
+        router.clone(),
+        "/app/home/api/week/20260809/leave-out",
+        json!({ "key": key, "undo": false }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let repeated: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(repeated["search_queued"], true);
+    assert_eq!(fs::read(&store).unwrap(), stored);
+    assert_eq!(queued_keys(journal.path()), [page]);
+
+    // A refused leave-out queues it too.
+    drained();
+    let (status, _, _) = post(
+        router.clone(),
+        "/app/home/api/week/20260809/leave-out",
+        json!({ "key": "not-on-this-page", "undo": false }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(queued_keys(journal.path()), [page]);
+
+    // Twin: the undo queues the page, and the store no longer names the key.
+    drained();
+    let (status, _, _) = post(
+        router,
+        "/app/home/api/week/20260809/leave-out",
+        json!({ "key": key, "undo": true }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(queued_keys(journal.path()), [page]);
+    let after: Value = serde_json::from_slice(&fs::read(&store).unwrap()).unwrap();
+    assert_eq!(after["keys"], json!([]));
 }
 
 #[tokio::test]
@@ -664,25 +743,29 @@ async fn week_leave_out_disk_invariants() {
     let files_after = list_files(journal.path(), journal.path());
     let new_files: Vec<_> = files_after
         .into_iter()
-        .filter(|p| !files_before.contains(p))
+        .filter(|p| !files_before.contains(p) && !p.starts_with("indexer"))
         .collect();
 
     let expected_new = vec![
-        std::path::PathBuf::from("health/week-left-out.json"),
-        std::path::PathBuf::from("health/week-left-out.json.lock"),
+        std::path::PathBuf::from("config/week-left-out.json"),
+        std::path::PathBuf::from("config/week-left-out.json.lock"),
     ];
     assert_eq!(
         new_files, expected_new,
-        "only health/week-left-out.json and lock created"
+        "only config/week-left-out.json and lock created"
+    );
+    assert_eq!(
+        queued_keys(journal.path()),
+        ["reflections/weekly/20260809.md"]
     );
 
-    let health_dir = journal.path().join("health");
-    let lock_path = health_dir.join("week-left-out.json.lock");
-    let data_path = health_dir.join("week-left-out.json");
+    let config_dir = journal.path().join("config");
+    let lock_path = config_dir.join("week-left-out.json.lock");
+    let data_path = config_dir.join("week-left-out.json");
 
     assert!(lock_path.exists(), "lock file exists");
     assert!(data_path.exists(), "data file exists");
-    assert!(!health_dir.join("week-left-out.json.lock.lock").exists());
+    assert!(!config_dir.join("week-left-out.json.lock.lock").exists());
 
     // Perform undo
     let (status, _, _) = post(
@@ -898,7 +981,7 @@ async fn week_concurrent_leave_out_requests_persist_all_keys() {
         assert_eq!(status, StatusCode::OK);
     }
 
-    let left_out_path = journal.path().join("health/week-left-out.json");
+    let left_out_path = journal.path().join("config/week-left-out.json");
     let left_out_disk: Value =
         serde_json::from_str(&fs::read_to_string(&left_out_path).unwrap()).unwrap();
     let keys = left_out_disk["keys"]
@@ -926,9 +1009,9 @@ async fn week_leave_out_fails_safely_when_left_out_file_is_unreadable() {
     let model: Value = serde_json::from_slice(&body).expect("json");
     let key = model["rows"][0]["key"].as_str().expect("key").to_owned();
 
-    let health_dir = journal.path().join("health");
-    fs::create_dir_all(&health_dir).expect("health dir");
-    let left_out_path = health_dir.join("week-left-out.json");
+    let config_dir = journal.path().join("config");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    let left_out_path = config_dir.join("week-left-out.json");
     fs::write(&left_out_path, b"{}").expect("write");
     fs::set_permissions(&left_out_path, fs::Permissions::from_mode(0o000)).expect("mode 000");
 
@@ -946,7 +1029,7 @@ async fn week_leave_out_fails_safely_when_left_out_file_is_unreadable() {
     let json: Value = serde_json::from_slice(&body).expect("json");
     assert_eq!(json["error"], "couldn't leave this out. nothing changed.");
 
-    let lock_path = health_dir.join("week-left-out.json.lock");
+    let lock_path = config_dir.join("week-left-out.json.lock");
     assert!(lock_path.exists(), "lock file exists");
     let record_bytes = fs::read_to_string(&left_out_path).unwrap();
     assert_eq!(record_bytes, "{}", "record bytes still empty object");
@@ -1104,9 +1187,9 @@ async fn week_leave_out_accepts_a_said_key_and_refuses_the_others() {
         "couldn't leave this out. nothing changed."
     );
 
-    let health = journal.path().join("health");
-    fs::create_dir_all(&health).unwrap();
-    fs::write(health.join("week-left-out.json"), r#"{"keys":["ghost"]}"#).unwrap();
+    let config = journal.path().join("config");
+    fs::create_dir_all(&config).unwrap();
+    fs::write(config.join("week-left-out.json"), r#"{"keys":["ghost"]}"#).unwrap();
     let (status, _, _) = post(
         router,
         "/app/home/api/week/20260308/leave-out",
@@ -1115,7 +1198,7 @@ async fn week_leave_out_accepts_a_said_key_and_refuses_the_others() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let stored: Value =
-        serde_json::from_str(&fs::read_to_string(health.join("week-left-out.json")).unwrap())
+        serde_json::from_str(&fs::read_to_string(config.join("week-left-out.json")).unwrap())
             .unwrap();
     assert!(
         stored["keys"]
@@ -1270,10 +1353,13 @@ fn week_dom_contract() {
     left_out_keys.insert("b359922341f75193".to_string());
     left_out_keys.insert("k_left_out".to_string());
     left_out_keys.insert("said-tue".to_string());
-    fs::create_dir_all(root.join("health")).unwrap();
+    fs::create_dir_all(root.join("config")).unwrap();
     fs::write(
-        root.join("health/week-left-out.json"),
-        String::from_utf8(solstone_core_home::weekly::left_out_bytes(&left_out_keys)).unwrap(),
+        root.join("config/week-left-out.json"),
+        String::from_utf8(
+            solstone_core_format::content::week_left_out::left_out_bytes(&left_out_keys),
+        )
+        .unwrap(),
     )
     .unwrap();
     let model_left_out = solstone_core_home::weekly::page_model(

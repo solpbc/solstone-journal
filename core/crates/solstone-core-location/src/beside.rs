@@ -15,6 +15,9 @@ use crate::record::Precision;
 
 const DAY_SECONDS: u32 = 24 * 60 * 60;
 
+/// How an entry ranks against another covering the same moment.
+type Ranked = (u8, std::cmp::Reverse<i64>);
+
 /// What sits beside one activity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Beside {
@@ -35,12 +38,20 @@ pub struct DayBeside {
 }
 
 impl DayBeside {
+    /// A places store that can't be read leaves nothing beside any activity:
+    /// what the owner hid can't be told apart from what they didn't.
     pub fn read(journal: &Path, day: &str) -> Self {
+        let Ok(store) = PlaceStore::read_strict(journal) else {
+            return Self {
+                day: None,
+                store: PlaceStore::default(),
+            };
+        };
         let located = crate::projection::read_build_record(journal, day)
             .and_then(|_| crate::read_journal_day(journal, day).ok());
         Self {
             day: located,
-            store: PlaceStore::read(journal),
+            store,
         }
     }
 
@@ -54,7 +65,7 @@ impl DayBeside {
     /// The entry covering `instant`, as each entry's device timed it, ranked
     /// as [`location_beside`] ranks: for an item that carries instants, not a
     /// device's clock.
-    fn at_instant(&self, instant: i64) -> Option<((u8, std::cmp::Reverse<i64>), Beside)> {
+    fn at_instant(&self, instant: i64) -> Option<(Ranked, Option<Beside>)> {
         let day = self.day.as_ref()?;
         let (entry, length) = day
             .entries
@@ -64,9 +75,11 @@ impl DayBeside {
                 (start <= instant && instant <= end).then_some((entry, end - start))
             })
             .max_by_key(|(entry, length)| (rank(entry), std::cmp::Reverse(*length)))?;
+        // The covering entry wins even when it says nothing, so an entry at a
+        // hidden place never gives way to a weaker one beside it.
         Some((
             (rank(entry), std::cmp::Reverse(length)),
-            describe(day, &self.store, entry)?,
+            describe(day, &self.store, entry),
         ))
     }
 }
@@ -93,7 +106,7 @@ pub fn place_at(
                 .at_instant(instant)
         })
         .max_by_key(|(rank, _)| *rank)
-        .map(|(_, beside)| beside)
+        .and_then(|(_, beside)| beside)
 }
 
 /// The instants an entry covers. An end its device didn't report is the end of
@@ -201,7 +214,12 @@ fn clock_on(time: &LocalTime, date: NaiveDate, outside: u32) -> Option<u32> {
     }
 }
 
+/// An entry recorded within reach of a hidden place, even in part, has no
+/// description: no name, no venue and no area.
 fn describe(day: &DayLocation, store: &PlaceStore, entry: &Entry) -> Option<Beside> {
+    if crate::projection::hidden_reach(store, entry) != crate::projection::Reach::Clear {
+        return None;
+    }
     let (device, words, place_id) = match entry {
         Entry::Readings { device, area, .. } => (*device, area.label()?, None),
         Entry::Visit {

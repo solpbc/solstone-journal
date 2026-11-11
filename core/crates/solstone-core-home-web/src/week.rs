@@ -13,7 +13,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::cant_open_response;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
-use solstone_core_home::weekly::{LeftOut, Said, WeekJudgment, judge, page_model, week_day};
+use solstone_core_format::content::week_left_out::{
+    LeftOut, left_out_bytes, left_out_path, read_left_out,
+};
+use solstone_core_home::weekly::{Said, WeekJudgment, judge, page_model, week_day};
 
 use crate::Clock;
 
@@ -121,18 +124,50 @@ pub async fn week_leave_out(
     let res = tokio::task::spawn_blocking(move || {
         let now = clock.now();
         let year = owner_year(&journal_root, now);
-        save_left_out(&journal_root, &week, req, year, is_moment)
+        let saved = save_left_out(&journal_root, &week, req, year, is_moment);
+        // Every call queues the page, changed or not, so a retry after a lost
+        // queue puts search right.
+        let queued = queue_week_page(&journal_root, &week);
+        (saved, queued)
     })
     .await;
 
     match res {
-        Ok(Ok(model)) => Json(model).into_response(),
-        Ok(Err((status, msg))) => (status, Json(json!({ "error": msg }))).into_response(),
+        Ok((Ok(mut model), queued)) => {
+            if let Value::Object(fields) = &mut model {
+                fields.insert("search_queued".to_owned(), Value::Bool(queued));
+            }
+            Json(model).into_response()
+        }
+        Ok((Err((status, msg)), _)) => (status, Json(json!({ "error": msg }))).into_response(),
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": join_fail_msg })),
         )
             .into_response(),
+    }
+}
+
+/// Queue the week's page for search, which leaves out a page with anything
+/// left out. Whether it was queued.
+fn queue_week_page(journal_root: &Path, week: &str) -> bool {
+    // A journal that isn't there has no page to read, and queueing would make
+    // its folder.
+    if !journal_root.is_dir() {
+        return false;
+    }
+    let page = Path::new("reflections")
+        .join("weekly")
+        .join(format!("{week}.md"));
+    match solstone_core_indexer_todo::enqueue_path(journal_root, &page) {
+        Ok(()) => true,
+        Err(error) => {
+            log::warn!(
+                target: "solstone::indexer",
+                "week page not queued after a leave-out week={week} cause={error}"
+            );
+            false
+        }
     }
 }
 
@@ -168,7 +203,7 @@ pub fn save_left_out(
         return Err((StatusCode::BAD_REQUEST, fail_msg));
     }
 
-    let target_path = solstone_core_home::weekly::left_out_path(journal_root);
+    let target_path = left_out_path(journal_root);
 
     let guard = match solstone_core_journal_io::hold_lock(
         &target_path,
@@ -178,7 +213,7 @@ pub fn save_left_out(
         Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, fail_msg)),
     };
 
-    let left_out = solstone_core_home::weekly::read_left_out(journal_root);
+    let left_out = read_left_out(journal_root);
     let mut keys = match left_out {
         LeftOut::Unreadable => {
             drop(guard);
@@ -194,7 +229,7 @@ pub fn save_left_out(
         keys.insert(req.key);
     }
 
-    let bytes = solstone_core_home::weekly::left_out_bytes(&keys);
+    let bytes = left_out_bytes(&keys);
 
     if solstone_core_journal_io::atomic_replace(
         &target_path,
