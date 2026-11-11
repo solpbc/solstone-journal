@@ -845,6 +845,151 @@ async function testCase(name, fn) {
     assert.strictEqual(Boolean(workRow.querySelector('.facet-list-muted')), false);
   });
 
+  await testCase('facet delete: the foot of the page offers it, except for the last facet that is not muted', async () => {
+    const harness = createHarness();
+    harness.window.location.pathname = '/app/settings/facets/work-life';
+    await run(harness, 'initSettingsWorkspace()');
+    await settle();
+    const C = await run(harness, 'FACET_DELETE_COPY');
+    const button = harness.document.getElementById('facetDeleteBtn');
+    const note = harness.document.getElementById('facetDeleteNote');
+    assert.strictEqual(harness.document.getElementById('facetDeleteFoot').hidden, false);
+    assert.strictEqual(button.hidden, false);
+    assert.strictEqual(button.textContent, C.button);
+    assert.strictEqual(note.hidden, true);
+    const foot = harness.document.getElementById('facetDeleteFoot');
+    assert.strictEqual(foot.parentElement.id, 'settings-facet-detail-view', 'it belongs to the facet, not to a tab');
+
+    const last = createHarness();
+    last.facets.get('zeta-project').muted = true;
+    last.window.location.pathname = '/app/settings/facets/work-life';
+    await run(last, 'initSettingsWorkspace()');
+    await settle();
+    assert.strictEqual(last.document.getElementById('facetDeleteBtn').hidden, true, 'the last facet that is not muted has no button');
+    assert.strictEqual(last.document.getElementById('facetDeleteNote').hidden, false);
+    assert.strictEqual(last.document.getElementById('facetDeleteNote').textContent, C.last, 'in its place, why and what to do');
+    await click(last.document.getElementById('facetMuteAction'));
+    await settle();
+    assert.strictEqual(last.document.getElementById('facetDeleteBtn').hidden, false, 'once muted it can be deleted');
+    assert.strictEqual(last.document.getElementById('facetDeleteNote').hidden, true);
+
+    const unread = createHarness();
+    const original = unread.context.fetch;
+    unread.context.fetch = async (url, options) => (String(url).endsWith('facets?all=true') ? Promise.reject(new TypeError('Failed to fetch')) : original(url, options));
+    unread.window.location.pathname = '/app/settings/facets/work-life';
+    await run(unread, 'initSettingsWorkspace()');
+    await settle();
+    assert.strictEqual(unread.document.getElementById('facetDeleteBtn').hidden, false, 'a failed read leaves the button: the journal still refuses the last one');
+  });
+
+  await testCase('facet delete: the dialog, its erase step, and where the page goes after', async () => {
+    const harness = createHarness();
+    const stored = new Map();
+    harness.window.sessionStorage = {
+      getItem: (key) => (stored.has(key) ? stored.get(key) : null),
+      setItem: (key, value) => stored.set(key, String(value)),
+      removeItem: (key) => stored.delete(key),
+    };
+    const shown = [];
+    harness.window.AppServices.notifications = { show: (notice) => shown.push(notice) };
+    const original = harness.context.fetch;
+    const deletes = [];
+    let answer = { status: 200, body: { success: true, trash: { id: 'T-facet', erase_at: '2099-11-17T00:00:00Z' } } };
+    harness.context.fetch = async (url, options = {}) => {
+      if (options.method === 'DELETE' && String(url).startsWith('/app/settings/api/facet/')) {
+        deletes.push({ url: String(url), body: JSON.parse(options.body) });
+        return response(answer.body, answer.status);
+      }
+      return original(url, options);
+    };
+    harness.window.location.pathname = '/app/settings/facets/work-life';
+    await run(harness, 'initSettingsWorkspace()');
+    await settle();
+    const C = await run(harness, 'FACET_DELETE_COPY');
+    const byId = (id) => harness.document.getElementById(id);
+    await click(byId('facetDeleteBtn'));
+    assert.strictEqual(byId('facetDeleteModal').style.display, 'flex');
+    assert.strictEqual(harness.document.activeElement, byId('facetDeleteModalConfirm'), 'focus lands on the reversible act');
+    assert.strictEqual(byId('facetDeleteModalTitle').textContent, C.move.title);
+    const paragraphs = () => byId('facetDeleteModalBody').children;
+    assert.strictEqual(paragraphs()[0].textContent, 'Work Life', 'the meta is its title');
+    assert.deepStrictEqual(paragraphs().slice(1).map((node) => node.textContent),
+      [C.move.reach, C.move.lead, C.list.join(' '), C.move.stays, C.recovering], 'what moves, what stays, and what recovering does not put back');
+    assert.strictEqual(paragraphs()[3].children.length, C.list.length, 'the list is fixed words with no counts');
+    await click(byId('facetDeleteModalErase'));
+    assert.strictEqual(byId('facetDeleteModalTitle').textContent, C.erase.title);
+    assert.ok(byId('facetDeleteModalHeader').classList.contains('danger'));
+    assert.deepStrictEqual(paragraphs().slice(1).map((node) => node.textContent),
+      [C.erase.reach, C.erase.lead, C.list.join(' '), C.erase.stays], 'the erase step says nothing about recovering');
+    assert.strictEqual(harness.document.activeElement, byId('facetDeleteModalBack'));
+    await click(byId('facetDeleteModalBack'));
+    await click(byId('facetDeleteModalConfirm'));
+    await settle();
+    assert.deepStrictEqual(deletes[0], { url: '/app/settings/api/facet/work-life', body: { consent: true } });
+    assert.strictEqual(harness.window.location.href, '/app/settings#facets', 'after a move the page goes to the facet list');
+    const stash = JSON.parse(stored.get('journal-facet-delete-receipt'));
+    assert.strictEqual(stash.outcome.kind, 'moved');
+    assert.strictEqual(stash.outcome.trashId, 'T-facet');
+    assert.strictEqual(byId('facetDeleteModal').style.display, 'none');
+
+    // The list shows the receipt; its recover reloads the list.
+    await run(harness, 'showStashedFacetReceipt()');
+    const receipt = shown.at(-1);
+    assert.strictEqual(receipt.title, C.receipt.moved.title);
+    assert.strictEqual(JSON.stringify(receipt.buttons.map((b) => b.label)), JSON.stringify([C.buttons.recover, C.buttons.openTrash]));
+    assert.strictEqual(stored.has('journal-facet-delete-receipt'), false, 'the receipt shows once');
+    const recovered = [];
+    harness.context.fetch = async (url, options = {}) => {
+      if (String(url) === '/app/settings/api/trash/recover') {
+        recovered.push(JSON.parse(options.body));
+        return response({ done: ['T-facet'], failed: [] });
+      }
+      return original(url, options);
+    };
+    const before = harness.requests.filter((request) => request.url === '/app/settings/api/facets?all=true').length;
+    await receipt.buttons[0].onClick();
+    assert.deepStrictEqual(recovered[0].ids, ['T-facet']);
+    assert.ok(harness.requests.filter((request) => request.url === '/app/settings/api/facets?all=true').length > before, 'recover reloads the list');
+    assert.strictEqual(shown.at(-1).title, C.receipt.recovered.title.replace('{noun}', C.noun));
+
+    // Erase now asks for it; a refusal stays on the page with its own words.
+    harness.context.fetch = async (url, options = {}) => {
+      if (options.method === 'DELETE') {
+        deletes.push({ url: String(url), body: JSON.parse(options.body) });
+        return response(answer.body, answer.status);
+      }
+      return original(url, options);
+    };
+    harness.window.location.href = '/app/settings/facets/work-life';
+    answer = { status: 409, body: { success: false, reason: 'last_facet', error: 'SERVER WORDS' } };
+    await click(byId('facetDeleteBtn'));
+    await click(byId('facetDeleteModalErase'));
+    await click(byId('facetDeleteModalEraseConfirm'));
+    await settle();
+    assert.deepStrictEqual(deletes.at(-1).body, { consent: true, erase: true });
+    assert.strictEqual(harness.window.location.href, '/app/settings/facets/work-life', 'a refusal stays on the page');
+    assert.strictEqual(shown.at(-1).title, C.receipt.eraseRefused.title.replace('{noun}', C.noun));
+    assert.strictEqual(shown.at(-1).message, C.refused.last_facet);
+    assert.ok(!JSON.stringify(shown.at(-1)).includes('SERVER WORDS'), 'no server reason reaches the owner');
+    answer = { status: 409, body: { success: false, reason: 'busy' } };
+    await click(byId('facetDeleteBtn'));
+    await click(byId('facetDeleteModalConfirm'));
+    await settle();
+    assert.strictEqual(shown.at(-1).title, C.receipt.moveRefused.title);
+    assert.strictEqual(shown.at(-1).message, C.refused.busy);
+    answer = { status: 500, body: { success: false, reason: 'new-code' } };
+    await click(byId('facetDeleteBtn'));
+    await click(byId('facetDeleteModalConfirm'));
+    await settle();
+    assert.strictEqual(shown.at(-1).message, C.receipt.moveRefused.message, 'an unknown code is other');
+    harness.context.fetch = async (url, options = {}) => (options.method === 'DELETE' ? Promise.reject(new TypeError('Failed to fetch')) : original(url, options));
+    await click(byId('facetDeleteBtn'));
+    await click(byId('facetDeleteModalConfirm'));
+    await settle();
+    assert.strictEqual(shown.at(-1).title, C.receipt.noAnswerMove.title, 'no answer: it may already be in the trash');
+    assert.strictEqual(shown.at(-1).message, C.receipt.noAnswerMove.message);
+  });
+
   await testCase('G3-19 notifications guide row opens health, facets moves out of help', async () => {
     const harness = createHarness();
     const notifRow = harness.document
