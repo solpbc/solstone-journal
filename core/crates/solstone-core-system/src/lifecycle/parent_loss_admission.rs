@@ -785,6 +785,325 @@ mod tests {
         }
     }
 
+    fn admitting(directory: &Path) -> (ParentLossLedger, ParentLossGeneration, ProcessInstance) {
+        let ledger = ParentLossLedger::open(directory).expect("ledger");
+        let supervisor = ProcessInstance {
+            pid: 10,
+            birth: ProcessBirth::linux(1, 1, 100),
+        };
+        let active = ledger
+            .reserve_generation(supervisor, [HostedServiceKind::Sense])
+            .expect("reserve");
+        ledger.initialize_record(&active).expect("record");
+        let coordinator = ProcessInstance {
+            pid: 20,
+            birth: ProcessBirth::linux(2, 1, 100),
+        };
+        ledger
+            .persist_coordinator_identity(active.generation, coordinator)
+            .expect("coordinator");
+        ledger
+            .mark_admitting(active.generation, coordinator)
+            .expect("admitting");
+        (ledger, active.generation, coordinator)
+    }
+
+    fn entry(ledger: &ParentLossLedger, generation: ParentLossGeneration, id: &str) -> PathBuf {
+        admission_directory(ledger, generation).join(id)
+    }
+
+    fn worker_identity(generation: ParentLossGeneration, id: &str, pid: u32) -> AdmissionIdentity {
+        AdmissionIdentity {
+            generation,
+            launch_id: id.to_owned(),
+            instance: ProcessInstance {
+                pid,
+                birth: ProcessBirth::linux(u64::from(pid), 1, 100),
+            },
+            uid: 501,
+            parent_launch_id: None,
+        }
+    }
+
+    #[test]
+    fn a_reaped_worker_leaves_admissions_and_a_late_drop_cannot_recreate_it() {
+        let directory = TempDir::new().expect("temporary root");
+        let (ledger, g, _) = admitting(directory.path());
+        let journal = directory.path();
+        write_parent_loss_admission_intent(journal, &AdmissionIntent::new(g, "w", None, None))
+            .expect("intent");
+        assert_eq!(
+            discharge(&ledger, g, "w", Discharger::Reaper).expect("discharge"),
+            Discharged::Moved
+        );
+        assert!(!entry(&ledger, g, "w").exists());
+        assert!(
+            discharged_directory(&ledger, g)
+                .join("w/intent.json")
+                .is_file()
+        );
+
+        let id = worker_identity(g, "w", 4242);
+        assert!(matches!(
+            write_parent_loss_admission_spawn_identity(journal, &id),
+            Err(ParentLossAdmissionError::GenerationClosed)
+        ));
+        assert!(matches!(
+            acknowledge_parent_loss_admission(journal, id.clone()),
+            Err(ParentLossAdmissionError::GenerationClosed)
+        ));
+        assert!(matches!(
+            write_parent_loss_admission_result(
+                journal,
+                g,
+                "w",
+                &AdmissionResult {
+                    schema: SCHEMA,
+                    identity: Some(id),
+                    state: AdmissionResultState::Admitted,
+                },
+            ),
+            Err(ParentLossAdmissionError::GenerationClosed)
+        ));
+        assert!(
+            !entry(&ledger, g, "w").exists(),
+            "a drop after discharge recreated the entry"
+        );
+    }
+
+    #[test]
+    fn the_reaper_leaves_service_roots_unreadable_intents_and_sealed_generations() {
+        let directory = TempDir::new().expect("temporary root");
+        let (ledger, g, coordinator) = admitting(directory.path());
+        let journal = directory.path();
+        write_parent_loss_admission_intent(
+            journal,
+            &AdmissionIntent::new(g, "svc", Some(HostedServiceKind::Sense), None),
+        )
+        .expect("service intent");
+        assert_eq!(
+            discharge(&ledger, g, "svc", Discharger::Reaper).expect("discharge"),
+            Discharged::Kept(DischargeKept::ServiceRoot)
+        );
+
+        // A torn intent and an intent with another schema are unreadable.
+        fs::create_dir_all(entry(&ledger, g, "torn")).expect("torn entry");
+        fs::write(entry(&ledger, g, "torn").join("intent.json"), b"{\"sche").expect("torn");
+        let mut other = serde_json::to_value(AdmissionIntent::new(g, "other", None, None))
+            .expect("intent value");
+        other["schema"] = serde_json::json!(2);
+        fs::create_dir_all(entry(&ledger, g, "other")).expect("other entry");
+        fs::write(
+            entry(&ledger, g, "other").join("intent.json"),
+            serde_json::to_vec(&other).expect("bytes"),
+        )
+        .expect("schema 2");
+        fs::create_dir_all(entry(&ledger, g, "bare")).expect("intent-less entry");
+        for id in ["torn", "other", "bare"] {
+            assert_eq!(
+                discharge(&ledger, g, id, Discharger::Reaper).expect("discharge"),
+                Discharged::Kept(DischargeKept::IntentUnreadable),
+                "{id}"
+            );
+            assert!(entry(&ledger, g, id).exists(), "{id}");
+        }
+        assert_eq!(
+            discharge(&ledger, g, "never-written", Discharger::Reaper).expect("discharge"),
+            Discharged::Kept(DischargeKept::EntryMissing)
+        );
+
+        write_parent_loss_admission_intent(journal, &AdmissionIntent::new(g, "w", None, None))
+            .expect("intent");
+        ledger.seal(g, coordinator).expect("seal");
+        for discharger in [Discharger::Reaper, Discharger::Launcher] {
+            assert_eq!(
+                discharge(&ledger, g, "w", discharger).expect("discharge"),
+                Discharged::Kept(DischargeKept::NotAdmitting)
+            );
+        }
+        assert!(entry(&ledger, g, "w").exists());
+        assert_eq!(
+            discharge(&ledger, g, "w", Discharger::Sealing).expect("discharge"),
+            Discharged::Moved
+        );
+    }
+
+    #[test]
+    fn a_reaper_that_cannot_take_the_lock_leaves_the_entry() {
+        let directory = TempDir::new().expect("temporary root");
+        let (ledger, g, _) = admitting(directory.path());
+        write_parent_loss_admission_intent(
+            directory.path(),
+            &AdmissionIntent::new(g, "w", None, None),
+        )
+        .expect("intent");
+        let _held = hold_lock(
+            ledger.admission_lock_path(g),
+            LockOptions {
+                timeout: Duration::from_secs(1),
+                poll_interval: Duration::from_millis(10),
+                mode: Some(FILE_MODE),
+            },
+        )
+        .expect("lock");
+        let began = std::time::Instant::now();
+        assert_eq!(
+            discharge(&ledger, g, "w", Discharger::Reaper).expect("discharge"),
+            Discharged::Kept(DischargeKept::LockBusy)
+        );
+        assert!(began.elapsed() < Duration::from_secs(1));
+        assert!(entry(&ledger, g, "w").exists());
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn a_drop_interrupted_mid_write_leaves_no_partial_file_under_its_final_name() {
+        use solstone_core_journal_io::{
+            BoundPublicationPrimitive, run_with_bound_publication_barrier,
+            run_with_bound_publication_fault,
+        };
+        let directory = TempDir::new().expect("temporary root");
+        let (ledger, g, _) = admitting(directory.path());
+        let journal = directory.path().to_path_buf();
+        write_parent_loss_admission_intent(&journal, &AdmissionIntent::new(g, "w", None, None))
+            .expect("intent");
+        let id = worker_identity(g, "w", 4242);
+        let final_path = spawn_identity_path(&ledger, g, "w");
+
+        // Fail the write of the staged bytes: the final name never appears and
+        // the stage is cleaned up.
+        let (result, injected) = run_with_bound_publication_fault(
+            BoundPublicationPrimitive::Write,
+            1,
+            libc::EIO,
+            || write_parent_loss_admission_spawn_identity(&journal, &id),
+        );
+        assert!(injected && result.is_err());
+        assert!(!final_path.exists());
+        let names: Vec<_> = fs::read_dir(entry(&ledger, g, "w"))
+            .expect("entry")
+            .map(|item| item.expect("item").file_name())
+            .collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("intent.json")]);
+
+        // Fully written and synced, but not yet published: still no final name.
+        let observed = final_path.clone();
+        let (result, fired) = run_with_bound_publication_barrier(
+            BoundPublicationPrimitive::ExclusivePublish,
+            1,
+            move || assert!(!observed.exists(), "final name visible before publish"),
+            || write_parent_loss_admission_spawn_identity(&journal, &id),
+        );
+        assert!(fired);
+        result.expect("published");
+        let read: AdmissionSpawnIdentity =
+            serde_json::from_slice(&fs::read(&final_path).expect("final")).expect("whole drop");
+        assert_eq!(read.identity, id);
+    }
+
+    #[test]
+    fn a_replacement_discharges_only_roots_whose_every_identity_exited() {
+        let directory = TempDir::new().expect("temporary root");
+        let (ledger, g, _) = admitting(directory.path());
+        let journal = directory.path();
+        let service = HostedServiceKind::Sense;
+        let live = worker_identity(g, "x", 7001).instance;
+        let root = |id: &str, kind: HostedServiceKind| {
+            write_parent_loss_admission_intent(
+                journal,
+                &AdmissionIntent::new(g, id, Some(kind), None),
+            )
+            .expect("intent");
+        };
+        let result = |id: &str, identity: AdmissionIdentity| {
+            write_parent_loss_admission_result(
+                journal,
+                g,
+                id,
+                &AdmissionResult {
+                    schema: SCHEMA,
+                    identity: Some(identity),
+                    state: AdmissionResultState::Admitted,
+                },
+            )
+            .expect("result");
+        };
+        // exited: one identity, gone.
+        root("exited", service);
+        result("exited", worker_identity(g, "exited", 6001));
+        // disagree: the result is gone, but its acknowledgement names a live process.
+        root("disagree", service);
+        result("disagree", worker_identity(g, "disagree", 6002));
+        let mut ack = worker_identity(g, "disagree", 7001);
+        ack.instance = live;
+        acknowledge_parent_loss_admission(journal, ack).expect("ack");
+        // live: the root is still running.
+        root("live", service);
+        let mut running = worker_identity(g, "live", 7001);
+        running.instance = live;
+        result("live", running);
+        // intent-only: no identity to observe.
+        root("intent-only", service);
+        // torn: an unreadable drop beside an exited identity.
+        root("torn", service);
+        result("torn", worker_identity(g, "torn", 6003));
+        fs::write(entry(&ledger, g, "torn").join("acknowledgement.json"), b"{").expect("torn");
+        // another service, exited.
+        root("cortex", HostedServiceKind::Cortex);
+        result("cortex", worker_identity(g, "cortex", 6004));
+        // the replacement itself.
+        root("current", service);
+
+        struct OnlyLive(ProcessInstance);
+        impl ProcessInstanceSource for OnlyLive {
+            fn inspect(&self, pid: u32) -> InspectResult {
+                if pid == self.0.pid {
+                    InspectResult::Present {
+                        instance: self.0,
+                        uid: 501,
+                        execution: crate::process::ExecutionState::Running,
+                        ppid: Some(1),
+                        pgid: Some(1),
+                    }
+                } else {
+                    InspectResult::Absent
+                }
+            }
+            fn census(&self) -> crate::process::InstanceCensus {
+                crate::process::InstanceCensus::Incomplete(Vec::new())
+            }
+        }
+        let lock = hold_lock(
+            ledger.admission_lock_path(g),
+            LockOptions {
+                timeout: Duration::from_secs(1),
+                poll_interval: Duration::from_millis(10),
+                mode: Some(FILE_MODE),
+            },
+        )
+        .expect("lock");
+        let moved = discharge_replaced_service_roots(
+            &ledger,
+            g,
+            "current",
+            service,
+            &OnlyLive(live),
+            &lock,
+        );
+        assert_eq!(moved, 1);
+        assert!(!entry(&ledger, g, "exited").exists());
+        for kept in [
+            "disagree",
+            "live",
+            "intent-only",
+            "torn",
+            "cortex",
+            "current",
+        ] {
+            assert!(entry(&ledger, g, kept).exists(), "{kept} was discharged");
+        }
+    }
+
     #[test]
     fn same_witness_is_idempotent_and_divergent_witness_conflicts() {
         let directory = TempDir::new().expect("temporary root");

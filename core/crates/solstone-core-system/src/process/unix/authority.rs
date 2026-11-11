@@ -1309,6 +1309,7 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     use crate::process::InstanceVerdict;
     use crate::process::{ProcessBirth, ProcessInstance};
+    use std::ffi::OsString;
 
     #[cfg(all(test, feature = "full-tests"))]
     fn process_is_gone(pid: u32) -> bool {
@@ -1489,6 +1490,461 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    fn outstanding(ledger: &ParentLossLedger, generation: ParentLossGeneration) -> Vec<String> {
+        let Ok(listing) = fs::read_dir(ledger.generation_path(generation).join("admissions"))
+        else {
+            return Vec::new();
+        };
+        let mut names: Vec<String> = listing
+            .map(|item| {
+                item.expect("entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// This test binary re-run as a child: the probe test below does the
+    /// child's part when `PROBE_ENV` names a mode.
+    pub(crate) const PROBE_ENV: &str = "SOLSTONE_TEST_ADMISSION_PROBE";
+    pub(crate) const PROBE_REPORT_ENV: &str = "SOLSTONE_TEST_ADMISSION_PROBE_REPORT";
+    const PROBE_TEST: &str = "process::platform::authority::tests::admission_probe_child";
+
+    pub(crate) fn probe_arguments() -> Vec<String> {
+        ["--exact", PROBE_TEST, "--nocapture", "--test-threads=1"]
+            .map(str::to_owned)
+            .to_vec()
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    fn probe_command(mode: &str) -> (Vec<String>, BTreeMap<OsString, OsString>) {
+        let mut command = vec![
+            std::env::current_exe()
+                .expect("test binary")
+                .display()
+                .to_string(),
+        ];
+        command.extend(probe_arguments());
+        let environment = BTreeMap::from([(OsString::from(PROBE_ENV), OsString::from(mode))]);
+        (command, environment)
+    }
+
+    /// The child side of the spawn tests. A plain test run does nothing.
+    /// `ack` records the child's own admission, as every journal binary does
+    /// at process entry; `exec` reaches `ack` through a pid-preserving exec;
+    /// `worker` also reports what it and its own children see.
+    #[test]
+    fn admission_probe_child() {
+        let Some(mode) = std::env::var_os(PROBE_ENV) else {
+            return;
+        };
+        std::process::exit(run_admission_probe(mode.to_str().unwrap_or_default()));
+    }
+
+    fn run_admission_probe(mode: &str) -> i32 {
+        use std::os::unix::process::CommandExt;
+        if mode == "exec" {
+            let error = Command::new(std::env::current_exe().expect("test binary"))
+                .args(probe_arguments())
+                .env(PROBE_ENV, "ack")
+                .exec();
+            eprintln!("probe exec failed: {error}");
+            return 71;
+        }
+        let Some(journal) = std::env::var_os("SOLSTONE_JOURNAL").map(PathBuf::from) else {
+            return 72;
+        };
+        if let Err(error) = crate::lifecycle::acknowledge_hosted_child_admission(&journal) {
+            eprintln!("probe admission failed: {error}");
+            return 70;
+        }
+        if mode != "worker" {
+            return 0;
+        }
+        // Work starts here: the acknowledgement must already be durable.
+        let generation: u64 = std::env::var(HOSTED_GENERATION_ENV)
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or_default();
+        let launch_id = std::env::var(HOSTED_LAUNCH_ID_ENV).unwrap_or_default();
+        let acked = read_parent_loss_admission_acknowledgement(&journal, generation, &launch_id)
+            .ok()
+            .flatten()
+            .is_some_and(|ack| ack.identity.instance.pid == std::process::id());
+        let count = |text: &str| {
+            text.lines()
+                .filter(|line| line.starts_with("SOL_PARENT_LOSS_"))
+                .count()
+        };
+        let raw = launch_command(
+            Disposition::InheritedParentScope,
+            CommandLaunchRequest {
+                program: OsString::from("/usr/bin/env"),
+                arguments: Vec::new(),
+                environment: BTreeMap::new(),
+                current_dir: None,
+                process_group: false,
+                stdin_piped: false,
+                stdout_piped: true,
+                stderr_piped: false,
+            },
+            Box::new(|child, _| child.kill().map_err(LaunchError::Terminate)),
+        )
+        .and_then(LaunchAuthority::wait_with_output)
+        .map(|output| count(&String::from_utf8_lossy(&output.stdout)));
+        let managed_file = journal.join("probe-managed-env.txt");
+        let managed = ManagedProcess::spawn(
+            vec![
+                "/bin/sh".to_owned(),
+                "-c".to_owned(),
+                format!("env > '{}'", managed_file.display()),
+            ],
+            super::super::super::SpawnOptions {
+                journal_root: journal.clone(),
+                reference: "probe-grandchild".to_owned(),
+                day: None,
+                sink: None,
+                environment: BTreeMap::new(),
+            },
+        )
+        .and_then(|mut process| process.wait().map_err(SpawnError::Spawn))
+        .ok()
+        .and_then(|_| fs::read_to_string(&managed_file).ok())
+        .map(|text| count(&text));
+        let report = format!(
+            "own={}\nacked={}\nraw={}\nmanaged={}\n",
+            u8::from(!launch_id.is_empty() && generation != 0),
+            u8::from(acked),
+            raw.map_or_else(|_| "error".to_owned(), |n| n.to_string()),
+            managed.map_or_else(|| "error".to_owned(), |n| n.to_string()),
+        );
+        let written = std::env::var_os(PROBE_REPORT_ENV).map(|path| fs::write(path, report));
+        if matches!(written, Some(Ok(()))) {
+            0
+        } else {
+            73
+        }
+    }
+
+    #[test]
+    fn a_thousand_spawn_failures_leave_admissions_empty() {
+        let bed = JournalBed::new("spawn-failures");
+        let (ledger, generation, _) = admitting_generation(&bed.root);
+        for index in 0..1_000 {
+            let error = launch_generation_child(
+                Disposition::InheritedParentScope,
+                &bed.root,
+                format!("fails-{index}"),
+                || Err(io::Error::from(io::ErrorKind::NotFound)),
+                Box::new(kill_child),
+            )
+            .expect_err("spawn fails");
+            assert!(matches!(error, LaunchError::Spawn(_)));
+        }
+        for index in 0..10 {
+            let result = launch_managed_generation_child(
+                Disposition::IndependentBoundedHelper {
+                    timeout: Duration::from_secs(5),
+                },
+                &bed.root,
+                format!("managed-fails-{index}"),
+                ManagedLaunchRequest {
+                    command: vec!["/definitely/not/a-binary".to_owned()],
+                    options: SpawnOptions {
+                        journal_root: bed.root.clone(),
+                        reference: "managed-fails".to_owned(),
+                        day: None,
+                        sink: None,
+                        environment: BTreeMap::new(),
+                    },
+                },
+                false,
+            );
+            assert!(matches!(result, Err(GenerationChildError::Unavailable(_))));
+        }
+        assert_eq!(outstanding(&ledger, generation), Vec::<String>::new());
+        let discharged = fs::read_dir(ledger.generation_path(generation).join("discharged"))
+            .expect("discharged")
+            .count();
+        assert_eq!(discharged, 1_010);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    fn hosted(
+        bed: &JournalBed,
+        generation: u64,
+        launch_id: &str,
+        service: Option<HostedServiceKind>,
+    ) -> HostedLaunchProvenance {
+        HostedLaunchProvenance {
+            journal: bed.root.clone(),
+            generation,
+            launch_id: launch_id.to_owned(),
+            service,
+            parent_launch_id: None,
+            acknowledgement_timeout: Duration::from_secs(10),
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    fn managed_probe(bed: &JournalBed, mode: &str) -> ManagedLaunchRequest {
+        let (command, environment) = probe_command(mode);
+        ManagedLaunchRequest {
+            command,
+            options: SpawnOptions {
+                journal_root: bed.root.clone(),
+                reference: format!("probe-{mode}"),
+                day: None,
+                sink: None,
+                environment,
+            },
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    fn managed_command(bed: &JournalBed, command: &[&str]) -> ManagedLaunchRequest {
+        ManagedLaunchRequest {
+            command: command.iter().map(|part| (*part).to_owned()).collect(),
+            options: SpawnOptions {
+                journal_root: bed.root.clone(),
+                reference: "plain".to_owned(),
+                day: None,
+                sink: None,
+                environment: BTreeMap::new(),
+            },
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn every_launch_path_discharges_the_child_it_reaps() {
+        let bed = JournalBed::new("reap-discharges");
+        let (ledger, generation, _) = admitting_generation(&bed.root);
+
+        let mut raw = launch_generation_child(
+            Disposition::InheritedParentScope,
+            &bed.root,
+            "raw-child".to_owned(),
+            || Command::new("/bin/true").spawn(),
+            Box::new(kill_child),
+        )
+        .expect("raw generation child");
+        assert_eq!(outstanding(&ledger, generation), ["raw-child"]);
+        assert_eq!(raw.wait().expect("wait"), 0);
+        assert_eq!(outstanding(&ledger, generation), Vec::<String>::new());
+
+        let mut managed = launch_managed_generation_child(
+            Disposition::IndependentBoundedHelper {
+                timeout: Duration::from_secs(5),
+            },
+            &bed.root,
+            "managed-child".to_owned(),
+            managed_command(&bed, &["/bin/true"]),
+            false,
+        )
+        .unwrap_or_else(|_| panic!("managed generation child"));
+        while managed.poll().expect("poll").is_none() {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(outstanding(&ledger, generation), Vec::<String>::new());
+
+        let mut hosted_managed = launch_managed_hosted(
+            Disposition::InheritedParentScope,
+            managed_probe(&bed, "ack"),
+            hosted(&bed, generation, "hosted-managed", None),
+        )
+        .expect("hosted managed child");
+        assert_eq!(hosted_managed.wait().expect("wait"), 0);
+        assert_eq!(outstanding(&ledger, generation), Vec::<String>::new());
+
+        let (command, environment) = probe_command("ack");
+        let hosted_raw = launch_command_hosted(
+            Disposition::InheritedParentScope,
+            CommandLaunchRequest {
+                program: OsString::from(&command[0]),
+                arguments: command[1..].iter().map(OsString::from).collect(),
+                environment,
+                current_dir: None,
+                process_group: false,
+                stdin_piped: false,
+                stdout_piped: true,
+                stderr_piped: true,
+            },
+            hosted(&bed, generation, "hosted-raw", None),
+            Box::new(kill_child),
+        )
+        .expect("hosted raw child");
+        assert!(
+            hosted_raw
+                .wait_with_output()
+                .expect("output")
+                .status
+                .success()
+        );
+        assert_eq!(outstanding(&ledger, generation), Vec::<String>::new());
+
+        let mut moved = launch_managed_hosted(
+            Disposition::InheritedParentScope,
+            managed_probe(&bed, "ack"),
+            hosted(&bed, generation, "into-managed", None),
+        )
+        .expect("hosted child")
+        .into_managed()
+        .expect("managed process");
+        assert_eq!(moved.wait().expect("wait"), 0);
+        assert_eq!(outstanding(&ledger, generation), Vec::<String>::new());
+
+        // A service root is the stop proof's roster: its reap never discharges it.
+        let mut service = launch_managed_hosted(
+            Disposition::InheritedParentScope,
+            managed_probe(&bed, "ack"),
+            hosted(
+                &bed,
+                generation,
+                "service-root",
+                Some(HostedServiceKind::Sense),
+            ),
+        )
+        .expect("hosted service");
+        assert_eq!(service.wait().expect("wait"), 0);
+        drop(service);
+        assert_eq!(outstanding(&ledger, generation), ["service-root"]);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_detached_child_is_never_discharged() {
+        let bed = JournalBed::new("detached");
+        let (ledger, generation, _) = admitting_generation(&bed.root);
+        let mut authority = launch_managed_generation_child(
+            Disposition::IndependentBoundedHelper {
+                timeout: Duration::from_secs(5),
+            },
+            &bed.root,
+            "detached-child".to_owned(),
+            managed_command(&bed, &["/bin/sleep", "30"]),
+            false,
+        )
+        .unwrap_or_else(|_| panic!("generation child"));
+        authority.detach_after_bounded_shutdown();
+        let pid = authority.pid();
+        nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(i32::try_from(pid).expect("pid")),
+            nix::sys::signal::Signal::SIGKILL,
+        )
+        .expect("kill");
+        while authority.poll().expect("poll").is_none() {
+            thread::sleep(Duration::from_millis(5));
+        }
+        authority.cleanup();
+        drop(authority);
+        assert_eq!(outstanding(&ledger, generation), ["detached-child"]);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn an_unconfirmed_reap_after_an_unverifiable_spawn_keeps_the_entry() {
+        let bed = JournalBed::new("unconfirmed-reap");
+        let (ledger, generation, _) = admitting_generation(&bed.root);
+        let request = |wait_fails: bool| {
+            let mut request = managed_command(&bed, &["/bin/sleep", "60"]);
+            let environment = &mut request.options.environment;
+            environment.insert(
+                OsString::from("SOLSTONE_TEST_EXACT_SPAWN_FORCE_UNVERIFIABLE"),
+                OsString::from("1"),
+            );
+            if wait_fails {
+                environment.insert(
+                    OsString::from("SOLSTONE_TEST_EXACT_SPAWN_FORCE_WAIT_FAILURE"),
+                    OsString::from("1"),
+                );
+            }
+            request
+        };
+        let disposition = || Disposition::IndependentBoundedHelper {
+            timeout: Duration::from_secs(5),
+        };
+
+        // The child was killed and its reap confirmed: the launcher discharges it.
+        let confirmed = launch_managed_generation_child(
+            disposition(),
+            &bed.root,
+            "confirmed".to_owned(),
+            request(false),
+            false,
+        );
+        assert!(matches!(
+            confirmed,
+            Err(GenerationChildError::Unavailable(_))
+        ));
+        assert_eq!(outstanding(&ledger, generation), Vec::<String>::new());
+
+        // The reap could not be confirmed: the entry stays, and the caller
+        // keeps the child until its own reap discharges it.
+        let unconfirmed = launch_managed_generation_child(
+            disposition(),
+            &bed.root,
+            "unconfirmed".to_owned(),
+            request(true),
+            false,
+        );
+        let Err(GenerationChildError::Live(authority, _)) = unconfirmed else {
+            panic!("an unconfirmed reap must hand the child back");
+        };
+        assert_eq!(outstanding(&ledger, generation), ["unconfirmed"]);
+        drop(authority);
+        assert_eq!(outstanding(&ledger, generation), Vec::<String>::new());
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_hosted_service_reached_through_exec_still_admits() {
+        let bed = JournalBed::new("exec-admits");
+        let (ledger, generation, _) = admitting_generation(&bed.root);
+        let mut authority = launch_managed_hosted(
+            Disposition::InheritedParentScope,
+            managed_probe(&bed, "exec"),
+            hosted(
+                &bed,
+                generation,
+                "exec-service",
+                Some(HostedServiceKind::Sense),
+            ),
+        )
+        .expect("an exec'd service acknowledges with the launch environment intact");
+        let result = admission_result(&ledger, generation, "exec-service");
+        assert_eq!(result.state, AdmissionResultState::Admitted);
+        assert_eq!(
+            result.identity.map(|identity| identity.instance.pid),
+            Some(authority.pid())
+        );
+        assert_eq!(authority.wait().expect("wait"), 0);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_thousand_restarts_of_one_hosted_service_leave_one_root() {
+        let bed = JournalBed::new("service-restarts");
+        let (ledger, generation, _) = admitting_generation(&bed.root);
+        let began = Instant::now();
+        let mut last = String::new();
+        for restart in 0..1_000 {
+            last = format!("sense-{restart}");
+            let mut authority = launch_managed_hosted(
+                Disposition::InheritedParentScope,
+                managed_probe(&bed, "ack"),
+                hosted(&bed, generation, &last, Some(HostedServiceKind::Sense)),
+            )
+            .expect("service admitted");
+            assert_eq!(authority.wait().expect("wait"), 0);
+        }
+        eprintln!("1,000 admitted service restarts took {:?}", began.elapsed());
+        assert_eq!(outstanding(&ledger, generation), [last]);
     }
 
     #[test]

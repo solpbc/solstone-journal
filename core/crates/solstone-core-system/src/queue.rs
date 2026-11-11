@@ -5387,6 +5387,140 @@ mod tests {
     }
 
     #[test]
+    fn only_a_command_resolved_to_the_task_binary_is_a_journal_binary_worker() {
+        let binary = Path::new("/opt/solstone/bin/solstone-core-journal");
+        let journal = exec_command(Some(binary), &["journal".to_owned(), "think".to_owned()]);
+        assert!(is_task_binary_command(Some(binary), &journal));
+        for other in [
+            vec!["/usr/bin/llama-server".to_owned()],
+            vec!["journal".to_owned(), "think".to_owned()],
+        ] {
+            assert!(!is_task_binary_command(Some(binary), &other), "{other:?}");
+        }
+        assert!(!is_task_binary_command(None, &journal));
+    }
+
+    /// A journal-binary task worker, run as this test binary's admission
+    /// probe: it must record its own admission before work, see the hosted
+    /// names itself, and pass none of them to its own children. The same
+    /// probe launched as a third-party command gets no injection.
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn a_journal_binary_task_worker_records_itself_and_its_children_inherit_no_launch_names() {
+        use crate::lifecycle::{HostedServiceKind, ParentLossLedger};
+        const PROBE_ENV: &str = "SOLSTONE_TEST_ADMISSION_PROBE";
+        const PROBE_REPORT_ENV: &str = "SOLSTONE_TEST_ADMISSION_PROBE_REPORT";
+        const PROBE_TEST: &str = "process::platform::authority::tests::admission_probe_child";
+
+        let root = tempfile::Builder::new()
+            .prefix("queue-worker-admission-")
+            .tempdir_in("/var/tmp")
+            .expect("journal");
+        let ledger = ParentLossLedger::open(root.path()).expect("ledger");
+        let supervisor = ProcessInstance {
+            pid: 10,
+            birth: test_birth(1),
+        };
+        let active = ledger
+            .reserve_generation(supervisor, [HostedServiceKind::Sense])
+            .expect("reserve");
+        ledger.initialize_record(&active).expect("record");
+        let coordinator = ProcessInstance {
+            pid: 20,
+            birth: test_birth(2),
+        };
+        ledger
+            .persist_coordinator_identity(active.generation, coordinator)
+            .expect("coordinator");
+        ledger
+            .mark_admitting(active.generation, coordinator)
+            .expect("admitting");
+        let generation_path = ledger.generation_path(active.generation);
+
+        let binary = std::env::current_exe().expect("test binary");
+        let queued: Vec<String> = [
+            "journal",
+            "--exact",
+            PROBE_TEST,
+            "--nocapture",
+            "--test-threads=1",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        let run = |name: &str, command: Vec<String>, journal_binary: bool| {
+            let report = root.path().join(format!("{name}.report"));
+            let environment = BTreeMap::from([
+                (OsString::from(PROBE_ENV), OsString::from("worker")),
+                (
+                    OsString::from(PROBE_REPORT_ENV),
+                    report.clone().into_os_string(),
+                ),
+                // A third-party worker still needs to know where to look.
+                (
+                    OsString::from("SOLSTONE_JOURNAL"),
+                    root.path().as_os_str().to_owned(),
+                ),
+            ]);
+            let Ok(handle) = spawn_managed_queue_process(
+                root.path().to_path_buf(),
+                command,
+                SpawnOptions {
+                    journal_root: root.path().to_path_buf(),
+                    reference: name.to_owned(),
+                    day: None,
+                    sink: None,
+                    environment,
+                },
+                Duration::from_secs(60),
+                journal_binary,
+            ) else {
+                panic!("{name}: task worker launch failed");
+            };
+            let deadline = Instant::now() + Duration::from_secs(60);
+            let code = loop {
+                if let Some(code) = handle.lock().expect("worker").poll().expect("poll") {
+                    break code;
+                }
+                assert!(Instant::now() < deadline, "{name}: worker did not exit");
+                thread::sleep(Duration::from_millis(10));
+            };
+            (code, fs::read_to_string(report).unwrap_or_default())
+        };
+
+        let command = exec_command(Some(&binary), &queued);
+        assert!(is_task_binary_command(Some(&binary), &command));
+        let (code, report) = run("journal-worker", command, true);
+        assert_eq!(code, 0, "{report}");
+        assert_eq!(report, "own=1\nacked=1\nraw=0\nmanaged=0\n");
+        // Reaped and discharged, with the worker's own acknowledgement kept.
+        assert_eq!(
+            fs::read_dir(generation_path.join("admissions"))
+                .expect("admissions")
+                .count(),
+            0
+        );
+        let discharged: Vec<_> = fs::read_dir(generation_path.join("discharged"))
+            .expect("discharged")
+            .map(|entry| entry.expect("entry").path())
+            .collect();
+        assert_eq!(discharged.len(), 1);
+        for drop in [
+            "intent.json",
+            "acknowledgement.json",
+            "spawn-identity.json",
+            "result.json",
+        ] {
+            assert!(discharged[0].join(drop).is_file(), "{drop}");
+        }
+
+        let mut third_party = vec![binary.display().to_string()];
+        third_party.extend(queued[1..].iter().cloned());
+        let (code, report) = run("third-party", third_party, false);
+        assert_eq!(code, 0, "{report}");
+        assert_eq!(report, "own=0\nacked=0\nraw=0\nmanaged=0\n");
+    }
+
+    #[test]
     fn exec_command_resolves_bare_journal_argv0_to_the_supervisors_sibling_binary() {
         let binary = Path::new("/usr/local/lib/solstone-runtime/bin/solstone-core-journal");
         let submitted = vec![
