@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: 24dc0cb23c7ffd898e86f7cab572897de56fdcddf359a5665f3a577f122890e3
+// authority-source-sha256: a5dd729cb42b5216d2393b744e195a29cb2513ebd16377b1ed345fdf64650a14
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -2145,7 +2145,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         surface: "sol-call",
         path: &["journal", "facet", "delete"],
         kind: "command",
-        help: "Delete a facet and all its data.\n\n--yes is required; without it the command refuses. Every delete is recorded in\nthe journal's action log as owner-approved, and --consent is accepted but changes\nnothing.",
+        help: "Move a facet and everything in it to the trash, where it can be recovered until it is erased.\n\n--yes is required; without it the command refuses. Every delete is recorded in\nthe journal's action log as owner-approved, and --consent is accepted but changes\nnothing.",
         authority_path: "core/native-sol/think/tools/native/journal/authority.toml",
         params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"name\",\"nargs\":1,\"options\":[\"name\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"yes\",\"nargs\":1,\"options\":[\"--yes\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"consent\",\"nargs\":1,\"options\":[\"--consent\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
         entry_type: "http",

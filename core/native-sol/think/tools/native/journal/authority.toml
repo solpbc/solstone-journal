@@ -29,7 +29,7 @@ params=[{name="title",kind="argument",type="text",required=true,nargs=1,multiple
 [[entries]]
 path=["journal","facet","delete"]
 kind="command"
-help="Delete a facet and all its data.\n\n--yes is required; without it the command refuses. Every delete is recorded in\nthe journal's action log as owner-approved, and --consent is accepted but changes\nnothing."
+help="Move a facet and everything in it to the trash, where it can be recovered until it is erased.\n\n--yes is required; without it the command refuses. Every delete is recorded in\nthe journal's action log as owner-approved, and --consent is accepted but changes\nnothing."
 operation_id="journal.facet.delete"
 entry_type="http"
 method="DELETE"
