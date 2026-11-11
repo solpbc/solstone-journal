@@ -30,7 +30,6 @@ use super::parent_loss_admission::{
     AdmissionSpawnIdentity, acknowledge_parent_loss_admission, write_parent_loss_admission_intent,
     write_parent_loss_admission_result, write_parent_loss_admission_spawn_identity,
 };
-use super::parent_loss_closure::{AdmissionRetirer, ClosingAuthority};
 use super::parent_loss_coordinator::{
     CoordinatorBootstrap, ParentLossCoordinator, write_retire_expected_control,
 };
@@ -38,6 +37,7 @@ use super::parent_loss_ledger::{
     ActiveGeneration, CoordinatorLease, ParentLossGeneration, ParentLossLedger,
     ParentLossLedgerError, ParentLossPhase, json_options,
 };
+use super::parent_loss_outstanding::{AdmissionRetirer, ClosingAuthority};
 use crate::process::{
     CensusRow, Disposition, ExecutionState, InspectResult, InstanceCensus, LaunchError,
     ProcessBirth, ProcessInstance, ProcessInstanceSource, ProcessOwner, SignalKind, TableBirth,
