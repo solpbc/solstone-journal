@@ -234,16 +234,6 @@ pub trait Kind {
         Ok(Vec::new())
     }
 
-    /// Live paths, other than the item's own, that recovering it replaces:
-    /// for a kind whose new arrival sits somewhere other than where the item
-    /// was (a person detected again under a new id). Asked under the hold
-    /// before anything moves back; each is set aside with the item, and the
-    /// record says it was erased. A path already set aside is no longer live,
-    /// so a resumed recovery doesn't return it again.
-    fn in_the_way(&self, _journal: &Path, _item: &Item) -> Result<Vec<String>, String> {
-        Ok(Vec::new())
-    }
-
     /// Whether one of the item's paths still has a home to come back to.
     /// One that doesn't stays with the item and goes when the item does: it
     /// belonged to a thing the owner removed since (a recording, an entity, a
@@ -540,7 +530,7 @@ pub fn stopped(journal: &Path) -> Result<Vec<Item>, TrashError> {
     };
     let mut items: Vec<Item> = all_items(journal)?
         .into_iter()
-        .filter(|item| item.state != State::Trashed)
+        .filter(|item| matches!(item.state, State::Detaching | State::Attaching))
         .collect();
     items.sort_by(|left, right| left.trashed_at.cmp(&right.trashed_at));
     Ok(items)
@@ -564,6 +554,33 @@ pub fn held_file(journal: &Path, id: &str, path: &str) -> Result<PathBuf, TrashE
         return Err(TrashError::NotInTrash);
     }
     trash_entry(journal, &files_rel(id, path))
+}
+
+/// Set aside a live journal path into item `id`, as recovering it replaces
+/// what is there: for a kind that puts its things back itself, inside its own
+/// [`Kind::references`]. The item's removal takes it, and the recover records
+/// it erased. Nothing at `path` is a no-op, so a resumed recovery can ask
+/// again; something at `path` that was already set aside once is an error.
+pub fn set_aside(journal: &Path, item: &Item, path: &str) -> Result<(), TrashError> {
+    let live = journal_entry(journal, path)?;
+    if !path_lexists(&live)? {
+        return Ok(());
+    }
+    let displaced = displaced_rel(&item.id, path);
+    ensure_trash_parent(journal, &displaced)?;
+    let aside = trash_entry(journal, &displaced)?;
+    if path_lexists(&aside)? {
+        return Err(TrashError::Io(format!(
+            "item {} already set aside what was at {path}",
+            item.id
+        )));
+    }
+    // Recorded before it moves, so a stop between the two leaves no erase
+    // unrecorded.
+    record_pending(journal, item, Event::Erased);
+    move_entry(&live, &aside)?;
+    sync_parent(journal, path);
+    Ok(())
 }
 
 /// Keep `bytes` with item `id` under `name`, for the kind's own attach: what a
@@ -1230,49 +1247,23 @@ fn finish_attach(
     hold: &dyn Hold,
 ) -> Result<(), TrashError> {
     let mut overwrote = false;
-    for path in kind.in_the_way(journal, item).map_err(TrashError::Io)? {
-        if item.paths.contains(&path) {
-            continue;
-        }
-        let live = journal_entry(journal, &path)?;
-        if !path_lexists(&live)? {
-            continue;
-        }
-        hold.moving(&path).map_err(TrashError::Held)?;
-        let displaced = displaced_rel(&item.id, &path);
-        ensure_trash_parent(journal, &displaced)?;
-        let aside = trash_entry(journal, &displaced)?;
-        if path_lexists(&aside)? {
-            return Err(TrashError::Io(format!(
-                "item {} already set aside what was at {path}",
-                item.id
-            )));
-        }
-        // Recorded before it moves: a stop between the two would otherwise
-        // leave it set aside and never recorded, since a resumed recovery no
-        // longer finds it in the way.
-        if !overwrote {
-            record_pending(journal, item, Event::Erased);
-            overwrote = true;
-        }
-        move_entry(&live, &aside)?;
-        sync_parent(journal, &path);
-    }
     let mut files = Vec::new();
     for path in &item.paths {
         let trashed = files_rel(&item.id, path);
         let held = trash_entry(journal, &trashed)?;
-        if path_lexists(&held)? && !kind.returns(journal, item, path) {
-            // No home for it now: it goes with the item, and the recover
-            // says so.
-            if !overwrote {
-                record_pending(journal, item, Event::Erased);
-                overwrote = true;
-            }
-            continue;
-        }
         if path_lexists(&held)? {
             hold.moving(path).map_err(TrashError::Held)?;
+            // Asked under the path's own hold, so its home can't go between
+            // the answer and the move.
+            if !kind.returns(journal, item, path) {
+                // No home for it now: it goes with the item, and the recover
+                // says so.
+                if !overwrote {
+                    record_pending(journal, item, Event::Erased);
+                    overwrote = true;
+                }
+                continue;
+            }
             ensure_journal_parent(journal, path)?;
             let live = journal_entry(journal, path)?;
             if path_lexists(&live)? {
@@ -1685,8 +1676,8 @@ mod tests {
         fail_references: std::cell::Cell<bool>,
         refuse_check_at: std::cell::Cell<u32>,
         companion: bool,
-        in_the_way: Vec<String>,
         homeless: Vec<String>,
+        aside: Vec<String>,
     }
 
     impl Kind for Fake {
@@ -1699,9 +1690,6 @@ mod tests {
         fn present(&self, journal: &Path, path: &str) -> bool {
             let place = journal.join(path);
             place.is_file() || (place.is_dir() && !place.join("tombstone.json").exists())
-        }
-        fn in_the_way(&self, _: &Path, _: &Item) -> Result<Vec<String>, String> {
-            Ok(self.in_the_way.clone())
         }
         fn returns(&self, _: &Path, _: &Item, path: &str) -> bool {
             !self.homeless.iter().any(|gone| gone == path)
@@ -1716,12 +1704,17 @@ mod tests {
         fn references(
             &self,
             journal: &Path,
-            _: &Item,
+            item: &Item,
             change: Change,
             files: &[String],
         ) -> Result<(), String> {
             if self.fail_references.get() {
                 return Err("synthetic failure".into());
+            }
+            if change == Change::Attached {
+                for path in &self.aside {
+                    set_aside(journal, item, path).map_err(|error| error.to_string())?;
+                }
             }
             if change == Change::Detached {
                 let place = journal.join(SEGMENT);
@@ -1910,23 +1903,18 @@ mod tests {
     }
 
     #[test]
-    fn recovering_sets_aside_what_the_kind_says_is_in_its_way() {
+    fn a_kind_putting_its_things_back_sets_aside_what_it_replaces() {
         let (_dir, root) = journal();
-        let newer = "chronicle/20261108/phone/080000_300";
+        let kept = "facets/work/notes.md";
         let kind = Fake {
-            in_the_way: vec![newer.into(), "nothing/here".into()],
+            aside: vec![kept.into(), "facets/work/absent.md".into()],
             ..Fake::default()
         };
         let item = trash(&root, &kind);
-        fs::create_dir_all(root.join(newer)).unwrap();
-        fs::write(root.join(newer).join("audio.flac"), b"newer").unwrap();
+        fs::create_dir_all(root.join("facets/work")).unwrap();
+        fs::write(root.join(kept), b"what the merge kept").unwrap();
         attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
-        assert_eq!(
-            fs::read(root.join(SEGMENT).join("audio.flac")).unwrap(),
-            b"sound"
-        );
-        // What was in its way went with the item, and the recover says so.
-        assert!(!root.join(newer).exists());
+        assert!(!root.join(kept).exists());
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
         assert!(events(&root).contains(&(Event::Erased, Action::Recover)));
     }
