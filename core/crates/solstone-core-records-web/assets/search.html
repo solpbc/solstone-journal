@@ -1,6 +1,7 @@
 <style>
 .search-app{max-width:1000px;margin:auto;padding:32px 24px;color:var(--ink);background:var(--panel);border-radius:var(--radius);overflow-wrap:anywhere}.search-app *{box-sizing:border-box}.search-app h1{font-size:2rem;margin:0 0 8px}.search-app p{line-height:1.6}.search-app label{display:block;font-weight:600;margin-bottom:6px}.search-app input,.search-app button,.search-app .search-link{font:inherit;min-height:46px;border:1px solid var(--hairline-2);border-radius:8px;padding:10px 14px}.search-app input{background:var(--paper);color:inherit;min-width:0;max-width:100%}.search-query-row{display:flex;gap:10px}.search-query-row input{flex:1}.search-app button{cursor:pointer;background:var(--paper);color:inherit}.search-app button[type=submit]{background:var(--orange);color:var(--ink-on-brand);font-weight:600}.search-app :focus-visible{outline:2px solid var(--focus);outline-offset:3px}.search-app a{color:var(--orange-text-aa)}.search-app summary{cursor:pointer;padding:12px 0}.search-dates{display:flex;gap:16px;flex-wrap:wrap}.search-dates>div{flex:1;min-width:150px}.search-dates input{width:100%}.search-status{padding:16px 0;color:var(--ink-soft)}.search-day{margin:24px 0}.search-day h2{font-size:1.2rem}.search-result{padding:18px;background:var(--paper);border:1px solid var(--hairline);border-radius:10px;margin:12px 0}.search-meta{color:var(--ink-soft);font-size:.9rem;display:flex;flex-wrap:wrap;gap:8px}.search-excerpt{margin:12px 0}.search-source{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:60vh;overflow:auto;background:var(--cream);padding:16px;border-radius:8px}.search-source[hidden]{display:none}.search-actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.search-paging{display:flex;gap:16px;flex-wrap:wrap;margin:28px 0}.search-error{color:var(--danger)}.search-app mark{background:var(--warn-wash);color:inherit}.search-app details{margin:8px 0}@media(max-width:600px){.search-app{padding:24px 16px}.search-query-row{flex-wrap:wrap}.search-query-row input{flex-basis:100%}.search-query-row button{width:100%}}
 </style>
+<!-- view-contract -->
 <section class="search-app" id="journal-search">
 <h1>search your journal</h1>
 <p>find words and phrases in your journal, then read the matched entry.</p>
@@ -17,20 +18,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 (function(){
-  const reportSearchReady = window.createViewReady('search');
-
- const root=document.getElementById('journal-search');
- const params=new URLSearchParams(location.search);
- const query=root.querySelector('[name=q]');const from=root.querySelector('[name=from]');const to=root.querySelector('[name=to]');
- const status=root.querySelector('.search-status');const results=root.querySelector('.search-results');const paging=root.querySelector('.search-paging');
- query.value=params.get('q')||'';from.value=params.get('from')||'';to.value=params.get('to')||'';
- // G2-39: the day-range narrowing option used to stay collapsed until the
- // owner opened it manually, so the fastest way to search was invisible on
- // first visit. Default it open until a search has actually run.
- root.querySelector('#search-date-options').open=Boolean(from.value||to.value||!query.value.trim());
- const offset=Math.max(0,Number.parseInt(params.get('offset')||'0',10)||0);
- const exactDay=Boolean(from.value&&from.value===to.value);const limit=exactDay?100:5;
- function pageUrl(changes){const p=new URLSearchParams(params);p.delete('offset');Object.entries(changes).forEach(([k,v])=>p.set(k,v));return '/app/search/?'+p.toString();}
+ // Search on the view contract: this script only registers. Its state is the
+ // address's query, so a new search, a page of results and a day's matches
+ // are search's own history entries on the path it opened on.
+ // The button that opens each matched entry, and what it opens.
+ const ENTRIES=new WeakMap();
  function node(tag,cls,text){const e=document.createElement(tag);e.className=cls||'';if(text!==undefined)e.textContent=text;return e;}
  function dayLink(day){const a=node('a','',window.JournalFormat.day(day));a.href='/app/transcripts/'+encodeURIComponent(day);return a;}
  // G2-53: a whole-journal search rendered data.days in whatever order the
@@ -132,14 +124,8 @@
   const path=String(hit.path||'');
   if(path&&!path.startsWith('entity_search:')&&hit.entry_id){
    const button=node('button','','read matched entry');button.type='button';button.setAttribute('aria-expanded','false');const content=node('pre','search-source');content.hidden=true;
-   button.addEventListener('click',async()=>{
-    if(!content.hidden){content.hidden=true;button.setAttribute('aria-expanded','false');button.textContent='read matched entry';return;}
-    content.hidden=false;button.setAttribute('aria-expanded','true');button.textContent='close entry';
-    if(content.dataset.loaded)return;
-    content.textContent='loading entry…';
-    try{const data=await window.apiJson('/app/search/api/entry?'+new URLSearchParams({path,idx:String(hit.idx),entry_id:String(hit.entry_id)}));if(!root.isConnected)return;content.replaceChildren(node('span','search-meta',data.reindexed_since_search?'this file was indexed again after your search, so this may not match the result':'as last indexed'),document.createTextNode(data.content));content.dataset.loaded='true';}
-    catch(error){if(!root.isConnected)return;content.textContent="couldn't open this entry. "+String(error.serverMessage||error.message||'try again.');if(error.rawDetail)content.textContent+=' '+String(error.rawDetail);}
-   });actions.append(button);card.append(actions,content);
+   ENTRIES.set(button,{path,idx:String(hit.idx),entry_id:String(hit.entry_id),content});
+   actions.append(button);card.append(actions,content);
   }else{
    // No entry to open, so the disclosure that normally holds the raw record is
    // not there. Keep the record reachable rather than dropping it (G2-B04).
@@ -148,31 +134,81 @@
   }
   return card;
  }
- let activeController=null;let progressTimeout=null;let progressInterval=null;
- function stopProgress(){if(progressTimeout){clearTimeout(progressTimeout);progressTimeout=null;}if(progressInterval){clearInterval(progressInterval);progressInterval=null;}}
- function abortActive(){if(activeController)activeController.abort();}
  const SEARCH_FAILURE_REASONS={
   index_locked:'the search index is busy right now.',
   index_absent:"your journal doesn't have a search index yet.",
   index_unreadable:"the search index couldn't be read.",
   empty_index:"there's nothing indexed yet."
  };
- async function load(){
-  if(!query.value.trim()){reportSearchReady('content');return;}
-  if(from.value&&to.value&&from.value>to.value){status.textContent='choose an end date on or after the start date.';status.classList.add('search-error');reportSearchReady('error');return;}
-  abortActive();const controller=new AbortController();activeController=controller;
-  results.replaceChildren();paging.replaceChildren();
-  status.classList.remove('search-error');status.textContent='searching your journal…';root.setAttribute('aria-busy','true');
-  const startedAt=Date.now();stopProgress();
-  const tip=exactDay?'':' a single day is usually much faster.';
-  progressTimeout=setTimeout(()=>{
-   const tick=()=>{status.textContent='still searching… '+Math.round((Date.now()-startedAt)/1000)+' s.'+tip;};
-   tick();progressInterval=setInterval(tick,5000);
-  },3000);
-  const p=new URLSearchParams({q:query.value.trim(),limit:String(limit),offset:String(offset)});
-  if(from.value)p.set('day_from',from.value.replaceAll('-',''));if(to.value)p.set('day_to',to.value.replaceAll('-',''));
-  try{
-   const data=await window.apiJson('/app/search/api/search?'+p,{signal:controller.signal});if(!root.isConnected)return;
+ // The answers this page drew for its last few history entries, so going
+ // back or forward to a search shows it at once and its scroll can come back.
+ // Keyed by entry: a move forward, a reload or a new tab is a new entry, and
+ // reads. Data only, in memory. This script runs once in the life of the page,
+ // so they outlive a move to another view and back.
+ const HELD_LIMIT=8;const held=new Map();
+ function hold(id,url,data){if(!id)return;held.delete(id);held.set(id,{url,data});while(held.size>HELD_LIMIT)held.delete(held.keys().next().value);}
+ function heldFor(id,url){const entry=id?held.get(id):null;return entry&&entry.url===url?entry.data:null;}
+ // Where each of search's own history entries was scrolled to.
+ const SCROLL_LIMIT=50;const scrolls=new Map();
+ function keepScroll(id){if(!id)return;scrolls.delete(id);scrolls.set(id,window.scrollY||0);while(scrolls.size>SCROLL_LIMIT)scrolls.delete(scrolls.keys().next().value);}
+ function entryId(){return window.history.state&&window.history.state.solRoute?window.history.state.solRoute.id:null;}
+ function stateOf(search){
+  const params=new URLSearchParams(search);
+  const q=params.get('q')||'',from=params.get('from')||'',to=params.get('to')||'';
+  const offset=Math.max(0,Number.parseInt(params.get('offset')||'0',10)||0);
+  const exactDay=Boolean(from&&from===to);
+  return {search,params,q,from,to,offset,exactDay,limit:exactDay?100:5};
+ }
+ function focusQuietly(el){try{el.focus({preventScroll:true});}catch(_){el.focus();}}
+
+ function mount(ctx){
+  const root=document.getElementById('journal-search');
+  const form=root.querySelector('form');
+  const query=root.querySelector('[name=q]');const from=root.querySelector('[name=from]');const to=root.querySelector('[name=to]');
+  const status=root.querySelector('.search-status');const results=root.querySelector('.search-results');const paging=root.querySelector('.search-paging');
+  const dateOptions=root.querySelector('#search-date-options');
+  const initialStatus=status.textContent;
+  // Search's own entries all keep the path it opened on; only the query moves.
+  const path=window.location.pathname;
+  let shown=stateOf(window.location.search);
+  let shownId=entryId();
+  let epoch=0;let running=null;let report=(state)=>ctx.ready(state);
+  // Drawing is for this mount while the address is still search's. A move to
+  // another view has written its address before this view is taken down.
+  const live=(mine)=>mine===epoch&&!ctx.disposed&&window.location.pathname===path;
+
+  function fill(state){
+   query.value=state.q;from.value=state.from;to.value=state.to;
+   // G2-39: the day-range narrowing option used to stay collapsed until the
+   // owner opened it manually, so the fastest way to search was invisible on
+   // first visit. Default it open until a search has actually run.
+   dateOptions.open=Boolean(state.from||state.to||!state.q.trim());
+  }
+  function pageUrl(state,changes){const p=new URLSearchParams(state.params);p.delete('offset');Object.entries(changes).forEach(([k,v])=>p.set(k,v));return path+'?'+p.toString();}
+  let progressTimeout=0;let progressInterval=0;
+  function stopProgress(){if(progressTimeout){ctx.clearTimeout(progressTimeout);progressTimeout=0;}if(progressInterval){ctx.clearInterval(progressInterval);progressInterval=0;}}
+  function abortRunning(){if(running)running.abort();}
+
+  // A redraw takes out what it replaces. Focus inside it goes to <main> first,
+  // then to the first day heading the redraw puts in, never to the page.
+  function holdFocus(){
+   const at=document.activeElement;
+   if(!at||at===document.body||!root.contains(at)||form.contains(at))return false;
+   const main=document.getElementById('main-content');
+   if(!main)return false;
+   if(!main.hasAttribute('tabindex'))main.setAttribute('tabindex','-1');
+   focusQuietly(main);return true;
+  }
+  function placeFocus(moved){
+   if(!moved)return;
+   const main=document.getElementById('main-content');
+   if(document.activeElement!==main)return;
+   const heading=results.querySelector('h2');
+   if(!heading)return;
+   heading.setAttribute('tabindex','-1');focusQuietly(heading);
+  }
+
+  function draw(state,data){
    status.textContent=data.total?matchesStatus(data.total,data.total_days):'no matches. try fewer words or a wider date range.';
    if(data.rebuilding)status.append(node('p','','search is rebuilding, so older days may be missing for now.'));
    if(data.relaxed&&data.total)status.append(node('p','','nothing matched your exact search, so these are broader matches.'));
@@ -181,26 +217,132 @@
     if(day.total>day.showing)section.append(node('p','search-meta',`showing the top ${day.showing} of ${day.total} matches for this day.`));
     const dayHref='/app/transcripts/'+encodeURIComponent(day.day);
     for(const hit of day.results)section.append(renderHit(hit,dayHref));
-    if(day.total>day.showing&&!exactDay){const a=node('a','search-link','more from this day');const date=day.day.replace(/(\d{4})(\d{2})(\d{2})/,'$1-$2-$3');a.href=pageUrl({from:date,to:date});section.append(a);}
+    if(day.total>day.showing&&!state.exactDay){const a=node('a','search-link','more from this day');const date=day.day.replace(/(\d{4})(\d{2})(\d{2})/,'$1-$2-$3');a.href=pageUrl(state,{from:date,to:date});section.append(a);}
     else if(day.total>day.showing)section.append(node('p','search-meta','add words to narrow these matches.'));
     results.append(section);
    }
-   if(offset>0){const a=node('a','search-link','newer matching days');a.href=pageUrl({offset:String(Math.max(0,offset-20))});paging.append(a);}
-   if(offset+data.days.length<data.total_days){const a=node('a','search-link','older matching days');a.href=pageUrl({offset:String(offset+20)});paging.append(a);}
-   if(offset>0&&!data.days.length){const a=node('a','search-link','back to first results');a.href=pageUrl({offset:'0'});paging.append(a);}
-   reportSearchReady(data.total ? 'content' : 'empty');
-  }catch(error){
-   if(error&&error.name==='AbortError')return;
-   if(!root.isConnected)return;
-   status.classList.add('search-error');
-   const reason=error&&error.reasonCode&&SEARCH_FAILURE_REASONS[error.reasonCode];
-   status.textContent=reason?("couldn't search your journal: "+reason):("couldn't search your journal. "+String(error.serverMessage||error.message||'try again.'));
-   if(error&&error.rawDetail){const disclosure=node('details');disclosure.append(node('summary','','details'),node('pre','search-source',String(error.rawDetail)));status.append(disclosure);}
-   const button=node('button','','try again');button.type='button';button.onclick=()=>{status.classList.remove('search-error');load();};status.append(node('br'),button);
-   reportSearchReady('error');
-  }finally{stopProgress();if(activeController===controller){root.removeAttribute('aria-busy');activeController=null;}}
+   if(state.offset>0){const a=node('a','search-link','newer matching days');a.href=pageUrl(state,{offset:String(Math.max(0,state.offset-20))});paging.append(a);}
+   if(state.offset+data.days.length<data.total_days){const a=node('a','search-link','older matching days');a.href=pageUrl(state,{offset:String(state.offset+20)});paging.append(a);}
+   if(state.offset>0&&!data.days.length){const a=node('a','search-link','back to first results');a.href=pageUrl(state,{offset:'0'});paging.append(a);}
+  }
+
+  // Shows `state`. A restore (back or forward onto this entry) draws the
+  // answer this page already had for it; anything else reads. Scrolls to
+  // `scroll` once drawn.
+  async function load(state,{restore=false,scroll=null}={}){
+   epoch+=1;const mine=epoch;const id=entryId();
+   abortRunning();running=null;stopProgress();root.removeAttribute('aria-busy');
+   shown=state;
+   const moved=holdFocus();
+   const settle=()=>{placeFocus(moved);if(scroll!==null)window.scrollTo(0,scroll);};
+   results.replaceChildren();paging.replaceChildren();status.classList.remove('search-error');
+   if(!state.q.trim()){status.textContent=initialStatus;settle();report('content');return;}
+   if(state.from&&state.to&&state.from>state.to){status.textContent='choose an end date on or after the start date.';status.classList.add('search-error');settle();report('error');return;}
+   const p=new URLSearchParams({q:state.q.trim(),limit:String(state.limit),offset:String(state.offset)});
+   if(state.from)p.set('day_from',state.from.replaceAll('-',''));if(state.to)p.set('day_to',state.to.replaceAll('-',''));
+   const url='/app/search/api/search?'+p;
+   const kept=restore?heldFor(id,url):null;
+   if(kept){hold(id,url,kept);draw(state,kept);settle();report(kept.total?'content':'empty');return;}
+   const controller=window.SolStore.createAbort();running=controller;
+   status.textContent='searching your journal…';root.setAttribute('aria-busy','true');
+   const startedAt=Date.now();
+   const tip=state.exactDay?'':' a single day is usually much faster.';
+   progressTimeout=ctx.setTimeout(()=>{
+    progressTimeout=0;
+    const tick=()=>{if(live(mine))status.textContent='still searching… '+Math.round((Date.now()-startedAt)/1000)+' s.'+tip;};
+    tick();progressInterval=ctx.setInterval(tick,5000);
+   },3000);
+   try{
+    const data=await ctx.read(url,{fresh:true,signal:controller.signal});
+    if(!live(mine))return;
+    // On a first load the router gives the entry its id after the mount.
+    hold(id||entryId(),url,data);draw(state,data);settle();
+    report(data.total?'content':'empty');
+   }catch(error){
+    if(!live(mine)||(error&&error.name==='AbortError'))return;
+    status.classList.add('search-error');
+    const reason=error&&error.reasonCode&&SEARCH_FAILURE_REASONS[error.reasonCode];
+    status.textContent=reason?("couldn't search your journal: "+reason):("couldn't search your journal. "+String(error.serverMessage||error.message||'try again.'));
+    if(error&&error.rawDetail){const disclosure=node('details');disclosure.append(node('summary','','details'),node('pre','search-source',String(error.rawDetail)));status.append(disclosure);}
+    const button=node('button','','try again');button.type='button';button.addEventListener('click',()=>own(shown,'fresh'));status.append(node('br'),button);
+    settle();report('error');
+   }finally{if(mine===epoch){stopProgress();root.removeAttribute('aria-busy');running=null;}}
+  }
+
+  // One of search's own moves: a new search, a page of results, a day's
+  // matches, the empty search. One history entry, then a read.
+  function own(state,how){
+   if(how==='push'){keepScroll(entryId());ctx.history.push(path+state.search);shownId=entryId();window.scrollTo(0,0);}
+   else if(how==='replace'){ctx.history.replace(path+state.search);}
+   fill(state);
+   const reportReady=window.beginViewReady?window.beginViewReady('search',{update:true}):null;
+   report=(s)=>{ctx.ready(s);if(reportReady)reportReady(s);};
+   load(state);
+  }
+
+  form.addEventListener('submit',(event)=>{
+   event.preventDefault();
+   // The address the browser builds from this form, in its order.
+   const search='?'+new URLSearchParams([['q',query.value],['from',from.value],['to',to.value]]).toString();
+   // On a phone the page no longer changes under the keyboard, so it would
+   // stay up over the results: let go of the field and wait on <main>.
+   const at=document.activeElement;
+   if(at&&form.contains(at)&&window.matchMedia&&window.matchMedia('(pointer: coarse)').matches){
+    const main=document.getElementById('main-content');
+    at.blur();
+    if(main){if(!main.hasAttribute('tabindex'))main.setAttribute('tabindex','-1');focusQuietly(main);}
+   }
+   own(stateOf(search),search===window.location.search?'replace':'push');
+  });
+  // A link to search's own path with another query is search's own entry.
+  // The router leaves it (same path, another query); a link it takes is
+  // already prevented, and the same address again is its fresh mount.
+  ctx.on(document,'click',(event)=>{
+   if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+   const link=event.target&&event.target.closest?event.target.closest('a[href]'):null;
+   if(!link||(link.target&&link.target!=='_self')||link.hasAttribute('download'))return;
+   let url;try{url=new URL(link.href,window.location.href);}catch(_){return;}
+   if(url.origin!==window.location.origin||url.pathname!==path||window.location.pathname!==path||url.search===window.location.search)return;
+   event.preventDefault();
+   own(stateOf(url.search),'push');
+  });
+  // Back or forward between two of search's entries. Another view's address
+  // is the router's.
+  ctx.on(window,'popstate',()=>{
+   if(window.location.pathname!==path)return;
+   const id=entryId();
+   if(window.location.search===shown.search){shownId=id;return;}
+   keepScroll(shownId);shownId=id;
+   const state=stateOf(window.location.search);fill(state);
+   const reportReady=window.beginViewReady?window.beginViewReady('search',{update:true}):null;
+   report=(s)=>{ctx.ready(s);if(reportReady)reportReady(s);};
+   load(state,{restore:true,scroll:scrolls.has(id)?scrolls.get(id):0});
+  });
+  // Opening a matched entry. A read still out when the page of results, or
+  // the view, has gone draws nothing.
+  results.addEventListener('click',(event)=>{
+   const button=event.target&&event.target.closest?event.target.closest('button'):null;
+   const entry=button&&ENTRIES.get(button);
+   if(!entry)return;
+   const content=entry.content;
+   if(!content.hidden){content.hidden=true;button.setAttribute('aria-expanded','false');button.textContent='read matched entry';return;}
+   content.hidden=false;button.setAttribute('aria-expanded','true');button.textContent='close entry';
+   if(content.dataset.loaded)return;
+   content.textContent='loading entry…';
+   const mine=epoch;
+   ctx.read('/app/search/api/entry?'+new URLSearchParams({path:entry.path,idx:entry.idx,entry_id:entry.entry_id})).then(
+    (data)=>{if(!live(mine)||!content.isConnected)return;content.replaceChildren(node('span','search-meta',data.reindexed_since_search?'this file was indexed again after your search, so this may not match the result':'as last indexed'),document.createTextNode(data.content));content.dataset.loaded='true';},
+    (error)=>{if(!live(mine)||!content.isConnected)return;content.textContent="couldn't open this entry. "+String(error.serverMessage||error.message||'try again.');if(error.rawDetail)content.textContent+=' '+String(error.rawDetail);}
+   );
+  });
+  query.addEventListener('input',abortRunning);from.addEventListener('input',abortRunning);to.addEventListener('input',abortRunning);
+  ctx.onDispose(()=>{abortRunning();running=null;epoch+=1;});
+
+  fill(shown);
+  load(shown,{restore:true});
+  return {dispose(){}};
  }
- query.addEventListener('input',abortActive);from.addEventListener('input',abortActive);to.addEventListener('input',abortActive);
- load();
+
+ window.SolViews.register('search',{mount});
 })();
 </script>
