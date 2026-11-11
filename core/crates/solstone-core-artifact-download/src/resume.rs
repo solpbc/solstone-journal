@@ -24,19 +24,30 @@ pub(super) fn checkpoint(cancelled: Option<&dyn Fn() -> bool>) -> Result<(), Arc
     Ok(())
 }
 
-// ureq's receive-body timeout covers the complete transfer, not an idle read.
-// Bound each transport wait while retaining its default TLS/proxy connector.
-#[derive(Debug)]
-struct IdleBound;
+// ureq keeps the response-header deadline running through the body, and once
+// it passes every later wait gets one second, so a long download died at the
+// first one-second stall after its first 30 seconds. The transfer is instead
+// bounded per transport wait: as long as bytes keep arriving it runs, and a
+// silence longer than the bound fails resumably. A cancellable fetch uses a
+// short bound so it notices a stop request.
+#[cfg(not(test))]
+const IDLE_BOUND: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const IDLE_BOUND: Duration = Duration::from_secs(1);
+const CANCEL_IDLE_BOUND: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
-struct IdleTransport<T>(T);
+struct IdleBound(Duration);
+
+#[derive(Debug)]
+struct IdleTransport<T>(T, Duration);
 
 fn idle_timeout(
     mut timeout: ureq::unversioned::transport::NextTimeout,
+    bound: Duration,
 ) -> ureq::unversioned::transport::NextTimeout {
-    if *timeout.after > Duration::from_secs(2) {
-        timeout.after = ureq::unversioned::transport::time::Duration::from_secs(2);
+    if *timeout.after > bound {
+        timeout.after = bound.into();
     }
     timeout
 }
@@ -51,7 +62,7 @@ impl<T: ureq::unversioned::transport::Transport> ureq::unversioned::transport::C
         _: &ureq::unversioned::transport::ConnectionDetails,
         chained: Option<T>,
     ) -> Result<Option<Self::Out>, ureq::Error> {
-        Ok(chained.map(IdleTransport))
+        Ok(chained.map(|transport| IdleTransport(transport, self.0)))
     }
 }
 
@@ -67,14 +78,15 @@ impl<T: ureq::unversioned::transport::Transport> ureq::unversioned::transport::T
         amount: usize,
         timeout: ureq::unversioned::transport::NextTimeout,
     ) -> Result<(), ureq::Error> {
-        self.0.transmit_output(amount, idle_timeout(timeout))
+        self.0
+            .transmit_output(amount, idle_timeout(timeout, self.1))
     }
 
     fn await_input(
         &mut self,
         timeout: ureq::unversioned::transport::NextTimeout,
     ) -> Result<bool, ureq::Error> {
-        self.0.await_input(idle_timeout(timeout))
+        self.0.await_input(idle_timeout(timeout, self.1))
     }
 
     fn is_open(&mut self) -> bool {
@@ -369,15 +381,18 @@ pub(super) fn download_verified_url_internal(
         progress(prefix, expected_size);
         return Ok(true);
     }
-    let agent = if cancelled.is_some() {
+    let agent = {
         use ureq::unversioned::transport::{Connector, DefaultConnector};
+        let bound = if cancelled.is_some() {
+            CANCEL_IDLE_BOUND
+        } else {
+            IDLE_BOUND
+        };
         ureq::Agent::with_parts(
             ureq::config::Config::default(),
-            DefaultConnector::default().chain(IdleBound),
+            DefaultConnector::default().chain(IdleBound(bound)),
             ureq::unversioned::resolver::DefaultResolver::default(),
         )
-    } else {
-        ureq::agent()
     };
     let mut followed = 0_u8;
     let response = loop {
@@ -393,12 +408,9 @@ pub(super) fn download_verified_url_internal(
             } else {
                 30
             })))
-            .timeout_recv_response(Some(Duration::from_secs(if cancelled.is_some() {
-                5
-            } else {
-                30
-            })))
-            .timeout_recv_body(Some(Duration::from_secs(1800)))
+            // Waiting for the headers and the body is bounded by IdleBound.
+            .timeout_recv_response(None)
+            .timeout_recv_body(None)
             .build()
             .header("accept-encoding", "identity");
         if prefix > 0 {

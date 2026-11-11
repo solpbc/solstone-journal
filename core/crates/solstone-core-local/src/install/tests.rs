@@ -4621,6 +4621,32 @@ mod runtime_fetch_seam_tests {
         });
     }
 
+    // Setup used to fail on one dropped connection during the transcription
+    // model download; it now retries like the thinking model does.
+    #[test]
+    fn parakeet_model_download_retries_a_network_failure() {
+        let fake = Rc::new(MockFake::default());
+        let root = temp("parakeet-model-retry");
+        with_runtime_fetch_target("linux-x86_64", || {
+            with_fake_runtime_fetch(&fake, || {
+                let mut status_val = test_status(&root);
+                let err = crate::install::install_parakeet_model(&root, &mut status_val, 0, 1)
+                    .unwrap_err();
+                assert_eq!(
+                    err.envelope.error.as_ref().unwrap().reason_code,
+                    "model_download_failed"
+                );
+            });
+        });
+        let calls = fake.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1 + super::super::MODEL_FETCH_RETRY_WAITS.len());
+        assert!(
+            calls
+                .iter()
+                .all(|call| call.0.ends_with(pins::PARAKEET_MODEL.1))
+        );
+    }
+
     #[test]
     fn local_model_removal_and_positive_twin_accounting() {
         let fake = Rc::new(MockFake::default());

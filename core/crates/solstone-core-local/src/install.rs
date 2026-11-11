@@ -2329,14 +2329,26 @@ fn install_parakeet_model(
             .map_err(|error| failure("state", "transition_failed", error, 74))?,
     )
     .map_err(|error| failure("state", "status_write_failed", error, 74))?;
-    fetch_install_member(
-        journal,
+    retry_transient_fetch(
         status_value,
-        artifact,
-        &dest,
-        completed_bytes,
-        total_bytes,
-        "model_download_failed",
+        |status_value| {
+            fetch_install_member(
+                journal,
+                status_value,
+                artifact,
+                &dest,
+                completed_bytes,
+                total_bytes,
+                "model_download_failed",
+            )
+        },
+        |status_value| {
+            status::assert_current(journal, status_value)
+                .map(|_| ())
+                .map_err(|error| failure("state", "attempt_superseded", error, 74))
+        },
+        &MODEL_FETCH_RETRY_WAITS,
+        std::thread::sleep,
     )?;
     *status_value = status::write_status(
         journal,
