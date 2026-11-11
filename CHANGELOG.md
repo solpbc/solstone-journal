@@ -22,7 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when you leave a memory or a quote out of your week, that week's page is now left out of search. the memory itself stays in your journal and in search.
 - `solstone call entities delete`, `solstone call journal facet delete` and `solstone call speakers wipe --commit` now say the day something is erased in your own time zone, and `facet delete` now answers in a sentence instead of raw output.
 - things you delete together, and things you recover or erase together from the trash, now share one line in the removal history for each step.
-- moving between home, the more page, transcripts and the body page, and to another day in either, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+- moving between home, the more page, transcripts, the body page and the activities page, and to another day on the last three, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 
 ### Fixed
 
