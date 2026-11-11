@@ -4193,14 +4193,13 @@ mod tests {
         );
     }
 
-    fn boot_case(
-        boot: Option<Option<String>>,
-        supervisor_boot: Option<u128>,
-    ) -> (
+    type BootOutcome = (
         Vec<(u32, &'static str)>,
         Result<ActiveGeneration, ParentLossLedgerError>,
         Option<ClosureSummary>,
-    ) {
+    );
+
+    fn boot_case(boot: Option<Option<String>>, supervisor_boot: Option<u128>) -> BootOutcome {
         let directory = TempDir::new().unwrap();
         let ledger = ParentLossLedger::open(directory.path()).unwrap();
         let mut supervisor = instance(10, 1);
