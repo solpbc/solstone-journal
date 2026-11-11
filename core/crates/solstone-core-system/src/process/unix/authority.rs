@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fmt;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -19,23 +19,25 @@ use super::super::{
 };
 #[cfg(any(test, feature = "test-hooks"))]
 use super::super::{HostedAdmissionTestFault, hosted_admission_test_fault};
-use super::spawn::ManagedProcess;
+use super::spawn::{ManagedProcess, discharge_if_reaped, remove_launch_only_environment};
 use crate::lifecycle::{
-    AdmissionIdentity, AdmissionIntent, AdmissionResult, AdmissionResultState,
-    HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV,
+    AdmissionIdentity, AdmissionIntent, AdmissionResult, AdmissionResultState, AdmissionTicket,
+    Discharger, HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV,
     ParentLossAdmissionError, ParentLossGeneration, ParentLossLedger, ParentLossPhase,
+    discharge_holding_lock, discharge_replaced_service_roots,
     read_parent_loss_admission_acknowledgement, write_parent_loss_admission_intent,
     write_parent_loss_admission_result, write_parent_loss_admission_spawn_identity,
 };
-use solstone_core_journal_io::{LockOptions, hold_lock};
+use solstone_core_journal_io::{FileLock, LockOptions, hold_lock};
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum GenerationChildError {
     /// No live child. Includes pre-spawn Admission (ledger open, admission lock,
-    /// "generation not admitting", "missing active generation") and
-    /// SpawnError::ExactInstanceUnavailable (root already killed and reaped).
+    /// "launch rejected after seal", "missing active generation") and
+    /// SpawnError::ExactInstanceUnavailable (root killed and its reap confirmed).
     Unavailable(LaunchError),
-    /// This value owns the live authority. Nothing has terminated it.
+    /// This value owns the live authority, including a child whose reap could
+    /// not be confirmed. Nothing has terminated it.
     Live(LaunchAuthority, LaunchError),
 }
 
@@ -55,6 +57,7 @@ enum Inner {
         child: Child,
         terminate_fn: BoxedTerminateFn,
         exact_identity: Option<LaunchedProcessIdentity>,
+        admission: Option<AdmissionTicket>,
     },
 }
 
@@ -174,7 +177,34 @@ impl LaunchAuthority {
         }
     }
 
+    /// Bind this child to its admission entry, discharged once this owner
+    /// observes the child reaped.
+    pub(crate) fn set_admission_ticket(&mut self, ticket: AdmissionTicket) {
+        match self.inner.as_mut() {
+            Some(Inner::Managed(process)) => process.set_admission_ticket(ticket),
+            Some(Inner::Raw { admission, .. }) => *admission = Some(ticket),
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(Inner::Scripted { .. }) => {}
+            None => {}
+        }
+    }
+
+    fn discharge_raw_if_reaped(&mut self) {
+        if let Some(Inner::Raw {
+            child, admission, ..
+        }) = self.inner.as_mut()
+        {
+            discharge_if_reaped(child, admission);
+        }
+    }
+
     pub fn poll(&mut self) -> io::Result<Option<i32>> {
+        let status = self.poll_inner();
+        self.discharge_raw_if_reaped();
+        status
+    }
+
+    fn poll_inner(&mut self) -> io::Result<Option<i32>> {
         match self.inner.as_mut() {
             Some(Inner::Managed(process)) => process.poll(),
             Some(Inner::Raw { child, .. }) => child
@@ -187,6 +217,12 @@ impl LaunchAuthority {
     }
 
     pub fn wait(&mut self) -> io::Result<i32> {
+        let status = self.wait_inner();
+        self.discharge_raw_if_reaped();
+        status
+    }
+
+    fn wait_inner(&mut self) -> io::Result<i32> {
         match self.inner.as_mut() {
             Some(Inner::Managed(process)) => process.wait(),
             Some(Inner::Raw { child, .. }) => child
@@ -204,6 +240,12 @@ impl LaunchAuthority {
     }
 
     pub fn terminate(&mut self, timeout: Duration) -> Result<(), LaunchError> {
+        let result = self.terminate_inner(timeout);
+        self.discharge_raw_if_reaped();
+        result
+    }
+
+    fn terminate_inner(&mut self, timeout: Duration) -> Result<(), LaunchError> {
         match self.inner.as_mut() {
             Some(Inner::Managed(process)) => process
                 .terminate(timeout)
@@ -241,6 +283,12 @@ impl LaunchAuthority {
     }
 
     pub(crate) fn terminate_exact_evidence(&mut self, timeout: Duration) -> TerminationEvidence {
+        let evidence = self.terminate_exact_evidence_inner(timeout);
+        self.discharge_raw_if_reaped();
+        evidence
+    }
+
+    fn terminate_exact_evidence_inner(&mut self, timeout: Duration) -> TerminationEvidence {
         match self.inner.as_mut() {
             Some(Inner::Managed(process)) => process.terminate_exact_evidence(timeout),
             Some(Inner::Raw {
@@ -292,6 +340,12 @@ impl LaunchAuthority {
         &mut self,
         deadline: Instant,
     ) -> TerminationEvidence {
+        let evidence = self.terminate_exact_until_evidence_inner(deadline);
+        self.discharge_raw_if_reaped();
+        evidence
+    }
+
+    fn terminate_exact_until_evidence_inner(&mut self, deadline: Instant) -> TerminationEvidence {
         match self.inner.as_mut() {
             Some(Inner::Managed(process)) => process.terminate_exact_until_evidence(deadline),
             Some(Inner::Raw {
@@ -365,8 +419,15 @@ impl LaunchAuthority {
                 drop(process);
                 Err(LaunchError::OutputUnavailable)
             }
-            Some(Inner::Raw { child, .. }) => {
-                child.wait_with_output().map_err(LaunchError::Terminate)
+            Some(Inner::Raw {
+                child, admission, ..
+            }) => {
+                let output = child.wait_with_output().map_err(LaunchError::Terminate)?;
+                // The output's status is the reap.
+                if let Some(ticket) = admission {
+                    let _ = ticket.discharge_reaped();
+                }
+                Ok(output)
             }
             #[cfg(any(test, feature = "test-hooks"))]
             Some(Inner::Scripted { .. }) => Err(LaunchError::OutputUnavailable),
@@ -413,7 +474,12 @@ impl LaunchAuthority {
     pub(crate) fn cleanup_until(&mut self, deadline: Instant) -> bool {
         match self.inner_mut() {
             Inner::Managed(process) => process.cleanup_until(deadline),
-            Inner::Raw { child, .. } => child.try_wait().ok().flatten().is_some(),
+            Inner::Raw {
+                child, admission, ..
+            } => {
+                discharge_if_reaped(child, admission);
+                child.try_wait().ok().flatten().is_some()
+            }
             #[cfg(any(test, feature = "test-hooks"))]
             Inner::Scripted { poll_fn, .. } => poll_fn().ok().flatten().is_some(),
         }
@@ -422,8 +488,11 @@ impl LaunchAuthority {
     /// Mark a managed authority so drop cannot begin a new service-length
     /// termination window after a bounded shutdown expires.
     pub(crate) fn detach_after_bounded_shutdown(&mut self) {
-        if let Some(Inner::Managed(process)) = self.inner.as_mut() {
-            process.detach_after_bounded_shutdown();
+        match self.inner.as_mut() {
+            Some(Inner::Managed(process)) => process.detach_after_bounded_shutdown(),
+            // A detached child is never discharged.
+            Some(Inner::Raw { admission, .. }) => *admission = None,
+            _ => {}
         }
     }
 
@@ -442,6 +511,7 @@ impl Drop for LaunchAuthority {
         let Some(Inner::Raw {
             mut child,
             mut terminate_fn,
+            mut admission,
             ..
         }) = self.inner.take()
         else {
@@ -451,6 +521,7 @@ impl Drop for LaunchAuthority {
             let _ = terminate_fn(&mut child, SERVICE_SHUTDOWN_TIMEOUT);
             let _ = child.wait();
         }
+        discharge_if_reaped(&mut child, &mut admission);
     }
 }
 
@@ -489,49 +560,37 @@ pub fn launch_command_hosted(
     provenance: HostedLaunchProvenance,
     terminate_fn: BoxedTerminateFn,
 ) -> Result<LaunchAuthority, LaunchError> {
-    let ledger = ParentLossLedger::open(&provenance.journal)
-        .map_err(|error| LaunchError::Admission(error.to_string()))?;
-    let lock_path = ledger.admission_lock_path(provenance.generation);
-    let _lock = hold_lock(
-        &lock_path,
-        LockOptions {
-            timeout: provenance.acknowledgement_timeout,
-            poll_interval: Duration::from_millis(10),
-            mode: Some(0o600),
-        },
-    )
-    .map_err(|error| LaunchError::Admission(error.to_string()))?;
-    let active = ledger
-        .active_generation()
-        .map_err(|error| LaunchError::Admission(error.to_string()))?
-        .ok_or_else(|| LaunchError::Admission("missing active generation".to_owned()))?;
-    if active.generation != provenance.generation || active.phase != ParentLossPhase::Admitting {
-        return Err(LaunchError::Admission(
-            "hosted launch rejected after seal".to_owned(),
-        ));
-    }
-    let intent = AdmissionIntent::new(
-        provenance.generation,
-        provenance.launch_id.clone(),
-        provenance.service,
-        provenance.parent_launch_id.clone(),
-    );
-    write_parent_loss_admission_intent(&provenance.journal, &intent)
-        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+    let admitted = admit_under_lock(
+        &provenance.journal,
+        Some(provenance.generation),
+        provenance.acknowledgement_timeout,
+    )?;
+    write_launch_intent(&admitted, &hosted_intent(&provenance))?;
     inject_hosted_provenance(&mut request.environment, &provenance);
-    let mut authority = launch(disposition, move || spawn_command(request), terminate_fn)?;
+    let mut authority = match launch(disposition, move || spawn_command(request), terminate_fn) {
+        Ok(authority) => authority,
+        Err(err) => {
+            record_spawn_failed(&admitted, &provenance.launch_id, &err, left_no_child(&err))?;
+            return Err(err);
+        }
+    };
     let source = SystemProcessInstanceSource;
     let identity = match source.inspect(authority.pid()) {
         InspectResult::Present { instance, uid, .. } => LaunchedProcessIdentity { instance, uid },
         InspectResult::Absent | InspectResult::Unverifiable => {
-            let _ = authority.terminate(Duration::from_secs(2));
+            let detail = match authority.terminate(Duration::from_secs(2)) {
+                Ok(()) => "exact launch identity unavailable".to_owned(),
+                Err(error) => error.to_string(),
+            };
+            record_unidentified_reject(&mut authority, &admitted, &provenance.launch_id, detail)?;
             return Err(LaunchError::Admission(
                 "exact launch identity unavailable".to_owned(),
             ));
         }
     };
     authority.bind_exact_identity(identity)?;
-    finish_hosted_admission(&mut authority, identity, &provenance)?;
+    finish_hosted_admission(&mut authority, identity, &provenance, Some(&admitted))?;
+    authority.set_admission_ticket(admitted.ticket(&provenance.launch_id));
     Ok(authority)
 }
 
@@ -553,6 +612,24 @@ pub fn launch_managed_request(
     })
 }
 
+/// [`launch_managed_request`] that hands back a child the exact spawn could
+/// not prove reaped. `Err((None, _))` means no process is left.
+#[allow(clippy::result_large_err)]
+fn launch_managed_keeping(
+    disposition: Disposition,
+    request: ManagedLaunchRequest,
+) -> Result<LaunchAuthority, (Option<LaunchAuthority>, LaunchError)> {
+    reject_empty_unowned_reason(&disposition).map_err(|error| (None, error))?;
+    production_capability_probe(&disposition).map_err(|error| (None, error))?;
+    match ManagedProcess::spawn_exact_keeping(request.command, request.options) {
+        Ok(process) => Ok(LaunchAuthority::from_managed(process, disposition)),
+        Err((process, error)) => Err((
+            process.map(|process| LaunchAuthority::from_managed(process, disposition)),
+            LaunchError::SpawnManaged(error),
+        )),
+    }
+}
+
 /// The non-bypassable hosted child boundary.  It writes an immutable intent
 /// before spawn, captures exact PID/birth/UID, waits for the child-owned
 /// acknowledgement, and exact-reaps a child if admission cannot complete.
@@ -561,81 +638,42 @@ pub fn launch_managed_hosted(
     mut request: ManagedLaunchRequest,
     provenance: HostedLaunchProvenance,
 ) -> Result<LaunchAuthority, LaunchError> {
-    let ledger = ParentLossLedger::open(&provenance.journal)
-        .map_err(|error| LaunchError::Admission(error.to_string()))?;
-    let lock_path = ledger.admission_lock_path(provenance.generation);
-    let _lock = hold_lock(
-        &lock_path,
-        LockOptions {
-            timeout: provenance.acknowledgement_timeout,
-            poll_interval: Duration::from_millis(10),
-            mode: Some(0o600),
-        },
-    )
-    .map_err(|error| LaunchError::Admission(error.to_string()))?;
-    let active = ledger
-        .active_generation()
-        .map_err(|error| LaunchError::Admission(error.to_string()))?
-        .ok_or_else(|| LaunchError::Admission("missing active generation".to_owned()))?;
-    if active.generation != provenance.generation || active.phase != ParentLossPhase::Admitting {
-        return Err(LaunchError::Admission(
-            "hosted launch rejected after seal".to_owned(),
-        ));
-    }
-    let intent = AdmissionIntent::new(
-        provenance.generation,
-        provenance.launch_id.clone(),
-        provenance.service,
-        provenance.parent_launch_id.clone(),
-    );
-    write_parent_loss_admission_intent(&provenance.journal, &intent)
-        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+    let admitted = admit_under_lock(
+        &provenance.journal,
+        Some(provenance.generation),
+        provenance.acknowledgement_timeout,
+    )?;
+    write_launch_intent(&admitted, &hosted_intent(&provenance))?;
     inject_hosted_provenance(&mut request.options.environment, &provenance);
-    let mut authority = match launch_managed_request(disposition, request) {
+    let mut authority = match launch_managed_keeping(disposition, request) {
         Ok(authority) => authority,
-        Err(err) => {
-            record_unidentified_admission_result(
-                &provenance.journal,
-                provenance.generation,
-                &provenance.launch_id,
-                AdmissionResultState::SpawnFailed {
-                    detail: err.to_string(),
-                },
-            )?;
+        Err((child, err)) => {
+            record_spawn_failed(&admitted, &provenance.launch_id, &err, child.is_none())?;
+            drop(child);
             return Err(err);
         }
     };
     if let Some(identity) = authority.exact_identity() {
-        finish_hosted_admission(&mut authority, identity, &provenance)?;
+        finish_hosted_admission(&mut authority, identity, &provenance, Some(&admitted))?;
+        authority.set_admission_ticket(admitted.ticket(&provenance.launch_id));
         return Ok(authority);
     }
     match authority.poll() {
-        Ok(Some(exit_code)) => {
-            record_unidentified_admission_result(
-                &provenance.journal,
-                provenance.generation,
+        Ok(Some(_)) => {
+            record_unidentified_reject(
+                &mut authority,
+                &admitted,
                 &provenance.launch_id,
-                AdmissionResultState::RejectedAndReaped {
-                    exit_code: Some(exit_code),
-                },
+                String::new(),
             )?;
             Ok(authority)
         }
         Ok(None) => {
-            let result_state = match authority.terminate_exact(Duration::from_secs(2)) {
-                Ok(()) => AdmissionResultState::RejectedAndReaped {
-                    exit_code: authority.poll().ok().flatten(),
-                },
-                Err(err) => AdmissionResultState::RejectedUnreaped {
-                    detail: err.to_string(),
-                },
+            let detail = match authority.terminate_exact(Duration::from_secs(2)) {
+                Ok(()) => "exact launch identity unavailable".to_owned(),
+                Err(err) => err.to_string(),
             };
-            record_unidentified_admission_result(
-                &provenance.journal,
-                provenance.generation,
-                &provenance.launch_id,
-                result_state,
-            )?;
+            record_unidentified_reject(&mut authority, &admitted, &provenance.launch_id, detail)?;
             Err(LaunchError::Admission(
                 "exact launch identity unavailable".to_owned(),
             ))
@@ -656,91 +694,68 @@ pub fn launch_managed_hosted(
     }
 }
 
+/// A queue task worker or other generation child. With `inject_provenance`
+/// (a journal binary), the child gets the hosted environment and records
+/// its own identity at process entry, before any work.
 #[allow(clippy::result_large_err)]
 pub(crate) fn launch_managed_generation_child(
     disposition: Disposition,
     journal: &Path,
     launch_id: String,
-    request: ManagedLaunchRequest,
+    mut request: ManagedLaunchRequest,
+    inject_provenance: bool,
 ) -> Result<LaunchAuthority, GenerationChildError> {
-    let ledger = ParentLossLedger::open(journal).map_err(|error| {
-        GenerationChildError::Unavailable(LaunchError::Admission(error.to_string()))
-    })?;
-    let active = ledger
-        .active_generation()
-        .map_err(|error| {
-            GenerationChildError::Unavailable(LaunchError::Admission(error.to_string()))
-        })?
-        .ok_or_else(|| {
-            GenerationChildError::Unavailable(LaunchError::Admission(
-                "missing active generation".to_owned(),
-            ))
-        })?;
-    if active.phase != ParentLossPhase::Admitting {
-        return Err(GenerationChildError::Unavailable(LaunchError::Admission(
-            "generation not admitting".to_owned(),
-        )));
+    let admitted = admit_under_lock(journal, None, GENERATION_CHILD_LOCK_TIMEOUT)
+        .map_err(GenerationChildError::Unavailable)?;
+    let intent = AdmissionIntent::new(admitted.generation, launch_id.clone(), None, None);
+    write_launch_intent(&admitted, &intent).map_err(GenerationChildError::Unavailable)?;
+    if inject_provenance {
+        inject_hosted_environment(
+            &mut request.options.environment,
+            journal,
+            admitted.generation,
+            &launch_id,
+            None,
+        );
     }
-    let generation = active.generation;
-    let lock_path = ledger.admission_lock_path(generation);
-    let _lock = hold_lock(
-        &lock_path,
-        LockOptions {
-            timeout: Duration::from_secs(5),
-            poll_interval: Duration::from_millis(10),
-            mode: Some(0o600),
-        },
-    )
-    .map_err(|error| {
-        GenerationChildError::Unavailable(LaunchError::Admission(error.to_string()))
-    })?;
 
-    let intent = AdmissionIntent::new(generation, launch_id.clone(), None, None);
-    write_parent_loss_admission_intent(journal, &intent).map_err(|error| {
-        GenerationChildError::Unavailable(LaunchError::Admission(error.to_string()))
-    })?;
+    let mut authority = match launch_managed_keeping(disposition, request) {
+        Ok(authority) => authority,
+        Err((Some(mut authority), err)) => {
+            authority.set_admission_ticket(admitted.ticket(&launch_id));
+            return Err(GenerationChildError::Live(authority, err));
+        }
+        Err((None, err)) => {
+            let _ = record_spawn_failed(&admitted, &launch_id, &err, true);
+            return Err(GenerationChildError::Unavailable(err));
+        }
+    };
 
-    let (managed_process, spawn_err) =
-        match ManagedProcess::spawn_exact_keeping(request.command, request.options) {
-            Ok(process) => (process, None),
-            Err((Some(process), err)) => (process, Some(err)),
-            Err((None, err)) => {
-                let launch_err = LaunchError::SpawnManaged(err);
-                let _ = record_unidentified_admission_result(
-                    journal,
-                    generation,
-                    &launch_id,
-                    AdmissionResultState::SpawnFailed {
-                        detail: launch_err.to_string(),
-                    },
-                );
-                return Err(GenerationChildError::Unavailable(launch_err));
+    match finish_generation_child_admission(&mut authority, &admitted, &launch_id, false) {
+        Ok(admitted_child) => {
+            if admitted_child {
+                authority.set_admission_ticket(admitted.ticket(&launch_id));
             }
-        };
-
-    let mut authority = LaunchAuthority::from_managed(managed_process, disposition);
-    if let Some(err) = spawn_err {
-        return Err(GenerationChildError::Live(
-            authority,
-            LaunchError::SpawnManaged(err),
-        ));
+            Ok(authority)
+        }
+        Err(err) => {
+            authority.set_admission_ticket(admitted.ticket(&launch_id));
+            Err(GenerationChildError::Live(authority, err))
+        }
     }
-
-    if let Err(err) =
-        finish_generation_child_admission(&mut authority, journal, generation, &launch_id, false)
-    {
-        return Err(GenerationChildError::Live(authority, err));
-    }
-    Ok(authority)
 }
 
+/// Record the exact identity of a generation child. Returns `false` when the
+/// child was already reaped inside the launch, in which case its entry has
+/// been discharged and there is nothing left to reap.
 fn finish_generation_child_admission(
     authority: &mut LaunchAuthority,
-    journal: &Path,
-    generation: u64,
+    admitted: &Admitted,
     launch_id: &str,
     retire: bool,
-) -> Result<(), LaunchError> {
+) -> Result<bool, LaunchError> {
+    let journal = admitted.journal.as_path();
+    let generation = admitted.generation;
     let source = SystemProcessInstanceSource;
     let identity = match authority.exact_identity() {
         Some(identity) => identity,
@@ -760,7 +775,8 @@ fn finish_generation_child_admission(
                             exit_code: Some(exit_code),
                         },
                     )?;
-                    return Ok(());
+                    admitted.discharge(launch_id);
+                    return Ok(false);
                 }
                 Ok(None) => {
                     if retire {
@@ -800,7 +816,7 @@ fn finish_generation_child_admission(
     write_parent_loss_admission_result(journal, generation, launch_id, &result)
         .map_err(|error| LaunchError::Admission(error.to_string()))?;
 
-    Ok(())
+    Ok(true)
 }
 
 pub fn launch_generation_child<F>(
@@ -813,50 +829,180 @@ pub fn launch_generation_child<F>(
 where
     F: FnOnce() -> io::Result<Child>,
 {
-    let ledger = ParentLossLedger::open(journal)
-        .map_err(|error| LaunchError::Admission(error.to_string()))?;
-    let active = ledger
-        .active_generation()
-        .map_err(|error| LaunchError::Admission(error.to_string()))?
-        .ok_or_else(|| LaunchError::Admission("missing active generation".to_owned()))?;
-    if active.phase != ParentLossPhase::Admitting {
-        return Err(LaunchError::Admission(
-            "generation not admitting".to_owned(),
-        ));
-    }
-    let generation = active.generation;
-    let lock_path = ledger.admission_lock_path(generation);
-    let _lock = hold_lock(
-        &lock_path,
-        LockOptions {
-            timeout: Duration::from_secs(5),
-            poll_interval: Duration::from_millis(10),
-            mode: Some(0o600),
-        },
-    )
-    .map_err(|error| LaunchError::Admission(error.to_string()))?;
-
-    let intent = AdmissionIntent::new(generation, launch_id.clone(), None, None);
-    write_parent_loss_admission_intent(journal, &intent)
-        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+    let admitted = admit_under_lock(journal, None, GENERATION_CHILD_LOCK_TIMEOUT)?;
+    let intent = AdmissionIntent::new(admitted.generation, launch_id.clone(), None, None);
+    write_launch_intent(&admitted, &intent)?;
 
     let mut authority = match launch(disposition, spawn, terminate_fn) {
         Ok(authority) => authority,
         Err(err) => {
-            record_unidentified_admission_result(
-                journal,
-                generation,
-                &launch_id,
-                AdmissionResultState::SpawnFailed {
-                    detail: err.to_string(),
-                },
-            )?;
+            record_spawn_failed(&admitted, &launch_id, &err, left_no_child(&err))?;
             return Err(err);
         }
     };
 
-    finish_generation_child_admission(&mut authority, journal, generation, &launch_id, true)?;
+    if finish_generation_child_admission(&mut authority, &admitted, &launch_id, true)? {
+        authority.set_admission_ticket(admitted.ticket(&launch_id));
+    }
     Ok(authority)
+}
+
+const GENERATION_CHILD_LOCK_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// One launch's hold on its generation's admission lock, taken before the
+/// pointer was read and found naming this generation `Admitting`. The seal
+/// takes the same lock, so nothing this launch writes can follow the seal.
+struct Admitted {
+    journal: PathBuf,
+    ledger: ParentLossLedger,
+    generation: ParentLossGeneration,
+    lock: FileLock,
+}
+
+impl Admitted {
+    fn ticket(&self, launch_id: &str) -> AdmissionTicket {
+        AdmissionTicket {
+            journal: self.journal.clone(),
+            generation: self.generation,
+            launch_id: launch_id.to_owned(),
+        }
+    }
+
+    /// Discharge an entry with no process left to reap, under the held lock.
+    fn discharge(&self, launch_id: &str) {
+        let _ = discharge_holding_lock(
+            &self.ledger,
+            self.generation,
+            launch_id,
+            Discharger::Launcher,
+            &self.lock,
+        );
+    }
+}
+
+/// The launch gate shared by every Unix launch path: take the admission
+/// lock, then read the pointer, then require `generation` (the active one
+/// when `None`) to be active and `Admitting`.
+fn admit_under_lock(
+    journal: &Path,
+    generation: Option<ParentLossGeneration>,
+    timeout: Duration,
+) -> Result<Admitted, LaunchError> {
+    let refuse = |detail: String| LaunchError::Admission(detail);
+    let ledger = ParentLossLedger::open(journal).map_err(|error| refuse(error.to_string()))?;
+    let read_pointer = || {
+        ledger
+            .active_generation()
+            .map_err(|error| refuse(error.to_string()))?
+            .ok_or_else(|| refuse("missing active generation".to_owned()))
+    };
+    let generation = match generation {
+        Some(generation) => generation,
+        None => read_pointer()?.generation,
+    };
+    let lock = hold_lock(
+        ledger.admission_lock_path(generation),
+        LockOptions {
+            timeout,
+            poll_interval: Duration::from_millis(10),
+            mode: Some(0o600),
+        },
+    )
+    .map_err(|error| refuse(error.to_string()))?;
+    let active = read_pointer()?;
+    if active.generation != generation || active.phase != ParentLossPhase::Admitting {
+        return Err(refuse("launch rejected after seal".to_owned()));
+    }
+    Ok(Admitted {
+        journal: journal.to_path_buf(),
+        ledger,
+        generation,
+        lock,
+    })
+}
+
+fn hosted_intent(provenance: &HostedLaunchProvenance) -> AdmissionIntent {
+    AdmissionIntent::new(
+        provenance.generation,
+        provenance.launch_id.clone(),
+        provenance.service,
+        provenance.parent_launch_id.clone(),
+    )
+}
+
+/// Write a launch's intent. A service launch then discharges the roots it
+/// replaces, still under the same lock.
+fn write_launch_intent(admitted: &Admitted, intent: &AdmissionIntent) -> Result<(), LaunchError> {
+    write_parent_loss_admission_intent(&admitted.journal, intent)
+        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+    if let Some(service) = intent.service {
+        discharge_replaced_service_roots(
+            &admitted.ledger,
+            admitted.generation,
+            &intent.launch_id,
+            service,
+            &SystemProcessInstanceSource,
+            &admitted.lock,
+        );
+    }
+    Ok(())
+}
+
+/// Whether a failed raw launch left no child behind. A confirmation failure
+/// spawned one and did not prove its reap.
+fn left_no_child(error: &LaunchError) -> bool {
+    !matches!(error, LaunchError::ConfirmationFailed { .. })
+}
+
+/// Record a launch that failed at spawn, discharging it when no child is left.
+fn record_spawn_failed(
+    admitted: &Admitted,
+    launch_id: &str,
+    error: &LaunchError,
+    no_child: bool,
+) -> Result<(), LaunchError> {
+    record_unidentified_admission_result(
+        &admitted.journal,
+        admitted.generation,
+        launch_id,
+        AdmissionResultState::SpawnFailed {
+            detail: error.to_string(),
+        },
+    )?;
+    if no_child {
+        admitted.discharge(launch_id);
+    }
+    Ok(())
+}
+
+/// Record an unidentified child the launch rejected. Only a confirmed reap
+/// status records `RejectedAndReaped` and discharges the entry.
+fn record_unidentified_reject(
+    authority: &mut LaunchAuthority,
+    admitted: &Admitted,
+    launch_id: &str,
+    detail: String,
+) -> Result<(), LaunchError> {
+    let (state, reaped) = match authority.poll() {
+        Ok(Some(exit_code)) => (
+            AdmissionResultState::RejectedAndReaped {
+                exit_code: Some(exit_code),
+            },
+            true,
+        ),
+        Ok(None) => (AdmissionResultState::RejectedUnreaped { detail }, false),
+        Err(error) => (
+            AdmissionResultState::RejectedUnreaped {
+                detail: error.to_string(),
+            },
+            false,
+        ),
+    };
+    record_unidentified_admission_result(&admitted.journal, admitted.generation, launch_id, state)?;
+    if reaped {
+        admitted.discharge(launch_id);
+    }
+    Ok(())
 }
 
 fn record_unidentified_admission_result(
@@ -878,19 +1024,35 @@ fn inject_hosted_provenance(
     environment: &mut BTreeMap<OsString, OsString>,
     provenance: &HostedLaunchProvenance,
 ) {
+    inject_hosted_environment(
+        environment,
+        &provenance.journal,
+        provenance.generation,
+        &provenance.launch_id,
+        provenance.parent_launch_id.as_deref(),
+    );
+}
+
+fn inject_hosted_environment(
+    environment: &mut BTreeMap<OsString, OsString>,
+    journal: &Path,
+    generation: ParentLossGeneration,
+    launch_id: &str,
+    parent_launch_id: Option<&str>,
+) {
     environment.insert(
         OsString::from(HOSTED_GENERATION_ENV),
-        OsString::from(provenance.generation.to_string()),
+        OsString::from(generation.to_string()),
     );
     environment.insert(
         OsString::from(HOSTED_LAUNCH_ID_ENV),
-        OsString::from(provenance.launch_id.clone()),
+        OsString::from(launch_id),
     );
     environment.insert(
         OsString::from("SOLSTONE_JOURNAL"),
-        provenance.journal.as_os_str().to_os_string(),
+        journal.as_os_str().to_os_string(),
     );
-    if let Some(parent_launch_id) = provenance.parent_launch_id.as_ref() {
+    if let Some(parent_launch_id) = parent_launch_id {
         environment.insert(
             OsString::from(HOSTED_PARENT_LAUNCH_ID_ENV),
             OsString::from(parent_launch_id),
@@ -902,6 +1064,7 @@ fn finish_hosted_admission(
     authority: &mut LaunchAuthority,
     identity: LaunchedProcessIdentity,
     provenance: &HostedLaunchProvenance,
+    admitted: Option<&Admitted>,
 ) -> Result<(), LaunchError> {
     let expected = AdmissionIdentity {
         generation: provenance.generation,
@@ -944,23 +1107,32 @@ fn finish_hosted_admission(
             Err(_) => break,
         }
     }
-    let result_state = match terminate_rejected_hosted_child(authority) {
-        Ok(exit_code) => AdmissionResultState::RejectedAndReaped { exit_code },
-        Err(error) => AdmissionResultState::RejectedUnreaped {
-            detail: error.to_string(),
-        },
+    let (result_state, reaped) = match terminate_rejected_hosted_child(authority) {
+        Ok(exit_code) => (
+            AdmissionResultState::RejectedAndReaped { exit_code },
+            exit_code.is_some(),
+        ),
+        Err(error) => (
+            AdmissionResultState::RejectedUnreaped {
+                detail: error.to_string(),
+            },
+            false,
+        ),
     };
     let result = AdmissionResult {
         schema: 1,
         identity: Some(expected),
         state: result_state,
     };
-    let _ = write_parent_loss_admission_result(
+    let recorded = write_parent_loss_admission_result(
         &provenance.journal,
         provenance.generation,
         &provenance.launch_id,
         &result,
     );
+    if let (Ok(()), true, Some(admitted)) = (recorded, reaped, admitted) {
+        admitted.discharge(&provenance.launch_id);
+    }
     Err(LaunchError::Admission(
         "hosted child did not complete matching admission acknowledgement".to_owned(),
     ))
@@ -987,6 +1159,7 @@ fn terminate_rejected_hosted_child(
 
 fn spawn_command(request: CommandLaunchRequest) -> io::Result<Child> {
     let mut command = Command::new(request.program);
+    remove_launch_only_environment(&mut command);
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     solstone_core_local_endpoint::prepare_child(&mut command, &request.environment);
     command.args(request.arguments).envs(request.environment);
@@ -1046,6 +1219,7 @@ where
             child,
             terminate_fn,
             exact_identity: None,
+            admission: None,
         }),
         disposition,
         resources: Vec::new(),
@@ -1509,9 +1683,16 @@ mod tests {
         )
         .expect_err("child without acknowledgement is rejected");
         assert!(matches!(error, LaunchError::Admission(_)));
+        // A confirmed reap is discharged by the launcher.
+        assert!(
+            !ledger
+                .generation_path(generation)
+                .join("admissions/unacknowledged-child")
+                .exists()
+        );
         let result_path = ledger
             .generation_path(generation)
-            .join("admissions/unacknowledged-child/result.json");
+            .join("discharged/unacknowledged-child/result.json");
         let result: AdmissionResult =
             serde_json::from_slice(&std::fs::read(&result_path).expect("rejected child result"))
                 .expect("result JSON");
@@ -1525,8 +1706,12 @@ mod tests {
             InstanceVerdict::NotSameOrExited
         ));
 
-        acknowledge_parent_loss_admission(&bed.root, identity.clone())
-            .expect("late child acknowledgement may be recorded but not trusted");
+        // A late acknowledgement or result finds the entry discharged and
+        // cannot recreate it.
+        assert!(matches!(
+            acknowledge_parent_loss_admission(&bed.root, identity.clone()),
+            Err(crate::lifecycle::ParentLossAdmissionError::GenerationClosed)
+        ));
         assert!(matches!(
             write_parent_loss_admission_result(
                 &bed.root,
@@ -1538,8 +1723,14 @@ mod tests {
                     state: AdmissionResultState::Admitted,
                 },
             ),
-            Err(crate::lifecycle::ParentLossAdmissionError::Conflict { .. })
+            Err(crate::lifecycle::ParentLossAdmissionError::GenerationClosed)
         ));
+        assert!(
+            !ledger
+                .generation_path(generation)
+                .join("admissions/unacknowledged-child")
+                .exists()
+        );
         assert!(matches!(
             ledger
                 .active_generation()
@@ -1584,7 +1775,7 @@ mod tests {
             complete_acknowledgement(file, expected);
         });
 
-        let finish = finish_hosted_admission(&mut authority, identity, &provenance);
+        let finish = finish_hosted_admission(&mut authority, identity, &provenance, None);
         writer.join().expect("acknowledgement writer");
         finish.expect("partial acknowledgement admits before deadline");
         assert!(matches!(
@@ -1633,7 +1824,7 @@ mod tests {
             complete_acknowledgement(file, expected);
         });
 
-        let error = finish_hosted_admission(&mut authority, identity, &provenance)
+        let error = finish_hosted_admission(&mut authority, identity, &provenance, None)
             .expect_err("late acknowledgement rejects child");
         writer.join().expect("acknowledgement writer");
         assert!(matches!(error, LaunchError::Admission(_)));
@@ -1663,7 +1854,7 @@ mod tests {
         let (file, _) = partial_acknowledgement(&ledger, generation, launch_id);
         complete_acknowledgement(file, expected);
 
-        let error = finish_hosted_admission(&mut authority, identity, &provenance)
+        let error = finish_hosted_admission(&mut authority, identity, &provenance, None)
             .expect_err("expired acknowledgement rejects child");
         assert!(matches!(error, LaunchError::Admission(_)));
         assert!(matches!(

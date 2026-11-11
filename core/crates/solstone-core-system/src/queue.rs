@@ -650,15 +650,28 @@ type CatchupAdmissionCapability = Arc<dyn Fn() -> Result<(), CatchupError> + Sen
 type WorkerThreadSpawner =
     Arc<dyn Fn(Box<dyn FnOnce() + Send>) -> io::Result<thread::JoinHandle<()>> + Send + Sync>;
 
+/// Whether a queue command resolved to the journal binary itself, the only
+/// task workers that record their own admission at process entry.
+#[cfg_attr(windows, allow(dead_code))]
+fn is_task_binary_command(task_binary: Option<&Path>, command: &[String]) -> bool {
+    task_binary.is_some_and(|binary| {
+        command
+            .first()
+            .is_some_and(|program| Path::new(program) == binary)
+    })
+}
+
 fn spawn_managed_queue_process(
     journal_root: PathBuf,
     command: Vec<String>,
     options: SpawnOptions,
     timeout: Duration,
+    journal_binary: bool,
 ) -> Result<QueueProcessHandle, QueueSpawnFailure> {
     #[cfg(unix)]
     {
-        let launch_id = crate::lifecycle::generate_helper_launch_id("task-worker");
+        let launch_id = crate::lifecycle::generate_helper_launch_id("task-worker")
+            .map_err(|error| QueueSpawnFailure::Clean(SpawnError::Spawn(error)))?;
         let res = crate::process::launch_managed_generation_child(
             Disposition::IndependentBoundedHelper { timeout },
             &journal_root,
@@ -669,6 +682,7 @@ fn spawn_managed_queue_process(
                 command,
                 options,
             },
+            journal_binary,
         );
         let authority = classify_generation_child(res)?;
         Ok(Arc::new(Mutex::new(Box::new(ManagedQueueProcess(
@@ -677,7 +691,7 @@ fn spawn_managed_queue_process(
     }
     #[cfg(not(unix))]
     {
-        let _ = journal_root;
+        let _ = (journal_root, journal_binary);
         let authority =
             match launch_managed(Disposition::IndependentBoundedHelper { timeout }, || {
                 ManagedProcess::spawn_exact(command, options)
@@ -791,7 +805,7 @@ fn spawn_windows_queue_process(
 
     if grants.is_empty() || !is_journal {
         // Third-party commands keep their existing no-protocol launch contract.
-        return spawn_managed_queue_process(journal_root, command, options, timeout);
+        return spawn_managed_queue_process(journal_root, command, options, timeout, false);
     }
     if is_analysis_command(&command) {
         crate::provider_runtime::ParakeetRuntimeShared::prepare_queued_child_environment(
@@ -1441,8 +1455,16 @@ impl TaskQueue {
         #[cfg(not(windows))]
         let spawner: QueueProcessSpawner = {
             let journal_root = options.journal_root.clone();
+            let task_binary = options.task_binary.clone();
             Arc::new(move |command, options, timeout| {
-                spawn_managed_queue_process(journal_root.clone(), command, options, timeout)
+                let journal_binary = is_task_binary_command(task_binary.as_deref(), &command);
+                spawn_managed_queue_process(
+                    journal_root.clone(),
+                    command,
+                    options,
+                    timeout,
+                    journal_binary,
+                )
             })
         };
         #[cfg(test)]

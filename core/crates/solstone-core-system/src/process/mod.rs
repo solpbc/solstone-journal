@@ -65,6 +65,8 @@ pub(crate) use platform::hold_while_instance_live;
 pub(crate) use platform::launch_managed_generation_child;
 #[cfg(target_os = "macos")]
 pub(crate) use platform::macos_sweep_table;
+#[cfg(unix)]
+pub use platform::remove_launch_only_environment;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use platform::signal_pid;
 #[cfg(windows)]

@@ -1794,7 +1794,8 @@ fn exercise_abandoned_generation_boots_unattended(systemd_scope_unit: Option<&st
         other => panic!("helper child inspectable: {other:?}"),
     };
     let helper_launch_id =
-        solstone_core_system::lifecycle::generate_helper_launch_id("task-worker");
+        solstone_core_system::lifecycle::generate_helper_launch_id("task-worker")
+            .expect("launch id");
     solstone_core_system::lifecycle::write_parent_loss_admission_intent(
         &journal.0,
         &solstone_core_system::lifecycle::AdmissionIntent::new(

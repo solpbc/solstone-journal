@@ -93,7 +93,10 @@ pub fn probe_parakeet_cpp_binary(binary: &Path, timeout: Duration) -> ParakeetCp
     let mut authority = match launch(
         Disposition::IndependentBoundedHelper { timeout },
         || {
-            Command::new(binary)
+            let mut command = Command::new(binary);
+            #[cfg(unix)]
+            crate::process::remove_launch_only_environment(&mut command);
+            command
                 .arg("--version")
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())

@@ -1115,7 +1115,9 @@ fn start_parakeet(
         let Some(journal_path) = journal_path else {
             return launch_failed();
         };
-        let launch_id = crate::lifecycle::generate_helper_launch_id("parakeet-provider");
+        let Ok(launch_id) = crate::lifecycle::generate_helper_launch_id("parakeet-provider") else {
+            return launch_failed();
+        };
         crate::process::launch_generation_child(
             Disposition::IndependentLongLived,
             journal_path,
@@ -1330,6 +1332,7 @@ fn spawn_parakeet(
         )
     })?;
     let mut command = Command::new(program);
+    crate::process::remove_launch_only_environment(&mut command);
     command.args(arguments).envs(env_updates);
     apply_parent_death_kill(&mut command);
     command.spawn()

@@ -78,12 +78,15 @@ pub enum HostedServiceKind {
 }
 
 #[cfg(unix)]
+pub(crate) use parent_loss_admission::discharge_replaced_service_roots;
+#[cfg(unix)]
 pub use parent_loss_admission::{
     AdmissionAcknowledgement, AdmissionIdentity, AdmissionIntent, AdmissionResult,
-    AdmissionResultState, AdmissionSpawnIdentity, HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV,
+    AdmissionResultState, AdmissionSpawnIdentity, AdmissionTicket, DISCHARGE_LOCK_TIMEOUT,
+    DischargeKept, Discharged, Discharger, HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV,
     HOSTED_PARENT_LAUNCH_ID_ENV, ParentLossAdmissionError, ParentLossServiceWitnessDrop,
-    acknowledge_hosted_child_admission, acknowledge_parent_loss_admission,
-    generate_helper_launch_id, hosted_child_launch_provenance,
+    acknowledge_hosted_child_admission, acknowledge_parent_loss_admission, discharge,
+    discharge_holding_lock, generate_helper_launch_id, hosted_child_launch_provenance,
     read_parent_loss_admission_acknowledgement, read_parent_loss_admission_spawn_identity,
     service_name, write_parent_loss_admission_intent, write_parent_loss_admission_result,
     write_parent_loss_admission_spawn_identity, write_parent_loss_service_witness,

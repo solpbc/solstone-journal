@@ -1340,7 +1340,9 @@ fn start_local_unix(
     let port = reservation.release_for_spawn();
     #[cfg(unix)]
     let authority_res = {
-        let launch_id = crate::lifecycle::generate_helper_launch_id("local-provider");
+        let Ok(launch_id) = crate::lifecycle::generate_helper_launch_id("local-provider") else {
+            return launch_failed();
+        };
         crate::process::launch_generation_child(
             Disposition::IndependentLongLived,
             journal_path,
@@ -2011,6 +2013,7 @@ fn spawn_plan(plan: &solstone_core_local::plan::LaunchPlan) -> std::io::Result<C
         )
     })?;
     let mut command = Command::new(program);
+    crate::process::remove_launch_only_environment(&mut command);
     command.args(arguments).envs(&plan.extra_env);
     apply_parent_death_kill(&mut command);
     command.spawn()

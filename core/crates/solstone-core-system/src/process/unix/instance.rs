@@ -353,11 +353,9 @@ fn inspect_macos(pid: u32) -> InspectResult {
 
 #[cfg(target_os = "macos")]
 fn census_macos() -> InstanceCensus {
-    let output = match std::process::Command::new("/bin/ps")
-        .args(["-axo", "pid="])
-        .env("LC_ALL", "C")
-        .output()
-    {
+    let mut command = std::process::Command::new("/bin/ps");
+    super::spawn::remove_launch_only_environment(&mut command);
+    let output = match command.args(["-axo", "pid="]).env("LC_ALL", "C").output() {
         Ok(output) => output,
         Err(_) => return InstanceCensus::Incomplete(Vec::new()),
     };
@@ -799,7 +797,9 @@ fn macos_sweep_table_from_text(text: &str) -> Option<Vec<MacosSweepRow>> {
 
 #[cfg(target_os = "macos")]
 pub(crate) fn macos_sweep_table() -> Option<Vec<MacosSweepRow>> {
-    let output = std::process::Command::new("/bin/ps")
+    let mut command = std::process::Command::new("/bin/ps");
+    super::spawn::remove_launch_only_environment(&mut command);
+    let output = command
         .args(["-axo", "pid=,ppid=,uid=,command="])
         .env("LC_ALL", "C")
         .output()

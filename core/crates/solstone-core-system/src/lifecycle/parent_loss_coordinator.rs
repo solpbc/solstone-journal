@@ -2207,10 +2207,10 @@ mod tests {
         assert_eq!(authority.poll().expect("second poll"), Some(75));
         assert_eq!(authority.wait().expect("wait"), 75);
 
-        let result_path = coordinator
-            .ledger
-            .generation_path(coordinator.generation())
-            .join(format!("admissions/{launch_id}/result.json"));
+        // A launch with no process left is discharged by its launcher.
+        let generation_path = coordinator.ledger.generation_path(coordinator.generation());
+        assert!(!generation_path.join("admissions").join(launch_id).exists());
+        let result_path = generation_path.join(format!("discharged/{launch_id}/result.json"));
         let result: AdmissionResult =
             serde_json::from_slice(&std::fs::read(&result_path).expect("result JSON exists"))
                 .expect("parse result");
@@ -2287,10 +2287,10 @@ mod tests {
             LaunchError::SpawnManaged(SpawnError::Spawn(_))
         ));
 
-        let result_path = coordinator
-            .ledger
-            .generation_path(coordinator.generation())
-            .join(format!("admissions/{launch_id}/result.json"));
+        // A launch with no process left is discharged by its launcher.
+        let generation_path = coordinator.ledger.generation_path(coordinator.generation());
+        assert!(!generation_path.join("admissions").join(launch_id).exists());
+        let result_path = generation_path.join(format!("discharged/{launch_id}/result.json"));
         let result: AdmissionResult =
             serde_json::from_slice(&std::fs::read(&result_path).expect("result JSON exists"))
                 .expect("parse result");
@@ -2379,10 +2379,10 @@ mod tests {
             InspectResult::Absent | InspectResult::Unverifiable
         ));
 
-        let result_path = coordinator
-            .ledger
-            .generation_path(coordinator.generation())
-            .join(format!("admissions/{launch_id}/result.json"));
+        // A launch with no process left is discharged by its launcher.
+        let generation_path = coordinator.ledger.generation_path(coordinator.generation());
+        assert!(!generation_path.join("admissions").join(launch_id).exists());
+        let result_path = generation_path.join(format!("discharged/{launch_id}/result.json"));
         let result: AdmissionResult =
             serde_json::from_slice(&std::fs::read(&result_path).expect("result JSON exists"))
                 .expect("parse result");

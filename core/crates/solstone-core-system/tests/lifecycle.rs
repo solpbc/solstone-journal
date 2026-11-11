@@ -1506,7 +1506,7 @@ mod abandoned_generation_closer {
             .mark_admitting(active.generation, coordinator)
             .expect("admitting state");
 
-        let launch_id = generate_helper_launch_id("task-worker");
+        let launch_id = generate_helper_launch_id("task-worker").expect("launch id");
         write_parent_loss_admission_intent(
             &bed.root,
             &AdmissionIntent::new(active.generation, &launch_id, None, None),

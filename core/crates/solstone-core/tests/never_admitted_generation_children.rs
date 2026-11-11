@@ -129,7 +129,7 @@ mod tests {
 
         // Spawn task worker helper
         let (mut task_child, task_instance) = spawn_child(false);
-        let task_launch_id = generate_helper_launch_id("task-worker");
+        let task_launch_id = generate_helper_launch_id("task-worker").expect("launch id");
         write_parent_loss_admission_intent(
             &journal.root,
             &AdmissionIntent::new(active.generation, &task_launch_id, None, None),
@@ -147,7 +147,7 @@ mod tests {
 
         // Spawn local provider helper
         let (mut provider_child, provider_instance) = spawn_child(false);
-        let provider_launch_id = generate_helper_launch_id("local-provider");
+        let provider_launch_id = generate_helper_launch_id("local-provider").expect("launch id");
         write_parent_loss_admission_intent(
             &journal.root,
             &AdmissionIntent::new(active.generation, &provider_launch_id, None, None),
@@ -238,7 +238,7 @@ mod tests {
             "descendant must still hold the published TCP resource"
         );
 
-        let launch_id = generate_helper_launch_id("task-worker");
+        let launch_id = generate_helper_launch_id("task-worker").expect("launch id");
         write_parent_loss_admission_intent(
             &journal.root,
             &AdmissionIntent::new(active.generation, &launch_id, None, None),
@@ -311,7 +311,7 @@ mod tests {
 
         // Journal A child (to be retired)
         let (mut child_a, instance_a) = spawn_child(false);
-        let launch_id_a = generate_helper_launch_id("task-worker");
+        let launch_id_a = generate_helper_launch_id("task-worker").expect("launch id");
         write_parent_loss_admission_intent(
             &journal_a.root,
             &AdmissionIntent::new(active_a.generation, &launch_id_a, None, None),
@@ -329,7 +329,7 @@ mod tests {
 
         // Same-named journal B child, recorded by B's own generation (must stay alive).
         let (mut child_b, instance_b) = spawn_child(false);
-        let launch_id_b = generate_helper_launch_id("task-worker");
+        let launch_id_b = generate_helper_launch_id("task-worker").expect("launch id");
         write_parent_loss_admission_intent(
             &journal_b.root,
             &AdmissionIntent::new(active_b.generation, &launch_id_b, None, None),
@@ -392,7 +392,7 @@ mod tests {
             .expect("admitting state");
 
         let (mut child, instance) = spawn_child(false);
-        let launch_id = generate_helper_launch_id("task-worker");
+        let launch_id = generate_helper_launch_id("task-worker").expect("launch id");
         write_parent_loss_admission_intent(
             &journal.root,
             &AdmissionIntent::new(active.generation, &launch_id, None, None),
@@ -457,7 +457,7 @@ mod tests {
 
         // Spawn child ignoring SIGTERM
         let (mut stubborn_child, stubborn_instance) = spawn_child(true);
-        let launch_id = generate_helper_launch_id("task-worker");
+        let launch_id = generate_helper_launch_id("task-worker").expect("launch id");
         write_parent_loss_admission_intent(
             &journal.root,
             &AdmissionIntent::new(active.generation, &launch_id, None, None),

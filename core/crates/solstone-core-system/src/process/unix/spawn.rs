@@ -13,6 +13,9 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use crate::lifecycle::{
+    AdmissionTicket, HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV,
+};
 use crate::partition::partition_for;
 use chrono::Local;
 
@@ -44,6 +47,32 @@ pub struct ManagedProcess {
     termination_mode: TerminationMode,
     exact_identity: Option<LaunchedProcessIdentity>,
     last_snapshot: Option<ProcessTreeSnapshot>,
+    admission: Option<AdmissionTicket>,
+}
+
+/// Remove the parent-loss launch names from a fresh spawn's inherited
+/// environment. Call it before applying the request's own environment, so
+/// only a launcher that injects them passes them on. A pid-preserving `exec`
+/// is not a fresh spawn and keeps them.
+pub fn remove_launch_only_environment(command: &mut Command) {
+    for name in [
+        HOSTED_GENERATION_ENV,
+        HOSTED_LAUNCH_ID_ENV,
+        HOSTED_PARENT_LAUNCH_ID_ENV,
+    ] {
+        command.env_remove(name);
+    }
+}
+
+/// Discharge `ticket` once `child` has been reaped. `try_wait` caches the
+/// status, so the check is cheap after the first reap.
+pub(crate) fn discharge_if_reaped(child: &mut Child, ticket: &mut Option<AdmissionTicket>) {
+    if ticket.is_some()
+        && matches!(child.try_wait(), Ok(Some(_)))
+        && let Some(ticket) = ticket.take()
+    {
+        let _ = ticket.discharge_reaped();
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -119,6 +148,7 @@ impl ManagedProcess {
         let writer = Arc::new(Mutex::new(writer));
 
         let mut command = Command::new(&cmd[0]);
+        remove_launch_only_environment(&mut command);
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         solstone_core_local_endpoint::prepare_child(&mut command, &options.environment);
         command
@@ -188,6 +218,7 @@ impl ManagedProcess {
             termination_mode: TerminationMode::Legacy,
             exact_identity: None,
             last_snapshot: None,
+            admission: None,
         };
         if exact {
             delay_exact_identity_observation_for_test(&options.environment);
@@ -208,8 +239,16 @@ impl ManagedProcess {
                     }
                     Ok(None) => {
                         let _ = process.child.kill();
-                        let _ = process.child.wait();
-                        return Err((None, SpawnError::ExactInstanceUnavailable { pid }));
+                        let waited =
+                            if force_exact_spawn_wait_failure_for_test(&options.environment) {
+                                Err(io::Error::other("test hook forced wait failure"))
+                            } else {
+                                process.child.wait().map(|_| ())
+                            };
+                        // `None` promises the child was reaped; without a
+                        // confirmed status the caller keeps the process.
+                        let kept = waited.is_err().then_some(process);
+                        return Err((kept, SpawnError::ExactInstanceUnavailable { pid }));
                     }
                     Err(err) => {
                         return Err((Some(process), SpawnError::Spawn(err)));
@@ -256,19 +295,44 @@ impl ManagedProcess {
         &self.cmd
     }
 
+    /// Bind this child to its admission entry. The entry is discharged once
+    /// this owner observes the child reaped.
+    pub(crate) fn set_admission_ticket(&mut self, ticket: AdmissionTicket) {
+        self.admission = Some(ticket);
+    }
+
+    fn discharge_if_reaped(&mut self) {
+        discharge_if_reaped(&mut self.child, &mut self.admission);
+    }
+
     pub fn poll(&mut self) -> io::Result<Option<i32>> {
-        self.child
+        let status = self
+            .child
             .try_wait()
-            .map(|status| status.map(|value| super::super::signal_aware_exit_code(&value)))
+            .map(|status| status.map(|value| super::super::signal_aware_exit_code(&value)));
+        self.discharge_if_reaped();
+        status
     }
 
     pub fn wait(&mut self) -> io::Result<i32> {
-        self.child
+        let status = self
+            .child
             .wait()
-            .map(|status| super::super::signal_aware_exit_code(&status))
+            .map(|status| super::super::signal_aware_exit_code(&status));
+        self.discharge_if_reaped();
+        status
     }
 
     pub fn terminate(&mut self, timeout: Duration) -> Result<TerminationOutcome, TerminationError> {
+        let outcome = self.terminate_inner(timeout);
+        self.discharge_if_reaped();
+        outcome
+    }
+
+    fn terminate_inner(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<TerminationOutcome, TerminationError> {
         match self.termination_mode {
             TerminationMode::Legacy => terminate(&mut self.child, timeout),
             TerminationMode::Exact(expected) => {
@@ -290,6 +354,12 @@ impl ManagedProcess {
     }
 
     pub(crate) fn terminate_exact_evidence(&mut self, timeout: Duration) -> TerminationEvidence {
+        let evidence = self.terminate_exact_evidence_inner(timeout);
+        self.discharge_if_reaped();
+        evidence
+    }
+
+    fn terminate_exact_evidence_inner(&mut self, timeout: Duration) -> TerminationEvidence {
         match self.termination_mode {
             TerminationMode::Exact(expected) => {
                 let source = SystemProcessInstanceSource;
@@ -327,6 +397,12 @@ impl ManagedProcess {
         &mut self,
         deadline: Instant,
     ) -> TerminationEvidence {
+        let evidence = self.terminate_exact_until_evidence_inner(deadline);
+        self.discharge_if_reaped();
+        evidence
+    }
+
+    fn terminate_exact_until_evidence_inner(&mut self, deadline: Instant) -> TerminationEvidence {
         match self.termination_mode {
             TerminationMode::Exact(expected) => {
                 let source = SystemProcessInstanceSource;
@@ -361,6 +437,8 @@ impl ManagedProcess {
     pub fn detach_after_bounded_shutdown(&mut self) {
         self.termination_mode = TerminationMode::BoundedShutdownDetached;
         self.drains.clear();
+        // A detached child may still be running: its entry stays outstanding.
+        self.admission = None;
     }
 
     pub fn signal_exact(&mut self, signal: SignalKind) -> Result<(), TerminationError> {
@@ -401,6 +479,7 @@ impl ManagedProcess {
         if self.child.try_wait().ok().flatten().is_none() {
             return;
         }
+        self.discharge_if_reaped();
         for drain in self.drains.drain(..) {
             join_drain_bounded(drain);
         }
@@ -436,6 +515,7 @@ impl ManagedProcess {
         if self.child.try_wait().ok().flatten().is_none() {
             return false;
         }
+        self.discharge_if_reaped();
         let mut completed = true;
         for drain in self.drains.drain(..) {
             completed &= join_drain_until(drain, deadline);
@@ -485,6 +565,22 @@ fn delay_exact_identity_observation_for_test(_environment: &BTreeMap<OsString, O
     }
 }
 
+/// Force the reap after an unverifiable exact spawn to report failure, only
+/// for an explicitly opted-in debug test process.
+fn force_exact_spawn_wait_failure_for_test(environment: &BTreeMap<OsString, OsString>) -> bool {
+    #[cfg(debug_assertions)]
+    {
+        environment
+            .get(OsStr::new("SOLSTONE_TEST_EXACT_SPAWN_FORCE_WAIT_FAILURE"))
+            .is_some_and(|value| value == "1")
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = environment;
+        false
+    }
+}
+
 /// Force the live-but-unverifiable exact-spawn branch only for an explicitly
 /// opted-in debug test process.
 fn force_exact_identity_unavailable_for_test(environment: &BTreeMap<OsString, OsString>) -> bool {
@@ -515,6 +611,7 @@ impl Drop for ManagedProcess {
             };
         }
         self.cleanup();
+        self.discharge_if_reaped();
     }
 }
 

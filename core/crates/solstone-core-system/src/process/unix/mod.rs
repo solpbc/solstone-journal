@@ -27,7 +27,7 @@ pub(crate) use instance::macos_sweep_table;
 ))]
 pub use instance::{process_owner, process_table_birth};
 pub use pdeathsig::apply_parent_death_kill;
-pub use spawn::ManagedProcess;
+pub use spawn::{ManagedProcess, remove_launch_only_environment};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use terminate::exact_descendant_tree;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
