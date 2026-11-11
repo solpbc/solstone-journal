@@ -236,6 +236,10 @@ pub trait AdmissionRetirer: Send + Sync {
     fn boot_id(&self) -> Option<String> {
         current_boot_id()
     }
+    /// macOS `kern.boottime` in seconds, or `None`.
+    fn boot_time(&self) -> Option<u64> {
+        current_boot_time()
+    }
 }
 
 /// Production retirer: every signal is guarded by a fresh exact observation.
@@ -417,6 +421,7 @@ pub(crate) enum Fault {
     SkipSeal,
     SkipDescendantPersist,
     InferEmpty,
+    HealDamagedIdentity,
 }
 
 #[cfg(test)]
@@ -560,19 +565,30 @@ pub(crate) fn authorities_veto(
 
 // ---- the boot session ----
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct BootRecord {
     schema: u32,
     boot: String,
+    /// macOS `kern.boottime`, seconds. Absent on Linux and on older records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    boot_time: Option<u64>,
 }
 
-fn normalize_boot(text: &str) -> Option<String> {
-    let text = text
-        .trim()
-        .trim_end_matches('\0')
-        .trim()
-        .to_ascii_lowercase();
-    (!text.is_empty()).then_some(text)
+/// A boot session id as a canonical UUID (32 lowercase hex digits). The nil
+/// UUID or anything unparseable is no id at all.
+fn parse_boot_uuid(text: &str) -> Option<String> {
+    let text = text.trim().trim_end_matches('\0').trim();
+    let hex: String = text.chars().filter(|c| *c != '-').collect();
+    let dashed_ok = !text.contains('-')
+        || (text.len() == 36
+            && [8, 13, 18, 23]
+                .iter()
+                .all(|&at| text.as_bytes().get(at) == Some(&b'-')));
+    if !dashed_ok || hex.len() != 32 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let hex = hex.to_ascii_lowercase();
+    (hex.chars().any(|c| c != '0')).then_some(hex)
 }
 
 /// The kernel's boot session id: Linux `boot_id`, macOS `kern.bootsessionuuid`.
@@ -582,7 +598,7 @@ pub(crate) fn current_boot_id() -> Option<String> {
         fs::read_to_string("/proc/sys/kernel/random/boot_id")
             .ok()
             .as_deref()
-            .and_then(normalize_boot)
+            .and_then(parse_boot_uuid)
     }
     #[cfg(target_os = "macos")]
     {
@@ -604,9 +620,37 @@ pub(crate) fn current_boot_id() -> Option<String> {
         }
         std::str::from_utf8(&buffer[..length.min(buffer.len())])
             .ok()
-            .and_then(normalize_boot)
+            .and_then(parse_boot_uuid)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        None
+    }
+}
+
+/// macOS `kern.boottime` in seconds; `None` elsewhere or when unreadable.
+pub(crate) fn current_boot_time() -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut value = libc::timeval {
+            tv_sec: 0,
+            tv_usec: 0,
+        };
+        let mut length = std::mem::size_of::<libc::timeval>();
+        // SAFETY: the name is NUL-terminated and `value` is a writable
+        // `timeval` of exactly `length` bytes owned by this frame.
+        let status = unsafe {
+            libc::sysctlbyname(
+                c"kern.boottime".as_ptr(),
+                (&mut value as *mut libc::timeval).cast(),
+                &mut length,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        (status == 0 && value.tv_sec > 0).then(|| value.tv_sec as u64)
+    }
+    #[cfg(not(target_os = "macos"))]
     {
         None
     }
@@ -632,29 +676,59 @@ pub(crate) fn record_boot(ledger: &ParentLossLedger, generation: ParentLossGener
             &BootRecord {
                 schema: BOOT_SCHEMA_V1,
                 boot,
+                boot_time: current_boot_time(),
             },
             json_options(),
         );
     }
 }
 
-/// Whether the generation provably ran on another boot. Both ids must be
-/// present and readable and differ; anything else settles nothing.
+/// The boot settlement rule. On Linux the session id alone decides. On
+/// macOS both the session id and `kern.boottime` must be recorded, read, and
+/// differ; a record without the boot time never settles there.
+fn boot_settles(
+    recorded: &BootRecord,
+    current: &str,
+    current_time: Option<u64>,
+    macos: bool,
+) -> bool {
+    let Some(recorded_id) = parse_boot_uuid(&recorded.boot) else {
+        return false;
+    };
+    if recorded.schema != BOOT_SCHEMA_V1 || recorded_id == current {
+        return false;
+    }
+    if !macos {
+        return true;
+    }
+    matches!(
+        (recorded.boot_time, current_time),
+        (Some(recorded), Some(current)) if recorded != current
+    )
+}
+
+/// Whether the generation provably ran on another boot. Anything that cannot
+/// be read settles nothing.
 fn boot_changed(
     ledger: &ParentLossLedger,
     generation: ParentLossGeneration,
-    current: Option<String>,
+    retirer: &dyn AdmissionRetirer,
     supervisor: Option<ProcessInstance>,
 ) -> bool {
-    let Some(current) = current.as_deref().and_then(normalize_boot) else {
+    let Some(current) = retirer.boot_id().as_deref().and_then(parse_boot_uuid) else {
         return false;
     };
     let recorded = fs::read(boot_path(ledger, generation))
         .ok()
-        .and_then(|bytes| serde_json::from_slice::<BootRecord>(&bytes).ok())
-        .filter(|record| record.schema == BOOT_SCHEMA_V1)
-        .and_then(|record| normalize_boot(&record.boot));
-    if recorded.is_some_and(|recorded| recorded != current) {
+        .and_then(|bytes| serde_json::from_slice::<BootRecord>(&bytes).ok());
+    if recorded.is_some_and(|recorded| {
+        boot_settles(
+            &recorded,
+            &current,
+            retirer.boot_time(),
+            cfg!(target_os = "macos"),
+        )
+    }) {
         return true;
     }
     // A Linux supervisor birth carries the boot it was observed on.
@@ -698,6 +772,18 @@ impl OutstandingEntry {
         }
     }
 
+    /// No identity was read, yet a drop that would carry one is there and
+    /// unreadable: a destroyed sole identity, which never heals into absence.
+    pub(crate) fn identity_destroyed(&self) -> bool {
+        self.identities.is_empty()
+            && self.unreadable.iter().any(|name| {
+                matches!(
+                    *name,
+                    "result.json" | "acknowledgement.json" | "spawn-identity.json"
+                )
+            })
+    }
+
     /// Whether the entry needs no process observed: it never had one.
     pub(crate) fn settled_without_process(&self) -> bool {
         self.identities.is_empty() && self.launcher_reaped()
@@ -725,12 +811,12 @@ fn read_drop<T: DeserializeOwned>(
     let bytes = match fs::read(directory.join(name)) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-        // A directory where a drop belongs is damage that never clears.
-        Err(error) if error.kind() == io::ErrorKind::IsADirectory => {
+        // A drop that is there and cannot be read (a directory where it
+        // belongs, an I/O error) is unreadable, the same as a torn one.
+        Err(_) => {
             unreadable.push(name);
             return Ok(None);
         }
-        Err(error) => return Err(error),
     };
     // Drops are created and then filled; a writer killed between the two
     // leaves an empty file, which is the drop that was never written.
@@ -880,6 +966,25 @@ fn discharged_dir(ledger: &ParentLossLedger, generation: ParentLossGeneration) -
     ledger.generation_path(generation).join("discharged")
 }
 
+/// A state directory found as a regular file is set aside under a suffixed
+/// name, so it can never refuse a start. `true` when one was set aside.
+fn set_aside_if_file(path: &Path) -> io::Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if !metadata.is_dir() => {
+            let name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            fs::rename(
+                path,
+                path.with_file_name(format!("{name}.not-a-directory.{}", unique_suffix())),
+            )?;
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
 fn admission_lock(
     ledger: &ParentLossLedger,
     generation: ParentLossGeneration,
@@ -932,6 +1037,7 @@ fn move_to_discharged(
     path: &Path,
 ) -> io::Result<()> {
     let trash = discharged_dir(ledger, generation);
+    set_aside_if_file(&trash)?;
     fs::create_dir_all(&trash)?;
     let name = path
         .file_name()
@@ -959,6 +1065,8 @@ struct CensusEvidence {
     main_damaged: bool,
     copies: Vec<CensusObligationFile>,
     markers: Vec<PathBuf>,
+    /// `census-started.json`, or a legacy refusal marker: retirement began.
+    began: bool,
     lost: bool,
 }
 
@@ -1007,11 +1115,13 @@ fn census_evidence(generation_dir: &Path) -> io::Result<CensusEvidence> {
     // empty census as authoritative; so does this one.
     let never_written = main.is_none() && !main_damaged && !started && census_copies == 0;
     let lost = main.is_none() && copies.is_empty() && !never_written;
+    let began = started || !markers.is_empty();
     Ok(CensusEvidence {
         main,
         main_damaged,
         copies,
         markers,
+        began,
         lost,
     })
 }
@@ -1149,12 +1259,14 @@ fn fold_census(
     ledger: &ParentLossLedger,
     generation: ParentLossGeneration,
     notes: &mut Vec<String>,
+    authority: &ClosingAuthority<'_>,
 ) -> Result<Option<Obligations>, ParentLossLedgerError> {
     let generation_dir = ledger.generation_path(generation);
     let evidence = census_evidence(&generation_dir)?;
     if evidence.lost {
         return Ok(None);
     }
+    let authoritative_census = evidence.main.is_some() || !evidence.copies.is_empty();
     let mut merged = Obligations::new();
     let main = evidence.main.map(|file| file.obligations);
     for (launch_id, live) in main.iter().flatten() {
@@ -1162,6 +1274,74 @@ fn fold_census(
     }
     for copy in evidence.copies {
         for (launch_id, live) in copy.obligations {
+            merge_obligation(&mut merged, launch_id, live);
+        }
+    }
+    let recovery = ledger.closure_recovery_dir(generation);
+    let admissions = admission_directory(ledger, generation);
+    let authoritative: HashSet<String> = merged.keys().cloned().collect();
+    if let Ok(children) = fs::read_dir(recovery.join("live")) {
+        for child in children.flatten() {
+            let path = child.path();
+            let Some(launch_id) = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .filter(|stem| validate_launch_id(stem).is_ok())
+                .map(str::to_owned)
+            else {
+                continue;
+            };
+            let live = match read_json_durable_validated::<LiveRecoveryFile>(
+                ArtifactId::ParentLossClosureRecovery,
+                &path,
+                |_| Ok(()),
+            ) {
+                Ok(DurableRead::Present(live)) => live,
+                Ok(DurableRead::Absent) => continue,
+                _ => {
+                    // Without an authoritative census, a damaged cache after
+                    // retirement began is lost identities: that refuses.
+                    if evidence.began && !authoritative_census {
+                        return Ok(None);
+                    }
+                    notes.push(format!("the recovery cache for {launch_id} was damaged"));
+                    continue;
+                }
+            };
+            // A cache the census does not hold is kept when its own drops or
+            // this journal's environment name its root, or while anything it
+            // names is not proven gone. Only a cache whose every process is
+            // observed gone, and that nothing authorizes, is dropped.
+            if !authoritative.contains(&launch_id) {
+                let by_drops = read_entry(&admissions, &launch_id).is_ok_and(|entry| {
+                    entry
+                        .identities
+                        .iter()
+                        .any(|identity| identity.instance == live.root && identity.uid == live.uid)
+                });
+                let by_environment = live.sources.as_ref().is_some_and(|sources| {
+                    sources
+                        .environment_identity
+                        .as_ref()
+                        .is_some_and(|identity| identity.instance == live.root)
+                        && sources.environment_journal.as_deref()
+                            == ledger.canonical_root().to_str()
+                });
+                let open = std::iter::once((live.root, live.uid))
+                    .chain(live.descendants.iter().map(|d| (d.instance, d.uid)))
+                    .any(|(instance, uid)| {
+                        !matches!(
+                            settle(authority.source, authority.retirer, instance, uid),
+                            Settlement::Gone(_)
+                        )
+                    });
+                if !by_drops && !by_environment && !open {
+                    notes.push(format!(
+                        "a recovery cache for {launch_id} named only processes observed gone; it was discarded"
+                    ));
+                    continue;
+                }
+            }
             merge_obligation(&mut merged, launch_id, live);
         }
     }
@@ -1797,7 +1977,17 @@ fn settle_listing(
                 }
             }
             hold_live(obligations, generation, &entry, live);
-            if blind {
+            let destroyed = entry.identity_destroyed();
+            #[cfg(test)]
+            let destroyed = destroyed && !fault(Fault::HealDamagedIdentity);
+            if destroyed {
+                notes.push(format!(
+                    "admission {}: its only identity drop is unreadable, so it is kept until the \
+                     computer restarts",
+                    entry.launch_id
+                ));
+            }
+            if blind || destroyed {
                 unverifiable += 1;
                 continue;
             }
@@ -1908,7 +2098,7 @@ pub(crate) fn close_generation(
         coordinator,
         observations,
     };
-    if boot_changed(ledger, generation, authority.retirer.boot_id(), supervisor) {
+    if boot_changed(ledger, generation, authority.retirer, supervisor) {
         tally.summary.boot_changed = true;
         notes.push(
             "the computer restarted since this run, so nothing it started can still be running"
@@ -1931,12 +2121,17 @@ pub(crate) fn close_generation(
         }
         return Ok(ClosureOutcome::Closed);
     }
-    let Some(mut obligations) = fold_census(ledger, generation, &mut notes)? else {
+    let Some(mut obligations) = fold_census(ledger, generation, &mut notes, authority)? else {
         return Ok(ClosureOutcome::Refused(
             BootstrapRecoveryReason::AbandonedAdmissionUnverifiable,
         ));
     };
     let admissions = admission_directory(ledger, generation);
+    if set_aside_if_file(&admissions)? {
+        notes.push(
+            "admissions was a file, not a directory; it was set aside and read as empty".to_owned(),
+        );
+    }
     let mut skipped: HashSet<String> = HashSet::new();
     let mut passes = 0;
     loop {
@@ -3340,37 +3535,120 @@ mod tests {
     }
 
     #[test]
-    fn a_recovery_cache_naming_a_root_its_drops_do_not_is_never_signalled() {
+    fn a_recovery_cache_the_census_lacks_is_observed_before_it_is_dropped() {
+        for live_stranger in [true, false] {
+            let directory = TempDir::new().unwrap();
+            let (ledger, active) = open_generation(&directory);
+            let real = instance(5001, 100);
+            let stranger = instance(5002, 200);
+            admit(
+                directory.path(),
+                active.generation,
+                "admitted-target",
+                None,
+                Some(real),
+            );
+            let live = obligation(
+                active.generation,
+                "admitted-target",
+                stranger,
+                Vec::new(),
+                false,
+            );
+            let path = ledger
+                .closure_recovery_dir(active.generation)
+                .join("live/admitted-target.json");
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            write_json(&path, &live, json_options()).unwrap();
+            let alive: Vec<_> = if live_stranger {
+                vec![(stranger, 501)]
+            } else {
+                Vec::new()
+            };
+            let (source, retirer) = fake(&alive, &[stranger.pid], &[]);
+            let lease = acquire_lease(&ledger);
+            start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("closed");
+            let notes = closure_of(&ledger, active.generation).notes;
+            if live_stranger {
+                assert_eq!(
+                    retirer.signals(),
+                    vec![(stranger.pid, "term")],
+                    "kept and retired"
+                );
+            } else {
+                assert!(retirer.signals().is_empty());
+                assert!(notes.iter().any(|note| note.contains("observed gone")));
+            }
+        }
+    }
+
+    #[test]
+    fn a_recovery_cache_rooted_in_this_journals_environment_is_kept() {
         let directory = TempDir::new().unwrap();
         let (ledger, active) = open_generation(&directory);
-        let real = instance(5001, 100);
-        let stranger = instance(5002, 200);
-        admit(
-            directory.path(),
-            active.generation,
-            "admitted-target",
-            None,
-            Some(real),
-        );
-        let live = obligation(
-            active.generation,
-            "admitted-target",
-            stranger,
-            Vec::new(),
-            false,
-        );
+        let root = instance(5011, 100);
+        admit(directory.path(), active.generation, "env-root", None, None);
+        let mut live = obligation(active.generation, "env-root", root, Vec::new(), false);
+        live.sources = Some(AdmissionSourceSnapshot {
+            environment_identity: Some(identity(active.generation, "env-root", root)),
+            environment_journal: ledger.canonical_root().to_str().map(str::to_owned),
+            ..AdmissionSourceSnapshot::default()
+        });
         let path = ledger
             .closure_recovery_dir(active.generation)
-            .join("live/admitted-target.json");
+            .join("live/env-root.json");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         write_json(&path, &live, json_options()).unwrap();
-        let (source, retirer) = fake(&[(stranger, 501)], &[stranger.pid], &[]);
+        let (source, retirer) = fake(&[], &[], &[]);
         let lease = acquire_lease(&ledger);
         start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("closed");
+        let closure = closure_of(&ledger, active.generation);
         assert!(
-            retirer.signals().is_empty(),
-            "an unauthorized cache root was signalled"
+            !closure
+                .notes
+                .iter()
+                .any(|note| note.contains("observed gone"))
         );
+        assert_eq!(
+            closure.summary.unwrap().exited,
+            1,
+            "the env-rooted obligation settled"
+        );
+    }
+
+    #[test]
+    fn a_damaged_recovery_cache_is_lost_identities_only_without_a_census() {
+        for with_census in [false, true] {
+            let directory = TempDir::new().unwrap();
+            let (ledger, active) = open_generation(&directory);
+            let dir = ledger.generation_path(active.generation);
+            fs::write(dir.join("census-refusal.json"), b"{\"schema\":1}").unwrap();
+            if with_census {
+                write_census(&ledger, active.generation, &[]);
+            }
+            let path = ledger
+                .closure_recovery_dir(active.generation)
+                .join("live/gone.json");
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, b"{ torn").unwrap();
+            let (source, retirer) = fake(&[], &[], &[]);
+            let lease = acquire_lease(&ledger);
+            let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+            if with_census {
+                result.expect("an authoritative census stands");
+                assert!(
+                    closure_of(&ledger, active.generation)
+                        .notes
+                        .iter()
+                        .any(|note| note.contains("gone") && note.contains("damaged"))
+                );
+            } else {
+                assert!(refused(
+                    &result,
+                    BootstrapRecoveryReason::AbandonedAdmissionUnverifiable
+                ));
+            }
+        }
     }
 
     #[test]
@@ -4627,6 +4905,177 @@ mod tests {
                 .notes
                 .iter()
                 .any(|note| note.contains("odd") && note.contains("intent.json"))
+        );
+    }
+
+    // ---- the second review ----
+
+    fn a_destroyed_sole_identity_never_heals() -> Result<(), String> {
+        for (drop, bytes) in [
+            (
+                "spawn-identity.json",
+                b"{\"schema\":1,\"identity\":{".to_vec(),
+            ),
+            (
+                "acknowledgement.json",
+                br#"{"schema":2,"identity":{}}"#.to_vec(),
+            ),
+            ("result.json", Vec::new()),
+        ] {
+            let directory = TempDir::new().unwrap();
+            let (ledger, active) = open_generation(&directory);
+            write_parent_loss_admission_intent(
+                directory.path(),
+                &AdmissionIntent::new(active.generation, "destroyed", None, None),
+            )
+            .unwrap();
+            let path = admission_directory(&ledger, active.generation)
+                .join("destroyed")
+                .join(drop);
+            if bytes.is_empty() {
+                fs::create_dir_all(&path).unwrap();
+            } else {
+                fs::write(&path, &bytes).unwrap();
+            }
+            let (source, retirer) = fake(&[], &[], &[]);
+            let lease = acquire_lease(&ledger);
+            let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
+            if !refused(
+                &result,
+                BootstrapRecoveryReason::AbandonedAdmissionUnverifiable,
+            ) {
+                return Err(format!(
+                    "{drop}: a destroyed sole identity healed: {result:?}"
+                ));
+            }
+            if entries(&ledger, active.generation) != vec!["destroyed"] {
+                return Err(format!("{drop}: the entry was discharged"));
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_destroyed_sole_identity_is_kept_and_refuses() {
+        a_destroyed_sole_identity_never_heals().unwrap();
+    }
+
+    #[test]
+    fn healing_a_destroyed_identity_turns_the_test_red() {
+        with_fault(Fault::HealDamagedIdentity, || {
+            assert!(a_destroyed_sole_identity_never_heals().is_err());
+        });
+    }
+
+    #[test]
+    fn a_torn_intent_alone_still_heals_and_a_boot_change_settles_a_destroyed_identity() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let dir = admission_directory(&ledger, active.generation);
+        fs::create_dir_all(dir.join("torn-intent")).unwrap();
+        fs::write(dir.join("torn-intent/intent.json"), b"{\"schema\":").unwrap();
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("an intent alone heals");
+        assert_eq!(summary_of(&ledger, active.generation).never_acknowledged, 1);
+
+        if current_boot_id().is_none() {
+            return;
+        }
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let dir = admission_directory(&ledger, active.generation).join("destroyed");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("spawn-identity.json"), b"{ torn").unwrap();
+        let (source, mut retirer) = fake(&[], &[], &[]);
+        retirer.boot = Some(Some("0123456789abcdef0123456789abcdef".to_owned()));
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("boot-settled");
+        assert!(summary_of(&ledger, active.generation).boot_changed);
+    }
+
+    #[test]
+    fn boot_settlement_needs_a_valid_id_and_on_macos_a_changed_boot_time() {
+        let other = "8b9f3c1e-77a2-4d0b-9e61-2f4c05aad317";
+        let current = parse_boot_uuid("0123456789abcdef0123456789abcdef").unwrap();
+        let record = |boot: &str, boot_time| BootRecord {
+            schema: 1,
+            boot: boot.to_owned(),
+            boot_time,
+        };
+        assert_eq!(
+            parse_boot_uuid("00000000-0000-0000-0000-000000000000"),
+            None
+        );
+        assert_eq!(parse_boot_uuid("not-a-boot"), None);
+        assert_eq!(parse_boot_uuid("8b9f3c1e77a2-4d0b-9e61-2f4c05aad317"), None);
+        assert!(
+            boot_settles(&record(other, None), &current, None, false),
+            "linux: id alone"
+        );
+        assert!(!boot_settles(
+            &record(&current, None),
+            &current,
+            None,
+            false
+        ));
+        assert!(!boot_settles(
+            &record("garbage", None),
+            &current,
+            None,
+            false
+        ));
+        assert!(
+            !boot_settles(&record(other, None), &current, Some(9), true),
+            "mac: no recorded time"
+        );
+        assert!(
+            !boot_settles(&record(other, Some(9)), &current, Some(9), true),
+            "mac: same time"
+        );
+        assert!(
+            !boot_settles(&record(other, Some(8)), &current, None, true),
+            "mac: unreadable time"
+        );
+        assert!(boot_settles(
+            &record(other, Some(8)),
+            &current,
+            Some(9),
+            true
+        ));
+    }
+
+    #[test]
+    fn file_shaped_state_directories_are_set_aside_not_refused() {
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        admit(
+            directory.path(),
+            active.generation,
+            "gone",
+            None,
+            Some(instance(4242, 42)),
+        );
+        let generation_dir = ledger.generation_path(active.generation);
+        fs::write(generation_dir.join("discharged"), b"x").unwrap();
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("a file-shaped trash heals");
+        assert!(generation_dir.join("discharged/gone").is_dir());
+
+        let directory = TempDir::new().unwrap();
+        let (ledger, active) = open_generation(&directory);
+        let generation_dir = ledger.generation_path(active.generation);
+        fs::write(generation_dir.join("admissions"), b"x").unwrap();
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+        start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET)
+            .expect("a file-shaped admissions heals");
+        assert!(
+            closure_of(&ledger, active.generation)
+                .notes
+                .iter()
+                .any(|note| note.contains("admissions was a file"))
         );
     }
 }

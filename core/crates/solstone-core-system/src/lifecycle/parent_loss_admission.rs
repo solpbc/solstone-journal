@@ -485,7 +485,16 @@ pub fn discharge_holding_lock(
     let target = discharged_directory(ledger, generation);
     match fs::create_dir(&target) {
         Ok(()) => {}
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists && target.is_dir() => {}
+        // A trash path that is not a directory is set aside and recreated,
+        // so damage there never keeps an entry outstanding.
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            let aside =
+                target.with_file_name(format!("discharged.not-a-directory.{}", trash_suffix()));
+            if fs::rename(&target, aside).is_err() || fs::create_dir(&target).is_err() {
+                return Ok(Discharged::Kept(DischargeKept::RenameFailed));
+            }
+        }
         Err(_) => return Ok(Discharged::Kept(DischargeKept::RenameFailed)),
     }
     match fs::rename(&entry, target.join(launch_id)) {

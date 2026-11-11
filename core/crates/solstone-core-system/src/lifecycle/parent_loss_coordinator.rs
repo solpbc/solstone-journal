@@ -407,9 +407,15 @@ impl ParentLossCoordinator {
             source,
             owners,
         );
-        // After the terminal, what was proven gone leaves the outstanding set,
-        // so a clean stop leaves an empty `admissions/`.
-        if self.active.phase == ParentLossPhase::Terminal {
+        // After a clean terminal, what was proven gone leaves the outstanding
+        // set, so a clean stop leaves an empty `admissions/`. ⛔ Never after
+        // `Unresolved`: a rolled-back binary closes that generation from its
+        // entries against the bound ledger, so they stay for the closer.
+        if matches!(
+            outcome,
+            Ok(ParentLossTerminalDisposition::Completed { .. }
+                | ParentLossTerminalDisposition::RetiredExpected)
+        ) {
             self.discharge_settled(sealed, source, owners);
         }
         outcome
@@ -1629,7 +1635,12 @@ mod tests {
                         reason: ParentLossUnresolvedReason::RetirementDeadlineExceeded { .. }
                     }
                 ));
-                assert_eq!(outstanding(&coordinator), vec!["a-sense-before-restart"]);
+                // ⛔ An unresolved stop discharges nothing: a rolled-back
+                // binary closes it from its entries against the bound ledger.
+                assert_eq!(
+                    outstanding(&coordinator),
+                    vec!["a-sense-before-restart", "sense"]
+                );
             } else {
                 assert!(
                     matches!(terminal, ParentLossTerminalDisposition::Completed { .. }),

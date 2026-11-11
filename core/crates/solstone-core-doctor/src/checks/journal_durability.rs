@@ -171,9 +171,20 @@ fn scan_generations(journal: &Path, report: &mut DurabilityReport) {
             .as_ref()
             .is_some_and(|record| record.closure.is_some());
         if !closed && parent_loss_census_is_lost(&directory) {
+            // A Mac generation from before its boot time was recorded can
+            // never prove a restart, so it cannot clear on its own.
+            let boot_time_recorded = fs::read(directory.join("boot.json"))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+                .is_some_and(|boot| boot.get("boot_time").is_some_and(|time| time.is_u64()));
+            let clears = if cfg!(target_os = "macos") && !boot_time_recorded {
+                "it will not clear on its own and needs help from support"
+            } else {
+                "it clears after the computer restarts"
+            };
             report.refusals.push(format!(
                 "generation {generation}: the record of processes a retirement started is lost, \
-                 so the journal will not start until the computer restarts"
+                 so the journal will not start; {clears}"
             ));
         }
         let Some(record) = record else {
@@ -202,7 +213,7 @@ fn scan_generations(journal: &Path, report: &mut DurabilityReport) {
                         .count(),
                 ),
             };
-            let never_admitted = total - exited - retired;
+            let never_admitted = total.saturating_sub(exited).saturating_sub(retired);
             report.closed_generations.push(format!(
                 "generation {generation} was closed by the start that became generation {} \
                  (unix {}): {total} admissions, {exited} already exited, {retired} stopped by the journal, \
@@ -366,8 +377,8 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         Status::Fail
     };
     let action = if !report.refusals.is_empty() {
-        "the journal refuses to start until the computer restarts; restart it, then start the \
-         journal again"
+        "the journal will not start until this clears; each line above says whether it clears \
+         after the computer restarts or needs help"
     } else if report.unreadable.is_empty() {
         "no action is needed: recovered records stay beside the originals and are listed here"
     } else {
@@ -772,6 +783,8 @@ mod tests {
         let report = scan(journal.path());
         assert_eq!(report.refusals.len(), 1);
         assert!(report.refusals[0].contains("generation 4"));
+        #[cfg(not(target_os = "macos"))]
+        assert!(report.refusals[0].contains("it clears after the computer restarts"));
         let result = run(&test_context(journal.path().to_path_buf()), test_check()).expect("run");
         assert_eq!(result.status, Status::Fail);
         assert!(result.detail.contains("starts refused"));
