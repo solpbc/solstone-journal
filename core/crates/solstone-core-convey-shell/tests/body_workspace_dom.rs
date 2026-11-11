@@ -16,6 +16,7 @@ fn body_workspace_dom_contract() {
         Ok(_) => {}
     }
     let output = Command::new("node")
+        .arg("--expose-gc")
         .arg(format!(
             "{}/tests/body_workspace_dom.js",
             env!("CARGO_MANIFEST_DIR")

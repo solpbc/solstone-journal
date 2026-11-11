@@ -1,3 +1,6 @@
+<!-- first-read: /app/body/ -> /app/body/api/status -->
+<!-- first-read: /app/body/{day} -> /app/body/api/day/{day} -->
+<!-- view-contract -->
 <link rel="stylesheet" href="/static/date-nav.css">
 <script src="/static/date-nav.js"></script>
 <style>
@@ -1045,15 +1048,15 @@ a.body-day-cell:focus-visible {
   <div id="body-view-root" hidden></div>
 </div>
 
+
 <script>
 (() => {
   "use strict";
-  const reportBodyReady = window.createViewReady('body');
+  // Registers the view. Nothing here runs until the view is mounted, and a
+  // day change is taken in place.
 
   const DAY_RE = /^\d{8}$/;
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
-  const root = document.getElementById("body-view-root");
-  const gate = document.getElementById("body-state-gate");
 
   function html(parts) {
     return parts.filter(Boolean).join("");
@@ -1080,38 +1083,6 @@ a.body-day-cell:focus-visible {
   function bodyDayHref(value) {
     const day = safeDay(value);
     return day ? `/app/body/${escapeHtml(day)}` : "/app/body/";
-  }
-
-  function setLoading(text) {
-    if (!root || !gate) return;
-    root.hidden = true;
-    gate.hidden = false;
-    gate.innerHTML = window.SurfaceState.loading({ text });
-  }
-
-  function reveal(markup) {
-    if (!root || !gate) return;
-    gate.hidden = true;
-    gate.innerHTML = "";
-    root.innerHTML = markup;
-    root.hidden = false;
-  }
-
-  function showError(heading, err, retryFn) {
-    if (window.logError) {
-      window.logError(err, { context: heading });
-    }
-    if (!root || !gate) return;
-    root.hidden = true;
-    gate.hidden = false;
-    gate.innerHTML = window.SurfaceState.error({
-      heading,
-      desc: window.CONVEY_COPY.RELOAD_HINT,
-      serverMessage: err?.serverMessage,
-      detail: err,
-      retry: true,
-    });
-    gate.querySelector(".surface-state-retry")?.addEventListener("click", retryFn, { once: true });
   }
 
   function renderHeader(title, subtitle, backLink, options = {}) {
@@ -1222,26 +1193,6 @@ a.body-day-cell:focus-visible {
     ]);
   }
 
-  async function loadBodyStatus() {
-    setLoading("loading body data…");
-    try {
-      const status = await window.apiJson("/app/body/api/status");
-      const hasData = Boolean(status.coverage);
-      document.querySelector(".body-shell")?.toggleAttribute("data-body-empty", !hasData);
-      reveal(renderOverview(status));
-      reportBodyReady(hasData ? 'content' : 'empty');
-    } catch (err) {
-      showError("couldn't load your body data", err, initBodyOverview);
-      reportBodyReady('error');
-    }
-  }
-
-  function initBodyOverview() {
-    const { segment } = window.solPathContext();
-    if (segment !== null) return;
-    loadBodyStatus();
-  }
-
   function renderEmptyDay(bodyDay, heldEarlier) {
     const nearest = asObject(bodyDay.nearest);
     return html([
@@ -1329,36 +1280,31 @@ a.body-day-cell:focus-visible {
   function openTrashButton() {
     return { label: WORKOUT_COPY.buttons.openTrash, onClick: () => { window.location.href = TRASH_PAGE; } };
   }
-  function reloadBodyDay() {
-    const { day } = window.solPathContext();
-    if (day) loadBodyDay(day);
+
+  // A workout delete keeps going if the owner leaves, and its receipt does
+  // not hold the page they left. The row leaves only while that day is showing.
+  let hooks = null;
+
+  function showing(day) {
+    const current = window.SolViews && window.SolViews.current && window.SolViews.current();
+    if (!current || current.name !== "body" || !current.ctx || current.ctx.disposed) return false;
+    const routeDay = (current.ctx.route && current.ctx.route.day) || null;
+    return routeDay === (day || null);
   }
-  async function recoverWorkout(trashId) {
-    let answer = null;
-    try {
-      const response = await fetch("/app/settings/api/trash/recover", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: [trashId], page: "body" }),
-      });
-      answer = await response.json().catch(() => null);
-      if (!response.ok) answer = { done: [] };
-    } catch (_) {
-      workoutReceipt("noAnswerRecover");
-      return;
-    }
-    if (!(answer && Array.isArray(answer.done) && answer.done.includes(trashId))) {
-      workoutReceipt("recoverFailed", {}, [openTrashButton()]);
-      return;
-    }
-    reloadBodyDay();
-    workoutReceipt("recovered");
-  }
-  async function deleteWorkout(id, erase) {
+
+  function removeWorkoutRows(id) {
     const rows = Array.from(document.querySelectorAll(`[data-strava-row="${CSS.escape(id)}"]`));
+    rows.forEach((row) => {
+      const list = row.parentElement;
+      row.remove();
+      if (list && !list.querySelector("[data-strava-row]")) list.closest(".body-card, section")?.remove();
+    });
+  }
+
+  async function deleteWorkout(id, day, erase) {
     let response;
     try {
-      response = await fetch(`${STRAVA_API}/workout/${encodeURIComponent(id)}`, {
+      response = await window.fetch(`${STRAVA_API}/workout/${encodeURIComponent(id)}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(erase ? { erase: true } : {}),
@@ -1376,64 +1322,227 @@ a.body-day-cell:focus-visible {
       workoutReceipt(erase ? "eraseRefused" : "moveRefused");
       return;
     }
-    // The row leaves the day at once, and with the day's last one its card goes.
-    rows.forEach((row) => {
-      const list = row.parentElement;
-      row.remove();
-      if (list && !list.querySelector("[data-strava-row]")) list.closest(".body-card, section")?.remove();
-    });
+    if (showing(day)) removeWorkoutRows(id);
     if (answer.erased === true) { workoutReceipt("erased"); return; }
     if (answer.erase_failed === true) { workoutReceipt("eraseFailed", {}, [openTrashButton()]); return; }
     const trashId = answer.trash && answer.trash.id;
     workoutReceipt("moved", { date: trashEraseDate(answer.trash && answer.trash.erase_at) }, [
-      { label: WORKOUT_COPY.buttons.recover, onClick: () => recoverWorkout(trashId) },
+      { label: WORKOUT_COPY.buttons.recover, onClick: () => recoverWorkout(trashId, day) },
       openTrashButton(),
     ]);
   }
-  function workoutDialog(button) {
-    const id = button.getAttribute("data-strava-delete");
-    const { day } = window.solPathContext();
-    const start = button.getAttribute("data-strava-start") || "";
-    const meta = [workoutDayLabel(day), start, "Strava"].filter(Boolean).join(" · ");
-    const dialog = document.createElement("dialog");
-    dialog.className = "body-trash-dialog";
-    dialog.setAttribute("aria-modal", "true");
-    let step = "move";
-    const paint = () => {
-      const copy = WORKOUT_COPY[step];
-      const erasing = step === "erase";
-      dialog.classList.toggle("body-trash-erase", erasing);
-      dialog.setAttribute("aria-label", copy.title);
-      dialog.innerHTML = html([
-        `<div class="body-trash-head"><h3>${escapeHtml(copy.title)}</h3><button type="button" class="body-trash-close" data-workout-cancel aria-label="close">&times;</button></div>`,
-        `<div class="body-trash-body"><div class="body-trash-note" data-workout-step="${step}"><p class="body-trash-meta"><strong>${escapeHtml(meta)}</strong></p><p>${escapeHtml(copy.reach)}</p><p>${escapeHtml(copy.stays)}</p><p>${escapeHtml(WORKOUT_COPY.again)}</p></div></div>`,
-        erasing
-          ? `<div class="body-trash-foot"><span class="body-trash-right"><button type="button" class="body-trash-btn body-trash-secondary" data-workout-back>${escapeHtml(WORKOUT_COPY.buttons.back)}</button><button type="button" class="body-trash-btn body-trash-danger-fill" data-workout-erase>${escapeHtml(WORKOUT_COPY.buttons.eraseNow)}</button></span></div>`
-          : `<div class="body-trash-foot"><button type="button" class="body-trash-btn body-trash-danger" data-workout-erase-step>${escapeHtml(WORKOUT_COPY.buttons.eraseNow)}</button><span class="body-trash-right"><button type="button" class="body-trash-btn body-trash-secondary" data-workout-cancel>${escapeHtml(WORKOUT_COPY.buttons.cancel)}</button><button type="button" class="body-trash-btn body-trash-primary" data-workout-move>${escapeHtml(WORKOUT_COPY.buttons.moveToTrash)}</button></span></div>`,
-      ]);
-      dialog.querySelector(erasing ? "[data-workout-back]" : "[data-workout-move]")?.focus();
-    };
-    const close = () => { dialog.close(); dialog.remove(); button.focus(); };
-    dialog.addEventListener("click", (event) => {
-      if (event.target === dialog || event.target.closest("[data-workout-cancel]")) { close(); return; }
-      if (event.target.closest("[data-workout-erase-step]")) { step = "erase"; paint(); return; }
-      if (event.target.closest("[data-workout-back]")) { step = "move"; paint(); return; }
-      if (event.target.closest("[data-workout-move]")) { close(); deleteWorkout(id, false); return; }
-      if (event.target.closest("[data-workout-erase]")) { close(); deleteWorkout(id, true); }
-    });
-    dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
-    document.body.appendChild(dialog);
-    paint();
-    dialog.showModal();
-    // Opening a dialog moves focus to its first control; the step's own goes first.
-    dialog.querySelector("[data-workout-move]")?.focus();
+
+  async function recoverWorkout(trashId, day) {
+    let answer = null;
+    try {
+      const response = await window.fetch("/app/settings/api/trash/recover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [trashId], page: "body" }),
+      });
+      answer = await response.json().catch(() => null);
+      if (!response.ok) answer = { done: [] };
+    } catch (_) {
+      workoutReceipt("noAnswerRecover");
+      return;
+    }
+    if (!(answer && Array.isArray(answer.done) && answer.done.includes(trashId))) {
+      workoutReceipt("recoverFailed", {}, [openTrashButton()]);
+      return;
+    }
+    if (showing(day) && hooks) hooks.reloadDay();
+    workoutReceipt("recovered");
   }
-  if (!window.__bodyStravaDeleteBound) {
-    window.__bodyStravaDeleteBound = true;
-    document.addEventListener("click", (event) => {
-      const button = event.target.closest("[data-strava-delete]");
-      if (button) workoutDialog(button);
+
+  function mountBody(ctx) {
+    const root = document.getElementById("body-view-root");
+    const gate = document.getElementById("body-state-gate");
+    let epoch = 0;
+    let scope = window.SolStore.createAbort();
+    let shown = ctx.route.day || null;
+    let closeOpenDialog = null;
+
+    ctx.on(document, "click", (event) => {
+      const button = event.target && event.target.closest && event.target.closest("[data-strava-delete]");
+      if (!button || ctx.disposed) return;
+      openWorkoutDialog(button, shown);
     });
+    if (!root || !gate) throw new Error("body has no root");
+
+    function cut() {
+      // The epoch moves first. A read that the abort rejects in the same
+      // turn is already stale, and must not draw or show an error.
+      epoch += 1;
+      scope.abort();
+      scope = window.SolStore.createAbort();
+    }
+
+    function focusNode(node) {
+      if (!node || typeof node.focus !== "function") return;
+      if (!node.hasAttribute("tabindex")) node.setAttribute("tabindex", "-1");
+      try { node.focus({ preventScroll: true }); }
+      catch (_) { node.focus(); }
+    }
+
+    // Leaving the overview replaces the link that had focus. Focus goes to
+    // the day's own heading once it is drawn, or to the workspace until then.
+    function focusArrived() {
+      const heading = root.querySelector("h1, h2");
+      const visible = heading && !heading.closest("[hidden]") ? heading : null;
+      focusNode(visible || document.getElementById("main-content"));
+    }
+
+    function read(url) {
+      const asked = epoch;
+      const signal = window.SolStore.eitherSignal(ctx.signal, scope.signal);
+      return ctx.read(url, { signal }).then(
+        (value) => (asked === epoch && !ctx.disposed ? value : window.SolStore.never()),
+        (error) => (asked === epoch && !ctx.disposed ? Promise.reject(error) : window.SolStore.never())
+      );
+    }
+
+    function setLoading(text) {
+      root.hidden = true;
+      gate.hidden = false;
+      gate.innerHTML = window.SurfaceState.loading({ text, busy: false });
+    }
+
+    function reveal(markup) {
+      if (ctx.disposed) return;
+      gate.hidden = true;
+      gate.innerHTML = "";
+      root.innerHTML = markup;
+      root.hidden = false;
+    }
+
+    function showError(heading, err, retryFn) {
+      if (ctx.disposed) return;
+      if (window.logError) window.logError(err, { context: heading });
+      root.hidden = true;
+      gate.hidden = false;
+      gate.innerHTML = window.SurfaceState.error({
+        heading,
+        desc: window.CONVEY_COPY.RELOAD_HINT,
+        serverMessage: err?.serverMessage,
+        detail: err,
+        retry: true,
+      });
+      gate.querySelector(".surface-state-retry")?.addEventListener("click", retryFn, { once: true });
+    }
+
+    function closeDialog() {
+      const close = closeOpenDialog;
+      closeOpenDialog = null;
+      if (close) close(false);
+    }
+
+    function openWorkoutDialog(button, day) {
+      closeDialog();
+      const id = button.getAttribute("data-strava-delete");
+      const start = button.getAttribute("data-strava-start") || "";
+      const meta = [workoutDayLabel(day), start, "Strava"].filter(Boolean).join(" · ");
+      const dialog = document.createElement("dialog");
+      dialog.className = "body-trash-dialog";
+      dialog.setAttribute("aria-modal", "true");
+      let step = "move";
+      const paint = () => {
+        const copy = WORKOUT_COPY[step];
+        const erasing = step === "erase";
+        dialog.classList.toggle("body-trash-erase", erasing);
+        dialog.setAttribute("aria-label", copy.title);
+        dialog.innerHTML = html([
+          `<div class="body-trash-head"><h3>${escapeHtml(copy.title)}</h3><button type="button" class="body-trash-close" data-workout-cancel aria-label="close">&times;</button></div>`,
+          `<div class="body-trash-body"><div class="body-trash-note" data-workout-step="${step}"><p class="body-trash-meta"><strong>${escapeHtml(meta)}</strong></p><p>${escapeHtml(copy.reach)}</p><p>${escapeHtml(copy.stays)}</p><p>${escapeHtml(WORKOUT_COPY.again)}</p></div></div>`,
+          erasing
+            ? `<div class="body-trash-foot"><span class="body-trash-right"><button type="button" class="body-trash-btn body-trash-secondary" data-workout-back>${escapeHtml(WORKOUT_COPY.buttons.back)}</button><button type="button" class="body-trash-btn body-trash-danger-fill" data-workout-erase>${escapeHtml(WORKOUT_COPY.buttons.eraseNow)}</button></span></div>`
+            : `<div class="body-trash-foot"><button type="button" class="body-trash-btn body-trash-danger" data-workout-erase-step>${escapeHtml(WORKOUT_COPY.buttons.eraseNow)}</button><span class="body-trash-right"><button type="button" class="body-trash-btn body-trash-secondary" data-workout-cancel>${escapeHtml(WORKOUT_COPY.buttons.cancel)}</button><button type="button" class="body-trash-btn body-trash-primary" data-workout-move>${escapeHtml(WORKOUT_COPY.buttons.moveToTrash)}</button></span></div>`,
+        ]);
+        dialog.querySelector(erasing ? "[data-workout-back]" : "[data-workout-move]")?.focus();
+      };
+      const close = (focus) => {
+        if (closeOpenDialog === close) closeOpenDialog = null;
+        dialog.close();
+        dialog.remove();
+        if (focus !== false && button.isConnected) button.focus();
+      };
+      closeOpenDialog = close;
+      dialog.addEventListener("click", (event) => {
+        if (event.target === dialog || event.target.closest("[data-workout-cancel]")) { close(); return; }
+        if (event.target.closest("[data-workout-erase-step]")) { step = "erase"; paint(); return; }
+        if (event.target.closest("[data-workout-back]")) { step = "move"; paint(); return; }
+        if (event.target.closest("[data-workout-move]")) { close(); deleteWorkout(id, day, false); return; }
+        if (event.target.closest("[data-workout-erase]")) { close(); deleteWorkout(id, day, true); }
+      });
+      dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
+      document.body.appendChild(dialog);
+      paint();
+      dialog.showModal();
+      dialog.querySelector("[data-workout-move]")?.focus();
+    }
+
+    async function loadOverview() {
+      const asked = epoch;
+      setLoading("loading body data…");
+      try {
+        const status = await read("/app/body/api/status");
+        if (asked !== epoch || ctx.disposed) return;
+        const hasData = Boolean(status.coverage);
+        document.querySelector(".body-shell")?.toggleAttribute("data-body-empty", !hasData);
+        reveal(renderOverview(status));
+        ctx.ready(hasData ? "content" : "empty");
+      } catch (err) {
+        if (asked !== epoch || ctx.disposed) return;
+        showError("couldn't load your body data", err, () => loadOverview());
+        ctx.ready("error");
+      }
+    }
+
+    async function loadBodyDay(day, arrive) {
+      const asked = epoch;
+      setLoading("loading body day…");
+      try {
+        const bodyDay = await read(`/app/body/api/day/${day}`);
+        if (asked !== epoch || ctx.disposed) return;
+        reveal(renderDayView(bodyDay));
+        if (arrive) focusArrived();
+        ctx.ready(bodyDay.has_data ? "content" : "empty");
+      } catch (err) {
+        if (asked !== epoch || ctx.disposed) return;
+        showError("couldn't load body day", err, () => loadBodyDay(day, arrive));
+        if (arrive) focusArrived();
+        ctx.ready("error");
+      }
+    }
+
+    function changeTo(day) {
+      if (!day || day === shown) return;
+      const arrive = !shown;
+      closeDialog();
+      cut();
+      shown = day;
+      if (window.DateNav && window.DateNav.setDay) window.DateNav.setDay(day);
+      document.querySelector(".body-shell")?.removeAttribute("data-body-empty");
+      if (arrive) focusNode(document.getElementById("main-content"));
+      loadBodyDay(day, arrive);
+    }
+
+    const mine = {
+      reloadDay() {
+        if (shown) loadBodyDay(shown);
+      },
+    };
+    hooks = mine;
+    ctx.onDispose(() => {
+      closeDialog();
+      if (hooks === mine) hooks = null;
+      scope.abort();
+    });
+
+    if (shown) loadBodyDay(shown);
+    else loadOverview();
+    return {
+      update(params) { changeTo(params && params.day); },
+    };
   }
 
   function renderExperience(item) {
@@ -1518,25 +1627,6 @@ a.body-day-cell:focus-visible {
     ]);
   }
 
-  async function loadBodyDay(day) {
-    setLoading("loading body day…");
-    try {
-      const bodyDay = await window.apiJson(`/app/body/api/day/${encodeURIComponent(day)}`);
-      reveal(renderDayView(bodyDay));
-      reportBodyReady(bodyDay.has_data ? 'content' : 'empty');
-    } catch (err) {
-      showError("couldn't load body day", err, () => initBodyDay());
-      reportBodyReady('error');
-    }
-  }
-
-  function initBodyDay() {
-    const { day } = window.solPathContext();
-    if (!day) return;
-    loadBodyDay(day);
-  }
-
-  initBodyOverview();
-  initBodyDay();
+  window.SolViews.register("body", { mount: mountBody });
 })();
 </script>

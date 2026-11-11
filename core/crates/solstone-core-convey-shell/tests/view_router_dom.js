@@ -412,13 +412,24 @@ const ENTRY_TABLE = {
       styles: [],
       reads: [],
     },
+    body: {
+      fragment: '/app/body/workspace',
+      scripts: [{ src: '/b/body.js' }],
+      styles: ['/static/date-nav.css'],
+      reads: [
+        { route: '/app/body/', urls: ['/app/body/api/status'] },
+        { route: '/app/body/{day}', urls: ['/app/body/api/day/{day}'] },
+      ],
+      contract: true,
+    },
   },
 };
 
 const FRAGMENTS = {
   '/app/home/workspace': '<div class="home"><h2>your day</h2><div id="home-root"></div></div><script src="/h/home.js"></script>',
   '/app/transcripts/workspace': '<link rel="stylesheet" href="/t/date-nav.css"><div class="tr"><h2 data-day-heading>day</h2><div id="tr-root"></div></div><script src="/t/transcripts.js"></script>',
-  '/app/more/workspace': '<div class="more"><div id="more-root"></div><a href="/app/transcripts/">transcripts</a><a href="/app/home/">home</a><a href="/app/settings/">settings</a></div><script src="/m/more.js"></script>',
+  '/app/more/workspace': '<div class="more"><div id="more-root"></div><a href="/app/transcripts/">transcripts</a><a href="/app/home/">home</a><a href="/app/body/">body</a><a href="/app/settings/">settings</a></div><script src="/m/more.js"></script>',
+  '/app/body/workspace': '<link rel="stylesheet" href="/static/date-nav.css"><div class="body-shell"><h1 class="body-title">body</h1><div id="body-root"></div><a class="body-day-cell" href="/app/body/20260102">day</a></div><script src="/b/body.js"></script>',
   '/app/entities/workspace': '<div><h2>entities</h2></div>',
   '/app/settings/workspace': '<div><h2>settings</h2></div>',
 };
@@ -491,6 +502,34 @@ const VIEW_CODE = {
         ctx.on(document, 'keydown', () => {});
         ctx.ready('content');
         return () => { window.__views.more.disposes += 1; };
+      }
+    });`,
+  '/b/body.js': `
+    window.SolViews.register('body', {
+      mount(ctx) {
+        const views = window.__views.body;
+        views.mounts += 1;
+        let day = ctx.route.day;
+        const read = () => {
+          const asked = day;
+          const url = asked ? '/app/body/api/day/' + asked : '/app/body/api/status';
+          ctx.read(url).then((answer) => {
+            if (asked !== day) return;
+            views.draws.push(asked || 'overview');
+            const root = document.getElementById('body-root');
+            if (root) root.textContent = asked || 'overview';
+            ctx.ready('content');
+          }, () => { if (asked === day) ctx.ready('error'); });
+        };
+        read();
+        return {
+          update(params) {
+            views.updates.push(params.day);
+            day = params.day;
+            read();
+          },
+          dispose() { views.disposes += 1; }
+        };
       }
     });`,
 };
@@ -570,8 +609,8 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
   document.querySelectorAll = (selector) => document.root.querySelectorAll(selector);
   document.body.innerHTML =
     '<nav id="app-rail"><a href="/app/home/" data-app-name="home">home</a><a href="/app/transcripts/" data-app-name="transcripts">transcripts</a>' +
-    '<a href="/app/more/" data-app-name="more">more</a><a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/sources/" data-app-name="sources">sources</a><a href="/app/settings/" data-app-name="settings">settings</a>' +
-    '<div id="status-instrument"></div></nav><nav id="app-dock"><a href="/app/more/" data-app-name="more">more</a><a href="/app/home/" data-app-name="home">home</a></nav>' +
+    '<a href="/app/body/" data-app-name="body">body</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/sources/" data-app-name="sources">sources</a><a href="/app/settings/" data-app-name="settings">settings</a>' +
+    '<div id="status-instrument"></div></nav><nav id="app-dock"><a href="/app/body/" data-app-name="body">body</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/home/" data-app-name="home">home</a></nav>' +
     '<div id="view-announcer" role="status" aria-live="polite"></div>' +
     '<main id="main-content" tabindex="-1"><div class="surface-state surface-state--loading" role="status" aria-busy="true"></div></main>';
   if (transitions) {
@@ -632,11 +671,12 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       home: { mounts: 0, disposes: 0, draws: [], throwAfterAdding: false },
       transcripts: { mounts: 0, disposes: 0, updates: [], draws: [], pops: 0 },
       more: { mounts: 0, disposes: 0 },
+      body: { mounts: 0, disposes: 0, updates: [], draws: [] },
     },
     __scriptErrors: [],
     __consoleErrors: [],
     solShellData: {
-      apps: ['home', 'transcripts', 'more', 'entities', 'sources', 'settings'].map((name) => ({
+      apps: ['home', 'transcripts', 'more', 'body', 'entities', 'sources', 'settings'].map((name) => ({
         name, label: name, workspace_url: `/app/${name}/workspace`,
       })),
     },
@@ -669,6 +709,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
     // Answers every view read and fragment as a plain success.
     answerAll({ pulse = { n: 1 } } = {}) {
       server.answers.set('/app/home/api/pulse', server.json(pulse));
+      server.answers.set('/app/body/api/status', server.json({ coverage: { start: '20260102', end: '20260102' } }));
       for (const [url, body] of Object.entries(FRAGMENTS)) server.answers.set(url, server.html(body));
       server.answers.set('/api/shell', server.json({ app_names: [] }));
       server.answers.set('/api/streams/labels', server.json({}));
@@ -697,6 +738,12 @@ function dayAnswer(day, extra = {}) {
 function answerDays(page) {
   for (const day of ['20260101', '20260102', '20260103']) {
     page.server.answers.set(`/app/transcripts/api/day/${day}`, dayAnswer(day));
+  }
+}
+
+function answerBody(page) {
+  for (const day of ['20260102', '20260103']) {
+    page.server.answers.set(`/app/body/api/day/${day}`, page.server.json({ day }));
   }
 }
 
@@ -970,6 +1017,125 @@ asyncCase('router: a day step on another dated view stays a page load', async ()
   pilot.answerAll();
   await pilot.boot('home');
   assert.strictEqual(pilot.window.solRouter.navigate('/app/entities/20260102'), false, 'leaving a pilot view for another view loads the page');
+});
+
+asyncCase('router: body stays in the page with home, transcripts and more, and a day change is an update', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  answerBody(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260102' }));
+  await page.boot('home');
+  const rail = page.document.getElementById('app-rail');
+  page.window.scrollY = 180;
+
+  page.click('/app/body/');
+  await page.clock.advance(400);
+  assert.ok(page.view('body'));
+  assert.strictEqual(page.location.pathname, '/app/body/');
+  assert.strictEqual(page.document.getElementById('app-rail'), rail, 'the rail stays');
+  assert.strictEqual(page.window.scrollY, 0, 'a new view starts at the top');
+  assert.strictEqual(page.document.activeElement, page.main().querySelector('h1'), 'focus is on the heading body ships');
+  assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'body');
+  assert.strictEqual(page.window.__views.body.mounts, 1);
+  assert.deepStrictEqual(page.window.__views.body.draws, ['overview']);
+  assert.deepStrictEqual(page.record.assigned, []);
+  assert.strictEqual(page.server.of('/app/body/workspace').length, 1, 'the fragment is fetched once');
+
+  // A heatmap cell is a link in the overview. The day replaces it in place.
+  page.click('/app/body/20260102');
+  await page.clock.advance(400);
+  const views = page.window.__views.body;
+  assert.strictEqual(views.mounts, 1, 'overview to a day is not a remount');
+  assert.deepStrictEqual(views.updates, ['20260102']);
+  assert.deepStrictEqual(views.draws, ['overview', '20260102']);
+  assert.strictEqual(page.location.pathname, '/app/body/20260102');
+  assert.strictEqual(page.server.of('/app/body/workspace').length, 1, 'a day change does not fetch the fragment');
+
+  // A day step keeps focus where it was and says nothing new.
+  const step = page.link('/app/home/');
+  step.focus();
+  page.window.solRouter.navigate('/app/body/20260103');
+  await page.clock.advance(400);
+  assert.strictEqual(views.mounts, 1);
+  assert.deepStrictEqual(views.updates, ['20260102', '20260103']);
+  assert.deepStrictEqual(views.draws, ['overview', '20260102', '20260103']);
+  assert.strictEqual(page.document.activeElement, step, 'a day step does not move focus');
+  assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'body');
+
+  // Back to the overview remounts, and stays in the page.
+  page.click('/app/body/');
+  await page.clock.advance(400);
+  assert.strictEqual(views.mounts, 2, 'a day back to the overview mounts again');
+  assert.ok(page.view('body'));
+  assert.strictEqual(page.location.pathname, '/app/body/');
+  assert.deepStrictEqual(page.record.assigned, []);
+
+  page.click('/app/transcripts/');
+  await page.clock.advance(400);
+  assert.ok(page.view('transcripts'));
+  assert.strictEqual(page.location.pathname, '/app/transcripts/20260102');
+  page.click('/app/body/');
+  await page.clock.advance(400);
+  assert.ok(page.view('body'));
+  assert.strictEqual(page.location.pathname, '/app/body/');
+
+  page.click('/app/more/');
+  await page.clock.advance(400);
+  assert.ok(page.view('more'));
+  page.main().querySelector('a[href="/app/body/"]').click();
+  await page.clock.advance(400);
+  assert.ok(page.view('body'), 'more\'s card opens body in the page');
+  assert.deepStrictEqual(page.record.assigned, []);
+
+  page.document.getElementById('app-dock').querySelector('a[href="/app/home/"]').click();
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+  page.document.getElementById('app-dock').querySelector('a[href="/app/body/"]').click();
+  await page.clock.advance(400);
+  assert.ok(page.view('body'), 'the dock opens body in the page');
+  assert.deepStrictEqual(page.record.assigned, []);
+
+  page.click('/app/settings/');
+  assert.ok(!page.view('settings'));
+  assert.deepStrictEqual(page.record.assigned, ['/app/settings/'], 'settings is still a full load');
+  assert.strictEqual(page.window.solRouter.navigate('/app/entities/'), false, 'entities is still a full load');
+});
+
+asyncCase('router: back and forward restore body and where the page was', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerBody(page);
+  await page.boot('home');
+  page.window.scrollY = 220;
+  page.click('/app/body/');
+  await page.clock.advance(400);
+  assert.ok(page.view('body'));
+  assert.strictEqual(page.window.scrollY, 0);
+  page.window.scrollY = 90;
+  page.click('/app/body/20260102');
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/body/20260102');
+  page.window.scrollY = 40;
+  await page.history.back();
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/body/');
+  assert.ok(page.view('body'));
+  assert.strictEqual(page.window.scrollY, 90, 'the overview is where it was left');
+  await page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+  assert.strictEqual(page.window.scrollY, 220, 'home is where it was left');
+  await page.history.forward();
+  await page.clock.advance(400);
+  assert.ok(page.view('body'));
+  assert.strictEqual(page.location.pathname, '/app/body/');
+  assert.strictEqual(page.window.scrollY, 90);
+  await page.history.forward();
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/body/20260102');
+  assert.strictEqual(page.window.scrollY, 40);
+  assert.deepStrictEqual(page.record.assigned, []);
 });
 
 asyncCase('router: back and forward between pilot entries restore view and scroll', async () => {
