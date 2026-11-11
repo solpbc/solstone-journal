@@ -271,3 +271,19 @@ impl LocaleRegistry {
         Ok(selected)
     }
 }
+
+pub fn resolve_namespace_owner<'a>(
+    namespace_owners: &'a HashMap<String, String>,
+    namespace: &str,
+) -> Option<&'a str> {
+    let mut candidate = namespace;
+    loop {
+        if let Some(owner) = namespace_owners.get(candidate) {
+            return (!owner.trim().is_empty()).then_some(owner.as_str());
+        }
+        match candidate.rsplit_once('.') {
+            Some((parent, _)) => candidate = parent,
+            None => return None,
+        }
+    }
+}

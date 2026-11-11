@@ -26,7 +26,7 @@ Put commands, flags, accepted input, URLs, mark words and meaningful whitespace 
 
 Every sidecar names its logical `surfaces` and compiled `bundles` separately. Coverage checks required message × locale × bundle cells, plus branch and slot populations. The source locale uses canonical source directly; another locale requires an explicit current catalog. English fallback cannot satisfy its coverage.
 
-The [locale registry](locales.json) is compiled into this tool. It owns namespaces, bundle locale membership, locale purpose, tier and channel state. Its current entries are synthetic. Production excludes draft, test and pseudo locales even when a contradictory release flag says released. A consuming repository pins the reviewed compiler source and registry bytes together; adding its real namespaces, bundles or supported languages is an explicit integration change.
+The [locale registry](locales.json) is compiled into this tool. It owns namespaces (by exact match or root prefix), bundle locale membership, locale purpose, tier and channel state. Production excludes draft, test and pseudo locales even when a contradictory release flag says released. A consuming repository pins the reviewed compiler source and registry bytes together; adding its real namespaces, bundles or supported languages is an explicit integration change.
 
 For a new catalog, bootstrap history explicitly with `history: false` in `catalog.json`, run `history <catalog>`, then set `history: true`. Compiled output requires history; a catalog claiming existing history cannot recreate a missing registry. Use `retire <catalog> --id <id> [--replacement <id>]` to keep a permanent retirement record.
 
@@ -77,7 +77,7 @@ node tools/i18n/verify-esm.mjs /var/tmp/i18n-target-resources \
   tools/i18n/fixtures/runtime-contract/expected-esm.json
 ```
 
-No `make` target runs the compiler's tests, so run them with the commands at the top of this guide. The process-based generated API checks sit behind a feature:
+`make check-rust-i18n-catalog` (which runs in `make ci`) keeps compiler tests in process. The process-based generated API checks sit behind a feature:
 
 ```sh
 cargo test --manifest-path tools/i18n/Cargo.toml --locked --offline --features full-tests

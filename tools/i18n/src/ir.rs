@@ -3,6 +3,7 @@
 
 use crate::admit::{CLDR_CATEGORIES, ParsedMessage};
 use crate::history::compute_resource_key;
+use crate::locale::resolve_namespace_owner;
 use crate::metadata::{ApprovalRecord, MessageMetadata};
 use crate::model::{Branch, ElementKind};
 use crate::vocab::{Channel, FormatIntent, NumericStyle, ScalarType};
@@ -114,7 +115,9 @@ pub fn build_ir(
         let meta = &metadata_map[id];
 
         let ns = id.rsplit_once('.').map(|(p, _)| p).unwrap_or("");
-        let owner = namespace_owners.get(ns).cloned().unwrap_or_default();
+        let owner = resolve_namespace_owner(namespace_owners, ns)
+            .unwrap_or_default()
+            .to_string();
         let resource = compute_resource_key(id);
 
         let mut args: Vec<CompiledArgument> = meta
