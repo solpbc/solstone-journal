@@ -914,13 +914,17 @@ async function testCase(name, fn) {
     const paragraphs = () => byId('facetDeleteModalBody').children;
     assert.strictEqual(paragraphs()[0].textContent, 'Work Life', 'the meta is its title');
     assert.deepStrictEqual(paragraphs().slice(1).map((node) => node.textContent),
-      [C.move.reach, C.move.lead, C.list.join(' '), C.move.stays, C.recovering], 'what moves, what stays, and what recovering does not put back');
+      [C.move.reach, C.move.lead, C.list.join(' '), `${C.move.stays} ${C.move.newName}`, C.recovering], 'what moves, what stays (a new facet of this name holds its segments), and what recovering does not put back');
     assert.strictEqual(paragraphs()[3].children.length, C.list.length, 'the list is fixed words with no counts');
     await click(byId('facetDeleteModalErase'));
     assert.strictEqual(byId('facetDeleteModalTitle').textContent, C.erase.title);
     assert.ok(byId('facetDeleteModalHeader').classList.contains('danger'));
     assert.deepStrictEqual(paragraphs().slice(1).map((node) => node.textContent),
-      [C.erase.reach, C.erase.lead, C.list.join(' '), C.erase.stays], 'the erase step says nothing about recovering');
+      [C.erase.reach, C.erase.lead, C.list.join(' '), `${C.erase.stays} ${C.erase.newName}`], 'the erase step says nothing about recovering');
+    // A renamed facet keeps its old folder, so a new facet given the shown name
+    // would hold none of its segments: the line isn't said.
+    const renamed = await run(harness, "facetDeleteBody('move', 'Renamed Since').map((node) => node.textContent)");
+    assert.ok(renamed.includes(C.move.stays), 'a title that is not its folder says only what stays');
     assert.strictEqual(harness.document.activeElement, byId('facetDeleteModalBack'));
     await click(byId('facetDeleteModalBack'));
     await click(byId('facetDeleteModalConfirm'));
