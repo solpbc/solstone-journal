@@ -144,38 +144,37 @@ fn facet_view(journal_root: &Path, item: &Item) -> Value {
     Value::Object(fields)
 }
 
-/// What a facet merge dropped: the facet it was merged into and how many
-/// files, from the item's own manifest.
+/// What a facet merge dropped: the facet it was merged into, from the item's
+/// own manifest (a leftover the doctor kept has none), and how many files it
+/// holds.
 fn facet_file_view(journal_root: &Path, item: &Item) -> Value {
-    let manifest = item.paths.first().and_then(|path| {
-        let held = solstone_core_trash::held_file(
-            journal_root,
-            &item.id,
-            &format!("{path}/manifest.json"),
-        )
-        .ok()?;
-        serde_json::from_slice::<Value>(&std::fs::read(held).ok()?).ok()
-    });
+    let folder = item.paths.first().map(String::as_str).unwrap_or_default();
+    let held = |rel: &str| {
+        solstone_core_trash::held_file(journal_root, &item.id, &format!("{folder}/{rel}")).ok()
+    };
+    let dest = held("manifest.json")
+        .and_then(|path| std::fs::read(path).ok())
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|manifest| manifest.get("dest_name").cloned())
+        .unwrap_or(Value::Null);
+    let files = held("files").map_or(0, |dir| count_files(&dir));
     let mut fields = common(item, "facet_file");
-    fields.insert(
-        "dest".to_owned(),
-        manifest
-            .as_ref()
-            .and_then(|manifest| manifest.get("dest_name"))
-            .cloned()
-            .unwrap_or(Value::Null),
-    );
-    fields.insert(
-        "files".to_owned(),
-        json!(
-            manifest
-                .as_ref()
-                .and_then(|manifest| manifest.get("files"))
-                .and_then(Value::as_array)
-                .map(Vec::len)
-        ),
-    );
+    fields.insert("dest".to_owned(), dest);
+    fields.insert("files".to_owned(), json!(files));
     Value::Object(fields)
+}
+
+fn count_files(dir: &Path) -> usize {
+    std::fs::read_dir(dir).map_or(0, |entries| {
+        entries
+            .flatten()
+            .map(|entry| match entry.file_type() {
+                Ok(kind) if kind.is_dir() => count_files(&entry.path()),
+                Ok(_) => 1,
+                Err(_) => 0,
+            })
+            .sum()
+    })
 }
 
 /// The speakers wipe: how many files it took.
