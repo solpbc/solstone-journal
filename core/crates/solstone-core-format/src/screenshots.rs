@@ -4,8 +4,10 @@
 //! Screenshots a linked device sends, one to a segment.
 //!
 //! A screenshot arrives under the `screenshots` source as one image named
-//! `screenshot_screen.<ext>`, the bytes exactly as the platform saved them,
-//! with its capture time in the envelope's `meta.screenshot`. The `_screen`
+//! `screenshot_screen.<ext>`. An accepted type is the bytes exactly as the
+//! platform saved them. A type outside png, jpg, jpeg and webp is converted
+//! to PNG on the device, keeping its metadata, and then these are the bytes
+//! of that PNG. Its capture time is in the envelope's `meta.screenshot`. The `_screen`
 //! stem puts the image, and what describe writes beside it
 //! (`screenshot_screen.jsonl`), in the screen family, so it is read the way a
 //! screen is. This module is the one reading of that contract that needs no
