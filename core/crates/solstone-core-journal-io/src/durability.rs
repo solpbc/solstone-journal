@@ -161,6 +161,13 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         parser: ParserKind::WholeJson,
         rationale: "the owner's pending asks to think a corrected day again, written under a lock with atomic replace and read strictly by owner_ask::read; nothing can rebuild what the owner asked, so a damaged one is kept as it is, no ask is worked and recording a new one refuses",
     },
+    DurableArtifact {
+        id: ArtifactId::WeekLeftOut,
+        path: "config/week-left-out.json",
+        class: DurabilityClass::MustBeValid,
+        parser: ParserKind::WholeJson,
+        rationale: "the memories and quotes the owner left out of their week pages, written under a lock with atomic replace and read strictly by week_left_out::read_left_out; nothing can rebuild what the owner chose, so a damaged one is kept as it is, the page shows everything with a notice, further changes refuse and search leaves out every week page",
+    },
     // Healable
     DurableArtifact {
         id: ArtifactId::SchedulesConfig,
@@ -464,13 +471,6 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::Wipeable,
         parser: ParserKind::WholeJson,
         rationale: "segment speaker corrections input",
-    },
-    DurableArtifact {
-        id: ArtifactId::WeekLeftOut,
-        path: "health/week-left-out.json",
-        class: DurabilityClass::Wipeable,
-        parser: ParserKind::WholeJson,
-        rationale: "the memories the owner left out of weekly reflections, written under a lock with atomic replace; an unreadable one shows every memory with a notice and refuses further changes, and losing it costs the owner leaving them out again",
     },
     DurableArtifact {
         id: ArtifactId::SegmentStream,
@@ -1116,6 +1116,7 @@ mod tests {
             vec![
                 "config/journal.json",
                 "health/owner-asks.json",
+                "config/week-left-out.json",
                 "health/parent-loss/generations/*/census-obligation.json",
                 "health/parent-loss/generations/*/census-started.json",
                 "health/parent-loss/generations/*/census-refusal.json",

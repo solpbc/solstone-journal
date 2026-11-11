@@ -2036,9 +2036,9 @@ mod tests {
         let journal = keep_stable_week(&FIRST, &SECOND);
         let before = first_page(journal.path());
         let left_out = before["memories"][0]["key"].as_str().unwrap().to_owned();
-        fs::create_dir_all(journal.path().join("health")).unwrap();
+        fs::create_dir_all(journal.path().join("config")).unwrap();
         fs::write(
-            solstone_core_home::weekly::left_out_path(journal.path()),
+            solstone_core_format::content::week_left_out::left_out_path(journal.path()),
             json!({"keys": [left_out]}).to_string(),
         )
         .unwrap();
@@ -2048,8 +2048,8 @@ mod tests {
             journal.path(),
             unavailable_commit(ALL_KEPT, &prepared, &state).unwrap(),
         );
-        let solstone_core_home::weekly::LeftOut::Keys(keys) =
-            solstone_core_home::weekly::read_left_out(journal.path())
+        let solstone_core_format::content::week_left_out::LeftOut::Keys(keys) =
+            solstone_core_format::content::week_left_out::read_left_out(journal.path())
         else {
             panic!("left-out marks are readable");
         };

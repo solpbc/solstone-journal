@@ -8,9 +8,10 @@ use chrono::{Datelike, NaiveDate, Offset, TimeDelta};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use solstone_core_format::content::week_left_out::{LeftOut, read_left_out};
 use solstone_core_home::weekly::{
-    LeftOut, Said, WeekJudgment, checked_neighbors, format_week_intro, judge, read_left_out,
-    resolve_day_cell_state, week_day,
+    Said, WeekJudgment, checked_neighbors, format_week_intro, judge, resolve_day_cell_state,
+    week_day,
 };
 
 use super::ToolError;
@@ -561,7 +562,8 @@ mod tests {
     use chrono::{Duration, NaiveDate, Utc};
     use serde_json::{Value, json};
     use sha2::{Digest, Sha256};
-    use solstone_core_home::weekly::{left_out_bytes, page_model};
+    use solstone_core_format::content::week_left_out::left_out_bytes;
+    use solstone_core_home::weekly::page_model;
     use solstone_core_mcp_audit::ToolName;
 
     use super::validate;
@@ -737,7 +739,7 @@ mod tests {
             .collect::<BTreeSet<_>>();
         write_raw(
             root,
-            "health/week-left-out.json",
+            "config/week-left-out.json",
             &String::from_utf8(left_out_bytes(&keys)).unwrap(),
         );
     }
@@ -1665,10 +1667,10 @@ mod tests {
                 "[]",
             ),
         );
-        fs::create_dir_all(linked_leave_out.path().join("health")).unwrap();
+        fs::create_dir_all(linked_leave_out.path().join("config")).unwrap();
         symlink(
             outside.path().join("secret.json"),
-            linked_leave_out.path().join("health/week-left-out.json"),
+            linked_leave_out.path().join("config/week-left-out.json"),
         )
         .unwrap();
         let res = probe(linked_leave_out.path(), json!({"week": "20260308"})).unwrap();
