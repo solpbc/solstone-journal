@@ -6222,6 +6222,9 @@ dependencies = [
 name = "solstone-core-serving"
 version = "2.0.74"
 dependencies = [
+ "serde_json",
+ "solstone-core-entity",
+ "solstone-core-facets",
  "tokio",
 ]
 
