@@ -370,7 +370,8 @@ fn resolve_platform_device_word(
 
     match platform.as_deref() {
         Some("macos") => Some(DeviceWord::Mac),
-        Some("ios") => match device_type {
+        // An iPad's app reports its platform as `ipados`.
+        Some("ios") | Some("ipados") => match device_type {
             Some("tablet") => Some(DeviceWord::Ipad),
             Some("phone") => Some(DeviceWord::Iphone),
             _ => None,
@@ -892,6 +893,7 @@ mod tests {
             "sha256:i1": make_desc("sha256:i1", "ios", Some("tablet")),
             "sha256:i2": make_desc("sha256:i2", "ios", Some("phone")),
             "sha256:i3": make_desc("sha256:i3", "ios", None),
+            "sha256:i4": make_desc("sha256:i4", "ipados", Some("tablet")),
             "sha256:a1": make_desc("sha256:a1", "android", Some("tablet")),
             "sha256:a2": make_desc("sha256:a2", "android", Some("phone")),
             "sha256:a3": make_desc("sha256:a3", "android", None),
@@ -927,6 +929,14 @@ mod tests {
         );
         write_stream(
             root.path(),
+            "s_i4",
+            "observer",
+            Some("sha256:i4"),
+            Some("screen"),
+            None,
+        );
+        write_stream(
+            root.path(),
             "s_a1",
             "observer",
             Some("sha256:a1"),
@@ -955,6 +965,7 @@ mod tests {
         assert_eq!(part_of("s_i1").device_word(), Some(DeviceWord::Ipad));
         assert_eq!(part_of("s_i2").device_word(), Some(DeviceWord::Iphone));
         assert_eq!(part_of("s_i3").device_word(), None);
+        assert_eq!(part_of("s_i4").device_word(), Some(DeviceWord::Ipad));
         assert_eq!(part_of("s_a1").device_word(), Some(DeviceWord::Tablet));
         assert_eq!(part_of("s_a2").device_word(), Some(DeviceWord::Phone));
         assert_eq!(part_of("s_a3").device_word(), None);

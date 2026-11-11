@@ -802,6 +802,11 @@ fn screen_chunks(
             ) == Some("image")
         {
             entry.insert("raw".into(), Value::String(frame_raw.clone()));
+            // A screenshot's entry shows its image itself, so its text carries
+            // no file note under it.
+            if solstone_core_format::screenshots::is_screenshot_file_name(&frame_raw) {
+                continue;
+            }
             let mut content = entry
                 .get_mut("content")
                 .and_then(Value::as_object_mut)
@@ -2434,6 +2439,46 @@ mod tests {
             segment.data_state.0.get("screen").map(|s| s.as_str())
         );
         assert_eq!(segment.data_state.0.get("image"), None);
+    }
+
+    #[test]
+    fn a_screenshot_entry_carries_its_text_and_no_file_note() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/phone_screenshots/091405_1");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("screenshot_screen.png"),
+            b"screenshot bytes",
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("screenshot_screen.jsonl"),
+            concat!(
+                "{\"raw\":\"screenshot_screen.png\",\"_solstone_processing\":{\"handler\":\"describe\",\"state\":\"analyzed\"}}\n",
+                "{\"frame_id\":1,\"timestamp\":0.0,\"analysis\":{\"visual_description\":\"a boarding pass\",\"primary\":\"reading\"},",
+                "\"content\":{\"reading\":\"Gate B14\"}}\n",
+            ),
+        )
+        .unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let value =
+            super::prepare_segment(root, "20260101", "phone_screenshots", "091405_1", now).unwrap();
+        let chunks = value["chunks"].as_array().unwrap();
+        assert_eq!(chunks.len(), 1, "{chunks:?}");
+        let chunk = &chunks[0];
+        assert_eq!(chunk["screenshot"]["text"], "searchable");
+        let markdown = chunk["markdown"].as_str().unwrap();
+        assert!(markdown.contains("Gate B14"), "{markdown}");
+        assert!(!markdown.contains("photo_file"), "{markdown}");
+        assert!(!markdown.contains("screenshot_screen.png"), "{markdown}");
+        assert!(
+            value["image_files"]
+                .as_object()
+                .is_some_and(|files| files.contains_key("screenshot_screen.png")),
+            "{value}"
+        );
     }
 
     #[test]

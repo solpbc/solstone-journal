@@ -562,17 +562,20 @@ fn modality_signals(segment_dir: &Path, modality: &str, now: chrono::DateTime<Ut
                 .and_then(|value| value.to_str())
                 .unwrap_or_default();
             let kind = solstone_core_processing_record::media_kind(extension);
-            if (modality == "audio"
-                && kind == Some(solstone_core_processing_record::MediaKind::Audio))
-                || (modality == "screen"
-                    && kind == Some(solstone_core_processing_record::MediaKind::Video))
-            {
-                has_raw = true;
-            }
             let name = path
                 .file_name()
                 .and_then(|value| value.to_str())
                 .unwrap_or_default();
+            // A screenshot is a still read the way a screen is, so it is the
+            // screen's raw media.
+            if (modality == "audio"
+                && kind == Some(solstone_core_processing_record::MediaKind::Audio))
+                || (modality == "screen"
+                    && (kind == Some(solstone_core_processing_record::MediaKind::Video)
+                        || solstone_core_format::screenshots::is_screenshot_file_name(name)))
+            {
+                has_raw = true;
+            }
             if name.ends_with(&format!("{modality}.jsonl")) {
                 has_jsonl = true;
                 if let Ok(text) = fs::read_to_string(path) {
@@ -1300,6 +1303,42 @@ mod tests {
             }
             other => panic!("expected Command::Sense, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn reprocess_screen_reads_a_screenshot_again() {
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            "chronicle/20260731/phone_screenshots/091405_1/screenshot_screen.png",
+            b"raw screenshot",
+        );
+        let spawner = Arc::new(ExpectingSpawner {
+            expected: SenseRequest {
+                day: "20260731".into(),
+                stream: "phone_screenshots".into(),
+                key: "091405_1".into(),
+                modality: "screen".into(),
+            },
+            calls: AtomicUsize::new(0),
+        });
+        let response = test_router(root.path(), Arc::clone(&spawner) as Arc<dyn SenseSpawner>)
+            .oneshot(
+                Request::post(
+                    "/app/transcripts/api/segment/20260731/phone_screenshots/091405_1/reprocess",
+                )
+                .body(Body::from(r#"{"modality":"screen"}"#))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(spawner.calls.load(Ordering::SeqCst), 1);
+        let body: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body["data_state"]["screen"], "analyzing");
+        assert!(body["data_state"].get("image").is_none());
     }
 
     #[tokio::test]

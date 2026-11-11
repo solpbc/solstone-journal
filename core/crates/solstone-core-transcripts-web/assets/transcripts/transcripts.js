@@ -1472,7 +1472,8 @@
     // name it beside the range so the times read as what they are.
     function segmentRangeLabel(seg) {
       if (seg.locationRow) return seg.start;
-      const range = `${seg.start} - ${seg.end}`;
+      // A screenshot is a moment, so its time alone.
+      const range = isScreenshotsStream(seg.stream) ? seg.start : `${seg.start} - ${seg.end}`;
       if (!selectedSegmentZone?.differs || !selectedSegmentZone.label) return range;
       const note = window.JournalClock
         ? window.JournalClock.noteText(selectedSegmentZone.label)
@@ -1757,7 +1758,7 @@
       filtered.forEach(seg => {
         const option = document.createElement('option');
         option.value = segmentChoiceId(seg);
-        option.textContent = `${seg.start} – ${seg.end} · ${humanizeStreamName(seg.stream)}`;
+        option.textContent = `${isScreenshotsStream(seg.stream) ? seg.start : `${seg.start} – ${seg.end}`} · ${humanizeStreamName(seg.stream)}`;
         option.title = seg.stream;
         segmentPicker.appendChild(option);
       });
@@ -1855,8 +1856,11 @@
         const omitType = shouldOmitStreamType(seg.stream, typeDesc);
         const typeTitlePart = omitType ? '' : ' · ' + typeDesc;
         const typeAriaPart = omitType ? '' : ', ' + typeLabel;
-        pill.title = seg.start + ' – ' + seg.end + ' · ' + duration + ' min' + typeTitlePart + ' · ' + label + statusSuffix + ' (' + seg.stream + ')';
-        pill.setAttribute('aria-label', 'segment ' + seg.start + ' \u2013 ' + seg.end + typeAriaPart + ', ' + label + ariaStatusSuffix);
+        // A screenshot is a moment, not a stretch: its time alone, no length.
+        const titleSpan = isShotOnly ? seg.start : seg.start + ' – ' + seg.end + ' · ' + duration + ' min';
+        const ariaSpan = isShotOnly ? seg.start : seg.start + ' \u2013 ' + seg.end;
+        pill.title = titleSpan + typeTitlePart + ' · ' + label + statusSuffix + ' (' + seg.stream + ')';
+        pill.setAttribute('aria-label', 'segment ' + ariaSpan + typeAriaPart + ', ' + label + ariaStatusSuffix);
         pill.dataset.key = seg.key;
         pill.dataset.stream = seg.stream;
 
@@ -3733,7 +3737,9 @@
 
       // Add click handlers for enhanced screen and image entries to open modal
       targetEl.querySelectorAll('.tr-entry-screen, .tr-entry-image').forEach(entry => {
-        const thumb = entry.querySelector('.tr-entry-thumb');
+        // A screenshot's image sits in its own button; other thumbnails are
+        // the target themselves.
+        const thumb = entry.querySelector('.tr-entry-shot-open') || entry.querySelector('.tr-entry-thumb');
         if (thumb) {
           thumb.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -3964,6 +3970,13 @@
 
     // A screenshot in its moment: the image at its own shape beside its text,
     // or, until its text is searchable, where that stands.
+    // A screen entry's text opens with its own time as a heading, which the
+    // time column already shows. Drop that one line, so every heading the text
+    // itself carries can show.
+    function withoutLeadingTimeHeading(markdown) {
+      return String(markdown || '').replace(/^\s*#{1,6}[ \t]+\d{1,2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?[ \t]*(?:\r?\n|$)/, '');
+    }
+
     function renderScreenshotEntry(chunk, idx) {
       const shot = chunk.screenshot || {};
       const timeStr = chunk.time || '';
@@ -3981,12 +3994,15 @@
       html += '<div class="tr-entry-content">';
       html += `<span class="sr-only">${escapeHtml(SCREENSHOT_COPY.J1)}: </span>`;
       if (imageUrl) {
-        html += `<img class="tr-entry-thumb tr-entry-shot" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(alt)}"${size} loading="lazy">`;
+        // A button, so a keyboard opens the viewer too; the image's alt names it.
+        html += '<button type="button" class="tr-entry-shot-open">'
+          + `<img class="tr-entry-thumb tr-entry-shot" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(alt)}"${size} loading="lazy">`
+          + '</button>';
       }
       html += '<div class="tr-entry-desc">';
       html += `<div class="tr-shot-label">${escapeHtml(label)}</div>`;
       if (searchable) {
-        html += renderScreenChunkMarkdown(chunk.markdown);
+        html += renderScreenChunkMarkdown(withoutLeadingTimeHeading(chunk.markdown));
       } else if (shot.text === 'no_processing') {
         html += `<div class="tr-shot-final"><p>${escapeHtml(SCREENSHOT_COPY.J6)}</p>`
           + `<p class="tr-shot-action"><a href="/app/thinking">${escapeHtml(SCREENSHOT_COPY.J6_ACTION)}</a></p></div>`;
@@ -4353,6 +4369,7 @@
           if (!document.contains(modal)) return;
           if (!grew) {
             updateModalContent();
+            modal.querySelector('.tr-modal-close')?.focus();
             return;
           }
           newIndex = index + delta;
@@ -4365,16 +4382,24 @@
         }
       };
 
+      let stopKeys = () => {};
       const closeModal = () => {
         modal.remove();
-        document.removeEventListener('keydown', handleKeys);
+        stopKeys();
         document.body.style.overflow = prevOverflow;
         if (triggerElement && document.contains(triggerElement)) triggerElement.focus();
         currentFrameIndex = -1;
       };
 
+      // The viewer is modal, so a key goes to it alone: nothing under it, such
+      // as the day's arrow keys, acts while it is open.
       const handleKeys = (e) => {
-        if (e.key === 'Escape') closeModal();
+        e.stopPropagation();
+        const nav = (e.key === 'Enter' || e.key === ' ') && document.activeElement?.closest?.('.tr-modal-nav:not(.disabled)');
+        if (nav && modal.contains(nav)) {
+          e.preventDefault();
+          navigateFrame(nav.dataset.dir === 'prev' ? -1 : 1);
+        } else if (e.key === 'Escape') closeModal();
         else if (e.key === 'ArrowLeft') { e.preventDefault(); navigateFrame(-1); }
         else if (e.key === 'ArrowRight') { e.preventDefault(); navigateFrame(1); }
         else if (e.key === 'Tab') {
@@ -4408,7 +4433,7 @@
       document.body.appendChild(modal);
       updateModalContent();
       modal.querySelector('.tr-modal-close')?.focus();
-      ctx.on(document, 'keydown', handleKeys);
+      stopKeys = ctx.on(document, 'keydown', handleKeys, true);
     }
 
     function updateZoom() {
@@ -5076,6 +5101,9 @@
         transcript: 'transcript',
         analysis: 'analysis stored with it',
         location: 'location',
+        // J8 in the design system's screenshots copy file: a screenshot's
+        // segment holds its screenshot, not audio or frames.
+        screenshot: 'screenshot',
       },
       buttons: {
         eraseNow: 'erase now',
@@ -5112,6 +5140,20 @@
       return node;
     }
 
+    // What a delete takes from each segment, so the confirm states its reach:
+    // a screenshot's segment holds its screenshot and what was made from it.
+    function segmentParts(segs, holdsLoc) {
+      const shots = segs.some((seg) => isScreenshotsStream(seg.stream));
+      const others = segs.some((seg) => !isScreenshotsStream(seg.stream));
+      return [
+        ...(others ? ['audio', 'screen'] : []),
+        ...(shots ? ['screenshot'] : []),
+        ...(others ? ['transcript'] : []),
+        'analysis',
+        ...(holdsLoc ? ['location'] : []),
+      ];
+    }
+
     // One step of the delete dialog: 'move' (the trash, the default) or 'erase'
     // (its own confirm). The segment's names are journal data, so they go in as text.
     function renderDeleteSegmentStep(seg, step) {
@@ -5133,12 +5175,10 @@
       const streamName = deleteDialogElement('strong', null, humanizeStreamName(seg.stream));
       streamName.setAttribute('title', seg.stream);
       const dayName = deleteDialogElement('strong', null, window.JournalFormat.day(day).toLowerCase());
-      const timeName = deleteDialogElement('strong', null, isLocRow ? seg.start : `${seg.start} - ${seg.end}`);
+      const timeName = deleteDialogElement('strong', null, isLocRow || isScreenshotsStream(seg.stream) ? seg.start : `${seg.start} - ${seg.end}`);
       meta.append(streamName, deleteDialogElement('span', null, ' · '), dayName, deleteDialogElement('span', null, ' · '), timeName);
 
-      const parts = isLocRow
-        ? ['location']
-        : ['audio', 'screen', 'transcript', 'analysis', ...(holdsLoc ? ['location'] : [])];
+      const parts = isLocRow ? ['location'] : segmentParts([seg], holdsLoc);
       const list = deleteDialogElement('ul', 'tr-delete-segment-list');
       parts.forEach(part => list.append(deleteDialogElement('li', null, TRASH_COPY.parts[part])));
 
@@ -5458,6 +5498,8 @@
     }
 
     function segPickRange(seg) {
+      // A screenshot is a moment, so its time alone.
+      if (isScreenshotsStream(seg.stream)) return seg.start;
       return segPickFill(TRASH_COPY.pickRange, { start: seg.start, end: seg.end });
     }
 
@@ -5585,7 +5627,7 @@
       if (segs.length > 5) shown.append(deleteDialogElement('li', 'trash-set-more', segPickFill(copy.more, { n: segs.length - 5 })));
 
       const holdsLoc = segs.some((seg) => isOpenSegment(seg) && segmentData?.holds_location);
-      const parts = ['audio', 'screen', 'transcript', 'analysis', ...(holdsLoc ? ['location'] : [])];
+      const parts = segmentParts(segs, holdsLoc);
       const list = deleteDialogElement('ul', 'tr-delete-segment-list');
       parts.forEach((part) => list.append(deleteDialogElement('li', null, TRASH_COPY.parts[part])));
 

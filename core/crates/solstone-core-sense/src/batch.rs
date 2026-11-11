@@ -1149,15 +1149,30 @@ fn matches_modality(path: &Path, modality: Option<ReprocessKind>) -> bool {
         .extension()
         .and_then(|value| value.to_str())
         .unwrap_or_default();
+    let screenshot = is_screenshot(path);
     match modality {
         Some(ReprocessKind::Audio) => media_kind(extension) == Some(MediaKind::Audio),
-        Some(ReprocessKind::Screen) => media_kind(extension) == Some(MediaKind::Video),
-        Some(ReprocessKind::Image) => media_kind(extension) == Some(MediaKind::Image),
+        Some(ReprocessKind::Screen) => {
+            screenshot || media_kind(extension) == Some(MediaKind::Video)
+        }
+        Some(ReprocessKind::Image) => {
+            !screenshot && media_kind(extension) == Some(MediaKind::Image)
+        }
         Some(ReprocessKind::All) | None => true,
     }
 }
 
+/// A screenshot is a still read the way a screen is, never depicted as a photo.
+fn is_screenshot(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(solstone_core_format::screenshots::is_screenshot_file_name)
+}
+
 fn handler_for_path(path: &Path) -> Option<&'static str> {
+    if is_screenshot(path) {
+        return Some("describe");
+    }
     match media_kind(path.extension()?.to_str()?)? {
         MediaKind::Audio => Some("transcribe"),
         MediaKind::Video => Some("describe"),
@@ -1633,6 +1648,37 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_screenshot_is_screen_work_for_describe_and_never_image_work() {
+        let temp = tempfile::tempdir().expect("journal");
+        let path = segment(temp.path());
+        let day = temp.path().join("chronicle").join("20260812");
+        fs::write(path.join("screenshot_screen.png"), b"shot").expect("screenshot");
+
+        for filter in [None, Some(ReprocessKind::Screen), Some(ReprocessKind::All)] {
+            let work = scan_unprocessed(temp.path(), &day, None, None, filter).expect("scan");
+            assert_eq!(work.len(), 1, "{filter:?}");
+            assert_eq!(work[0].handler, "describe", "{filter:?}");
+        }
+        let work = scan_unprocessed(temp.path(), &day, None, None, Some(ReprocessKind::Image))
+            .expect("image scan");
+        assert!(work.is_empty());
+
+        // A failed read is deleted for a screen reprocess and the still stays.
+        fs::write(
+            path.join("screenshot_screen.jsonl"),
+            b"{\"_solstone_processing\":{\"state\":\"failed\",\"handler\":\"describe\"}}\n",
+        )
+        .expect("failed sidecar");
+        let deleted = delete_outputs(temp.path(), &day, ReprocessKind::Screen, None, None, false)
+            .expect("delete");
+        assert_eq!(deleted, vec![path.join("screenshot_screen.jsonl")]);
+        assert!(path.join("screenshot_screen.png").exists());
+        let work = scan_unprocessed(temp.path(), &day, None, None, Some(ReprocessKind::Screen))
+            .expect("rescan");
+        assert_eq!(work.len(), 1);
     }
 
     #[test]

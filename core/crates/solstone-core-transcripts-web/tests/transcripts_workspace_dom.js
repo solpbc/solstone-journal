@@ -372,15 +372,26 @@ class Document {
     return this.documentElement.querySelector(selector);
   }
   querySelectorAll(selector) { return this.documentElement.querySelectorAll(selector); }
-  addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
-  removeEventListener(type, listener) {
-    if (this.listeners[type]) {
-      this.listeners[type] = this.listeners[type].filter((l) => l !== listener);
+  // Capture listeners run first and can stop the event before the others.
+  addEventListener(type, listener, options) {
+    const capture = options === true || Boolean(options && options.capture);
+    const table = capture ? (this.captureListeners ||= {}) : this.listeners;
+    (table[type] ||= []).push(listener);
+  }
+  removeEventListener(type, listener, options) {
+    const capture = options === true || Boolean(options && options.capture);
+    const table = capture ? (this.captureListeners ||= {}) : this.listeners;
+    if (table[type]) {
+      table[type] = table[type].filter((l) => l !== listener);
     }
   }
   dispatchEvent(event) {
     event.target ||= this;
     event.currentTarget = this;
+    event.stopPropagation ||= () => { event.cancelBubble = true; };
+    event.preventDefault ||= () => { event.defaultPrevented = true; };
+    for (const listener of [...((this.captureListeners || {})[event.type] || [])]) listener.call(this, event);
+    if (event.cancelBubble) return !event.defaultPrevented;
     for (const listener of [...(this.listeners[event.type] || [])]) listener.call(this, event);
     return !event.defaultPrevented;
   }
@@ -953,6 +964,7 @@ async function createEnvironment(
               json: async () => ({
                 chunks: payloadOverride?.chunks ?? [],
                 audio_file: payloadOverride?.audio_file,
+                image_files: payloadOverride?.image_files,
                 data_state: dataState,
                 holds_location: payloadOverride?.holds_location,
                 media_sizes: payloadOverride?.media_sizes,
@@ -1229,6 +1241,139 @@ test('body context counts what a segment holds and never states a value', async 
   assert.ok(transcript.includes('heart rate · 3 readings'), transcript);
   assert.ok(transcript.includes('step count · 2 entries'), transcript);
   assert.ok(!/HR |60-70|90-110|1,234 steps/.test(transcript), transcript);
+});
+
+// A screenshot is its own one-second segment in a device's screenshots stream.
+const SHOT_SEGMENTS = [
+  { key: '114715_1', stream: 'phone_screenshots', start: '11:47', end: '11:48', types: ['screen'], data_state: { screen: 'analyzed' } },
+];
+
+function shotFormat() {
+  return {
+    stream: (s) => (s === 'phone_screenshots' ? 'your phone · screenshots' : String(s ?? '')),
+    streamSays: (s) => (s === 'phone_screenshots' ? { what: 'screenshots', imported: false } : { what: null, imported: false }),
+    day: (key) => `DAY-${key}`,
+  };
+}
+
+function shotChunk(text, markdown = '') {
+  return {
+    type: 'screen',
+    time: '11:47:15',
+    timestamp: 0,
+    markdown,
+    basic: false,
+    screenshot: { width: 1179, height: 2556, text },
+    source_ref: {
+      frame_id: 1,
+      filename: 'screenshot_screen.jsonl',
+      raw: 'screenshot_screen.png',
+      media_kind: 'image',
+      monitor: 'screenshot',
+      offset: 0,
+      analysis: text === 'searchable' ? { visual_description: 'a boarding pass' } : null,
+    },
+  };
+}
+
+async function shotEnvironment(text, markdown) {
+  const env = await createEnvironment(undefined, 'analyzed', false, SHOT_SEGMENTS, { journalFormat: shotFormat() });
+  // Keep the rendered text in its own element, so the stand-in DOM can read it.
+  env.window.AppServices.renderMarkdown = (source) => `<div class="md">${String(source ?? '')}</div>`;
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {
+    data_state: { screen: text === 'searchable' ? 'analyzed' : 'pending' },
+    chunks: [shotChunk(text, markdown)],
+    image_files: { 'screenshot_screen.png': '/app/transcripts/api/media/shot.png' },
+  });
+  return env;
+}
+
+test('a screenshot pill names one moment, not a stretch', async () => {
+  const env = await createEnvironment(undefined, 'analyzed', false, SHOT_SEGMENTS, { journalFormat: shotFormat() });
+  const pill = getZoomPills(env.doc)[0];
+  assert.ok(pill.classList.contains('tr-zoom-pill-shot'), pill.className);
+  assert.ok(pill.getAttribute('aria-label').includes('11:47'), pill.getAttribute('aria-label'));
+  assert.ok(!pill.getAttribute('aria-label').includes('11:48'), pill.getAttribute('aria-label'));
+  assert.ok(!pill.title.includes('11:48'), pill.title);
+  const option = env.doc.querySelectorAll('#trSegmentPicker option').find((item) => String(item.value).includes('114715_1'));
+  assert.ok(option, 'the picker lists the screenshot');
+  assert.ok(!option.textContent.includes('11:48'), option.textContent);
+});
+
+test('a screenshot opens the frame viewer from a button a keyboard reaches', async () => {
+  const env = await shotEnvironment('searchable', '### 11:47:15\n\nGate B14');
+  const entry = env.doc.querySelector('#tr-tabpanel-transcript .tr-entry-screenshot');
+  assert.ok(entry, env.doc.querySelector('#tr-tabpanel-transcript').innerHTML);
+  const opener = entry.querySelector('.tr-entry-shot-open');
+  assert.ok(opener, entry.innerHTML);
+  assert.strictEqual(opener.tagName, 'BUTTON');
+  assert.strictEqual(opener.getAttribute('type'), 'button');
+  const image = opener.querySelector('img.tr-entry-shot');
+  assert.ok(image, opener.innerHTML);
+  assert.ok(image.getAttribute('alt'), 'the image names the button');
+  opener.dispatchEvent({ type: 'click', stopPropagation() {} });
+  assert.ok(env.doc.querySelector('.tr-screenshot-modal'), 'the viewer opened');
+});
+
+test('the frame viewer keeps its keys from the page under it', async () => {
+  const env = await shotEnvironment('searchable', 'Gate B14');
+  const heard = [];
+  // A stand-in for a page shortcut such as the day's arrow keys.
+  env.doc.addEventListener('keydown', (event) => heard.push(event.key));
+  const opener = env.doc.querySelector('#tr-tabpanel-transcript .tr-entry-shot-open');
+  opener.focus();
+  opener.dispatchEvent({ type: 'click', stopPropagation() {} });
+  assert.ok(env.doc.querySelector('.tr-screenshot-modal'), 'the viewer opened');
+  env.doc.dispatchEvent({ type: 'keydown', key: 'ArrowLeft' });
+  env.doc.dispatchEvent({ type: 'keydown', key: 't' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(heard, []);
+  assert.ok(env.doc.querySelector('.tr-screenshot-modal'), 'still open');
+  env.doc.dispatchEvent({ type: 'keydown', key: 'Escape' });
+  assert.strictEqual(env.doc.querySelector('.tr-screenshot-modal'), null);
+  assert.strictEqual(env.doc.activeElement, opener, 'focus returns to the screenshot');
+  env.doc.dispatchEvent({ type: 'keydown', key: 'ArrowLeft' });
+  assert.deepStrictEqual(heard, ['ArrowLeft']);
+});
+
+test("a screenshot's delete states its own reach: the screenshot and what was made from it", async () => {
+  const env = await shotEnvironment('searchable', 'Gate B14');
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  const items = env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li');
+  // Two parts, where a recording's segment lists four.
+  assert.strictEqual(items.length, 2);
+  const meta = env.doc.querySelector('#trDeleteSegmentModalBody .tr-delete-segment-meta').textContent;
+  assert.ok(meta.includes('11:47'), meta);
+  assert.ok(!meta.includes('11:48'), meta);
+});
+
+test("a screenshot's text drops only its own time heading and keeps the headings it carries", async () => {
+  const env = await shotEnvironment('searchable', '### 11:47:15\n\n### Itinerary\nGate B14');
+  const desc = env.doc.querySelector('#tr-tabpanel-transcript .tr-entry-screenshot .tr-entry-desc .md').textContent;
+  assert.ok(!desc.includes('11:47:15'), desc);
+  assert.ok(desc.includes('### Itinerary'), desc);
+  assert.ok(desc.includes('Gate B14'), desc);
+});
+
+test('a screenshot says where its text stands in each state', async () => {
+  const waiting = await shotEnvironment('waiting');
+  const waitingEntry = waiting.doc.querySelector('#tr-tabpanel-transcript .tr-entry-screenshot');
+  assert.ok(waitingEntry.querySelector('.tr-shot-waiting'), waitingEntry.innerHTML);
+  assert.strictEqual(waitingEntry.querySelector('.tr-shot-final'), null);
+
+  const unset = await shotEnvironment('no_processing');
+  const unsetEntry = unset.doc.querySelector('#tr-tabpanel-transcript .tr-entry-screenshot');
+  const link = unsetEntry.querySelector('.tr-shot-final .tr-shot-action a');
+  assert.ok(link, unsetEntry.innerHTML);
+  assert.strictEqual(link.getAttribute('href'), '/app/thinking');
+
+  const failed = await shotEnvironment('unreadable');
+  const failedEntry = failed.doc.querySelector('#tr-tabpanel-transcript .tr-entry-screenshot');
+  const retry = failedEntry.querySelector('.tr-shot-final .tr-analyze-action');
+  assert.ok(retry, failedEntry.innerHTML);
+  assert.strictEqual(retry.getAttribute('data-modality'), 'screen');
+  assert.strictEqual(retry.getAttribute('aria-label'), null, 'try again names itself');
 });
 
 test('case 2: back navigation preserves previously active tab', async () => {

@@ -58,6 +58,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
 - when a day mentioned a person or topic you had removed from a facet or hidden, your journal could skip that day's notes for every other person and topic in that facet. it now leaves out only that one and keeps the rest.
+- in the frame viewer on transcripts, the left and right arrow keys now move between frames without also changing the day behind it, and the viewer's previous and next controls work from the keyboard.
+- what comes in from your ipad is now labeled "your ipad", as the sources page already shows it, instead of "your tablet".
 
 ## [2.0.75] - 2026-11-11
 

@@ -2001,10 +2001,42 @@
 }
 
 /* A screenshot is kept by the owner's choice, so it shows at its own shape
-   and a size you can recognise: a phone's tall, a computer's wide. */
-.tr-entry-screenshot .tr-entry-content {
+   and a size you can recognise: a phone's tall, a computer's wide. Its text
+   starts level with the image's top, so this outranks the screen entry's
+   centring below. */
+.tr-entry-screen.tr-entry-screenshot .tr-entry-content {
   align-items: flex-start;
   flex-wrap: wrap;
+}
+
+/* The image is the control that opens the viewer, so a keyboard reaches it.
+   Its name is the image's own alt text. */
+.tr-entry-shot-open {
+  flex-shrink: 0;
+  display: block;
+  max-width: min(100%, 440px);
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  cursor: zoom-in;
+}
+
+.tr-entry-shot-open:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* The text the journal made searchable can carry its own headings; they read
+   at the entry's size, and none is hidden. */
+.tr-entry-screenshot .tr-entry-desc h1,
+.tr-entry-screenshot .tr-entry-desc h2,
+.tr-entry-screenshot .tr-entry-desc h3 {
+  display: block;
+  font-size: 1em;
+  font-weight: 600;
+  margin: 8px 0 2px;
+  color: var(--ink);
 }
 
 /* The text sits beside a tall screenshot and wraps below a wide one. */
@@ -2018,7 +2050,7 @@
   display: block;
   width: auto;
   height: auto;
-  max-width: min(100%, 440px);
+  max-width: 100%;
   max-height: 360px;
   border-radius: 6px;
   border: 1px solid var(--hairline);
