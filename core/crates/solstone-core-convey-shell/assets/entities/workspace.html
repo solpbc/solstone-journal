@@ -5487,6 +5487,7 @@ function entityPickTick(entity) {
   const box = document.createElement('input');
   box.type = 'checkbox';
   box.dataset.entityPick = 'true';
+  box.dataset.entityId = entity.id;
   box.setAttribute('aria-label', entityDeleteFill(ENTITY_DELETE_COPY.pickLabel, { name: entity.name || '' }).trim());
   box.checked = entityPick.items.has(entity.id);
   box.addEventListener('change', () => setEntityPicked(entity, box.checked));
@@ -5595,7 +5596,17 @@ function selectAllEntities() {
 }
 
 function deleteChosenEntities() {
-  const chosen = [...entityPick.items.values()];
+  // In the list's order; any picked on another page or search follow, as picked.
+  const boxes = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('input[data-entity-pick]') : [];
+  const shown = Array.from(boxes || [], box => box.dataset.entityId);
+  const at = item => {
+    const index = shown.indexOf(item.id);
+    return index < 0 ? shown.length : index;
+  };
+  const chosen = [...entityPick.items.values()]
+    .map((item, picked) => ({ item, picked }))
+    .sort((a, b) => at(a.item) - at(b.item) || a.picked - b.picked)
+    .map(entry => entry.item);
   if (!chosen.length) return;
   if (chosen.length === 1) {
     openEntityDeleteDialog(entityOneSpec(chosen[0], erase => deleteOneFromEntityList(chosen[0], erase)));

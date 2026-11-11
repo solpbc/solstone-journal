@@ -2190,7 +2190,7 @@ button:focus:not(:focus-visible) {
 .trash-returned { color: var(--ink-soft); font-size: .9em; margin-top: .2em; }
 .trash-setting { margin-top: 1.5em; }
 .trash-row--stopped { cursor: default; }
-.trash-row-gap { flex: none; width: 13px; }
+.trash-row-gap { flex: none; width: 13px; margin: .25em 3px 0 4px; }
 .trash-stopped { display: block; color: var(--ink); font-size: .9em; margin-top: .2em; }
 .trash-row-note { display: block; color: var(--ink-soft); font-size: .9em; margin-top: .2em; }
 @media (max-width: 480px) { .trash-row-gap { width: 20px; } }
@@ -4549,13 +4549,15 @@ const FACET_DELETE_COPY = {
     title: 'delete this facet?',
     reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
     lead: 'this moves everything in the facet:',
-    stays: 'segments sorted into it, and the entities attached to it, stay in your journal. a new facet you give this name will hold those segments. summaries elsewhere in your journal stay where they are and may still mention it.',
+    stays: 'segments sorted into it, and the entities attached to it, stay in your journal. summaries elsewhere in your journal stay where they are and may still mention it.',
+    newName: 'a new facet you give this name will hold those segments.',
   },
   erase: {
     title: 'erase this facet now?',
     reach: "it leaves your journal now and can't be recovered.",
     lead: 'this erases everything in the facet:',
-    stays: "segments sorted into it, and the entities attached to it, stay in your journal. a new facet you give this name will hold those segments. summaries elsewhere in your journal aren't erased and may still mention it.",
+    stays: "segments sorted into it, and the entities attached to it, stay in your journal. summaries elsewhere in your journal aren't erased and may still mention it.",
+    newName: 'a new facet you give this name will hold those segments.',
   },
   list: [
     'its settings and the activities it looks for',
@@ -4662,6 +4664,15 @@ function noteFacetMuted(slug, muted) {
   renderFacetDeleteFoot();
 }
 
+// A title as settings makes it a folder name when a facet is created.
+function facetTitleSlug(title) {
+  return String(title || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 function facetDeleteBody(step, title) {
   const copy = FACET_DELETE_COPY[step];
   const meta = facetDeleteEl('p', 'trash-dlg-meta');
@@ -4675,6 +4686,11 @@ function facetDeleteBody(step, title) {
     list,
     facetDeleteEl('p', 'facet-delete-stays', copy.stays),
   ];
+  // True only while the shown name is still the facet's folder: a new facet
+  // takes its folder from its typed title, and a rename keeps the old folder.
+  if (facetTitleSlug(title) === facetDetailSlugState) {
+    nodes[nodes.length - 1].textContent = `${copy.stays} ${copy.newName}`;
+  }
   // Said once, where the owner decides: not on the erase step, nothing comes back.
   if (step === 'move') nodes.push(facetDeleteEl('p', 'trash-dlg-again', FACET_DELETE_COPY.recovering));
   return nodes;
