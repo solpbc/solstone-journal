@@ -2676,6 +2676,37 @@ asyncCase('scripts: a view script that has loaded keeps no listener, so it keeps
   }
 });
 
+asyncCase('scripts: a script past its bound that loads late still counts as run, so try again loads the page', async () => {
+  const page = makePage();
+  page.answerAll();
+  await page.boot('home');
+  // A view off the contract whose script never answers within the bound.
+  page.server.answers.set('/app/settings/workspace', page.server.html('<div class="settings"><h2>settings</h2></div><script src="/s/slow.js"></script>'));
+  const held = [];
+  const inserted = page.document.inserted;
+  page.document.inserted = (node) => {
+    if (node.tagName === 'SCRIPT' && node.getAttribute('src') === '/s/slow.js') { held.push(node); return; }
+    inserted(node);
+  };
+  const mounting = page.window.mountWorkspaceFragment('/app/settings/workspace', { appName: 'settings' }).catch(() => {});
+  await page.clock.advance(61000);
+  await mounting;
+  // The fragment's own element is reported when the markup goes in; the
+  // clone that runs is the last one in.
+  const clone = held[held.length - 1];
+  assert.ok(clone && clone.hasAttribute('src'), 'the script went into the page');
+  const retry = page.main().querySelector('.surface-state-retry');
+  assert.ok(retry, 'the error state, with try again');
+  // It loads after all: its code ran, and it keeps no listener once it has.
+  clone.dispatchEvent({ type: 'load' });
+  assert.strictEqual(clone.listenerCount(), 0);
+  const asked = page.server.of('/app/settings/workspace').length;
+  retry.click();
+  await page.clock.advance(100);
+  assert.strictEqual(page.record.reloads.length, 1, 'try again loads the page rather than run the script twice');
+  assert.strictEqual(page.server.of('/app/settings/workspace').length, asked, 'the fragment is not run again');
+});
+
 asyncCase('leaks: a hundred switches and fifty day steps leave the page as the first switch did', async () => {
   const page = makePage();
   page.answerAll();

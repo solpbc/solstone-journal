@@ -113,6 +113,21 @@
   // takes a few seconds on a weak signal.
   const SCRIPT_LOAD_BOUND_MS = 60000;
 
+  // A script past its bound can still end, and it ends as it would have: a
+  // load means its code ran (so "try again" off the contract loads the page
+  // rather than run it twice), an error recovers a stale asset. This holds the
+  // clone and the chain only, never the markup the script was read from.
+  function afterBound(clone, chain) {
+    const late = (event) => {
+      clone.removeEventListener('load', late);
+      clone.removeEventListener('error', late);
+      if (event && event.type === 'load') chain.ran = true;
+      else window.recoverFromStaleAsset?.(clone.src);
+    };
+    clone.addEventListener('load', late);
+    clone.addEventListener('error', late);
+  }
+
   // `place` is where the script runs, when that isn't where it stands.
   function runScript(script, chain, place) {
     const at = place || script;
@@ -142,6 +157,7 @@
         };
         const timer = setTimeout(() => {
           settle();
+          afterBound(clone, chain);
           reject(new Error(`Script did not load within ${SCRIPT_LOAD_BOUND_MS} ms: ${clone.src}`));
         }, SCRIPT_LOAD_BOUND_MS);
         clone.addEventListener('load', onLoad);
