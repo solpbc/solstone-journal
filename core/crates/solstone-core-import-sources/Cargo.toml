@@ -52,6 +52,8 @@ solstone-core-import.workspace = true
 solstone-core-ingest-resolve.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
+# The one writer of the owner's hidden body days, which an archive merge adds to.
+solstone-core-location.workspace = true
 solstone-core-segment.workspace = true
 tempfile = "3.24.0"
 # License: Unlicense OR MIT. MIT is already allow-listed. Pure Rust with no build script (MSRV 1.65).

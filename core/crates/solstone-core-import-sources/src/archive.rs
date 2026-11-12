@@ -26,6 +26,10 @@ use solstone_core_facets::{
     read_facet_entity_link, read_facet_entity_observations, read_log_file, read_news_file,
     serialize_observation_rows,
 };
+use solstone_core_format::content::body_hidden_days::{
+    HIDDEN_DAYS_RELATIVE_PATH, HiddenDays, MAX_HIDDEN_DAYS_BYTES, hidden_days_path,
+    parse_hidden_days, read_hidden_days,
+};
 use solstone_core_import::ImportPreview;
 use solstone_core_ingest_resolve::segment_key_candidates;
 use solstone_core_journal_io::{
@@ -33,6 +37,9 @@ use solstone_core_journal_io::{
     LockOptions, PathOrDay, RecordIdentity, Segment, StagedDirOptions, StreamLocation,
     append_jsonl, atomic_replace, contained_path, hold_lock, iter_segments, publish_staged_dir,
     realpath_non_strict, write_bytes_exclusive,
+};
+use solstone_core_location::body_hidden::{
+    BodyHiddenError, merge_hidden_body_days, set_body_days_hidden,
 };
 use solstone_core_segment::touch_stream_health_marker;
 use zip::ZipArchive;
@@ -59,6 +66,14 @@ const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
 /// Fuzzy name-match floor for an imported entity, on the matcher's 0-100
 /// similarity scale: the same floor every other entity resolution uses.
 const ENTITY_FUZZY_THRESHOLD: f64 = 90.0;
+/// Why an archive merge stops when this journal's hidden body days can't be
+/// read.
+const TARGET_HIDDEN_DAYS_UNREADABLE: &str =
+    "this journal can't read which days of body data you hid, so this archive can't be imported";
+/// Why an archive merge stops when the archive's hidden body days can't be
+/// read.
+const ARCHIVE_HIDDEN_DAYS_UNREADABLE: &str =
+    "this archive's hidden days of body data can't be read, so this archive can't be imported";
 const LEGACY_TRANSFER_ARCHIVE: &str = "a .tgz or .tar.gz archive isn't supported. if it's an old transfer archive, export that day again as a .zip from the journal it came from and merge that, or merge this file into a new, empty journal on an earlier 2.x release, export that journal as a .zip, and merge that .zip into your journal";
 
 const GIB: u64 = 1024 * 1024 * 1024;
@@ -145,6 +160,14 @@ pub struct MergeSummary {
     /// one this journal holds for them, so their times may read wrong.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub body_zones_differ: Vec<BodyZoneDiffers>,
+    /// Days of body data the archive's owner hid that weren't hidden here,
+    /// and now are.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub body_days_hidden: usize,
+}
+
+fn is_zero(count: &usize) -> bool {
+    *count == 0
 }
 
 /// One body source merged from an archive whose fixed zone differs from this
@@ -1424,6 +1447,9 @@ struct MergeState {
     ancestor_witnesses: AncestorWitnesses,
     undo_reserve: UndoReserve,
     published_entity_json: bool,
+    /// The days of body data this merge hid that weren't hidden before it, so
+    /// a merge undone whole unhides exactly them.
+    hidden_days_added: BTreeSet<String>,
     writes: usize,
     has_conflict: bool,
     has_staged: bool,
@@ -1455,6 +1481,7 @@ impl MergeState {
             ancestor_witnesses: AncestorWitnesses::default(),
             undo_reserve: UndoReserve::default(),
             published_entity_json: false,
+            hidden_days_added: BTreeSet::new(),
             writes: 0,
             has_conflict: false,
             has_staged: false,
@@ -2856,16 +2883,30 @@ fn log_skipped_extras(source: &Path, state: &mut MergeState) -> Result<(), Impor
         if JOURNAL_FAMILY_ROOTS.contains(&name.as_str()) {
             continue;
         }
+        // The archive's hidden body days are merged, not skipped.
+        let files = if path.is_dir() {
+            extra_files(&path)
+                .into_iter()
+                .map(|file| {
+                    file.strip_prefix(source)
+                        .expect("under source")
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let skipped = files
+            .iter()
+            .filter(|relative| relative.as_str() != HIDDEN_DAYS_RELATIVE_PATH)
+            .collect::<Vec<_>>();
+        if skipped.is_empty() && !files.is_empty() {
+            continue;
+        }
         state.decision("skipped", "extra", json!({"path": name}))?;
-        if path.is_dir() {
-            for file in extra_files(&path) {
-                let relative = file
-                    .strip_prefix(source)
-                    .expect("under source")
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                state.decision("skipped", "extra", json!({"path": relative}))?;
-            }
+        for relative in skipped {
+            state.decision("skipped", "extra", json!({"path": relative}))?;
         }
     }
     Ok(())
@@ -2915,9 +2956,89 @@ fn stage_bytes(state: &MergeState, relative: &str, bytes: &[u8]) -> Result<(), I
     })
 }
 
-/// Stage and publish what the archive brings. Segments and raw imports are
-/// new directories: they are staged and published first with live-name exclusion, and one
-/// whose destination appeared in between stops the import. Entities and
+/// The days of body data the archive's owner hid, read as strictly as this
+/// journal's own: none when the archive holds no store.
+fn archive_hidden_days(source: &Path) -> Result<BTreeSet<String>, ImportSourcesError> {
+    let refuse = || ImportSourcesError::ImportMerge {
+        path: PathBuf::from(HIDDEN_DAYS_RELATIVE_PATH),
+        detail: ARCHIVE_HIDDEN_DAYS_UNREADABLE.to_owned(),
+    };
+    let path = source.join(HIDDEN_DAYS_RELATIVE_PATH);
+    match fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(BTreeSet::new()),
+        Ok(metadata) if metadata.is_file() && metadata.len() <= MAX_HIDDEN_DAYS_BYTES as u64 => {}
+        _ => return Err(refuse()),
+    }
+    let bytes = fs::read(&path).map_err(|_| refuse())?;
+    parse_hidden_days(&bytes).ok_or_else(refuse)
+}
+
+fn target_hidden_days_refusal(target: &Path) -> ImportSourcesError {
+    ImportSourcesError::ImportMerge {
+        path: hidden_days_path(target),
+        detail: TARGET_HIDDEN_DAYS_UNREADABLE.to_owned(),
+    }
+}
+
+/// Hide here the days the archive's owner hid, before any of its content is
+/// published: a stop or failure after this leaves extra days hidden, never a
+/// hidden day open. A merge undone whole unhides the days this added
+/// ([`unhide_added_days`]); a retry adds them again and changes nothing more.
+fn hide_archive_days(
+    target: &Path,
+    arriving: &BTreeSet<String>,
+    state: &mut MergeState,
+) -> Result<(), ImportSourcesError> {
+    if arriving.is_empty() {
+        return Ok(());
+    }
+    let HiddenDays::Days(before) = read_hidden_days(target) else {
+        return Err(target_hidden_days_refusal(target));
+    };
+    let (added, _search_queued) =
+        merge_hidden_body_days(target, arriving).map_err(|error| match error {
+            BodyHiddenError::Unreadable => target_hidden_days_refusal(target),
+            error => ImportSourcesError::ImportMerge {
+                path: hidden_days_path(target),
+                detail: error.to_string(),
+            },
+        })?;
+    if added == 0 {
+        return Ok(());
+    }
+    let added_days = arriving
+        .difference(&before)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    // When the owner changed the hidden days between the read and the merge,
+    // which days this added isn't known: an undo leaves them all hidden.
+    if added_days.len() == added {
+        state.hidden_days_added = added_days;
+    }
+    state.summary.body_days_hidden = added;
+    state.writes += 1;
+    state.decision("committed", "body_hidden_days", json!({"added": added}))
+}
+
+/// After a merge is undone whole, unhide the days it hid. What is left of
+/// one undone only in part keeps them hidden. Says why when they couldn't be
+/// unhidden, and so are still hidden.
+fn unhide_added_days(target: &Path, state: &mut MergeState) -> Option<String> {
+    let days = std::mem::take(&mut state.hidden_days_added);
+    if days.is_empty() {
+        return None;
+    }
+    set_body_days_hidden(target, &days, false)
+        .err()
+        .map(|error| format!("days of body data the import hid are still hidden: {error}"))
+}
+
+/// Stage and publish what the archive brings. The archive's hidden body days
+/// are read first, with this journal's, and either one damaged stops the
+/// import before anything is written. Segments and raw imports are new
+/// directories: they are staged and published first with live-name exclusion, and one
+/// whose destination appeared in between stops the import; just before they
+/// publish, the archive's hidden days are hidden here. Entities and
 /// facets are then staged and published under one hold of the facet trust
 /// lock, which takes the entity lock first, so nothing changes what staging
 /// read before it is published, and a failure is undone before the lock is
@@ -2927,6 +3048,10 @@ fn stage_and_publish(
     target: &Path,
     state: &mut MergeState,
 ) -> Result<(), ImportSourcesError> {
+    let arriving_hidden_days = archive_hidden_days(source)?;
+    if read_hidden_days(target) == HiddenDays::Unreadable {
+        return Err(target_hidden_days_refusal(target));
+    }
     refuse_retired_facet_names(source, target)?;
     stage_segments(source, target, state)?;
     stage_imports(source, target, state)?;
@@ -2952,6 +3077,9 @@ fn stage_and_publish(
     // the reserve, and as much again for publication's own transient use.
     raise_open_file_limit(2 * (chronicle_units.len() + reserve));
     state.undo_reserve = UndoReserve::hold(target, reserve).map_err(not_mutated)?;
+    hide_archive_days(target, &arriving_hidden_days, state)?;
+    #[cfg(test)]
+    run_after_hidden_days();
     if let Err(error) = publish_units(target, state, &chronicle_units)
         .and_then(|()| publish_units(target, state, &import_units))
     {
@@ -3038,14 +3166,23 @@ fn publish_owned_files(target: &Path, state: &mut MergeState) -> Result<(), Impo
 /// already published and report the failure as it was, or with what the undo
 /// couldn't restore.
 fn abandon(target: &Path, state: &mut MergeState, error: ImportSourcesError) -> ImportSourcesError {
-    if state.published.is_empty() {
-        return error;
-    }
-    let undo_failures = undo_publish(target, state, || {});
+    let undo_failures = if state.published.is_empty() {
+        Vec::new()
+    } else {
+        undo_publish(target, state, || {})
+    };
     if undo_failures.is_empty() {
         // Nothing is left to restore, so nothing is left for an operator.
-        let _ = fs::remove_dir_all(&state.publish_undo);
-        return error;
+        if !state.published.is_empty() {
+            let _ = fs::remove_dir_all(&state.publish_undo);
+        }
+        return match unhide_added_days(target, state) {
+            None => error,
+            Some(still_hidden) => ImportSourcesError::MergePublishFailed {
+                detail: format!("{error}; {still_hidden}"),
+                mutation: MergeMutationState::MayHaveMutated,
+            },
+        };
     }
     ImportSourcesError::MergePublishFailed {
         detail: format!("{error}; undo incomplete: {}", undo_failures.join("; ")),
@@ -3066,12 +3203,18 @@ fn abort_publish(
     error: ImportSourcesError,
     release_owned: impl FnOnce(),
 ) -> ImportSourcesError {
-    let mutation = if state.published.is_empty() {
+    let mut mutation = if state.published.is_empty() {
         MergeMutationState::NotMutated
     } else {
         MergeMutationState::MayHaveMutated
     };
-    let undo_failures = undo_publish(target, state, release_owned);
+    let mut undo_failures = undo_publish(target, state, release_owned);
+    if undo_failures.is_empty()
+        && let Some(still_hidden) = unhide_added_days(target, state)
+    {
+        undo_failures.push(still_hidden);
+        mutation = MergeMutationState::MayHaveMutated;
+    }
     let detail = if undo_failures.is_empty() {
         error.to_string()
     } else {
@@ -3627,6 +3770,7 @@ thread_local! {
     static EXTRACT_CLEANUP_FAIL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static BEFORE_PUBLISH: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
     static WHILE_LOCKED: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+    static AFTER_HIDDEN_DAYS: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Run `action` once, after segments and imports are staged and before they
@@ -3646,6 +3790,20 @@ pub fn inject_while_locked(action: Option<Box<dyn FnOnce()>>) {
 #[cfg(test)]
 fn run_while_locked() {
     if let Some(action) = WHILE_LOCKED.with(|cell| cell.borrow_mut().take()) {
+        action();
+    }
+}
+
+/// Run `action` once, after the archive's hidden body days are hidden here
+/// and before anything of the archive is published.
+#[cfg(test)]
+pub fn inject_after_hidden_days(action: Option<Box<dyn FnOnce()>>) {
+    AFTER_HIDDEN_DAYS.with(|cell| *cell.borrow_mut() = action);
+}
+
+#[cfg(test)]
+fn run_after_hidden_days() {
+    if let Some(action) = AFTER_HIDDEN_DAYS.with(|cell| cell.borrow_mut().take()) {
         action();
     }
 }
@@ -3924,6 +4082,7 @@ mod tests {
             inject_extract_cleanup_fail(false);
             inject_before_publish(None);
             inject_while_locked(None);
+            inject_after_hidden_days(None);
             #[cfg(feature = "full-tests")]
             {
                 BEFORE_RAW_UNDO.with(|slot| *slot.borrow_mut() = None);
@@ -6147,5 +6306,232 @@ mod tests {
             rows.iter().all(|row| row["occurrence_count"] == 2),
             "{rows:?}"
         );
+    }
+
+    const ARCHIVE_STORE: &str = "solstone/apps/body/hidden-days.json";
+
+    fn hidden_here(target: &Path) -> HiddenDays {
+        read_hidden_days(target)
+    }
+
+    fn days(items: &[&str]) -> BTreeSet<String> {
+        items.iter().map(|item| (*item).to_owned()).collect()
+    }
+
+    fn hide_here(target: &Path, items: &[&str]) {
+        set_body_days_hidden(target, &days(items), true).unwrap();
+    }
+
+    fn store_bytes(target: &Path) -> Option<Vec<u8>> {
+        fs::read(hidden_days_path(target)).ok()
+    }
+
+    #[test]
+    fn an_archives_hidden_days_are_hidden_here_counted_once_and_not_skipped() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        hide_here(&target, &["20260101"]);
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260102/120000_60/value", b"day"),
+                (
+                    ARCHIVE_STORE,
+                    br#"{"days":["20260101","20260102","20260103"]}"#,
+                ),
+                ("solstone/apps/other.json", b"{}"),
+            ],
+        );
+
+        let result = merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+
+        assert_eq!(result.merge_summary.body_days_hidden, 2);
+        assert_eq!(
+            hidden_here(&target),
+            HiddenDays::Days(days(&["20260101", "20260102", "20260103"]))
+        );
+        let log = fs::read_to_string(&result.decision_log_path).unwrap();
+        assert!(!log.contains("hidden-days.json"), "{log}");
+        assert!(log.contains("solstone/apps/other.json"), "{log}");
+
+        // Merged again, the store is as it was and nothing is counted.
+        let before = store_bytes(&target);
+        let again = merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        assert_eq!(again.merge_summary.body_days_hidden, 0);
+        assert_eq!(again.retry_disposition, RetryDisposition::IdempotentNoop);
+        assert_eq!(store_bytes(&target), before);
+    }
+
+    #[test]
+    fn an_archive_whose_only_extra_is_its_hidden_days_lists_nothing_skipped() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260102/120000_60/value", b"day"),
+                (ARCHIVE_STORE, br#"{"days":["20260102"]}"#),
+            ],
+        );
+        let result = merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        let log = fs::read_to_string(&result.decision_log_path).unwrap();
+        assert!(!log.contains("\"skipped\""), "{log}");
+    }
+
+    #[test]
+    fn a_damaged_store_on_either_side_refuses_the_merge_with_nothing_written() {
+        let _reset = FaultReset;
+        // The archive's.
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        hide_here(&target, &["20260101"]);
+        let before = (journal_family_snapshot(&target), store_bytes(&target));
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260102/120000_60/value", b"day"),
+                (ARCHIVE_STORE, b"{not json"),
+            ],
+        );
+        let error =
+            merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
+        assert!(
+            matches!(&error, ImportSourcesError::ImportMerge { detail, .. } if detail == ARCHIVE_HIDDEN_DAYS_UNREADABLE),
+            "{error}"
+        );
+        assert_eq!(error.mutation_state(), MergeMutationState::NotMutated);
+        assert_eq!(
+            (journal_family_snapshot(&target), store_bytes(&target)),
+            before
+        );
+
+        // This journal's, whatever the archive holds.
+        let path = hidden_days_path(&target);
+        fs::write(&path, b"{not json").unwrap();
+        let before = journal_family_snapshot(&target);
+        for members in [
+            vec![
+                ("chronicle/20260102/120000_60/value", &b"day"[..]),
+                (ARCHIVE_STORE, &br#"{"days":["20260102"]}"#[..]),
+            ],
+            vec![("chronicle/20260102/120000_60/value", &b"day"[..])],
+        ] {
+            let archive = write_zip(&tree.path, &members);
+            let error =
+                merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
+            assert!(
+                matches!(&error, ImportSourcesError::ImportMerge { detail, .. } if detail == TARGET_HIDDEN_DAYS_UNREADABLE),
+                "{error}"
+            );
+            assert_eq!(journal_family_snapshot(&target), before);
+            assert_eq!(fs::read(&path).unwrap(), b"{not json");
+        }
+    }
+
+    #[test]
+    fn the_days_are_hidden_before_anything_publishes_and_an_undone_merge_unhides_them() {
+        let _reset = FaultReset;
+        // A failure at the first publish, at a later one, and a destination
+        // that appears after the days were hidden: each merge is undone whole.
+        for case in 0..3 {
+            let tree = PlanTree::new();
+            let target = tree.path.join("target");
+            fs::create_dir(&target).unwrap();
+            hide_here(&target, &["20260101"]);
+            let before_store = store_bytes(&target);
+            let before = journal_family_snapshot(&target);
+            let archive = write_zip(
+                &tree.path,
+                &[
+                    ("chronicle/20260102/120000_60/value", b"a"),
+                    ("chronicle/20260103/120000_60/value", b"b"),
+                    ("imports/batch/value", b"theirs"),
+                    (ARCHIVE_STORE, br#"{"days":["20260101","20260102"]}"#),
+                ],
+            );
+            let seen = Rc::new(std::cell::RefCell::new(None));
+            let witness = seen.clone();
+            let journal = target.clone();
+            let appears = target.join("imports/batch");
+            inject_after_hidden_days(Some(Box::new(move || {
+                *witness.borrow_mut() = Some(read_hidden_days(&journal));
+                if case == 2 {
+                    fs::create_dir_all(&appears).unwrap();
+                    fs::write(appears.join("value"), b"mine").unwrap();
+                }
+            })));
+            match case {
+                0 => inject_publish_fail_after(Some(0)),
+                1 => inject_publish_fail_after(Some(1)),
+                _ => {}
+            }
+
+            assert!(merge_journal_archive(&archive, &target, &merge_options(&tree), None).is_err());
+
+            // Hidden before the first publish.
+            assert_eq!(
+                seen.borrow().clone(),
+                Some(HiddenDays::Days(days(&["20260101", "20260102"]))),
+                "case {case}"
+            );
+            // Undone whole: the store is what it was, and none of the archive
+            // is left.
+            assert_eq!(store_bytes(&target), before_store, "case {case}");
+            for segment in ["20260102", "20260103"] {
+                let published = target.join("chronicle").join(segment).join("120000_60");
+                assert!(!published.exists(), "case {case}");
+            }
+            // An undo leaves a published segment's lock sidecar behind.
+            let mut after = journal_family_snapshot(&target);
+            after.retain(|path, _| !path.ends_with(".lock") && !path.starts_with("imports/batch"));
+            assert_eq!(after, before, "case {case}");
+        }
+    }
+
+    #[test]
+    fn a_merge_stopped_while_staging_what_follows_unhides_the_days_it_hid() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir_all(target.join("facets/work/facet.json")).unwrap();
+        let row = json!({"id":"theirs","title":"theirs","destination_id":"x"}).to_string() + "\n";
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260102/120000_60/value", b"a"),
+                ("facets/work/activities/20260102.jsonl", row.as_bytes()),
+                (ARCHIVE_STORE, br#"{"days":["20260102"]}"#),
+            ],
+        );
+        assert!(merge_journal_archive(&archive, &target, &merge_options(&tree), None).is_err());
+        assert_eq!(hidden_here(&target), HiddenDays::Days(BTreeSet::new()));
+        assert!(!target.join("chronicle/20260102/120000_60").exists());
+    }
+
+    #[test]
+    fn a_merge_that_dies_part_way_leaves_the_days_hidden() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260102/120000_60/value", b"a"),
+                ("chronicle/20260103/120000_60/value", b"b"),
+                (ARCHIVE_STORE, br#"{"days":["20260102"]}"#),
+            ],
+        );
+        inject_publish_crash_after(Some(1));
+        let panicked = catch_unwind(AssertUnwindSafe(|| {
+            merge_journal_archive(&archive, &target, &merge_options(&tree), None)
+        }));
+        assert!(panicked.is_err());
+        assert_eq!(hidden_here(&target), HiddenDays::Days(days(&["20260102"])));
     }
 }
