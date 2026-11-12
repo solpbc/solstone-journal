@@ -66,6 +66,7 @@ fn artifact_paths_are_unique_and_strict_artifacts_preserve_irreplaceable_evidenc
             "health/owner-asks.json",
             "health/week-left-out.json",
             "solstone/apps/map/places.json",
+            "solstone/apps/body/hidden-days.json",
             "facets/*/hidden-names.json",
             "health/parent-loss/generations/*/census-obligation.json",
             "health/parent-loss/generations/*/census-started.json",
@@ -239,6 +240,7 @@ fn every_artifact_has_owning_production_mention_outside_durability() {
             }
             ArtifactId::SegmentStream => combined_source.contains("stream.json"),
             ArtifactId::WeekLeftOut => combined_source.contains("week-left-out.json"),
+            ArtifactId::BodyHiddenDays => combined_source.contains("body/hidden-days.json"),
             ArtifactId::MapPlaces => {
                 combined_source.contains(".join(\"places.json\")")
                     && combined_source.contains("fn read_strict(")

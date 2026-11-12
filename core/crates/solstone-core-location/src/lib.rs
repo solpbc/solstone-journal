@@ -18,6 +18,7 @@ pub mod area;
 pub mod asset;
 pub mod beside;
 pub mod body_day;
+pub mod body_hidden;
 pub mod body_records;
 mod cache;
 pub mod day;

@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 chrono = { workspace = true, features = ["serde"] }
+chrono-tz.workspace = true
 glob.workspace = true
 pulldown-cmark.workspace = true
 serde.workspace = true
@@ -23,5 +24,4 @@ solstone-core-processing-record.workspace = true
 unicode-normalization.workspace = true
 
 [dev-dependencies]
-chrono-tz.workspace = true
 tempfile = "3.24.0"

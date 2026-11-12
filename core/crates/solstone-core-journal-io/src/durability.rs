@@ -54,6 +54,7 @@ pub enum ArtifactId {
     JournalConfig,
     WeekLeftOut,
     MapPlaces,
+    BodyHiddenDays,
     SchedulesConfig,
     ConveyConfig,
     ParentLossActive,
@@ -176,6 +177,13 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::MustBeValid,
         parser: ParserKind::WholeJson,
         rationale: "the places worked out from the owner's stays, with the names they gave them and the ones they hid, written under a lock with atomic replace and read strictly by PlaceStore::read_strict; the names and hides can't be rebuilt, so a damaged one is kept as it is, no day's location words are rendered and nothing is described beside an activity",
+    },
+    DurableArtifact {
+        id: ArtifactId::BodyHiddenDays,
+        path: "solstone/apps/body/hidden-days.json",
+        class: DurabilityClass::MustBeValid,
+        parser: ParserKind::WholeJson,
+        rationale: "the days of body data the owner hid, written under a lock with atomic replace and read strictly by body_hidden_days::read_hidden_days; nothing can rebuild what the owner chose, so a damaged one is kept as it is, the body page shows everything with a notice, a hide or unhide refuses, and search and connections leave out all body data",
     },
     DurableArtifact {
         id: ArtifactId::FacetHiddenNames,
@@ -1134,6 +1142,8 @@ mod tests {
                 "health/owner-asks.json",
                 "health/week-left-out.json",
                 "solstone/apps/map/places.json",
+                // Days of body data the owner hid.
+                "solstone/apps/body/hidden-days.json",
                 // Names the owner hid in a facet.
                 "facets/*/hidden-names.json",
                 "health/parent-loss/generations/*/census-obligation.json",

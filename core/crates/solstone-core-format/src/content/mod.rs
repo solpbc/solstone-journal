@@ -39,6 +39,7 @@ use serde_json::{Map, Value};
 use crate::chunker::format_markdown;
 use crate::matcher::{PatternSpec, Resolver, patterns_for_root as filter_patterns_for_root};
 
+pub mod body_hidden_days;
 pub mod possible_names;
 pub mod screen_text;
 pub mod week_left_out;
