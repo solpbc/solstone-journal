@@ -2287,6 +2287,31 @@ asyncCase('prefetch: pressing or hovering on a rail entry fetches its code, neve
   assert.ok(page.window.solRouter.held().fragments <= 2, 'one fragment per pilot view at most');
 });
 
+asyncCase('store: the last failure per key is plain fields, never an error object', async () => {
+  const page = makePage();
+  page.answerAll();
+  page.server.answers.set('/app/home/api/broken', (call) => call.respond(500, '{"error":"no"}', { 'content-type': 'application/json' }));
+  const controller = page.window.SolStore.createAbort();
+  const reads = page.window.SolStore.scope(controller.signal);
+  await reads.read('/app/home/api/broken').catch(() => {});
+  const cut = page.window.SolStore.createAbort();
+  const cutReads = page.window.SolStore.scope(cut.signal);
+  cutReads.read('/app/home/api/never');
+  await flush();
+  cut.abort();
+  await flush();
+  for (const url of ['/app/home/api/broken', '/app/home/api/never']) {
+    const entry = page.window.SolStore.last(url);
+    assert.ok(entry && entry.error, url + ' failed');
+    assert.deepStrictEqual(Object.keys(entry.error).sort(), ['message', 'name', 'status'], url);
+    for (const value of Object.values(entry.error)) {
+      assert.ok(value === null || ['string', 'number'].includes(typeof value), url + ': plain fields only');
+    }
+  }
+  assert.strictEqual(page.window.SolStore.last('/app/home/api/broken').error.status, 500);
+  assert.strictEqual(page.window.SolStore.last('/app/home/api/never').error.name, 'AbortError');
+});
+
 asyncCase('leaks: a hundred switches and fifty day steps leave the page as the first switch did', async () => {
   const page = makePage();
   page.answerAll();
