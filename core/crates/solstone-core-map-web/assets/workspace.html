@@ -1476,6 +1476,11 @@ button.map-month-row:hover { background: var(--cream); }
   const SIZE = { label: "about 1 km" };
   // Resolution 8 cells are about 1 km across. The ring is the cell's own
   // boundary, projected with the stops, so a pentagon keeps five corners.
+  // When a resolution 8 ring would draw under MIN_RING_PX, the month draws
+  // the areas' fixed parent cells instead, at the finest resolution that
+  // reaches it. DRAWN_SIZE is each resolution's average width, corner to corner.
+  const MIN_RING_PX = 8;
+  const DRAWN_SIZE = ["about 2,600 km", "about 1,000 km", "about 370 km", "about 140 km", "about 50 km", "about 20 km", "about 7 km", "about 3 km", SIZE.label];
   const WORDS = ["no", "once", "twice"];
   const COMPASS = ["east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east"];
 
@@ -2172,6 +2177,7 @@ button.map-month-row:hover { background: var(--cream); }
       notDrawn: topNotDrawn,
       days: calendarDays,
       towns: projectedTowns,
+      project,
     };
   }
 
@@ -2224,6 +2230,51 @@ button.map-month-row:hover { background: var(--cream); }
     const view = { z: 1, dx: 0, dy: 0, all: false };
     let lastK = 1;
     let dragged = false, drag = null;
+    // Parent cells drawn in place of areas too small to see: each one's
+    // geometry, the grouping of each areas list by resolution, and what the
+    // last draw put on the map, for its clicks.
+    const parentGeometry = new Map();
+    const parentGroups = new WeakMap();
+    let drawnParents = new Map();
+
+    function parentsAt(list, r) {
+      let byRes = parentGroups.get(list);
+      if (!byRes) parentGroups.set(list, byRes = new Map());
+      if (byRes.has(r)) return byRes.get(r);
+      const groups = new Map();
+      for (const c of list) {
+        const id = locationGrid().cellToParent(c.id, r);
+        let g = groups.get(id);
+        if (!g) {
+          let geo = parentGeometry.get(id);
+          if (!geo) {
+            const [cx, cy] = cellCenter(id, m.project);
+            geo = { cx, cy, ring: cellRing(id, m.project) };
+            parentGeometry.set(id, geo);
+          }
+          g = { id, ...geo, kids: [], days: new Set() };
+          groups.set(id, g);
+        }
+        g.kids.push(c);
+        for (const d of c.days) g.days.add(d);
+      }
+      const out = [...groups.values()];
+      byRes.set(r, out);
+      return out;
+    }
+
+    // The resolution the map draws at scale k: resolution 8 while every ring
+    // reaches MIN_RING_PX, otherwise the finest parent resolution that does.
+    function drawnAt(list, k) {
+      const small = (rings) => rings.some((ring) => ringSpan(ring) * k < MIN_RING_PX);
+      if (!small(list.map((c) => c.ring))) return { res: H3_RES, groups: null };
+      let groups = null;
+      for (let r = H3_RES - 1; r >= 0; r--) {
+        groups = parentsAt(list, r);
+        if (!small(groups.map((g) => g.ring))) return { res: r, groups };
+      }
+      return { res: 0, groups };
+    }
 
     const bin = (n) => n >= 15 ? 5 : n >= 8 ? 4 : n >= 4 ? 3 : n >= 2 ? 2 : 1;
 
@@ -2317,6 +2368,49 @@ button.map-month-row:hover { background: var(--cream); }
       }).join("");
     }
 
+    // The map's size and scale for the current view: k is pixels per metre,
+    // (mx, my) the centre drawn, (cx, cy) the fitted centre before panning.
+    function frame() {
+      const list = activeChoice ? activeChoice.areas : [];
+      const W = Math.max(280, root.querySelector("[data-map-month-map]").clientWidth || 600);
+      const narrow = W < 560;
+      const fit = view.all || (activeChoice && activeChoice.trip) ? list : coreOf(list);
+      const pts = fit.flatMap((c) => c.ring);
+      let x0 = Math.min(...pts.map((p) => p[0])), x1 = Math.max(...pts.map((p) => p[0]));
+      let y0 = Math.min(...pts.map((p) => p[1])), y1 = Math.max(...pts.map((p) => p[1]));
+      if (pts.length === 0) {
+        x0 = -500; x1 = 500; y0 = -500; y1 = 500;
+      }
+      const aspect = (y1 - y0 + 800) / (x1 - x0 + 800);
+      const H = Math.round(W * Math.min(narrow ? 1.1 : 0.8, Math.max(narrow ? 1 : 0.62, aspect)));
+      const padM = Math.max(250, (x1 - x0) * 0.07, (y1 - y0) * 0.07);
+      x0 -= padM; x1 += padM; y0 -= padM; y1 += padM;
+      const k = Math.min((W - 24) / (x1 - x0), (H - 72) / (y1 - y0)) * view.z;
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      return { list, W, H, k, cx, cy, mx: cx + view.dx, my: cy + view.dy };
+    }
+
+    // A parent cell holding several areas zooms the map to those areas. It
+    // returns false, leaving the view as it was, when that can't draw them any
+    // larger (the zoom is already at its limit).
+    function zoomToParent(g) {
+      const before = { ...view };
+      Object.assign(view, { z: 1, dx: 0, dy: 0, all: true });
+      const base = frame();
+      const pts = g.kids.flatMap((c) => c.ring);
+      const bx0 = Math.min(...pts.map((p) => p[0])), bx1 = Math.max(...pts.map((p) => p[0]));
+      const by0 = Math.min(...pts.map((p) => p[1])), by1 = Math.max(...pts.map((p) => p[1]));
+      const pad = Math.max(250, (bx1 - bx0) * 0.07, (by1 - by0) * 0.07);
+      const want = Math.min((base.W - 24) / (bx1 - bx0 + 2 * pad), (base.H - 72) / (by1 - by0 + 2 * pad)) / base.k;
+      const z = Math.min(12, Math.max(1, want));
+      if (base.k * z <= lastK * 1.01) {
+        Object.assign(view, before);
+        return false;
+      }
+      Object.assign(view, { z, dx: (bx0 + bx1) / 2 - base.cx, dy: (by0 + by1) / 2 - base.cy });
+      return true;
+    }
+
     function renderMapSvg() {
       const wrap = root.querySelector("[data-map-month-svg]");
       const outBtn = root.querySelector("[data-map-month-outside]");
@@ -2344,41 +2438,29 @@ button.map-month-row:hover { background: var(--cream); }
         return;
       }
 
-      const list = activeChoice ? activeChoice.areas : [];
-      const W = Math.max(280, root.querySelector("[data-map-month-map]").clientWidth || 600);
-      const narrow = W < 560;
-      const fit = view.all || (activeChoice && activeChoice.trip) ? list : coreOf(list);
-      const pts = fit.flatMap((c) => c.ring);
-      let x0 = Math.min(...pts.map((p) => p[0])), x1 = Math.max(...pts.map((p) => p[0]));
-      let y0 = Math.min(...pts.map((p) => p[1])), y1 = Math.max(...pts.map((p) => p[1]));
-      if (pts.length === 0) {
-        x0 = -500; x1 = 500; y0 = -500; y1 = 500;
-      }
-      const aspect = (y1 - y0 + 800) / (x1 - x0 + 800);
-      const H = Math.round(W * Math.min(narrow ? 1.1 : 0.8, Math.max(narrow ? 1 : 0.62, aspect)));
-      const padM = Math.max(250, (x1 - x0) * 0.07, (y1 - y0) * 0.07);
-      x0 -= padM; x1 += padM; y0 -= padM; y1 += padM;
-      const k = Math.min((W - 24) / (x1 - x0), (H - 72) / (y1 - y0)) * view.z;
+      const { list, W, H, k, mx, my } = frame();
       lastK = k;
-      const mx = (x0 + x1) / 2 + view.dx, my = (y0 + y1) / 2 + view.dy;
       const px = (x) => W / 2 + (x - mx) * k;
       const py = (y) => (H - 60) / 2 + 6 - (y - my) * k;
       const inView = (x, y) => px(x) > 6 && px(x) < W - 6 && py(y) > 10 && py(y) < H - 6;
 
-      const screenOf = (c) => {
-        const pts = c.ring.map(([x, y]) => [px(x), py(y)]);
-        const span = ringSpan(pts);
-        if (!(span > 0 && span < 8)) return pts;
-        const ox = px(c.cx), oy = py(c.cy), scale = 8 / span;
-        return pts.map(([x, y]) => [ox + (x - ox) * scale, oy + (y - oy) * scale]);
-      };
-      const polys = list.map((c) => {
+      const screenOf = (ring) => ring.map(([x, y]) => `${px(x).toFixed(1)},${py(y).toFixed(1)}`).join(" ");
+      const { res, groups } = drawnAt(list, k);
+      drawnParents = new Map((groups || []).map((g) => [g.id, g]));
+      const polys = groups ? groups.map((g) => {
+        const d = g.days.size;
+        const one = g.kids.length === 1 ? g.kids[0] : null;
+        const cls = ["map-month-cell"];
+        if (activeDay) cls.push(g.days.has(activeDay) ? "ring" : "dim");
+        if (g.kids.some((c) => c.id === activeCell)) cls.push("sel");
+        const title = one ? `${one.label} · ${plural(d, "day", "days")}` : `${plural(g.kids.length, "area", "areas")} · ${plural(d, "day", "days")}`;
+        return `<polygon class="${cls.join(" ")}" data-parent="${g.id}" data-res="${res}"${one ? ` data-cell="${one.id}"` : ""} points="${screenOf(g.ring)}" style="fill:var(--b${bin(d)})"><title>${escapeHtml(title)}</title></polygon>`;
+      }) : list.map((c) => {
         const d = c.dayCount;
         const cls = ["map-month-cell"];
         if (activeDay) cls.push(c.days.includes(activeDay) ? "ring" : "dim");
         if (activeCell === c.id) cls.push("sel");
-        const ptsArr = screenOf(c).map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-        return `<polygon class="${cls.join(" ")}" data-cell="${c.id}" points="${ptsArr}" style="fill:var(--b${bin(d)})"><title>${escapeHtml(c.label)} · ${plural(d, "day", "days")}</title></polygon>`;
+        return `<polygon class="${cls.join(" ")}" data-cell="${c.id}" points="${screenOf(c.ring)}" style="fill:var(--b${bin(d)})"><title>${escapeHtml(c.label)} · ${plural(d, "day", "days")}</title></polygon>`;
       });
 
       const towns = m.towns.filter((t) => inView(t.x, t.y)).map((t) => {
@@ -2394,11 +2476,9 @@ button.map-month-row:hover { background: var(--cream); }
 
       const zoomed = view.z > 1 ? " zoomed in." : "";
       const choiceLabel = activeChoice ? (activeChoice.trip ? activeChoice.name : activeChoice.name) : "";
-      const drawnLarger = list.some((c) => {
-        const span = ringSpan(c.ring);
-        return span > 0 && span * k < 8;
-      });
-      const summary = `map of ${choiceLabel}: ${plural(list.length, "shaded area", "shaded areas")}, each ${SIZE.label} across${drawnLarger ? ", drawn larger so they can be seen" : ""}. the same areas are listed under areas this month.${zoomed}`;
+      const summary = groups
+        ? `map of ${choiceLabel}: ${plural(groups.length, "shaded area", "shaded areas")}, each ${DRAWN_SIZE[res]} across, holding the ${plural(list.length, "area", "areas")} listed under areas this month.${zoomed}`
+        : `map of ${choiceLabel}: ${plural(list.length, "shaded area", "shaded areas")}, each ${SIZE.label} across. the same areas are listed under areas this month.${zoomed}`;
       const outside = list.filter((c) => !(px(c.cx) > 0 && px(c.cx) < W && py(c.cy) > 0 && py(c.cy) < H - 50)).length;
       outBtn.hidden = !outside;
       outBtn.textContent = outside ? `${plural(outside, "area", "areas")} outside the map · show all` : "";
@@ -2611,8 +2691,18 @@ button.map-month-row:hover { background: var(--cream); }
 
     root.querySelector("[data-map-month-svg]").addEventListener("click", (ev) => {
       if (dragged) { dragged = false; return; }
-      const btn = ev.target.closest("[data-cell]");
-      const cid = btn?.getAttribute("data-cell");
+      let cid = ev.target.closest("[data-cell]")?.getAttribute("data-cell");
+      if (!cid) {
+        const g = drawnParents.get(ev.target.closest("[data-parent]")?.getAttribute("data-parent"));
+        if (!g) return;
+        if (zoomToParent(g)) {
+          renderMapSvg();
+          live(`zoomed in on ${plural(g.kids.length, "area", "areas")}`);
+          return;
+        }
+        // At the zoom limit, choose the parent's area with the most days.
+        cid = g.kids[0].id;
+      }
       if (cid) {
         activeCell = cid === activeCell ? null : cid;
         activeDay = null;

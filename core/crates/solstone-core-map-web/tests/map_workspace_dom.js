@@ -1464,6 +1464,127 @@ test('a pentagon draws five corners', async () => {
   assert.strictEqual(poly.getAttribute('points').trim().split(/\s+/).length, 5);
 });
 
+// A month whose areas span about 90 km north to south: a busy area A, two
+// areas beside it in the same resolution 7 parent, and one area 44 km north
+// and one 44 km south. The fitted view holds the areas near A; show all holds
+// the whole month, where a 1 km area is too small to see.
+function wideMonth() {
+  const visit = (day, [lat, lon], hh = '10') => ({
+    kind: 'visit', device: 0, area: { label: `Area ${lat.toFixed(3)}` },
+    arrival: { utc: `2026-10-${day.slice(6)}T${hh}:00:00Z`, clock: `${hh}:00`, day },
+    departure: { utc: `2026-10-${day.slice(6)}T${hh}:30:00Z`, clock: `${hh}:30`, day },
+    point: [lat, lon, 40],
+  });
+  const a = h3.latLngToCell(39.75, -105, 8);
+  const p7 = h3.cellToParent(a, 7);
+  const [b, c] = h3.cellToChildren(p7, 8).filter((x) => x !== a);
+  const north = h3.latLngToCell(40.15, -105, 8);
+  const south = h3.latLngToCell(39.35, -105, 8);
+  const at = (cell) => h3.cellToLatLng(cell);
+  const month = makeMonth({
+    '20261001': { items: [visit('20261001', at(a)), visit('20261001', at(b), '12')] },
+    '20261002': { items: [visit('20261002', at(a)), visit('20261002', at(c), '12')] },
+    '20261005': { items: [visit('20261005', at(north))] },
+    '20261006': { items: [visit('20261006', at(south))] },
+  });
+  return { month, a, b, c, p7, north, south };
+}
+
+function monthPolys(elements) {
+  return elements['map-view-root'].querySelectorAll('[data-map-month-svg] polygon').map((el) => ({
+    el,
+    cell: el.getAttribute('data-cell'),
+    parent: el.getAttribute('data-parent'),
+    res: el.getAttribute('data-res'),
+    cls: el.getAttribute('class'),
+    pts: el.getAttribute('points').trim().split(/\s+/).map((p) => p.split(',').map(Number)),
+  }));
+}
+
+function monthLabel(elements) {
+  return elements['map-view-root'].querySelector('[data-map-month-svg] svg').getAttribute('aria-label');
+}
+
+function areasList(elements) {
+  const root = elements['map-view-root'];
+  return root.querySelector('[data-map-month-areas-sum]').textContent + root.querySelector('[data-map-month-areas]').innerHTML;
+}
+
+test('a 1 km area too small to see draws its fixed parent cell, on its own boundary, and the list stays at 1 km', async () => {
+  const { month, a, b, c, p7, north, south } = wideMonth();
+  const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': month } });
+  const listFitted = areasList(elements);
+
+  // The fitted view draws the 1 km areas themselves, as before.
+  const fitted = monthPolys(elements);
+  assert.ok(fitted.length > 0);
+  assert.ok(fitted.every((p) => p.cell && !p.parent));
+  assert.ok(monthLabel(elements).includes('each about 1 km across. the same areas are listed'));
+
+  // Show all: every area becomes its parent, drawn once.
+  elements['map-view-root'].querySelector('[data-map-month-outside]').click();
+  const drawn = monthPolys(elements);
+  const res = Number(drawn[0].res);
+  assert.ok(res < 8, 'a wide view draws parent cells');
+  assert.ok(drawn.every((p) => Number(p.res) === res), 'one resolution at a time');
+  const want = [...new Set([a, b, c, north, south].map((x) => h3.cellToParent(x, res)))].sort();
+  assert.deepEqual(drawn.map((p) => p.parent).sort(), want, 'each parent drawn once, so none overlaps another');
+  assert.ok(drawn.some((p) => p.parent === h3.cellToParent(p7, res) && !p.cell), 'the parent of three areas stands for all three');
+  assert.ok(monthLabel(elements).includes(`${drawn.length} shaded areas`));
+  assert.ok(monthLabel(elements).includes('holding the 5 areas listed under areas this month'));
+  assert.ok(!monthLabel(elements).includes('drawn larger'));
+
+  // Every corner is the parent's own boundary under one projection for the
+  // whole map (x from longitude, y from latitude), so nothing is scaled
+  // around its centre, and every ring reaches 8 px.
+  const corners = drawn.flatMap((p) => h3.cellToBoundary(p.parent).map(([lat, lon], i) => ({ lat, lon, x: p.pts[i][0], y: p.pts[i][1] })));
+  const fitAxis = (us, vs) => {
+    const mu = us.reduce((s, u) => s + u, 0) / us.length, mv = vs.reduce((s, v) => s + v, 0) / vs.length;
+    const slope = us.reduce((s, u, i) => s + (u - mu) * (vs[i] - mv), 0) / us.reduce((s, u) => s + (u - mu) ** 2, 0);
+    return (u) => mv + slope * (u - mu);
+  };
+  const xOf = fitAxis(corners.map((q) => q.lon), corners.map((q) => q.x));
+  const yOf = fitAxis(corners.map((q) => q.lat), corners.map((q) => q.y));
+  for (const q of corners) {
+    assert.ok(Math.abs(xOf(q.lon) - q.x) < 0.2 && Math.abs(yOf(q.lat) - q.y) < 0.2, `corner off its boundary by ${Math.abs(xOf(q.lon) - q.x)}, ${Math.abs(yOf(q.lat) - q.y)} px`);
+  }
+  for (const p of drawn) {
+    const xs = p.pts.map((q) => q[0]), ys = p.pts.map((q) => q[1]);
+    assert.ok(Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) >= 8);
+  }
+  assert.strictEqual(areasList(elements), listFitted, 'the areas list and its counts do not move with the drawing');
+
+  // A list choice and a day both show on the parent that holds them.
+  elements['map-view-root'].querySelector(`[data-map-month-areas] [data-cell="${b}"]`).click();
+  const chosen = monthPolys(elements).filter((p) => p.cls.split(' ').includes('sel'));
+  assert.deepEqual(chosen.map((p) => p.parent), [h3.cellToParent(b, res)]);
+  assert.ok(elements['map-view-root'].querySelector('[data-map-month-detail]').innerHTML.includes('an area about 1 km across'));
+  elements['map-view-root'].querySelector('[data-map-month-cal] button[data-day="20261006"]').click();
+  const ringed = monthPolys(elements).filter((p) => p.cls.split(' ').includes('ring'));
+  assert.deepEqual(ringed.map((p) => p.parent), [h3.cellToParent(south, res)]);
+  assert.ok(monthPolys(elements).filter((p) => p.parent !== ringed[0].parent).every((p) => p.cls.split(' ').includes('dim')));
+  assert.strictEqual(areasList(elements).replace(/aria-pressed="(true|false)"/g, ''), listFitted.replace(/aria-pressed="(true|false)"/g, ''));
+});
+
+test('a parent of one area chooses it, and a parent of several zooms to them', async () => {
+  const { month, a, b, c, p7, north } = wideMonth();
+  const { elements } = await run({ pathname: '/app/map/month/202610', responses: { '/app/map/api/month/202610': month } });
+  const listFitted = areasList(elements);
+  elements['map-view-root'].querySelector('[data-map-month-outside]').click();
+  const res = Number(monthPolys(elements)[0].res);
+
+  monthPolys(elements).find((p) => p.parent === h3.cellToParent(north, res)).el.click();
+  assert.ok(elements['map-view-root'].querySelector('[data-map-month-detail]').innerHTML.includes('an area about 1 km across'));
+  assert.strictEqual(elements['map-view-root'].querySelector(`[data-map-month-areas] [data-cell="${north}"]`).getAttribute('aria-pressed'), 'true');
+
+  monthPolys(elements).find((p) => p.parent === h3.cellToParent(p7, res)).el.click();
+  const zoomed = monthPolys(elements);
+  assert.ok(zoomed.every((p) => p.cell && !p.parent), 'zoomed in, the 1 km areas are drawn again');
+  for (const x of [a, b, c]) assert.ok(zoomed.some((p) => p.cell === x));
+  assert.ok(monthLabel(elements).includes('each about 1 km across'));
+  assert.strictEqual(areasList(elements).replace(/aria-pressed="(true|false)"/g, ''), listFitted.replace(/aria-pressed="(true|false)"/g, ''));
+});
+
 test('month with a stop and no location grid shows the month error', async () => {
   const p = makeMonth({
     '20261001': {
