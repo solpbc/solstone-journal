@@ -99,10 +99,29 @@ fn identical_retry_is_noop_and_different_segment_lands_on_a_new_key() {
     let archive_before = fs::read(&archive).unwrap();
     let archive_mtime = fs::metadata(&archive).unwrap().modified().unwrap();
     merge_journal_archive(&archive, &target, &options, None).unwrap();
+    let segment = target.join("chronicle/20260811/120000_60");
+    drop(hold_lock(segment.join("value"), LockOptions::default()).unwrap());
+    assert!(segment.join("value.lock").is_file());
+    fs::create_dir(segment.join("talents")).unwrap();
+    fs::write(segment.join("talents/sense.md"), b"derived result").unwrap();
+    fs::write(segment.join("events.jsonl"), b"saved event\n").unwrap();
     let before = fs::read(target.join("chronicle/20260811/120000_60/value")).unwrap();
+    let preview = preview_size(&archive, &target).unwrap();
+    assert!(preview.recordings.is_empty());
+    assert_eq!(preview.skipped, 1);
     let second = merge_journal_archive(&archive, &target, &options, None).unwrap();
     assert_eq!(second.retry_disposition, RetryDisposition::IdempotentNoop);
     assert_eq!(second.entries_written, 0);
+    assert_eq!(second.merge_summary.segments_skipped, preview.skipped);
+    assert!(!target.join("chronicle/20260811/120000_61").exists());
+    assert_eq!(
+        fs::read(segment.join("talents/sense.md")).unwrap(),
+        b"derived result"
+    );
+    assert_eq!(
+        fs::read(segment.join("events.jsonl")).unwrap(),
+        b"saved event\n"
+    );
     assert_eq!(
         fs::read(target.join("chronicle/20260811/120000_60/value")).unwrap(),
         before
@@ -139,6 +158,10 @@ fn identical_retry_is_noop_and_different_segment_lands_on_a_new_key() {
     ));
 
     // Retrying that merge finds the material where it landed.
+    let moved = target.join("chronicle/20260811/120000_61");
+    drop(hold_lock(moved.join("value"), LockOptions::default()).unwrap());
+    fs::create_dir(moved.join("talents")).unwrap();
+    fs::write(moved.join("talents/activity.md"), b"later result").unwrap();
     let retry = merge_journal_archive(&collision_archive, &target, &options, None).unwrap();
     assert_eq!(retry.retry_disposition, RetryDisposition::IdempotentNoop);
     assert!(
@@ -155,6 +178,54 @@ fn identical_retry_is_noop_and_different_segment_lands_on_a_new_key() {
         fs::metadata(&archive).unwrap().modified().unwrap(),
         archive_mtime
     );
+}
+
+#[test]
+fn retry_preserves_missing_or_different_archived_files_as_a_separate_segment() {
+    for changed in [
+        "value",
+        "talents/activity.md",
+        "events.jsonl",
+        "metadata/source.json",
+    ] {
+        let tree = TempTree::new();
+        let source = tree.path.join("source");
+        let target = tree.path.join("target");
+        let relative = Path::new("chronicle/20260811/120000_60");
+        for name in [
+            "value",
+            "talents/activity.md",
+            "events.jsonl",
+            "metadata/source.json",
+        ] {
+            let path = source.join(relative).join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"one").unwrap();
+        }
+        let archive = archive_from(&source, &tree.path);
+        let options = options(&tree);
+        merge_journal_archive(&archive, &target, &options, None).unwrap();
+        let changed_path = target.join(relative).join(changed);
+        if changed == "metadata/source.json" {
+            fs::remove_file(&changed_path).unwrap();
+        } else {
+            fs::write(&changed_path, b"two").unwrap();
+        }
+        let preview = preview_size(&archive, &target).unwrap();
+        assert_eq!(preview.recordings.len(), 1, "{changed}");
+        assert_eq!(preview.skipped, 0, "{changed}");
+        let result = merge_journal_archive(&archive, &target, &options, None).unwrap();
+        assert_eq!(result.merge_summary.segments_copied, 1, "{changed}");
+        assert_eq!(
+            fs::read(target.join("chronicle/20260811/120000_61").join(changed)).unwrap(),
+            b"one"
+        );
+        if changed == "metadata/source.json" {
+            assert!(!changed_path.exists());
+        } else {
+            assert_eq!(fs::read(changed_path).unwrap(), b"two");
+        }
+    }
 }
 
 #[test]

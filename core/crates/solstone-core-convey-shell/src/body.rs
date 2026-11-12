@@ -55,7 +55,7 @@ mod tests {
 
     impl EstablishedJournal {
         fn new(config: &[u8]) -> Self {
-            let dir = tempfile::TempDir::new_in("/var/tmp").expect("temporary root creates");
+            let dir = tempfile::tempdir().expect("temporary root creates");
             fs::create_dir(dir.path().join("config")).expect("config directory creates");
             fs::write(dir.path().join("config/journal.json"), config).expect("config writes");
             Self(dir)

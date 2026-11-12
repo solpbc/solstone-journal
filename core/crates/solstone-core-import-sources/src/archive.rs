@@ -1649,14 +1649,13 @@ fn place_colliding_segment(
             .collect::<Vec<_>>(),
         None => vec![identity.name.to_owned()],
     };
-    let source_digest = tree_digest(segment.path())?;
     let mut free = None;
     for name in &candidates {
         let relative = segment_relative_for(day, segment, RecordIdentity { name, ..identity });
         let destination = target.join(&relative);
         let candidate = key_state(&destination)?;
         if candidate == KeyState::Live {
-            if tree_digest(&destination)? == source_digest {
+            if segment_contains(segment.path(), &destination)? {
                 return Ok(CollisionPlacement::Held);
             }
         } else if free.is_none()
@@ -4015,46 +4014,56 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<(), io::Error> {
     }
     Ok(())
 }
-fn tree_digest(path: &Path) -> Result<Vec<u8>, ImportSourcesError> {
-    let mut hasher = Sha256::new();
-    fn visit(root: &Path, current: &Path, hasher: &mut Sha256) -> Result<(), io::Error> {
-        let mut entries = fs::read_dir(current)?.collect::<Result<Vec<_>, _>>()?;
-        entries.sort_by_key(|entry| entry.file_name());
-        for entry in entries {
-            let ty = entry.file_type()?;
-            if ty.is_symlink() {
-                return Err(io::Error::other("symbolic link in segment"));
+/// Compare only the archive's entries: processing can add files to a segment,
+/// but a missing or changed archived file must still land separately.
+fn segment_contains(source: &Path, destination: &Path) -> Result<bool, ImportSourcesError> {
+    fn file_digest(path: &Path) -> io::Result<Vec<u8>> {
+        let mut hasher = Sha256::new();
+        let mut file = File::open(path)?;
+        let mut buffer = [0_u8; 32 * 1024];
+        loop {
+            let count = file.read(&mut buffer)?;
+            if count == 0 {
+                break;
             }
-            let relative = entry
-                .path()
-                .strip_prefix(root)
-                .expect("under root")
-                .to_string_lossy()
-                .to_string();
-            hasher.update(relative.as_bytes());
-            if ty.is_dir() {
-                hasher.update(b"d");
-                visit(root, &entry.path(), hasher)?;
-            } else if ty.is_file() {
-                hasher.update(b"f");
-                let mut file = File::open(entry.path())?;
-                let mut buffer = [0_u8; 32 * 1024];
-                loop {
-                    let count = file.read(&mut buffer)?;
-                    if count == 0 {
-                        break;
-                    }
-                    hasher.update(&buffer[..count]);
+            hasher.update(&buffer[..count]);
+        }
+        Ok(hasher.finalize().to_vec())
+    }
+
+    fn contains(source: &Path, destination: &Path) -> io::Result<bool> {
+        let source_meta = fs::symlink_metadata(source)?;
+        let destination_meta = match fs::symlink_metadata(destination) {
+            Ok(meta) => meta,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        if source_meta.is_symlink() || destination_meta.is_symlink() {
+            return Err(io::Error::other("symbolic link in segment"));
+        }
+        if source_meta.is_dir() {
+            if !destination_meta.is_dir() {
+                return Ok(false);
+            }
+            for entry in fs::read_dir(source)? {
+                let entry = entry?;
+                if !contains(&entry.path(), &destination.join(entry.file_name()))? {
+                    return Ok(false);
                 }
             }
+            Ok(true)
+        } else if source_meta.is_file() && destination_meta.is_file() {
+            Ok(source_meta.len() == destination_meta.len()
+                && file_digest(source)? == file_digest(destination)?)
+        } else {
+            Ok(false)
         }
-        Ok(())
     }
-    visit(path, path, &mut hasher).map_err(|error| ImportSourcesError::SegmentMerge {
-        path: path.to_path_buf(),
+
+    contains(source, destination).map_err(|error| ImportSourcesError::SegmentMerge {
+        path: destination.to_path_buf(),
         detail: error.to_string(),
-    })?;
-    Ok(hasher.finalize().to_vec())
+    })
 }
 
 #[cfg(test)]
@@ -4092,6 +4101,46 @@ mod tests {
     }
 
     static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn segment_containment_checks_nested_entry_types() {
+        let tree = PlanTree::new();
+        let source = tree.path.join("source");
+        let destination = tree.path.join("destination");
+        fs::create_dir_all(source.join("nested")).unwrap();
+        fs::write(source.join("nested/value"), b"same").unwrap();
+        fs::create_dir_all(&destination).unwrap();
+        fs::write(destination.join("nested"), b"same").unwrap();
+        assert!(!segment_contains(&source, &destination).unwrap());
+        fs::remove_file(destination.join("nested")).unwrap();
+        fs::create_dir_all(destination.join("nested/value")).unwrap();
+        assert!(!segment_contains(&source, &destination).unwrap());
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn segment_containment_refuses_matching_symlink_referents() {
+        use std::os::unix::fs::symlink;
+
+        for linked in ["", "nested", "nested/value"] {
+            let tree = PlanTree::new();
+            let source = tree.path.join("source");
+            let destination = tree.path.join("destination");
+            fs::create_dir_all(source.join("nested")).unwrap();
+            fs::write(source.join("nested/value"), b"same").unwrap();
+            let link = if linked.is_empty() {
+                destination.clone()
+            } else {
+                destination.join(linked)
+            };
+            fs::create_dir_all(link.parent().unwrap()).unwrap();
+            symlink(source.join(linked), &link).unwrap();
+            let error = segment_contains(&source, &destination).unwrap_err();
+            assert!(error.to_string().contains("symbolic link"), "{error}");
+            assert!(fs::symlink_metadata(link).unwrap().is_symlink());
+            assert_eq!(fs::read(source.join("nested/value")).unwrap(), b"same");
+        }
+    }
 
     #[test]
     fn abandoned_extractions_are_reaped_only_while_no_merge_holds_the_lock() {

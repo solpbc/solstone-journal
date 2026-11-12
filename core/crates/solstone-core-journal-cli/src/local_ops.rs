@@ -24,7 +24,7 @@ use solstone_core_import_sources::ImportSourcesError;
 #[cfg(not(target_os = "ios"))]
 use solstone_core_import_sources::archive::{
     ArchiveMergeOptions, ArchiveMergeResult, ArchivePlan, FullReindexRequester, ReindexStatus,
-    RetryDisposition, merge_journal_archive, plan_journal_archive,
+    RetryDisposition, merge_journal_archive, plan_journal_archive, preview_size,
 };
 #[cfg(not(target_os = "ios"))]
 use solstone_core_indexer_query::{
@@ -974,10 +974,7 @@ fn archive_merge(args: &[OsString]) -> Outcome {
         Err(error) => return failure("archive merge", &error, EXIT_DATA),
     };
     if dry_run {
-        return match plan_journal_archive(&source) {
-            Ok(plan) => archive_merge_plan(&plan, &source, json_output),
-            Err(error) => archive_merge_json(Err(error), &source, true, json_output),
-        };
+        return archive_merge_preview(&source, &journal, json_output);
     }
     let options = ArchiveMergeOptions {
         working_root: solstone_core_import_sources::archive::archive_merge_working_root(&journal),
@@ -4154,12 +4151,29 @@ fn archive_error(token: &str, message: &str) -> Outcome {
 }
 
 #[cfg(not(target_os = "ios"))]
-fn archive_merge_plan(plan: &ArchivePlan, source: &Path, json_output: bool) -> Outcome {
+fn archive_merge_preview(source: &Path, journal: &Path, json_output: bool) -> Outcome {
+    let plan = match plan_journal_archive(source) {
+        Ok(plan) => plan,
+        Err(error) => return archive_merge_json(Err(error), source, true, json_output),
+    };
+    match preview_size(source, journal) {
+        Ok(size) => archive_merge_plan(&plan, source, size.skipped, json_output),
+        Err(error) => archive_merge_json(Err(error), source, true, json_output),
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn archive_merge_plan(
+    plan: &ArchivePlan,
+    source: &Path,
+    skipped: usize,
+    json_output: bool,
+) -> Outcome {
     if !json_output {
         return success(format!(
             "Archive merge (days: {}): 0 committed, {} skipped, 0 failed.\n",
             plan.days.join(", "),
-            plan.payload_files,
+            skipped,
         ));
     }
     emit_merge_json(
@@ -4169,7 +4183,7 @@ fn archive_merge_plan(plan: &ArchivePlan, source: &Path, json_output: bool) -> O
         true,
         Some(&plan.days),
         0,
-        plan.payload_files,
+        skipped,
         0,
         None,
         None,
@@ -4375,6 +4389,70 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn archive_dry_run_counts_skipped_segments_instead_of_payload_files() {
+        let (source, _) = make_test_journal();
+        let base = source.parent().unwrap();
+        let target = base.join("target");
+        fs::create_dir(&target).unwrap();
+        let segment = "chronicle/20260811/120000_60";
+        fs::create_dir_all(source.join(segment)).unwrap();
+        for name in ["first.txt", "second.txt"] {
+            fs::write(source.join(segment).join(name), b"original").unwrap();
+        }
+        let archive = base.join("archive.zip");
+        let archive_source = ArchiveSource::open(&source).unwrap();
+        let output = acquire_explicit_output_target(&ExplicitArchiveOutputRequest::new(
+            archive.clone(),
+            base.to_path_buf(),
+        ))
+        .unwrap();
+        publish_archive(
+            &output,
+            &EncodeArchiveRequest {
+                source: &archive_source,
+                solstone_version: env!("CARGO_PKG_VERSION"),
+                exported_at: "2026-08-11T12:00:00Z",
+                day_window: None,
+            },
+        )
+        .unwrap();
+
+        let assert_preview = |skipped: usize| {
+            let Outcome::LocalSuccess { stdout, .. } =
+                archive_merge_preview(&archive, &target, true)
+            else {
+                panic!("archive preview failed")
+            };
+            let result: Value = serde_json::from_str(&stdout).unwrap();
+            assert_eq!(result["dry_run"], true);
+            assert_eq!(result["committed"], 0);
+            assert_eq!(result["skipped"], skipped);
+            assert_eq!(result["days"], json!(["20260811"]));
+        };
+        assert_preview(0);
+        assert!(fs::read_dir(&target).unwrap().next().is_none());
+        let options = ArchiveMergeOptions {
+            working_root: base.join("merge-work"),
+            ..Default::default()
+        };
+        merge_journal_archive(&archive, &target, &options, None).unwrap();
+        let lock = target.join(segment).join("first.txt.lock");
+        fs::write(&lock, b"retained lock").unwrap();
+        assert_preview(1);
+        for name in ["first.txt", "second.txt"] {
+            assert_eq!(
+                fs::read(target.join(segment).join(name)).unwrap(),
+                b"original"
+            );
+        }
+        assert_eq!(fs::read(lock).unwrap(), b"retained lock");
+        assert!(!target.join("chronicle/20260811/120000_61").exists());
+        drop(output);
+        drop(archive_source);
+        fs::remove_dir_all(base).unwrap();
+    }
 
     #[test]
     fn doctor_index_failure_preserves_repair_report_and_original_failure() {

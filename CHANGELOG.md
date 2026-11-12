@@ -16,6 +16,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- importing the same journal archive again skips recordings already present, even after your journal has added processing results. existing duplicate copies stay as they are.
+- `solstone journal archive merge --dry-run` now counts recordings it would skip, rather than files in the archive.
 - when Oura moves an entry by more than a day, your journal keeps it where it was first saved, and the summary now says so instead of saying you deleted it.
 - importing a file into a journal on windows no longer fails with "the import could not be prepared" after the journal has been running for a while.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
