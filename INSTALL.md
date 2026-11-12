@@ -79,7 +79,9 @@ The public key is in this repository at `packaging/keys/solstone-journal-release
 
 The installer downloads and checks a pinned copy of minisign if it is missing.
 
-If a completed journal or CLI tree install skipped signature verification, download the [journal installer](https://updates.solstone.app/solstone-journal/install.sh) and run it with the same `--prefix`, `--role` and `--version`. If the installed files match the signed release, it updates the receipt and keeps the installed files and service settings.
+If a completed journal or CLI tree install in the default prefix, `~/.local/solstone-journal`, skipped signature verification, run the [solstone installer](https://solstone.app/install.sh) with `--upgrade`: `curl -fsSL https://solstone.app/install.sh | sh -s -- --upgrade`. It installs the current signed release where the install is and records it as a solstone install, keeping its service settings. If the install is already that release, it checks the installed files against it instead and refuses if they don't match, and the install keeps working as before.
+
+A tree in any other prefix still uses the journal installer: download the [journal installer](https://updates.solstone.app/solstone-journal/install.sh) and run it with the same `--prefix`, `--role` and `--version`. If the installed files match the signed release, it updates the receipt and keeps the installed files and service settings.
 
 ### A distribution package
 
