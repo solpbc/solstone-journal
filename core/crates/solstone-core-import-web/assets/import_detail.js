@@ -92,6 +92,8 @@
     zone_differs_under: "less than an hour of {source} may show at the wrong time: it was saved in a different time zone from the one this journal holds for {source}.",
     zone_differs_one: "1 hour of {source} may show at the wrong time: it was saved in a different time zone from the one this journal holds for {source}.",
     zone_differs_many: "{hours} hours of {source} may show at the wrong time: they were saved in a different time zone from the one this journal holds for {source}.",
+    body_days_hidden_one: "1 day of body data was hidden in the archive, so it's hidden in this journal too.",
+    body_days_hidden_many: "{n} days of body data were hidden in the archive, so they're hidden in this journal too.",
     skipped: 'skipped',
     errored: 'errored',
     created: 'created',
@@ -537,8 +539,17 @@
       ),
       ...asArray(summary.body_zones_differ).map((differs) =>
         `<p class="import-zone-differs">${escapeHtml(zoneDiffersLine(differs))}</p>`
-      )
+      ),
+      bodyDaysHiddenLine(numberValue(summary.body_days_hidden))
     ]);
+  }
+
+  // How many days of body data the archive brought hidden; nothing when none.
+  function bodyDaysHiddenLine(days) {
+    if (!days) return '';
+    const line = days === 1 ? strings.body_days_hidden_one
+      : strings.body_days_hidden_many.replace('{n}', String(days));
+    return `<p class="import-zone-differs" data-copy-key="body_days_hidden">${escapeHtml(line)}</p>`;
   }
 
   function zoneDiffersLine(differs) {

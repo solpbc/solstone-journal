@@ -2855,6 +2855,16 @@ function runDetailDropsFactsThatDoNotApply() {
   assert.ok(zoneLineHtml(0).includes('less than an hour of Oura may show at the wrong time: it was'));
   assert.ok(zoneLineHtml(1).includes('1 hour of Oura may show at the wrong time: it was'));
   assert.ok(zoneLineHtml(3).includes('3 hours of Oura may show at the wrong time: they were'));
+  const hiddenDaysHtml = (days) => ImportDetail.renderDetail({
+    status: 'success',
+    target_day: '20260706',
+    import_json: {},
+    imported_json: null,
+    merge_summary: { segments_copied: 1, body_days_hidden: days },
+  });
+  const hiddenLines = (html) => html.split('data-copy-key="body_days_hidden"').length - 1;
+  assert.strictEqual(hiddenLines(hiddenDaysHtml(2)), 1, 'a merge that brought hidden days says so once');
+  assert.strictEqual(hiddenLines(hiddenDaysHtml(0)), 0, 'a merge that brought none says nothing');
   const stagedCollisionHtml = ImportDetail.renderDetail({
     status: 'success',
     target_day: '20260706',

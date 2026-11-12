@@ -1209,6 +1209,11 @@ fn run_archive_with_seams(
                         differs.hours,
                     ));
                 }
+                if outcome.merge_summary.body_days_hidden > 0 {
+                    text.push_str(&cli_render::body_days_hidden(
+                        outcome.merge_summary.body_days_hidden,
+                    ));
+                }
                 success(text)
             }
             RetryDisposition::IdempotentNoop => {

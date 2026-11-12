@@ -295,6 +295,18 @@ pub fn body_zones_differ(source: &str, hours: u64) -> String {
     )
 }
 
+/// What the owner reads about days of body data an archive brought hidden.
+pub fn body_days_hidden(days: usize) -> String {
+    if days == 1 {
+        "1 day of body data was hidden in the archive, so it's hidden in this journal too.\n"
+            .to_owned()
+    } else {
+        format!(
+            "{days} days of body data were hidden in the archive, so they're hidden in this journal too.\n"
+        )
+    }
+}
+
 pub fn source_archive_already_present(source: RegistrySource) -> String {
     format!(
         "{} import did not merge anything: archive content is already present\n",
