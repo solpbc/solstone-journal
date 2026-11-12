@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+use solstone_core_format::content::body_hidden_days::HiddenDays;
 use solstone_core_format::content::body_records::BODY_RECORD_STREAMS;
 use solstone_core_format::content::strava_body::STRAVA_STREAM;
 
@@ -61,21 +62,38 @@ pub(crate) fn is_deleted(root: &Path, day: &str, stream: &str, name: &str) -> bo
         .exists()
 }
 
-/// Every day that holds a window, and the sources holding one that day.
-pub(crate) fn body_days(root: &Path) -> Result<BTreeMap<String, BTreeSet<&'static str>>, String> {
+/// Each day's sources, by day.
+pub(crate) type DaySources = BTreeMap<String, BTreeSet<&'static str>>;
+
+/// Every day that holds a live window: the ones that show, with the sources
+/// holding one that day, and apart from them the ones the owner hid.
+#[derive(Debug, Default)]
+pub(crate) struct BodyDays {
+    pub(crate) shown: DaySources,
+    pub(crate) hidden: BTreeSet<String>,
+}
+
+/// Every day that holds a window, split by `hidden`. While the hidden days
+/// can't be read, every day shows.
+pub(crate) fn body_days(root: &Path, hidden: &HiddenDays) -> Result<BodyDays, String> {
     let days = solstone_core_journal_io::day_dirs(root).map_err(|error| error.to_string())?;
-    let mut by_day = BTreeMap::new();
+    let mut held = BodyDays::default();
     for day in days.into_keys() {
         let sources = body_streams()
             .iter()
             .filter(|(stream, _)| holds_a_live_window(root, &day, stream))
             .map(|(_, source)| *source)
             .collect::<BTreeSet<_>>();
-        if !sources.is_empty() {
-            by_day.insert(day, sources);
+        if sources.is_empty() {
+            continue;
+        }
+        if hidden.hides(&day) == Some(true) {
+            held.hidden.insert(day);
+        } else {
+            held.shown.insert(day, sources);
         }
     }
-    Ok(by_day)
+    Ok(held)
 }
 
 /// Live windows a day holds, across every body stream.

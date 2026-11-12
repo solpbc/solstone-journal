@@ -6,26 +6,36 @@
 //! A Strava workout lives in the journal as consecutive pieces of about five
 //! minutes under `chronicle/<day>/import.strava/`, each holding the workout's own
 //! values in `workout.json`. A day lists each workout that has a piece on it,
-//! once, with the values Strava recorded. Nothing is computed from them.
+//! once, with the values Strava recorded. Nothing is computed from them. A
+//! workout goes with the day it started: when the owner hid that day, the
+//! days after it leave it out too.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use chrono::DateTime;
 use serde_json::{Value, json};
+use solstone_core_format::content::body_hidden_days::day_of;
 
 use crate::fmt::{clock, grouped_decimal, number};
 
 const STREAM: &str = "import.strava";
 
-/// The day's Strava workouts, in start order. A piece that can't be read is
-/// skipped: this is a view, and the delete re-reads before it removes anything.
-pub(crate) fn workouts_on(journal: &Path, day: &str) -> Vec<Value> {
+/// The day's Strava workouts, in start order, and the hidden days whose
+/// workouts it left out. A piece that can't be read is skipped: this is a view,
+/// and the delete re-reads before it removes anything.
+pub(crate) fn workouts_on(
+    journal: &Path,
+    day: &str,
+    hidden: &BTreeSet<String>,
+) -> (Vec<Value>, BTreeSet<String>) {
+    let mut took = BTreeSet::new();
     let dir = journal.join("chronicle").join(day).join(STREAM);
     let Ok(entries) = std::fs::read_dir(&dir) else {
-        return Vec::new();
+        return (Vec::new(), took);
     };
     let mut by_workout: BTreeMap<u64, Value> = BTreeMap::new();
+    let mut starts_here = BTreeSet::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.starts_with('.') {
@@ -40,11 +50,33 @@ pub(crate) fn workouts_on(journal: &Path, day: &str) -> Vec<Value> {
         let Some(activity_id) = tile.get("activity_id").and_then(Value::as_u64) else {
             continue;
         };
+        if tile.pointer("/tile/index").and_then(Value::as_u64) == Some(0) {
+            starts_here.insert(activity_id);
+        }
         if let Some(workout) = tile.get("workout") {
             by_workout
                 .entry(activity_id)
                 .or_insert_with(|| workout.clone());
         }
+    }
+    if !hidden.is_empty() {
+        let zone = solstone_core_journal_config::placed_zone(journal, "strava");
+        by_workout.retain(|activity_id, workout| {
+            if starts_here.contains(activity_id) {
+                return true;
+            }
+            let started = workout
+                .get("start")
+                .and_then(Value::as_str)
+                .and_then(|start| day_of(start, zone));
+            match started {
+                Some(started) if hidden.contains(&started) => {
+                    took.insert(started);
+                    false
+                }
+                _ => true,
+            }
+        });
     }
     let mut items = by_workout
         .into_iter()
@@ -56,7 +88,7 @@ pub(crate) fn workouts_on(journal: &Path, day: &str) -> Vec<Value> {
             map.remove("sort");
         }
     }
-    items
+    (items, took)
 }
 
 fn item(activity_id: u64, workout: &Value, day: &str) -> Value {
@@ -195,7 +227,9 @@ mod tests {
         piece(root.path(), "20261004", "070200_300", 9, run.clone());
         piece(root.path(), "20261004", "070700_300", 9, run);
 
-        let items = workouts_on(root.path(), "20261004");
+        let none = BTreeSet::new();
+        let (items, took) = workouts_on(root.path(), "20261004", &none);
+        assert!(took.is_empty());
         assert_eq!(items.len(), 2);
         assert_eq!(items[0]["name"], "Night Ride");
         assert_eq!(items[0]["start"], "oct 3, 11:30 PM");
@@ -219,7 +253,20 @@ mod tests {
             ])
         );
         assert_eq!(items[0]["more_from_strava"], json!([]));
-        assert_eq!(workouts_on(root.path(), "20261003").len(), 1);
-        assert!(workouts_on(root.path(), "20261005").is_empty());
+        assert_eq!(workouts_on(root.path(), "20261003", &none).0.len(), 1);
+        assert!(workouts_on(root.path(), "20261005", &none).0.is_empty());
+
+        // The night ride started on a day the owner hid: the next day leaves it
+        // out and says which day took it, and keeps its own morning run.
+        let hidden = BTreeSet::from(["20261003".to_owned()]);
+        let (items, took) = workouts_on(root.path(), "20261004", &hidden);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["name"], "Morning Run");
+        assert_eq!(took, hidden);
+        // Hiding the next day instead leaves the ride on the day it started.
+        let next = BTreeSet::from(["20261004".to_owned()]);
+        let (items, took) = workouts_on(root.path(), "20261003", &next);
+        assert_eq!(items.len(), 1);
+        assert!(took.is_empty());
     }
 }

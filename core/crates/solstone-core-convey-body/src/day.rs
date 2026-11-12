@@ -6,6 +6,10 @@
 //! Per source: what happened, each reading kind's count and first and last
 //! time, each count kind's total, logged entries, and the dated documents'
 //! names. Nothing here computes a minimum, maximum, average or comparison.
+//!
+//! A day the owner hid shows only that it's hidden. On another day, the part of
+//! a night or workout that started on a hidden day is left out, and the day
+//! says which hidden day took it.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -17,13 +21,15 @@ use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
 use chrono_tz::Tz;
 use serde_json::{Value, json};
+use solstone_core_format::content::body_hidden_days::{HiddenDays, read_hidden_days};
 use solstone_core_format::content::body_records::{
     BODY_RECORD_STREAMS, BodyRow, RowKind, parse_source_time, source_words, user_entered,
 };
 use solstone_core_location::body_records::{LINE_VALUE, day_faces, line_distance};
 
-use crate::fmt::{clock, count_noun, grouped, long_day, parse_day, short_day};
-use crate::listing::body_days;
+use crate::fmt::{clock, count_noun, grouped, long_day, parse_day, short_day, short_day_year};
+use crate::hidden::drop_hidden_rows;
+use crate::listing::{DaySources, body_days};
 use crate::old_lines::day_lines;
 use crate::presentation::display_value;
 use crate::rows::day_rows;
@@ -296,7 +302,7 @@ fn source_section(
     })
 }
 
-fn nearest(days: &BTreeMap<String, BTreeSet<&'static str>>, day: &str) -> Value {
+fn nearest(days: &DaySources, day: &str) -> Value {
     let prev = days.keys().rev().find(|key| key.as_str() < day);
     let next = days.keys().find(|key| key.as_str() > day);
     json!({
@@ -309,9 +315,29 @@ fn nearest(days: &BTreeMap<String, BTreeSet<&'static str>>, day: &str) -> Value 
 
 pub(crate) fn build_day(root: &Path, day: &str) -> Result<Value, String> {
     let date = parse_day(day).ok_or_else(|| "invalid day".to_owned())?;
-    let days = body_days(root)?;
-    let (by_source, unreadable) = day_rows(root, day);
-    let strava = workouts_on(root, day);
+    let store = read_hidden_days(root);
+    let hidden_unreadable = store == HiddenDays::Unreadable;
+    let hidden = store.days().cloned().unwrap_or_default();
+    let days = body_days(root, &store)?.shown;
+    if hidden.contains(day) {
+        return Ok(json!({
+            "day": day,
+            "day_label": long_day(date),
+            "hidden": true,
+            "hidden_unreadable": false,
+            "hidden_with": [],
+            "has_data": false,
+            "nearest": nearest(&days, day),
+        }));
+    }
+    let (mut by_source, unreadable) = day_rows(root, day);
+    let mut took = BTreeSet::new();
+    for (source, rows) in &mut by_source {
+        drop_hidden_rows(root, source, day, rows, &hidden, &mut took);
+    }
+    by_source.retain(|_, rows| !rows.is_empty());
+    let (strava, strava_took) = workouts_on(root, day, &hidden);
+    took.extend(strava_took);
     let titles = owner_titles(root, day);
     let entry_total = by_source
         .values()
@@ -328,9 +354,16 @@ pub(crate) fn build_day(root: &Path, day: &str) -> Result<Value, String> {
         })
         .collect::<Vec<_>>();
     let has_data = !sources.is_empty() || !strava.is_empty() || unreadable > 0;
+    let hidden_with = took
+        .iter()
+        .map(|day| json!({"day": day, "label": short_day_year(day)}))
+        .collect::<Vec<_>>();
     Ok(json!({
         "day": day,
         "day_label": long_day(date),
+        "hidden": false,
+        "hidden_unreadable": hidden_unreadable,
+        "hidden_with": hidden_with,
         "has_data": has_data,
         "entry_total": entry_total,
         "entry_total_label": grouped(entry_total),

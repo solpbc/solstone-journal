@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! The Body app's read routes, over the journal's body windows.
+//! The Body app's routes, over the journal's body windows: its reads, and the
+//! owner's hide for a day of body data.
 
 mod audit;
 mod day;
 mod fmt;
+mod hidden;
 mod listing;
 mod old_lines;
 mod presentation;
@@ -20,6 +22,8 @@ mod window;
 mod app_tests;
 #[cfg(test)]
 mod corpus_test;
+#[cfg(test)]
+mod hidden_tests;
 
 pub use router::api_router;
 
