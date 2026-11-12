@@ -203,6 +203,16 @@ It runs at journal start, before an Apple Health or Oura save, inside a Strava i
 
 Moving a code record writes an intent to `imports/.body-moves.jsonl` first, with the exact copy the target gets. The source line is frozen while the intent is open, so the store refuses to change it, and finishing is always the same: add the copy if the target lacks the key, then remove the source. The next start finishes any move left open; an import finishes those of the workouts it touches.
 
+## Hidden days
+
+The owner can hide a journal day of body data. It's kept as `{"days": ["YYYYMMDD", …]}` in `solstone/apps/body/hidden-days.json`, read strictly (`solstone_core_format::content::body_hidden_days`) and written only by `solstone_core_location::body_hidden`. Nothing is stamped on a row or a record, so whatever an import, sync or archive merge brings in for a hidden day lands hidden, and an import's delete or erase never touches it. An archive merge adds the archive's hidden days to this journal's before it writes anything else, and takes back the ones it added if it fails.
+
+- **Which day a row goes with** (`RowDays`): its window's day, except a later piece of a workout, night or session that started on an earlier day, which goes with the day it started (by the span every piece carries, on the source's fixed zone), and the stages and events of one, found through a piece of it on the same day. A Strava workout goes with the day of its first piece. Readings in a workout's session slots after midnight go with their own window's day.
+- **Day readers** (the body app, `body.md`, search entries for body windows and Strava workouts, agents' span reads and `list_transcripts`, a body window's segment page) leave out the rows a hidden day takes. A hidden day has no `body.md`.
+- **Group readers** (Home, the activities day view, `list_activities`, `get_week`, `fetch`, `get_activity_sources`, a body record's search entry) hide a group whose anchor's day is hidden, worked out over every record, whatever a connection may read. A face says `hidden_day` and `hidden_self` apart. A record whose group has a hidden member is hidden when the owner writes words on it.
+- **When the file can't be read,** the owner's pages show everything, search and connections leave out all body data, a hide or unhide refuses, and `body.md` waits.
+- Search is decided when a file is indexed: each hide and unhide queues the day's body streams, its `body.md` and each facet's activities for that day, and `body.md` rebuilds the days after it that a night or longer experience reaches.
+
 ## Deleting an import
 
 A body import is deleted as one thing, through the trash. It takes what it first wrote and nothing else:
