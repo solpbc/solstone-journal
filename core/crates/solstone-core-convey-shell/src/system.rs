@@ -127,7 +127,10 @@ pub async fn status(journal_root: PathBuf) -> Response {
                 }
             };
             let etc_dir = std::path::Path::new("/etc");
-            let probe = solstone_core_update::RealPackageProbe;
+            let probe = RememberedProbe {
+                inner: &solstone_core_update::RealPackageProbe,
+                answers: &PAYLOAD_ANSWERS,
+            };
             linux_version_status(&UPDATE_LISTING, &probe, exe, &data_dir, etc_dir)
         })
         .await
@@ -178,6 +181,134 @@ fn linux_version_status(
     etc: &std::path::Path,
 ) -> solstone_core_update::UpdateReport {
     solstone_core_update::check(catalogue, probe, executable, data, etc, true, None)
+}
+
+/// Whether the installed tree matches its manifest, as last checked for an
+/// executable file that has not changed since. The check hashes the whole
+/// installed tree: on a processor without SHA instructions that took 7 to 9 s
+/// a read, longer than a phone waits for status, so the phone never learned
+/// what this journal understands. A changed file is checked again.
+#[cfg(target_os = "linux")]
+static PAYLOAD_ANSWERS: PayloadAnswers = PayloadAnswers::new();
+
+#[cfg(target_os = "linux")]
+struct PayloadAnswers(std::sync::Mutex<Option<std::collections::HashMap<PayloadKey, bool>>>);
+
+#[cfg(target_os = "linux")]
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct PayloadKey {
+    executable: PathBuf,
+    version: String,
+    len: u64,
+    modified: std::time::SystemTime,
+}
+
+#[cfg(target_os = "linux")]
+impl PayloadAnswers {
+    const fn new() -> Self {
+        Self(std::sync::Mutex::new(None))
+    }
+
+    fn matches(
+        &self,
+        inner: &dyn solstone_core_update::PackageProbe,
+        executable: &std::path::Path,
+        version: &str,
+    ) -> bool {
+        let key = std::fs::canonicalize(executable)
+            .and_then(|path| {
+                let meta = std::fs::metadata(&path)?;
+                Ok(PayloadKey {
+                    executable: path,
+                    version: version.to_owned(),
+                    len: meta.len(),
+                    modified: meta.modified()?,
+                })
+            })
+            .ok();
+        let Some(key) = key else {
+            return inner.payload_matches(executable, version);
+        };
+        // Held across the check, so reads that arrive together hash once.
+        let mut answers = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let answers = answers.get_or_insert_with(Default::default);
+        if let Some(matches) = answers.get(&key) {
+            return *matches;
+        }
+        let matches = inner.payload_matches(executable, version);
+        answers
+            .retain(|known, _| known.executable != key.executable || known.version != key.version);
+        answers.insert(key, matches);
+        matches
+    }
+}
+
+#[cfg(target_os = "linux")]
+struct RememberedProbe<'a> {
+    inner: &'a dyn solstone_core_update::PackageProbe,
+    answers: &'a PayloadAnswers,
+}
+
+#[cfg(target_os = "linux")]
+impl solstone_core_update::PackageProbe for RememberedProbe<'_> {
+    fn owns_journal(&self, executable: &std::path::Path) -> bool {
+        self.inner.owns_journal(executable)
+    }
+
+    fn journal_version(&self, executable: &std::path::Path) -> Option<String> {
+        let version = env!("CARGO_PKG_VERSION");
+        self.payload_matches(executable, version)
+            .then(|| version.to_owned())
+    }
+
+    fn payload_matches(&self, executable: &std::path::Path, version: &str) -> bool {
+        self.answers.matches(self.inner, executable, version)
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod payload_answer_tests {
+    use super::*;
+    use solstone_core_update::PackageProbe;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct Counting(AtomicUsize);
+    impl PackageProbe for Counting {
+        fn owns_journal(&self, _: &std::path::Path) -> bool {
+            false
+        }
+        fn payload_matches(&self, _: &std::path::Path, _: &str) -> bool {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            true
+        }
+    }
+
+    #[test]
+    fn an_unchanged_executable_is_checked_once_and_a_changed_one_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("solstone-core");
+        std::fs::write(&exe, b"payload").unwrap();
+        let inner = Counting(AtomicUsize::new(0));
+        let answers = PayloadAnswers::new();
+        let probe = RememberedProbe {
+            inner: &inner,
+            answers: &answers,
+        };
+
+        assert_eq!(
+            probe.journal_version(&exe).as_deref(),
+            Some(env!("CARGO_PKG_VERSION"))
+        );
+        assert!(probe.payload_matches(&exe, env!("CARGO_PKG_VERSION")));
+        assert_eq!(inner.0.load(Ordering::SeqCst), 1);
+
+        std::fs::write(&exe, b"a changed payload").unwrap();
+        assert!(probe.payload_matches(&exe, env!("CARGO_PKG_VERSION")));
+        assert_eq!(inner.0.load(Ordering::SeqCst), 2);
+    }
 }
 
 #[cfg(all(test, feature = "full-tests", target_os = "linux"))]
