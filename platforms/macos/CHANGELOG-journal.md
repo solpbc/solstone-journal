@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.76 (build 128)] - 2026-11-12
+
 ### Added
 
 - when an update has waited a few days for you to quit and reopen the journal app, the journal app now asks whether to restart and install the update. it restarts only when you choose to, and your journal keeps running until then.
+
+### Changed
+
+- updated the bundled journal to [2.0.76](https://solstone.app/releases#v2.0.76) →
 
 ### Fixed
 
