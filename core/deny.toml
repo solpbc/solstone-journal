@@ -14,6 +14,45 @@ ignore = [
     # or this use grows beyond the bounded stub-client queries.
     # Upstream: https://rustsec.org/advisories/RUSTSEC-2026-0119
     { id = "RUSTSEC-2026-0119", reason = "sol pbc product engineering: hickory-proto 0.24.4 only encodes bounded single-question stub lookups, not attacker-supplied multi-record messages; patched 0.26.1 requires an unaccepted DNSSEC rewrite" },
+    # Product engineering compatibility exception, 2026-11-12: three more
+    # hickory-proto 0.24.4 advisories, patched only in 0.26.2 (the same DNSSEC
+    # rewrite as RUSTSEC-2026-0119). RUSTSEC-2026-0487, -0489 and -0490 are
+    # panics in the zone-file text parser (SVCB/HTTPS `alpn` values, a lone
+    # quote, a 4096-character token). That parser is the `text-parsing`
+    # feature, which this graph does not enable: hickory-resolver is built with
+    # default features off and `tokio-runtime` only, so the code is not
+    # compiled. RUSTSEC-2026-0491 is wire decoding: a response whose header
+    # claims 65,535 records makes the decoder reserve that capacity (about
+    # 18 MB) before it fails. The hostname check sends a few bounded
+    # single-question UDP queries to the system resolver under a 5 s timeout:
+    # when the owner asks, and every 60 s in the background while a BYO
+    # hostname is configured (byo_door.rs). Within a window the client keeps
+    # reading after a failed decode, so spoofed replies can repeat the
+    # reservation, but each failed decode frees its buffer and the peak is
+    # bounded by the concurrent requests (about 2 x 18 MB), never cumulative.
+    # Anyone able to inject those replies can already fail the check and
+    # unbind ingress. Revisit with RUSTSEC-2026-0119: a compatible patched
+    # resolver, the 0.26 migration, any growth beyond the bounded stub-client
+    # queries, or anything that enables hickory's text-parsing feature.
+    # Upstream: https://rustsec.org/advisories/RUSTSEC-2026-0487 (-0489, -0490, -0491)
+    { id = "RUSTSEC-2026-0487", reason = "sol pbc product engineering: zone-file text parser panic; hickory-proto 0.24.4 is built without the text-parsing feature, so the code is not compiled; patched 0.26.2 requires an unaccepted DNSSEC rewrite" },
+    { id = "RUSTSEC-2026-0489", reason = "sol pbc product engineering: zone-file text parser panic; hickory-proto 0.24.4 is built without the text-parsing feature, so the code is not compiled; patched 0.26.2 requires an unaccepted DNSSEC rewrite" },
+    { id = "RUSTSEC-2026-0490", reason = "sol pbc product engineering: zone-file lexer panic; hickory-proto 0.24.4 is built without the text-parsing feature, so the code is not compiled; patched 0.26.2 requires an unaccepted DNSSEC rewrite" },
+    { id = "RUSTSEC-2026-0491", reason = "sol pbc product engineering: header-count capacity reservation on decode is a bounded, non-cumulative transient allocation in the 5 s single-question hostname check (owner-requested, and every 60 s while a BYO hostname is configured); patched 0.26.2 requires an unaccepted DNSSEC rewrite" },
+    # VPE exception, 2026-11-12: RUSTSEC-2026-0486 (informational, unsound)
+    # affects rustix 1.1.4's xattr readers (getxattr, lgetxattr, fgetxattr,
+    # listxattr, llistxattr, flistxattr): given a zero-length buffer they mark
+    # unwritten bytes initialized. Nothing here calls them. No workspace crate
+    # does, and the one crate that wraps them, xattr 1.6.1, is reached only
+    # through tar 0.4.46, which calls xattr::set (setxattr) when unpacking and
+    # never a reader. Patched 1.1.6 is a one-line lock bump, but rustix sits in
+    # the Windows notice closure and the Windows notices refresh does not yet
+    # admit a licence-identical upgrade whose expression carries
+    # `WITH LLVM-exception`; that is a notices-tool change, not a release-night
+    # one. Revisit at the next Journal prepare (take 1.1.6 once the refresh
+    # admits it), or at once if any code reads extended attributes.
+    # Upstream: https://rustsec.org/advisories/RUSTSEC-2026-0486
+    { id = "RUSTSEC-2026-0486", reason = "VPE: rustix 1.1.4 xattr readers are never called (tar 0.4.46 uses only xattr::set); take 1.1.6 once the Windows notices refresh admits its Apache-2.0 WITH LLVM-exception upgrade" },
     # VPE exception, 2026-09-14: RUSTSEC-2024-0388 applies to derivative 2.2.0,
     # reached only through the pinned Velopack =1.2.0 Windows-installer callback
     # dependency. RustSec lists no patched derivative release; Velopack's own current
