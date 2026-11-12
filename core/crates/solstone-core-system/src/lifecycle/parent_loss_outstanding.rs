@@ -592,6 +592,7 @@ fn parse_boot_uuid(text: &str) -> Option<String> {
 }
 
 /// The kernel's boot session id: Linux `boot_id`, macOS `kern.bootsessionuuid`.
+#[allow(unsafe_code)]
 pub(crate) fn current_boot_id() -> Option<String> {
     #[cfg(target_os = "linux")]
     {
@@ -629,6 +630,7 @@ pub(crate) fn current_boot_id() -> Option<String> {
 }
 
 /// macOS `kern.boottime` in seconds; `None` elsewhere or when unreadable.
+#[allow(unsafe_code)]
 pub(crate) fn current_boot_time() -> Option<u64> {
     #[cfg(target_os = "macos")]
     {
