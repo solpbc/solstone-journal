@@ -2842,6 +2842,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_body_record_is_drawn_by_its_name_and_its_times() {
+        let root = body_journal();
+        let (_, view) = body_call(root.path(), "view", None, None).await;
+        let item = body_item(&view).unwrap_or_else(|| panic!("{view}"));
+        assert!(
+            item["title"]
+                .as_str()
+                .is_some_and(|title| !title.is_empty()),
+            "{item}"
+        );
+        let (start, end) = (item["start_min"].as_i64(), item["end_min"].as_i64());
+        assert!(
+            start.is_some() && end >= start && item["start"].is_string(),
+            "{item}"
+        );
+    }
+
+    #[tokio::test]
     async fn a_body_record_says_whether_its_day_or_itself_is_hidden() {
         let root = body_journal();
         hide_body_days(root.path(), &[BODY_DAY]);

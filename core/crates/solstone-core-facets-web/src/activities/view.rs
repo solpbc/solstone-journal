@@ -321,6 +321,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
 
     // Body faces: composed from their windows, after the day's own items.
     let mut places = BTreeMap::new();
+    let zone = solstone_core_journal_config::owner_zone(root);
     for f in &scope {
         let faces = around
             .get(f)
@@ -335,6 +336,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
                 }
             }
             let mut item = solstone_core_location::body_records::face_json(&face);
+            place_body_item(&mut item, &face, zone, day);
             if let Some(span) = solstone_core_location::body_records::shown_span(&face) {
                 // A record with nothing still there sits beside nothing, either way.
                 let there = solstone_core_location::body_records::face_still_there(&face);
@@ -717,4 +719,38 @@ fn query_value(query: Option<&str>, key: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// What the day's timeline draws a body item by, as it draws any activity: its
+/// name and its times on the owner's clock, in minutes from the day's start.
+/// A night that runs past midnight is drawn to the day's end.
+fn place_body_item(
+    item: &mut Value,
+    face: &solstone_core_location::body_records::Face,
+    zone: chrono_tz::Tz,
+    day: &str,
+) {
+    if let Some(name) = solstone_core_location::body_records::face_line(face, zone, day)
+        .and_then(|line| line.get("name").and_then(Value::as_str).map(str::to_owned))
+    {
+        item["title"] = Value::String(name);
+    }
+    let Some((start, end)) = solstone_core_location::body_records::shown_span(face) else {
+        return;
+    };
+    let Some(midnight) = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+        .ok()
+        .and_then(|date| date.and_hms_opt(0, 0, 0))
+        .and_then(|naive| naive.and_local_timezone(zone).earliest())
+        .map(|midnight| midnight.timestamp())
+    else {
+        return;
+    };
+    let minute = |at: i64| ((at - midnight).div_euclid(60)).clamp(0, 1440);
+    let (start_min, end_min) = (minute(start), minute(end));
+    let clock = |minutes: i64| format!("{:02}:{:02}", (minutes % 1440) / 60, minutes % 60);
+    item["start_min"] = Value::from(start_min);
+    item["end_min"] = Value::from(end_min.max(start_min));
+    item["start"] = Value::String(clock(start_min));
+    item["end"] = Value::String(clock(end_min.max(start_min)));
 }
