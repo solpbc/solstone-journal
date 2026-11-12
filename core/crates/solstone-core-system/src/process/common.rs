@@ -262,6 +262,7 @@ impl ProcessBirth {
     }
 
     /// The boot a Linux birth was observed on, when it was recorded.
+    #[cfg(unix)]
     pub(crate) fn linux_boot(&self) -> Option<u128> {
         match self.inner {
             ProcessBirthInner::Linux { boot, .. } => boot,
