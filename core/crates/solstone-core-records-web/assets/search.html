@@ -193,11 +193,15 @@
 
   // A redraw takes out what it replaces. Focus inside it goes to <main> first,
   // then to the first day heading the redraw puts in, never to the page.
-  function holdFocus(){
+  // Search's own moves and pops take focus from <main> or from nowhere too:
+  // a tap on a phone focuses nothing, and blurs what had focus.
+  function holdFocus(ours){
    const at=document.activeElement;
-   if(!at||at===document.body||!root.contains(at)||form.contains(at))return false;
    const main=document.getElementById('main-content');
    if(!main)return false;
+   const inside=at&&root.contains(at)&&!form.contains(at);
+   const lost=!at||at===document.body||at===main;
+   if(!inside&&!(ours&&lost))return false;
    if(!main.hasAttribute('tabindex'))main.setAttribute('tabindex','-1');
    focusQuietly(main);return true;
   }
@@ -231,11 +235,11 @@
   // Shows `state`. A restore (back or forward onto this entry) draws the
   // answer this page already had for it; anything else reads. Scrolls to
   // `scroll` once drawn.
-  async function load(state,{restore=false,scroll=null}={}){
+  async function load(state,{restore=false,scroll=null,ours=false}={}){
    epoch+=1;const mine=epoch;const id=entryId();
    abortRunning();running=null;stopProgress();root.removeAttribute('aria-busy');
    shown=state;
-   const moved=holdFocus();
+   const moved=holdFocus(ours);
    const settle=()=>{placeFocus(moved);if(scroll!==null)window.scrollTo(0,scroll);};
    results.replaceChildren();paging.replaceChildren();status.classList.remove('search-error');
    if(!state.q.trim()){status.textContent=initialStatus;settle();report('content');return;}
@@ -276,14 +280,14 @@
   function stale(){return !!(window.appEvents&&window.appEvents.buildChanged&&window.appEvents.buildChanged());}
   // One of search's own moves: a new search, a page of results, a day's
   // matches, the empty search. One history entry, then a read.
-  function own(state,how){
+  function own(state,how,{focus=true}={}){
    if(stale()){window.location.assign(path+state.search);return;}
    if(how==='push'){keepScroll(entryId());ctx.history.push(path+state.search);shownId=entryId();window.scrollTo(0,0);}
    else if(how==='replace'){ctx.history.replace(path+state.search);}
    fill(state);
    const reportReady=window.beginViewReady?window.beginViewReady('search',{update:true}):null;
    report=(s)=>{ctx.ready(s);if(reportReady)reportReady(s);};
-   load(state);
+   load(state,{ours:focus});
   }
 
   form.addEventListener('submit',(event)=>{
@@ -298,7 +302,7 @@
     at.blur();
     if(main){if(!main.hasAttribute('tabindex'))main.setAttribute('tabindex','-1');focusQuietly(main);}
    }
-   own(stateOf(search),search===window.location.search?'replace':'push');
+   own(stateOf(search),search===window.location.search?'replace':'push',{focus:false});
   });
   // A link to search's own path with another query is search's own entry.
   // The router leaves it (same path, another query); a link it takes is
@@ -323,7 +327,7 @@
    const state=stateOf(window.location.search);fill(state);
    const reportReady=window.beginViewReady?window.beginViewReady('search',{update:true}):null;
    report=(s)=>{ctx.ready(s);if(reportReady)reportReady(s);};
-   load(state,{restore:true,scroll:scrolls.has(id)?scrolls.get(id):0});
+   load(state,{restore:true,scroll:scrolls.has(id)?scrolls.get(id):0,ours:true});
   });
   // Opening a matched entry. A read still out when the page of results, or
   // the view, has gone draws nothing.

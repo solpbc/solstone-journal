@@ -685,6 +685,47 @@ module.exports = async function searchContractCases(env) {
     assert.strictEqual(p.doc.activeElement, rail);
   });
 
+  // A phone's tap focuses nothing and blurs what had focus.
+  await test('a tap on the rail\'s search on results, with focus nowhere, puts focus on <main>, never the page', async () => {
+    const p = page('/app/search/?q=alpha');
+    await p.mount();
+    p.searches()[0].answer(ALPHA);
+    await settle();
+    p.doc.activeElement = p.doc.body;
+    p.q('#app-rail a[data-app-name="search"]').click();
+    assert.strictEqual(p.location.href, ORIGIN + '/app/search/');
+    assert.strictEqual(p.doc.activeElement, p.main);
+  });
+
+  await test('a tap on older matching days from <main> moves focus to the first day heading', async () => {
+    const p = page('/app/search/?q=alpha&from=&to=');
+    await p.mount();
+    p.searches()[0].answer(ALPHA);
+    await settle();
+    p.main.setAttribute('tabindex', '-1');
+    p.main.focus();
+    p.q('.search-paging').querySelector('a').click();
+    assert.strictEqual(p.doc.activeElement, p.main, 'focus waits on <main> while the page reads');
+    p.searches()[1].answer(answer([day('20260301', 1)], { total_days: 25 }));
+    await settle();
+    assert.strictEqual(p.doc.activeElement, p.q('.search-results').querySelector('h2'));
+  });
+
+  await test('back between two searches with focus nowhere moves focus to the first day heading', async () => {
+    const p = page('/app/search/?q=alpha&from=&to=');
+    await p.mount();
+    p.searches()[0].answer(ALPHA);
+    await settle();
+    p.q('[name=q]').value = 'beta';
+    p.submit();
+    p.searches()[1].answer(BETA);
+    await settle();
+    p.doc.activeElement = p.doc.body;
+    p.window.history.back();
+    await settle();
+    assert.strictEqual(p.doc.activeElement, p.q('.search-results').querySelector('h2'));
+  });
+
   await test('links search does not take: the same address, another view, a modified click', async () => {
     const p = page('/app/search/');
     await p.mount();
