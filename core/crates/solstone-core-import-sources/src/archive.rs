@@ -3017,7 +3017,14 @@ fn hide_archive_days(
     }
     state.summary.body_days_hidden = added;
     state.writes += 1;
-    state.decision("committed", "body_hidden_days", json!({"added": added}))
+    // Nothing is published yet: a log that can't be written stops the merge
+    // with the store as it was, or with the days still hidden when even that
+    // fails.
+    state
+        .decision("committed", "body_hidden_days", json!({"added": added}))
+        .inspect_err(|_| {
+            let _ = unhide_added_days(target, state);
+        })
 }
 
 /// After a merge is undone whole, unhide the days it hid. What is left of
