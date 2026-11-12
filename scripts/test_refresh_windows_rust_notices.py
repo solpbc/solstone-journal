@@ -459,7 +459,8 @@ class RegistryAdditionOutsideClosure(unittest.TestCase):
             refresh.require_permissive_additions(self.meta(license), [self.added()])
 
     def test_copyleft_or_missing_licence_refuses(self):
-        for license in ("GPL-3.0-only", "MIT OR LGPL-2.1", "", None):
+        for license in ("GPL-3.0-only", "MIT OR LGPL-2.1",
+                        "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT", "", None):
             with self.assertRaisesRegex(refresh.RefreshError, "permissive"):
                 refresh.require_permissive_additions(self.meta(license), [self.added()])
 
@@ -1173,7 +1174,8 @@ class RegistryUpgrade(unittest.TestCase):
         return result
 
     def test_incremental_refresh_keeps_surviving_members_and_notices_identical(self):
-        for expression in ("MIT", "CDLA-Permissive-2.0"):
+        for expression in ("MIT", "CDLA-Permissive-2.0",
+                           "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"):
             with self.subTest(expression=expression), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 archive, metadata, data, prior = self.fixture(root, expression)
@@ -1182,6 +1184,7 @@ class RegistryUpgrade(unittest.TestCase):
                 self.assertIsNone(result["new_notices"])
                 self.assertEqual(result["new_index"]["notices_sha256"], refresh.sha256_bytes(before))
                 self.assertEqual(result["new_index"]["packages"][0]["version"], "1.0.1")
+                self.assertEqual(result["new_index"]["packages"][0]["license_expression"], expression)
                 with tarfile.open(root / "out" / result["report"]["new_archive"]["filename"]) as tar:
                     observed = {m.name: tar.extractfile(m).read() for m in tar if m.isfile()}
                 survivors = {n: b for n, b in prior.items() if n.startswith("vendor/outside-")}
@@ -1222,6 +1225,12 @@ class RegistryUpgrade(unittest.TestCase):
     def test_licence_and_acquisition_refusals_leave_published_inputs_untouched(self):
         for changes in ({"new_expression": "ISC"}, {"new_text": b"changed\n"},
                         {"expression": "GPL-3.0-only"}, {"expression": "unknown"},
+                        {"expression": "Apache-2.0 WITH unknown-exception"},
+                        {"expression": "GPL-3.0-only WITH LLVM-exception"},
+                        {"expression": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+                         "new_expression": "Apache-2.0 OR MIT"},
+                        {"expression": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+                         "new_text": b"changed\n"},
                         {"extra": {"native/NOTICE": b"new terms"}},
                         {"extra": {"Cargo.toml": b'[package]\nname="digest"\nversion="1.0.1"\nlicense="MIT"\nlicense-file="missing"\n'}}):
             with self.subTest(changes=changes), tempfile.TemporaryDirectory() as tmp:

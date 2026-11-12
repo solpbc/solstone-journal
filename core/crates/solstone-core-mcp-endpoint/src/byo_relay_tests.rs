@@ -698,7 +698,7 @@ impl russh::server::Handler for SimpleMockSshHandler {
     async fn auth_publickey(
         &mut self,
         user: &str,
-        _key: &russh::keys::ssh_key::PublicKey,
+        _key: russh::server::VerifiedPublicKey<'_>,
     ) -> Result<russh::server::Auth, Self::Error> {
         if user == "solstone-relay" {
             Ok(russh::server::Auth::Accept)
@@ -986,7 +986,7 @@ impl russh::server::Handler for StallingAuthServer {
     async fn auth_publickey(
         &mut self,
         _user: &str,
-        _key: &russh::keys::ssh_key::PublicKey,
+        _key: russh::server::VerifiedPublicKey<'_>,
     ) -> Result<russh::server::Auth, Self::Error> {
         self.auth_entered.notify_one();
         let _ = self.release.changed().await;
@@ -1683,7 +1683,7 @@ impl russh::server::Handler for HostileServerHandler {
     async fn auth_publickey(
         &mut self,
         _user: &str,
-        _key: &russh::keys::ssh_key::PublicKey,
+        _key: russh::server::VerifiedPublicKey<'_>,
     ) -> Result<russh::server::Auth, Self::Error> {
         Ok(russh::server::Auth::Accept)
     }

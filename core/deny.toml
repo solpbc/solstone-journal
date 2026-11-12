@@ -39,20 +39,6 @@ ignore = [
     { id = "RUSTSEC-2026-0489", reason = "sol pbc product engineering: zone-file text parser panic; hickory-proto 0.24.4 is built without the text-parsing feature, so the code is not compiled; patched 0.26.2 requires an unaccepted DNSSEC rewrite" },
     { id = "RUSTSEC-2026-0490", reason = "sol pbc product engineering: zone-file lexer panic; hickory-proto 0.24.4 is built without the text-parsing feature, so the code is not compiled; patched 0.26.2 requires an unaccepted DNSSEC rewrite" },
     { id = "RUSTSEC-2026-0491", reason = "sol pbc product engineering: header-count capacity reservation on decode is a bounded, non-cumulative transient allocation in the 5 s single-question hostname check (owner-requested, and every 60 s while a BYO hostname is configured); patched 0.26.2 requires an unaccepted DNSSEC rewrite" },
-    # VPE exception, 2026-11-12: RUSTSEC-2026-0486 (informational, unsound)
-    # affects rustix 1.1.4's xattr readers (getxattr, lgetxattr, fgetxattr,
-    # listxattr, llistxattr, flistxattr): given a zero-length buffer they mark
-    # unwritten bytes initialized. Nothing here calls them. No workspace crate
-    # does, and the one crate that wraps them, xattr 1.6.1, is reached only
-    # through tar 0.4.46, which calls xattr::set (setxattr) when unpacking and
-    # never a reader. Patched 1.1.6 is a one-line lock bump, but rustix sits in
-    # the Windows notice closure and the Windows notices refresh does not yet
-    # admit a licence-identical upgrade whose expression carries
-    # `WITH LLVM-exception`; that is a notices-tool change, not a release-night
-    # one. Revisit at the next Journal prepare (take 1.1.6 once the refresh
-    # admits it), or at once if any code reads extended attributes.
-    # Upstream: https://rustsec.org/advisories/RUSTSEC-2026-0486
-    { id = "RUSTSEC-2026-0486", reason = "VPE: rustix 1.1.4 xattr readers are never called (tar 0.4.46 uses only xattr::set); take 1.1.6 once the Windows notices refresh admits its Apache-2.0 WITH LLVM-exception upgrade" },
     # VPE exception, 2026-09-14: RUSTSEC-2024-0388 applies to derivative 2.2.0,
     # reached only through the pinned Velopack =1.2.0 Windows-installer callback
     # dependency. RustSec lists no patched derivative release; Velopack's own current

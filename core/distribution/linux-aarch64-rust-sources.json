@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "8b6ea9f3fd1b61888c21c4bf77a3ad7a6d3f7fe531a4d28b9b0fcca32f67fc25",
+  "cargo_lock_sha256": "c4058b1701af2e092ec2b2cd1754cde76c1e19d28ebdd260a66b63e5518ef22e",
   "filter_platform": "aarch64-unknown-linux-gnu",
   "notice_texts": [
     {
@@ -14859,7 +14859,7 @@
       ]
     },
     {
-      "identity": "russh@0.64.1 (registry+https://github.com/rust-lang/crates.io-index)",
+      "identity": "russh@0.65.0 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "Apache-2.0",
       "notice_references": [
         {
@@ -14872,8 +14872,8 @@
             "kind": "pinned-upstream-git-blob",
             "member": "LICENSE.txt",
             "repository": "https://github.com/warp-tech/russh",
-            "revision": "e5d80a07dc554480b6ea3b2e14adfc190407b627",
-            "source_url": "https://raw.githubusercontent.com/warp-tech/russh/e5d80a07dc554480b6ea3b2e14adfc190407b627/LICENSE.txt"
+            "revision": "183a22e8f8f490fa09b6eb7bd044ef99d8c4414f",
+            "source_url": "https://raw.githubusercontent.com/warp-tech/russh/183a22e8f8f490fa09b6eb7bd044ef99d8c4414f/LICENSE.txt"
           }
         }
       ]
@@ -14931,47 +14931,47 @@
       ]
     },
     {
-      "identity": "rustix@1.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+      "identity": "rustix@1.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
       "notice_references": [
         {
           "bytes": 853,
           "sha256": "377c2e7c53250cc5905c0b0532d35973392af16ffb9596a41d99d202cf3617c9",
           "source": {
-            "archive_sha256": "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190",
+            "archive_sha256": "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa",
             "kind": "cargo-registry-archive",
             "member": "COPYRIGHT",
-            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.4.crate"
+            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.6.crate"
           }
         },
         {
           "bytes": 10847,
           "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
           "source": {
-            "archive_sha256": "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190",
+            "archive_sha256": "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-APACHE",
-            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.4.crate"
+            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.6.crate"
           }
         },
         {
           "bytes": 12243,
           "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
           "source": {
-            "archive_sha256": "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190",
+            "archive_sha256": "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-Apache-2.0_WITH_LLVM-exception",
-            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.4.crate"
+            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.6.crate"
           }
         },
         {
           "bytes": 1023,
           "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
           "source": {
-            "archive_sha256": "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190",
+            "archive_sha256": "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-MIT",
-            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.4.crate"
+            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.6.crate"
           }
         }
       ]

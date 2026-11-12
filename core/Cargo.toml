@@ -339,7 +339,7 @@ crossterm = { version = "=0.29.0", default-features = false, features = ["events
 # rust-version 1.95. Apache-2.0 license is already allowed in deny.toml.
 # russh has no build script; ring 0.17.14 is already in the workspace graph.
 # Resolves on all deny.toml graph targets: Linux gnu/musl, macOS, iOS, Windows.
-russh = { version = "=0.64.1", default-features = false, features = ["ring"] }
+russh = { version = "=0.65.0", default-features = false, features = ["ring"] }
 # Portable OS identity for journal-config default materialization. Release-rail lenses:
 # `whoami` 2.1.2 is Apache-2.0 OR BSL-1.0 OR MIT. default-features are disabled
 # because they pull `wasi-wasite` + `wasm-web`, whose deps are wasm32-target-gated

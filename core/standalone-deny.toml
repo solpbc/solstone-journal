@@ -13,16 +13,6 @@ ignore = [
     { id = "RUSTSEC-2026-0489", reason = "zone-file text parser panic; hickory-proto 0.24.4 built without text-parsing, code not compiled; revisit with RUSTSEC-2026-0119" },
     { id = "RUSTSEC-2026-0490", reason = "zone-file lexer panic; hickory-proto 0.24.4 built without text-parsing, code not compiled; revisit with RUSTSEC-2026-0119" },
     { id = "RUSTSEC-2026-0491", reason = "header-count decode reservation is a bounded, non-cumulative transient allocation in the shared hostname check (owner-requested, and every 60 s while a BYO hostname is configured); revisit with RUSTSEC-2026-0119" },
-    # 2026-11-12: rustix 1.1.4/1.1.5 in six graphs (android and ios native
-    # runtimes, mobile-serving, mobile-audio, mobile-qwen-engine and the
-    # local-thinking install helper). Their only xattr user is tar 0.4.46,
-    # which calls xattr::set, so the affected readers are never called here
-    # either. These locks don't feed the Windows notices, so nothing blocks
-    # 1.1.6 in them; it waits for the next Journal prepare only to keep this
-    # release's probed inputs (the ios-check input among them) unchanged.
-    # Revisit at the next Journal prepare, or at once if any code reads
-    # extended attributes.
-    { id = "RUSTSEC-2026-0486", reason = "rustix xattr readers are never called in these six graphs (tar 0.4.46 uses only xattr::set); take 1.1.6 at the next Journal prepare" },
     # 2026-10-26: paste 1.0.15 is a build-time macro dependency of pulp/gemm
     # in OCR and native inference. No patched release exists. Replacing that
     # transitive dependency requires an upstream change or a reviewed fork.

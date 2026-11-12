@@ -98,7 +98,9 @@ vendored member is copied unchanged. The declared permissive expression,
 licence/notice files and indexed notice texts must all remain identical,
 and rendering the NOTICES must reproduce its bytes. No closure promotion or
 removal, git pin move, or other external addition/removal may accompany it.
-Changed texts or expressions still require acquisition and licence review.
+An unchanged `WITH LLVM-exception` is admitted only on this upgrade path;
+the additions policy is unchanged. Changed texts or expressions still require
+acquisition and licence review.
 An upgrade that removes notice-bearing source files may name each reviewed
 member with `--admit-removed-notice-source NAME@VERSION:MEMBER`, using the new
 version. The member must be indexed in the prior acquired source and absent
@@ -1765,7 +1767,13 @@ def upgraded_package_rows(
             if expression != old_row["license_expression"]:
                 raise RefreshError(f"upgraded package licence expression changed: {identity}")
             if expression != "CDLA-Permissive-2.0":
-                require_permissive_additions(metadata, [right])
+                # The expression is already attested and identical. Check its
+                # base licences without treating this known exception as one;
+                # keep the original expression in the generated index row.
+                base_expression = re.sub(r"\bWITH\s+LLVM-exception\b", "", expression or "")
+                require_permissive_additions(
+                    {"packages": [{**manifest, "license": base_expression}]}, [right]
+                )
             new_files = {p.relative_to(directory).as_posix(): p.read_bytes()
                          for p in directory.rglob("*") if p.is_file()}
             removed_sources = frozenset(

@@ -1,9 +1,9 @@
 {
-  "cargo_lock_sha256": "ac9db423c9c8ad21a68ff732042443d137eb65e98031cc0f55a12ae0ddd45b73",
+  "cargo_lock_sha256": "c4058b1701af2e092ec2b2cd1754cde76c1e19d28ebdd260a66b63e5518ef22e",
   "dependency_source_companion": {
-    "bytes": 102169340,
-    "filename": "windows-rust-dependencies-ac9db423c9c8ad21.tar.gz",
-    "sha256": "dac96b24ebae6f1d7c7eb7b2208276cef1a2eea7b09639e114725803aef2d309"
+    "bytes": 102182341,
+    "filename": "windows-rust-dependencies-c4058b1701af2e09.tar.gz",
+    "sha256": "44ae4fa81a45102e54594efb07819ff33d2d091332fb618b9398c33300e59cbb"
   },
   "notice_texts": [
     {
@@ -20922,8 +20922,8 @@
       "windows_notice_population": true
     },
     {
-      "archive_sha256": "ba61e87b9ec9a39a59a6bbed4c0b8ff7fb07073405b24a767a1f2c8560ac8f58",
-      "identity": "russh@0.64.1 (registry+https://github.com/rust-lang/crates.io-index)",
+      "archive_sha256": "3bb77a4b259312b2abbc541bca1c13cb4e9b61c560a7fd894068c3b92e0c9dc3",
+      "identity": "russh@0.65.0 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "Apache-2.0",
       "name": "russh",
       "notice_references": [
@@ -20937,8 +20937,8 @@
             "kind": "pinned-upstream-git-blob",
             "member": "LICENSE.txt",
             "repository": "https://github.com/warp-tech/russh",
-            "revision": "e5d80a07dc554480b6ea3b2e14adfc190407b627",
-            "source_url": "https://raw.githubusercontent.com/warp-tech/russh/e5d80a07dc554480b6ea3b2e14adfc190407b627/LICENSE.txt"
+            "revision": "183a22e8f8f490fa09b6eb7bd044ef99d8c4414f",
+            "source_url": "https://raw.githubusercontent.com/warp-tech/russh/183a22e8f8f490fa09b6eb7bd044ef99d8c4414f/LICENSE.txt"
           }
         }
       ],
@@ -20947,11 +20947,11 @@
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "vcs": {
         "git": {
-          "sha1": "e5d80a07dc554480b6ea3b2e14adfc190407b627"
+          "sha1": "183a22e8f8f490fa09b6eb7bd044ef99d8c4414f"
         },
         "path_in_vcs": "russh"
       },
-      "version": "0.64.1",
+      "version": "0.65.0",
       "windows_notice_population": true
     },
     {
@@ -21139,8 +21139,8 @@
       "windows_notice_population": true
     },
     {
-      "archive_sha256": "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190",
-      "identity": "rustix@1.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+      "archive_sha256": "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa",
+      "identity": "rustix@1.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
       "name": "rustix",
       "notice_references": [
@@ -21148,40 +21148,40 @@
           "bytes": 853,
           "sha256": "377c2e7c53250cc5905c0b0532d35973392af16ffb9596a41d99d202cf3617c9",
           "source": {
-            "archive_sha256": "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190",
+            "archive_sha256": "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa",
             "kind": "cargo-registry-archive",
             "member": "COPYRIGHT",
-            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.4.crate"
+            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.6.crate"
           }
         },
         {
           "bytes": 10847,
           "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
           "source": {
-            "archive_sha256": "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190",
+            "archive_sha256": "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-APACHE",
-            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.4.crate"
+            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.6.crate"
           }
         },
         {
           "bytes": 12243,
           "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
           "source": {
-            "archive_sha256": "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190",
+            "archive_sha256": "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-Apache-2.0_WITH_LLVM-exception",
-            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.4.crate"
+            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.6.crate"
           }
         },
         {
           "bytes": 1023,
           "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
           "source": {
-            "archive_sha256": "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190",
+            "archive_sha256": "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-MIT",
-            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.4.crate"
+            "source_url": "https://static.crates.io/crates/rustix/rustix-1.1.6.crate"
           }
         }
       ],
@@ -21190,11 +21190,11 @@
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "vcs": {
         "git": {
-          "sha1": "c4caf5caaa7e93828a2e4a4cdba1dd0171e45717"
+          "sha1": "4a563ad698b2c20ff848515821023d2265a788d0"
         },
         "path_in_vcs": ""
       },
-      "version": "1.1.4",
+      "version": "1.1.6",
       "windows_notice_population": true
     },
     {
@@ -28961,7 +28961,7 @@
           }
         }
       ],
-      "patched_tree_sha256": "aa03c842b3945b7c7752b7b60a55c89937b467a212b32c5410f783c9271bc881",
+      "patched_tree_sha256": "366188b0d2576ec64f1606cc86e41d4fa869802276476635b4d4f37ecb6c2e88",
       "source": "path+core/vendor/velopack",
       "source_tree_member": "path-dependencies/velopack/",
       "version": "1.2.0",
@@ -28969,20 +28969,20 @@
     }
   ],
   "path_dependency_trees": {
-    "velopack@1.2.0 (path+core/vendor/velopack)": "aa03c842b3945b7c7752b7b60a55c89937b467a212b32c5410f783c9271bc881"
+    "velopack@1.2.0 (path+core/vendor/velopack)": "366188b0d2576ec64f1606cc86e41d4fa869802276476635b4d4f37ecb6c2e88"
   },
   "population": {
     "metadata_feature_scope": "workspace unified; conservative inclusion, not exact PE link graph",
     "notices": "non-dev dependency closure from Windows inventory binary roots in Windows-filtered Cargo metadata",
     "query": "cargo metadata --manifest-path core/Cargo.toml --locked --offline --format-version 1 --filter-platform x86_64-pc-windows-msvc --features solstone-core/journal-mcp-endpoint; inventory roots; follow non-dev dependency edges",
-    "query_utc": "2026-11-10T17:04:16.465229+00:00",
+    "query_utc": "2026-11-12T15:09:38.560505+00:00",
     "shipped_feature_arguments": [
       "--features",
       "solstone-core/journal-mcp-endpoint"
     ],
     "source": "complete Cargo.lock external-source set",
     "source_package_count": 563,
-    "source_sha256": "154a2d216920d2fc5e58463538a474dccdda7382b3b2eefeb740d618c89745da",
+    "source_sha256": "48f6f3114cc8f83347d936d9c4879015b880fb0d180ef73924bd167181e1b282",
     "windows_notice_package_count": 498,
     "windows_notice_path_package_count": 1
   },
