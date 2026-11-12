@@ -278,7 +278,7 @@ impl Coverage {
         let covered = stored.map_or_else(|| Ok(Spans::default()), |e| e.spans(endpoint))?;
         let mut deferred = BTreeSet::new();
         for hole in stored.into_iter().flat_map(|e| &e.holes) {
-            if hole.reason == HoleReason::Deferred
+            if matches!(hole.reason, HoleReason::Deferred | HoleReason::MovedFar)
                 && let Some(day) = hole_day(endpoint, &hole.at, zone)
             {
                 deferred.insert(day);

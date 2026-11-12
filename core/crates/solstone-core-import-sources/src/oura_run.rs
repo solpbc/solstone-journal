@@ -919,7 +919,7 @@ pub fn scan_pages(
                     findings.moved_far += 1;
                     findings
                         .holes
-                        .extend(holes_of([&read.row], HoleReason::Deferred));
+                        .extend(holes_of([&read.row], HoleReason::MovedFar));
                     continue;
                 }
             };

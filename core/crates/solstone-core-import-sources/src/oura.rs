@@ -379,6 +379,8 @@ pub enum HoleReason {
     /// A revision kept as first written: a start that crosses the owner's midnight,
     /// or a placement or record on another day.
     Deferred,
+    /// A document Oura moved more than a day, kept where it was first saved.
+    MovedFar,
     /// A document held back because a window it could already be in couldn't be
     /// read as rows.
     HeldBack,
@@ -399,6 +401,9 @@ impl HoleReason {
         match self {
             Self::Deferred => {
                 "Oura moved this to the other side of midnight; your journal keeps the time it first saved"
+            }
+            Self::MovedFar => {
+                "Oura moved this by more than a day; your journal keeps it where it was first saved"
             }
             Self::HeldBack | Self::ReadingHeldBack => {
                 "not added yet: it may already be in a part of the journal that couldn't be read; an import that asks for this day again tries again"

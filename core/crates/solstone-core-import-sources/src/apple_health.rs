@@ -2027,14 +2027,18 @@ pub fn summary_text(
     if counts.moved_far > 0 {
         let _ = writeln!(
             text,
-            "{source} moved {} by more than a day; your journal keeps {} where it first saved {}.\n",
+            "{source} moved {} by more than a day; your journal keeps {} where {} first saved.\n",
             if counts.moved_far == 1 {
                 "1 entry".to_owned()
             } else {
                 format!("{} entries", counts.moved_far)
             },
             if counts.moved_far == 1 { "it" } else { "them" },
-            if counts.moved_far == 1 { "it" } else { "them" },
+            if counts.moved_far == 1 {
+                "it was"
+            } else {
+                "they were"
+            },
         );
     }
     if counts.moved > 0 {
