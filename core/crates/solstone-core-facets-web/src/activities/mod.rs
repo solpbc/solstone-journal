@@ -610,6 +610,17 @@ async fn mutate_update(
         .with_timezone(&Utc)
         .format("%Y-%m-%dT%H:%M:%SZ")
         .to_string();
+    // Words on a body record in a group the owner hid through another member
+    // are hidden with it, in the same write, so they never reach search.
+    let joins_hidden = match joins_a_hidden_group(root, &facet, &day, &span_id) {
+        Ok(joins) => joins,
+        Err(response) => return response,
+    };
+    let mut patch = patch.clone();
+    if joins_hidden {
+        patch.insert("hidden".to_owned(), Value::Bool(true));
+    }
+    let patch = &patch;
     // The owner's account and recording mark hold for every activity over the
     // same stretch, in any facet; each of those is thought about again too.
     let saved = if actor == "owner:update" {
@@ -657,6 +668,9 @@ async fn mutate_update(
             ) {
                 return internal(error.to_string());
             }
+            if joins_hidden {
+                queue_hidden_activity(root, &facet, &day, &span_id);
+            }
             with_ask(record, ask)
         }
         Ok((None, _))
@@ -665,6 +679,32 @@ async fn mutate_update(
         }
         Err(error) => store_error(error),
     }
+}
+
+/// Whether `span_id` is a body record not hidden itself whose group has a
+/// member the owner hid. A group that can't be read is an error, not a group
+/// of one: words written beside a hidden member must not read as visible.
+fn joins_a_hidden_group(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    span_id: &str,
+) -> Result<bool, Response> {
+    // A record that isn't a body record, or that the day can't say, is the
+    // write's to report.
+    let Ok(records) = solstone_core_location::body_records::stored_body_records(root, facet, day)
+    else {
+        return Ok(false);
+    };
+    if !records
+        .iter()
+        .any(|record| record.id == span_id && !record.hidden)
+    {
+        return Ok(false);
+    }
+    let members = solstone_core_location::body_records::owner_group(root, facet, day, span_id)
+        .map_err(|error| internal(error.to_string()))?;
+    Ok(members.iter().any(|member| member.hidden))
 }
 
 /// The owner takes one body account out of the group it was put in: it never
@@ -2778,6 +2818,232 @@ mod tests {
             status,
             serde_json::from_slice(&bytes).unwrap_or(Value::Null),
         )
+    }
+
+    fn hide_body_days(root: &Path, days: &[&str]) {
+        let path = solstone_core_format::content::body_hidden_days::hidden_days_path(root);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            path,
+            solstone_core_format::content::body_hidden_days::hidden_days_bytes(
+                &days.iter().map(|day| (*day).to_owned()).collect(),
+            ),
+        )
+        .unwrap();
+    }
+
+    fn body_item(view: &Value) -> Option<Value> {
+        view["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["source"] == "body")
+            .cloned()
+    }
+
+    #[tokio::test]
+    async fn a_body_record_says_whether_its_day_or_itself_is_hidden() {
+        let root = body_journal();
+        hide_body_days(root.path(), &[BODY_DAY]);
+        let (_, view) = body_call(root.path(), "view", None, None).await;
+        assert!(body_item(&view).is_none(), "{view}");
+        assert_eq!(view["hidden_count"], 1, "{view}");
+        let (_, view) = body_call(root.path(), "view?include_hidden=1", None, None).await;
+        let item = body_item(&view).unwrap_or_else(|| panic!("{view}"));
+        assert_eq!(
+            (&item["hidden"], &item["hidden_day"], &item["hidden_self"]),
+            (&json!(true), &json!(true), &json!(false)),
+            "{item}"
+        );
+        assert_eq!(item["day"], BODY_DAY);
+
+        // Hidden both ways.
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_w/mute?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (_, view) = body_call(root.path(), "view?include_hidden=1", None, None).await;
+        let item = body_item(&view).unwrap();
+        assert_eq!(
+            (&item["hidden_day"], &item["hidden_self"]),
+            (&json!(true), &json!(true))
+        );
+
+        // The day shown again, the owner's own hide stays.
+        hide_body_days(root.path(), &[]);
+        let (_, view) = body_call(root.path(), "view?include_hidden=1", None, None).await;
+        let item = body_item(&view).unwrap();
+        assert_eq!(
+            (&item["hidden"], &item["hidden_day"], &item["hidden_self"]),
+            (&json!(true), &json!(false), &json!(true))
+        );
+
+        // While which days are hidden can't be read, the owner's view shows it.
+        let fresh = body_journal();
+        std::fs::create_dir_all(
+            solstone_core_format::content::body_hidden_days::hidden_days_path(fresh.path())
+                .parent()
+                .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            solstone_core_format::content::body_hidden_days::hidden_days_path(fresh.path()),
+            "{ damaged",
+        )
+        .unwrap();
+        let (_, view) = body_call(fresh.path(), "view", None, None).await;
+        let item = body_item(&view).unwrap_or_else(|| panic!("{view}"));
+        assert_eq!(item["hidden"], false, "{item}");
+    }
+
+    /// Every indexed entry of the journal holding `word`.
+    fn found(root: &Path, word: &str) -> Vec<String> {
+        let conn = solstone_core_indexer_store::open_index_reader(root).unwrap();
+        let mut statement = conn
+            .prepare(
+                "SELECT path FROM chunks WHERE chunks MATCH ? AND path NOT LIKE 'entity_search:%'",
+            )
+            .unwrap();
+        statement
+            .query_map([word], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    /// A third recorder's account of the same run, with no words.
+    fn join_third_account(root: &Path) {
+        use solstone_core_format::content::body_records::{
+            BodyRow, RowKind, encode_rows, recorder_id,
+        };
+        let mut row = BodyRow::new(
+            RowKind::Experience,
+            "y".to_owned(),
+            "apple_health",
+            "HKWorkoutActivityTypeRunning",
+            "Running".to_owned(),
+        );
+        row.experience = Some("workout".to_owned());
+        row.start = Some("2026-10-10 07:00:30 -0600".to_owned());
+        row.end = Some("2026-10-10 07:40:30 -0600".to_owned());
+        row.by = Some("Synthetic Ring".to_owned());
+        let dir = root.join(format!(
+            "chronicle/{BODY_DAY}/import.apple_health/070000_3601"
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("body.jsonl"),
+            encode_rows(std::slice::from_ref(&row)),
+        )
+        .unwrap();
+        let record = json!({
+            "id": "body_y", "source": "body", "activity": "workout",
+            "account": {"key": "import.apple_health\u{1f}y", "start": row.start,
+                "end": row.end, "type": "running",
+                "recorder": recorder_id("import.apple_health", row.by.as_deref())},
+        });
+        let _ = solstone_core_facets::append_activity_record(
+            root,
+            "body",
+            BODY_DAY,
+            record.as_object().unwrap().clone(),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn titling_a_record_that_joined_a_hidden_group_hides_it_in_the_same_write() {
+        let root = body_journal();
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_x/mute?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        // A new account joins the hidden group later, with no words of its own.
+        join_third_account(root.path());
+        let members = solstone_core_location::body_records::owner_group(
+            root.path(),
+            "body",
+            BODY_DAY,
+            "body_y",
+        )
+        .unwrap();
+        assert_eq!(members.len(), 3, "it joins the group");
+        solstone_core_indexer_store::scan::scan_journal(root.path(), true).unwrap();
+
+        let (status, record) = body_call(
+            root.path(),
+            "record/body_y/update?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({"patch": {"title": "Zebrafinch loop"}})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{record}");
+        let stored = solstone_core_location::body_records::stored_body_records(
+            root.path(),
+            "body",
+            BODY_DAY,
+        )
+        .unwrap();
+        let titled = stored.iter().find(|record| record.id == "body_y").unwrap();
+        assert!(titled.hidden, "hidden with its group");
+        assert_eq!(titled.owner["title"], "Zebrafinch loop");
+        // One write: the words and the hide are one edit, the owner's.
+        let raw = std::fs::read_to_string(
+            root.path()
+                .join(format!("facets/body/activities/{BODY_DAY}.jsonl")),
+        )
+        .unwrap();
+        let line: Value = raw
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .find(|line| line["id"] == "body_y")
+            .unwrap();
+        let edits = line["edits"].as_array().unwrap();
+        assert_eq!(edits.len(), 1, "{line}");
+        assert_eq!(edits[0]["actor"], "owner:update");
+        assert_eq!(edits[0]["fields"], json!(["title", "hidden"]));
+
+        solstone_core_indexer_store::todo::drain_now(root.path()).unwrap();
+        assert!(found(root.path(), "Zebrafinch").is_empty());
+        solstone_core_indexer_store::scan::scan_journal(root.path(), true).unwrap();
+        assert!(found(root.path(), "Zebrafinch").is_empty());
+    }
+
+    #[tokio::test]
+    async fn titling_a_record_in_a_group_nobody_hid_leaves_it_shown_and_found() {
+        let root = body_journal();
+        join_third_account(root.path());
+        let (status, record) = body_call(
+            root.path(),
+            "record/body_y/update?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({"patch": {"title": "Zebrafinch loop"}})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{record}");
+        let stored = solstone_core_location::body_records::stored_body_records(
+            root.path(),
+            "body",
+            BODY_DAY,
+        )
+        .unwrap();
+        assert!(
+            !stored
+                .iter()
+                .find(|record| record.id == "body_y")
+                .unwrap()
+                .hidden
+        );
+        solstone_core_indexer_store::scan::scan_journal(root.path(), true).unwrap();
+        assert_eq!(found(root.path(), "Zebrafinch").len(), 1);
     }
 
     #[tokio::test]

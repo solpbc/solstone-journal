@@ -715,6 +715,40 @@ test('separating an account asks first, then posts that account on its own day',
   assert.ok(env.viewReads() > reads, 'the day is read again');
 });
 
+function reasonKeys(env) {
+  return env.panel().querySelectorAll('.act-panel-hidden-reason').map((el) => el.getAttribute('data-copy-key'));
+}
+
+test('a body record hidden by its day says so and offers the day\'s unhide on the body page instead of its own', async () => {
+  const item = bodyActivity([{}], { hidden: true, hidden_day: true, hidden_self: false, day: '20261028' });
+  const env = await createPage({ items: [item] });
+  assert.deepStrictEqual(reasonKeys(env), ['reason-day']);
+  assert.strictEqual(env.panel().querySelector('[data-action-unhide]'), null, 'no unhide of the record alone');
+  const link = env.panel().querySelector('a[data-unhide-day]');
+  assert.ok(link && keyed(env.panel(), 'action-unhide-day'));
+  assert.strictEqual(link.getAttribute('href'), '/app/body/20261028', 'the hidden day, not the day it is listed under');
+  assert.strictEqual(env.panel().querySelector('[data-action-hide]'), null);
+  assert.strictEqual(env.panel().querySelector('[data-action-edit]'), null);
+});
+
+test('a body record hidden both ways gives its own hide first, then the day\'s, and only the day\'s link', async () => {
+  const item = bodyActivity([{}], { hidden: true, hidden_day: true, hidden_self: true, day: DAY });
+  const env = await createPage({ items: [item] });
+  assert.deepStrictEqual(reasonKeys(env), ['reason-owner', 'reason-day']);
+  assert.strictEqual(env.panel().querySelector('[data-action-unhide]'), null);
+  assert.strictEqual(env.panel().querySelector('a[data-unhide-day]').getAttribute('href'), `/app/body/${DAY}`);
+});
+
+test('a body record the owner hid on a day still shown keeps its own unhide', async () => {
+  const item = bodyActivity([{}], { hidden: true, hidden_day: false, hidden_self: true, day: DAY });
+  const env = await createPage({ items: [item], post: () => respond(200, { ok: true }) });
+  assert.deepStrictEqual(reasonKeys(env), ['reason-owner']);
+  assert.strictEqual(env.panel().querySelector('a[data-unhide-day]'), null);
+  await env.click(env.panel().querySelector('[data-action-unhide]'));
+  assert.strictEqual(env.posts().length, 1);
+  assert.ok(env.posts()[0].url.endsWith('/record/standup/unmute?facet=work'), env.posts()[0].url);
+});
+
 test('an activity already marked as playing does not offer it again', async () => {
   const env = await createPage({ items: [activity({ playback: true, corrected: true })] });
   await env.click(env.panel().querySelector('[data-action-correct]'));

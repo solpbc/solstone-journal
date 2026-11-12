@@ -1036,6 +1036,8 @@
     'action-unhide': 'unhide',
     'sheet-close': 'close',
     'reason-owner': 'you hid this',
+    'reason-day': "you hid this day's body data",
+    'action-unhide-day': 'unhide the day on the body page',
     'heading-accounts': 'what recorded it',
     'state-removed_by_you': 'removed by you',
     'state-removed': 'removed',
@@ -1826,8 +1828,9 @@
       if (justHidden) {
         phtml += `<div class="act-panel-status" role="status" data-copy-key="hidden-status">${STRINGS['hidden-status']}</div>`;
       }
-      const reasonKey = `reason-${item.hidden_reason || 'other'}`;
-      phtml += `<div class="act-panel-hidden-reason" data-copy-key="${reasonKey}">${STRINGS[reasonKey] || STRINGS['reason-other']}</div>`;
+      for (const reasonKey of hiddenReasons(item)) {
+        phtml += `<div class="act-panel-hidden-reason" data-copy-key="${reasonKey}">${STRINGS[reasonKey] || STRINGS['reason-other']}</div>`;
+      }
     }
 
     // What the calendar had scheduled then, and where a device was, beside the activity
@@ -2016,7 +2019,11 @@
       phtml += `<button type="button" class="act-btn" data-copy-key="action-correct" data-action-correct>${esc(STRINGS['action-correct'])}</button>`;
       phtml += `<button type="button" class="act-btn" data-copy-key="action-edit" data-action-edit>${STRINGS['action-edit']}</button>`;
       phtml += `<button type="button" class="act-btn" data-copy-key="action-hide" data-action-hide>${STRINGS['action-hide']}</button>`;
-    } else if (item.hidden_reason === 'owner' || item.hidden_reason === 'command') {
+    } else if (item.hidden_day) {
+      // Unhiding the activity alone would leave it hidden by its day, so the
+      // one action is the day's own unhide, on the body page.
+      phtml += `<a class="act-btn" data-copy-key="action-unhide-day" data-unhide-day href="/app/body/${encodeURIComponent(item.day || '')}">${esc(STRINGS['action-unhide-day'])}</a>`;
+    } else if (item.hidden_self || item.hidden_reason === 'owner' || item.hidden_reason === 'command') {
       phtml += `<button type="button" class="act-btn" data-copy-key="action-unhide" data-action-unhide>${STRINGS['action-unhide']}</button>`;
     }
     phtml += `<span class="control-save-error" role="alert" data-control-save-error hidden></span>`;
@@ -2151,6 +2158,19 @@
   function currentItem() {
     const items = state.view?.items || [];
     return items.find(it => it.id === state.selectedId && (!state.selectedFacet || it.facet === state.selectedFacet)) || null;
+  }
+
+  // Why a hidden activity is hidden, first to last: a body record says the
+  // owner's own hide and their hide of its day apart, so it's clear before
+  // they unhide the day that it stays hidden after.
+  function hiddenReasons(item) {
+    if (item.source === 'body' && (item.hidden_self || item.hidden_day)) {
+      const reasons = [];
+      if (item.hidden_self) reasons.push(item.hidden_reason === 'command' ? 'reason-command' : 'reason-owner');
+      if (item.hidden_day) reasons.push('reason-day');
+      return reasons;
+    }
+    return [`reason-${item.hidden_reason || 'other'}`];
   }
 
   function itemKey(item) {
