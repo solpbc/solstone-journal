@@ -650,7 +650,7 @@ pub(crate) fn current_boot_time() -> Option<u64> {
                 0,
             )
         };
-        (status == 0 && value.tv_sec > 0).then(|| value.tv_sec as u64)
+        (status == 0 && value.tv_sec > 0).then_some(value.tv_sec as u64)
     }
     #[cfg(not(target_os = "macos"))]
     {
