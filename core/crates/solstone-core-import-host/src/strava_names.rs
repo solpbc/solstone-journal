@@ -22,6 +22,12 @@
 //! run reads at a time, and a workout whose facet is muted or gone isn't read
 //! until it's back. A failed call isn't kept and is tried again on the next
 //! run; nothing here fails the import.
+//!
+//! A workout on a day the owner hid (the day of its first tile) is sent to no
+//! model and counts toward no new entity, while its line and what was read
+//! before are kept, so unhiding the day reads nothing again. A workout it
+//! hasn't read is read on a later import once the day is unhidden. When the
+//! hidden days can't be read, every workout waits.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -31,6 +37,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_facets::{FacetEntityCreateOutcome, create_facet_entity_if_absent};
+use solstone_core_format::content::body_hidden_days::{HiddenDays, read_hidden_days};
 use solstone_core_format::content::body_records::{RowKind, owner_gear, owner_words};
 use solstone_core_format::content::strava_body::{STRAVA_SOURCE, STRAVA_STREAM, STRAVA_TILE_FILE};
 use solstone_core_generate::{
@@ -168,6 +175,13 @@ pub struct StravaNamesOutcome {
     pub set_aside: u64,
     /// Workouts with names but no facet, which give no entity.
     pub no_facet: u64,
+    /// Workouts with words on a day the owner hid, not read: they are on a
+    /// later import once the day is unhidden. Each is counted in `waiting`
+    /// too.
+    pub hidden: u64,
+    /// The hidden days couldn't be read, so no workout's words were read and
+    /// no name became an entity this run.
+    pub hidden_days_unreadable: bool,
     /// Names over their threshold in a facet that is muted, which become no
     /// entity there while it is.
     pub muted: u64,
@@ -253,6 +267,13 @@ fn record_strava_names_keeping(
     };
     let live = live_workouts(journal);
     outcome.workouts = live.len() as u64;
+    // With the hidden days unreadable, no workout's words are read or marked
+    // read, and no name is promoted.
+    let hidden = read_hidden_days(journal);
+    if hidden == HiddenDays::Unreadable {
+        log::warn!("Strava names: the hidden body days can't be read, no words read");
+        outcome.hidden_days_unreadable = true;
+    }
     let mut empty = BTreeMap::new();
     for (activity_id, workout) in &live {
         outcome.gear.extend(workout.gear.iter().cloned());
@@ -284,7 +305,9 @@ fn record_strava_names_keeping(
                 .or_insert_with(|| StravaNamesLine::unread(activity_id, &workout.day));
             line.day.clone_from(&workout.day);
             line.gear.clone_from(&workout.gear);
-            if let Some(hash) = empty.get(activity_id) {
+            if let Some(hash) = empty.get(activity_id)
+                && hidden != HiddenDays::Unreadable
+            {
                 line.words_hash = Some(hash.clone());
                 line.entities = Vec::new();
             }
@@ -318,6 +341,21 @@ fn record_strava_names_keeping(
         // Gone since it was found live: a delete took its line.
         if !stored.contains_key(activity_id) {
             continue;
+        }
+        // A day the owner hid is sent nowhere. Its line stays, unread, and
+        // a later import reads it once the day is unhidden.
+        match hidden.hides(&workout.day) {
+            Some(false) => {}
+            Some(true) => {
+                outcome.hidden += 1;
+                outcome.waiting += 1;
+                continue;
+            }
+            None => {
+                outcome.waiting += 1;
+                outcome.wait.get_or_insert(NamesWait::SettingsUnreadable);
+                continue;
+            }
         }
         // A workout with no facet gives no entity, so its words aren't read
         // until it has one; an import that files it reads them then.
@@ -361,6 +399,21 @@ fn record_strava_names_keeping(
         // result is then not kept.
         if !still_live(&workout.window) {
             continue;
+        }
+        // Hidden since the run began: not sent either.
+        match read_hidden_days(journal).hides(&workout.day) {
+            Some(false) => {}
+            Some(true) => {
+                outcome.hidden += 1;
+                outcome.waiting += 1;
+                continue;
+            }
+            None => {
+                outcome.hidden_days_unreadable = true;
+                outcome.waiting += 1;
+                outcome.wait.get_or_insert(NamesWait::SettingsUnreadable);
+                continue;
+            }
         }
         match read_strava_names(journal) {
             Ok(lines) if lines.contains_key(activity_id) => {}
@@ -422,7 +475,14 @@ fn record_strava_names_keeping(
             return outcome;
         }
     };
-    promote_strava_names(journal, &lines, &live, clock(), &mut outcome);
+    // Read again: a day hidden while the words were read counts toward no
+    // entity either.
+    let hidden = read_hidden_days(journal);
+    if hidden == HiddenDays::Unreadable {
+        outcome.hidden_days_unreadable = true;
+        return outcome;
+    }
+    promote_strava_names(journal, &lines, &live, &hidden, clock(), &mut outcome);
     outcome
 }
 
@@ -602,11 +662,14 @@ struct Tally {
 }
 
 /// Per facet, create the entity of every name found on enough workout days
-/// that is no one's yet. An existing entity is never touched.
+/// that is no one's yet. An existing entity is never touched. A workout on a
+/// day the owner hid counts for nothing, and with the hidden days unreadable
+/// no workout does.
 fn promote_strava_names(
     journal: &Path,
     lines: &StravaNames,
     live: &BTreeMap<String, LiveWorkout>,
+    hidden: &HiddenDays,
     now: DateTime<Utc>,
     outcome: &mut StravaNamesOutcome,
 ) {
@@ -615,6 +678,9 @@ fn promote_strava_names(
         let Some(workout) = live.get(activity_id) else {
             continue;
         };
+        if hidden.hides(&workout.day) != Some(false) {
+            continue;
+        }
         let names = line
             .entities
             .iter()

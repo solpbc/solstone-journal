@@ -1433,6 +1433,8 @@ const IMPORT_DELETE_COPY = {
     strava: 'importing a Strava download again brings back the workouts this {verb}.',
     oura: 'an Oura sync leaves out what this {verb}. one you ask for the days it covered brings it back.',
   },
+  // Said once, after the lines above, whenever the dialog holds a body import.
+  hideDay: 'a day you hide on the body page stays hidden when you import or sync it again.',
   list: {
     bodySpan: 'body data from {first} to {last}',
     bodyDay: 'body data from {day}',
@@ -1625,6 +1627,11 @@ function importEarlierOfSource(kind, id, outside = new Set()) {
   return (importsCache || []).some(imp => imp.source_type === kind && imp.timestamp < id && !outside.has(imp.timestamp));
 }
 
+// Whether an import of `kind` brings body data in, which a day's hide holds against.
+function importIsBody(kind) {
+  return Object.prototype.hasOwnProperty.call(IMPORT_DELETE_COPY.again, kind);
+}
+
 // The lines after the list for a body import: what an earlier import keeps,
 // and what brings it back.
 function importBodyLines(step, item, preview, kind) {
@@ -1672,6 +1679,7 @@ function importOneBody(step, item, preview) {
   body.forEach(line => nodes.push(importDeleteEl('p', 'import-delete-shared', line)));
   nodes.push(importDeleteEl('p', 'import-delete-stays', copy.stays));
   if (again) nodes.push(importDeleteEl('p', 'import-delete-again', again));
+  if (importIsBody(kind)) nodes.push(importDeleteEl('p', 'import-delete-hide-day', IMPORT_DELETE_COPY.hideDay));
   const size = step === 'move' && preview ? importDeleteSize(preview.bytes) : '';
   if (size) nodes.push(importDeleteEl('p', 'import-delete-size', importDeleteFill(copy.size, { size })));
   return nodes;
@@ -1703,6 +1711,7 @@ function importSetBody(step, items) {
   nodes.push(importDeleteEl('p', 'import-delete-stays', copy.staysMany));
   const kinds = [...new Set(items.map(item => item.kind))].filter(kind => IMPORT_DELETE_COPY.again[kind]);
   kinds.forEach(kind => nodes.push(importDeleteEl('p', 'import-delete-again', importDeleteFill(IMPORT_DELETE_COPY.again[kind], { verb: copy.verb }))));
+  if (items.some(item => importIsBody(item.kind))) nodes.push(importDeleteEl('p', 'import-delete-hide-day', IMPORT_DELETE_COPY.hideDay));
   return nodes;
 }
 

@@ -5288,6 +5288,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-local",
+ "solstone-core-location",
  "solstone-core-removals",
  "solstone-core-segment",
  "solstone-core-system",
