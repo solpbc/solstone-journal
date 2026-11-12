@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 use serde_json::{Map, Value, json};
 use solstone_core_format::content::{ContentResolution, Family, classify};
-use solstone_core_indexer_query::AdmittedCategory;
 use solstone_core_indexer_store::classification::{FacetDeclarationSet, classify_source};
 use solstone_core_journal_io::is_day_key;
 use solstone_core_journal_io::paths::{
@@ -18,8 +17,8 @@ use solstone_core_journal_io::paths::{
 use solstone_core_transcripts::segment_clock;
 
 use crate::dispatch::{
-    DispatchPrincipal, boundary, codec, differing_capture_zone, segment_assignment_probe_path,
-    source_label, source_labels,
+    DispatchPrincipal, codec, differing_capture_zone, segment_assignment_probe_path, source_label,
+    source_labels,
 };
 use crate::permissions::ConnectionReadSnapshot;
 use crate::possible_names::ConnectionPossibleNames;
@@ -143,13 +142,12 @@ pub(crate) fn issue_segment_links(
     response_checks: &mut usize,
     checker: &mut dyn TranscriptPageCheck,
 ) {
-    if !snapshot.categories.contains(&AdmittedCategory::Transcripts) {
+    let Some(transcript_boundary) = crate::dispatch::segment_boundary(snapshot, None) else {
         return;
-    }
+    };
     let Ok(declarations) = FacetDeclarationSet::from_journal(journal_root) else {
         return;
     };
-    let transcript_boundary = boundary(snapshot, Some(AdmittedCategory::Transcripts), None);
     let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
     // Read once a link is issued: most subjects name no segment.
     let mut sources = None;
@@ -175,7 +173,7 @@ pub(crate) fn issue_segment_links(
             );
             // Scope comes first: a segment this connection may not read leaves
             // no trace, not even in `more_segments`.
-            if !transcript_boundary.allows_classification(&classification) {
+            if !transcript_boundary.allows_classification(journal_root, &classification) {
                 continue;
             }
             if !crate::source_release::check_segment_transcript_release(

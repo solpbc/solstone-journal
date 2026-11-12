@@ -769,7 +769,7 @@ fn mcp_subcommand_help(words: &[&str]) -> &'static str {
             "  --token LABEL        a bearer-token connection, by its label\n",
             "  --oauth CLIENT_ID    an OAuth connection, by its client id\n",
             "  --created TIMESTAMP  with --oauth, which grant, when one client id has several\n",
-            "  --category CATEGORY  what it may read: transcripts, entities, facets or screen_text; repeat for more\n",
+            "  --category CATEGORY  what it may read: transcripts, entities, facets, screen_text or body; repeat for more\n",
             "  --facet FACET        only this facet, by name; repeat for more (default: the whole journal)\n",
         ),
         ["permission", "clear", ..] => concat!(

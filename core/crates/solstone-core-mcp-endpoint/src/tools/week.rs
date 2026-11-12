@@ -164,6 +164,10 @@ fn project_sunday(
     let mut collected = Vec::new();
     // Body faces, composed for this connection: workouts, nights and sessions.
     let gate = crate::body_source::window_gate(journal, snapshot);
+    // A body record or Strava line this connection would read with the body
+    // permission, so the week says it needs it.
+    let holds_body = crate::body_source::holds_body(snapshot);
+    let mut body_withheld = false;
     let mut body = Vec::new();
     // The windows body faces were composed from, for the audit.
     let mut windows = Vec::new();
@@ -235,12 +239,22 @@ fn project_sunday(
             for (row, rec_id) in rows.into_iter().zip(line_identities) {
                 if row.get("hidden").and_then(Value::as_bool).unwrap_or(false)
                     || solstone_core_facets::is_retired_plan(&row)
-                    || crate::body_source::strava_line_hidden(journal, &day_str, &row)
                     || row
                         .get("id")
                         .and_then(Value::as_str)
                         .is_some_and(|id| superseded.contains(id))
                 {
+                    continue;
+                }
+                if crate::body_source::strava_line_hidden(journal, snapshot, &day_str, &row) {
+                    body_withheld = body_withheld
+                        || crate::body_source::strava_line_needs_body(
+                            journal, snapshot, &day_str, &row,
+                        );
+                    continue;
+                }
+                if solstone_core_facets::is_body_record(&row) && !holds_body {
+                    body_withheld = true;
                     continue;
                 }
                 if solstone_core_facets::is_body_record(&row) {
@@ -534,6 +548,9 @@ fn project_sunday(
     let mut value = value;
     if !body_items.is_empty() {
         value["body"] = Value::Array(body_items);
+    }
+    if body_withheld {
+        value["body_note"] = json!(crate::body_source::BODY_NOT_GRANTED);
     }
 
     Ok(WeekRead {
@@ -898,7 +915,11 @@ mod tests {
     }
 
     fn folded_week(root: &Path, held: bool) -> Value {
-        whole(root);
+        grant(
+            root,
+            &["transcripts", "facets", "body"],
+            ReadScope::WholeJournal,
+        );
         write_raw(
             root,
             "facets/work/facet.json",
@@ -927,6 +948,12 @@ mod tests {
     fn a_strava_line_a_code_record_holds_isnt_a_row() {
         let open = journal("solstone-week-unfolded-");
         assert_eq!(folded_week(open.path(), false)["activities_total"], 1);
+        // An unconverted line is body data: without body it isn't a row, and
+        // the week says why.
+        whole(open.path());
+        let value = probe(open.path(), json!({"week": "20260308"})).unwrap();
+        assert_eq!(value["activities_total"], 0);
+        assert_eq!(value["body_note"], crate::body_source::BODY_NOT_GRANTED);
         let held = journal("solstone-week-folded-");
         let value = folded_week(held.path(), true);
         assert_eq!(value["activities"], json!([]));

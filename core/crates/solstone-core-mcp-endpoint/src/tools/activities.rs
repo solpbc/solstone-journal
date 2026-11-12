@@ -710,6 +710,10 @@ pub(crate) fn execute_list(
         );
     // Body rows as read, by facet, day and id, until their groups are read.
     let mut body_rows: BTreeMap<(String, String, String), CollectedItem> = BTreeMap::new();
+    // A body record or Strava line this connection would list with the body
+    // permission, so the answer says it needs it.
+    let holds_body = crate::body_source::holds_body(snapshot);
+    let mut body_withheld = false;
 
     for (facet_id, facet_dir, facet_title) in &facets_to_search {
         let stems = solstone_core_facets::list_activity_day_stems(journal_root, facet_dir)
@@ -766,10 +770,22 @@ pub(crate) fn execute_list(
                     .get("hidden")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
-                if hidden
-                    || solstone_core_facets::is_retired_plan(&record)
-                    || crate::body_source::strava_line_hidden(journal_root, &day, &record)
-                {
+                if hidden || solstone_core_facets::is_retired_plan(&record) {
+                    continue;
+                }
+                if crate::body_source::strava_line_hidden(journal_root, snapshot, &day, &record) {
+                    body_withheld = body_withheld
+                        || entity_filter.is_none()
+                            && crate::body_source::strava_line_needs_body(
+                                journal_root,
+                                snapshot,
+                                &day,
+                                &record,
+                            );
+                    continue;
+                }
+                if solstone_core_facets::is_body_record(&record) && !holds_body {
+                    body_withheld = body_withheld || entity_filter.is_none();
                     continue;
                 }
                 if solstone_core_facets::is_body_record(&record) {
@@ -925,6 +941,8 @@ pub(crate) fn execute_list(
     // an activity and where a device was.
     let sees_calendar = matches!(snapshot.scope, ConnectionScope::WholeJournal)
         && snapshot.categories.contains(&AdmittedCategory::Transcripts);
+    // Where a device was during a body face is body data with the face.
+    let sees_body_place = matches!(snapshot.scope, ConnectionScope::WholeJournal) && holds_body;
     let mut calendars = BTreeMap::new();
     let mut locations = BTreeMap::new();
 
@@ -978,7 +996,7 @@ pub(crate) fn execute_list(
                     activity["beside"] = Value::Array(beside);
                 }
                 // Where a device was at its middle, as that device timed it.
-                if sees_calendar
+                if sees_body_place
                     && let Some(beside) = solstone_core_location::place_at(
                         journal_root,
                         span.0 + (span.1 - span.0) / 2,
@@ -1092,6 +1110,11 @@ pub(crate) fn execute_list(
     if let Some(next_cursor) = next_cursor {
         response_val["next_cursor"] = json!(next_cursor);
     }
+    if body_withheld {
+        response_val["body_note"] = json!(crate::body_source::BODY_NOT_GRANTED);
+        return Ok(Prepared::new(response_val, count, targets)
+            .when_empty(crate::body_source::BODY_NOT_GRANTED));
+    }
 
     Ok(Prepared::new(response_val, count, targets).when_empty(
         "No activities. This connection can see none that match. This is a complete answer, not an error.",
@@ -1162,7 +1185,7 @@ pub(crate) fn execute_get_sources(
     else {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     };
-    if crate::body_source::strava_line_hidden(journal_root, &activity_ref.day, &record) {
+    if crate::body_source::strava_line_hidden(journal_root, snapshot, &activity_ref.day, &record) {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     }
 
@@ -1178,7 +1201,11 @@ pub(crate) fn execute_get_sources(
 
     let activity_kind = record.get("activity").and_then(Value::as_str).unwrap_or("");
 
-    let transcript_boundary = boundary(snapshot, Some(AdmittedCategory::Transcripts), None);
+    // Each segment is read as what it is: a body window under body, any other
+    // under transcripts.
+    let Some(transcript_boundary) = crate::dispatch::segment_boundary(snapshot, None) else {
+        return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+    };
     let mut admitted_transcripts = Vec::new();
     let mut any_denied_or_unreadable = false;
     let mut segment_link_map = std::collections::BTreeMap::new();

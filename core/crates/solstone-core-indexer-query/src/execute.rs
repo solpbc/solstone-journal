@@ -110,6 +110,57 @@ pub fn search_connection_with_possible_names(
     )
 }
 
+/// Whether a connection's search would have matched what a body import brought
+/// in, had it held the body permission: a window, workout, body document or
+/// summary, a body record's entry, or an unconverted Strava line. `boundary` is
+/// the connection's own with body added, and `body_entries` admits body
+/// records' entries as they would then read. Only body material is asked for,
+/// and one row settles it.
+pub fn connection_search_withheld_body(
+    journal: &Path,
+    boundary: &ConnectionBoundary,
+    request: &ConnectionSearchRequest,
+    reference_date: NaiveDate,
+    body_entries: BodyEntryAdmission,
+) -> Result<bool, IndexAccessError> {
+    let compilation = compile_query(&request.query, reference_date);
+    let day_bounded =
+        request.day.is_some() || request.day_from.is_some() || request.day_to.is_some();
+    if matches!(compilation.outcome, CompileOutcome::NoTokenizableTerm) && !day_bounded {
+        return Ok(false);
+    }
+    let query_boundary = QueryBoundary::Connection(boundary.clone());
+    let mut connection = match open_index_reader(journal, &query_boundary) {
+        Ok(connection) => connection,
+        Err(IndexAccessError::Absent { .. } | IndexAccessError::Empty { .. }) => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    connection.set_body_entries(BodyEntries::OnlyBody(body_entries));
+    let owner_request = owner_request_for_connection(request);
+    let (mut plan, _) = resolve_plan_with_boundary(
+        &mut connection,
+        &owner_request,
+        reference_date,
+        compilation,
+        Some(boundary),
+    )?;
+    // An activity file's rows are judged by the admission: body entries and
+    // Strava lines only.
+    plan.where_clause.push_str(&format!(
+        " AND ({BODY_MATERIAL_FUNCTION}(chunks.path) OR chunks.path LIKE 'facets/%/activities/%.jsonl')"
+    ));
+    let found: Option<i64> = connection
+        .connection
+        .query_row(
+            &format!("SELECT 1 FROM chunks WHERE {} LIMIT 1", plan.where_clause),
+            params_from_iter(plan.params.iter()),
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| connection.classify(error))?;
+    Ok(found.is_some())
+}
+
 fn search_connection_admitting(
     journal: &Path,
     boundary: &ConnectionBoundary,
@@ -129,10 +180,20 @@ fn search_connection_admitting(
         }
         Err(error) => return Err(error),
     };
-    if let Some((admission, body_entries)) = admission {
-        connection.admit_possible_names(admission)?;
-        connection.set_body_entries(BodyEntries::Admitted(body_entries));
-    }
+    let strava_lines = boundary
+        .connection()
+        .is_some_and(|boundary| boundary.categories().contains(&AdmittedCategory::Body));
+    let body_entries: BodyEntryAdmission = match admission {
+        Some((admission, body_entries)) => {
+            connection.admit_possible_names(admission)?;
+            body_entries
+        }
+        None => Arc::new(|_: &str, _: i64| false),
+    };
+    connection.set_body_entries(BodyEntries::Admitted {
+        admission: body_entries,
+        strava_lines,
+    });
     // A query with no searchable word still lists a bounded day range, as an
     // empty query does; without a day bound it finds nothing.
     let day_bounded =
@@ -475,8 +536,10 @@ fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary
         return;
     }
     let categories = category_placeholders(boundary.categories().len());
+    // What a body import brought in is body whatever category it was stored
+    // under, so a row indexed before body existed is gated as body too.
     let mut clause = format!(
-        "EXISTS (SELECT 1 FROM chunk_classification cc WHERE cc.path=chunks.path AND cc.eligible=1 AND cc.unclassified=0 AND cc.category IN ({categories})"
+        "EXISTS (SELECT 1 FROM chunk_classification cc WHERE cc.path=chunks.path AND cc.eligible=1 AND cc.unclassified=0 AND (CASE WHEN {BODY_MATERIAL_FUNCTION}(chunks.path) THEN 'body' ELSE cc.category END) IN ({categories})"
     );
     for category in boundary.categories() {
         plan.params.push(category_sql_name(*category).to_string());
@@ -521,7 +584,43 @@ fn category_sql_name(category: AdmittedCategory) -> &'static str {
         AdmittedCategory::Entities => "entities",
         AdmittedCategory::Facets => "facets",
         AdmittedCategory::ScreenText => "screen_text",
+        AdmittedCategory::Body => "body",
     }
+}
+
+const BODY_MATERIAL_FUNCTION: &str = "solstone_body_material";
+
+/// Register `solstone_body_material(path)`: whether an indexed path is what a
+/// body import brought in. A summary's manifest is read once per reader.
+fn register_body_material(
+    connection: &Connection,
+    journal: Option<PathBuf>,
+) -> rusqlite::Result<()> {
+    let summaries = Mutex::new(BTreeMap::<String, bool>::new());
+    connection.create_scalar_function(
+        BODY_MATERIAL_FUNCTION,
+        1,
+        // Not deterministic: a summary's manifest is read from the journal.
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DIRECTONLY,
+        move |context| {
+            let path = context.get_raw(0).as_str().unwrap_or_default();
+            if solstone_core_format::content::body_material::is_body_path(path) {
+                return Ok(true);
+            }
+            let Some(journal) = journal.as_deref() else {
+                return Ok(false);
+            };
+            if !path.starts_with("imports/") {
+                return Ok(false);
+            }
+            let mut summaries = summaries
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            Ok(*summaries.entry(path.to_owned()).or_insert_with(|| {
+                solstone_core_format::content::body_material::is_body_import_summary(journal, path)
+            }))
+        },
+    )
 }
 
 fn append_filter(plan: &mut SqlPlan, clause: &str, value: String) {
@@ -872,6 +971,9 @@ struct DayFileView {
     ordinary: Vec<String>,
     /// What a record another now stands for says in the index.
     superseded: BTreeSet<String>,
+    /// What an unconverted Strava line says in the index: body data, shown
+    /// only to a connection with the body permission.
+    strava: BTreeSet<String>,
     /// The entry positions of body records that show from another file.
     moved: BTreeSet<usize>,
 }
@@ -884,8 +986,15 @@ pub(crate) enum BodyEntries {
     None,
     /// The owner's own surfaces.
     All,
-    /// A connection: each one as its composed record reads for it.
-    Admitted(BodyEntryAdmission),
+    /// A connection: each one as its composed record reads for it, and an
+    /// unconverted Strava line only when it holds the body permission.
+    Admitted {
+        admission: BodyEntryAdmission,
+        strava_lines: bool,
+    },
+    /// Asking only after body material: an activity file's ordinary rows
+    /// count only when they are unconverted Strava lines.
+    OnlyBody(BodyEntryAdmission),
 }
 
 /// `None` when the file can't be read: it can vouch for nothing.
@@ -902,11 +1011,18 @@ fn day_file_view(journal: &Path, path: &str) -> Option<DayFileView> {
             .and_then(serde_json::Value::as_str)
             .is_some_and(|id| gone.contains(id))
     };
-    let superseded = records
-        .iter()
-        .filter(|record| !is_retired_plan(record) && !is_body_record(record))
-        .zip(&ordinary)
+    let listed = || {
+        records
+            .iter()
+            .filter(|record| !is_retired_plan(record) && !is_body_record(record))
+            .zip(&ordinary)
+    };
+    let superseded = listed()
         .filter(|(record, _)| is_gone(record))
+        .map(|(_, entry)| entry.clone())
+        .collect();
+    let strava = listed()
+        .filter(|(record, _)| solstone_core_format::content::is_strava_reading(record))
         .map(|(_, entry)| entry.clone())
         .collect();
     let moved = (0..records.len() + ordinary.len())
@@ -915,6 +1031,7 @@ fn day_file_view(journal: &Path, path: &str) -> Option<DayFileView> {
     Some(DayFileView {
         ordinary,
         superseded,
+        strava,
         moved,
     })
 }
@@ -951,17 +1068,36 @@ fn register_body_entry_admission(
                 let mut state = state
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if !*state.may_fold.get_or_insert_with(|| {
+                // A connection without the body permission is shown no Strava
+                // line. A file that can't be read can't vouch that a row isn't one.
+                let withhold_strava = matches!(
+                    state.entries,
+                    BodyEntries::Admitted {
+                        strava_lines: false,
+                        ..
+                    }
+                );
+                let only_body = matches!(state.entries, BodyEntries::OnlyBody(_));
+                let may_fold = *state.may_fold.get_or_insert_with(|| {
                     solstone_core_facets::strava_lines_may_be_folded(journal)
-                }) {
+                });
+                if !may_fold && !withhold_strava && !only_body {
                     return Ok(true);
                 }
-                let shown = state
+                let shown = match state
                     .files
                     .entry(path.to_owned())
                     .or_insert_with(|| day_file_view(journal, path))
                     .as_ref()
-                    .is_none_or(|view| !view.superseded.contains(content.trim()));
+                {
+                    None => !withhold_strava && !only_body,
+                    Some(view) => {
+                        let entry = content.trim();
+                        !(may_fold && view.superseded.contains(entry))
+                            && !(withhold_strava && view.strava.contains(entry))
+                            && (!only_body || view.strava.contains(entry))
+                    }
+                };
                 return Ok(shown);
             }
             let idx = match context.get_raw(1) {
@@ -1000,7 +1136,7 @@ fn register_body_entry_admission(
                     .and_then(|(view, position)| view.ordinary.get(position))
                     .is_some_and(|entry| entry == content.trim());
                 if vouched {
-                    return Ok(true);
+                    return Ok(!matches!(state.entries, BodyEntries::OnlyBody(_)));
                 }
             }
             let entries = state.entries.clone();
@@ -1009,7 +1145,9 @@ fn register_body_entry_admission(
                 _ if !body_open => false,
                 BodyEntries::None => false,
                 BodyEntries::All => true,
-                BodyEntries::Admitted(admission) => admission(path, idx),
+                BodyEntries::Admitted { admission, .. } | BodyEntries::OnlyBody(admission) => {
+                    admission(path, idx)
+                }
             })
         },
     )
@@ -1534,6 +1672,11 @@ impl QueryConnection {
             .map_err(|error| classify_sql_error(path.clone(), error))?;
         register_possible_name_admission(&connection, None)
             .map_err(|error| classify_sql_error(path.clone(), error))?;
+        register_body_material(
+            &connection,
+            path.parent().and_then(Path::parent).map(Path::to_path_buf),
+        )
+        .map_err(|error| classify_sql_error(path.clone(), error))?;
         let body_entries = Arc::new(Mutex::new(BodyEntryState::default()));
         register_body_entry_admission(
             &connection,

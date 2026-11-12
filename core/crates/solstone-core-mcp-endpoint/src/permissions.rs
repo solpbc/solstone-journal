@@ -69,6 +69,7 @@ impl ReadPermission {
                 "entities".to_string(),
                 "facets".to_string(),
                 "screen_text".to_string(),
+                "body".to_string(),
             ],
             scope: ReadScope::WholeJournal,
         }
@@ -275,6 +276,7 @@ pub fn evaluate_connection_read(journal_root: &Path, connection_key: &str) -> Pe
             "entities" => Some(AdmittedCategory::Entities),
             "facets" => Some(AdmittedCategory::Facets),
             "screen_text" => Some(AdmittedCategory::ScreenText),
+            "body" => Some(AdmittedCategory::Body),
             _ => None,
         })
         .collect();
@@ -617,7 +619,7 @@ mod tests {
         assert_eq!(read.scope, ReadScope::WholeJournal);
         assert_eq!(
             read.categories,
-            vec!["transcripts", "entities", "facets", "screen_text"]
+            vec!["transcripts", "entities", "facets", "screen_text", "body"]
         );
     }
 
@@ -813,6 +815,7 @@ mod tests {
                     AdmittedCategory::Entities,
                     AdmittedCategory::Facets,
                     AdmittedCategory::ScreenText,
+                    AdmittedCategory::Body,
                 ]
                 .into_iter()
                 .collect(),

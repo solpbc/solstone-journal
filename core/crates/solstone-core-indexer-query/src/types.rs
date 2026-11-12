@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize};
 pub use solstone_core_format::content::AdmittedCategory;
@@ -68,6 +68,7 @@ impl ConnectionBoundary {
                 "Entities" | "entities" => AdmittedCategory::Entities,
                 "Facets" | "facets" => AdmittedCategory::Facets,
                 "ScreenText" | "screen_text" => AdmittedCategory::ScreenText,
+                "Body" | "body" => AdmittedCategory::Body,
                 value => {
                     return Err(ConnectionBoundaryError::UnknownCategory {
                         token: value.to_string(),
@@ -92,8 +93,14 @@ impl ConnectionBoundary {
     /// This is the in-memory equivalent of the connection classification
     /// prefilter. Callers use it after reclassifying a source from the journal,
     /// rather than trusting a classification row recorded by an earlier index run.
+    /// What a body import brought in is body, whatever category it was stored
+    /// under, so its journal is needed to read a summary's manifest.
     #[must_use]
-    pub fn allows_classification(&self, classification: &ChunkClassification) -> bool {
+    pub fn allows_classification(
+        &self,
+        journal: &Path,
+        classification: &ChunkClassification,
+    ) -> bool {
         if !classification.eligible || classification.unclassified {
             return false;
         }
@@ -104,6 +111,14 @@ impl ConnectionBoundary {
         }
         let Some(category) = classification.category.and_then(category_from_sql_name) else {
             return false;
+        };
+        let category = if solstone_core_format::content::body_material::is_body_material(
+            Some(journal),
+            &classification.path,
+        ) {
+            AdmittedCategory::Body
+        } else {
+            category
         };
         if !self.categories.contains(&category) {
             return false;
@@ -511,3 +526,36 @@ impl std::fmt::Display for IndexAccessError {
 }
 
 impl std::error::Error for IndexAccessError {}
+
+#[cfg(test)]
+mod body_category_tests {
+    use super::*;
+
+    fn stored_as_transcripts(path: &str) -> ChunkClassification {
+        ChunkClassification {
+            path: path.to_owned(),
+            category: Some("transcripts"),
+            basis: Some("segment_assigned"),
+            eligible: true,
+            unclassified: false,
+            facet_ids: vec!["work".to_owned()],
+        }
+    }
+
+    fn boundary(kinds: &[&str]) -> ConnectionBoundary {
+        ConnectionBoundary::from_category_tokens(kinds, ConnectionScope::WholeJournal).unwrap()
+    }
+
+    #[test]
+    fn a_body_import_stored_as_transcripts_is_read_as_body() {
+        let journal = Path::new("/nonexistent-journal");
+        let body = stored_as_transcripts("20261010/import.oura/000000_86400/body.jsonl");
+        let speech = stored_as_transcripts("20261010/audio/090000_300/talents/transcript.md");
+        let transcripts = boundary(&["transcripts", "entities", "facets", "screen_text"]);
+        assert!(!transcripts.allows_classification(journal, &body));
+        assert!(transcripts.allows_classification(journal, &speech));
+        let body_only = boundary(&["body"]);
+        assert!(body_only.allows_classification(journal, &body));
+        assert!(!body_only.allows_classification(journal, &speech));
+    }
+}

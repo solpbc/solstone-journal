@@ -435,6 +435,9 @@ pub(crate) fn category_name(category: AdmittedCategory) -> &'static str {
         AdmittedCategory::Entities => "entities",
         AdmittedCategory::Facets => "facets",
         AdmittedCategory::ScreenText => "screen_text",
+        // No pattern admits it: body is decided from the path when read, and
+        // the stored category of a body import's file stays transcripts.
+        AdmittedCategory::Body => "body",
     }
 }
 

@@ -1760,6 +1760,69 @@ else
 	fail "receipt-less prune: $(cat "$BASE/prune-receiptless.out")"
 fi
 
+# A successful install or update removes version directories outside the
+# window, exactly as --prune would, except one something still runs from; and
+# a directory the checks can't identify leaves every version in place.
+AUTO_HOME=$BASE/autoprune-home
+AUTO_PREFIX=$BASE/autoprune-prefix
+mkdir -p "$AUTO_HOME/.local/bin"
+_patch=0
+while [ "$_patch" -le 2 ]; do
+	env HOME="$AUTO_HOME" "$INSTALL" --prefix "$AUTO_PREFIX" \
+		--archive "$BASE/downgrade-${_patch}.tar.gz" --sha256 "$BASE/downgrade-${_patch}.sha256" \
+		--release "$BASE/downgrade-${_patch}.release" >/dev/null
+	touch -t "20260903010${_patch}.00" "$AUTO_PREFIX/$(readlink "$AUTO_PREFIX/current")"
+	_patch=$((_patch + 1))
+done
+_auto_oldest=$AUTO_PREFIX/$(ls -1t "$AUTO_PREFIX/versions" | tail -n 1 | sed 's|^|versions/|')
+printf "#!/bin/bash\nSOL_BIN='%s/bin/solstone'\nexec \"\$SOL_BIN\" \"\$@\"\n" "$_auto_oldest" >"$AUTO_HOME/.local/bin/solstone"
+if env HOME="$AUTO_HOME" "$INSTALL" --prefix "$AUTO_PREFIX" \
+	--archive "$BASE/downgrade-3.tar.gz" --sha256 "$BASE/downgrade-3.sha256" \
+	--release "$BASE/downgrade-3.release" >"$BASE/autoprune-inuse.out" 2>&1 \
+	&& [ -d "$_auto_oldest" ] \
+	&& [ "$(find "$AUTO_PREFIX/versions" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -eq 4 ]; then
+	pass "an update keeps an old version the wrapper still names"
+else
+	fail "an update removed a version the wrapper names: $(cat "$BASE/autoprune-inuse.out")"
+fi
+touch -t "202609030103.00" "$AUTO_PREFIX/$(readlink "$AUTO_PREFIX/current")"
+rm -f "$AUTO_HOME/.local/bin/solstone"
+make_tree_tar "$BASE/autoprune-4.tar.gz" "$BASE/autoprune-4-stage" "echo '# fixture-version: 2.0.4' >/dev/null; exit 0"
+sha_sidecar "$BASE/autoprune-4.tar.gz" "$BASE/autoprune-4.sha256"
+make_release "$BASE/autoprune-4.release" 2.0.4 "$TARGET"
+_auto_before=$(readlink "$AUTO_PREFIX/current")
+if env HOME="$AUTO_HOME" "$INSTALL" --prefix "$AUTO_PREFIX" \
+	--archive "$BASE/autoprune-4.tar.gz" --sha256 "$BASE/autoprune-4.sha256" \
+	--release "$BASE/autoprune-4.release" >"$BASE/autoprune.out" 2>&1 \
+	&& [ ! -d "$_auto_oldest" ] && [ -d "$AUTO_PREFIX/$_auto_before" ] \
+	&& [ "$(find "$AUTO_PREFIX/versions" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -eq 3 ]; then
+	pass "an update keeps the current version and the two before it"
+else
+	fail "an update did not prune to the window: $(cat "$BASE/autoprune.out")"
+fi
+if env HOME="$AUTO_HOME" "$INSTALL" --prefix "$AUTO_PREFIX" \
+	--archive "$BASE/downgrade-3.tar.gz" --sha256 "$BASE/downgrade-3.sha256" \
+	--release "$BASE/downgrade-3.release" >/dev/null 2>&1 \
+	&& grep -F '# fixture-version: 2.0.3' "$AUTO_PREFIX/current/bin/journal" >/dev/null; then
+	pass "rollback to the previous version works after a prune"
+else
+	fail "rollback after a prune failed"
+fi
+mkdir -p "$AUTO_PREFIX/versions/not-ours"
+_auto_count=$(find "$AUTO_PREFIX/versions" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+make_tree_tar "$BASE/autoprune-5.tar.gz" "$BASE/autoprune-5-stage" "echo '# fixture-version: 2.0.5' >/dev/null; exit 0"
+sha_sidecar "$BASE/autoprune-5.tar.gz" "$BASE/autoprune-5.sha256"
+make_release "$BASE/autoprune-5.release" 2.0.5 "$TARGET"
+if env HOME="$AUTO_HOME" "$INSTALL" --prefix "$AUTO_PREFIX" \
+	--archive "$BASE/autoprune-5.tar.gz" --sha256 "$BASE/autoprune-5.sha256" \
+	--release "$BASE/autoprune-5.release" >"$BASE/autoprune-foreign.out" 2>&1 \
+	&& [ -d "$AUTO_PREFIX/versions/not-ours" ] \
+	&& [ "$(find "$AUTO_PREFIX/versions" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -eq $((_auto_count + 1)) ]; then
+	pass "an unidentified version directory leaves every version in place and the update succeeds"
+else
+	fail "an unidentified version directory: $(cat "$BASE/autoprune-foreign.out")"
+fi
+
 # negative twin: a tarball whose digest does not match its own .sha256 must
 # still be refused, even when it is a same-version respin sitting right next
 # to an installable one.
@@ -1896,6 +1959,48 @@ if env HOME="$CLI_HOME" SOLSTONE_SETUP_ARGS_LOG="$CLI_SETUP_LOG" \
 	pass "role=cli installs without running setup"
 else
 	fail "role=cli installation failed or invoked setup: $(cat "$CLI_PREFIX/install-receipt" 2>/dev/null)"
+fi
+
+# A cli install has no managed wrapper, so interactive shells get the PATH
+# block too: in each of ~/.bashrc and ~/.zshrc that exists, guarded so a shell
+# reading both files adds the directory once.
+CLIRC_HOME=$BASE/clirc-home
+CLIRC_PREFIX=$BASE/clirc-prefix
+mkdir -p "$CLIRC_HOME"
+printf '# owner bashrc\n' >"$CLIRC_HOME/.bashrc"
+printf '# owner zshrc\n' >"$CLIRC_HOME/.zshrc"
+if env HOME="$CLIRC_HOME" "$INSTALL" --role cli --prefix "$CLIRC_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >"$BASE/clirc.out" 2>&1 \
+	&& [ "$(grep -c -Fx '# BEGIN solstone-journal PATH' "$CLIRC_HOME/.bashrc")" -eq 1 ] \
+	&& [ "$(grep -c -Fx '# BEGIN solstone-journal PATH' "$CLIRC_HOME/.zshrc")" -eq 1 ] \
+	&& grep -Fx '# owner zshrc' "$CLIRC_HOME/.zshrc" >/dev/null \
+	&& [ "$(env -i HOME="$CLIRC_HOME" PATH=/usr/bin:/bin sh -c '. "$HOME/.profile"; . "$HOME/.bashrc"; printf %s "$PATH"' | tr ':' '\n' | grep -c -Fx "$CLIRC_PREFIX/current/bin")" -eq 1 ]; then
+	pass "role=cli writes one guarded PATH block to each existing shell rc"
+else
+	fail "role=cli shell rc PATH blocks: $(cat "$BASE/clirc.out")"
+fi
+CLIRC_NONE_HOME=$BASE/clirc-none-home
+mkdir -p "$CLIRC_NONE_HOME"
+if env HOME="$CLIRC_NONE_HOME" "$INSTALL" --role cli --prefix "$BASE/clirc-none-prefix" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null 2>&1 \
+	&& [ ! -e "$CLIRC_NONE_HOME/.bashrc" ] && [ ! -e "$CLIRC_NONE_HOME/.zshrc" ]; then
+	pass "role=cli creates no shell rc file that did not exist"
+else
+	fail "role=cli created a shell rc file"
+fi
+# A journal install owns the command through its wrapper, so it takes a cli
+# install's block back out of the shell rc files and leaves the owner's lines.
+JRC_HOME=$BASE/jrc-home
+mkdir -p "$JRC_HOME"
+printf '# owner bashrc\n# BEGIN solstone-journal PATH\nPATH="/old/current/bin${PATH:+:$PATH}"\nexport PATH\n# END solstone-journal PATH\n' >"$JRC_HOME/.bashrc"
+if env HOME="$JRC_HOME" "$INSTALL" --role journal --prefix "$BASE/jrc-prefix" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null 2>&1 \
+	&& ! grep -F 'solstone-journal PATH' "$JRC_HOME/.bashrc" >/dev/null \
+	&& grep -Fx '# owner bashrc' "$JRC_HOME/.bashrc" >/dev/null \
+	&& grep -Fx '# BEGIN solstone-journal PATH' "$JRC_HOME/.profile" >/dev/null; then
+	pass "role=journal removes a cli PATH block from shell rc files"
+else
+	fail "role=journal left a PATH block in ~/.bashrc"
 fi
 
 # Fresh journal installation with --no-start

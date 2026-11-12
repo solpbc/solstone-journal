@@ -125,12 +125,17 @@ fn journal() -> tempfile::TempDir {
     journal
 }
 
+/// A connection that reads transcripts and body data.
 fn grant(journal: &Path, scope: ReadScope) {
+    grant_kinds(journal, &["transcripts", "body"], scope);
+}
+
+fn grant_kinds(journal: &Path, kinds: &[&str], scope: ReadScope) {
     PermissionStore::open(journal)
         .set_permission(
             CONNECTION,
             ReadPermission {
-                categories: vec!["transcripts".to_owned()],
+                categories: kinds.iter().map(|kind| (*kind).to_owned()).collect(),
                 scope,
             },
         )
@@ -2223,7 +2228,7 @@ fn a_strava_line_a_code_record_holds_isnt_listed() {
         .set_permission(
             CONNECTION,
             ReadPermission {
-                categories: vec!["facets".to_owned()],
+                categories: vec!["facets".to_owned(), "body".to_owned()],
                 scope: ReadScope::WholeJournal,
             },
         )
@@ -2306,6 +2311,12 @@ fn a_day_only_an_old_bundle_covers_is_noted_for_a_whole_journal_connection() {
     let note = list["earlier_imports_note"].as_str().expect("the note");
     assert!(note.contains("Apple Health"), "{note}");
     assert!(note.contains("this day"), "{note}");
+
+    // Without body the note is withheld, and the listing says why.
+    grant_kinds(root, &["transcripts"], ReadScope::WholeJournal);
+    let list = call(root, "list_transcripts", json!({"day": OLD_DAY}));
+    assert!(list.get("earlier_imports_note").is_none(), "{list}");
+    assert_eq!(list["body_note"], BODY_WORDS, "{list}");
 }
 
 #[test]
@@ -2766,7 +2777,11 @@ fn a_group_whose_day_is_hidden_is_found_by_no_group_reader() {
     run_record(root, DAY, &watch);
     run_record(root, NEXT, &ring);
     let health_only = ReadPermission {
-        categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+        categories: vec![
+            "facets".to_owned(),
+            "transcripts".to_owned(),
+            "body".to_owned(),
+        ],
         scope: ReadScope::Facets {
             ids: vec![HEALTH.to_owned()],
         },
@@ -2839,7 +2854,7 @@ fn a_strava_line_on_a_hidden_day_is_listed_by_no_connection() {
         .set_permission(
             CONNECTION,
             ReadPermission {
-                categories: vec!["facets".to_owned()],
+                categories: vec!["facets".to_owned(), "body".to_owned()],
                 scope: ReadScope::WholeJournal,
             },
         )
@@ -2871,4 +2886,184 @@ fn a_strava_line_on_a_hidden_day_is_listed_by_no_connection() {
         ["Standup"],
         "and every one while the days can't be read"
     );
+}
+
+const BODY_WORDS: &str = crate::body_source::BODY_NOT_GRANTED;
+
+fn workout_day(root: &Path) {
+    let mut rows = many_readings("a", 6, 31, 3);
+    rows.push(workout());
+    window(root, DAY, "063000_300", &rows, None);
+    fs::write(
+        root.join("chronicle").join(DAY).join("body.md"),
+        "# body on Saturday, October 10, 2026\n\n## Apple Health · imported\n\n- workout: running\n",
+    )
+    .unwrap();
+    index(root);
+}
+
+fn found_douro(root: &Path, arguments: Value) -> (bool, Value) {
+    let found = call(root, "search", arguments);
+    let any = found["results"].as_array().unwrap().iter().any(|result| {
+        result["snippet"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Douro")
+    });
+    (any, found)
+}
+
+#[test]
+fn a_connection_approved_before_body_reads_none_of_it_and_is_told_why() {
+    let journal = journal();
+    let root = journal.path();
+    // What every connection approved before body existed holds.
+    grant_kinds(
+        root,
+        &["transcripts", "entities", "facets", "screen_text"],
+        ReadScope::WholeJournal,
+    );
+    // Indexed under the old classification: body files are stored as transcripts.
+    workout_day(root);
+
+    let list = call(root, "list_transcripts", json!({"day": DAY}));
+    assert!(list.get("other_sources").is_none(), "{list}");
+    assert_eq!(list["body_note"], BODY_WORDS, "{list}");
+    assert_eq!(empty_note(root, json!({"day": DAY})), BODY_WORDS);
+
+    let source = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL}),
+    );
+    assert!(
+        source["transcripts"].as_array().unwrap().is_empty(),
+        "{source}"
+    );
+    assert_eq!(source["body_note"], BODY_WORDS, "{source}");
+
+    for arguments in [
+        json!({"query": "Douro Loop", "day": DAY}),
+        json!({"query": "Douro Loop", "day": DAY, "category": "transcripts"}),
+        json!({"query": "running", "day": DAY}),
+    ] {
+        let (any, found) = found_douro(root, arguments.clone());
+        assert!(!any, "{arguments}: {found}");
+        assert_eq!(found["body_note"], BODY_WORDS, "{arguments}: {found}");
+    }
+    // A search that would have found no body data says nothing of it.
+    let unrelated = call(root, "search", json!({"query": "kestrel", "day": DAY}));
+    assert!(unrelated.get("body_note").is_none(), "{unrelated}");
+    // Asking for body by name is refused, as any kind not granted is.
+    assert!(
+        run_mcp_probe(
+            root,
+            CONNECTION,
+            "search",
+            &json!({"query": "Douro", "category": "body"})
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn body_alone_reaches_body_data_and_one_tick_grants_it() {
+    let journal = journal();
+    let root = journal.path();
+    grant_kinds(root, &["transcripts", "facets"], ReadScope::WholeJournal);
+    workout_day(root);
+    assert!(!found_douro(root, json!({"query": "Douro Loop", "day": DAY})).0);
+
+    // The owner ticks body: the same index now answers.
+    grant_kinds(
+        root,
+        &["transcripts", "facets", "body"],
+        ReadScope::WholeJournal,
+    );
+    let (any, found) = found_douro(root, json!({"query": "Douro Loop", "day": DAY}));
+    assert!(any, "{found}");
+    assert!(found.get("body_note").is_none(), "{found}");
+
+    // Body without transcripts still reaches every body route the tools have.
+    grant_kinds(root, &["body"], ReadScope::WholeJournal);
+    let list = call(root, "list_transcripts", json!({"day": DAY}));
+    assert_eq!(list["other_sources"], json!([LABEL]), "{list}");
+    let source = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL}),
+    );
+    assert!(
+        !source["transcripts"].as_array().unwrap().is_empty(),
+        "{source}"
+    );
+    for category in [None, Some("body")] {
+        let mut arguments = json!({"query": "Douro Loop", "day": DAY});
+        if let Some(category) = category {
+            arguments["category"] = json!(category);
+        }
+        let (any, found) = found_douro(root, arguments);
+        assert!(any, "{category:?}: {found}");
+    }
+}
+
+#[test]
+fn an_old_strava_line_needs_body_by_every_tool() {
+    let journal = journal();
+    let root = journal.path();
+    let line = json!({"id": "exercise_1", "activity": "exercise", "title": "Morning Run",
+        "description": "kestrel ridge loop",
+        "stream": "import.strava", "segments": ["070000_300"], "created_at": 1});
+    let other = json!({"id": "meeting_1", "activity": "meeting", "title": "Standup",
+        "segments": ["090000_300"], "created_at": 2});
+    let path = root.join(format!("facets/health/activities/{DAY}.jsonl"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, format!("{line}\n{other}\n")).unwrap();
+    index(root);
+    let titles = |value: &Value, key: &str| {
+        let mut titles: Vec<String> = value[key]
+            .as_array()
+            .map(|rows| {
+                rows.iter()
+                    .filter_map(|row| row["title"].as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        titles.sort();
+        titles
+    };
+    let kestrel = |root: &Path| {
+        let found = call(root, "search", json!({"query": "kestrel"}));
+        let any = !found["results"].as_array().unwrap().is_empty();
+        (any, found)
+    };
+
+    // Facets alone, as a connection approved before body held: not listed,
+    // shown in the week or found, and each answer says why.
+    grant_kinds(root, &["transcripts", "facets"], ReadScope::WholeJournal);
+    let listed = call(root, "list_activities", json!({"day": DAY}));
+    assert_eq!(titles(&listed, "activities"), ["Standup"], "{listed}");
+    assert_eq!(listed["body_note"], BODY_WORDS, "{listed}");
+    let week = call(root, "get_week", json!({"week": "20261004"}));
+    assert!(!week.to_string().contains("Morning Run"), "{week}");
+    assert_eq!(week["body_note"], BODY_WORDS, "{week}");
+    let (any, found) = kestrel(root);
+    assert!(!any, "{found}");
+    assert_eq!(found["body_note"], BODY_WORDS, "{found}");
+
+    // With body it reads as before.
+    grant_kinds(
+        root,
+        &["transcripts", "facets", "body"],
+        ReadScope::WholeJournal,
+    );
+    let listed = call(root, "list_activities", json!({"day": DAY}));
+    assert_eq!(
+        titles(&listed, "activities"),
+        ["Morning Run", "Standup"],
+        "{listed}"
+    );
+    assert!(listed.get("body_note").is_none(), "{listed}");
+    let (any, found) = kestrel(root);
+    assert!(any, "{found}");
 }

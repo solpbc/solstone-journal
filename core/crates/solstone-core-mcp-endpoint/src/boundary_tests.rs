@@ -478,7 +478,7 @@ fn ac25_a_refusal_is_recorded_and_the_owner_can_tell_it_from_a_served_call() {
     assert_eq!(
         reasons,
         [
-            "this connection does not have the transcripts or screen_text category",
+            "this connection does not have the transcripts or screen_text or body category",
             "this connection has no read permission",
         ]
     );
@@ -13290,7 +13290,11 @@ fn list_activities_shows_a_body_record_only_to_a_connection_that_reads_its_windo
     assert_eq!(body["facet"], "Alpha");
 
     let alpha_with_transcripts = ReadPermission {
-        categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+        categories: vec![
+            "facets".to_owned(),
+            "transcripts".to_owned(),
+            "body".to_owned(),
+        ],
         scope: ReadScope::Facets {
             ids: vec![FACET_A.to_owned()],
         },
@@ -13301,25 +13305,41 @@ fn list_activities_shows_a_body_record_only_to_a_connection_that_reads_its_windo
             .contains("Synthetic Watch")
     );
 
-    // A beta-limited connection and a Facets-only one get exactly what they
-    // would with no body data at all.
-    for permission in [
-        ReadPermission {
-            categories: vec!["facets".to_owned(), "transcripts".to_owned()],
-            scope: ReadScope::Facets {
-                ids: vec![FACET_B.to_owned()],
-            },
+    // A beta-limited connection gets exactly what it would with no body data
+    // at all: the record's window isn't in its scope.
+    let beta = ReadPermission {
+        categories: vec![
+            "facets".to_owned(),
+            "transcripts".to_owned(),
+            "body".to_owned(),
+        ],
+        scope: ReadScope::Facets {
+            ids: vec![FACET_B.to_owned()],
         },
-        ReadPermission {
-            categories: vec!["facets".to_owned()],
+    };
+    assert_eq!(
+        listed(&body_record_journal(true), Some(beta.clone())),
+        listed(&body_record_journal(false), Some(beta)),
+    );
+
+    // Without the body permission the record isn't listed, and the answer says
+    // why instead of reading as no body data at all.
+    for categories in [vec!["facets"], vec!["facets", "transcripts"]] {
+        let permission = ReadPermission {
+            categories: categories.iter().map(|kind| (*kind).to_owned()).collect(),
             scope: ReadScope::WholeJournal,
-        },
-    ] {
-        let without = body_record_journal(false);
+        };
+        let with_body = listed(&body_record_journal(true), Some(permission.clone()));
+        let without = listed(&body_record_journal(false), Some(permission.clone()));
         assert_eq!(
-            listed(&body_record_journal(true), Some(permission.clone())),
-            listed(&without, Some(permission.clone())),
+            with_body["activities"], without["activities"],
             "{permission:?}"
+        );
+        assert!(without.get("body_note").is_none(), "{without}");
+        assert_eq!(
+            with_body["body_note"],
+            crate::body_source::BODY_NOT_GRANTED,
+            "{with_body}"
         );
     }
 }
@@ -14082,7 +14102,11 @@ fn a_list_page_names_the_body_windows_it_read_with_or_without_capture_on_it() {
 
 fn alpha_reader() -> ReadPermission {
     ReadPermission {
-        categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+        categories: vec![
+            "facets".to_owned(),
+            "transcripts".to_owned(),
+            "body".to_owned(),
+        ],
         scope: ReadScope::Facets {
             ids: vec![FACET_A.to_owned()],
         },

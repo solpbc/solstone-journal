@@ -115,6 +115,8 @@ MANIFEST_FILE=
 MINISIG_FILE=
 UPGRADE=0
 PRUNE=0
+PROFILE_WRITTEN=
+PROFILE_RC=0
 NO_PATH=0
 ROLE=journal
 ROLE_EXPLICIT=0
@@ -930,18 +932,52 @@ refuse_after_rollback_failure() {
 	refuse setup-failed "${_reason}; the previous current target could not be restored; inspect ${CURRENT}, then rerun this same install.sh command"
 }
 
+# ~/.profile is read only by login shells: a new terminal window on most
+# desktops is not one, zsh never reads it, and bash skips it when
+# ~/.bash_profile exists. The journal role's setup installs the managed
+# ~/.local/bin/solstone wrapper and puts ~/.local/bin on PATH in those shells'
+# own files, so only the cli role, which has no wrapper, also writes this block
+# into ~/.bashrc and ~/.zshrc. It writes the ones that exist, as setup does.
+# Every copy is the same marked block, and uninstall removes it by its markers.
 write_profile() {
 	_prefix=$1
 	if [ -n "${SOLSTONE_PROFILE:-}" ]; then
 		write_one_profile "$_prefix" "$SOLSTONE_PROFILE"
+		PROFILE_WRITTEN=$SOLSTONE_PROFILE
 		return 0
 	fi
 	write_one_profile "$_prefix" "$HOME/.profile"
+	# shellcheck disable=SC2088
+	PROFILE_WRITTEN='~/.profile'
+	for _rc in .bashrc .zshrc; do
+		[ -f "$HOME/$_rc" ] || continue
+		if [ "$ROLE" = cli ]; then
+			write_one_profile "$_prefix" "$HOME/$_rc" guarded
+			PROFILE_WRITTEN="${PROFILE_WRITTEN}, ~/${_rc}"
+			PROFILE_RC=1
+		elif grep -Fqx "$PROFILE_BEGIN" "$HOME/$_rc" 2>/dev/null; then
+			# A journal install over a cli one: its wrapper is the command now.
+			remove_profile_block "$HOME/$_rc"
+		fi
+	done
+}
+
+remove_profile_block() {
+	_profile=$1
+	_tmp=$(mktemp "$WORK/solstone-install-profile-XXXXXX")
+	awk -v begin="$PROFILE_BEGIN" -v end="$PROFILE_END" '
+		$0 == begin {skip=1; next}
+		$0 == end {skip=0; next}
+		skip != 1 {print}
+	' "$_profile" >"$_tmp"
+	cat "$_tmp" >"$_profile"
+	rm -f "$_tmp"
 }
 
 write_one_profile() {
 	_prefix=$1
 	_profile=$2
+	_guarded=${3:-}
 	_dir=$(dirname "$_profile")
 	mkdir -p "$_dir"
 	_tmp=$(mktemp "$WORK/solstone-install-profile-XXXXXX")
@@ -957,7 +993,12 @@ write_one_profile() {
 	{
 		cat "$_tmp"
 		printf '%s\n' "$PROFILE_BEGIN"
-		printf 'PATH="%s/current/bin${PATH:+:$PATH}"\n' "$_prefix"
+		if [ -n "$_guarded" ]; then
+			# An interactive shell can read this after ~/.profile already did.
+			printf 'case ":${PATH}:" in *":%s/current/bin:"*) ;; *) PATH="%s/current/bin${PATH:+:$PATH}" ;; esac\n' "$_prefix" "$_prefix"
+		else
+			printf 'PATH="%s/current/bin${PATH:+:$PATH}"\n' "$_prefix"
+		fi
 		printf '%s\n' "export PATH"
 		printf '%s\n' "$PROFILE_END"
 	} >"${_tmp}.out"
@@ -1019,10 +1060,16 @@ report_success() {
 		printf 'PATH not updated (--no-path)\n'
 	elif [ -n "${SOLSTONE_PROFILE:-}" ]; then
 		printf 'PATH updated in %s\n' "$SOLSTONE_PROFILE"
-		printf 'open a new terminal, or: . %s\n' "$SOLSTONE_PROFILE"
+		printf 'to use solstone in this terminal: . %s\n' "$SOLSTONE_PROFILE"
 	else
-		printf 'PATH updated in ~/.profile\n'
-		printf 'open a new terminal, or: . ~/.profile\n'
+		printf 'PATH updated in %s\n' "${PROFILE_WRITTEN:-~/.profile}"
+		# A cli install with no shell rc file has only ~/.profile, which a new
+		# terminal window does not read.
+		if [ "$ROLE" = journal ] || [ "$PROFILE_RC" -eq 1 ]; then
+			printf 'new terminals find solstone. to use it in this one: . ~/.profile\n'
+		else
+			printf 'to use solstone in this terminal: . ~/.profile\n'
+		fi
 	fi
 	printf 'then: %s --version\n' "$(journal_command_for_version "$VERSION")"
 	finish_journal_install
@@ -1169,16 +1216,57 @@ validate_prunable_version_dir() {
 	*) refuse prune-unsafe "version directory does not match its archive provenance: $_name" ;;
 	esac
 	validate_release "$(cat "$_dir/.release")" "$_version" "$TARGET"
-	[ "$RELEASE_EPOCH" = "$INSTALLED_EPOCH" ] \
+	[ "$RELEASE_EPOCH" = "$PRUNE_EPOCH" ] \
 		|| refuse prune-unsafe "mixed upgrade epochs under versions/: $_name"
 }
 
+# A version directory that something still runs from stays, whatever its age:
+# the managed wrapper's SOL_BIN or a service unit naming it, or a running
+# program started from it.
+version_dir_in_use() {
+	_dir=$1
+	_real=$(cd "$_dir" 2>/dev/null && pwd -P) || return 0
+	for _file in "$HOME/.local/bin/solstone" "$HOME/.local/bin/journal" \
+		"${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/solstone.service"; do
+		[ -f "$_file" ] || continue
+		grep -F -e "$_dir/" -e "$_real/" "$_file" >/dev/null 2>&1 && return 0
+	done
+	for _exe in /proc/[0-9]*/exe; do
+		_target=$(readlink "$_exe" 2>/dev/null) || continue
+		case $_target in
+		"$_real"/*) return 0 ;;
+		esac
+	done
+	return 1
+}
+
+# Run after a successful install or update: the same checks as --prune, in a
+# subshell, so a directory they cannot positively identify leaves every version
+# in place and the install still succeeds.
+prune_after_install() {
+	[ "$ROUTE" = tree ] || return 0
+	if (
+		validate_release "$(cat "$DEST/.release")" "$VERSION" "$TARGET"
+		prune_versions after-install "$DEST" "$RELEASE_EPOCH" "$RELEASE_RETENTION_WINDOW"
+	) 2>"$WORK/prune.err"; then
+		return 0
+	fi
+	printf 'older versions were left in place: %s\n' "$(tail -n 1 "$WORK/prune.err")"
+}
+
+# prune_versions [after-install DEST EPOCH WINDOW]: with no arguments, --prune
+# keeps the installed version's window; after an install, the new one's.
 prune_versions() {
+	_prune_mode=${1:-}
+	PRUNE_DEST=${2:-$INSTALLED_DEST}
+	PRUNE_EPOCH=${3:-$INSTALLED_EPOCH}
+	_prune_window=${4:-$INSTALLED_RETENTION_WINDOW}
+	_removed=0
 	[ "$ROUTE" = tree ] || refuse prune-unsafe "only a positively identified tree install can be pruned"
-	[ "$INSTALLED_EPOCH" = "$SUPPORTED_UPGRADE_EPOCH" ] \
+	[ "$PRUNE_EPOCH" = "$SUPPORTED_UPGRADE_EPOCH" ] \
 		|| refuse retention-policy-unsupported "the current release has no supported retention policy"
-	[ "$INSTALLED_RETENTION_WINDOW" = "$SUPPORTED_RETENTION_WINDOW" ] \
-		|| refuse retention-policy-unsupported "retention_window=${INSTALLED_RETENTION_WINDOW}"
+	[ "$_prune_window" = "$SUPPORTED_RETENTION_WINDOW" ] \
+		|| refuse retention-policy-unsupported "retention_window=${_prune_window}"
 	for _candidate in "$PREFIX"/versions/*; do
 		validate_prunable_version_dir "$_candidate"
 	done
@@ -1188,7 +1276,7 @@ prune_versions() {
 '
 	# shellcheck disable=SC2045
 	for _candidate in $(ls -1dt -- "$PREFIX"/versions/* 2>/dev/null); do
-		[ "$_candidate" = "$INSTALLED_DEST" ] && continue
+		[ "$_candidate" = "$PRUNE_DEST" ] && continue
 		if [ "$_kept" -lt "$SUPPORTED_RETENTION_WINDOW" ]; then
 			_kept=$((_kept + 1))
 			continue
@@ -1200,9 +1288,19 @@ prune_versions() {
 		_live_current=$PREFIX/$_live_link
 		[ "$_candidate" != "$_live_current" ] \
 			|| refuse prune-unsafe "current changed while pruning; retry"
+		version_dir_in_use "$_candidate" && continue
 		rm -rf -- "$_candidate"
+		_removed=$((_removed + 1))
 	done
 	IFS=$_oldifs
+	if [ "$_prune_mode" = after-install ]; then
+		case $_removed in
+		0) ;;
+		1) printf 'removed 1 older version; %s and the two installed before it stay\n' "$VERSION" ;;
+		*) printf 'removed %s older versions; %s and the two installed before it stay\n' "$_removed" "$VERSION" ;;
+		esac
+		return 0
+	fi
 	_count=$(find "$PREFIX/versions" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
 	printf 'retained %s version directories; current -> %s\n' \
 		"$_count" "$(readlink "$PREFIX/current")"
@@ -2089,6 +2187,7 @@ if [ "$ROLE" = cli ]; then
 	fi
 	publish_receipt "$PREFIX"
 	rm -f -- "$DEST"/.install-transaction-*
+	prune_after_install
 	if [ "$NO_PATH" -eq 0 ]; then
 		write_profile "$PREFIX"
 	fi
@@ -2138,6 +2237,7 @@ fi
 publish_receipt "$PREFIX"
 rm -f -- "$DEST"/.install-transaction-*
 SETUP_TRANSACTION_ACTIVE=0
+prune_after_install
 if [ "$NO_PATH" -eq 0 ]; then
 	write_profile "$PREFIX"
 fi

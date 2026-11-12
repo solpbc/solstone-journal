@@ -40,6 +40,7 @@ use crate::chunker::format_markdown;
 use crate::matcher::{PatternSpec, Resolver, patterns_for_root as filter_patterns_for_root};
 
 pub mod body_hidden_days;
+pub mod body_material;
 pub mod possible_names;
 pub mod screen_text;
 pub mod week_left_out;
@@ -215,6 +216,10 @@ pub enum AdmittedCategory {
     Entities,
     Facets,
     ScreenText,
+    /// What body imports brought in. ⛔ Never a stored category: a reader
+    /// decides it from the path (`body_material`), so a row stored as
+    /// transcripts before it existed is gated as body too.
+    Body,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
