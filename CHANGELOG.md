@@ -8,7 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- on the body page you can now hide a day of body data: everything Apple Health, Oura and Strava recorded that day, and a night or workout that starts on it, after midnight too. it stays in your journal, and it stays hidden when you import or sync it again or merge a journal archive that holds it. search and the activities page leave it out, and connected agents can't reach it. unhide brings it back as it was, and a workout you hid on its own stays hidden.
+- on the body page you can now hide a day of body data: that day's readings from Apple Health, Oura and Strava, and a night or workout that starts on it, after midnight too. it stays in your journal, and it stays hidden when you import or sync it again or merge a journal archive that holds it. search and the activities page leave it out, and connected agents can't reach it. unhide brings it back as it was, and anything you hid on its own stays hidden.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
