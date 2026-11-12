@@ -36,6 +36,7 @@ function makeClock() {
   };
   return {
     now: () => now,
+    count: () => timers.size,
     setTimeout: (fn, ms) => add(fn, ms, false),
     setInterval: (fn, ms) => add(fn, ms, true),
     clearTimeout: (id) => timers.delete(id),
@@ -532,6 +533,26 @@ asyncCase('generations: a caller\'s own abort still rejects, as before', async (
   controller.abort();
   await flush();
   assert.strictEqual(read.error?.name, 'AbortError');
+});
+
+// ---- what an abort leaves running
+
+asyncCase('bounds: an aborted read whose body nobody reads keeps no stall clock', async () => {
+  const page = makePage();
+  const before = page.clock.count();
+  const caller = new AbortController();
+  const got = settledState(page.window.fetch('/app/home/api/pulse', { signal: caller.signal }));
+  await flush();
+  // A body that has sent what it has, with nobody reading it.
+  page.server.last().respondStreaming(200, JSON_TYPE).push('{"n":');
+  await flush();
+  assert.ok(got.value, 'the headers are in');
+  assert.strictEqual(page.clock.count(), before + 1, 'the stall clock runs while the body is open');
+  caller.abort();
+  await flush();
+  assert.strictEqual(page.clock.count(), before, 'the abort ends the stall clock with the read');
+  await page.clock.advance(25000);
+  assert.strictEqual(page.clock.count(), before);
 });
 
 // ---- the mount

@@ -688,15 +688,19 @@
     const callerSignal = init?.signal || (isRequest(input) ? input.signal : null);
     let failure = null;
     let timer = null;
-    const onAbort = () => controller.abort(callerSignal.reason);
-    if (callerSignal) {
-      if (callerSignal.aborted) controller.abort(callerSignal.reason);
-      else callerSignal.addEventListener('abort', onAbort, { once: true });
-    }
     const finish = () => {
       stopTimer(timer);
       callerSignal?.removeEventListener('abort', onAbort);
     };
+    // An aborted read is over: a body nobody reads keeps no stall clock.
+    const onAbort = () => {
+      controller.abort(callerSignal.reason);
+      finish();
+    };
+    if (callerSignal) {
+      if (callerSignal.aborted) controller.abort(callerSignal.reason);
+      else callerSignal.addEventListener('abort', onAbort, { once: true });
+    }
     const arm = (kind, ms, delay = ms) => {
       stopTimer(timer);
       timer = startTimer(() => {
