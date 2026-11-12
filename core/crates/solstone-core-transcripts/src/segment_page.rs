@@ -6,7 +6,7 @@
 //! This module intentionally does not share the broad day-clustering surface:
 //! it has no percept, browser, or talent selection flags.
 
-use std::collections::{BTreeMap, hash_map::DefaultHasher};
+use std::collections::{BTreeMap, BTreeSet, hash_map::DefaultHasher};
 use std::fs::{self, File};
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom};
@@ -164,6 +164,27 @@ pub fn read_segment_transcript_page(
     speakers: Option<&AgentSpeakers>,
     possible_names: Option<&PossibleNameLabels>,
 ) -> Result<SegmentTranscriptPage, SegmentTranscriptReadError> {
+    read_segment_transcript_page_leaving_out(
+        segment,
+        cursor,
+        speakers,
+        possible_names,
+        &BTreeSet::new(),
+    )
+}
+
+/// [`read_segment_transcript_page`], leaving out the body rows whose ids are
+/// in `left_out`: the rows of a day of body data the owner hid, which the
+/// caller works out. What is left out is part of the page version, so a
+/// continuation never mixes pages from before and after it changed. With
+/// nothing left out, the page and its version are the plain read's.
+pub fn read_segment_transcript_page_leaving_out(
+    segment: &Segment,
+    cursor: Option<&SegmentTranscriptCursor>,
+    speakers: Option<&AgentSpeakers>,
+    possible_names: Option<&PossibleNameLabels>,
+    left_out: &BTreeSet<String>,
+) -> Result<SegmentTranscriptPage, SegmentTranscriptReadError> {
     let files = transcript_files(segment.path())?;
     let labels = speakers.and_then(|speakers| local_speaker_names(segment.path(), speakers));
     // An agent read keeps one number on one voice through a continuous recording.
@@ -171,7 +192,7 @@ pub fn read_segment_transcript_page(
         .map(|_| crate::run_numbers_by_source(segment.path(), &files))
         .unwrap_or_default();
     let possible_names = possible_names.filter(|labels| !labels.statements.is_empty());
-    let version = source_version(&files, &labels, &run_numbers, possible_names)?;
+    let version = source_version(&files, &labels, &run_numbers, possible_names, left_out)?;
     let untimed = files
         .iter()
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("jsonl"))
@@ -239,12 +260,16 @@ pub fn read_segment_transcript_page(
             let named = named_line.as_deref().unwrap_or(line);
             let labelled_line = name_labels
                 .and_then(|labels| label_line(named, labels.statements.get(&sentence_id?)?));
-            let text = project_line(
-                &segment_origin,
-                name,
-                speech,
-                labelled_line.as_deref().unwrap_or(named),
-            );
+            let text = if is_left_out(name, line, left_out) {
+                String::new()
+            } else {
+                project_line(
+                    &segment_origin,
+                    name,
+                    speech,
+                    labelled_line.as_deref().unwrap_or(named),
+                )
+            };
             if !text.trim().is_empty() {
                 entries.push(SegmentTranscriptEntry {
                     channel: source_channel(&segment_origin, name, speech),
@@ -288,6 +313,15 @@ pub fn read_segment_transcript_page(
     })
 }
 
+/// Whether `line` of the file `name` is a body row the caller leaves out. A
+/// line that doesn't read as a row is never one.
+fn is_left_out(name: &str, line: &str, left_out: &BTreeSet<String>) -> bool {
+    !left_out.is_empty()
+        && name == solstone_core_format::content::body_records::BODY_RECORDS_FILE
+        && serde_json::from_str::<solstone_core_format::content::body_records::BodyRow>(line)
+            .is_ok_and(|row| left_out.contains(&row.id))
+}
+
 fn transcript_files(segment: &Path) -> Result<Vec<PathBuf>, SegmentTranscriptReadError> {
     let mut files = Vec::new();
     for entry in fs::read_dir(segment).map_err(|_| SegmentTranscriptReadError::Io)? {
@@ -324,12 +358,16 @@ fn source_version(
     labels: &Option<(String, BTreeMap<i64, String>)>,
     run_numbers: &BTreeMap<String, BTreeMap<i64, i64>>,
     possible_names: Option<&PossibleNameLabels>,
+    left_out: &BTreeSet<String>,
 ) -> Result<SegmentTranscriptVersion, SegmentTranscriptReadError> {
     let mut hasher = DefaultHasher::new();
     labels.hash(&mut hasher);
     run_numbers.hash(&mut hasher);
     if let Some(possible_names) = possible_names {
         possible_names.hash(&mut hasher);
+    }
+    if !left_out.is_empty() {
+        left_out.hash(&mut hasher);
     }
     for path in files {
         let metadata = fs::metadata(path).map_err(|_| SegmentTranscriptReadError::Io)?;
@@ -529,11 +567,12 @@ fn project_line(segment_origin: &str, name: &str, speech: bool, line: &str) -> S
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::fs;
 
     use super::{
         MAX_TRANSCRIPT_PAGE_BYTES, MAX_TRANSCRIPT_PAGE_ITEMS, read_segment_transcript_page,
-        segment_clock,
+        read_segment_transcript_page_leaving_out, segment_clock,
     };
     use solstone_core_format::content::{
         Family, RawPerceptFamily, produce_chunks, produce_raw_percept_chunks,
@@ -850,6 +889,55 @@ mod tests {
             }]
         );
         assert!(pages[1].is_empty());
+    }
+
+    #[test]
+    fn a_body_window_leaves_out_the_rows_asked_and_its_version_says_so() {
+        use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows};
+        let root = tempfile::tempdir().unwrap();
+        let segment = root
+            .path()
+            .join("chronicle/20261104/import.apple_health/010000_3600");
+        fs::create_dir_all(&segment).unwrap();
+        let row = |id: &str| {
+            let mut row = BodyRow::new(
+                RowKind::Reading,
+                id.to_owned(),
+                "apple_health",
+                "HKQuantityTypeIdentifierHeartRate",
+                "heart rate".into(),
+            );
+            row.at = Some("2026-11-04 01:10:00 -0700".into());
+            row.value = Some(format!("{}", id.len() + 60));
+            row
+        };
+        fs::write(
+            segment.join("body.jsonl"),
+            encode_rows(&[row("kept"), row("gone")]),
+        )
+        .unwrap();
+        let segments = iter_segments(root.path(), PathOrDay::Day("20261104")).unwrap();
+        let plain = read_segment_transcript_page(&segments[0], None, None, None).unwrap();
+        assert_eq!(plain.entries.len(), 2);
+        let none = read_segment_transcript_page_leaving_out(
+            &segments[0],
+            None,
+            None,
+            None,
+            &BTreeSet::new(),
+        )
+        .unwrap();
+        assert_eq!(none, plain);
+        let left = read_segment_transcript_page_leaving_out(
+            &segments[0],
+            None,
+            None,
+            None,
+            &BTreeSet::from(["gone".to_owned()]),
+        )
+        .unwrap();
+        assert_eq!(left.entries, plain.entries[..1]);
+        assert_ne!(left.version, plain.version);
     }
 
     #[test]
