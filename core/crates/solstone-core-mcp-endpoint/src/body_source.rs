@@ -6,18 +6,21 @@
 //! This reaches body windows and nothing else, so capture zones, untimed flags
 //! and speaker names don't arise. `docs/BODY_SEGMENTS.md` is the contract.
 
+use std::cell::RefCell;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Timelike};
 use serde_json::{Value, json};
+use solstone_core_format::content::body_hidden_days::{HiddenDays, RowDays, read_hidden_days};
 use solstone_core_format::content::body_records::{
     BODY_RECORD_STREAMS, BODY_RECORDS_FILE, BodyRow, RowKind, only_moved_rows, parse_source_time,
     render_row,
 };
-use solstone_core_format::content::strava_body::STRAVA_TILE_FILE;
+use solstone_core_format::content::strava_body::{STRAVA_SOURCE, STRAVA_TILE_FILE, strava_rows};
 use solstone_core_journal_config::Tz;
 use solstone_core_journal_io::paths::{
     PathOrDay, Segment, iter_segments_skipping_unreadable_streams,
@@ -106,6 +109,159 @@ struct Window {
     start_seconds: u32,
     end_seconds: u32,
     label: String,
+    /// Its rows of a night or workout that started on a day the owner hid.
+    left_out: BTreeSet<String>,
+}
+
+/// How many days before a day a night or workout running into it can have
+/// started: an experience can run this long.
+const HIDE_REACH_DAYS: i64 = 14;
+
+/// The owner's hidden days of body data, read once for a call, and what they
+/// take from a day of one body source: the whole day when it is hidden, and on
+/// a later day the rows of a night or workout that started on a hidden one.
+/// While which days are hidden can't be read, no body data can be.
+pub(crate) struct BodyHides {
+    days: HiddenDays,
+    /// Each day's row rule for a source, worked out once a read needs it.
+    rules: RefCell<BTreeMap<(String, String), Rc<RowDays>>>,
+}
+
+impl BodyHides {
+    pub(crate) fn read(journal_root: &Path) -> Self {
+        Self {
+            days: read_hidden_days(journal_root),
+            rules: RefCell::default(),
+        }
+    }
+
+    /// Whether none of `day`'s body data may be read: the owner hid it, or
+    /// which days they hid can't be read.
+    pub(crate) fn day_hidden(&self, day: &str) -> bool {
+        self.days.hides(day) != Some(false)
+    }
+
+    /// The hidden days, when one of them is close enough before `day` for a
+    /// night or workout that started on it to run into `day`.
+    fn reaching(&self, day: &str) -> Option<&BTreeSet<String>> {
+        let days = self.days.days()?;
+        let date = day_date(day)?;
+        let reach = (date - chrono::Duration::days(HIDE_REACH_DAYS))
+            .format("%Y%m%d")
+            .to_string();
+        days.range(reach..day.to_owned()).next().map(|_| days)
+    }
+
+    /// The ids among `rows`, all of `stream` on `day`, that go with a hidden
+    /// earlier day.
+    fn left_out(
+        &self,
+        journal_root: &Path,
+        day: &str,
+        stream: &str,
+        rows: &[BodyRow],
+    ) -> BTreeSet<String> {
+        let Some(hidden) = self.reaching(day) else {
+            return BTreeSet::new();
+        };
+        let rule = self.rule(journal_root, day, stream);
+        rows.iter()
+            .filter(|row| rule.hidden(row, hidden))
+            .map(|row| row.id.clone())
+            .collect()
+    }
+
+    /// The row rule over every row `stream` holds on `day`, so a stage finds
+    /// its night through a piece of it in any window of the day.
+    fn rule(&self, journal_root: &Path, day: &str, stream: &str) -> Rc<RowDays> {
+        let key = (day.to_owned(), stream.to_owned());
+        if let Some(rule) = self.rules.borrow().get(&key) {
+            return Rc::clone(rule);
+        }
+        let mut rows = Vec::new();
+        let directory = journal_root.join("chronicle").join(day).join(stream);
+        for entry in std::fs::read_dir(directory).into_iter().flatten().flatten() {
+            let Ok(text) = std::fs::read_to_string(entry.path().join(BODY_RECORDS_FILE)) else {
+                continue;
+            };
+            rows.extend(
+                text.lines()
+                    .filter_map(|line| serde_json::from_str::<BodyRow>(line).ok())
+                    .filter(|row| row.kind != RowKind::Moved),
+            );
+        }
+        let rule = Rc::new(RowDays::new(day, source_zone(journal_root, stream), &rows));
+        self.rules.borrow_mut().insert(key, Rc::clone(&rule));
+        rule
+    }
+
+    /// Whether a Strava tile on `day` is hidden: on a hidden day, or a later
+    /// piece of a workout that started on one.
+    fn hides_workout(&self, journal_root: &Path, day: &str, segment: &Segment) -> bool {
+        if self.day_hidden(day) {
+            return true;
+        }
+        let Some(hidden) = self.reaching(day) else {
+            return false;
+        };
+        let Some(rows) = std::fs::read_to_string(segment.path().join(STRAVA_TILE_FILE))
+            .ok()
+            .and_then(|text| strava_rows(&text))
+        else {
+            return false;
+        };
+        let zone = solstone_core_journal_config::placed_zone(journal_root, STRAVA_SOURCE);
+        let rule = RowDays::new(day, zone, &rows);
+        rows.iter().any(|row| rule.hidden(row, hidden))
+    }
+
+    /// What of a body-only segment may be read: `None` when nothing may (a
+    /// hidden day's, a window holding only rows of a hidden night, a piece of
+    /// a workout that started on a hidden day), else the rows to leave out. A
+    /// segment that isn't body data alone is read whole.
+    pub(crate) fn shown(
+        &self,
+        journal_root: &Path,
+        day: &str,
+        stream: &str,
+        segment: &Segment,
+    ) -> Option<BTreeSet<String>> {
+        if !solstone_core_segment::is_body_only_segment(segment) {
+            return Some(BTreeSet::new());
+        }
+        if segment.path().join(STRAVA_TILE_FILE).is_file() {
+            return (!self.hides_workout(journal_root, day, segment)).then(BTreeSet::new);
+        }
+        if self.day_hidden(day) {
+            return None;
+        }
+        if self.reaching(day).is_none() {
+            return Some(BTreeSet::new());
+        }
+        let Ok(text) = std::fs::read_to_string(segment.path().join(BODY_RECORDS_FILE)) else {
+            return Some(BTreeSet::new());
+        };
+        let mut rows = Vec::new();
+        let mut damaged = false;
+        for line in text.lines().filter(|line| !line.trim().is_empty()) {
+            match serde_json::from_str::<BodyRow>(line) {
+                Ok(row) if row.kind == RowKind::Moved => {}
+                Ok(row) => rows.push(row),
+                // A line that isn't a row says nothing of a day: it reads as itself.
+                Err(_) => damaged = true,
+            }
+        }
+        let left_out = self.left_out(journal_root, day, stream, &rows);
+        let all_hidden = !rows.is_empty() && left_out.len() == rows.len();
+        (damaged || !all_hidden).then_some(left_out)
+    }
+}
+
+/// The zone that placed a body stream's windows, when its source fixed one.
+fn source_zone(journal_root: &Path, stream: &str) -> Option<Tz> {
+    stream
+        .strip_prefix("import.")
+        .and_then(|source| solstone_core_journal_config::placed_zone(journal_root, source))
 }
 
 fn released(journal_root: &Path, day: &str, stream: &str, name: &str) -> bool {
@@ -123,9 +279,15 @@ pub(crate) fn holds_only_moved(window: &Path) -> bool {
 fn readable_windows(
     journal_root: &Path,
     snapshot: &ConnectionReadSnapshot,
+    hides: &BodyHides,
     day: &str,
     stream: &str,
 ) -> Result<Vec<Window>, DispatchError> {
+    // A hidden day's windows aren't there to read, and while which days are
+    // hidden can't be read, no day's are.
+    if hides.day_hidden(day) {
+        return Ok(Vec::new());
+    }
     let transcript_boundary = boundary(snapshot, Some(AdmittedCategory::Transcripts), None);
     let segments = iter_segments_skipping_unreadable_streams(journal_root, PathOrDay::Day(day))
         .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
@@ -156,12 +318,18 @@ fn readable_windows(
         {
             continue;
         }
+        // One holding only rows of a night that started on a hidden day reads
+        // as no window, as one holding only moved rows does.
+        let Some(left_out) = hides.shown(journal_root, day, stream, &segment) else {
+            continue;
+        };
         windows.push(Window {
             segment,
             name,
             start_seconds: clock.start_seconds,
             end_seconds: clock.exclusive_end_seconds,
             label: clock.label,
+            left_out,
         });
     }
     windows.sort_by(|left, right| {
@@ -252,10 +420,13 @@ pub(crate) fn window_gate<'a>(
     // Body windows are transcripts: a connection without that category reads none,
     // whatever tool it calls.
     let transcripts = snapshot.categories.contains(&AdmittedCategory::Transcripts);
+    // No window of a day the owner hid is read, through any tool, and none at
+    // all while which days are hidden can't be read.
+    let hides = BodyHides::read(journal_root);
     // A window's answer holds for the read: many records share one window.
     let known = std::cell::RefCell::new(BTreeMap::<(String, String, String), bool>::new());
     move |day: &str, stream: &str, window: Option<&str>| match window {
-        Some(_) if !transcripts => false,
+        Some(_) if !transcripts || hides.day_hidden(day) => false,
         Some(name) => {
             let key = (day.to_owned(), stream.to_owned(), name.to_owned());
             if let Some(&allowed) = known.borrow().get(&key) {
@@ -302,6 +473,7 @@ pub(crate) fn name_windows(targets: &mut Vec<String>, windows: Vec<String>) {
 pub(crate) fn other_sources(
     journal_root: &Path,
     snapshot: &ConnectionReadSnapshot,
+    hides: &BodyHides,
     day: &str,
 ) -> Vec<String> {
     let labels = source_labels(journal_root);
@@ -309,7 +481,7 @@ pub(crate) fn other_sources(
         .iter()
         .filter_map(|stream| {
             let label = labels.get(*stream)?;
-            let readable = readable_windows(journal_root, snapshot, day, stream).ok()?;
+            let readable = readable_windows(journal_root, snapshot, hides, day, stream).ok()?;
             (!readable.is_empty()).then(|| label.clone())
         })
         .collect()
@@ -376,9 +548,7 @@ struct Clock {
 
 impl Clock {
     fn new(journal_root: &Path, stream: &str, date: NaiveDate) -> Self {
-        let zone = stream
-            .strip_prefix("import.")
-            .and_then(|source| solstone_core_journal_config::placed_zone(journal_root, source));
+        let zone = source_zone(journal_root, stream);
         Self { date, zone }
     }
 
@@ -547,6 +717,7 @@ fn window_rows(
             Ok(row) => {
                 good += 1;
                 if row.kind == RowKind::Moved
+                    || window.left_out.contains(&row.id)
                     || kind.is_some_and(|kind| !is_kind(&row, kind))
                     || (behind
                         && !matches!(row.kind, RowKind::Count | RowKind::Stage | RowKind::Logged))
@@ -608,7 +779,8 @@ pub(crate) fn list_source(
     };
     let earlier =
         source_kind.and_then(|only| earlier_import_note(journal_root, snapshot, day, Some(only)));
-    let windows = readable_windows(journal_root, snapshot, day, stream)?;
+    let hides = BodyHides::read(journal_root);
+    let windows = readable_windows(journal_root, snapshot, &hides, day, stream)?;
     if windows.is_empty() {
         let mut response = json!({ "transcripts": [] });
         if let Some(note) = &earlier {
@@ -739,11 +911,12 @@ pub(crate) fn list_source(
     let mut last_name = None;
     for window in remaining.by_ref().take(request.limit) {
         last_name = Some(window.name.clone());
-        let page = solstone_core_transcripts::read_segment_transcript_page(
+        let page = solstone_core_transcripts::read_segment_transcript_page_leaving_out(
             &window.segment,
             None,
             None,
             None,
+            &window.left_out,
         );
         // Freeze the page before the last deletion observation, as a single read does.
         if !released(journal_root, day, stream, &window.name) {
@@ -906,7 +1079,14 @@ pub(crate) fn read_source_span(
             position.row.clone(),
         )
     });
-    let readable = readable_windows(journal_root, snapshot, &reference.day, &reference.stream)?;
+    let hides = BodyHides::read(journal_root);
+    let readable = readable_windows(
+        journal_root,
+        snapshot,
+        &hides,
+        &reference.day,
+        &reference.stream,
+    )?;
     let reach = from.saturating_sub(LOOK_BACK_SECONDS);
     let windows: Vec<&Window> = readable
         .iter()

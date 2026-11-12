@@ -44,7 +44,8 @@ pub use segment_page::{
     AgentSpeakers, MAX_TRANSCRIPT_PAGE_BYTES, MAX_TRANSCRIPT_PAGE_ITEMS,
     POSSIBLE_SPEAKER_CHANGE_WITHIN_SENTENCE, SegmentClock, SegmentTranscriptCursor,
     SegmentTranscriptEntry, SegmentTranscriptPage, SegmentTranscriptReadError,
-    SegmentTranscriptVersion, read_segment_transcript_page, segment_clock,
+    SegmentTranscriptVersion, read_segment_transcript_page,
+    read_segment_transcript_page_leaving_out, segment_clock,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]

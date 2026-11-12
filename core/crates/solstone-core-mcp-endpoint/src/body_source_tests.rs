@@ -2405,3 +2405,397 @@ fn a_named_source_gets_the_note_in_gaps_note_before_nothing_readable() {
     );
     assert!(list.get("gaps_note").is_none(), "{list}");
 }
+
+const NEXT: &str = "20261011";
+
+/// The owner's hidden body days, as the store holds them.
+fn hide_days(root: &Path, days: &[&str]) {
+    use solstone_core_format::content::body_hidden_days::{hidden_days_bytes, hidden_days_path};
+    let path = hidden_days_path(root);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let days = days.iter().map(|day| (*day).to_owned()).collect();
+    fs::write(path, hidden_days_bytes(&days)).unwrap();
+}
+
+/// A store of hidden days that can't be read.
+fn damage_hidden_days(root: &Path) {
+    let path = solstone_core_format::content::body_hidden_days::hidden_days_path(root);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, "{ damaged").unwrap();
+}
+
+fn probe_fails(root: &Path, tool: &str, arguments: Value) -> bool {
+    run_mcp_probe(root, CONNECTION, tool, &arguments).is_err()
+}
+
+fn night_piece(kind: RowKind, id: &str, index: Option<u64>) -> BodyRow {
+    let mut row = BodyRow::new(
+        kind,
+        id.into(),
+        "apple_health",
+        "HKCategoryTypeIdentifierSleepAnalysis",
+        "sleep".into(),
+    );
+    row.experience = Some("sleep".into());
+    row.by = Some("Synthetic Watch".into());
+    row.start = Some("2026-10-10 23:10:00 -0600".into());
+    row.end = Some("2026-10-11 06:30:00 -0600".into());
+    if kind != RowKind::Experience {
+        row.of = Some("night".into());
+    }
+    row.index = index;
+    row
+}
+
+/// A night that starts late on DAY and runs into NEXT, beside each day's own
+/// readings, and a Strava workout on each side of midnight.
+fn a_night_across_midnight(root: &Path) {
+    fix_zone(root, "America/Denver");
+    fs::write(
+        root.join("imports/.strava-zone.json"),
+        json!({"zone": "America/Denver"}).to_string(),
+    )
+    .unwrap();
+    window(
+        root,
+        DAY,
+        "060000_3600",
+        &many_readings("d", 6, 31, 3),
+        None,
+    );
+    window(
+        root,
+        DAY,
+        "230000_3600",
+        &[night_piece(RowKind::Experience, "night", None)],
+        None,
+    );
+    window(
+        root,
+        NEXT,
+        "000000_3600",
+        &[
+            night_piece(RowKind::ExperienceTile, "night:1", Some(1)),
+            reading("early", "2026-10-11 00:20:00 -0600", "58"),
+        ],
+        None,
+    );
+    let mut stage = night_piece(RowKind::Stage, "s1", None);
+    stage.start = Some("2026-10-11 01:30:00 -0600".into());
+    stage.end = Some("2026-10-11 01:50:00 -0600".into());
+    window(
+        root,
+        NEXT,
+        "010000_3600",
+        &[
+            night_piece(RowKind::ExperienceTile, "night:2", Some(2)),
+            stage,
+        ],
+        None,
+    );
+    window(
+        root,
+        NEXT,
+        "070000_3600",
+        &[reading("own", "2026-10-11 07:00:00 -0600", "61")],
+        None,
+    );
+    strava_tile(root, "070000_300", &[]);
+    // The second piece of a run that started on DAY, on NEXT.
+    let dir = root
+        .join("chronicle")
+        .join(NEXT)
+        .join("import.strava/000000_300");
+    fs::create_dir_all(dir.join("talents")).unwrap();
+    fs::write(
+        dir.join("workout.json"),
+        json!({
+            "schema": "solstone.import.strava.tile.v1",
+            "activity_id": 7,
+            "tile": {"index": 1, "count": 2},
+            "workout": {"name": "Late Run", "type": "Run",
+                "start": "2026-10-10T23:55:00-06:00", "elapsed_seconds": 1200}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(dir.join("stream.json"), "{}").unwrap();
+    fs::write(dir.join("talents/sense.json"), "{}").unwrap();
+}
+
+fn source_list(root: &Path, day: &str) -> Value {
+    call(
+        root,
+        "list_transcripts",
+        json!({"day": day, "source": LABEL}),
+    )
+}
+
+#[test]
+fn a_hidden_day_lists_and_reads_no_body_window_and_its_night_leaves_the_next_morning() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    a_night_across_midnight(root);
+
+    let listed = source_list(root, DAY);
+    assert_eq!(
+        listed["transcripts"].as_array().unwrap().len(),
+        2,
+        "{listed}"
+    );
+    let on_day = listed["transcripts"][0]["reference"].clone();
+    assert!(!probe_fails(
+        root,
+        "get_transcript",
+        json!({"reference": on_day})
+    ));
+    assert_eq!(
+        source_list(root, NEXT)["transcripts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    let day = call(root, "list_transcripts", json!({"day": DAY}));
+    assert_eq!(day["other_sources"], json!([LABEL]), "{day}");
+    assert_eq!(day["omitted_workouts"], json!(1), "{day}");
+    let next = call(root, "list_transcripts", json!({"day": NEXT}));
+    assert_eq!(next["omitted_workouts"], json!(1), "{next}");
+
+    hide_days(root, &[DAY]);
+    // The hidden day: no window, no span to read, and a window named before
+    // the hide reads as not found.
+    let listed = source_list(root, DAY);
+    assert!(
+        listed["transcripts"].as_array().unwrap().is_empty(),
+        "{listed}"
+    );
+    assert!(listed.get("span_reference").is_none(), "{listed}");
+    assert!(probe_fails(
+        root,
+        "get_transcript",
+        json!({"reference": on_day})
+    ));
+    // Counts leave it out: its source and its workout.
+    let day = call(root, "list_transcripts", json!({"day": DAY}));
+    assert!(day.get("other_sources").is_none(), "{day}");
+    assert!(day.get("omitted_workouts").is_none(), "{day}");
+    // The next day keeps its own rows and source; the night's part after
+    // midnight and the run's second piece go with the day they started.
+    let next = call(root, "list_transcripts", json!({"day": NEXT}));
+    assert_eq!(next["other_sources"], json!([LABEL]), "{next}");
+    assert!(next.get("omitted_workouts").is_none(), "{next}");
+    let listed = source_list(root, NEXT);
+    let windows = listed["transcripts"].as_array().unwrap();
+    assert_eq!(
+        windows
+            .iter()
+            .map(|w| w["time"].clone())
+            .collect::<Vec<_>>(),
+        [json!("00:00-01:00"), json!("07:00-08:00")],
+        "a window holding only the night's rows isn't listed: {listed}"
+    );
+    let (entries, _) = every_entry(root, listed["span_reference"].as_str().unwrap());
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    assert!(
+        entries.iter().all(|entry| !entry.contains("sleep")),
+        "{entries:?}"
+    );
+    let window = call(
+        root,
+        "get_transcript",
+        json!({"reference": windows[0]["reference"]}),
+    );
+    let entries = window["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1, "{window}");
+    assert!(entries[0].as_str().unwrap().contains("58"), "{window}");
+
+    // Hiding the next day instead leaves the night on the day it started.
+    hide_days(root, &[NEXT]);
+    assert!(
+        source_list(root, NEXT)["transcripts"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let listed = source_list(root, DAY);
+    let (entries, _) = every_entry(root, listed["span_reference"].as_str().unwrap());
+    assert!(
+        entries.iter().any(|entry| entry.contains("sleep")),
+        "{entries:?}"
+    );
+
+    // While which days are hidden can't be read, no body window is.
+    hide_days(root, &[]);
+    let next_window = source_list(root, NEXT)["transcripts"][0]["reference"].clone();
+    damage_hidden_days(root);
+    for day in [DAY, NEXT] {
+        let listed = source_list(root, day);
+        assert!(
+            listed["transcripts"].as_array().unwrap().is_empty(),
+            "{listed}"
+        );
+        let plain = call(root, "list_transcripts", json!({"day": day}));
+        assert!(plain.get("other_sources").is_none(), "{plain}");
+        assert!(plain.get("omitted_workouts").is_none(), "{plain}");
+    }
+    assert!(probe_fails(
+        root,
+        "get_transcript",
+        json!({"reference": next_window})
+    ));
+}
+
+fn run_row(id: &str, by: &str, start: &str, end: &str) -> BodyRow {
+    let mut row = BodyRow::new(
+        RowKind::Experience,
+        id.into(),
+        "apple_health",
+        "HKWorkoutActivityTypeRunning",
+        "running".into(),
+    );
+    row.experience = Some("workout".into());
+    row.start = Some(start.into());
+    row.end = Some(end.into());
+    row.by = Some(by.into());
+    row
+}
+
+fn run_record(root: &Path, day: &str, row: &BodyRow) {
+    use solstone_core_format::content::body_records::recorder_id;
+    let path = root.join(format!("facets/health/activities/{day}.jsonl"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let record = json!({
+        "id": format!("body_{}", row.id), "source": "body", "activity": "workout",
+        "account": {"key": format!("{STREAM}\u{1f}{}", row.id), "start": row.start,
+            "end": row.end, "type": "running", "recorder": recorder_id(STREAM, row.by.as_deref())},
+    });
+    let mut text = fs::read_to_string(&path).unwrap_or_default();
+    text.push_str(&format!("{record}\n"));
+    fs::write(path, text).unwrap();
+}
+
+fn permit(root: &Path, permission: ReadPermission) {
+    PermissionStore::open(root)
+        .set_permission(CONNECTION, permission)
+        .unwrap();
+}
+
+fn body_activities(root: &Path) -> Vec<Value> {
+    call(root, "list_activities", json!({"from": DAY, "to": NEXT}))["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|activity| activity["source"] == "body")
+        .cloned()
+        .collect()
+}
+
+fn week_names_the_run(root: &Path) -> bool {
+    call(root, "get_week", json!({"week": "20261004"}))
+        .to_string()
+        .contains("Synthetic Watch")
+}
+
+#[test]
+fn a_group_whose_day_is_hidden_is_found_by_no_group_reader() {
+    let journal = journal();
+    let root = journal.path();
+    fix_zone(root, "America/Denver");
+    // One run from two recorders across midnight, anchored on DAY. The
+    // watch's window is filed under work, so a connection granted health
+    // reads only the ring's, on NEXT.
+    let watch = run_row(
+        "w",
+        "Synthetic Watch",
+        "2026-10-10 23:55:00 -0600",
+        "2026-10-11 06:55:00 -0600",
+    );
+    let ring = run_row(
+        "r",
+        "Synthetic Ring",
+        "2026-10-11 00:05:00 -0600",
+        "2026-10-11 07:00:00 -0600",
+    );
+    window(
+        root,
+        DAY,
+        "235500_300",
+        std::slice::from_ref(&watch),
+        Some("work"),
+    );
+    window(
+        root,
+        NEXT,
+        "000500_300",
+        std::slice::from_ref(&ring),
+        Some("health"),
+    );
+    run_record(root, DAY, &watch);
+    run_record(root, NEXT, &ring);
+    let health_only = ReadPermission {
+        categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+        scope: ReadScope::Facets {
+            ids: vec![HEALTH.to_owned()],
+        },
+    };
+
+    // The whole journal: one group, under DAY.
+    permit(root, ReadPermission::default_whole_journal());
+    let listed = body_activities(root);
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    let reference = json!({"reference": listed[0]["reference"]});
+    assert!(!probe_fails(root, "fetch", reference.clone()));
+    assert!(!probe_fails(
+        root,
+        "get_activity_sources",
+        reference.clone()
+    ));
+    assert!(week_names_the_run(root));
+    hide_days(root, &[DAY]);
+    assert!(body_activities(root).is_empty());
+    assert!(probe_fails(root, "fetch", reference.clone()));
+    assert!(probe_fails(root, "get_activity_sources", reference.clone()));
+    assert!(!week_names_the_run(root));
+
+    // A connection that may read only the ring's window still finds nothing:
+    // the anchor is decided on the owner's whole group.
+    hide_days(root, &[]);
+    permit(root, health_only.clone());
+    let listed = body_activities(root);
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    let reference = json!({"reference": listed[0]["reference"]});
+    assert!(!probe_fails(
+        root,
+        "get_activity_sources",
+        reference.clone()
+    ));
+    hide_days(root, &[DAY]);
+    assert!(body_activities(root).is_empty());
+    assert!(probe_fails(root, "fetch", reference.clone()));
+    assert!(probe_fails(root, "get_activity_sources", reference.clone()));
+    // With NEXT hidden, its window isn't read, so no face lands under it.
+    hide_days(root, &[NEXT]);
+    assert!(body_activities(root).is_empty());
+    assert!(probe_fails(root, "fetch", reference.clone()));
+    assert!(probe_fails(root, "get_activity_sources", reference));
+
+    // While which days are hidden can't be read, no connection sees the group.
+    hide_days(root, &[]);
+    permit(root, ReadPermission::default_whole_journal());
+    let listed = body_activities(root);
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    let reference = json!({"reference": listed[0]["reference"]});
+    damage_hidden_days(root);
+    assert!(body_activities(root).is_empty());
+    assert!(probe_fails(root, "fetch", reference.clone()));
+    assert!(probe_fails(root, "get_activity_sources", reference));
+    assert!(!week_names_the_run(root));
+    // The owner's own view still lists it.
+    let owner = solstone_core_location::body_records::body_faces_range(
+        root, "health", DAY, NEXT, None, false,
+    )
+    .unwrap();
+    assert_eq!(owner.values().flatten().count(), 1);
+}

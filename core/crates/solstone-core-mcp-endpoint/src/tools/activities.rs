@@ -1140,6 +1140,11 @@ pub(crate) fn execute_get_sources(
             &activity_ref.day,
             &body,
         )?;
+        // A hidden group is not found, as a missing one isn't: hidden by the
+        // owner's hide of a member or of the day it shows under.
+        if face.hidden {
+            return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+        }
         let item = solstone_core_location::body_records::face_json(&face);
         let units = item
             .get("accounts")

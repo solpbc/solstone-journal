@@ -34,5 +34,6 @@ tokio = { workspace = true, features = ["macros", "rt"] }
 [dev-dependencies]
 sha2.workspace = true
 solstone-core-convey-shell.workspace = true
+solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 tempfile = "3.24.0"
 tower.workspace = true
