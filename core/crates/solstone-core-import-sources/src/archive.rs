@@ -38,9 +38,7 @@ use solstone_core_journal_io::{
     append_jsonl, atomic_replace, contained_path, hold_lock, iter_segments, publish_staged_dir,
     realpath_non_strict, write_bytes_exclusive,
 };
-use solstone_core_location::body_hidden::{
-    BodyHiddenError, merge_hidden_body_days, set_body_days_hidden,
-};
+use solstone_core_location::body_hidden::{BodyHiddenError, merge_hidden_body_days};
 use solstone_core_segment::touch_stream_health_marker;
 use zip::ZipArchive;
 
@@ -1447,9 +1445,6 @@ struct MergeState {
     ancestor_witnesses: AncestorWitnesses,
     undo_reserve: UndoReserve,
     published_entity_json: bool,
-    /// The days of body data this merge hid that weren't hidden before it, so
-    /// a merge undone whole unhides exactly them.
-    hidden_days_added: BTreeSet<String>,
     writes: usize,
     has_conflict: bool,
     has_staged: bool,
@@ -1481,7 +1476,6 @@ impl MergeState {
             ancestor_witnesses: AncestorWitnesses::default(),
             undo_reserve: UndoReserve::default(),
             published_entity_json: false,
-            hidden_days_added: BTreeSet::new(),
             writes: 0,
             has_conflict: false,
             has_staged: false,
@@ -2980,10 +2974,11 @@ fn target_hidden_days_refusal(target: &Path) -> ImportSourcesError {
     }
 }
 
-/// Hide here the days the archive's owner hid, before any of its content is
-/// published: a stop or failure after this leaves extra days hidden, never a
-/// hidden day open. A merge undone whole unhides the days this added
-/// ([`unhide_added_days`]); a retry adds them again and changes nothing more.
+/// Hide here the days the archive's owner hid, just before any of its content
+/// is published. Nothing undoes this: a failure or stop after it leaves the
+/// days hidden, never a hidden day open, and says so
+/// ([`note_days_left_hidden`]); the owner can unhide them. A retry adds them
+/// again and changes nothing more.
 fn hide_archive_days(
     target: &Path,
     arriving: &BTreeSet<String>,
@@ -2992,9 +2987,6 @@ fn hide_archive_days(
     if arriving.is_empty() {
         return Ok(());
     }
-    let HiddenDays::Days(before) = read_hidden_days(target) else {
-        return Err(target_hidden_days_refusal(target));
-    };
     let (added, _search_queued) =
         merge_hidden_body_days(target, arriving).map_err(|error| match error {
             BodyHiddenError::Unreadable => target_hidden_days_refusal(target),
@@ -3006,46 +2998,49 @@ fn hide_archive_days(
     if added == 0 {
         return Ok(());
     }
-    let added_days = arriving
-        .difference(&before)
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    // When the owner changed the hidden days between the read and the merge,
-    // which days this added isn't known: an undo leaves them all hidden.
-    if added_days.len() == added {
-        state.hidden_days_added = added_days;
-    }
     state.summary.body_days_hidden = added;
     state.writes += 1;
-    // Nothing is published yet: a log that can't be written stops the merge
-    // with the store as it was, or with the days still hidden when even that
-    // fails.
     state
         .decision("committed", "body_hidden_days", json!({"added": added}))
-        .inspect_err(|_| {
-            let _ = unhide_added_days(target, state);
-        })
+        .map_err(|error| note_days_left_hidden(error, added))
 }
 
-/// After a merge is undone whole, unhide the days it hid. What is left of
-/// one undone only in part keeps them hidden. Says why when they couldn't be
-/// unhidden, and so are still hidden.
-fn unhide_added_days(target: &Path, state: &mut MergeState) -> Option<String> {
-    let days = std::mem::take(&mut state.hidden_days_added);
-    if days.is_empty() {
-        return None;
+/// What a merge that failed after hiding the archive's days says of them.
+fn days_left_hidden_words(days: usize) -> String {
+    if days == 1 {
+        "1 day of body data from the archive stays hidden; you can unhide it on the body page."
+            .to_owned()
+    } else {
+        format!(
+            "{days} days of body data from the archive stay hidden; you can unhide them on the body page."
+        )
     }
-    set_body_days_hidden(target, &days, false)
-        .err()
-        .map(|error| format!("days of body data the import hid are still hidden: {error}"))
+}
+
+/// `error`, saying how many of the archive's days this merge hid stay hidden.
+/// The journal has changed, so the merge may have changed it.
+fn note_days_left_hidden(error: ImportSourcesError, days: usize) -> ImportSourcesError {
+    if days == 0 {
+        return error;
+    }
+    let detail = match error {
+        ImportSourcesError::MergePublishFailed { detail, .. } => detail,
+        error => error.to_string(),
+    };
+    ImportSourcesError::MergePublishFailed {
+        detail: format!("{detail}; {}", days_left_hidden_words(days)),
+        mutation: MergeMutationState::MayHaveMutated,
+    }
 }
 
 /// Stage and publish what the archive brings. The archive's hidden body days
 /// are read first, with this journal's, and either one damaged stops the
 /// import before anything is written. Segments and raw imports are new
 /// directories: they are staged and published first with live-name exclusion, and one
-/// whose destination appeared in between stops the import; just before they
-/// publish, the archive's hidden days are hidden here. Entities and
+/// whose destination appeared in between stops the import. Just before they
+/// publish, after every check that can stop the import with nothing changed,
+/// the archive's hidden days are hidden here, and they stay hidden whatever
+/// happens after. Entities and
 /// facets are then staged and published under one hold of the facet trust
 /// lock, which takes the entity lock first, so nothing changes what staging
 /// read before it is published, and a failure is undone before the lock is
@@ -3085,10 +3080,22 @@ fn stage_and_publish(
     raise_open_file_limit(2 * (chronicle_units.len() + reserve));
     state.undo_reserve = UndoReserve::hold(target, reserve).map_err(not_mutated)?;
     hide_archive_days(target, &arriving_hidden_days, state)?;
+    publish_staged(source, target, state, &chronicle_units, &import_units)
+        .map_err(|error| note_days_left_hidden(error, state.summary.body_days_hidden))
+}
+
+/// Publish what was staged, after the archive's hidden days are hidden here.
+fn publish_staged(
+    source: &Path,
+    target: &Path,
+    state: &mut MergeState,
+    chronicle_units: &PublishUnits,
+    import_units: &PublishUnits,
+) -> Result<(), ImportSourcesError> {
     #[cfg(test)]
     run_after_hidden_days();
-    if let Err(error) = publish_units(target, state, &chronicle_units)
-        .and_then(|()| publish_units(target, state, &import_units))
+    if let Err(error) = publish_units(target, state, chronicle_units)
+        .and_then(|()| publish_units(target, state, import_units))
     {
         return Err(abort_publish(target, state, error, || {}));
     }
@@ -3173,23 +3180,14 @@ fn publish_owned_files(target: &Path, state: &mut MergeState) -> Result<(), Impo
 /// already published and report the failure as it was, or with what the undo
 /// couldn't restore.
 fn abandon(target: &Path, state: &mut MergeState, error: ImportSourcesError) -> ImportSourcesError {
-    let undo_failures = if state.published.is_empty() {
-        Vec::new()
-    } else {
-        undo_publish(target, state, || {})
-    };
+    if state.published.is_empty() {
+        return error;
+    }
+    let undo_failures = undo_publish(target, state, || {});
     if undo_failures.is_empty() {
         // Nothing is left to restore, so nothing is left for an operator.
-        if !state.published.is_empty() {
-            let _ = fs::remove_dir_all(&state.publish_undo);
-        }
-        return match unhide_added_days(target, state) {
-            None => error,
-            Some(still_hidden) => ImportSourcesError::MergePublishFailed {
-                detail: format!("{error}; {still_hidden}"),
-                mutation: MergeMutationState::MayHaveMutated,
-            },
-        };
+        let _ = fs::remove_dir_all(&state.publish_undo);
+        return error;
     }
     ImportSourcesError::MergePublishFailed {
         detail: format!("{error}; undo incomplete: {}", undo_failures.join("; ")),
@@ -3210,18 +3208,12 @@ fn abort_publish(
     error: ImportSourcesError,
     release_owned: impl FnOnce(),
 ) -> ImportSourcesError {
-    let mut mutation = if state.published.is_empty() {
+    let mutation = if state.published.is_empty() {
         MergeMutationState::NotMutated
     } else {
         MergeMutationState::MayHaveMutated
     };
-    let mut undo_failures = undo_publish(target, state, release_owned);
-    if undo_failures.is_empty()
-        && let Some(still_hidden) = unhide_added_days(target, state)
-    {
-        undo_failures.push(still_hidden);
-        mutation = MergeMutationState::MayHaveMutated;
-    }
+    let undo_failures = undo_publish(target, state, release_owned);
     let detail = if undo_failures.is_empty() {
         error.to_string()
     } else {
@@ -6326,7 +6318,8 @@ mod tests {
     }
 
     fn hide_here(target: &Path, items: &[&str]) {
-        set_body_days_hidden(target, &days(items), true).unwrap();
+        solstone_core_location::body_hidden::set_body_days_hidden(target, &days(items), true)
+            .unwrap();
     }
 
     fn store_bytes(target: &Path) -> Option<Vec<u8>> {
@@ -6441,16 +6434,16 @@ mod tests {
     }
 
     #[test]
-    fn the_days_are_hidden_before_anything_publishes_and_an_undone_merge_unhides_them() {
+    fn the_days_are_hidden_before_anything_publishes_and_stay_hidden_when_it_fails() {
         let _reset = FaultReset;
         // A failure at the first publish, at a later one, and a destination
-        // that appears after the days were hidden: each merge is undone whole.
+        // that appears after the days were hidden: each merge is undone, and
+        // the days it hid stay hidden, as it says.
         for case in 0..3 {
             let tree = PlanTree::new();
             let target = tree.path.join("target");
             fs::create_dir(&target).unwrap();
             hide_here(&target, &["20260101"]);
-            let before_store = store_bytes(&target);
             let before = journal_family_snapshot(&target);
             let archive = write_zip(
                 &tree.path,
@@ -6458,7 +6451,10 @@ mod tests {
                     ("chronicle/20260102/120000_60/value", b"a"),
                     ("chronicle/20260103/120000_60/value", b"b"),
                     ("imports/batch/value", b"theirs"),
-                    (ARCHIVE_STORE, br#"{"days":["20260101","20260102"]}"#),
+                    (
+                        ARCHIVE_STORE,
+                        br#"{"days":["20260101","20260102","20260104"]}"#,
+                    ),
                 ],
             );
             let seen = Rc::new(std::cell::RefCell::new(None));
@@ -6478,17 +6474,23 @@ mod tests {
                 _ => {}
             }
 
-            assert!(merge_journal_archive(&archive, &target, &merge_options(&tree), None).is_err());
+            let error =
+                merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
 
-            // Hidden before the first publish.
+            let hidden = HiddenDays::Days(days(&["20260101", "20260102", "20260104"]));
+            // Hidden before the first publish, and still.
+            assert_eq!(seen.borrow().clone(), Some(hidden.clone()), "case {case}");
+            assert_eq!(hidden_here(&target), hidden, "case {case}");
+            assert!(
+                error.to_string().contains(&days_left_hidden_words(2)),
+                "case {case}: {error}"
+            );
             assert_eq!(
-                seen.borrow().clone(),
-                Some(HiddenDays::Days(days(&["20260101", "20260102"]))),
+                error.mutation_state(),
+                MergeMutationState::MayHaveMutated,
                 "case {case}"
             );
-            // Undone whole: the store is what it was, and none of the archive
-            // is left.
-            assert_eq!(store_bytes(&target), before_store, "case {case}");
+            // None of the archive's content is left.
             for segment in ["20260102", "20260103"] {
                 let published = target.join("chronicle").join(segment).join("120000_60");
                 assert!(!published.exists(), "case {case}");
@@ -6501,7 +6503,7 @@ mod tests {
     }
 
     #[test]
-    fn a_merge_stopped_while_staging_what_follows_unhides_the_days_it_hid() {
+    fn a_merge_stopped_after_its_days_are_hidden_keeps_them_hidden_and_says_so() {
         let _reset = FaultReset;
         let tree = PlanTree::new();
         let target = tree.path.join("target");
@@ -6515,9 +6517,49 @@ mod tests {
                 (ARCHIVE_STORE, br#"{"days":["20260102"]}"#),
             ],
         );
-        assert!(merge_journal_archive(&archive, &target, &merge_options(&tree), None).is_err());
-        assert_eq!(hidden_here(&target), HiddenDays::Days(BTreeSet::new()));
+        let error =
+            merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
+        assert_eq!(hidden_here(&target), HiddenDays::Days(days(&["20260102"])));
+        assert!(
+            error.to_string().contains(&days_left_hidden_words(1)),
+            "{error}"
+        );
         assert!(!target.join("chronicle/20260102/120000_60").exists());
+    }
+
+    #[test]
+    fn a_merge_that_stops_before_its_days_are_hidden_changes_none() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260311/120000_60/value", b"day"),
+                (ARCHIVE_STORE, br#"{"days":["20260311"]}"#),
+            ],
+        );
+        // Publication's admission can't be held, so the merge stops just
+        // before the days would be hidden.
+        let sidecar = target.join("health/daily-location-admission.lock");
+        inject_before_publish(Some(Box::new(move || {
+            let _ = fs::remove_file(&sidecar);
+            fs::create_dir_all(&sidecar).unwrap();
+        })));
+        let error =
+            merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
+        assert!(
+            error.to_string().contains("daily-location-admission"),
+            "{error}"
+        );
+        assert_eq!(
+            error.mutation_state(),
+            MergeMutationState::NotMutated,
+            "{error}"
+        );
+        assert_eq!(store_bytes(&target), None);
+        assert!(!target.join("chronicle/20260311/120000_60").exists());
     }
 
     #[test]
