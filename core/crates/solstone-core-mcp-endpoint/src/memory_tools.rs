@@ -385,7 +385,7 @@ fn ordinary_readable(journal: &Path, connection: &str, coordinate: &Coordinate) 
     ) else {
         return false;
     };
-    boundary.allows_classification(&classification)
+    boundary.allows_classification(journal, &classification)
 }
 
 fn notify_note(journal: &Path, coordinate: &Coordinate) {

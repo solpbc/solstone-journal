@@ -22,6 +22,9 @@ pub(crate) struct ToolRequirement {
     /// that every category is required. A tool that admits on any category
     /// still checks each target against the category that target reads.
     pub(crate) any_of: bool,
+    /// Besides `read`, at least one of these, when any are named: a tool that
+    /// reads transcripts or body windows by what each target is.
+    pub(crate) one_of: &'static [AdmittedCategory],
 }
 
 /// Everything schema generation may know about a connection.
@@ -53,49 +56,64 @@ const NOTHING: ToolRequirement = ToolRequirement {
     read: &[],
     whole_journal: false,
     any_of: false,
+    one_of: &[],
 };
-const TRANSCRIPTS: ToolRequirement = ToolRequirement {
-    read: &[AdmittedCategory::Transcripts],
+/// Transcripts and body windows are read by the same tools, each target under
+/// its own kind: a body window under body, any other segment under transcripts.
+const TRANSCRIPTS_OR_BODY: ToolRequirement = ToolRequirement {
+    read: &[AdmittedCategory::Transcripts, AdmittedCategory::Body],
     whole_journal: false,
-    any_of: false,
+    any_of: true,
+    one_of: &[],
 };
 const ENTITIES: ToolRequirement = ToolRequirement {
     read: &[AdmittedCategory::Entities],
     whole_journal: false,
     any_of: false,
+    one_of: &[],
 };
 const FACETS: ToolRequirement = ToolRequirement {
     read: &[AdmittedCategory::Facets],
     whole_journal: false,
     any_of: false,
+    one_of: &[],
 };
-const FACETS_AND_TRANSCRIPTS: ToolRequirement = ToolRequirement {
-    read: &[AdmittedCategory::Facets, AdmittedCategory::Transcripts],
+const FACETS_AND_TRANSCRIPTS_OR_BODY: ToolRequirement = ToolRequirement {
+    read: &[AdmittedCategory::Facets],
     whole_journal: false,
     any_of: false,
+    one_of: &[AdmittedCategory::Transcripts, AdmittedCategory::Body],
 };
 const WEEK: ToolRequirement = ToolRequirement {
     read: &[AdmittedCategory::Transcripts, AdmittedCategory::Facets],
     whole_journal: true,
     any_of: false,
+    one_of: &[],
 };
 const SEARCH: ToolRequirement = ToolRequirement {
-    read: &[AdmittedCategory::Transcripts, AdmittedCategory::ScreenText],
+    read: &[
+        AdmittedCategory::Transcripts,
+        AdmittedCategory::ScreenText,
+        AdmittedCategory::Body,
+    ],
     whole_journal: false,
     any_of: true,
+    one_of: &[],
 };
 /// `list_activities` mints activity references under a facets grant, and search
-/// mints entry references under a transcripts or screen_text grant. Advertising `fetch` for
-/// any grant lets those references round-trip. The call still refuses an
-/// entry without transcripts or screen_text and an activity without facets.
+/// mints entry references under a transcripts, screen_text or body grant.
+/// Advertising `fetch` for any grant lets those references round-trip. The call
+/// still refuses an entry without its own kind and an activity without facets.
 const FETCH: ToolRequirement = ToolRequirement {
     read: &[
         AdmittedCategory::Transcripts,
         AdmittedCategory::Facets,
         AdmittedCategory::ScreenText,
+        AdmittedCategory::Body,
     ],
     whole_journal: false,
     any_of: true,
+    one_of: &[],
 };
 
 /// The single registry used for advertisement, dispatch, validation, and auditing.
@@ -131,7 +149,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::Search,
         wire_name: "search",
         title: "search the journal",
-        description: "search what this connection may see of the owner's journal: short summaries of conversations and work sessions, activities and their stories, text recognized from screens or shown in a terminal, imported documents and calendar events, and notes about people and projects. screen text says what was visible, not what the owner read, typed or did. use a few keywords such as names or topics, not a sentence. days are YYYYMMDD or YYYY-MM-DD. when this connection can see the whole journal, a search for a day also returns the calendar events scheduled that day, as of the latest change the phone sent. calendar events belong to no facet, so a connection limited to some facets never sees them, and its results say so in coverage.outside_facets. agent notes belong to no facet either, so such a connection reads its own notes with recall_memory. a calendar result's calendar field says latest for that version or recorded for a change saved on that day, with when it was recorded. search does not read conversations word for word. when a result lists transcript segments, read them with get_transcript before saying who said, promised or decided something. when a result shows more_segments, fetch it for more. hidden activities aren't returned. if an activity you just saw disappears, search again; a changed activity file stays out until the journal indexes it. a screen-text result's time is when it was on screen, on the recording device's clock; its minute counts from the start of its segment.",
+        description: "search what this connection may see of the owner's journal: short summaries of conversations and work sessions, activities and their stories, text recognized from screens or shown in a terminal, imported documents and calendar events, body data from apps and devices, and notes about people and projects. body data is found with the body permission; without it, a search that would have found some says so in body_note. screen text says what was visible, not what the owner read, typed or did. use a few keywords such as names or topics, not a sentence. days are YYYYMMDD or YYYY-MM-DD. when this connection can see the whole journal, a search for a day also returns the calendar events scheduled that day, as of the latest change the phone sent. calendar events belong to no facet, so a connection limited to some facets never sees them, and its results say so in coverage.outside_facets. agent notes belong to no facet either, so such a connection reads its own notes with recall_memory. a calendar result's calendar field says latest for that version or recorded for a change saved on that day, with when it was recorded. search does not read conversations word for word. when a result lists transcript segments, read them with get_transcript before saying who said, promised or decided something. when a result shows more_segments, fetch it for more. hidden activities aren't returned. if an activity you just saw disappears, search again; a changed activity file stays out until the journal indexes it. a screen-text result's time is when it was on screen, on the recording device's clock; its minute counts from the start of its segment.",
         input_schema: search_input_schema,
         requires: SEARCH,
         audit_name: solstone_core_mcp_audit::ToolName::Search,
@@ -149,9 +167,9 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListTranscripts,
         wire_name: "list_transcripts",
         title: "list transcripts",
-        description: "List transcript segments this connection may read, each with its time and its source, which says where it came from. Give one day (YYYYMMDD or YYYY-MM-DD), and a time range within it when you know one; without a day, the newest days come first. When more remain, pass next_cursor as cursor to continue. Read one with get_transcript. A reference is different on every call, even for the same segment, so don't compare references to tell segments apart. Two segments at the same time with different sources are separate recordings. A list leaves out segments holding only body records, and a day's list names their sources in other_sources. Pass one of those labels as source to list those segments. It leaves out Strava workouts too, which no label lists: it counts them in omitted_workouts, and search finds them, and list_activities lists the activity recorded for each, when it has one. The response adds gaps, the stretches no segment this connection can read covers (a gap means no segment, not that nothing happened), and span_reference: pass it to get_transcript as reference to read those segments in time order.",
+        description: "List transcript segments this connection may read, each with its time and its source, which says where it came from. Give one day (YYYYMMDD or YYYY-MM-DD), and a time range within it when you know one; without a day, the newest days come first. When more remain, pass next_cursor as cursor to continue. Read one with get_transcript. A reference is different on every call, even for the same segment, so don't compare references to tell segments apart. Two segments at the same time with different sources are separate recordings. A list leaves out segments holding only body records, and a day's list names their sources in other_sources. Pass one of those labels as source to list those segments. It leaves out Strava workouts too, which no label lists: it counts them in omitted_workouts, and search finds them, and list_activities lists the activity recorded for each, when it has one. Body segments and workouts are read with the body permission; without it, none of these are listed or counted, and body_note says so. The response adds gaps, the stretches no segment this connection can read covers (a gap means no segment, not that nothing happened), and span_reference: pass it to get_transcript as reference to read those segments in time order.",
         input_schema: list_transcripts_input_schema,
-        requires: TRANSCRIPTS,
+        requires: TRANSCRIPTS_OR_BODY,
         audit_name: solstone_core_mcp_audit::ToolName::ListTranscripts,
     },
     ToolEntry {
@@ -160,7 +178,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         title: "read a transcript",
         description: "Read what was said in one transcript segment, from a search result or from list_transcripts. Its source is the one listed with that segment. When it returns next_cursor, pass it as cursor to read the rest. When it says untimed, the times are not real. If a segment can't be read, search again or list that day. Pass a span_reference from list_transcripts as reference to read through that source's segments in time order, each entry attributed; a page can be short, so read on while next_cursor is present.",
         input_schema: transcript_input_schema,
-        requires: TRANSCRIPTS,
+        requires: TRANSCRIPTS_OR_BODY,
         audit_name: solstone_core_mcp_audit::ToolName::GetTranscript,
     },
     ToolEntry {
@@ -185,7 +203,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetWeek,
         wire_name: "get_week",
         title: "read a week",
-        description: "read one week. memories are derived from activities and are not the owner's words. quotes are the owner's words. each activity's `participants` attended it, `heard` lists people the owner talked with in a conversation that wasn't a meeting, `mentioned` were named there without attending, and `on_screen` only appeared on screen. `activities` holds up to seven, with activities of the same name as one row; `activities_total` counts all of the week's activities, and list_activities lists them. leaving an entry off the week page leaves that source visible to the other tools. pass week as the sunday it starts, YYYYMMDD, or omit it for the week containing today.",
+        description: "read one week. memories are derived from activities and are not the owner's words. quotes are the owner's words. each activity's `participants` attended it, `heard` lists people the owner talked with in a conversation that wasn't a meeting, `mentioned` were named there without attending, and `on_screen` only appeared on screen. `activities` holds up to seven, with activities of the same name as one row; `activities_total` counts all of the week's activities, and list_activities lists them. with the body permission, `body` lists the week's workouts, nights and mindfulness sessions; without it, `body_note` says so. leaving an entry off the week page leaves that source visible to the other tools. pass week as the sunday it starts, YYYYMMDD, or omit it for the week containing today.",
         input_schema: week_input_schema,
         requires: WEEK,
         audit_name: solstone_core_mcp_audit::ToolName::GetWeek,
@@ -194,7 +212,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListActivities,
         wire_name: "list_activities",
         title: "list activities",
-        description: "List journal activities for one day or an inclusive range across granted facets. When more remain, pass next_cursor as cursor to continue. Each activity lists `participants`, the people who attended it; `heard`, people the owner talked with in a conversation that wasn't a meeting; `mentioned`, people named in it who didn't attend; and `on_screen`, names that only appeared on screen, which nobody said. Call get_activity_sources to read the verbatim transcript segments an activity spans. An activity appears once it has ended; when a device stops sending, its last activity appears about an hour later. With access to the whole journal's transcripts, an activity also lists what the owner's calendar had scheduled while it ran, in its `scheduled` field, with the known people invited when the connection may also read entities. That is what was planned, not who was there. With the same access, an activity also says where a device that sent its location was while it ran, in its `place` field: the device, and the area or place in words, never coordinates.",
+        description: "List journal activities for one day or an inclusive range across granted facets. When more remain, pass next_cursor as cursor to continue. Each activity lists `participants`, the people who attended it; `heard`, people the owner talked with in a conversation that wasn't a meeting; `mentioned`, people named in it who didn't attend; and `on_screen`, names that only appeared on screen, which nobody said. Call get_activity_sources to read the verbatim transcript segments an activity spans. Workouts, nights and other body records are listed with the body permission, and carry `place` when this connection can also see the whole journal; without the body permission, `body_note` says so. An activity appears once it has ended; when a device stops sending, its last activity appears about an hour later. With access to the whole journal's transcripts, an activity also lists what the owner's calendar had scheduled while it ran, in its `scheduled` field, with the known people invited when the connection may also read entities. That is what was planned, not who was there. With the same access, an activity also says where a device that sent its location was while it ran, in its `place` field: the device, and the area or place in words, never coordinates.",
         input_schema: list_activities_input_schema,
         requires: FACETS,
         audit_name: solstone_core_mcp_audit::ToolName::ListActivities,
@@ -205,7 +223,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         title: "read activity sources",
         description: "Read the verbatim transcript segments an activity spans. Pass the activity reference returned by list_activities, or by get_week when this connection has it. When more remain, pass next_cursor as cursor to continue. When a unit says untimed, the times inside it are not real.",
         input_schema: get_activity_sources_input_schema,
-        requires: FACETS_AND_TRANSCRIPTS,
+        requires: FACETS_AND_TRANSCRIPTS_OR_BODY,
         audit_name: solstone_core_mcp_audit::ToolName::GetActivitySources,
     },
 ];
@@ -261,6 +279,24 @@ pub(crate) fn requirement_refusal(
                 missing.join(" and ")
             ));
         }
+    }
+    if !entry.requires.one_of.is_empty()
+        && !entry
+            .requires
+            .one_of
+            .iter()
+            .any(|category| snapshot.categories.contains(category))
+    {
+        let names = entry
+            .requires
+            .one_of
+            .iter()
+            .map(category_token)
+            .collect::<Vec<_>>()
+            .join(" or ");
+        return Some(format!(
+            "this connection does not have the {names} category"
+        ));
     }
     if entry.requires.whole_journal && !matches!(snapshot.scope, ConnectionScope::WholeJournal) {
         return Some(
@@ -542,6 +578,7 @@ pub(crate) fn category_token(category: &AdmittedCategory) -> &'static str {
         AdmittedCategory::Entities => "entities",
         AdmittedCategory::Facets => "facets",
         AdmittedCategory::ScreenText => "screen_text",
+        AdmittedCategory::Body => "body",
     }
 }
 

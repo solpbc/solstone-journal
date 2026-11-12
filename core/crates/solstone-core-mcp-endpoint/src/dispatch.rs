@@ -435,6 +435,12 @@ fn fetch_target_category_refusal(
             else {
                 return None;
             };
+            // What a body import brought in is body, whatever it was stored as.
+            let category = if solstone_core_format::content::body_material::is_body_path(path) {
+                AdmittedCategory::Body
+            } else {
+                category
+            };
             if snapshot.categories.contains(&category) {
                 return None;
             }
@@ -724,6 +730,7 @@ fn audit_permission_snapshot(
             solstone_core_indexer_query::AdmittedCategory::Entities => "entities".to_owned(),
             solstone_core_indexer_query::AdmittedCategory::Facets => "facets".to_owned(),
             solstone_core_indexer_query::AdmittedCategory::ScreenText => "screen_text".to_owned(),
+            solstone_core_indexer_query::AdmittedCategory::Body => "body".to_owned(),
         })
         .collect();
     let (scope, facet_ids) = match &snapshot.scope {
@@ -832,6 +839,29 @@ pub(crate) fn boundary(
         .expect("closed admitted categories construct a boundary")
 }
 
+/// The connection's boundary for reading segments: its transcripts, and its
+/// body windows when it holds the body permission. Each segment is then judged
+/// by what it is, so a body window needs body and any other needs transcripts.
+pub(crate) fn segment_boundary(
+    snapshot: &ConnectionReadSnapshot,
+    facet: Option<&str>,
+) -> Option<ConnectionBoundary> {
+    let categories = [AdmittedCategory::Transcripts, AdmittedCategory::Body]
+        .into_iter()
+        .filter(|category| snapshot.categories.contains(category))
+        .collect::<BTreeSet<_>>();
+    (!categories.is_empty()).then(|| {
+        let scope = facet.map_or_else(
+            || snapshot.scope.clone(),
+            |id| ConnectionScope::ChosenFacets {
+                ids: BTreeSet::from([id.to_owned()]),
+            },
+        );
+        ConnectionBoundary::from_category_tokens(categories.iter().map(category_token), scope)
+            .expect("closed admitted categories construct a boundary")
+    })
+}
+
 pub(crate) fn live_allows(
     journal_root: &Path,
     boundary: &ConnectionBoundary,
@@ -840,7 +870,7 @@ pub(crate) fn live_allows(
 ) -> bool {
     FacetDeclarationSet::from_journal(journal_root)
         .map(|declarations| classify_source(journal_root, path, stream, &declarations))
-        .is_ok_and(|classification| boundary.allows_classification(&classification))
+        .is_ok_and(|classification| boundary.allows_classification(journal_root, &classification))
 }
 
 pub(crate) fn codec() -> &'static ReferenceCodec {
@@ -1678,10 +1708,19 @@ fn search(
     if resolution.status == EntityResolutionStatus::Incomplete {
         response_val["entity_context_incomplete"] = Value::Bool(true);
     }
+    // A connection without the body permission is told when its search would
+    // have found body data with it. Once, on the first page.
+    let body_withheld = request.cursor.is_none()
+        && search_withheld_body(journal_root, snapshot, &boundary, &resolution, &request)?;
+    if body_withheld {
+        response_val["body_note"] = json!(crate::body_source::BODY_NOT_GRANTED);
+    }
     // Each snippet is made literal where it is cut.
     let mut prepared =
         Prepared::new(response_val, count, targets).served_as_is(&["snippet", "query"]);
-    if count == 0 && resolution.status != EntityResolutionStatus::Incomplete {
+    if count == 0 && body_withheld {
+        prepared = prepared.when_empty(crate::body_source::BODY_NOT_GRANTED);
+    } else if count == 0 && resolution.status != EntityResolutionStatus::Incomplete {
         prepared = prepared.when_empty(if complete {
             SEARCH_EMPTY
         } else {
@@ -1689,6 +1728,56 @@ fn search(
         });
     }
     Ok(prepared)
+}
+
+/// Whether this search would have found body data had the connection held the
+/// body permission, within the same query, days, facets and kinds.
+fn search_withheld_body(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    boundary: &ConnectionBoundary,
+    resolution: &EntityResolutionOutcome,
+    request: &ValidatedSearch,
+) -> Result<bool, DispatchError> {
+    if crate::body_source::holds_body(snapshot)
+        || matches!(
+            request.category,
+            Some(AdmittedCategory::Entities | AdmittedCategory::ScreenText)
+        )
+    {
+        return Ok(false);
+    }
+    let mut with_body = snapshot.clone();
+    with_body.categories.insert(AdmittedCategory::Body);
+    let mut categories = boundary.categories().clone();
+    categories.insert(AdmittedCategory::Body);
+    let probe = ConnectionBoundary::from_category_tokens(
+        categories.iter().map(category_token),
+        boundary.scope().clone(),
+    )
+    .expect("closed admitted categories construct a boundary");
+    solstone_core_indexer_query::connection_search_withheld_body(
+        journal_root,
+        &probe,
+        &ConnectionSearchRequest {
+            query: resolution.effective_query.clone(),
+            limit: 1,
+            day: request.day.clone(),
+            day_from: request.day_from.clone(),
+            day_to: request.day_to.clone(),
+            relax: true,
+            ..ConnectionSearchRequest::default()
+        },
+        Utc::now()
+            .with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
+            .date_naive(),
+        crate::body_source::body_entry_admission(
+            journal_root,
+            &with_body,
+            crate::body_source::ActivityDayFiles::default(),
+        ),
+    )
+    .map_err(index_error)
 }
 
 fn resolve_search_cursor(
@@ -2147,7 +2236,12 @@ fn fetch(
             if record
                 .get("hidden")
                 .is_some_and(solstone_core_facets::activity_value_truthy)
-                || crate::body_source::strava_line_hidden(journal_root, &act_ref.day, &record)
+                || crate::body_source::strava_line_hidden(
+                    journal_root,
+                    snapshot,
+                    &act_ref.day,
+                    &record,
+                )
             {
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             }
@@ -2251,6 +2345,10 @@ pub(crate) fn body_face_for(
     day: &str,
     record: &Map<String, Value>,
 ) -> Result<solstone_core_location::body_records::Face, DispatchError> {
+    // A body record and everything on it is body data.
+    if !crate::body_source::holds_body(snapshot) {
+        return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+    }
     let id = record.get("id").and_then(Value::as_str).unwrap_or_default();
     let gate = crate::body_source::window_gate(journal_root, snapshot);
     // Every day the record's group can show under, grouped once.
@@ -2739,11 +2837,18 @@ fn list_transcripts(
         );
     }
 
-    let boundary = boundary(
+    // A segment is read as what it is: a body window under body, any other
+    // under transcripts. One of them may be all this connection holds.
+    let segments_boundary = segment_boundary(snapshot, request.facet_id.as_deref());
+    // Body windows and workouts are counted under body alone. Without it, what
+    // would have been counted is said to need it instead.
+    let body_boundary = boundary(
         snapshot,
-        Some(AdmittedCategory::Transcripts),
+        Some(AdmittedCategory::Body),
         request.facet_id.as_deref(),
     );
+    let holds_body = crate::body_source::holds_body(snapshot);
+    let mut body_withheld = false;
     let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
 
     let day_map =
@@ -2828,7 +2933,7 @@ fn list_transcripts(
                 if crate::body_source::is_left_out_workout(&segment)
                     && live_allows(
                         journal_root,
-                        &boundary,
+                        &body_boundary,
                         &segment_assignment_probe_path(day, &stream, &name),
                         Some(&stream),
                     )
@@ -2839,20 +2944,25 @@ fn list_transcripts(
                         &name,
                     )
                 {
-                    omitted_workouts.insert(crate::body_source::workout_id(&segment));
+                    if holds_body {
+                        omitted_workouts.insert(crate::body_source::workout_id(&segment));
+                    } else {
+                        body_withheld = true;
+                    }
                 }
-                omitted_body = omitted_body
-                    || segment
-                        .path()
-                        .join(solstone_core_format::content::body_records::BODY_RECORDS_FILE)
-                        .is_file()
-                        && !crate::body_source::holds_only_moved(segment.path())
-                        && live_allows(
-                            journal_root,
-                            &boundary,
-                            &segment_assignment_probe_path(day, &stream, &name),
-                            Some(&stream),
-                        );
+                let window = segment
+                    .path()
+                    .join(solstone_core_format::content::body_records::BODY_RECORDS_FILE)
+                    .is_file()
+                    && !crate::body_source::holds_only_moved(segment.path())
+                    && live_allows(
+                        journal_root,
+                        &body_boundary,
+                        &segment_assignment_probe_path(day, &stream, &name),
+                        Some(&stream),
+                    );
+                omitted_body = omitted_body || window && holds_body;
+                body_withheld = body_withheld || window && !holds_body;
                 continue;
             }
             let clock = segment_clock(&name);
@@ -2891,7 +3001,9 @@ fn list_transcripts(
             // Scope comes first: a segment this connection may not read neither
             // fills the page nor earns a `next_cursor`.
             let probe_path = segment_assignment_probe_path(day, &stream, &name);
-            if !live_allows(journal_root, &boundary, &probe_path, Some(&stream)) {
+            if !segments_boundary.as_ref().is_some_and(|boundary| {
+                live_allows(journal_root, boundary, &probe_path, Some(&stream))
+            }) {
                 continue;
             }
 
@@ -3032,7 +3144,16 @@ fn list_transcripts(
         response_val["omitted_workouts"] = json!(omitted_workouts.len());
         response_val["workouts_note"] = json!(LIST_TRANSCRIPTS_WORKOUTS);
     }
-    let empty_note = if other_sources.is_empty() {
+    let body_withheld = body_withheld
+        || request.day.as_deref().is_some_and(|day| {
+            crate::body_source::earlier_import_withheld(journal_root, snapshot, day)
+        });
+    if body_withheld {
+        response_val["body_note"] = json!(crate::body_source::BODY_NOT_GRANTED);
+    }
+    let empty_note = if body_withheld && other_sources.is_empty() {
+        crate::body_source::BODY_NOT_GRANTED
+    } else if other_sources.is_empty() {
         if omitted_body && request.day.is_none() {
             LIST_TRANSCRIPTS_BODY_ELSEWHERE
         } else if !omitted_workouts.is_empty() {
@@ -3093,12 +3214,14 @@ fn get_transcript(
         .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
     let probe_path =
         segment_assignment_probe_path(&reference.day, &reference.stream, &reference.segment);
-    if !live_allows(
-        journal_root,
-        &boundary(snapshot, Some(AdmittedCategory::Transcripts), None),
-        &probe_path,
-        Some(&reference.stream),
-    ) {
+    if !segment_boundary(snapshot, None).is_some_and(|boundary| {
+        live_allows(
+            journal_root,
+            &boundary,
+            &probe_path,
+            Some(&reference.stream),
+        )
+    }) {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     }
     let continuation = request

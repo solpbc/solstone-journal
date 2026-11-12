@@ -51,6 +51,16 @@ const LOOK_BACK_SECONDS: u32 = 3_600;
 /// Entries on one page: what a single segment's page already holds.
 const MAX_ENTRIES_PER_PAGE: usize = solstone_core_transcripts::MAX_TRANSCRIPT_PAGE_ITEMS;
 
+/// What an agent is told where an answer would have held or counted body data
+/// that its connection lacks the permission for.
+pub(crate) const BODY_NOT_GRANTED: &str = "this connection doesn't have the body permission. the owner can grant it in the journal's agents app.";
+
+/// Whether this connection holds the body permission: what body imports
+/// brought in is read under it alone.
+pub(crate) fn holds_body(snapshot: &ConnectionReadSnapshot) -> bool {
+    snapshot.categories.contains(&AdmittedCategory::Body)
+}
+
 const NOTHING_READABLE: &str = "No body source with that label holds anything this connection can read on that day. A source's label comes from `other_sources` on a day's list_transcripts, or from that day's body document.";
 const SPAN_EMPTY: &str = "No entries in this span.";
 const SPAN_EMPTY_CONTINUES: &str =
@@ -60,7 +70,7 @@ const BEGAN_EARLIER: &str = "Nothing in this range is listed, but an entry that 
 const OTHER_CONTENT: &str = "This source also holds other content on this day that isn't listed here, so these gaps describe only its body segments. List the day without source to see it.";
 
 /// What an earlier import of a body source holds for this day, for a connection
-/// that may read the whole journal's transcripts. A bundle has no facet, so a
+/// that may read the whole journal's body data. A bundle has no facet, so a
 /// limited connection is told nothing of it.
 fn earlier_import_note(
     journal_root: &Path,
@@ -68,7 +78,7 @@ fn earlier_import_note(
     day: &str,
     only: Option<OldSource>,
 ) -> Option<String> {
-    if !snapshot.categories.contains(&AdmittedCategory::Transcripts)
+    if !holds_body(snapshot)
         || !matches!(
             snapshot.scope,
             solstone_core_indexer_query::ConnectionScope::WholeJournal
@@ -92,6 +102,21 @@ fn earlier_import_note(
         })
         .collect::<Vec<_>>();
     (!notes.is_empty()).then(|| notes.join(" "))
+}
+
+/// Whether a connection without the body permission would have been told of an
+/// earlier body import covering this day had it held one.
+pub(crate) fn earlier_import_withheld(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    day: &str,
+) -> bool {
+    !holds_body(snapshot)
+        && matches!(
+            snapshot.scope,
+            solstone_core_indexer_query::ConnectionScope::WholeJournal
+        )
+        && !covers_on_day(journal_root, day, None).is_empty()
 }
 
 /// The note for a plain day listing, when an old import of any body source covers it.
@@ -277,9 +302,24 @@ pub(crate) fn holds_only_moved(window: &Path) -> bool {
     std::fs::read_to_string(window.join(BODY_RECORDS_FILE)).is_ok_and(|text| only_moved_rows(&text))
 }
 
-/// The body window a live, in-scope, unreleased segment is, in time order. One
-/// holding only moved rows is left out.
+/// The body windows this connection reads: none without the body permission.
 fn readable_windows(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    hides: &BodyHides,
+    day: &str,
+    stream: &str,
+) -> Result<Vec<Window>, DispatchError> {
+    if !holds_body(snapshot) {
+        return Ok(Vec::new());
+    }
+    windows_in_scope(journal_root, snapshot, hides, day, stream)
+}
+
+/// The body window a live, in-scope, unreleased segment is, in time order. One
+/// holding only moved rows is left out. This is what the connection would read
+/// with the body permission, whether or not it holds it.
+fn windows_in_scope(
     journal_root: &Path,
     snapshot: &ConnectionReadSnapshot,
     hides: &BodyHides,
@@ -291,7 +331,7 @@ fn readable_windows(
     if hides.day_hidden(day) {
         return Ok(Vec::new());
     }
-    let transcript_boundary = boundary(snapshot, Some(AdmittedCategory::Transcripts), None);
+    let transcript_boundary = boundary(snapshot, Some(AdmittedCategory::Body), None);
     let segments = iter_segments_skipping_unreadable_streams(journal_root, PathOrDay::Day(day))
         .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
     let mut windows = Vec::new();
@@ -342,8 +382,7 @@ fn readable_windows(
 }
 
 /// Whether this connection may read a body window, by day, stream and name: the
-/// same test `readable_windows` makes, and the Transcripts category, which that
-/// tool requires before it runs. No window to name, its directory gone with
+/// same test `readable_windows` makes, and the body permission. No window to name, its directory gone with
 /// no tombstone say, is no window to read: only the owner sees that account.
 /// The facet folder and day of an activity day file's path.
 pub(crate) fn activity_file_place(path: &str) -> Option<(String, String)> {
@@ -386,7 +425,7 @@ impl ActivityDayFiles {
 }
 
 /// The composed record behind a body record's search entry, as this connection
-/// may read it. `None` when it may not: no Transcripts, no grant on its window,
+/// may read it. `None` when it may not: no body permission, no grant on its window,
 /// or a window that's gone.
 pub(crate) fn body_entry_face(
     journal_root: &Path,
@@ -419,17 +458,17 @@ pub(crate) fn window_gate<'a>(
     journal_root: &'a Path,
     snapshot: &'a ConnectionReadSnapshot,
 ) -> impl Fn(&str, &str, Option<&str>) -> bool + 'a {
-    let transcript_boundary = boundary(snapshot, Some(AdmittedCategory::Transcripts), None);
-    // Body windows are transcripts: a connection without that category reads none,
-    // whatever tool it calls.
-    let transcripts = snapshot.categories.contains(&AdmittedCategory::Transcripts);
+    let transcript_boundary = boundary(snapshot, Some(AdmittedCategory::Body), None);
+    // Body windows are body data: a connection without the body permission reads
+    // none, whatever tool it calls.
+    let body = holds_body(snapshot);
     // No window of a day the owner hid is read, through any tool, and none at
     // all while which days are hidden can't be read.
     let hides = BodyHides::read(journal_root);
     // A window's answer holds for the read: many records share one window.
     let known = std::cell::RefCell::new(BTreeMap::<(String, String, String), bool>::new());
     move |day: &str, stream: &str, window: Option<&str>| match window {
-        Some(_) if !transcripts || hides.day_hidden(day) => false,
+        Some(_) if !body || hides.day_hidden(day) => false,
         Some(name) => {
             let key = (day.to_owned(), stream.to_owned(), name.to_owned());
             if let Some(&allowed) = known.borrow().get(&key) {
@@ -783,6 +822,20 @@ pub(crate) fn list_source(
     let earlier =
         source_kind.and_then(|only| earlier_import_note(journal_root, snapshot, day, Some(only)));
     let hides = BodyHides::read(journal_root);
+    if !holds_body(snapshot) {
+        // Said only where the permission is all that stands between the
+        // connection and a window: what its scope can't reach leaves no trace.
+        if windows_in_scope(journal_root, snapshot, &hides, day, stream)?.is_empty() {
+            return Ok(Prepared::new(json!({ "transcripts": [] }), 0, Vec::new())
+                .when_empty(NOTHING_READABLE));
+        }
+        return Ok(Prepared::new(
+            json!({ "transcripts": [], "body_note": BODY_NOT_GRANTED }),
+            0,
+            Vec::new(),
+        )
+        .when_empty(BODY_NOT_GRANTED));
+    }
     let windows = readable_windows(journal_root, snapshot, &hides, day, stream)?;
     if windows.is_empty() {
         let mut response = json!({ "transcripts": [] });
@@ -999,7 +1052,9 @@ fn holds_other_content(
     day: &str,
     stream: &str,
 ) -> Result<bool, DispatchError> {
-    let transcript_boundary = boundary(snapshot, Some(AdmittedCategory::Transcripts), None);
+    let Some(transcript_boundary) = crate::dispatch::segment_boundary(snapshot, None) else {
+        return Ok(false);
+    };
     let segments = iter_segments_skipping_unreadable_streams(journal_root, PathOrDay::Day(day))
         .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
     Ok(segments.iter().any(|segment| {
@@ -1250,13 +1305,30 @@ pub(crate) fn read_source_span(
 /// no connection reads one.
 pub(crate) fn strava_line_hidden(
     journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
     day: &str,
     record: &serde_json::Map<String, serde_json::Value>,
 ) -> bool {
     solstone_core_format::content::is_strava_reading(record)
-        && solstone_core_format::content::body_hidden_days::read_hidden_days(journal_root)
-            .hides(day)
-            != Some(false)
+        && (!holds_body(snapshot) || !strava_day_shown(journal_root, day))
+}
+
+/// Whether an unconverted Strava line is left out only for want of the body
+/// permission: a line on a day the owner hid is not there to mention.
+pub(crate) fn strava_line_needs_body(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    day: &str,
+    record: &serde_json::Map<String, serde_json::Value>,
+) -> bool {
+    solstone_core_format::content::is_strava_reading(record)
+        && !holds_body(snapshot)
+        && strava_day_shown(journal_root, day)
+}
+
+fn strava_day_shown(journal_root: &Path, day: &str) -> bool {
+    solstone_core_format::content::body_hidden_days::read_hidden_days(journal_root).hides(day)
+        == Some(false)
 }
 
 #[cfg(test)]

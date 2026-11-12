@@ -14,6 +14,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
+### Changed
+
+- connected agents now need body, a permission of its own, to read what you imported from Apple Health, Oura or Strava: readings, sleep, workouts, mindfulness sessions and what you logged there. the transcripts permission no longer includes it. a new connection has body ticked. a connection you approved before doesn't, and can't read that data until you tick body for it in the agents app.
+
 ### Fixed
 
 - importing the same journal archive again skips recordings already present, even after your journal has added processing results. existing duplicate copies stay as they are.
