@@ -877,6 +877,18 @@ module.exports = async function searchContractCases(env) {
     assert.deepStrictEqual(p.doc.loads.slice(-1), ['reload'], 'a pop onto an own entry reloads it');
   });
 
+  await test('a mount placed after the address moved to another view still takes search\'s own links', async () => {
+    const p = page('/app/search/');
+    p.location.set('/app/home/');
+    await p.mount();
+    assert.strictEqual(p.searches().length, 0);
+    p.location.set('/app/search/');
+    parseInto(p.doc, p.doc.body, '<a id="own" href="/app/search/?q=alpha&from=&to=&offset=20">older</a>');
+    const event = p.q('#own').click();
+    assert.strictEqual(event.defaultPrevented, true, 'search takes its own link, not the browser');
+    assert.strictEqual(p.searches().length, 1);
+  });
+
   await test('a pop to another view\'s address is left to the router', async () => {
     const p = page('/app/search/?q=alpha');
     await p.mount();

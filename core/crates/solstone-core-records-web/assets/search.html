@@ -169,7 +169,9 @@
   const dateOptions=root.querySelector('#search-date-options');
   const initialStatus=status.textContent;
   // Search's own entries all keep the path it opened on; only the query moves.
-  const path=window.location.pathname;
+  // A mount placed after the address had already moved on (a move made within
+  // a frame of the last) still has search's own path, never another view's.
+  const path=/^\/app\/search\/?$/.test(window.location.pathname)?window.location.pathname:'/app/search/';
   let shown=stateOf(window.location.search);
   let shownId=entryId();
   let epoch=0;let running=null;let report=(state)=>ctx.ready(state);
