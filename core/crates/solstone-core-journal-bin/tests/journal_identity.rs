@@ -1470,7 +1470,9 @@ fn archive_merge_directory_source_is_unsafe() {
 
 #[test]
 fn hosted_local_journal_entry_acknowledges_once_and_rejects_identity_reuse() {
-    use solstone_core_system::lifecycle::{HostedServiceKind, ParentLossLedger};
+    use solstone_core_system::lifecycle::{
+        AdmissionIntent, HostedServiceKind, ParentLossLedger, write_parent_loss_admission_intent,
+    };
     use solstone_core_system::process::{
         InspectResult, ProcessInstanceSource, SystemProcessInstanceSource,
     };
@@ -1493,6 +1495,18 @@ fn hosted_local_journal_entry_acknowledges_once_and_rejects_identity_reuse() {
         .persist_coordinator_identity(active.generation, instance)
         .unwrap();
     ledger.mark_admitting(active.generation, instance).unwrap();
+    // The launcher records its intent before it starts the child; only the
+    // intent creates the entry the child acknowledges into.
+    write_parent_loss_admission_intent(
+        &journal,
+        &AdmissionIntent::new(
+            active.generation,
+            "journal-tool-local",
+            None,
+            Some("talent-parent".to_owned()),
+        ),
+    )
+    .unwrap();
     let generation = active.generation.to_string();
     let invoke = || {
         Command::new(bin())
