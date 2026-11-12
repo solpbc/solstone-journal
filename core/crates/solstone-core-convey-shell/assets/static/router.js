@@ -388,7 +388,9 @@
       mountedPath = window.location.pathname;
       await window.mountWorkspaceFragment(app.workspace_url, {
         appName: name,
-        fragmentText: held ? held.text : undefined,
+        fragmentText: held && typeof held.text === 'string' ? held.text : undefined,
+        // A press's read of the fragment still out: the mount takes its answer.
+        fragmentPending: held && typeof held.text !== 'string' ? held.pending : undefined,
         signal: controller.signal,
         swap: async (place) => {
           await readsAnswered(early, Math.max(0, TRANSITION_WAIT_MS - (Date.now() - started)));
@@ -452,16 +454,26 @@
     const entry = entryTable()[name];
     const app = knownApp(name);
     if (!entry || !app) return;
-    const record = { text: null };
+    // The read's answer, for a move made while it is still out: the text, or
+    // null when there is none to use. Once it has answered the record keeps
+    // only the text, or goes, and only its own record: a fragment a mount kept
+    // meanwhile stays.
+    const record = { text: null, pending: null };
     fragments.set(name, record);
     prefetched.add(name);
-    fetch(entry.fragment, { credentials: 'same-origin', priority: 'low' })
-      .then((response) => (response.ok && !response.redirected ? response.text() : null))
-      .then((text) => {
-        if (text === null) fragments.delete(name);
-        else record.text = text;
+    record.pending = fetch(entry.fragment, { credentials: 'same-origin', priority: 'low' })
+      .then((response) => {
+        if (response.ok && !response.redirected) return response.text();
+        response.body?.cancel?.()?.catch?.(() => {});
+        return null;
       })
-      .catch(() => fragments.delete(name));
+      .catch(() => null)
+      .then((text) => {
+        record.pending = null;
+        if (typeof text === 'string') record.text = text;
+        else if (fragments.get(name) === record) fragments.delete(name);
+        return typeof text === 'string' ? text : null;
+      });
     const code = [...entry.scripts.filter((script) => !script.routePrefix).map((script) => script.src), ...entry.styles];
     code.forEach((href) => {
       fetch(href, { credentials: 'same-origin', priority: 'low' })
@@ -551,6 +563,14 @@
     keepFragment,
     isActive: () => active,
     // For tests and the leak check.
-    held: () => ({ scrolls: scrolls.size, fragments: fragments.size, active, mountedPath, entryId })
+    held: () => ({
+      scrolls: scrolls.size,
+      fragments: fragments.size,
+      // What each kept fragment record holds, by field.
+      records: [...fragments.values()].map((record) => Object.keys(record).filter((key) => record[key] !== null).sort().join(',')),
+      active,
+      mountedPath,
+      entryId
+    })
   };
 })();

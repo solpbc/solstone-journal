@@ -2337,6 +2337,95 @@ function heldFragment(page, url) {
   };
 }
 
+asyncCase('first arrival: a press then a click reads the fragment once, and the record keeps only its text', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+  const fragment = heldFragment(page, '/app/transcripts/workspace');
+  await page.boot('home');
+  const seen = recordMounts(page);
+  page.document.dispatchEvent({ type: 'pointerdown', target: page.link('/app/transcripts/') });
+  page.click('/app/transcripts/');
+  await page.clock.advance(100);
+  assert.strictEqual(fragment.calls.length, 1, 'the move waits on the press\'s read rather than asking again');
+  fragment.release();
+  await page.clock.advance(400);
+  assert.ok(page.view('transcripts'));
+  assert.strictEqual(page.server.of('/app/transcripts/workspace').length, 1, 'one fragment read for the arrival');
+  assert.deepStrictEqual(seen, [['transcripts', '/app/transcripts/20260101']]);
+  assert.deepStrictEqual(Array.from(page.window.solRouter.held().records), ['text', 'text'], 'no read or promise is kept once it has answered');
+});
+
+asyncCase('first arrival: a press whose read fails, or never answers usefully, still mounts the view', async () => {
+  for (const failure of ['status', 'transport', 'redirect-like']) {
+    const page = makePage();
+    page.answerAll();
+    answerDays(page);
+    page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+    const fragment = heldFragment(page, '/app/transcripts/workspace');
+    await page.boot('home');
+    page.document.dispatchEvent({ type: 'pointerdown', target: page.link('/app/transcripts/') });
+    page.click('/app/transcripts/');
+    await page.clock.advance(100);
+    if (failure === 'status') fragment.fail(0, 500);
+    else if (failure === 'transport') fragment.calls[0].failTransport();
+    else fragment.fail(0, 404);
+    await page.clock.advance(100);
+    assert.strictEqual(fragment.calls.length, 2, `${failure}: the move asks for the fragment itself`);
+    fragment.release(1);
+    await page.clock.advance(400);
+    assert.ok(page.view('transcripts'), `${failure}: mounted`);
+    assert.strictEqual(page.window.__views.transcripts.mounts, 1);
+    assert.deepStrictEqual(Array.from(page.window.solRouter.held().records), ['text', 'text'], `${failure}: the failed read left nothing`);
+  }
+});
+
+asyncCase('first arrival: a press on one view and a click on another reads the clicked view\'s own fragment', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+  const body = heldFragment(page, '/app/body/workspace');
+  await page.boot('home');
+  page.document.dispatchEvent({ type: 'pointerdown', target: page.link('/app/body/') });
+  page.click('/app/transcripts/');
+  await page.clock.advance(400);
+  assert.ok(page.view('transcripts'));
+  assert.strictEqual(page.server.of('/app/transcripts/workspace').length, 1);
+  // The press's read answers late, and is not kept.
+  body.release();
+  await page.clock.advance(100);
+  assert.strictEqual(page.window.solRouter.held().fragments, 2, 'home and transcripts only');
+  assert.strictEqual(page.window.__views.body.mounts, 0);
+});
+
+asyncCase('first arrival: a press\'s read failing late never takes away a fragment a mount kept since', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+  const fragment = heldFragment(page, '/app/transcripts/workspace');
+  await page.boot('home');
+  // Pressed, then another view opened, so the press's record is dropped.
+  page.document.dispatchEvent({ type: 'pointerdown', target: page.link('/app/transcripts/') });
+  page.click('/app/more/');
+  await page.clock.advance(400);
+  page.click('/app/transcripts/');
+  await page.clock.advance(100);
+  fragment.release(1);
+  await page.clock.advance(400);
+  assert.ok(page.view('transcripts'));
+  fragment.fail(0, 500);
+  await page.clock.advance(100);
+  page.click('/app/home/');
+  await page.clock.advance(400);
+  page.click('/app/transcripts/');
+  await page.clock.advance(400);
+  assert.ok(page.view('transcripts'));
+  assert.strictEqual(fragment.calls.length, 2, 'the kept fragment is used again, not asked for');
+});
+
 asyncCase('superseded: with view transitions, a move placed after a newer one changes nothing', async () => {
   const page = makePage({ transitions: true });
   page.answerAll();

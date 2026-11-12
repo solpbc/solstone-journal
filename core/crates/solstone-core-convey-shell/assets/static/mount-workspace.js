@@ -305,9 +305,16 @@
 
   // Answers with the fragment's text. A caller that already holds it (the
   // router keeps each pilot view's fragment for the life of the page) passes
-  // it in, and nothing is asked.
+  // it in, and nothing is asked. A caller whose read of it is still out
+  // passes that read: the fragment comes from it, or is asked for here when
+  // it ends without one.
   async function fetchFragment(url, options) {
     if (typeof options.fragmentText === 'string') return { html: options.fragmentText, startedEarly: false };
+    if (options.fragmentPending && typeof options.fragmentPending.then === 'function') {
+      const text = await options.fragmentPending;
+      if (options.signal?.aborted) return null;
+      if (typeof text === 'string') return { html: text, startedEarly: false };
+    }
     const request = window.boundedRequest
       ? await window.boundedRequest(url, { credentials: 'same-origin' })
       : await fetch(url, { credentials: 'same-origin' }).then((response) => ({
@@ -342,6 +349,8 @@
   // Options:
   // - `appName`: the view.
   // - `fragmentText`: the fragment, when the caller holds it.
+  // - `fragmentPending`: a read of the fragment already out, answering with
+  //   its text or null; never rejects.
   // - `signal`: a newer navigation took over; stop without drawing.
   // - `swap(fn)`: runs the step that replaces the page's view (the router
   //   wraps it in a view transition); resolves when it has run.
