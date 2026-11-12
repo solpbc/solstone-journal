@@ -269,9 +269,13 @@
    }finally{if(mine===epoch){stopProgress();root.removeAttribute('aria-busy');running=null;}}
   }
 
+  // A page that has learned the journal is another build has the old code.
+  // As the router does for every move, it loads the address as a new page.
+  function stale(){return !!(window.appEvents&&window.appEvents.buildChanged&&window.appEvents.buildChanged());}
   // One of search's own moves: a new search, a page of results, a day's
   // matches, the empty search. One history entry, then a read.
   function own(state,how){
+   if(stale()){window.location.assign(path+state.search);return;}
    if(how==='push'){keepScroll(entryId());ctx.history.push(path+state.search);shownId=entryId();window.scrollTo(0,0);}
    else if(how==='replace'){ctx.history.replace(path+state.search);}
    fill(state);
@@ -312,6 +316,7 @@
    if(window.location.pathname!==path)return;
    const id=entryId();
    if(window.location.search===shown.search){shownId=id;return;}
+   if(stale()){window.location.reload();return;}
    keepScroll(shownId);shownId=id;
    const state=stateOf(window.location.search);fill(state);
    const reportReady=window.beginViewReady?window.beginViewReady('search',{update:true}):null;

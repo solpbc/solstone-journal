@@ -217,7 +217,6 @@ function parseInto(doc, parent, html) {
 function makeDocument(location) {
   const doc = new Target();
   doc.location = location;
-  doc.loads = [];
   doc.title = 'search - journal';
   doc.createElement = (tag) => new Element(doc, tag);
   doc.createTextNode = (t) => new TextNode(t);
@@ -310,8 +309,12 @@ function makePage({ manifestDir, searchHtml, dateFormatSource }, address = '/app
     get search() { return current.search; },
     get hash() { return current.hash; },
     set(url) { current = new URL(url, current.href); },
+    assign(url) { loads.push(new URL(url, current.href).href); },
+    reload() { loads.push('reload'); },
   };
+  const loads = [];
   const doc = makeDocument(location);
+  doc.loads = loads;
   const clock = makeClock();
   const calls = [];
   const marks = [];
@@ -849,6 +852,29 @@ module.exports = async function searchContractCases(env) {
     await settle();
     assert.strictEqual(p.searches().length, 2, 'the first answer was held');
     assert.strictEqual(p.window.scrollY, 500, 'and the first entry\'s scroll');
+  });
+
+  await test('on a page that has learned a new build, search\'s own moves load the page instead', async () => {
+    const p = page('/app/search/?q=alpha&from=&to=');
+    await p.mount();
+    p.searches()[0].answer(ALPHA);
+    await settle();
+    p.window.appEvents = { buildChanged: () => true };
+    const length = p.entries.length;
+    p.q('[name=q]').value = 'beta';
+    const event = p.submit();
+    assert.strictEqual(event.defaultPrevented, true);
+    assert.deepStrictEqual(p.doc.loads, [ORIGIN + '/app/search/?q=beta&from=&to='], 'one page load of the new address');
+    assert.strictEqual(p.entries.length, length, 'no entry written by this page');
+    assert.strictEqual(p.searches().length, 1, 'and no read with the old code');
+    p.window.appEvents = { buildChanged: () => false };
+    p.q('[name=q]').value = 'beta';
+    p.submit();
+    p.searches()[1].answer(BETA);
+    await settle();
+    p.window.appEvents = { buildChanged: () => true };
+    p.window.history.back();
+    assert.deepStrictEqual(p.doc.loads.slice(-1), ['reload'], 'a pop onto an own entry reloads it');
   });
 
   await test('a pop to another view\'s address is left to the router', async () => {
