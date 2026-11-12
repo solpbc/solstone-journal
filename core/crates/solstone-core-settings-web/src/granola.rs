@@ -45,11 +45,19 @@ fn start_sync(root: PathBuf) -> bool {
     if SYNCING.swap(true, Ordering::SeqCst) {
         return false;
     }
+    // Clears the flag however the sync ends, a panic included.
+    struct Running;
+    impl Drop for Running {
+        fn drop(&mut self) {
+            SYNCING.store(false, Ordering::SeqCst);
+        }
+    }
+    let running = Running;
     tokio::task::spawn_blocking(move || {
+        let _running = running;
         if let Err(error) = granola::sync(&root) {
             log::warn!("{error}");
         }
-        SYNCING.store(false, Ordering::SeqCst);
     });
     true
 }
@@ -227,7 +235,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(SYNCING.load(Ordering::SeqCst), false);
+        assert!(!SYNCING.load(Ordering::SeqCst));
         let schedules: Value = serde_json::from_slice(
             &std::fs::read(root.path().join("config/schedules.json")).unwrap(),
         )

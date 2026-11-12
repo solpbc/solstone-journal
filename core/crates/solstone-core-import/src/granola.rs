@@ -103,7 +103,9 @@ impl Error {
     }
     /// The failure a stored message names. A message from an older wording names none.
     pub fn from_message(message: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|error| error.message() == message)
+        Self::ALL
+            .into_iter()
+            .find(|error| error.message() == message)
     }
 }
 impl std::fmt::Display for Error {

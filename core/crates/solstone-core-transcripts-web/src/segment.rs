@@ -1644,7 +1644,12 @@ mod tests {
         assert!(note["private_notes"].is_null());
         assert_eq!(note["attendees"], json!(["r@example.org", "Robin"]));
         assert!(note["calendar_title"].is_null());
-        assert!(note["web_url"].as_str().unwrap().starts_with("https://notes.granola.ai/"));
+        assert!(
+            note["web_url"]
+                .as_str()
+                .unwrap()
+                .starts_with("https://notes.granola.ai/")
+        );
         let speech = value["chunks"]
             .as_array()
             .unwrap()
@@ -1653,7 +1658,12 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(speech.len(), 1);
         assert_eq!(speech[0]["speaker_attribution"], "Granola: them");
-        assert!(!speech[0]["markdown"].as_str().unwrap().contains("Beta status"));
+        assert!(
+            !speech[0]["markdown"]
+                .as_str()
+                .unwrap()
+                .contains("Beta status")
+        );
     }
 
     #[test]

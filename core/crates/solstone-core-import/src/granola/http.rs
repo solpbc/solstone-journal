@@ -25,7 +25,12 @@ impl LiveApi {
         let config = ureq::Agent::config_builder()
             .http_status_as_error(false)
             .max_redirects(0)
-            .timeout_global(Some(Duration::from_secs(90)))
+            // A key check waits for the owner, so it gives up sooner than a sync.
+            .timeout_global(Some(Duration::from_secs(if root.is_some() {
+                90
+            } else {
+                20
+            })))
             .build();
         Self {
             key,
