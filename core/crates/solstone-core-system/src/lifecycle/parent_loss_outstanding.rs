@@ -4638,11 +4638,7 @@ mod tests {
     }
 
     // ---- what stays flat ----
-    //
-    // These time two starts against each other, so they wait on the wall clock
-    // and run with full-tests, one test at a time, never in the parallel unit run.
 
-    #[cfg(all(test, feature = "full-tests"))]
     fn write_exited_history(
         ledger: &ParentLossLedger,
         generation: ParentLossGeneration,
@@ -4686,16 +4682,28 @@ mod tests {
         }
     }
 
-    /// Close a synthetic legacy-shaped generation of `completed` exited
-    /// entries and 3 live ones, then time the start after it.
-    #[cfg(all(test, feature = "full-tests"))]
-    fn close_then_restart(completed: usize) -> (Duration, Duration) {
-        let directory = tempfile::Builder::new()
-            .prefix("pl-outstanding-")
-            .tempdir_in("/var/tmp")
+    fn open_generation_at(path: &Path) -> (ParentLossLedger, ActiveGeneration) {
+        let ledger = ParentLossLedger::open(path).unwrap();
+        let active = ledger.reserve_generation(instance(10, 1), []).unwrap();
+        ledger.initialize_record(&active).unwrap();
+        let coordinator = instance(20, 2);
+        let active = ledger
+            .persist_coordinator_identity(active.generation, coordinator)
             .unwrap();
+        let active = ledger
+            .mark_admitting(active.generation, coordinator)
+            .unwrap();
+        (ledger, active)
+    }
+
+    /// A closed generation's entries stay on disk until a prune. The start
+    /// after it must not read them, so its cost does not grow with that
+    /// history: with every tree holding them made unreadable, it still starts.
+    #[test]
+    fn a_closed_history_costs_the_next_start_nothing() {
+        let directory = TempDir::new().unwrap();
         let (ledger, active) = open_generation_at(directory.path());
-        write_exited_history(&ledger, active.generation, completed);
+        write_exited_history(&ledger, active.generation, 1_000);
         let live: Vec<_> = (0..3)
             .map(|i| (instance(900_001 + i, 9_000 + u64::from(i)), 501))
             .collect();
@@ -4711,50 +4719,27 @@ mod tests {
         let pids: Vec<u32> = live.iter().map(|(i, _)| i.pid).collect();
         let (source, retirer) = fake(&live, &pids, &[]);
         let lease = acquire_lease(&ledger);
-        let began = Instant::now();
         start(&ledger, &lease, &source, &retirer, Duration::from_secs(600))
             .expect("one start closes it");
-        let closing = began.elapsed();
-        assert_eq!(
-            summary_of(&ledger, active.generation).exited,
-            completed as u64
-        );
+        // A legacy-shaped set is still outstanding work: read once, and closed
+        // by that one start.
+        assert_eq!(summary_of(&ledger, active.generation).exited, 1_000);
+
+        // Any read of a tree that is now a plain file fails, and the start
+        // reports it.
+        for path in [
+            admission_directory(&ledger, active.generation),
+            discharged_dir(&ledger, active.generation),
+        ] {
+            if path.exists() {
+                fs::remove_dir_all(&path).unwrap();
+            }
+            fs::write(&path, b"").unwrap();
+        }
         // The next generation dies too, empty; its start must not re-pay the first.
-        let began = Instant::now();
-        start(&ledger, &lease, &source, &retirer, Duration::from_secs(600)).expect("restart");
-        (closing, began.elapsed())
-    }
-
-    #[cfg(all(test, feature = "full-tests"))]
-    fn open_generation_at(path: &Path) -> (ParentLossLedger, ActiveGeneration) {
-        let ledger = ParentLossLedger::open(path).unwrap();
-        let active = ledger.reserve_generation(instance(10, 1), []).unwrap();
-        ledger.initialize_record(&active).unwrap();
-        let coordinator = instance(20, 2);
-        let active = ledger
-            .persist_coordinator_identity(active.generation, coordinator)
-            .unwrap();
-        let active = ledger
-            .mark_admitting(active.generation, coordinator)
-            .unwrap();
-        (ledger, active)
-    }
-
-    #[cfg(all(test, feature = "full-tests"))]
-    #[test]
-    fn a_closed_history_costs_the_next_start_nothing() {
-        let (small_close, small_next) = close_then_restart(1_000);
-        let (large_close, large_next) = close_then_restart(100_000);
-        eprintln!(
-            "outstanding: close K=1k {small_close:?}, K=100k {large_close:?}; \
-             next start K=1k {small_next:?}, K=100k {large_next:?}"
-        );
-        assert!(
-            large_next <= small_next * 3 + Duration::from_millis(50),
-            "the start after a closed 100k history grew: {small_next:?} vs {large_next:?}"
-        );
-        // A legacy-shaped set is still outstanding work, read once: linear,
-        // and closed by one start (`close_then_restart` asserts the one).
+        start(&ledger, &lease, &source, &retirer, Duration::from_secs(600))
+            .expect("the next start never reads the closed history");
+        assert_eq!(summary_of(&ledger, active.generation).exited, 1_000);
     }
 
     // ---- the prune ----
