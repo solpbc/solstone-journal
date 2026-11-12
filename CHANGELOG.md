@@ -16,6 +16,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- when a phone sends your calendar again, for example after you pair it with your journal again, events your journal already has are no longer added a second time.
 - on some older linux computers, the solstone app on iphone gave up waiting for your journal, so new screenshots, Obsidian notes and calendar events stayed waiting on the phone. your journal checked its own installed files every time the app checked in, which took longer than the app waits; it now checks them once after it starts.
 - when Oura moves an entry by more than a day, your journal keeps it where it was first saved, and the summary now says so instead of saying you deleted it.
 - importing a file into a journal on windows no longer fails with "the import could not be prepared" after the journal has been running for a while.
