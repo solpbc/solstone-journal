@@ -396,6 +396,11 @@
         }
         let mounted = null;
         const place = () => {
+          // A newer move took over before this one was placed (a view
+          // transition runs this later, and skipping one still runs it). It
+          // changes nothing: the view on the page stays, and this one never
+          // mounts, so no view ever mounts at another move's address.
+          if (superseded()) return Promise.resolve();
           window.SolViews.dispose();
           applyStylesheets(fragment);
           target.replaceChildren(contractMarkup(fragment));
@@ -436,6 +441,10 @@
     } catch (error) {
       if (superseded()) return;
       window.settleEarly?.();
+      // The error state is this view's, at its address: the view it replaces
+      // goes first, so nothing of it stays working behind the error, and a
+      // reconnect reads this view again.
+      if (contract) window.SolViews.dispose();
       renderFailure(target, retry, error);
       reportReady('error');
       if (typeof options.onRetry === 'function') {

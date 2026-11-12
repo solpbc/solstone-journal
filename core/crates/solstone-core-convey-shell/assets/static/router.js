@@ -337,6 +337,10 @@
       entryId = newEntryId();
       window.history.pushState(stateWith(entryId, 'router'), '', url.pathname + url.search + url.hash);
     }
+    // The address is the move's from here on. A back press while the move is
+    // out is then the router's, and supersedes it; the leaving view's own
+    // entries are refused, since the address is no longer its own.
+    mountedPath = url.pathname;
 
     // The same view, another day: the view takes it in place.
     const current = window.SolViews.current();
@@ -370,8 +374,16 @@
     performance.mark('router:start', { detail: { view: name, mode } });
     let early = null;
     try {
-      await openDay(app);
+      await openDay(app, controller.signal);
+    } catch (error) {
       if (controller.signal.aborted) return true;
+      // The view can't open without its day, and the leaving view no longer
+      // owns the address. The page loads it, as a move off the contract does.
+      window.logError?.(error, { context: 'router-open-day', view: name });
+      return fullLoad(url, null, mode);
+    }
+    if (controller.signal.aborted) return true;
+    try {
       early = window.__solEarlyRoute?.(window.location.href, { fragment: !held }) || null;
       mountedPath = window.location.pathname;
       await window.mountWorkspaceFragment(app.workspace_url, {
@@ -400,10 +412,13 @@
   // on the journal's clock. The page takes that address before the view runs,
   // so the view only ever sees a day in its path. The page's first view and
   // every move to such an address go through here.
-  async function openDay(app) {
+  // A move that was superseded during the read writes nothing: the address
+  // is the newer move's by then.
+  async function openDay(app, signal) {
     const open = entryTable()[app.name]?.openDay;
     if (!open || window.location.pathname !== open.route) return;
-    const { day } = await window.apiJson(open.url);
+    const { day } = await window.apiJson(open.url, signal ? { signal } : undefined);
+    if (signal?.aborted) return;
     if (typeof day !== 'string' || !/^\d{8}$/.test(day)) {
       throw new Error('No day to open');
     }

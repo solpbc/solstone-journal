@@ -2287,6 +2287,265 @@ asyncCase('prefetch: pressing or hovering on a rail entry fetches its code, neve
   assert.ok(page.window.solRouter.held().fragments <= 2, 'one fragment per pilot view at most');
 });
 
+// ---- a first arrival, a superseded move and what the store keeps
+
+// Every mount, with the address the page had when it ran.
+function recordMounts(page) {
+  const seen = [];
+  const views = page.window.SolViews;
+  const mount = views.mount;
+  views.mount = function (name, options) {
+    seen.push([name, page.location.pathname]);
+    return mount.call(this, name, options);
+  };
+  return seen;
+}
+
+// Each mount ran at an address of its own view.
+function assertOwnAddresses(seen) {
+  for (const [name, at] of seen) {
+    assert.ok(at === `/app/${name}/` || at.startsWith(`/app/${name}/`), `${name} mounted at ${at}`);
+  }
+}
+
+// A view transition that runs its callback in a later frame, as a browser
+// does. `frame()` runs the ones waiting; skipping one runs it at once.
+function heldTransitions(page) {
+  const waiting = [];
+  page.document.startViewTransition = (update) => {
+    page.record.transitions += 1;
+    let go;
+    const gate = new Promise((resolve) => { go = resolve; });
+    const done = gate.then(update);
+    waiting.push(go);
+    return { updateCallbackDone: done, ready: done, finished: done, skipTransition() { page.record.skipped += 1; go(); } };
+  };
+  return {
+    waiting: () => waiting.length,
+    frame() { waiting.splice(0).forEach((go) => go()); },
+  };
+}
+
+// A fragment that waits for the test, answered by `release()`.
+function heldFragment(page, url) {
+  const calls = [];
+  page.server.answers.set(url, (call) => { calls.push(call); });
+  return {
+    calls,
+    release(index = calls.length - 1) { page.server.html(FRAGMENTS[url])(calls[index]); },
+    fail(index = calls.length - 1, status = 500) { calls[index].respond(status, 'no'); },
+  };
+}
+
+asyncCase('superseded: with view transitions, a move placed after a newer one changes nothing', async () => {
+  const page = makePage({ transitions: true });
+  page.answerAll();
+  answerDays(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+  await page.boot('home');
+  const frames = heldTransitions(page);
+  const seen = recordMounts(page);
+  page.click('/app/transcripts/');
+  await page.clock.advance(400);
+  assert.strictEqual(frames.waiting(), 1, 'the swap is checked and waits for its frame');
+  assert.ok(page.view('home'));
+  // The newer move skips the waiting transition, which runs the old swap.
+  page.click('/app/body/');
+  await page.clock.advance(400);
+  frames.frame();
+  await page.clock.advance(400);
+  assert.ok(page.view('body'));
+  assert.strictEqual(page.location.pathname, '/app/body/');
+  assert.strictEqual(page.window.__views.transcripts.mounts, 0, 'the superseded view never mounts');
+  assert.strictEqual(page.window.__views.home.disposes, 1, 'home goes once, for the newer view');
+  assert.ok(page.record.skipped >= 1);
+  assert.deepStrictEqual(seen, [['body', '/app/body/']]);
+  assert.ok(page.main().querySelector('.body-shell') && !page.main().querySelector('.tr'));
+});
+
+asyncCase('superseded: without a transition, a place whose move ended disposes, inserts and mounts nothing', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  await page.boot('home');
+  const seen = recordMounts(page);
+  const controller = new page.window.AbortController();
+  await page.window.mountWorkspaceFragment('/app/transcripts/workspace', {
+    appName: 'transcripts',
+    signal: controller.signal,
+    swap: async (place) => {
+      controller.abort();
+      return place();
+    },
+  });
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+  assert.ok(page.main().querySelector('.home'), 'the markup on the page stays');
+  assert.strictEqual(page.window.__views.home.disposes, 0);
+  assert.deepStrictEqual(seen, []);
+});
+
+asyncCase('superseded: a day step made while transcripts reads its open day keeps its own address', async () => {
+  // A newer move that mounts nothing (a day step taken in place) leaves the
+  // older move's open-day read running; its answer must not write over the
+  // step's address.
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  const openDays = [];
+  page.server.answers.set('/app/transcripts/api/open-day', (call) => {
+    openDays.push(call);
+    if (openDays.length === 1) dayAnswer('20260101')(call);
+  });
+  await page.boot('home');
+  page.click('/app/transcripts/');
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/transcripts/20260101');
+  const seen = recordMounts(page);
+  page.click('/app/transcripts/');
+  await page.clock.advance(50);
+  assert.strictEqual(openDays.length, 2, 'the undated address reads its day again');
+  page.window.solRouter.navigate('/app/transcripts/20260103');
+  await page.clock.advance(50);
+  if (!openDays[1].settled) dayAnswer('20260102')(openDays[1]);
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/transcripts/20260103', 'the late day is not written over the step');
+  assert.deepStrictEqual(Array.from(page.window.__views.transcripts.updates).slice(-1), ['20260103']);
+  assert.ok(!page.history.entries.some((entry) => entry.url.includes('/app/transcripts/20260102')), 'no entry took the late day');
+  assert.deepStrictEqual(seen, []);
+});
+
+asyncCase('superseded: a back press while transcripts reads its day is a move, and the leaving view writes no entry', async () => {
+  const page = makePage({ transitions: true });
+  page.answerAll();
+  answerDays(page);
+  answerSearch(page);
+  let openDay = null;
+  page.server.answers.set('/app/transcripts/api/open-day', (call) => { openDay = call; });
+  await page.boot('home');
+  const frames = heldTransitions(page);
+  page.click('/app/search/');
+  await page.clock.advance(400);
+  frames.frame();
+  await page.clock.advance(400);
+  assert.ok(page.view('search'));
+  const seen = recordMounts(page);
+  page.click('/app/transcripts/');
+  await page.clock.advance(50);
+  // The leaving view's own entry is refused: the address is the move's.
+  page.window.solRouter.viewEntry('push', '/app/search/?q=alpha');
+  assert.strictEqual(page.location.pathname, '/app/transcripts/');
+  await page.history.back();
+  await page.clock.advance(50);
+  assert.strictEqual(page.location.pathname, '/app/search/');
+  if (!openDay.settled) dayAnswer('20260101')(openDay);
+  await page.clock.advance(400);
+  frames.frame();
+  await page.clock.advance(400);
+  assert.ok(page.view('search'), 'back lands on search');
+  assert.strictEqual(page.location.pathname, '/app/search/');
+  assert.strictEqual(page.window.__views.transcripts.mounts, 0);
+  assert.ok(!page.history.entries.some((entry) => entry.url.includes('/app/transcripts/2026')));
+  assert.deepStrictEqual(seen, [['search', '/app/search/']]);
+});
+
+asyncCase('superseded: across quick moves, back presses and open-day reads, every mount runs at its own address', async () => {
+  const page = makePage({ transitions: true });
+  page.answerAll();
+  answerDays(page);
+  answerBody(page);
+  answerSearch(page);
+  const openDays = [];
+  page.server.answers.set('/app/transcripts/api/open-day', (call) => { openDays.push(call); });
+  await page.boot('home');
+  const frames = heldTransitions(page);
+  const seen = recordMounts(page);
+  const answerOpenDays = () => openDays.filter((call) => !call.settled).forEach((call) => dayAnswer('20260101')(call));
+  const steps = [
+    () => page.click('/app/transcripts/'),
+    () => page.click('/app/body/'),
+    () => frames.frame(),
+    () => page.click('/app/search/'),
+    () => page.click('/app/transcripts/'),
+    () => page.history.back(),
+    answerOpenDays,
+    () => frames.frame(),
+    () => page.click('/app/more/'),
+    () => page.click('/app/transcripts/'),
+    answerOpenDays,
+    () => page.history.back(),
+    () => frames.frame(),
+    () => page.history.forward(),
+    answerOpenDays,
+    () => frames.frame(),
+  ];
+  for (const step of steps) {
+    await step();
+    await page.clock.advance(120);
+  }
+  for (let i = 0; i < 4; i += 1) {
+    answerOpenDays();
+    frames.frame();
+    await page.clock.advance(400);
+  }
+  assert.ok(seen.length >= 3, 'views mounted along the way');
+  assertOwnAddresses(seen);
+  const now = page.window.SolViews.current();
+  assert.ok(now && page.location.pathname.startsWith(`/app/${now.name}/`), 'the view on the page is the address\'s');
+  assert.deepStrictEqual(page.record.assigned, []);
+});
+
+asyncCase('failed move: an open-day read that fails loads the page, and a failed fragment leaves the new view\'s error state', async () => {
+  // The day can't be read: the leaving view no longer owns the address, so
+  // the page loads it.
+  {
+    const page = makePage();
+    page.answerAll();
+    answerSearch(page);
+    page.server.answers.set('/app/transcripts/api/open-day', (call) => call.respond(500, 'no'));
+    await page.boot('home');
+    page.click('/app/search/');
+    await page.clock.advance(400);
+    page.click('/app/transcripts/');
+    await page.clock.advance(15000);
+    assert.deepStrictEqual(page.record.assigned, ['/app/transcripts/'], 'the address is loaded as a page');
+    assert.strictEqual(page.window.__views.transcripts.mounts, 0);
+  }
+  // The fragment can't be read: the error state is transcripts', at its
+  // address, with nothing of search still working behind it, and a reconnect
+  // reads transcripts again.
+  {
+    const page = makePage();
+    page.answerAll();
+    answerDays(page);
+    answerSearch(page);
+    page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+    const fragment = heldFragment(page, '/app/transcripts/workspace');
+    await page.boot('home');
+    page.click('/app/search/');
+    await page.clock.advance(400);
+    const before = page.window.__views.search.disposes;
+    page.click('/app/transcripts/');
+    await page.clock.advance(50);
+    // The early read and its ordinary retry both fail.
+    for (let i = 0; i < 3 && !page.main().querySelector('.surface-state-retry'); i += 1) {
+      fragment.calls.filter((call) => !call.settled).forEach((call) => call.respond(500, 'no'));
+      await page.clock.advance(4000);
+    }
+    assert.strictEqual(page.location.pathname, '/app/transcripts/20260101');
+    assert.ok(page.main().querySelector('.surface-state-retry'), 'the error state, with try again');
+    assert.strictEqual(page.window.SolViews.current(), null, 'search is no longer mounted');
+    assert.strictEqual(page.window.__views.search.disposes, before + 1);
+    page.setConnected(false);
+    page.setConnected(true);
+    await page.clock.advance(50);
+    fragment.release();
+    await page.clock.advance(400);
+    assert.ok(page.view('transcripts'), 'the reconnect read transcripts again');
+    assert.deepStrictEqual(page.record.assigned, []);
+  }
+});
+
 asyncCase('store: the last failure per key is plain fields, never an error object', async () => {
   const page = makePage();
   page.answerAll();
