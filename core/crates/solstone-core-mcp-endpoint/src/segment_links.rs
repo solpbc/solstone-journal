@@ -40,6 +40,8 @@ pub(crate) trait TranscriptPageCheck {
 pub(crate) struct LiveTranscriptPages {
     speakers: Option<Option<solstone_core_transcripts::AgentSpeakers>>,
     possible_names: Arc<ConnectionPossibleNames>,
+    /// What the owner hid of their body data, read once a body window asks.
+    hides: Option<crate::body_source::BodyHides>,
 }
 
 impl LiveTranscriptPages {
@@ -47,6 +49,7 @@ impl LiveTranscriptPages {
         Self {
             speakers: None,
             possible_names,
+            hides: None,
         }
     }
 
@@ -58,6 +61,7 @@ impl LiveTranscriptPages {
         Self {
             speakers: Some(speakers),
             possible_names,
+            hides: None,
         }
     }
 }
@@ -75,11 +79,36 @@ impl TranscriptPageCheck for LiveTranscriptPages {
             .get_or_insert_with(|| solstone_core_talent_runtime::agent_speakers(journal_root))
             .as_ref();
         let possible_names = self.possible_names.labels(segment.path());
-        match solstone_core_transcripts::read_segment_transcript_page(
+        // A link reads as `get_transcript` will: a body window the owner hid
+        // gets none, and one holding a hidden night's rows leaves them out.
+        let left_out = if solstone_core_segment::is_body_only_segment(segment) {
+            let (Ok(identity), Some(day)) = (
+                segment.record_identity(),
+                segment
+                    .path()
+                    .parent()
+                    .and_then(Path::parent)
+                    .and_then(Path::file_name)
+                    .and_then(|day| day.to_str()),
+            ) else {
+                return Ok(None);
+            };
+            let hides = self
+                .hides
+                .get_or_insert_with(|| crate::body_source::BodyHides::read(journal_root));
+            match hides.shown(journal_root, day, identity.stream, segment) {
+                Some(left_out) => left_out,
+                None => return Ok(None),
+            }
+        } else {
+            BTreeSet::new()
+        };
+        match solstone_core_transcripts::read_segment_transcript_page_leaving_out(
             segment,
             None,
             speakers,
             possible_names.as_ref(),
+            &left_out,
         ) {
             Ok(page) if !page.entries.is_empty() => Ok(Some(page.version.fingerprint())),
             Ok(_) => Ok(None),

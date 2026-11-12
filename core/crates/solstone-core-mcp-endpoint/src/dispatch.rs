@@ -2793,6 +2793,8 @@ fn list_transcripts(
     // Each workout counts once, by its id: a workout has a tile every five
     // minutes of its span.
     let mut omitted_workouts = std::collections::BTreeSet::new();
+    // What the owner hid of their body data, read once for the list.
+    let hides = crate::body_source::BodyHides::read(journal_root);
 
     'outer: for day in &days {
         let day_segments =
@@ -2814,6 +2816,12 @@ fn list_transcripts(
             // Body windows are reached by naming their source: hundreds a day would
             // push what the owner said off the page.
             if solstone_core_segment::is_body_only_segment(&segment) {
+                // What the owner hid isn't counted: a hidden day's windows and
+                // workouts, and what a night or workout that started on one
+                // left on a later day.
+                if hides.shown(journal_root, day, &stream, &segment).is_none() {
+                    continue;
+                }
                 // A Strava workout is body data too, but no source lists it:
                 // the list counts it and says where it is found.
                 if crate::body_source::is_left_out_workout(&segment)
@@ -3012,7 +3020,7 @@ fn list_transcripts(
         response_val["unreadable"] = json!(unreadable);
     }
     let other_sources = request.day.as_deref().map_or_else(Vec::new, |day| {
-        crate::body_source::other_sources(journal_root, snapshot, day)
+        crate::body_source::other_sources(journal_root, snapshot, &hides, day)
     });
     if let Some(note) = request.day.as_deref().and_then(|day| {
         crate::body_source::listing_earlier_import_note(journal_root, snapshot, day)
@@ -3077,6 +3085,11 @@ fn get_transcript(
             })
             .filter(|segment| !solstone_core_segment::is_calendar_segment(journal_root, segment))
             .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+    // A body window the owner hid reads as one that isn't there; a later
+    // day's window leaves out what a hidden night left in it.
+    let left_out = crate::body_source::BodyHides::read(journal_root)
+        .shown(journal_root, &reference.day, &reference.stream, &segment)
+        .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
     let probe_path =
         segment_assignment_probe_path(&reference.day, &reference.stream, &reference.segment);
     if !live_allows(
@@ -3139,12 +3152,15 @@ fn get_transcript(
         // while it holds and only for an entity this connection may see.
         let possible_names =
             ConnectionPossibleNames::new(journal_root, snapshot).labels(segment.path());
-        Some(solstone_core_transcripts::read_segment_transcript_page(
-            &segment,
-            continuation.as_ref(),
-            speakers.as_ref(),
-            possible_names.as_ref(),
-        ))
+        Some(
+            solstone_core_transcripts::read_segment_transcript_page_leaving_out(
+                &segment,
+                continuation.as_ref(),
+                speakers.as_ref(),
+                possible_names.as_ref(),
+                &left_out,
+            ),
+        )
     } else {
         None
     };
