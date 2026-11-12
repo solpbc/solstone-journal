@@ -121,25 +121,31 @@
       if (place) clone.setAttribute('data-view-code', '');
       if (clone.src) {
         clone.async = false;
-        const timer = setTimeout(() => {
-          reject(new Error(`Script did not load within ${SCRIPT_LOAD_BOUND_MS} ms: ${clone.src}`));
-        }, SCRIPT_LOAD_BOUND_MS);
-        clone.addEventListener('load', () => {
+        // The script stays in the page, so whichever way it ends, it keeps no
+        // listener: one left behind would keep the markup it was read from.
+        const settle = () => {
           clearTimeout(timer);
+          clone.removeEventListener('load', onLoad);
+          clone.removeEventListener('error', onError);
+        };
+        const onLoad = () => {
+          settle();
           chain.ran = true;
           resolve();
-        }, { once: true });
-        clone.addEventListener(
-          'error',
-          () => {
-            clearTimeout(timer);
-            // A view script from an older build: reload once for the new one.
-            // A second failure stays on this view's error state.
-            window.recoverFromStaleAsset?.(clone.src);
-            reject(new Error(`Failed to load script ${clone.src}`));
-          },
-          { once: true }
-        );
+        };
+        const onError = () => {
+          settle();
+          // A view script from an older build: reload once for the new one.
+          // A second failure stays on this view's error state.
+          window.recoverFromStaleAsset?.(clone.src);
+          reject(new Error(`Failed to load script ${clone.src}`));
+        };
+        const timer = setTimeout(() => {
+          settle();
+          reject(new Error(`Script did not load within ${SCRIPT_LOAD_BOUND_MS} ms: ${clone.src}`));
+        }, SCRIPT_LOAD_BOUND_MS);
+        clone.addEventListener('load', onLoad);
+        clone.addEventListener('error', onError);
         at.replaceWith(clone);
         return;
       }

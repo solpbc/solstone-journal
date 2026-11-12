@@ -2660,6 +2660,22 @@ asyncCase('store: the last failure per key is plain fields, never an error objec
   assert.strictEqual(page.window.SolStore.last('/app/home/api/never').error.name, 'AbortError');
 });
 
+asyncCase('scripts: a view script that has loaded keeps no listener, so it keeps nothing it was read from', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+  await page.boot('home');
+  page.click('/app/transcripts/');
+  await page.clock.advance(400);
+  assert.ok(page.view('transcripts'));
+  const scripts = page.document.head.children.filter((node) => node.tagName === 'SCRIPT' && node.hasAttribute('src'));
+  assert.ok(scripts.length >= 2, 'home\'s and transcripts\' code stay in the head');
+  for (const node of scripts) {
+    assert.strictEqual(node.listenerCount(), 0, `${node.getAttribute('src')} keeps no listener`);
+  }
+});
+
 asyncCase('leaks: a hundred switches and fifty day steps leave the page as the first switch did', async () => {
   const page = makePage();
   page.answerAll();
