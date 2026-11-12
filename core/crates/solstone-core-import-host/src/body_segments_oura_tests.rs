@@ -2387,4 +2387,12 @@ fn a_hidden_day_stays_hidden_through_an_oura_sync_and_comes_back_when_unhidden()
     let back = found(root, "sleep");
     println!("unhid 20260105; search \"sleep\": {back:?}");
     assert_eq!(back.len(), 2, "{back:?}");
+
+    // While the hidden days can't be read, search returns no body data, even
+    // what was indexed for a day nobody hid.
+    let store = solstone_core_format::content::body_hidden_days::hidden_days_path(root);
+    fs::write(&store, b"{ damaged").unwrap();
+    let damaged = found(root, "sleep");
+    println!("store damaged; search \"sleep\": {damaged:?}");
+    assert!(damaged.is_empty(), "{damaged:?}");
 }

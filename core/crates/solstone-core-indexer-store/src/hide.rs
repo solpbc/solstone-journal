@@ -149,6 +149,11 @@ impl HideCache {
             }
             // Chronicle files are named from the day, without `chronicle/`.
             [day, stream, _, file] if is_body_file(stream, file) => self.body_day(journal, day),
+            // What thinking once wrote under a body window or a Strava workout's
+            // piece goes with its day too.
+            [day, stream, _, "talents", ..] if is_body_stream(stream) && is_day(day) => {
+                self.body_day(journal, day)
+            }
             [day, BODY_DOCUMENT] if is_day(day) => self.body_day(journal, day),
             ["reflections", "weekly", file] => match file.strip_suffix(".md") {
                 Some(start) => self.week_page(journal, start),
@@ -226,6 +231,11 @@ impl HideCache {
             )),
         }
     }
+}
+
+/// A stream that holds body windows or Strava workouts.
+fn is_body_stream(stream: &str) -> bool {
+    BODY_RECORD_STREAMS.contains(&stream) || stream == STRAVA_STREAM
 }
 
 /// A body window's records or a Strava workout's piece.

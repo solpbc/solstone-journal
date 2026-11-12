@@ -215,10 +215,11 @@ impl BodyHides {
         rows.iter().any(|row| rule.hidden(row, hidden))
     }
 
-    /// What of a body-only segment may be read: `None` when nothing may (a
-    /// hidden day's, a window holding only rows of a hidden night, a piece of
-    /// a workout that started on a hidden day), else the rows to leave out. A
-    /// segment that isn't body data alone is read whole.
+    /// What of a segment holding body data may be read: `None` when nothing
+    /// may (a hidden day's, a window holding only rows of a hidden night, a
+    /// piece of a workout that started on a hidden day), else the rows to leave
+    /// out. A body file decides it whatever else sits beside it; a segment with
+    /// none is read whole.
     pub(crate) fn shown(
         &self,
         journal_root: &Path,
@@ -226,7 +227,9 @@ impl BodyHides {
         stream: &str,
         segment: &Segment,
     ) -> Option<BTreeSet<String>> {
-        if !solstone_core_segment::is_body_only_segment(segment) {
+        if !segment.path().join(BODY_RECORDS_FILE).is_file()
+            && !segment.path().join(STRAVA_TILE_FILE).is_file()
+        {
             return Some(BTreeSet::new());
         }
         if segment.path().join(STRAVA_TILE_FILE).is_file() {
@@ -1266,4 +1269,18 @@ mod tests {
             vec![json!({"from": "06:00", "to": "08:00"})]
         );
     }
+}
+
+/// Whether an activity line thinking once wrote for a Strava workout is a hidden
+/// day's: it goes with its file's day, and while the hidden days can't be read
+/// no connection reads one.
+pub(crate) fn strava_line_hidden(
+    journal_root: &Path,
+    day: &str,
+    record: &serde_json::Map<String, serde_json::Value>,
+) -> bool {
+    solstone_core_format::content::is_strava_reading(record)
+        && solstone_core_format::content::body_hidden_days::read_hidden_days(journal_root)
+            .hides(day)
+            != Some(false)
 }

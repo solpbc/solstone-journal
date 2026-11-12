@@ -766,7 +766,10 @@ pub(crate) fn execute_list(
                     .get("hidden")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
-                if hidden || solstone_core_facets::is_retired_plan(&record) {
+                if hidden
+                    || solstone_core_facets::is_retired_plan(&record)
+                    || crate::body_source::strava_line_hidden(journal_root, &day, &record)
+                {
                     continue;
                 }
                 if solstone_core_facets::is_body_record(&record) {
@@ -1159,6 +1162,9 @@ pub(crate) fn execute_get_sources(
     else {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     };
+    if crate::body_source::strava_line_hidden(journal_root, &activity_ref.day, &record) {
+        return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+    }
 
     let segments = record.get("segments").and_then(Value::as_array);
     let Some(segment_vals) = segments else {

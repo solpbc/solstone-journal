@@ -2147,6 +2147,7 @@ fn fetch(
             if record
                 .get("hidden")
                 .is_some_and(solstone_core_facets::activity_value_truthy)
+                || crate::body_source::strava_line_hidden(journal_root, &act_ref.day, &record)
             {
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             }

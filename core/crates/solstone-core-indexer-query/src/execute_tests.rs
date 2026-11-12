@@ -3966,6 +3966,7 @@ fn finding_a_reindexed_entry_never_reads_all_of_chunks() {
     drop(connection);
     let conn = read_only(&root);
     crate::execute::register_today_anywhere(&conn).expect("today");
+    crate::execute::register_body_data_open(&conn, None).expect("body data");
     let whole_scan = |sql: &str| {
         let mut plan = conn
             .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))

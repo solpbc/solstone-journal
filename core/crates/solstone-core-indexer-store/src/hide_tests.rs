@@ -1205,3 +1205,35 @@ fn a_hidden_days_activity_file_of_only_body_entries_is_current_once_indexed() {
     let full = journal.scan(true);
     assert_eq!(full.indexed, 0, "{full:?}");
 }
+
+#[test]
+fn what_thinking_once_wrote_under_a_hidden_days_workout_leaves_search() {
+    let journal = Journal::new("hidden-body-day-talents");
+    let rel = "20260304/import.strava/080000_300/talents/activity.md";
+    journal.write(
+        &format!("chronicle/{rel}"),
+        "# A run\n\nplovertalent along the river\n",
+    );
+    journal.write(
+        "chronicle/20260303/import.strava/080000_300/talents/activity.md",
+        "# A run\n\nplovertalent the day before\n",
+    );
+    journal.scan(true);
+    assert_eq!(journal.search("plovertalent").len(), 2);
+    journal.json(HIDDEN_DAYS, json!({"days": ["20260304"]}));
+    crate::todo::enqueue_path(
+        journal.path(),
+        &journal.path().join("chronicle/20260304/import.strava"),
+    )
+    .unwrap();
+    crate::todo::drain_now(journal.path()).unwrap();
+    let left: Vec<String> = journal
+        .search("plovertalent")
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    assert_eq!(
+        left,
+        ["20260303/import.strava/080000_300/talents/activity.md"]
+    );
+}

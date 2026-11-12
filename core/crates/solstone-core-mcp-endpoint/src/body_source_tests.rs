@@ -2577,6 +2577,37 @@ fn a_hidden_day_lists_and_reads_no_body_window_and_its_night_leaves_the_next_mor
         "get_transcript",
         json!({"reference": on_day})
     ));
+    // A stray file beside a window's records doesn't open it.
+    for stream in ["import.apple_health", "import.strava"] {
+        for window in fs::read_dir(root.join("chronicle").join(DAY).join(stream))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|entry| entry.path().is_dir())
+        {
+            fs::write(window.path().join("copy (1).txt"), "a sync client's copy").unwrap();
+        }
+    }
+    assert!(probe_fails(
+        root,
+        "get_transcript",
+        json!({"reference": on_day})
+    ));
+    assert!(
+        source_list(root, DAY)["transcripts"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    for stream in ["import.apple_health", "import.strava"] {
+        for window in fs::read_dir(root.join("chronicle").join(DAY).join(stream))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let _ = fs::remove_file(window.path().join("copy (1).txt"));
+        }
+    }
     // Counts leave it out: its source and its workout.
     let day = call(root, "list_transcripts", json!({"day": DAY}));
     assert!(day.get("other_sources").is_none(), "{day}");
@@ -2798,4 +2829,46 @@ fn a_group_whose_day_is_hidden_is_found_by_no_group_reader() {
     )
     .unwrap();
     assert_eq!(owner.values().flatten().count(), 1);
+}
+
+#[test]
+fn a_strava_line_on_a_hidden_day_is_listed_by_no_connection() {
+    let journal = self::journal();
+    let root = journal.path();
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["facets".to_owned()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    let line = json!({"id": "exercise_1", "activity": "exercise", "title": "Morning Run",
+        "stream": "import.strava", "segments": ["070000_300"], "created_at": 1});
+    let other = json!({"id": "meeting_1", "activity": "meeting", "title": "Standup",
+        "segments": ["090000_300"], "created_at": 2});
+    let path = root.join(format!("facets/health/activities/{DAY}.jsonl"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, format!("{line}\n{other}\n")).unwrap();
+    let titles = || {
+        let mut titles: Vec<String> =
+            call(root, "list_activities", json!({"day": DAY}))["activities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|row| row["title"].as_str().map(str::to_owned))
+                .collect();
+        titles.sort();
+        titles
+    };
+    assert_eq!(titles(), ["Morning Run", "Standup"]);
+    hide_days(root, &[DAY]);
+    assert_eq!(titles(), ["Standup"], "the hidden day's workout line goes");
+    damage_hidden_days(root);
+    assert_eq!(
+        titles(),
+        ["Standup"],
+        "and every one while the days can't be read"
+    );
 }

@@ -235,6 +235,7 @@ fn project_sunday(
             for (row, rec_id) in rows.into_iter().zip(line_identities) {
                 if row.get("hidden").and_then(Value::as_bool).unwrap_or(false)
                     || solstone_core_facets::is_retired_plan(&row)
+                    || crate::body_source::strava_line_hidden(journal, &day_str, &row)
                     || row
                         .get("id")
                         .and_then(Value::as_str)

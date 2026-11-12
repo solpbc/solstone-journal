@@ -718,7 +718,43 @@ impl QueryConnection {
 }
 
 fn visible_rows(clause: &str) -> String {
-    format!("{clause} AND NOT ({AUTHORED_CHAT_PATH_PREDICATE}) AND {NOT_AFTER_TODAY}")
+    format!(
+        "{clause} AND NOT ({AUTHORED_CHAT_PATH_PREDICATE}) AND {NOT_AFTER_TODAY} AND {BODY_DATA_ROWS_OPEN}"
+    )
+}
+
+/// While the owner's hidden body days can't be read, no body window's,
+/// Strava workout's or body document's entry is returned: what is already in
+/// the index may be a day the owner hid. Every other row passes untouched.
+const BODY_DATA_ROWS_OPEN: &str = "(solstone_body_data_open() \
+     OR NOT (path GLOB '*/import.apple_health/*' OR path GLOB '*/import.oura/*' \
+     OR path GLOB '*/import.strava/*' OR path GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/body.md'))";
+
+/// Register `solstone_body_data_open()`: whether the owner's hidden body days
+/// can be read, asked once when the reader opens.
+pub(crate) fn register_body_data_open(
+    connection: &Connection,
+    journal: Option<&Path>,
+) -> rusqlite::Result<()> {
+    let open = body_data_open(journal);
+    connection.create_scalar_function(
+        "solstone_body_data_open",
+        0,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_INNOCUOUS,
+        move |_| Ok(open),
+    )
+}
+
+/// Whether the owner's hidden body days can be read; a journal unknown to the
+/// reader has none.
+fn body_data_open(journal: Option<&Path>) -> bool {
+    journal.is_none_or(|journal| {
+        solstone_core_format::content::body_hidden_days::read_hidden_days(journal)
+            .days()
+            .is_some()
+    })
 }
 
 /// The journal returns nothing dated after today. A day has arrived once it
@@ -895,6 +931,9 @@ fn register_body_entry_admission(
     journal: Option<PathBuf>,
     state: Arc<Mutex<BodyEntryState>>,
 ) -> rusqlite::Result<()> {
+    // While the hidden body days can't be read, no body record's entry is
+    // returned to anyone.
+    let body_open = body_data_open(journal.as_deref());
     connection.create_scalar_function(
         BODY_ENTRY_ADMISSION_FUNCTION,
         3,
@@ -967,6 +1006,7 @@ fn register_body_entry_admission(
             let entries = state.entries.clone();
             drop(state);
             Ok(match entries {
+                _ if !body_open => false,
                 BodyEntries::None => false,
                 BodyEntries::All => true,
                 BodyEntries::Admitted(admission) => admission(path, idx),
@@ -1502,6 +1542,8 @@ impl QueryConnection {
         )
         .map_err(|error| classify_sql_error(path.clone(), error))?;
         register_today_anywhere(&connection)
+            .map_err(|error| classify_sql_error(path.clone(), error))?;
+        register_body_data_open(&connection, path.parent().and_then(Path::parent))
             .map_err(|error| classify_sql_error(path.clone(), error))?;
         Ok(Self {
             connection,

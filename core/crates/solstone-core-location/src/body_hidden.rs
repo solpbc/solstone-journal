@@ -16,7 +16,8 @@ use std::fs;
 use std::path::Path;
 
 use solstone_core_format::content::body_hidden_days::{
-    HiddenDays, hidden_days_bytes, hidden_days_path, is_day, read_hidden_days,
+    HiddenDays, MAX_HIDDEN_DAYS_BYTES, hidden_days_bytes, hidden_days_path, is_day,
+    read_hidden_days,
 };
 use solstone_core_format::content::body_records::BODY_RECORD_STREAMS;
 use solstone_core_format::content::strava_body::STRAVA_STREAM;
@@ -122,9 +123,17 @@ fn update(
         let before = held.clone();
         change(&mut held);
         if held != before {
+            let bytes = hidden_days_bytes(&held);
+            // A store its reader would refuse would hide every day from search
+            // and connections and refuse every later change.
+            if bytes.len() > MAX_HIDDEN_DAYS_BYTES {
+                return Err(BodyHiddenError::Write(
+                    "too many days would be hidden to keep".to_owned(),
+                ));
+            }
             solstone_core_journal_io::atomic_replace(
                 &path,
-                &hidden_days_bytes(&held),
+                &bytes,
                 solstone_core_journal_io::AtomicWriteOptions::default(),
             )
             .map_err(|error| BodyHiddenError::Write(error.to_string()))?;
