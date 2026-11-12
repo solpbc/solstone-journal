@@ -2267,19 +2267,18 @@ fn a_document_oura_moves_more_than_a_day_stays_where_it_was_and_isnt_called_the_
     let t1 = placed(root, "t1");
     assert_eq!(t1.len(), 1, "{}", outcome.summary);
     assert_eq!(t1[0].0.as_str(), "20260105");
+    // Counted as Oura's move, not the owner's delete.
     assert!(
-        outcome.summary.contains("by more than a day"),
-        "{}",
-        outcome.summary
-    );
-    assert!(
-        !outcome.summary.contains("because you deleted"),
-        "{}",
-        outcome.summary
+        outcome
+            .holes
+            .iter()
+            .any(|hole| hole.reason == HoleReason::MovedFar),
+        "{:?}",
+        outcome.holes
     );
 
     // The twin: once the owner deletes it where it was, the same move is their
-    // delete, and stays out.
+    // delete, and stays out; a delete is no hole.
     delete(root, "20260105", "090000_3600");
     let again = run(
         root,
@@ -2288,12 +2287,5 @@ fn a_document_oura_moves_more_than_a_day_stays_where_it_was_and_isnt_called_the_
         None,
     );
     assert!(placed(root, "t1").is_empty(), "{}", again.summary);
-    assert!(
-        again
-            .summary
-            .contains("1 entry wasn't added, because you deleted"),
-        "{}",
-        again.summary
-    );
-    assert!(!again.summary.contains("by more than a day"));
+    assert!(again.holes.is_empty(), "{:?}", again.holes);
 }

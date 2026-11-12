@@ -18,6 +18,7 @@ use chrono::{DateTime, FixedOffset, NaiveDate, Timelike};
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
 use solstone_core_facets::{activity_field_held, is_body_record, update_activity_record_with};
+use solstone_core_format::content::body_hidden_days::{HiddenDays, read_hidden_days};
 use solstone_core_format::content::body_records::{
     BODY_RECORDS_FILE, BodyRow, RowKind, copy_rank, decode_rows, parse_source_time, user_entered,
 };
@@ -846,8 +847,12 @@ pub struct Face {
     pub anchor: ComposedBody,
     /// Every member, the anchor included, earliest first.
     pub members: Vec<ComposedBody>,
-    /// Hidden when any member is.
+    /// Hidden when the owner hid a member or the day it shows under.
     pub hidden: bool,
+    /// The owner hid the day of body data it shows under.
+    pub hidden_day: bool,
+    /// The owner hid a member itself.
+    pub hidden_self: bool,
 }
 
 /// How many days back a group's members can be filed, and forward.
@@ -925,8 +930,12 @@ pub fn body_faces_range(
 pub struct Group {
     /// The id of the record it shows as.
     pub anchor_id: String,
-    /// Hidden when any member is.
+    /// Hidden when the owner hid a member or the day it shows under.
     pub hidden: bool,
+    /// The owner hid the day of body data it shows under.
+    pub hidden_day: bool,
+    /// The owner hid a member itself.
+    pub hidden_self: bool,
     at: usize,
     order: Vec<usize>,
 }
@@ -963,6 +972,8 @@ impl Groups {
             anchor,
             members,
             hidden: group.hidden,
+            hidden_day: group.hidden_day,
+            hidden_self: group.hidden_self,
         }
     }
 
@@ -1028,14 +1039,24 @@ pub fn body_groups_range(
         every.extend(stored_body_records(journal, facet, day).unwrap_or_default());
     }
     // Hidden is the owner's word on the group as the owner sees it: a member
-    // in one with a hidden account hides for every reader, whatever else that
-    // reader may read.
+    // in one with a hidden account, or shown under a day of body data the owner
+    // hid, hides for every reader, whatever else that reader may read. While
+    // the hidden days can't be read, the owner sees everything and a
+    // connection sees none of it.
+    let hidden_days = read_hidden_days(journal);
     let mut hides = BTreeSet::new();
-    if readable.is_some() {
-        for group in group_partition(&every) {
-            if group.iter().any(|&index| every[index].hidden) {
-                hides.extend(group.iter().map(|&index| every[index].id.clone()));
-            }
+    let mut day_hides = BTreeSet::new();
+    for group in group_partition(&every) {
+        if readable.is_some() && group.iter().any(|&index| every[index].hidden) {
+            hides.extend(group.iter().map(|&index| every[index].id.clone()));
+        }
+        let day = &every[anchor(&every, &group)].day;
+        let day_hidden = match &hidden_days {
+            HiddenDays::Days(days) => days.contains(day),
+            HiddenDays::Unreadable => readable.is_some(),
+        };
+        if day_hidden {
+            day_hides.extend(group.iter().map(|&index| every[index].id.clone()));
         }
     }
     for stored in every {
@@ -1050,9 +1071,13 @@ pub fn body_groups_range(
         if day.as_str() < from || day.as_str() > to {
             continue;
         }
-        let hidden = group
+        let hidden_self = group
             .iter()
             .any(|&index| records[index].hidden || hides.contains(&records[index].id));
+        let hidden_day = group
+            .iter()
+            .any(|&index| day_hides.contains(&records[index].id));
+        let hidden = hidden_self || hidden_day;
         if hidden && !include_hidden {
             continue;
         }
@@ -1068,6 +1093,8 @@ pub fn body_groups_range(
         groups.by_day.entry(day).or_default().push(Group {
             anchor_id: records[at].id.clone(),
             hidden,
+            hidden_day,
+            hidden_self,
             at,
             order,
         });
@@ -1145,6 +1172,14 @@ pub fn day_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
             .any(|facet| muted.contains(facet))
         })
     };
+    // The owner's home: while the hidden days can't be read, everything shows.
+    let hidden_days = read_hidden_days(journal)
+        .days()
+        .cloned()
+        .unwrap_or_default();
+    if hidden_days.contains(day) {
+        return Ok(Vec::new());
+    }
     let mut faces = Vec::new();
     for facet in &facets {
         if muted.contains(facet) {
@@ -1165,6 +1200,7 @@ pub fn day_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
             };
             if owner_moment(journal, start).map(|(on, _)| on).as_deref() != Some(day)
                 || group.iter().any(|&index| records[index].hidden)
+                || hidden_days.contains(&records[at].day)
             {
                 continue;
             }
@@ -1202,6 +1238,8 @@ pub fn day_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
                 anchor,
                 members,
                 hidden: false,
+                hidden_day: false,
+                hidden_self: false,
             });
         }
     }
@@ -1410,6 +1448,8 @@ pub fn face_json(face: &Face) -> Value {
         Value::String(face.anchor.activity.clone()),
     );
     item.insert("hidden".to_owned(), Value::Bool(face.hidden));
+    item.insert("hidden_day".to_owned(), Value::Bool(face.hidden_day));
+    item.insert("hidden_self".to_owned(), Value::Bool(face.hidden_self));
     for (field, value) in &face.anchor.owner {
         item.insert(field.clone(), value.clone());
     }

@@ -2877,8 +2877,9 @@ const UNDECIDED_MTIME: i64 = -1;
 #[derive(Debug, Default)]
 struct FileOutcome {
     warnings: Vec<String>,
-    /// The file was left with no rows and not current, because what hides
-    /// part of it couldn't be read. Says what couldn't be read.
+    /// The file was left not current, with no rows or only the rows a hide
+    /// could decide, because what hides part of it couldn't be read. Says what
+    /// couldn't be read.
     undecidable: Option<String>,
 }
 
@@ -3002,9 +3003,13 @@ fn index_file(
         )
         .map_err(|error| format!("memory original insert failed for {rel}: {error}"))?;
     }
+    // Kept rows stay; what couldn't be decided is tried again on the next scan.
+    let undecidable = hide
+        .retry()
+        .map(|cause| format!("{rel} is partly left out of search for now: {cause}"));
     Ok(FileOutcome {
         warnings,
-        undecidable: None,
+        undecidable,
     })
 }
 

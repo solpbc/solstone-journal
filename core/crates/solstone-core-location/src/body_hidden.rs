@@ -147,10 +147,20 @@ fn queue_day(journal: &Path, day: &str) -> bool {
     let mut queued = true;
     let chronicle = journal.join("chronicle").join(day);
     let streams = BODY_RECORD_STREAMS.iter().copied().chain([STRAVA_STREAM]);
+    // Each facet's activities that day: a body record's entry goes with it.
+    let activities: Vec<_> = fs::read_dir(journal.join("facets"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
+        .map(|entry| entry.path().join("activities").join(format!("{day}.jsonl")))
+        .filter(|path| path.is_file())
+        .collect();
     let paths = streams
         .map(|stream| chronicle.join(stream))
         .filter(|path| path.is_dir())
-        .chain([chronicle.join(BODY_DOCUMENT)]);
+        .chain([chronicle.join(BODY_DOCUMENT)])
+        .chain(activities);
     for path in paths {
         if let Err(error) = solstone_core_indexer_store::todo::enqueue_path(journal, &path) {
             queued = false;

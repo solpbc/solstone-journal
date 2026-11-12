@@ -2154,3 +2154,66 @@ fn an_open_move_shows_a_record_from_one_side_only() {
     .unwrap();
     assert_eq!(stored_body_records(root, "body", DAY).unwrap().len(), 1);
 }
+
+#[test]
+fn a_group_goes_with_its_anchors_day_for_every_reader() {
+    let journal = journal();
+    let root = journal.path();
+    // One night from two recorders across midnight: the earlier, on DAY, anchors it.
+    let watch = workout_row(
+        "w",
+        "Synthetic Watch",
+        "2026-10-10 23:55:00 -0600",
+        "2026-10-11 06:55:00 -0600",
+    );
+    let ring = workout_row(
+        "r",
+        "Synthetic Ring",
+        "2026-10-11 00:05:00 -0600",
+        "2026-10-11 07:00:00 -0600",
+    );
+    window(root, DAY, "235500_300", std::slice::from_ref(&watch));
+    window(root, NEXT, "000500_300", std::slice::from_ref(&ring));
+    workout_record(root, DAY, &watch, json!({}));
+    workout_record(root, NEXT, &ring, json!({}));
+    let hide = |day: &str, hidden: bool| {
+        crate::body_hidden::set_body_days_hidden(
+            root,
+            &std::collections::BTreeSet::from([day.to_owned()]),
+            hidden,
+        )
+        .unwrap();
+    };
+    let shown = |readable: &dyn Fn(&str, &str, Option<&str>) -> bool| {
+        body_faces_range(root, "body", DAY, NEXT, Some(readable), false)
+            .unwrap()
+            .into_values()
+            .flatten()
+            .count()
+    };
+    assert_eq!(shown(&everyone), 1);
+
+    hide(DAY, true);
+    assert_eq!(shown(&everyone), 0);
+    // A connection that may read only the ring's window still can't see it: the
+    // anchor is the owner's, not what this reader can read.
+    let only_ring = |_: &str, _: &str, window: Option<&str>| window == Some("000500_300");
+    assert_eq!(shown(&only_ring), 0);
+    // The owner's view marks it hidden by its day, not by its own hide.
+    let owner = body_faces_range(root, "body", DAY, NEXT, None, true).unwrap();
+    let face = owner.values().flatten().next().unwrap();
+    assert!(face.hidden && face.hidden_day && !face.hidden_self);
+
+    // Hiding the next day instead leaves it.
+    hide(DAY, false);
+    hide(NEXT, true);
+    assert_eq!(shown(&everyone), 1);
+    hide(NEXT, false);
+
+    // A store that can't be read: connections see nothing, the owner everything.
+    let path = solstone_core_format::content::body_hidden_days::hidden_days_path(root);
+    fs::write(&path, b"{ damaged").unwrap();
+    assert_eq!(shown(&everyone), 0);
+    let owner = body_faces_range(root, "body", DAY, NEXT, None, false).unwrap();
+    assert_eq!(owner.values().flatten().count(), 1);
+}

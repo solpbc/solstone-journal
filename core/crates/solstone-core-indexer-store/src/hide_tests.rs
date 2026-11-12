@@ -1132,3 +1132,48 @@ fn body_files_wait_while_the_hidden_days_cant_be_read_and_other_files_dont() {
     journal.scan(false);
     assert_eq!(journal.search("wrenneedle").len(), 4);
 }
+
+#[test]
+fn a_hidden_days_body_entries_leave_its_activity_file_and_ordinary_ones_stay() {
+    let journal = Journal::new("hidden-body-day-activities");
+    let strava =
+        json!({"id": "s", "title": "sternneedle", "stream": "import.strava", "created_at": 1});
+    journal.lines(
+        ACTIVITIES,
+        &[
+            activity("a", "alphaneedle", false),
+            strava,
+            body_record("e", "echoneedle"),
+        ],
+    );
+    journal.scan(true);
+    let echo = journal.search("echoneedle");
+    assert_eq!(echo.len(), 1);
+    assert_eq!(journal.search("sternneedle").len(), 1);
+
+    journal.json(HIDDEN_DAYS, json!({"days": ["20260304"]}));
+    crate::todo::enqueue_path(journal.path(), &journal.path().join(ACTIVITIES)).unwrap();
+    crate::todo::drain_now(journal.path()).unwrap();
+    assert!(journal.search("echoneedle").is_empty());
+    assert!(journal.search("sternneedle").is_empty());
+    // The ordinary activity keeps its entry, at its position.
+    assert_eq!(journal.search("alphaneedle"), [(ACTIVITIES.to_owned(), 0)]);
+    assert!(
+        journal
+            .stored_mtime(ACTIVITIES)
+            .is_some_and(|mtime| mtime > 0)
+    );
+
+    // Can't tell which days are hidden: the body entry stays out, the ordinary
+    // one stays in, and the file is tried again.
+    journal.write(HIDDEN_DAYS, "{ damaged");
+    journal.rescan(ACTIVITIES);
+    assert!(journal.search("echoneedle").is_empty());
+    assert_eq!(journal.search("alphaneedle").len(), 1);
+    assert_eq!(journal.stored_mtime(ACTIVITIES), Some(-1));
+
+    // Unhidden, the entry comes back where it was.
+    journal.json(HIDDEN_DAYS, json!({"days": []}));
+    journal.scan(false);
+    assert_eq!(journal.search("echoneedle"), echo);
+}

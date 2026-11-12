@@ -43,6 +43,10 @@ pub(crate) enum FileHide {
     Index,
     /// The detected rows whose names the facet doesn't hide.
     DetectedNames(Rc<HiddenKeys>),
+    /// Every entry but a body record's or a Strava workout's: the file's
+    /// day of body data is hidden, or which days are can't be read, which
+    /// says why the file is tried again.
+    BodyEntriesOut(Option<String>),
     /// Nothing: the whole file is hidden.
     Skip,
     /// Nothing for now: what is hidden can't be read. Says which store.
@@ -63,7 +67,19 @@ impl FileHide {
                 .and_then(|source| source.get("name"))
                 .and_then(Value::as_str)
                 .is_some_and(|name| keys.is_hidden(name)),
+            Self::BodyEntriesOut(_) => !chunk.source.as_ref().is_some_and(|source| {
+                source.get("source").and_then(Value::as_str) == Some("body")
+                    || source.get("stream").and_then(Value::as_str) == Some(STRAVA_STREAM)
+            }),
             Self::Skip | Self::Undecidable(_) => false,
+        }
+    }
+
+    /// Why the file must be indexed again on the next scan, when it must.
+    pub(crate) fn retry(&self) -> Option<&str> {
+        match self {
+            Self::BodyEntriesOut(retry) => retry.as_deref(),
+            _ => None,
         }
     }
 }
@@ -107,6 +123,14 @@ impl HideCache {
                     Err(error) => FileHide::Undecidable(error),
                 }
             }
+            ["facets", _, "activities", file] => match file.strip_suffix(".jsonl") {
+                Some(day) if is_day(day) => match self.body_day(journal, day) {
+                    FileHide::Index => FileHide::Index,
+                    FileHide::Undecidable(cause) => FileHide::BodyEntriesOut(Some(cause)),
+                    _ => FileHide::BodyEntriesOut(None),
+                },
+                _ => FileHide::Index,
+            },
             ["facets", facet, "activities", day, id, file] if file.ends_with(".md") => {
                 let rows = self.day_rows(journal, facet, day);
                 if rows.hidden.contains(*id) {

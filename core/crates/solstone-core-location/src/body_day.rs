@@ -56,27 +56,22 @@ const REACH_DAYS: i64 = 14;
 /// What a day's document depends on: what its segments did, either way, and
 /// which days within an experience's reach the owner hid. Nothing is added
 /// while none is, so a journal with no hidden day builds as it did.
-fn build_token(journal: &Path, day: &str) -> String {
+fn build_token(journal: &Path, day: &str, hidden: &BTreeSet<String>) -> String {
     let markers = format!(
         "{}+{}",
         marker_token(journal, day, HealthMarkerKind::Stream),
         marker_token(journal, day, HealthMarkerKind::Body)
     );
-    match read_hidden_days(journal) {
-        HiddenDays::Unreadable => format!("{markers}+hidden:unreadable"),
-        HiddenDays::Days(hidden) => {
-            let reach = days_reaching(day);
-            let within: Vec<&str> = hidden
-                .iter()
-                .filter(|hidden| reach.contains(*hidden))
-                .map(String::as_str)
-                .collect();
-            if within.is_empty() {
-                markers
-            } else {
-                format!("{markers}+hidden:{}", within.join(","))
-            }
-        }
+    let reach = days_reaching(day);
+    let within: Vec<&str> = hidden
+        .iter()
+        .filter(|hidden| reach.contains(*hidden))
+        .map(String::as_str)
+        .collect();
+    if within.is_empty() {
+        markers
+    } else {
+        format!("{markers}+hidden:{}", within.join(","))
     }
 }
 
@@ -95,16 +90,13 @@ fn days_reaching(day: &str) -> BTreeSet<String> {
 }
 
 /// A day's rows the owner hasn't hidden: none on a hidden day, and on another
-/// day none of a night or workout that started on one. While the hidden days
-/// can't be read every row stays: search leaves the document out meanwhile.
+/// day none of a night or workout that started on one.
 fn shown_rows(
     journal: &Path,
     day: &str,
+    hidden: &BTreeSet<String>,
     mut rows: BTreeMap<String, Vec<BodyRow>>,
 ) -> BTreeMap<String, Vec<BodyRow>> {
-    let HiddenDays::Days(hidden) = read_hidden_days(journal) else {
-        return rows;
-    };
     if hidden.contains(day) {
         return BTreeMap::new();
     }
@@ -114,7 +106,7 @@ fn shown_rows(
     for (source, rows) in &mut rows {
         let zone = solstone_core_journal_config::placed_zone(journal, source);
         let days = RowDays::new(day, zone, rows.iter());
-        rows.retain(|row| !days.hidden(row, &hidden));
+        rows.retain(|row| !days.hidden(row, hidden));
     }
     rows.retain(|_, rows| !rows.is_empty());
     rows
@@ -396,11 +388,15 @@ fn render_document(journal: &Path, day: &str, rows: &BTreeMap<String, Vec<BodyRo
     text
 }
 
-fn rebuild_day(journal: &Path, day: &str) -> Result<(), ProjectionError> {
+fn rebuild_day(
+    journal: &Path,
+    day: &str,
+    hidden: &BTreeSet<String>,
+) -> Result<(), ProjectionError> {
     // The marker is read first: a change that lands while this reads moves it, and
     // the next pass builds again.
-    let source = build_token(journal, day);
-    let rows = shown_rows(journal, day, read_rows(journal, day)?);
+    let source = build_token(journal, day, hidden);
+    let rows = shown_rows(journal, day, hidden, read_rows(journal, day)?);
     let document = document_path(journal, day);
     let record = record_path(journal, day);
     let write_error = |path: &Path, error: std::io::Error| ProjectionError::Write {
@@ -409,7 +405,12 @@ fn rebuild_day(journal: &Path, day: &str) -> Result<(), ProjectionError> {
     };
     if rows.is_empty() {
         let had = crate::reconcile_io::remove(&document).map_err(|e| write_error(&document, e))?;
-        crate::reconcile_io::remove(&record).map_err(|e| write_error(&record, e))?;
+        if hidden.contains(day) {
+            // A hidden day is current with no document: its record says so.
+            write_record(&record, source).map_err(|e| write_error(&record, e))?;
+        } else {
+            crate::reconcile_io::remove(&record).map_err(|e| write_error(&record, e))?;
+        }
         if had {
             let rel = format!("{day}/{BODY_DOCUMENT}");
             crate::reconcile_io::enqueue(journal, Path::new(&rel)).map_err(|error| {
@@ -432,6 +433,10 @@ fn rebuild_day(journal: &Path, day: &str) -> Result<(), ProjectionError> {
         path: document.clone(),
         detail: error.to_string(),
     })?;
+    write_record(&record, source).map_err(|e| write_error(&record, e))
+}
+
+fn write_record(record: &Path, source: String) -> std::io::Result<()> {
     let built = BuildRecord {
         version: RECORD_VERSION,
         source,
@@ -439,7 +444,7 @@ fn rebuild_day(journal: &Path, day: &str) -> Result<(), ProjectionError> {
     };
     let mut bytes = serde_json::to_vec_pretty(&built).unwrap_or_default();
     bytes.push(b'\n');
-    crate::reconcile_io::replace(&record, &bytes).map_err(|e| write_error(&record, e))
+    crate::reconcile_io::replace(record, &bytes)
 }
 
 fn holds_body_stream(journal: &Path, day: &str) -> bool {
@@ -459,13 +464,19 @@ impl BodyDays {
     /// costs their read. Failures are logged here, since this pass runs whatever
     /// happens to location's.
     pub fn reconcile(&mut self, journal: &Path) {
+        // While the owner's hidden days can't be read no day is rendered: the
+        // documents stay as they were until it reads again.
+        let HiddenDays::Days(hidden) = read_hidden_days(journal) else {
+            log::warn!("body documents wait: the hidden body days can't be read");
+            return;
+        };
         let mut days: Vec<String> = day_dirs(journal)
             .map(|days| days.into_keys().collect())
             .unwrap_or_default();
         days.sort_unstable();
         self.seen.retain(|day, _| days.binary_search(day).is_ok());
         for day in days {
-            let token = build_token(journal, &day);
+            let token = build_token(journal, &day, &hidden);
             if self.seen.get(&day) == Some(&token) {
                 continue;
             }
@@ -480,12 +491,13 @@ impl BodyDays {
                         && built.document == DOCUMENT_VERSION
                 });
             let quiet = if current {
-                document.is_file()
+                document.is_file() || hidden.contains(&day)
             } else {
                 !document.exists() && !record.exists() && !holds_body_stream(journal, &day)
             };
             if !quiet
-                && let Err(error) = crate::reconcile_io::transaction(|| rebuild_day(journal, &day))
+                && let Err(error) =
+                    crate::reconcile_io::transaction(|| rebuild_day(journal, &day, &hidden))
             {
                 log::warn!("body document for {day}: {error}");
                 continue;
