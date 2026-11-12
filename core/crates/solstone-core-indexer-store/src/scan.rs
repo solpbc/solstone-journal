@@ -790,7 +790,7 @@ fn scan_journal_pass(
         }
         if family == Family::Activity
             && db_mtimes.get(rel.as_str()) == Some(mtime)
-            && activity_source_current(&conn, rel, path)?
+            && activity_source_current(&conn, rel, path, &hides.decide(journal, rel))?
         {
             continue;
         }
@@ -2819,7 +2819,8 @@ fn ensure_file_current(
     if !matches!(update, FileUpdate::Force)
         && stored_mtime == Some(mtime)
         && activity_membership_current(conn, rel)?
-        && (family != Family::Activity || activity_source_current(conn, rel, path)?)
+        && (family != Family::Activity
+            || activity_source_current(conn, rel, path, &hides.decide(journal, rel))?)
         && (family != Family::AgentMemory
             || (memory_original.is_some() && memory_original_exists(conn, rel)?))
         && (family != Family::ScreenText || screen_text_file_current(conn, journal, rel)?)
@@ -3003,9 +3004,14 @@ fn index_file(
         )
         .map_err(|error| format!("memory original insert failed for {rel}: {error}"))?;
     }
-    // Kept rows stay; what couldn't be decided is tried again on the next scan.
+    // Kept rows stay; a row that couldn't be decided is tried again on the
+    // next scan. A file with no such row is current.
+    let held_back = produced.chunks.iter().any(|chunk| {
+        solstone_core_format::content::indexed(family, chunk) && !hide.keeps(family, chunk)
+    });
     let undecidable = hide
         .retry()
+        .filter(|_| held_back)
         .map(|cause| format!("{rel} is partly left out of search for now: {cause}"));
     Ok(FileOutcome {
         warnings,

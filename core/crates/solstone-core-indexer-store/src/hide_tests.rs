@@ -1177,3 +1177,31 @@ fn a_hidden_days_body_entries_leave_its_activity_file_and_ordinary_ones_stay() {
     journal.scan(false);
     assert_eq!(journal.search("echoneedle"), echo);
 }
+
+#[test]
+fn a_damaged_hidden_days_store_leaves_a_file_with_no_body_entry_current() {
+    let journal = Journal::new("hidden-body-day-ordinary");
+    journal.lines(ACTIVITIES, &[activity("a", "alphaneedle", false)]);
+    journal.write(HIDDEN_DAYS, "{ damaged");
+    let report = journal.scan(true);
+    assert_eq!(journal.search("alphaneedle").len(), 1);
+    assert!(
+        journal
+            .stored_mtime(ACTIVITIES)
+            .is_some_and(|mtime| mtime > 0)
+    );
+    assert_eq!(report.failed, 0, "{report:?}");
+}
+
+#[test]
+fn a_hidden_days_activity_file_of_only_body_entries_is_current_once_indexed() {
+    let journal = Journal::new("hidden-body-day-only-body");
+    journal.lines(ACTIVITIES, &[body_record("e", "echoneedle")]);
+    journal.json(HIDDEN_DAYS, json!({"days": ["20260304"]}));
+    journal.scan(true);
+    assert!(journal.search("echoneedle").is_empty());
+    let again = journal.scan(false);
+    assert_eq!(again.indexed, 0, "{again:?}");
+    let full = journal.scan(true);
+    assert_eq!(full.indexed, 0, "{full:?}");
+}

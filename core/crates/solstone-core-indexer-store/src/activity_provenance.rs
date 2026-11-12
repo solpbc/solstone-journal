@@ -13,10 +13,11 @@ use std::path::Path;
 
 use rusqlite::{Connection, params};
 use sha2::{Digest, Sha256};
-use solstone_core_format::content::{Family, JsonObject, indexed, produce_chunks};
+use solstone_core_format::content::{Family, JsonObject, produce_chunks};
 
 use crate::StoreError;
 use crate::db::sqlite_table_exists;
+use crate::hide::FileHide;
 
 pub(crate) const CREATE_ACTIVITY_PROVENANCE: &str = "\
 CREATE TABLE IF NOT EXISTS activity_provenance(
@@ -125,6 +126,7 @@ pub(crate) fn activity_source_current(
     conn: &Connection,
     rel: &str,
     path: &Path,
+    hide: &FileHide,
 ) -> Result<bool, StoreError> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
@@ -136,7 +138,7 @@ pub(crate) fn activity_source_current(
     let digest = digest_bytes(text.as_bytes());
     let chunk_count: i64 = conn.query_row(CHUNK_COUNT_FOR_PATH, [rel], |row| row.get(0))?;
     if chunk_count == 0 {
-        return Ok(!activity_file_has_chunk(rel, &text));
+        return Ok(!activity_file_has_chunk(rel, &text, hide));
     }
     let mut statement = conn.prepare(DIGESTS_FOR_PATH)?;
     let digests = statement
@@ -147,7 +149,7 @@ pub(crate) fn activity_source_current(
     }
     // An index written before retired plans stopped being indexed still holds
     // their entries; the same bytes now index fewer chunks.
-    if text.contains("\"anticipated\"") && indexed_chunks(rel, &text) as i64 != chunk_count {
+    if text.contains("\"anticipated\"") && indexed_chunks(rel, &text, hide) as i64 != chunk_count {
         return Ok(false);
     }
     Ok(digests
@@ -157,16 +159,17 @@ pub(crate) fn activity_source_current(
 
 /// Whether the file's bytes give search any entry. A file whose records are
 /// all hidden gives none, and is current with none stored.
-fn activity_file_has_chunk(rel: &str, text: &str) -> bool {
-    indexed_chunks(rel, text) > 0
+fn activity_file_has_chunk(rel: &str, text: &str, hide: &FileHide) -> bool {
+    indexed_chunks(rel, text, hide) > 0
 }
 
-/// How many entries the file's bytes give search, as the indexer counts them.
-fn indexed_chunks(rel: &str, text: &str) -> usize {
+/// How many entries the file's bytes give search, as the indexer counts them
+/// with the hide it indexes under.
+fn indexed_chunks(rel: &str, text: &str, hide: &FileHide) -> usize {
     produce_chunks(Family::Activity, rel, text)
         .chunks
         .iter()
-        .filter(|chunk| indexed(Family::Activity, chunk))
+        .filter(|chunk| hide.keeps(Family::Activity, chunk))
         .count()
 }
 
