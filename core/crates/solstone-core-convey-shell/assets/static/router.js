@@ -279,13 +279,24 @@
     placedHeading = target.querySelector('h1, h2');
   }
 
+  // A heading the view's markup ships hidden until its state is known (an
+  // empty state's) can't take focus, and focus on it would stay on the page.
+  // Where the engine can't say whether it is drawn, the `hidden` attribute is
+  // the only sign.
+  function shown(node) {
+    if (node.closest('[hidden]')) return false;
+    if (typeof node.checkVisibility === 'function') return node.checkVisibility();
+    if (typeof node.getClientRects === 'function') return node.getClientRects().length > 0;
+    return true;
+  }
+
   function focusView() {
     const main = document.getElementById('main-content');
     const heading = placedHeading;
     placedHeading = null;
     if (!main) return;
     if (!main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1');
-    const into = heading && heading.isConnected && main.contains(heading) && !heading.closest('[hidden]') ? heading : main;
+    const into = heading && heading.isConnected && main.contains(heading) && shown(heading) ? heading : main;
     if (into !== main && !into.hasAttribute('tabindex')) into.setAttribute('tabindex', '-1');
     focusQuietly(into);
   }

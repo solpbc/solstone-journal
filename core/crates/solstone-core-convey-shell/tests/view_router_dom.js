@@ -267,6 +267,16 @@ class FakeNode extends FakeEventTarget {
     return null;
   }
   focus() { this.ownerDocument.activeElement = this; }
+  // Drawn, as far as this page can tell: connected, and neither it nor an
+  // ancestor is hidden or styled out of the layout.
+  checkVisibility() {
+    if (!this.isConnected) return false;
+    for (let node = this; node && node.tagName !== '#fragment'; node = node.parent) {
+      if (node.hasAttribute('hidden')) return false;
+      if (/display:\s*none/.test(node.getAttribute('style') || '')) return false;
+    }
+    return true;
+  }
   // A click bubbles from the element to the document.
   click() {
     const event = { type: 'click', target: this, button: 0, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
@@ -2191,6 +2201,52 @@ asyncCase('accessibility: a view with no heading drawn yet takes focus on the wo
   assert.strictEqual(page.document.activeElement, page.main(), 'focus is on the workspace');
   assert.strictEqual(page.main().getAttribute('tabindex'), '-1', 'the workspace can take focus');
   assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'home');
+});
+
+// A view can ship a heading inside a part it shows only in one state (entities'
+// empty facet). Where the engine can say it isn't drawn, it is passed over.
+async function arriveAtHiddenHeading() {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+  page.server.answers.set('/app/home/workspace', page.server.html('<section style="display: none"><h2 id="empty-heading">nothing here</h2></section><div class="home"><div id="home-root"></div></div><script src="/h/home.js"></script>'));
+  await page.boot('transcripts');
+  page.click('/app/home/');
+  await page.clock.advance(400);
+  return page;
+}
+
+asyncCase('accessibility: a shipped heading that is not drawn is passed over for the workspace', async () => {
+  const page = await arriveAtHiddenHeading();
+  assert.strictEqual(page.document.activeElement, page.main(), 'focus is on the workspace, not the hidden heading');
+  assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'home');
+});
+
+asyncCase('accessibility: an engine with layout boxes but no checkVisibility passes over a heading that is not drawn', async () => {
+  const proto = FakeNode.prototype;
+  const visible = proto.checkVisibility;
+  proto.checkVisibility = undefined;
+  proto.getClientRects = function () { return visible.call(this) ? [{}] : []; };
+  try {
+    const page = await arriveAtHiddenHeading();
+    assert.strictEqual(page.document.activeElement, page.main(), 'focus is on the workspace');
+  } finally {
+    proto.checkVisibility = visible;
+    delete proto.getClientRects;
+  }
+});
+
+asyncCase('accessibility: an engine that can say nothing of layout keeps the hidden-attribute rule', async () => {
+  const proto = FakeNode.prototype;
+  const visible = proto.checkVisibility;
+  proto.checkVisibility = undefined;
+  try {
+    const page = await arriveAtHiddenHeading();
+    assert.strictEqual(page.document.activeElement, page.document.getElementById('empty-heading'), 'the shipped heading, as before');
+  } finally {
+    proto.checkVisibility = visible;
+  }
 });
 
 asyncCase('accessibility: a heading the view draws itself is passed over for the workspace, so a redraw keeps focus', async () => {
