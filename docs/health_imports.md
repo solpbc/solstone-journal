@@ -20,7 +20,7 @@ Strava is the first body source an owner brings in from the import page (the **S
 
 ## Hiding a day
 
-The body app hides a whole day of body data: everything Apple Health, Oura and Strava recorded on that journal day, and each night or workout that started on it, its part after midnight included. A night another source recorded starting after midnight stays on the next day. A hidden day stays in the journal. The owner's search and Home leave it out, the Activities page counts it as hidden, and connected agents can't read it. Whatever comes in for a hidden day later lands hidden: an export or a Strava download imported again, an Oura sync or range, or a journal archive merged in, whose own hidden days come with it. Unhiding brings the day back as it was, and a workout hidden on its own stays hidden. The days are kept in `solstone/apps/body/hidden-days.json` ([`BODY_SEGMENTS.md`](BODY_SEGMENTS.md#hidden-days)).
+On the body app, the owner can hide a day of body data: that day's readings from Apple Health, Oura and Strava, and each night or workout that started on it, its part after midnight included. A hidden day stays in the journal. The owner's search leaves it out, the activities page counts it as hidden, and connected agents can't read it. Whatever comes in for a hidden day later lands hidden: an export or a Strava download imported again, an Oura sync or range, or a journal archive merged in, whose own hidden days come with it. Unhiding brings the day back as it was, and anything hidden on its own stays hidden. The days are kept in `solstone/apps/body/hidden-days.json` ([`BODY_SEGMENTS.md`](BODY_SEGMENTS.md#hidden-days)).
 
 ## Apple Health and Oura
 
