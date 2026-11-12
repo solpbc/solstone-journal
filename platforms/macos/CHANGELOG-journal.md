@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- when an update has waited a few days for you to quit and reopen the journal app, the journal app now asks whether to restart and install the update. it restarts only when you choose to, and your journal keeps running until then.
+
+### Fixed
+
+- while an update waited for you to quit and reopen the journal app, it stopped checking for newer ones, so a journal app that stayed open could stay on an old version long after a newer one came out. it now keeps checking on its usual schedule, and a newer release takes the waiting one's place.
+
 ## [2.0.75 (build 127)] - 2026-11-11
 
 ### Added

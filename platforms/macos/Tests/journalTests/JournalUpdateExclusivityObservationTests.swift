@@ -144,9 +144,13 @@ private final class JournalSpyUpdater: SparkleUpdating {
     var checkForUpdatesCallCount = 0
     var startCallCount = 0
 
+    var userAgentString = "journal Sparkle"
+
     func checkForUpdates() {
         checkForUpdatesCallCount += 1
     }
+
+    func checkForUpdatesInBackground() {}
 
     func start() throws {
         startCallCount += 1

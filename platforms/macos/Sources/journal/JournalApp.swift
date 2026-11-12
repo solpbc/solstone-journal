@@ -22,7 +22,6 @@ final class JournalAppModel {
     private var startupTask: Task<Void, Never>?
     private var activationTasks: [Task<Void, Never>] = []
     private(set) var terminationPrepared = false
-    private(set) var appKitTerminationBegan = false
 
     lazy var updateController: UpdateController = makeUpdateController()
 
@@ -72,6 +71,9 @@ final class JournalAppModel {
         if let receiptContext {
             supervisor.configureReceiptContext(receiptContext)
         }
+        // Start the updater at launch, not when the window's scene first reads it, so
+        // update checks run whether or not a window opens (a login-item start, say).
+        _ = updateController
         JournalMarkFont.register()
         iconManager.start()
         Task { @MainActor in
@@ -109,7 +111,6 @@ final class JournalAppModel {
     }
 
     func prepareForTermination() async {
-        noteAppKitTerminationBegan()
         guard !terminationPrepared else { return }
         terminationPrepared = true
         startupTask?.cancel()
@@ -118,14 +119,9 @@ final class JournalAppModel {
         await supervisor.terminate(reason: "ordinary-quit")
     }
 
-    func noteAppKitTerminationBegan() {
-        appKitTerminationBegan = true
-    }
-
     func resetAfterFailedUpdaterInstall() {
         firstRunModel.resetAfterFailedUpdaterInstall()
         terminationPrepared = false
-        appKitTerminationBegan = false
     }
 
     func reestablishSupervisionAfterFailedUpdate() async {
@@ -153,8 +149,8 @@ final class JournalAppModel {
                 self?.resetAfterFailedUpdaterInstall()
                 await self?.reestablishSupervisionAfterFailedUpdate()
             },
-            terminationBegan: { [weak self] in
-                self?.appKitTerminationBegan ?? false
+            restartPrompt: { version, respond in
+                UpdateRestartPrompt(copy: UpdatesCopy(provider: .journal)).present(version: version, respond: respond)
             }
         )
     }
@@ -216,7 +212,6 @@ final class JournalAppDelegate: NSObject, NSApplicationDelegate {
         guard let model = JournalAppModel.shared else {
             return .terminateNow
         }
-        model.noteAppKitTerminationBegan()
         if model.terminationPrepared {
             return .terminateNow
         }

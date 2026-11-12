@@ -11,7 +11,7 @@ import Testing
 @MainActor
 @Suite("JournalUpdateRecovery")
 struct JournalUpdateRecoveryTests {
-    @Test func failedInstallRecoveryResetsTerminationFlagsAndRestartsSupervision() async throws {
+    @Test func failedInstallRecoveryResetsTerminationAndRestartsSupervision() async throws {
         let fixture = try makeConfiguredFixture()
         defer { fixture.clear() }
         let runner = RecoveryRunner()
@@ -26,21 +26,18 @@ struct JournalUpdateRecoveryTests {
 
         await model.prepareForTermination()
         #expect(model.terminationPrepared)
-        #expect(model.appKitTerminationBegan)
         #expect(await runner.stopForTerminationCalls == 1)
 
         model.resetAfterFailedUpdaterInstall()
         await model.reestablishSupervisionAfterFailedUpdate()
 
         #expect(!model.terminationPrepared)
-        #expect(!model.appKitTerminationBegan)
         #expect(await runner.startCalls == 1)
         #expect(await runner.runningJournalRoot == fixture.root.standardizedFileURL)
 
         await model.prepareForTermination()
 
         #expect(model.terminationPrepared)
-        #expect(model.appKitTerminationBegan)
         #expect(await runner.stopForTerminationCalls == 2)
     }
 

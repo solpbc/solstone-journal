@@ -47,6 +47,8 @@
 	<string>5EP/CLtfMrN2qC8zWsHeIWcPVPjqFH7hW4m8cGX7Qg0=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
+	<key>SUScheduledImpatientCheckInterval</key>
+	<integer>86400</integer>
 	<key>SUSendsSystemProfile</key>
 	<false/>
 	<key>SUShowReleaseNotes</key>

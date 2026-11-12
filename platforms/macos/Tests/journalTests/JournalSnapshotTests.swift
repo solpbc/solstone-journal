@@ -570,6 +570,8 @@ private final class JournalUpdateWindowUpdater: SparkleUpdating {
     var automaticallyDownloadsUpdates = false
     var updateCheckInterval: TimeInterval = 86_400
     var sessionInProgress = false
+    var userAgentString = "journal Sparkle"
     func checkForUpdates() {}
+    func checkForUpdatesInBackground() {}
     func start() throws {}
 }
