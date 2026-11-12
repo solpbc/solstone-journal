@@ -1004,3 +1004,136 @@ fn snapshot(root: &Path, roots: &[&str]) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
     }
     files
 }
+
+/// The words the first call was sent.
+fn sent_words(model: &Model) -> String {
+    let ContentPart::Text { text } = &model.calls.borrow()[0].1.contents[0] else {
+        panic!("the words come first, as text");
+    };
+    text.clone()
+}
+
+fn hide_days(root: &Path, days: &[&str]) {
+    use solstone_core_format::content::body_hidden_days::{hidden_days_bytes, hidden_days_path};
+    let path = hidden_days_path(root);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let days = days.iter().map(|day| (*day).to_owned()).collect();
+    fs::write(path, hidden_days_bytes(&days)).unwrap();
+}
+
+#[test]
+fn a_hidden_days_workout_is_sent_nothing_and_counts_no_day_until_unhidden() {
+    let journal = journal();
+    let root = journal.path();
+    Workout::new(1, "20261001", "Hill repeats with Sam").write(root);
+    Workout::new(2, "20261002", "Tempo with Sam").write(root);
+    hide_days(root, &["20261001"]);
+    let model = Model::answering(json!([person("Sam", "with Sam")]));
+
+    let outcome = run(root, &model);
+
+    // Only the visible day's workout is sent.
+    assert_eq!(model.count(), 1);
+    let sent = sent_words(&model);
+    assert!(sent.contains("Tempo"), "{sent}");
+    assert!(!sent.contains("Hill"), "{sent}");
+    assert_eq!((outcome.calls, outcome.hidden, outcome.waiting), (1, 1, 0));
+    // Its line stays, unread, and Sam has one day, not two.
+    let lines = store(root);
+    assert!(lines["1"].words_hash.is_none());
+    assert_eq!(outcome.created, 0);
+    assert!(!root.join("entities/sam").exists());
+
+    // Unhidden, the next run reads it, and Sam has both days.
+    hide_days(root, &[]);
+    let model = Model::answering(json!([person("Sam", "with Sam")]));
+    let outcome = run(root, &model);
+    assert_eq!(model.count(), 1);
+    let sent = sent_words(&model);
+    assert!(sent.contains("Hill"), "{sent}");
+    assert_eq!((outcome.hidden, outcome.created), (0, 1));
+    assert!(root.join("entities/sam").exists());
+}
+
+#[test]
+fn hiding_a_day_keeps_what_was_read_and_unhiding_reads_nothing_again() {
+    let journal = journal();
+    let root = journal.path();
+    Workout::new(1, "20261001", "Hill repeats with Sam").write(root);
+    let model = Model::answering(json!([person("Sam", "with Sam")]));
+    run(root, &model);
+    let read = store(root)["1"].clone();
+    assert!(read.words_hash.is_some());
+
+    // Hidden: its line and what was read stay, and nothing is sent, while a
+    // visible day's new words still are.
+    hide_days(root, &["20261001"]);
+    Workout::new(2, "20261002", "Tempo with Alex").write(root);
+    let model = Model::answering(json!([person("Alex", "with Alex")]));
+    let outcome = run(root, &model);
+    assert_eq!(model.count(), 1);
+    let sent = sent_words(&model);
+    assert!(sent.contains("Alex") && !sent.contains("Sam"), "{sent}");
+    assert_eq!(outcome.pruned, 0);
+    let lines = store(root);
+    assert_eq!(lines["1"].words_hash, read.words_hash);
+    assert_eq!(names(&lines["1"]), [("Person", "Sam")]);
+
+    // Unhidden: what was read is still there, so no call is made.
+    hide_days(root, &[]);
+    let outcome = run(root, &Model::unused());
+    assert_eq!((outcome.calls, outcome.cached), (0, 2));
+    assert_eq!(store(root)["1"].words_hash, read.words_hash);
+}
+
+#[test]
+fn with_the_hidden_days_unreadable_every_workout_waits_and_nothing_is_promoted() {
+    let journal = journal();
+    let root = journal.path();
+    Workout::new(1, "20261001", "Hill repeats with Sam").write(root);
+    for (index, day) in ["20261002", "20261003", "20261004", "20261005", "20261006"]
+        .into_iter()
+        .enumerate()
+    {
+        Workout::new(30 + index as u64, day, "Morning Ride")
+            .fields(json!({"Activity Gear": "Fast shoes"}))
+            .write(root);
+    }
+    let path = solstone_core_format::content::body_hidden_days::hidden_days_path(root);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, b"{not json").unwrap();
+
+    let outcome = run(root, &Model::unused());
+
+    assert!(outcome.hidden_days_unreadable);
+    assert_eq!((outcome.calls, outcome.waiting), (0, 1));
+    assert_eq!(outcome.wait, Some(NamesWait::SettingsUnreadable));
+    // Five days of gear would make an entity; none is made while the hidden
+    // days can't be read.
+    assert_eq!(outcome.created, 0);
+    assert!(!root.join("entities/fast_shoes").exists());
+    assert!(store(root)["1"].words_hash.is_none());
+}
+
+#[test]
+fn a_hidden_days_gear_counts_toward_no_new_entity() {
+    let journal = journal();
+    let root = journal.path();
+    let days = ["20261002", "20261003", "20261004", "20261005", "20261006"];
+    for (index, day) in days.into_iter().enumerate() {
+        Workout::new(30 + index as u64, day, "Morning Ride")
+            .fields(json!({"Activity Gear": "Fast shoes"}))
+            .write(root);
+    }
+    hide_days(root, &["20261004"]);
+
+    let outcome = run(root, &Model::unused());
+
+    // Four visible days are under the five a Tool needs.
+    assert_eq!((outcome.created, outcome.below_threshold), (0, 1));
+    assert!(!root.join("entities/fast_shoes").exists());
+
+    hide_days(root, &[]);
+    let outcome = run(root, &Model::unused());
+    assert_eq!(outcome.created, 1);
+}
