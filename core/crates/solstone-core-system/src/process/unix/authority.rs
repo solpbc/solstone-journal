@@ -22,9 +22,9 @@ use super::super::{HostedAdmissionTestFault, hosted_admission_test_fault};
 use super::spawn::{ManagedProcess, discharge_if_reaped, remove_launch_only_environment};
 use crate::lifecycle::{
     AdmissionIdentity, AdmissionIntent, AdmissionResult, AdmissionResultState, AdmissionTicket,
-    Discharger, HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV,
-    ParentLossAdmissionError, ParentLossGeneration, ParentLossLedger, ParentLossPhase,
-    discharge_holding_lock, discharge_replaced_service_roots,
+    Discharger, HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_LAUNCHER_PID_ENV,
+    HOSTED_PARENT_LAUNCH_ID_ENV, ParentLossAdmissionError, ParentLossGeneration, ParentLossLedger,
+    ParentLossPhase, discharge_holding_lock, discharge_replaced_service_roots,
     read_parent_loss_admission_acknowledgement, write_parent_loss_admission_intent,
     write_parent_loss_admission_result, write_parent_loss_admission_spawn_identity,
 };
@@ -1052,6 +1052,11 @@ fn inject_hosted_environment(
         OsString::from("SOLSTONE_JOURNAL"),
         journal.as_os_str().to_os_string(),
     );
+    // The child checks it still belongs to this process before working.
+    environment.insert(
+        OsString::from(HOSTED_LAUNCHER_PID_ENV),
+        OsString::from(std::process::id().to_string()),
+    );
     if let Some(parent_launch_id) = parent_launch_id {
         environment.insert(
             OsString::from(HOSTED_PARENT_LAUNCH_ID_ENV),
@@ -1566,6 +1571,30 @@ mod tests {
         let Some(journal) = std::env::var_os("SOLSTONE_JOURNAL").map(PathBuf::from) else {
             return 72;
         };
+        if mode == "orphan" || mode == "attached" {
+            // Acknowledge only once the launcher has exited and this process
+            // was reparented ("orphan"), or at once ("attached"), and report.
+            let launcher: Option<i32> = std::env::var(HOSTED_LAUNCHER_PID_ENV)
+                .ok()
+                .and_then(|pid| pid.parse().ok());
+            let until = Instant::now() + Duration::from_secs(10);
+            while mode == "orphan"
+                && Some(nix::unistd::getppid().as_raw()) == launcher
+                && Instant::now() < until
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let outcome = match crate::lifecycle::acknowledge_hosted_child_admission(&journal) {
+                Ok(()) => "worked".to_owned(),
+                Err(error) => format!("stopped: {error}"),
+            };
+            let written = std::env::var_os(PROBE_REPORT_ENV).map(|path| fs::write(path, outcome));
+            return if matches!(written, Some(Ok(()))) {
+                0
+            } else {
+                73
+            };
+        }
         if let Err(error) = crate::lifecycle::acknowledge_hosted_child_admission(&journal) {
             eprintln!("probe admission failed: {error}");
             return 70;
@@ -1737,7 +1766,7 @@ mod tests {
             Disposition::InheritedParentScope,
             &bed.root,
             "raw-child".to_owned(),
-            || Command::new("/bin/true").spawn(),
+            || Command::new("/usr/bin/true").spawn(),
             Box::new(kill_child),
         )
         .expect("raw generation child");
@@ -1751,7 +1780,7 @@ mod tests {
             },
             &bed.root,
             "managed-child".to_owned(),
-            managed_command(&bed, &["/bin/true"]),
+            managed_command(&bed, &["/usr/bin/true"]),
             false,
         )
         .unwrap_or_else(|_| panic!("managed generation child"));
@@ -1906,6 +1935,70 @@ mod tests {
         assert_eq!(outstanding(&ledger, generation), ["unconfirmed"]);
         drop(authority);
         assert_eq!(outstanding(&ledger, generation), Vec::<String>::new());
+    }
+
+    /// A task worker launched by a shell that stands in for its launcher. With
+    /// `orphan`, the shell exits at once and the worker acknowledges after it
+    /// was reparented; otherwise the shell waits for it. The worker reports
+    /// whether it went on to work.
+    #[cfg(all(test, feature = "full-tests"))]
+    fn launcher_probe(name: &str, orphan: bool, skip_check: bool) -> String {
+        let bed = JournalBed::new(name);
+        let (_ledger, generation, _) = admitting_generation(&bed.root);
+        let launch_id = format!("{name}-worker");
+        write_parent_loss_admission_intent(
+            &bed.root,
+            &AdmissionIntent::new(generation, launch_id.clone(), None, None),
+        )
+        .expect("intent");
+        let report = bed.root.join("launcher-report.txt");
+        let script = if orphan {
+            "SOL_PARENT_LOSS_LAUNCHER_PID=$$ \"$0\" \"$@\" &"
+        } else {
+            "SOL_PARENT_LOSS_LAUNCHER_PID=$$ \"$0\" \"$@\"; true"
+        };
+        let mut shell = Command::new("/bin/sh");
+        shell
+            .args(["-c", script])
+            .arg(std::env::current_exe().expect("test binary"))
+            .args(probe_arguments())
+            .env(PROBE_ENV, if orphan { "orphan" } else { "attached" })
+            .env(PROBE_REPORT_ENV, &report)
+            .env("SOLSTONE_JOURNAL", &bed.root)
+            .env(HOSTED_GENERATION_ENV, generation.to_string())
+            .env(HOSTED_LAUNCH_ID_ENV, &launch_id)
+            .stdout(std::process::Stdio::null());
+        if skip_check {
+            shell.env("SOLSTONE_TEST_SKIP_LAUNCHER_CHECK", "1");
+        }
+        assert!(shell.status().expect("launcher shell").success());
+        let until = Instant::now() + Duration::from_secs(30);
+        while !report.exists() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        fs::read_to_string(&report).expect("the worker reported")
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_worker_whose_launcher_died_before_it_acknowledged_stops_without_working() {
+        let outcome = launcher_probe("launcher-gone", true, false);
+        assert!(
+            outcome.starts_with("stopped:") && outcome.contains("has exited"),
+            "{outcome}"
+        );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn removing_the_launcher_check_turns_the_orphan_test_red() {
+        assert_eq!(launcher_probe("launcher-unchecked", true, true), "worked");
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_worker_whose_launcher_is_alive_proceeds() {
+        assert_eq!(launcher_probe("launcher-alive", false, false), "worked");
     }
 
     #[cfg(all(test, feature = "full-tests"))]

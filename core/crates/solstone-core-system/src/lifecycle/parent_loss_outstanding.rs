@@ -2512,6 +2512,8 @@ mod tests {
         obeys_terminate: HashSet<u32>,
         immortal: HashSet<u32>,
         boot: Option<Option<String>>,
+        /// macOS needs the boot time to have changed too.
+        boot_time: Option<Option<u64>>,
     }
 
     impl AdmissionRetirer for FakeRetirer {
@@ -2568,6 +2570,13 @@ mod tests {
                 None => current_boot_id(),
             }
         }
+
+        fn boot_time(&self) -> Option<u64> {
+            match &self.boot_time {
+                Some(time) => *time,
+                None => current_boot_time(),
+            }
+        }
     }
 
     impl FakeRetirer {
@@ -2593,6 +2602,7 @@ mod tests {
             obeys_terminate: obeys_terminate.iter().copied().collect(),
             immortal: immortal.iter().copied().collect(),
             boot: None,
+            boot_time: None,
         };
         (FakeSource(table), retirer)
     }
@@ -4521,6 +4531,12 @@ mod tests {
         );
     }
 
+    /// A boot time other than the one `record_boot` just wrote, where the
+    /// platform records one (macOS); Linux settles on the id alone.
+    fn another_boot_time() -> Option<u64> {
+        Some(current_boot_time().map_or(1, |time| time + 1))
+    }
+
     type BootOutcome = (
         Vec<(u32, &'static str)>,
         Result<ActiveGeneration, ParentLossLedgerError>,
@@ -4553,6 +4569,7 @@ mod tests {
             Some(live),
         );
         let (source, mut retirer) = fake(&[(live, 501)], &[live.pid], &[]);
+        retirer.boot_time = Some(another_boot_time());
         retirer.boot = boot;
         let lease = acquire_lease(&ledger);
         let result = start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET);
@@ -4991,6 +5008,7 @@ mod tests {
         fs::write(dir.join("spawn-identity.json"), b"{ torn").unwrap();
         let (source, mut retirer) = fake(&[], &[], &[]);
         retirer.boot = Some(Some("0123456789abcdef0123456789abcdef".to_owned()));
+        retirer.boot_time = Some(another_boot_time());
         let lease = acquire_lease(&ledger);
         start(&ledger, &lease, &source, &retirer, AMPLE_BUDGET).expect("boot-settled");
         assert!(summary_of(&ledger, active.generation).boot_changed);

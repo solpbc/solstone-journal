@@ -38,6 +38,9 @@ const SEALING_DISCHARGE_LOCK_TIMEOUT: Duration = Duration::from_secs(2);
 pub const HOSTED_GENERATION_ENV: &str = "SOL_PARENT_LOSS_GENERATION";
 pub const HOSTED_LAUNCH_ID_ENV: &str = "SOL_PARENT_LOSS_LAUNCH_ID";
 pub const HOSTED_PARENT_LAUNCH_ID_ENV: &str = "SOL_PARENT_LOSS_PARENT_LAUNCH_ID";
+/// The pid of the process that launched this child. A child whose parent is
+/// no longer that process lost its launcher and must not work.
+pub const HOSTED_LAUNCHER_PID_ENV: &str = "SOL_PARENT_LOSS_LAUNCHER_PID";
 
 /// A random 64-bit launch id. Launch ids are never reused, so a launch is
 /// refused rather than given a predictable id when randomness fails.
@@ -151,6 +154,8 @@ pub enum ParentLossAdmissionError {
     InvalidLaunchId,
     #[error("the generation this child was launched under no longer admits")]
     GenerationClosed,
+    #[error("the process that started this one has exited, so it stops without working")]
+    LauncherGone,
 }
 
 impl AdmissionIntent {
@@ -271,7 +276,26 @@ pub fn acknowledge_hosted_child_admission(journal: &Path) -> Result<(), ParentLo
     };
     let identity = parse_hosted_admission_environment(instance, uid)?;
     acknowledge_parent_loss_admission(journal, identity.clone())?;
-    require_generation_still_admitting(journal, identity.generation)
+    require_generation_still_admitting(journal, identity.generation)?;
+    require_launcher_still_parent()
+}
+
+/// A child whose launcher died before it acknowledged has been reparented:
+/// it stops before any work. A launcher that records no pid is trusted, as
+/// before. A pid-preserving exec keeps the parent, so it passes.
+fn require_launcher_still_parent() -> Result<(), ParentLossAdmissionError> {
+    let Some(recorded) = std::env::var_os(HOSTED_LAUNCHER_PID_ENV) else {
+        return Ok(());
+    };
+    #[cfg(any(test, feature = "test-hooks"))]
+    if std::env::var_os("SOLSTONE_TEST_SKIP_LAUNCHER_CHECK").is_some() {
+        return Ok(());
+    }
+    let parent = u32::try_from(nix::unistd::getppid().as_raw()).ok();
+    match recorded.to_str().and_then(|pid| pid.parse::<u32>().ok()) {
+        Some(launcher) if Some(launcher) == parent => Ok(()),
+        _ => Err(ParentLossAdmissionError::LauncherGone),
+    }
 }
 
 /// After acknowledging, confirm the generation still admits. A launcher that

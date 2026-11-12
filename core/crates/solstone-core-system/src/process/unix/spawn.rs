@@ -14,7 +14,8 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::lifecycle::{
-    AdmissionTicket, HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV,
+    AdmissionTicket, HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_LAUNCHER_PID_ENV,
+    HOSTED_PARENT_LAUNCH_ID_ENV,
 };
 use crate::partition::partition_for;
 use chrono::Local;
@@ -59,6 +60,7 @@ pub fn remove_launch_only_environment(command: &mut Command) {
         HOSTED_GENERATION_ENV,
         HOSTED_LAUNCH_ID_ENV,
         HOSTED_PARENT_LAUNCH_ID_ENV,
+        HOSTED_LAUNCHER_PID_ENV,
     ] {
         command.env_remove(name);
     }

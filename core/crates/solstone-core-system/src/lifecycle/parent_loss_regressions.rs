@@ -579,9 +579,11 @@ fn a_torn_drop_at_stop_still_publishes_a_terminal() {
 
     // A task worker that ran and was reaped: its pid is gone. Its launcher
     // was killed while writing result.json, so the result is torn.
-    let mut exited = Command::new("/bin/true").spawn().expect("spawn /bin/true");
+    let mut exited = Command::new("/usr/bin/true")
+        .spawn()
+        .expect("spawn /usr/bin/true");
     let pid = exited.id();
-    exited.wait().expect("reap /bin/true");
+    exited.wait().expect("reap /usr/bin/true");
     let launch_id = "worker-torn-at-stop";
     write_intent(journal.path(), g, launch_id);
     let id = identity(g, launch_id, instance(pid, 7));
@@ -695,7 +697,7 @@ fn recovery_after_real_launches(completed: usize) -> (usize, Duration, usize) {
             crate::process::Disposition::InheritedParentScope,
             directory.path(),
             format!("worker-{i}"),
-            || Command::new("/bin/true").spawn(),
+            || Command::new("/usr/bin/true").spawn(),
             Box::new(|child: &mut std::process::Child, _| {
                 let _ = child.kill();
                 Ok(())
