@@ -143,11 +143,17 @@ fn edits_replace_one_meeting_and_null_transcripts_preserve_it() {
     );
     assert_eq!(fs::read(&output).unwrap(), prior);
     assert_eq!(state(root.path()).unwrap().watermark, watermark);
-    assert!(status(root.path()).unwrap()["attention"].is_string());
+    let attention = status(root.path()).unwrap();
+    assert!(attention["attention"].is_string());
+    assert_eq!(attention["attention_code"], "transcript");
+    // The edit stayed one meeting, and the failure kept it.
+    assert_eq!(attention["meetings"], 1);
     let mut unchanged = Fake::new(vec![(200, page(revision))]);
     sync_with(root.path(), &mut unchanged, &mut good).unwrap();
     assert!(unchanged.replies.is_empty());
-    assert!(status(root.path()).unwrap()["attention"].is_null());
+    let settled = status(root.path()).unwrap();
+    assert!(settled["attention"].is_null());
+    assert!(settled["attention_code"].is_null());
 }
 #[test]
 fn a_failed_publication_retries_the_same_placement_and_remote_deletion_keeps_it() {
@@ -271,6 +277,8 @@ fn owner_removal_wins_an_interrupted_publication_and_reconnect() {
             .to_string()
             .contains("grn_test_personal_key")
     );
+    // A meeting the owner removed is not counted as one the journal keeps.
+    assert_eq!(status(root.path()).unwrap()["meetings"], 0);
 }
 #[test]
 fn old_exact_ids_are_untouched_but_equal_titles_and_times_do_not_dedupe() {

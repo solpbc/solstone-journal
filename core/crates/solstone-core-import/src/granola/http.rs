@@ -8,12 +8,20 @@ use std::time::{Duration, Instant};
 
 pub struct LiveApi {
     key: String,
-    root: std::path::PathBuf,
+    /// The journal whose saved key must still match; none for a key check.
+    root: Option<std::path::PathBuf>,
     agent: ureq::Agent,
     last_request: Option<Instant>,
 }
 impl LiveApi {
     pub fn new(root: std::path::PathBuf, key: String) -> Self {
+        Self::build(Some(root), key)
+    }
+    /// A key that isn't saved yet, asked about once.
+    pub fn probe(key: String) -> Self {
+        Self::build(None, key)
+    }
+    fn build(root: Option<std::path::PathBuf>, key: String) -> Self {
         let config = ureq::Agent::config_builder()
             .http_status_as_error(false)
             .max_redirects(0)
@@ -34,7 +42,9 @@ impl Api for LiveApi {
         {
             std::thread::sleep(wait);
         }
-        if super::key(&self.root)?.as_deref() != Some(self.key.as_str()) {
+        if let Some(root) = &self.root
+            && super::key(root)?.as_deref() != Some(self.key.as_str())
+        {
             return Err(Error::Stopped);
         }
         self.last_request = Some(Instant::now());

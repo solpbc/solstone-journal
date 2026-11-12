@@ -41,31 +41,69 @@ pub enum Error {
     Stopped,
 }
 impl Error {
+    /// Every failure, so a stored message can be read back as its kind.
+    pub const ALL: [Self; 10] = [
+        Self::InvalidKey,
+        Self::Key,
+        Self::Access,
+        Self::Limited,
+        Self::Unavailable,
+        Self::Response,
+        Self::Transcript,
+        Self::Storage,
+        Self::Busy,
+        Self::Stopped,
+    ];
     pub const fn message(self) -> &'static str {
         match self {
-            Self::InvalidKey => "enter a complete Granola personal API key.",
-            Self::Key => "Granola refused the API key. add a new personal key to reconnect.",
+            Self::InvalidKey => {
+                "that isn't a complete Granola personal API key. it starts with grn_."
+            }
+            Self::Key => {
+                "Granola no longer accepts this key. it may have been revoked or reached its expiration date. add a new key to carry on."
+            }
             Self::Access => {
-                "Granola did not allow access. check API access and the key's permissions in Granola."
+                "Granola turned this key away. API access needs Granola Business or Enterprise, and on Enterprise an admin can turn it off."
             }
             Self::Limited => {
-                "Granola asked to slow down. your journal will try again on the next sync."
+                "Granola asked your journal to slow down. it will try again on its next check."
             }
             Self::Unavailable => {
-                "couldn't reach Granola. your journal will try again on the next sync."
+                "couldn't reach Granola. your journal will try again on its next check."
             }
             Self::Response => {
-                "Granola sent a response your journal couldn't read. the sync will try again."
+                "Granola sent something your journal couldn't read. it will try again on its next check."
             }
             Self::Transcript => {
-                "Granola didn't share the transcript. check transcript access in Granola; earlier meetings stay in your journal."
+                "Granola didn't include a meeting's transcript. your journal will try again on its next check."
             }
             Self::Storage => {
-                "your journal couldn't save the Granola sync. check available storage and try again."
+                "your journal couldn't save what came from Granola. check that this computer has free space."
             }
-            Self::Busy => "a Granola sync is already in progress. try again when it finishes.",
-            Self::Stopped => "the Granola sync stopped. it will continue on the next sync.",
+            Self::Busy => "your journal is already checking Granola. try again when it finishes.",
+            Self::Stopped => {
+                "the check stopped before it finished. your journal will pick it up on its next check."
+            }
         }
+    }
+    /// A stable name for the failure's kind, for surfaces that choose an action by it.
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::InvalidKey => "invalid_key",
+            Self::Key => "key",
+            Self::Access => "access",
+            Self::Limited => "limited",
+            Self::Unavailable => "unavailable",
+            Self::Response => "response",
+            Self::Transcript => "transcript",
+            Self::Storage => "storage",
+            Self::Busy => "busy",
+            Self::Stopped => "stopped",
+        }
+    }
+    /// The failure a stored message names. A message from an older wording names none.
+    pub fn from_message(message: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|error| error.message() == message)
     }
 }
 impl std::fmt::Display for Error {
@@ -228,9 +266,34 @@ fn key(root: &Path) -> Result<Option<String>, Error> {
 /// Does not return the credential or remote meeting content.
 pub fn status(root: &Path) -> Result<Value, Error> {
     let state = state(root)?;
-    Ok(
-        json!({"connected":key(root)?.is_some(), "last_sync":state.last_sync, "last_added":state.last_added, "attention":state.error}),
-    )
+    // Meetings this source has put in the journal and the owner still keeps.
+    let meetings = state
+        .notes
+        .values()
+        .filter(|p| p.revision.is_some() && !p.removed && !p.legacy)
+        .count();
+    // An older wording names no kind; it still shows, with the generic action.
+    let code = state
+        .error
+        .as_deref()
+        .map(|message| Error::from_message(message).map_or("unknown", Error::code));
+    Ok(json!({
+        "connected": key(root)?.is_some(),
+        "last_sync": state.last_sync,
+        "last_added": state.last_added,
+        "attention": state.error,
+        "attention_code": code,
+        "meetings": meetings,
+    }))
+}
+/// Ask Granola whether it accepts a key, before it replaces a working one.
+pub fn check_key(key: &str) -> Result<(), Error> {
+    validate_key(key)?;
+    check_with(&mut LiveApi::probe(key.to_owned()))
+}
+fn check_with(api: &mut dyn Api) -> Result<(), Error> {
+    let (status, body) = api.get("/v1/notes", &[("page_size", "1".to_owned())])?;
+    checked(status, body).map(|_| ())
 }
 /// Validate a personal key before changing connection state.
 pub fn validate_key(key: &str) -> Result<(), Error> {
@@ -697,6 +760,33 @@ mod unit_tests {
         speaker["name"] = json!("");
         let saved = rows(&nullable, &placement, chrono_tz::UTC).unwrap();
         assert_eq!(saved[1]["speaker"], "Granola: them");
+    }
+
+    #[test]
+    fn a_stored_message_reads_back_as_its_kind() {
+        let mut codes = BTreeSet::new();
+        for error in Error::ALL {
+            assert_eq!(Error::from_message(error.message()), Some(error));
+            assert!(codes.insert(error.code()));
+        }
+        assert_eq!(Error::from_message("an older wording"), None);
+    }
+
+    #[test]
+    fn a_key_check_reads_granolas_answer() {
+        struct Answer(u16);
+        impl Api for Answer {
+            fn get(&mut self, path: &str, query: &[(&str, String)]) -> Result<(u16, Value), Error> {
+                assert_eq!(path, "/v1/notes");
+                assert_eq!(query, [("page_size", "1".to_owned())]);
+                Ok((self.0, json!({"notes":[],"hasMore":false})))
+            }
+        }
+        assert_eq!(check_with(&mut Answer(200)), Ok(()));
+        assert_eq!(check_with(&mut Answer(401)), Err(Error::Key));
+        assert_eq!(check_with(&mut Answer(403)), Err(Error::Access));
+        assert_eq!(check_with(&mut Answer(503)), Err(Error::Unavailable));
+        assert_eq!(check_key("not-a-key"), Err(Error::InvalidKey));
     }
 
     #[test]

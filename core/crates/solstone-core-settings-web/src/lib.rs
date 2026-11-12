@@ -78,6 +78,7 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
     let granola_get_root = journal_root.clone();
     let granola_connect_root = journal_root.clone();
     let granola_disconnect_root = journal_root.clone();
+    let granola_sync_root = journal_root.clone();
     let sync_get_root = journal_root.clone();
     let sync_put_root = journal_root;
     Router::new()
@@ -87,6 +88,10 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
             get(move || granola::get(granola_get_root.clone()))
                 .post(move |body| granola::connect(granola_connect_root.clone(), body))
                 .delete(move || granola::disconnect(granola_disconnect_root.clone())),
+        )
+        .route(
+            "/app/settings/api/granola/sync",
+            post(move || granola::sync_now(granola_sync_root.clone())),
         )
         .route("/app/settings/workspace", get(assets::workspace))
         .route("/app/settings/static/settings.js", get(assets::settings_js))

@@ -13,17 +13,52 @@ use axum::{
 use serde_json::{Value, json};
 use solstone_core_import::granola;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// A sync this server started is still running. The hourly run is its own process.
+static SYNCING: AtomicBool = AtomicBool::new(false);
 
 fn failed(error: granola::Error) -> Response {
+    refused(error, error.message())
+}
+fn refused(error: granola::Error, message: &str) -> Response {
     (
         StatusCode::BAD_REQUEST,
-        axum::Json(json!({"error":error.message()})),
+        axum::Json(json!({"error":message,"code":error.code()})),
     )
         .into_response()
 }
+/// What a key Granola refuses means while the owner is pasting it.
+const fn pasted(error: granola::Error) -> &'static str {
+    match error {
+        granola::Error::Key => {
+            "Granola didn't accept that key. copy it again from Granola, or create a new one."
+        }
+        granola::Error::Access => {
+            "Granola turned that key away. API access needs Granola Business or Enterprise, and on Enterprise an admin may need to allow it."
+        }
+        other => other.message(),
+    }
+}
+/// Run the source in the background unless this server already is.
+fn start_sync(root: PathBuf) -> bool {
+    if SYNCING.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    tokio::task::spawn_blocking(move || {
+        if let Err(error) = granola::sync(&root) {
+            log::warn!("{error}");
+        }
+        SYNCING.store(false, Ordering::SeqCst);
+    });
+    true
+}
 pub async fn get(root: PathBuf) -> Response {
     match granola::status(&root) {
-        Ok(value) => json_response(value),
+        Ok(mut value) => {
+            value["syncing"] = json!(SYNCING.load(Ordering::SeqCst));
+            json_response(value)
+        }
         Err(error) => failed(error),
     }
 }
@@ -34,24 +69,47 @@ pub async fn connect(root: PathBuf, body: Bytes) -> Response {
     let Some(key) = value
         .get("api_key")
         .and_then(Value::as_str)
-        .map(str::to_owned)
+        .map(|key| key.trim().to_owned())
     else {
         return failed(granola::Error::InvalidKey);
     };
+    if let Err(error) = granola::validate_key(&key) {
+        return failed(error);
+    }
+    // A key Granola refuses never replaces the saved one. If Granola can't be
+    // asked right now, the key is saved and the sync reports what it finds.
+    let probe = key.clone();
+    match tokio::task::spawn_blocking(move || granola::check_key(&probe)).await {
+        Ok(Err(error @ (granola::Error::Key | granola::Error::Access))) => {
+            return refused(error, pasted(error));
+        }
+        Ok(_) => {}
+        Err(_) => return failed(granola::Error::Storage),
+    }
     let sync_root = root.clone();
     let result = tokio::task::spawn_blocking(move || change(&root, Some(&key))).await;
     match result {
         Ok(Ok(())) => {
-            tokio::task::spawn_blocking(move || {
-                if let Err(error) = granola::sync(&sync_root) {
-                    log::warn!("{error}");
-                }
-            });
+            start_sync(sync_root);
             json_response(json!({"success":true}))
         }
         Ok(Err(error)) => failed(error),
         Err(_) => failed(granola::Error::Storage),
     }
+}
+/// Check Granola now rather than at the next hourly run.
+pub async fn sync_now(root: PathBuf) -> Response {
+    let status_root = root.clone();
+    match tokio::task::spawn_blocking(move || granola::status(&status_root)).await {
+        Ok(Ok(value)) if value["connected"] == json!(true) => {}
+        Ok(Ok(_)) => return failed(granola::Error::InvalidKey),
+        Ok(Err(error)) => return failed(error),
+        Err(_) => return failed(granola::Error::Storage),
+    }
+    if !start_sync(root) {
+        return failed(granola::Error::Busy);
+    }
+    json_response(json!({"success":true}))
 }
 pub async fn disconnect(root: PathBuf) -> Response {
     let result = tokio::task::spawn_blocking(move || change(&root, None)).await;
@@ -134,6 +192,8 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let status: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(status["connected"], true);
+        assert_eq!(status["syncing"], false);
+        assert_eq!(status["meetings"], 0);
         assert!(!String::from_utf8_lossy(&body).contains("grn_personal_test_secret"));
         let response = router
             .clone()
@@ -146,6 +206,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let response = router
+            .clone()
             .oneshot(
                 Request::delete("/app/settings/api/granola")
                     .body(Body::empty())
@@ -155,6 +216,18 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(granola::status(root.path()).unwrap()["connected"], false);
+        // Nothing to check without a key, and nothing starts.
+        let response = router
+            .clone()
+            .oneshot(
+                Request::post("/app/settings/api/granola/sync")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(SYNCING.load(Ordering::SeqCst), false);
         let schedules: Value = serde_json::from_slice(
             &std::fs::read(root.path().join("config/schedules.json")).unwrap(),
         )

@@ -492,7 +492,60 @@ fn prepare_segment(
             );
         }
     }
+    if stream.starts_with(GRANOLA_STREAM_PREFIX)
+        && let Some(note) = granola_context(&dir)
+        && let Some(obj) = payload.as_object_mut()
+    {
+        obj.insert("granola".to_owned(), note);
+    }
     Ok(payload)
+}
+
+const GRANOLA_STREAM_PREFIX: &str = solstone_core_format::content::granola::STREAM_PREFIX;
+
+/// What Granola wrote about a meeting, apart from its speech: the title, its
+/// summary, the owner's own notes and who attended. None of it was spoken.
+fn granola_context(dir: &Path) -> Option<Value> {
+    let file = fs::File::open(dir.join("audio.jsonl")).ok()?;
+    let mut line = String::new();
+    std::io::BufRead::read_line(&mut std::io::BufReader::new(file), &mut line).ok()?;
+    let header: Value = serde_json::from_str(&line).ok()?;
+    let note = header.get(solstone_core_format::content::granola::HEADER_KEY)?;
+    let text = |keys: &[&str]| {
+        keys.iter()
+            .filter_map(|key| note.get(*key).and_then(Value::as_str))
+            .map(str::trim)
+            .find(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    let attendees: Vec<String> = note
+        .get("attendees")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|person| {
+            ["name", "email"]
+                .iter()
+                .filter_map(|key| person.get(*key).and_then(Value::as_str))
+                .map(str::trim)
+                .find(|value| !value.is_empty())
+                .map(str::to_owned)
+        })
+        .collect();
+    // Only a link back to Granola's own notes page is offered.
+    let web_url = text(&["web_url"]).filter(|url| url.starts_with("https://notes.granola.ai/"));
+    Some(json!({
+        "title": text(&["title"]),
+        "summary": text(&["summary_markdown", "summary_text"]),
+        "private_notes": text(&["private_notes_markdown", "private_notes_text"]),
+        "attendees": attendees,
+        "calendar_title": note
+            .get("calendar_event")
+            .and_then(|event| event.get("event_title"))
+            .and_then(Value::as_str)
+            .filter(|title| !title.trim().is_empty()),
+        "web_url": web_url,
+    }))
 }
 
 /// A screenshot is one entry at its second: the image at its own shape, its
@@ -736,6 +789,13 @@ fn audio_chunks(
             && let Some(obj) = chunk.as_object_mut()
         {
             obj.insert("possible_names".into(), Value::Array(possible_names));
+        }
+        // Granola names who spoke; the page shows its label as Granola's.
+        if context.stream.starts_with(GRANOLA_STREAM_PREFIX)
+            && let Some(label) = row.get("speaker").and_then(Value::as_str)
+            && let Some(obj) = chunk.as_object_mut()
+        {
+            obj.insert("speaker_attribution".into(), json!(label));
         }
         if let Some(label) = sid
             .and_then(|id| speakers.labels.get(&id))
@@ -1557,6 +1617,60 @@ mod tests {
             }
             assert!(!text.contains("null"), "{text}");
         }
+    }
+
+    #[test]
+    fn a_granola_meeting_carries_its_notes_apart_from_speech_and_granolas_speaker_labels() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let stream = "import.granola.6e6f745f61626364656667686a6b6c6d6e";
+        let seg_dir = root.join(format!("chronicle/20261111/{stream}/123448_164"));
+        std::fs::create_dir_all(&seg_dir).unwrap();
+        std::fs::write(
+            seg_dir.join("audio.jsonl"),
+            concat!(
+                r#"{"granola":{"id":"not_abcdefghjklmn","title":"Capulet standup","web_url":"https://notes.granola.ai/d/d3dd409e-7aa8-4031-a790-8027d758930e","summary_text":"Beta status","summary_markdown":"","private_notes_text":"","private_notes_markdown":null,"attendees":[{"name":null,"email":"r@example.org"},{"name":"Robin","email":"robin@example.org"}],"calendar_event":null},"granola_start_ms":1794425688939}"#,
+                "\n",
+                r#"{"start":"12:34:48.939","source_ms":1794425688939,"end_ms":1794425693309,"speaker":"Granola: them","text":"Morning.","source":"granola","granola_speaker":{"source":"speaker","attribution":"them"}}"#,
+                "\n"
+            ),
+        )
+        .unwrap();
+        let value = prepare_segment(root, "20261111", stream, "123448_164", Utc::now()).unwrap();
+        let note = &value["granola"];
+        assert_eq!(note["title"], "Capulet standup");
+        // An empty markdown summary falls back to its text, and empty notes are absent.
+        assert_eq!(note["summary"], "Beta status");
+        assert!(note["private_notes"].is_null());
+        assert_eq!(note["attendees"], json!(["r@example.org", "Robin"]));
+        assert!(note["calendar_title"].is_null());
+        assert!(note["web_url"].as_str().unwrap().starts_with("https://notes.granola.ai/"));
+        let speech = value["chunks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|chunk| chunk["type"] == "audio")
+            .collect::<Vec<_>>();
+        assert_eq!(speech.len(), 1);
+        assert_eq!(speech[0]["speaker_attribution"], "Granola: them");
+        assert!(!speech[0]["markdown"].as_str().unwrap().contains("Beta status"));
+    }
+
+    #[test]
+    fn a_segment_from_another_source_has_no_granola_notes() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let seg_dir = root.join("chronicle/20261111/import.audio/123448_164");
+        std::fs::create_dir_all(&seg_dir).unwrap();
+        std::fs::write(
+            seg_dir.join("audio.jsonl"),
+            "{\"granola\":{\"title\":\"not this\"}}\n{\"start\":\"12:34:48\",\"speaker\":1,\"text\":\"Hello.\"}\n",
+        )
+        .unwrap();
+        let value =
+            prepare_segment(root, "20261111", "import.audio", "123448_164", Utc::now()).unwrap();
+        assert!(value.get("granola").is_none());
+        assert!(value["chunks"][0].get("speaker_attribution").is_none());
     }
 
     #[test]

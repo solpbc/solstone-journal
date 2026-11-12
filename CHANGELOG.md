@@ -8,7 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- connect Granola in settings → sync with your own personal API key. your meetings come into your journal with their transcripts, summaries and private notes, and update every hour. an edit in Granola updates the same meeting; disconnecting keeps what is already in your journal.
+- connect Granola in settings → sync with your own personal API key, and the card walks you through getting one in Granola. your meetings come into your journal with their transcripts, summaries and private notes, and new and edited meetings follow within the hour. a meeting shows under its Granola title, with Granola's summary and your notes kept apart from what was said. disconnecting keeps what is already in your journal.
 
 - when the words change on a screen you share while it otherwise looks the same, such as new messages in a chat pane, new rows in your inbox or scrolling to a new part of a page, your journal now keeps that moment too. a screen that sits still adds no extra work.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.

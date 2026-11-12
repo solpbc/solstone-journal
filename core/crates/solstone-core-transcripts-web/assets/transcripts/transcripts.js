@@ -412,9 +412,25 @@
     const BTN_LABEL_FAILED = 'try again';
     const ANALYZING_LABEL = 'analyzing…';
     const AWAITING_THINKING_LABEL = 'awaiting thinking';
-    const BTN_TITLE = modality => modality === 'image'
-      ? "describe this segment's photos and add the descriptions to your journal."
-      : `Process this segment's raw ${modality} observed data and generate analyzed content.`;
+    const BTN_TITLE = modality => ({
+      image: "describe this segment's photos and add the descriptions to your journal.",
+      audio: "transcribe this segment's audio and add the words to your journal.",
+      screen: "describe this segment's screen and add the descriptions to your journal.",
+    })[modality] || "process this segment and add what it finds to your journal.";
+    // A Granola meeting's own strings. Granola's notes sit apart from its
+    // speech, and its speaker labels are shown as Granola's, never as a voice
+    // the journal recognised.
+    const GRANOLA_COPY = Object.freeze({
+      heading: "Granola's notes on this meeting",
+      summary: 'summary',
+      privateNotes: 'your notes',
+      attendees: 'attendees',
+      calendar: 'calendar event',
+      open: 'open in Granola',
+      speakerAssistive: 'as Granola labelled the speaker',
+      noTranscript: 'Granola has no transcript for this meeting.',
+    });
+
     // The screenshots source's owner strings, keyed to their ids in the design
     // system's screenshots copy file. Owner copy: voice-checked there.
     const SCREENSHOT_COPY = Object.freeze({
@@ -2205,7 +2221,8 @@
 
       const dataState = data.data_state || {};
       addTab('transcript', 'transcript');
-      if (dataState.audio) {
+      // A Granola meeting brings words, not sound: there is no audio to show.
+      if (dataState.audio && !data.granola) {
         addTab('audio', 'audio');
       }
       if (dataState.screen) {
@@ -2423,6 +2440,9 @@
         return;
       }
 
+      if (data.granola?.title) {
+        titleEl.textContent = data.granola.title;
+      }
       buildTabBar(data);
       const nextTab = requestedTabId && tabExists(requestedTabId) ? requestedTabId : 'transcript';
       activateTab(nextTab);
@@ -2823,6 +2843,14 @@
       }
       if (!label && item.speaker_voice) {
         return speakerVoiceChipModel(item.speaker_voice);
+      }
+      if (!label && item.speaker_attribution) {
+        return {
+          text: item.speaker_attribution,
+          dotClass: '',
+          neutral: true,
+          assistive: GRANOLA_COPY.speakerAssistive
+        };
       }
       if (!label || label.confidence_state === 'unknown') {
         return {
@@ -3435,6 +3463,35 @@
       });
     }
 
+    // What Granola wrote about the meeting: context for the owner, kept apart
+    // from the transcript so nothing in it reads as said aloud.
+    function renderGranolaContext(note) {
+      const parts = [];
+      if (note.summary) {
+        parts.push(`<details class="tr-granola-part"><summary>${escapeHtml(GRANOLA_COPY.summary)}</summary>`
+          + `<div class="tr-granola-text">${window.AppServices.renderMarkdown(note.summary) || ''}</div></details>`);
+      }
+      if (note.private_notes) {
+        parts.push(`<details class="tr-granola-part" open><summary>${escapeHtml(GRANOLA_COPY.privateNotes)}</summary>`
+          + `<div class="tr-granola-text">${window.AppServices.renderMarkdown(note.private_notes) || ''}</div></details>`);
+      }
+      const facts = [];
+      if (note.calendar_title) {
+        facts.push(`<dt>${escapeHtml(GRANOLA_COPY.calendar)}</dt><dd>${escapeHtml(note.calendar_title)}</dd>`);
+      }
+      if (Array.isArray(note.attendees) && note.attendees.length > 0) {
+        facts.push(`<dt>${escapeHtml(GRANOLA_COPY.attendees)}</dt><dd>${note.attendees.map(escapeHtml).join(', ')}</dd>`);
+      }
+      if (facts.length > 0) parts.push(`<dl class="tr-granola-facts">${facts.join('')}</dl>`);
+      const link = note.web_url
+        ? `<a class="tr-granola-open" href="${escapeHtml(note.web_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(GRANOLA_COPY.open)}</a>`
+        : '';
+      return `<section class="tr-granola" aria-label="${escapeHtml(GRANOLA_COPY.heading)}">`
+        + `<div class="tr-granola-head"><span class="tr-granola-label">${escapeHtml(GRANOLA_COPY.heading)}</span>${link}</div>`
+        + parts.join('')
+        + '</section>';
+    }
+
     function renderSegmentTimeline(data, showAudio, showScreen, targetEl, showBrowser = true, showImage = false) {
       const browserOnlyView = showBrowser && !showAudio && !showScreen && !showImage;
       const imageOnlyView = showImage && !showAudio && !showScreen && !showBrowser;
@@ -3464,6 +3521,13 @@
       allScreenFrames = chunks.filter(c => c.type === 'screen' || c.type === 'image');
       currentFrameIndex = -1;
 
+      const granolaNotes = data.granola && showAudio ? renderGranolaContext(data.granola) : '';
+      if (chunks.length === 0 && granolaNotes) {
+        setPaneEntryCount(targetEl, 0);
+        targetEl.innerHTML = granolaNotes
+          + `<p class="tr-granola-empty">${escapeHtml(GRANOLA_COPY.noTranscript)}</p>`;
+        return;
+      }
       if (chunks.length === 0) {
         setPaneEntryCount(targetEl, 0);
         if (showAudio && !showScreen && !showImage && dataState.audio && dataState.audio !== 'analyzed') {
@@ -3506,7 +3570,7 @@
       groupEntriesByIdx = new Map();
       setPaneEntryCount(targetEl, displayItems.length);
 
-      let html = renderBodyStrip(data.body_window);
+      let html = renderBodyStrip(data.body_window) + granolaNotes;
       html += `<div class="tr-unified" role="list" aria-label="transcript entries, ${displayItems.length} items">`;
 
       // Audio player section (if we have audio)

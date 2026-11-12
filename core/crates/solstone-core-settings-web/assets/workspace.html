@@ -2236,6 +2236,96 @@ button:focus:not(:focus-visible) {
   #facetDeleteModal .trash-dlg-foot button { min-height: 44px; padding-left: 12px; padding-right: 12px; white-space: nowrap; }
 }
 @media (max-width: 480px) { .trash-row, .trash-all { min-height: 44px; } .trash-bar-actions button, .trash-confirm-actions button { min-height: 44px; } .trash-row input, .trash-all input { width: 20px; height: 20px; } }
+/* Granola source card */
+.granola-card {
+  padding: 1em 1.25em 1.25em;
+  margin-bottom: 1.5em;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--cream-bright);
+}
+.granola-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  margin: 0 0 0.5em;
+}
+.granola-head .settings-subsection-title { margin: 0; color: var(--ink); }
+.granola-state {
+  flex: none;
+  padding: 0.2em 0.7em;
+  border-radius: 999px;
+  font-size: 0.82em;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--hairline);
+}
+.granola-state[data-state="on"] { color: var(--success-ink); background: var(--success-wash); }
+.granola-state[data-state="attention"] { color: var(--warn-ink); background: var(--warn-wash); }
+.granola-state[data-state="setting-up"] { color: var(--orange-text-aa); background: var(--orange-wash); }
+.granola-progress { margin: 0 0 0.75em; color: var(--ink-soft); font-size: 0.9em; }
+.granola-attention {
+  margin: 0 0 0.85em;
+  padding: 0.75em 0.9em;
+  border-radius: 6px;
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: 0.9em;
+  line-height: 1.45;
+}
+.granola-attention p { margin: 0; }
+.granola-attention p + p { margin-top: 0.35em; }
+.granola-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.3em 1.25em;
+  margin: 0 0 1em;
+  font-size: 0.9em;
+}
+.granola-facts dt { color: var(--ink-faint); }
+.granola-facts dd { margin: 0; color: var(--ink); }
+.granola-kept { margin: 0 0 1em; color: var(--ink-soft); font-size: 0.9em; }
+.granola-attention .granola-kept { margin: 0; color: inherit; }
+.granola-guide {
+  margin: 0 0 1em;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--paper);
+}
+.granola-guide summary {
+  padding: 0.6em 0.85em;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 600;
+  color: var(--orange-text-aa);
+}
+.granola-guide-body { padding: 0 0.85em 0.75em; font-size: 0.9em; color: var(--ink-soft); line-height: 1.5; }
+.granola-guide-body p { margin: 0.25em 0 0.6em; }
+.granola-guide-body ol { margin: 0 0 0.6em; padding-left: 1.4em; }
+.granola-guide-body li + li { margin-top: 0.25em; }
+.granola-guide-body strong { color: var(--ink); font-weight: 600; }
+.granola-guide-body code { font-family: var(--font-mono); font-size: 0.95em; }
+.granola-key-field { margin-bottom: 0.85em; }
+.granola-key-field small.granola-key-error { color: var(--danger); }
+.granola-actions { display: flex; flex-wrap: wrap; gap: 0.5em; }
+.granola-primary {
+  padding: 0.5em 1.1em;
+  border: 0;
+  border-radius: 6px;
+  background: var(--orange);
+  color: var(--ink-on-brand);
+  font-size: 0.9em;
+  font-weight: 600;
+  cursor: pointer;
+}
+.granola-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--orange) 88%, var(--surface-dark)); }
+.granola-actions button:disabled { opacity: 0.6; cursor: default; }
+.granola-note { margin: 0.6em 0 0; color: var(--ink-faint); font-size: 0.85em; }
+.granola-load-error { margin: 0.5em 0 0; color: var(--danger); font-size: 0.9em; }
+@media (max-width: 480px) {
+  .granola-actions button { min-height: 44px; }
+}
 </style>
 
 <script src="/app/settings/static/settings.js"></script>
@@ -2660,17 +2750,57 @@ button:focus:not(:focus-visible) {
 
       <form class="settings-form" onsubmit="return false;">
 
-      <div id="granolaSyncCard">
-        <h3 class="settings-subsection-title">Granola</h3>
-        <p class="settings-subsection-desc">your Granola meetings come into your journal, then update every hour.</p>
-        <div class="settings-field">
-          <label for="granolaKey">personal API key</label>
-          <input type="password" id="granolaKey" autocomplete="off" placeholder="grn_…" data-1p-ignore data-lpignore="true" data-bwignore="true">
+      <div id="granolaSyncCard" class="granola-card" aria-labelledby="granolaTitle">
+        <div class="granola-head">
+          <h3 class="settings-subsection-title" id="granolaTitle">Granola</h3>
+          <span class="granola-state" id="granolaState" data-state="loading">checking…</span>
         </div>
-        <button type="button" class="btn" id="granolaConnect">connect</button>
-        <button type="button" class="btn" id="granolaDisconnect" hidden>disconnect</button>
-        <button type="button" class="btn" id="granolaRefresh">refresh</button>
-        <p id="granolaStatus" role="status" aria-live="polite">loading…</p>
+        <p class="settings-subsection-desc">your Granola meetings come into your journal at the times they happened, with their transcripts and notes. new and edited meetings follow within the hour.</p>
+        <p class="granola-progress" id="granolaProgress" role="status" aria-live="polite" hidden></p>
+        <div class="granola-attention" id="granolaAttention" hidden>
+          <p class="granola-attention-reason" id="granolaAttentionReason"></p>
+          <p class="granola-kept" id="granolaAttentionKept"></p>
+        </div>
+        <dl class="granola-facts" id="granolaFacts" hidden></dl>
+        <p class="granola-kept" id="granolaOffKept" hidden></p>
+
+        <div class="granola-key" id="granolaKeyForm" hidden>
+          <details class="granola-guide" id="granolaGuide">
+            <summary>how to get your key</summary>
+            <div class="granola-guide-body">
+              <p>API access comes with Granola Business and Enterprise. the free Basic version doesn't include it.</p>
+              <ol>
+                <li>open the Granola app on your computer.</li>
+                <li>click your workspace name at the bottom left, then <strong>Settings</strong>.</li>
+                <li>choose <strong>Connectors</strong>, then <strong>Personal API keys</strong> under API.</li>
+                <li>click <strong>Create new key</strong>, tick <strong>Personal notes</strong>, and click <strong>Generate API Key</strong>.</li>
+                <li>copy the key, which starts with <code>grn_</code>, and paste it below.</li>
+              </ol>
+              <p>Personal notes covers the notes you own and the ones shared with you. on an Enterprise plan, an admin may need to allow API access first.</p>
+            </div>
+          </details>
+          <div class="settings-field granola-key-field">
+            <label for="granolaKey" id="granolaKeyLabel">personal API key</label>
+            <input type="password" id="granolaKey" autocomplete="off" spellcheck="false" placeholder="grn_…" aria-describedby="granolaKeyNote granolaKeyError" data-1p-ignore data-lpignore="true" data-bwignore="true">
+            <small id="granolaKeyNote">your journal keeps the key and uses it only to read your notes from Granola.</small>
+            <small id="granolaKeyError" class="granola-key-error" role="alert" hidden></small>
+          </div>
+          <div class="granola-actions">
+            <button type="button" class="granola-primary" id="granolaConnect">connect</button>
+            <button type="button" class="btn-secondary" id="granolaCancelKey" hidden>cancel</button>
+          </div>
+          <p class="granola-note" id="granolaReplaceNote" hidden>your meetings stay in your journal, and nothing comes in twice.</p>
+        </div>
+
+        <div id="granolaConnected" hidden>
+          <div class="granola-actions">
+            <button type="button" class="btn-secondary" id="granolaCheck">check now</button>
+            <button type="button" class="btn-secondary" id="granolaReplace">use a new key</button>
+            <button type="button" class="btn-secondary" id="granolaDisconnect">disconnect</button>
+          </div>
+          <p class="granola-note">disconnecting stops new meetings from coming in. meetings already in your journal stay.</p>
+        </div>
+        <p class="granola-load-error" id="granolaLoadError" role="alert" hidden>couldn't load Granola. reopen sync settings to try again.</p>
       </div>
 
       <div id="plaudSyncCard">
@@ -5612,46 +5742,216 @@ document.getElementById('field-plaud-sync-enabled').addEventListener('change', a
   }
 });
 
+// Granola: one card, five states. The status the journal reports is the
+// receipt for every action; nothing here claims an outcome before it does.
+const granola = { data: null, replacing: false, busy: false, poll: null };
+const granolaEl = id => document.getElementById(id);
+
+// The sources scale: just now · n min ago · n hours ago · yesterday · a date.
+function granolaRelative(iso) {
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return '';
+  const minutes = Math.floor((Date.now() - then.getTime()) / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (sameDay(then, today) || hours < 12) return hours === 1 ? '1 hour ago' : `${hours} hours ago`;
+  if (sameDay(then, yesterday)) return 'yesterday';
+  const month = then.toLocaleString('en-US', { month: 'long' }).toLowerCase();
+  return then.getFullYear() === today.getFullYear()
+    ? `${month} ${then.getDate()}`
+    : `${month} ${then.getDate()}, ${then.getFullYear()}`;
+}
+function granolaMeetings(n) {
+  return n === 1 ? '1 meeting' : `${n} meetings`;
+}
+function granolaMode(data) {
+  if (!data.connected) return data.meetings > 0 ? 'off' : 'ready';
+  if (data.attention) return 'attention';
+  if (!data.last_sync) return 'setting-up';
+  return 'on';
+}
+const GRANOLA_STATE_WORDS = {
+  ready: 'ready to set up', 'setting-up': 'setting up', on: 'on', attention: 'needs attention', off: 'off',
+};
+
+function renderGranola() {
+  const data = granola.data;
+  if (!data) return;
+  const mode = granolaMode(data);
+  const state = granolaEl('granolaState');
+  state.dataset.state = mode;
+  state.textContent = GRANOLA_STATE_WORDS[mode];
+
+  const progress = granolaEl('granolaProgress');
+  progress.hidden = mode !== 'setting-up';
+  if (mode === 'setting-up') {
+    progress.textContent = data.syncing
+      ? (data.meetings > 0
+        ? `bringing in your meetings from Granola. ${granolaMeetings(data.meetings)} so far.`
+        : 'bringing in your meetings from Granola…')
+      : 'your journal will bring in your meetings from Granola within the hour.';
+  }
+
+  granolaEl('granolaAttention').hidden = mode !== 'attention';
+  if (mode === 'attention') {
+    granolaEl('granolaAttentionReason').textContent = data.attention;
+    granolaEl('granolaAttentionKept').textContent = data.meetings > 0
+      ? `the ${granolaMeetings(data.meetings)} already in your journal stay.`
+      : 'nothing in your journal was changed.';
+  }
+
+  const facts = granolaEl('granolaFacts');
+  const rows = [];
+  if (mode === 'on' || mode === 'attention') {
+    rows.push(['meetings', data.meetings > 0 ? `${data.meetings} in your journal` : 'none yet']);
+    if (data.last_added) rows.push(['last added', granolaRelative(data.last_added)]);
+    if (data.last_sync) rows.push(['last checked', data.syncing ? 'checking now…' : granolaRelative(data.last_sync)]);
+  }
+  facts.hidden = rows.length === 0;
+  facts.replaceChildren(...rows.flatMap(([term, value]) => {
+    const dt = document.createElement('dt');
+    dt.textContent = term;
+    const dd = document.createElement('dd');
+    dd.textContent = value;
+    return [dt, dd];
+  }));
+
+  const offKept = granolaEl('granolaOffKept');
+  offKept.hidden = mode !== 'off';
+  if (mode === 'off') {
+    offKept.textContent = `disconnected. the ${granolaMeetings(data.meetings)} from Granola stay in your journal. connect again to keep them up to date; nothing comes in twice.`;
+  }
+
+  // A refused key is the one fault whose fix is a new key, so the field opens for it.
+  const keyFault = mode === 'attention' && data.attention_code === 'key';
+  const showKey = !data.connected || granola.replacing || keyFault;
+  const replacingKey = data.connected && showKey;
+  granolaEl('granolaKeyForm').hidden = !showKey;
+  granolaEl('granolaConnected').hidden = !data.connected;
+  granolaEl('granolaKeyLabel').textContent = replacingKey ? 'new personal API key' : 'personal API key';
+  granolaEl('granolaConnect').textContent = granola.busy === 'connect'
+    ? 'checking the key…'
+    : (replacingKey ? 'use this key' : 'connect');
+  granolaEl('granolaCancelKey').hidden = !(granola.replacing && !keyFault);
+  granolaEl('granolaReplaceNote').hidden = !replacingKey;
+  granolaEl('granolaReplace').hidden = replacingKey;
+  const guide = granolaEl('granolaGuide');
+  if (!guide.dataset.touched) guide.open = mode === 'ready';
+
+  const check = granolaEl('granolaCheck');
+  check.textContent = data.syncing ? 'checking…' : 'check now';
+  check.disabled = !!data.syncing || !!granola.busy;
+  granolaEl('granolaConnect').disabled = !!granola.busy;
+  granolaEl('granolaDisconnect').disabled = !!granola.busy;
+  granolaEl('granolaReplace').disabled = !!granola.busy;
+}
+
 async function loadGranola() {
-  const status = document.getElementById('granolaStatus');
   try {
-    const data = await window.apiJson('api/granola');
-    document.getElementById('granolaDisconnect').hidden = !data.connected;
-    const lines = [data.connected ? 'on' : 'not connected'];
-    if (data.connected) {
-      if (data.attention) lines.push(data.attention);
-      if (data.last_added) lines.push('last added to your journal: ' + new Date(data.last_added).toLocaleString());
-      if (data.last_sync) lines.push('last checked: ' + new Date(data.last_sync).toLocaleString());
-      else lines.push('waiting for the first sync.');
-    }
-    status.textContent = lines.join(' · ');
+    granola.data = await window.apiJson('api/granola');
+    granolaEl('granolaLoadError').hidden = true;
+    renderGranola();
   } catch (_) {
-    status.textContent = "couldn't load Granola. reopen sync settings to try again.";
+    granolaEl('granolaLoadError').hidden = false;
+    granolaEl('granolaState').textContent = 'unavailable';
+    granolaEl('granolaState').dataset.state = 'unavailable';
+  }
+  // Follow a running check until the journal reports how it ended.
+  const following = granola.data && (granola.data.syncing || granolaMode(granola.data) === 'setting-up');
+  clearTimeout(granola.poll);
+  if (following && document.visibilityState === 'visible') {
+    granola.poll = setTimeout(loadGranola, granola.data.syncing ? 2000 : 30000);
   }
 }
-async function changeGranola(disconnect) {
-  const connect = document.getElementById('granolaConnect');
-  const remove = document.getElementById('granolaDisconnect');
-  const key = document.getElementById('granolaKey');
-  const status = document.getElementById('granolaStatus');
-  connect.disabled = remove.disabled = true;
+
+function granolaKeyError(message) {
+  const error = granolaEl('granolaKeyError');
+  error.hidden = !message;
+  error.textContent = message || '';
+}
+
+async function connectGranola() {
+  const key = granolaEl('granolaKey');
+  const value = key.value.trim();
+  if (!value) {
+    granolaKeyError('paste your personal API key from Granola first.');
+    key.focus();
+    return;
+  }
+  granola.busy = 'connect';
+  granolaKeyError('');
+  renderGranola();
   try {
     await window.apiJson('api/granola', {
-      method: disconnect ? 'DELETE' : 'POST',
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      ...(disconnect ? {} : { body: JSON.stringify({ api_key: key.value.trim() }) }),
+      body: JSON.stringify({ api_key: value }),
     });
     key.value = '';
-    await loadGranola();
+    granola.replacing = false;
   } catch (error) {
-    status.textContent = error?.serverMessage || "couldn't change Granola. try again.";
+    granolaKeyError(error?.serverMessage || "couldn't save the key. try again.");
   } finally {
-    connect.disabled = remove.disabled = false;
+    granola.busy = false;
   }
+  await loadGranola();
 }
-document.getElementById('granolaRefresh').addEventListener('click', loadGranola);
-document.getElementById('granolaConnect').addEventListener('click', () => changeGranola(false));
-document.getElementById('granolaDisconnect').addEventListener('click', () => changeGranola(true));
+
+async function checkGranola() {
+  granola.busy = 'check';
+  renderGranola();
+  try {
+    await window.apiJson('api/granola/sync', { method: 'POST' });
+  } catch (_) {
+    // Already checking, or nothing to check: the status below says which.
+  } finally {
+    granola.busy = false;
+  }
+  await loadGranola();
+}
+
+async function disconnectGranola() {
+  granola.busy = 'disconnect';
+  renderGranola();
+  try {
+    await window.apiJson('api/granola', { method: 'DELETE' });
+    granola.replacing = false;
+  } catch (error) {
+    granolaEl('granolaLoadError').textContent = error?.serverMessage || "couldn't disconnect Granola. try again.";
+    granolaEl('granolaLoadError').hidden = false;
+  } finally {
+    granola.busy = false;
+  }
+  await loadGranola();
+}
+
+granolaEl('granolaConnect').addEventListener('click', connectGranola);
+granolaEl('granolaKey').addEventListener('keydown', event => {
+  if (event.key === 'Enter') { event.preventDefault(); connectGranola(); }
+});
+granolaEl('granolaCheck').addEventListener('click', checkGranola);
+granolaEl('granolaDisconnect').addEventListener('click', disconnectGranola);
+granolaEl('granolaReplace').addEventListener('click', () => {
+  granola.replacing = true;
+  renderGranola();
+  granolaEl('granolaKey').focus();
+});
+granolaEl('granolaCancelKey').addEventListener('click', () => {
+  granola.replacing = false;
+  granolaEl('granolaKey').value = '';
+  granolaKeyError('');
+  renderGranola();
+});
+granolaEl('granolaGuide').addEventListener('toggle', event => {
+  if (event.isTrusted) event.target.dataset.touched = '1';
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && document.getElementById('section-sync')?.classList.contains('active')) loadGranola();
+});
 
 // ========== VISION ==========
 let visionData = null;

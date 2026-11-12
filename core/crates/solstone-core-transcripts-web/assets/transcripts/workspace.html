@@ -615,6 +615,49 @@
   margin-bottom: 12px;
 }
 
+/* A Granola meeting's own notes, apart from its speech. */
+.tr-granola {
+  margin: 0 0 14px;
+  padding: 10px 14px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--cream-bright);
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+.tr-granola-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.tr-granola-label {
+  color: var(--ink-faint);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tr-granola-open { color: var(--orange-text-aa); font-size: 13px; white-space: nowrap; }
+.tr-granola-part { margin: 6px 0 0; }
+.tr-granola-part > summary { cursor: pointer; color: var(--ink); font-weight: 600; font-size: 13px; }
+.tr-granola-text { margin: 4px 0 0; line-height: 1.5; }
+.tr-granola-text :is(h1, h2, h3, h4, h5, h6) { font-size: 14px; font-weight: 600; color: var(--ink); margin: 10px 0 4px; }
+.tr-granola-text :is(ul, ol) { margin: 4px 0; padding-left: 20px; }
+.tr-granola-text > :first-child { margin-top: 0; }
+.tr-granola-text > :last-child { margin-bottom: 0; }
+.tr-granola-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 14px;
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.tr-granola-facts dt { color: var(--ink-faint); }
+.tr-granola-facts dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.tr-granola-empty { color: var(--ink-faint); font-size: 14px; margin: 4px 2px; }
+
 .tr-body-strip,
 .tr-body-context-card,
 .tr-body-panel {
