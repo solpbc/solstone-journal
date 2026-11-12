@@ -614,7 +614,7 @@ async fn mutate_update(
     // are hidden with it, in the same write, so they never reach search.
     let joins_hidden = match joins_a_hidden_group(root, &facet, &day, &span_id) {
         Ok(joins) => joins,
-        Err(response) => return response,
+        Err(error) => return internal(error),
     };
     let mut patch = patch.clone();
     if joins_hidden {
@@ -689,7 +689,7 @@ fn joins_a_hidden_group(
     facet: &str,
     day: &str,
     span_id: &str,
-) -> Result<bool, Response> {
+) -> Result<bool, String> {
     // A record that isn't a body record, or that the day can't say, is the
     // write's to report.
     let Ok(records) = solstone_core_location::body_records::stored_body_records(root, facet, day)
@@ -703,7 +703,7 @@ fn joins_a_hidden_group(
         return Ok(false);
     }
     let members = solstone_core_location::body_records::owner_group(root, facet, day, span_id)
-        .map_err(|error| internal(error.to_string()))?;
+        .map_err(|error| error.to_string())?;
     Ok(members.iter().any(|member| member.hidden))
 }
 
