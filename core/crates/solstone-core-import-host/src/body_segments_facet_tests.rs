@@ -66,7 +66,7 @@ pub(in crate::body_segments) fn entries(
         .set_permission(
             &connection,
             ReadPermission {
-                categories: vec!["transcripts".to_owned()],
+                categories: vec!["body".to_owned()],
                 scope: ReadScope::Facets {
                     ids: vec![facet_id.to_owned()],
                 },
