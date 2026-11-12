@@ -288,6 +288,8 @@ echo === cargo test --locked (journal library) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib || exit /b 1
 echo === cargo test --locked (ingest resolve: the write path paired apps upload through) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-ingest-resolve --lib || exit /b 1
+echo === cargo test --locked (import preview never inherits parent admission) ===
+call :run_exact_library solstone-core-import-web preview::tests::a_preview_child_does_not_receive_its_parents_launch_admission full-tests || exit /b 1
 echo === cargo test --locked (PDF import worker: signed-package resolution and argv) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-import-sources --lib document::windows_worker || exit /b 1
 echo === cargo test --locked (imported files keep their source time: documents and images) ===

@@ -653,6 +653,13 @@ async fn plan_using(
 ) -> Result<Value, PreviewError> {
     let args = preview_command(path, options, metadata)?;
     let mut child = tokio::process::Command::new(program);
+    // A new importer must not inherit the web process's consumed admission.
+    #[cfg(windows)]
+    for name in solstone_core_system::process::launch_only_environment_names() {
+        child.env_remove(name);
+    }
+    #[cfg(unix)]
+    solstone_core_system::process::remove_launch_only_environment(child.as_std_mut());
     child
         .args(&args[2..])
         .stdin(Stdio::null())
@@ -1038,6 +1045,81 @@ pub(crate) async fn prepare_embedded_start(
 mod tests {
     use super::*;
     use std::fs;
+
+    /// Re-enter this test in a parent with a consumed launch descriptor, then
+    /// run the real preview subprocess path. No process-global environment is
+    /// changed in the test harness that runs the rest of the suite.
+    #[cfg(all(test, feature = "full-tests"))]
+    #[tokio::test]
+    async fn a_preview_child_does_not_receive_its_parents_launch_admission() {
+        const CHILD: &str = "SOLSTONE_PREVIEW_INHERITANCE_TEST";
+        const VALUE: &str = "SOLSTONE_PREVIEW_PARENT_VALUE";
+        #[cfg(windows)]
+        const LAUNCH: &str = "SOL_WINDOWS_LAUNCH";
+        #[cfg(unix)]
+        const LAUNCH: &str = solstone_core_system::lifecycle::HOSTED_GENERATION_ENV;
+
+        if std::env::var_os(CHILD).is_none() {
+            let output = tokio::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "preview::tests::a_preview_child_does_not_receive_its_parents_launch_admission",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .env(LAUNCH, "consumed-parent-admission")
+                .env(VALUE, "kept")
+                .output()
+                .await
+                .unwrap();
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success() && stdout.contains("1 passed"),
+                "{stdout}\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        assert_eq!(std::env::var(LAUNCH).unwrap(), "consumed-parent-admission");
+        let root = tempfile::tempdir().unwrap();
+        let size = json!({"schema": "solstone.import.size.v1", "recordings": 1, "days": 1});
+        #[cfg(windows)]
+        let program = {
+            let program = root.path().join("importer.cmd");
+            fs::write(
+                &program,
+                format!(
+                    "@echo off\r\nif defined {LAUNCH} exit /b 70\r\nif not \"%{VALUE}%\"==\"kept\" exit /b 71\r\necho {size}\r\n"
+                ),
+            )
+            .unwrap();
+            program
+        };
+        #[cfg(unix)]
+        let program = {
+            use std::os::unix::fs::PermissionsExt as _;
+            let program = root.path().join("importer");
+            fs::write(
+                &program,
+                format!(
+                    "#!/bin/sh\n[ -z \"${{{LAUNCH}:-}}\" ] || exit 70\n[ \"${{{VALUE}:-}}\" = kept ] || exit 71\nprintf '%s\\n' '{size}'\n"
+                ),
+            )
+            .unwrap();
+            fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+            program
+        };
+        let actual = plan_using(
+            &program,
+            root.path(),
+            &json!({"zone": "UTC", "timestamp": "20261111_120000"}),
+            &ImportMetadata::new(),
+            Duration::from_secs(10),
+        )
+        .await
+        .unwrap();
+        assert_eq!(actual, size);
+    }
 
     /// The route a desktop page takes: the importer as its own process.
     #[cfg(unix)]

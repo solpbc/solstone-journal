@@ -37,6 +37,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- importing a file into a journal on windows no longer fails with "the import could not be prepared" after the journal has been running for a while.
 - after you correct an activity, your week is now remade only for the days you corrected. a corrected day's memory comes back corrected when the briefing still tells it, rather than being swapped for a different one, and your other days stay as they were.
 - when a connected agent asks your journal for something it has none of, such as a transcript of time in your terminal, the answer now always carries the note saying where to look. some agents, Claude Code among them, never saw that note before. thanks @dvanduzer for the report (#415).
 - a journal on a mac or linux computer that had been running for a long while could fail to start again after you stopped it, updated it or restarted the computer. it now starts as quickly after a month as after an hour, and it clears out the records it used to keep of every program it ever ran, which could take up gigabytes. a stray file in its folders, like the ones Finder adds, or a damaged record of a program it ran no longer stops it from starting either. a journal that's already failing to start this way starts again on its own, including after the restart that installs this update.
