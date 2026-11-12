@@ -1037,7 +1037,7 @@ fn a_hidden_days_workout_is_sent_nothing_and_counts_no_day_until_unhidden() {
     let sent = sent_words(&model);
     assert!(sent.contains("Tempo"), "{sent}");
     assert!(!sent.contains("Hill"), "{sent}");
-    assert_eq!((outcome.calls, outcome.hidden, outcome.waiting), (1, 1, 0));
+    assert_eq!((outcome.calls, outcome.hidden, outcome.waiting), (1, 1, 1));
     // Its line stays, unread, and Sam has one day, not two.
     let lines = store(root);
     assert!(lines["1"].words_hash.is_none());
@@ -1053,6 +1053,10 @@ fn a_hidden_days_workout_is_sent_nothing_and_counts_no_day_until_unhidden() {
     assert!(sent.contains("Hill"), "{sent}");
     assert_eq!((outcome.hidden, outcome.created), (0, 1));
     assert!(root.join("entities/sam").exists());
+
+    // Read once: the next import sends nothing.
+    let outcome = run(root, &Model::unused());
+    assert_eq!((outcome.calls, outcome.cached), (0, 2));
 }
 
 #[test]
@@ -1099,6 +1103,7 @@ fn with_the_hidden_days_unreadable_every_workout_waits_and_nothing_is_promoted()
             .fields(json!({"Activity Gear": "Fast shoes"}))
             .write(root);
     }
+    Workout::new(40, "20261007", "").write(root);
     let path = solstone_core_format::content::body_hidden_days::hidden_days_path(root);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, b"{not json").unwrap();
@@ -1112,7 +1117,8 @@ fn with_the_hidden_days_unreadable_every_workout_waits_and_nothing_is_promoted()
     // days can't be read.
     assert_eq!(outcome.created, 0);
     assert!(!root.join("entities/fast_shoes").exists());
-    assert!(store(root)["1"].words_hash.is_none());
+    // No workout is marked read, not even one with no words.
+    assert!(store(root).values().all(|line| line.words_hash.is_none()));
 }
 
 #[test]

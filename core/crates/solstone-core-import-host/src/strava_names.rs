@@ -176,7 +176,8 @@ pub struct StravaNamesOutcome {
     /// Workouts with names but no facet, which give no entity.
     pub no_facet: u64,
     /// Workouts with words on a day the owner hid, not read: they are on a
-    /// later import once the day is unhidden.
+    /// later import once the day is unhidden. Each is counted in `waiting`
+    /// too.
     pub hidden: u64,
     /// The hidden days couldn't be read, so no workout's words were read and
     /// no name became an entity this run.
@@ -266,6 +267,13 @@ fn record_strava_names_keeping(
     };
     let live = live_workouts(journal);
     outcome.workouts = live.len() as u64;
+    // With the hidden days unreadable, no workout's words are read or marked
+    // read, and no name is promoted.
+    let hidden = read_hidden_days(journal);
+    if hidden == HiddenDays::Unreadable {
+        log::warn!("Strava names: the hidden body days can't be read, no words read");
+        outcome.hidden_days_unreadable = true;
+    }
     let mut empty = BTreeMap::new();
     for (activity_id, workout) in &live {
         outcome.gear.extend(workout.gear.iter().cloned());
@@ -297,7 +305,9 @@ fn record_strava_names_keeping(
                 .or_insert_with(|| StravaNamesLine::unread(activity_id, &workout.day));
             line.day.clone_from(&workout.day);
             line.gear.clone_from(&workout.gear);
-            if let Some(hash) = empty.get(activity_id) {
+            if let Some(hash) = empty.get(activity_id)
+                && hidden != HiddenDays::Unreadable
+            {
                 line.words_hash = Some(hash.clone());
                 line.entities = Vec::new();
             }
@@ -317,11 +327,6 @@ fn record_strava_names_keeping(
     let enabled = solstone_core_facets::observe_declared_facet_inventory(journal)
         .map(|inventory| inventory.enabled)
         .map_err(|error| log::warn!("Strava names: facets unreadable, no words read: {error}"));
-    let hidden = read_hidden_days(journal);
-    if hidden == HiddenDays::Unreadable {
-        log::warn!("Strava names: the hidden body days can't be read, no words read");
-        outcome.hidden_days_unreadable = true;
-    }
     let mut wait = None;
     for (activity_id, workout) in &live {
         let hash = words_hash(&workout.words);
@@ -343,6 +348,7 @@ fn record_strava_names_keeping(
             Some(false) => {}
             Some(true) => {
                 outcome.hidden += 1;
+                outcome.waiting += 1;
                 continue;
             }
             None => {
@@ -399,6 +405,7 @@ fn record_strava_names_keeping(
             Some(false) => {}
             Some(true) => {
                 outcome.hidden += 1;
+                outcome.waiting += 1;
                 continue;
             }
             None => {
