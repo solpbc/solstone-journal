@@ -785,6 +785,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
   document.readyState = 'complete';
   document.activeElement = null;
   document.root = new FakeNode(document, 'html');
+  document.documentElement = document.root;
   document.head = document.root.appendChild(new FakeNode(document, 'head'));
   document.body = document.root.appendChild(new FakeNode(document, 'body'));
   document.inserted = (node) => {
@@ -1038,7 +1039,7 @@ asyncCase('contract: dispose leaves no listener, timer, subscription, observer, 
   const after = footprint(page);
   // The router listens on the document and window for the page's life; it
   // started with home and doesn't grow.
-  const router = { documentListeners: 3, windowListeners: 1, connections: 1 };
+  const router = { documentListeners: 3, windowListeners: 5, connections: 1 };
   assert.deepStrictEqual(after, {
     ...before,
     documentListeners: before.documentListeners + router.documentListeners,
@@ -1056,7 +1057,7 @@ asyncCase('contract: a mount that throws part-way takes back what it added, and 
   await page.boot('home').catch(() => {});
   await page.clock.advance(15000);
   const failed = footprint(page);
-  const router = { documentListeners: 3, windowListeners: 1, connections: 1 };
+  const router = { documentListeners: 3, windowListeners: 5, connections: 1 };
   assert.deepStrictEqual(failed, {
     ...before,
     documentListeners: before.documentListeners + router.documentListeners,
@@ -2730,6 +2731,225 @@ asyncCase('leaks: a hundred switches and fifty day steps leave the page as the f
   assert.deepStrictEqual(last, first);
   assert.ok(page.window.solRouter.held().scrolls <= 50, 'the scroll memory is bounded');
   assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
+// ---- a press while a move's view transition runs
+
+// A transition in its two phases, as a browser runs it: the callback waits
+// for a frame (`frame()`), then the animation runs until `finish()`. A skip
+// runs the callback at once and ends the animation.
+function phasedTransitions(page) {
+  const running = [];
+  page.document.startViewTransition = (update) => {
+    page.record.transitions += 1;
+    let go;
+    let end;
+    const gate = new Promise((resolve) => { go = resolve; });
+    const animated = new Promise((resolve) => { end = resolve; });
+    const updateCallbackDone = gate.then(update);
+    const finished = Promise.all([updateCallbackDone, animated]).then(() => {});
+    const entry = { go, end, skipped: false };
+    running.push(entry);
+    return {
+      updateCallbackDone, ready: updateCallbackDone, finished,
+      skipTransition() { page.record.skipped += 1; entry.skipped = true; go(); end(); },
+    };
+  };
+  return {
+    running: () => running.length,
+    frame() { running.forEach((entry) => entry.go()); },
+    finish() { running.splice(0).forEach((entry) => { entry.go(); entry.end(); }); },
+  };
+}
+
+// A pointer event as the page gets it: the window's capture listeners first,
+// then the document's.
+function pointer(page, type, target, pointerId = 1) {
+  const event = { type, pointerId, target, button: 0, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+  page.window.dispatchEvent(event);
+  page.document.dispatchEvent(event);
+  return event;
+}
+
+// An ordinary tap: down, up, then the click the browser makes of it.
+function tap(page, href, pointerId = 1) {
+  pointer(page, 'pointerdown', page.link(href), pointerId);
+  pointer(page, 'pointerup', page.link(href), pointerId);
+  return page.click(href);
+}
+
+// The move put focus on the view's heading or its workspace, never the body.
+function assertViewFocus(page, label) {
+  const active = page.document.activeElement;
+  assert.ok(active && active !== page.document.body, `${label}: focus is not on the body`);
+  assert.ok(active === page.main() || (/^H[12]$/.test(active.tagName) && page.main().contains(active)), `${label}: focus is on ${active.tagName}`);
+}
+
+function answerOpenDay(page) {
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+}
+
+asyncCase('press: a tap animates its move, and the transition runs to its end', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  answerOpenDay(page);
+  await page.boot('home');
+  const phases = phasedTransitions(page);
+  tap(page, '/app/transcripts/');
+  await page.clock.advance(400);
+  assert.strictEqual(page.record.transitions, 1, 'one transition for the tap');
+  phases.frame();
+  await page.clock.advance(400);
+  phases.finish();
+  await page.clock.advance(400);
+  assert.ok(page.view('transcripts'));
+  assert.strictEqual(page.record.skipped, 0, 'nothing cut it short');
+  assertViewFocus(page, 'after the tap');
+});
+
+asyncCase('press: a press during the transition ends it, so the tap reaches its link', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  answerOpenDay(page);
+  await page.boot('home');
+  const phases = phasedTransitions(page);
+  const root = page.document.documentElement;
+  // In the callback's frame: the browser sends the press to the root.
+  tap(page, '/app/transcripts/');
+  await page.clock.advance(400);
+  assert.strictEqual(phases.running(), 1);
+  assert.ok(page.view('home'), 'the move waits for its frame');
+  pointer(page, 'pointerdown', root);
+  assert.strictEqual(page.record.skipped, 1, 'the press ends the transition');
+  await page.clock.advance(400);
+  assert.ok(page.view('transcripts'), 'the view is placed at once');
+  pointer(page, 'pointerup', root);
+  // In the animation, after the move has focused the view: the press ends
+  // it, and the tap's click reaches the link it was on.
+  tap(page, '/app/home/', 2);
+  await page.clock.advance(400);
+  phases.frame();
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+  assertViewFocus(page, 'home placed');
+  pointer(page, 'pointerdown', root, 3);
+  assert.strictEqual(page.record.skipped, 2, 'a press in the animation ends it too');
+  pointer(page, 'pointerup', root, 3);
+  page.click('/app/more/');
+  await page.clock.advance(400);
+  phases.finish();
+  await page.clock.advance(400);
+  assert.ok(page.view('more'));
+  assert.strictEqual(page.location.pathname, '/app/more/', 'the page ends at the second link');
+  assertViewFocus(page, 'more placed');
+  await page.history.back();
+  await page.clock.advance(400);
+  phases.finish();
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/home/', 'back returns to the first view');
+  assert.ok(page.view('home'));
+});
+
+asyncCase('press: a move made while a press is down doesn\'t animate, and a press that ends lets moves animate again', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  answerOpenDay(page);
+  await page.boot('home');
+  const phases = phasedTransitions(page);
+  // A finger already down on the dock when the move swaps.
+  page.click('/app/transcripts/');
+  pointer(page, 'pointerdown', page.link('/app/map/'));
+  await page.clock.advance(400);
+  assert.strictEqual(page.record.transitions, 0, 'no transition while the press is down');
+  assert.ok(page.view('transcripts'));
+  pointer(page, 'pointerup', page.link('/app/map/'));
+  tap(page, '/app/home/', 2);
+  await page.clock.advance(400);
+  assert.strictEqual(page.record.transitions, 1, 'released, the next move animates');
+  phases.finish();
+  await page.clock.advance(400);
+  // A press that became a scroll ends with a cancel.
+  pointer(page, 'pointerdown', page.main(), 3);
+  pointer(page, 'pointercancel', page.main(), 3);
+  tap(page, '/app/transcripts/', 4);
+  await page.clock.advance(400);
+  assert.strictEqual(page.record.transitions, 2, 'a cancelled press is over');
+  phases.finish();
+  await page.clock.advance(400);
+  // A release the page never saw counts for a second, no longer.
+  pointer(page, 'pointerdown', page.main(), 5);
+  const RealDate = page.window.Date;
+  page.window.Date = class extends RealDate { static now() { return RealDate.now() + 1500; } };
+  try {
+    page.click('/app/home/');
+    await page.clock.advance(400);
+  } finally {
+    page.window.Date = RealDate;
+  }
+  assert.strictEqual(page.record.transitions, 3, 'a press held past a second no longer stops transitions');
+  phases.finish();
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+});
+
+asyncCase('press: a scroll put down during the transition ends it and changes nothing else', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  answerOpenDay(page);
+  await page.boot('home');
+  const phases = phasedTransitions(page);
+  tap(page, '/app/transcripts/');
+  await page.clock.advance(400);
+  phases.frame();
+  await page.clock.advance(50);
+  const down = pointer(page, 'pointerdown', page.document.documentElement, 2);
+  pointer(page, 'pointercancel', page.document.documentElement, 2);
+  assert.strictEqual(page.record.skipped, 1);
+  assert.ok(!down.defaultPrevented, 'the press itself is left alone, so the page scrolls');
+  await page.clock.advance(400);
+  assert.ok(page.view('transcripts'));
+  assert.strictEqual(page.location.pathname, '/app/transcripts/20260101');
+  assertViewFocus(page, 'after the scroll press');
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
+  assert.deepStrictEqual(page.window.__consoleErrors, []);
+});
+
+asyncCase('press: a mousedown on the root during a transition, or for a press that ended one, keeps focus', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  answerOpenDay(page);
+  await page.boot('home');
+  const phases = phasedTransitions(page);
+  const root = page.document.documentElement;
+  tap(page, '/app/transcripts/');
+  await page.clock.advance(400);
+  phases.frame();
+  await page.clock.advance(400);
+  assertViewFocus(page, 'placed');
+  // An engine that sends the tap's mousedown to the root while the
+  // transition runs: the mousedown takes nothing.
+  assert.ok(pointer(page, 'mousedown', root).defaultPrevented, 'a mousedown on the root during a transition is held');
+  assert.ok(!pointer(page, 'mousedown', page.link('/app/more/')).defaultPrevented, 'a mousedown on a link is the link\'s');
+  // One that keeps the root as the tap's target after the press ended it.
+  pointer(page, 'pointerdown', root, 2);
+  assert.strictEqual(page.record.skipped, 1);
+  await page.clock.advance(50);
+  assert.ok(pointer(page, 'mousedown', root, 2).defaultPrevented, 'the press\'s own mousedown is held too');
+  pointer(page, 'pointerup', root, 2);
+  assertViewFocus(page, 'after the lost tap');
+  // Outside both, the root's mousedown is the browser's.
+  const RealDate = page.window.Date;
+  page.window.Date = class extends RealDate { static now() { return RealDate.now() + 1500; } };
+  try {
+    assert.ok(!pointer(page, 'mousedown', root, 3).defaultPrevented, 'no transition, no hold');
+  } finally {
+    page.window.Date = RealDate;
+  }
 });
 
 (async () => {
