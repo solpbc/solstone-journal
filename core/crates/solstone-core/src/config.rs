@@ -7,18 +7,18 @@ use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::ExitCode;
 
 use solstone_core_cli::{ConfigAction, ConfigCommand, ConfigJournalOptions};
 use solstone_core_installation_identity::{
-    OwnerBase, PlatformTag, SetupAdmissionRequest, admit_setup_with_effective_journal_validator,
+    OwnerBase, PlatformTag, SetupAdmissionRequest, admit_journal_relocation,
     journal_token_from_path, namespace_name, root_token_from_path,
 };
 use solstone_core_journal::{
     Source, detect_checkout_root, read_config_journal, resolve_journal_path,
 };
 use solstone_core_setup::{
-    identity_evidence::gather_wrapper_artifact_evidence,
+    identity_evidence::gather_artifact_evidence,
     manifest::{legacy_manifest_evidence, manifest_path},
     refuse_journal_in_program_folder,
     wrapper::{
@@ -289,26 +289,95 @@ fn service_summary(c: &JournalChange, d: &Decision) -> &'static str {
 }
 
 pub(crate) enum ServiceCommandResult {
-    Exited { code: i32 },
-    ExecutableMissing { error: io::Error },
-    LaunchError { error: io::Error },
+    Exited {
+        code: i32,
+    },
+    #[cfg(test)]
+    ExecutableMissing {
+        error: io::Error,
+    },
 }
 pub(crate) trait ServiceCommandRunner {
+    fn prepare(&self, change: &JournalChange) -> Result<(bool, bool), String>;
     fn run(&self, executable: &Path, args: &[&str]) -> ServiceCommandResult;
+    fn publish(
+        &self,
+        guard: &solstone_core_installation_identity::GuardFields,
+    ) -> Result<(), String>;
 }
-struct RealServiceRunner;
+struct RealServiceRunner {
+    #[cfg(unix)]
+    relocation: std::cell::RefCell<Option<crate::service::JournalRelocation>>,
+}
 impl ServiceCommandRunner for RealServiceRunner {
+    fn prepare(&self, change: &JournalChange) -> Result<(bool, bool), String> {
+        #[cfg(unix)]
+        {
+            let relocation = crate::service::JournalRelocation::prepare(
+                &change.home_dir,
+                &change.sol_bin,
+                &change.current_path,
+                &change.identity_root,
+            )?;
+            let state = (relocation.installed(), relocation.running());
+            self.relocation.replace(Some(relocation));
+            Ok(state)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = change;
+            Err("journal-folder relocation requires a managed POSIX installation".into())
+        }
+    }
     fn run(&self, executable: &Path, args: &[&str]) -> ServiceCommandResult {
-        let mut c = Command::new(executable);
-        c.args(args);
-        match c.status() {
-            Ok(s) => ServiceCommandResult::Exited {
-                code: s.code().unwrap_or(1),
-            },
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                ServiceCommandResult::ExecutableMissing { error: e }
+        #[cfg(unix)]
+        {
+            let _ = executable;
+            let result = match args {
+                ["journal", "service", "stop"] => self
+                    .relocation
+                    .borrow_mut()
+                    .as_mut()
+                    .expect("prepared relocation")
+                    .stop(),
+                ["journal", "service", "start"]
+                | ["journal", "service", "restart", "--if-installed"] => self
+                    .relocation
+                    .borrow_mut()
+                    .as_mut()
+                    .expect("prepared relocation")
+                    .start(),
+                _ => Err("unsupported journal-folder service action".to_owned()),
+            };
+            if let Err(error) = &result {
+                eprintln!("{error}");
             }
-            Err(e) => ServiceCommandResult::LaunchError { error: e },
+            ServiceCommandResult::Exited {
+                code: if result.is_ok() { 0 } else { 1 },
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (executable, args);
+            ServiceCommandResult::Exited { code: 1 }
+        }
+    }
+    fn publish(
+        &self,
+        guard: &solstone_core_installation_identity::GuardFields,
+    ) -> Result<(), String> {
+        #[cfg(unix)]
+        {
+            self.relocation
+                .borrow_mut()
+                .as_mut()
+                .expect("prepared relocation")
+                .publish(guard)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = guard;
+            Err("journal-folder relocation requires a managed POSIX installation".into())
         }
     }
 }
@@ -351,53 +420,6 @@ fn corrupt(path: &Path) -> String {
         "your settings file at {} couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
         path.display()
     )
-}
-fn installed() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        home()
-            .join("Library/LaunchAgents/org.solpbc.solstone.plist")
-            .exists()
-    }
-    #[cfg(target_os = "linux")]
-    {
-        home()
-            .join(".config/systemd/user/solstone.service")
-            .exists()
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        false
-    }
-}
-fn running() -> bool {
-    if !installed() {
-        return false;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("launchctl")
-            .args([
-                "print",
-                &format!("gui/{}/org.solpbc.solstone", nix::unistd::Uid::effective()),
-            ])
-            .output()
-            .is_ok_and(|o| {
-                o.status.success()
-                    && String::from_utf8_lossy(&o.stdout).contains("\n\tstate = running\n")
-            })
-    }
-    #[cfg(target_os = "linux")]
-    {
-        Command::new("systemctl")
-            .args(["--user", "is-active", "solstone"])
-            .output()
-            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        false
-    }
 }
 fn home() -> PathBuf {
     env::var_os("HOME")
@@ -497,6 +519,12 @@ fn read_wrapper_targets(change: &JournalChange) -> Result<WrapperTargets, Rewrit
     let Some(sol_wrapper) = parse_wrapper(WrapperCommand::Solstone, &sol_content) else {
         return Err(RewriteError::Refusal(wrapper_refusal(&sol_alias)));
     };
+    if resolve_non_strict(Path::new(&sol_wrapper.journal)) != change.current_path {
+        return Err(RewriteError::Refusal(
+            "journal location changed while this command waited; try the folder change again"
+                .into(),
+        ));
+    }
     validate_wrapper_inputs(
         WrapperCommand::Solstone,
         &change.target_path,
@@ -508,18 +536,25 @@ fn read_wrapper_targets(change: &JournalChange) -> Result<WrapperTargets, Rewrit
     })
 }
 
-fn rewrite_preflighted(
+#[cfg(all(test, feature = "full-tests"))]
+thread_local! { static BEFORE_RELOCATION_ADMISSION: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) }; }
+
+fn admit_rewrite(
     change: &JournalChange,
-    targets: &WrapperTargets,
-) -> Result<PathBuf, RewriteError> {
-    let sol_alias = change.alias.clone();
+) -> Result<solstone_core_installation_identity::SetupAdmission, RewriteError> {
+    #[cfg(all(test, feature = "full-tests"))]
+    BEFORE_RELOCATION_ADMISSION.with(|slot| {
+        if let Some(hook) = slot.borrow_mut().take() {
+            hook();
+        }
+    });
     let root_token = root_token_from_path(&change.identity_root).map_err(|error| {
         RewriteError::Refusal(format!(
             "solstone journal config: identity root refused: {error}"
         ))
     })?;
     let namespace = namespace_name(PlatformTag::current(), &root_token);
-    let admission = admit_setup_with_effective_journal_validator(
+    admit_journal_relocation(
         SetupAdmissionRequest {
             owner: OwnerBase::at_home(change.home_dir.clone(), PlatformTag::current()).map_err(
                 |error| {
@@ -529,15 +564,15 @@ fn rewrite_preflighted(
                 },
             )?,
             root_token,
-            journal_token: journal_token_from_path(&change.target_path).map_err(|error| {
+            journal_token: journal_token_from_path(&change.current_path).map_err(|error| {
                 RewriteError::Refusal(format!(
                     "solstone journal config: journal path refused: {error}"
                 ))
             })?,
-            journal_is_explicit: true,
+            journal_is_explicit: false,
             accept_prepared_retarget: false,
             legacy_manifest: legacy_manifest_for_rewrite(change),
-            artifacts: gather_wrapper_artifact_evidence(&change.home_dir, &namespace),
+            artifacts: gather_artifact_evidence(&change.home_dir, &namespace),
         },
         &|token| refuse_journal_in_program_folder(&token.to_path_buf(), &change.sol_bin),
     )
@@ -545,9 +580,34 @@ fn rewrite_preflighted(
         RewriteError::Refusal(format!(
             "solstone journal config: identity admission refused: {error}"
         ))
-    })?;
+    })
+}
+
+fn rewrite_preflighted(
+    change: &JournalChange,
+    targets: &WrapperTargets,
+    admission: &mut solstone_core_installation_identity::SetupAdmission,
+) -> Result<(PathBuf, solstone_core_installation_identity::GuardFields), RewriteError> {
+    rewrite_preflighted_with(change, targets, admission, write_wrappers_atomically)
+}
+
+fn rewrite_preflighted_with(
+    change: &JournalChange,
+    targets: &WrapperTargets,
+    admission: &mut solstone_core_installation_identity::SetupAdmission,
+    publish_wrappers: impl FnOnce(
+        &[(PathBuf, String)],
+    ) -> Result<(), solstone_core_setup::wrapper::WrapperError>,
+) -> Result<(PathBuf, solstone_core_installation_identity::GuardFields), RewriteError> {
+    let sol_alias = change.alias.clone();
+    admission
+        .retarget_journal(
+            journal_token_from_path(&change.target_path)
+                .map_err(|error| RewriteError::Refusal(error.to_string()))?,
+        )
+        .map_err(|error| RewriteError::Install(error.to_string()))?;
     let guard = solstone_core_installation_identity::GuardFields::from_binding(admission.binding());
-    write_wrappers_atomically(&[(
+    publish_wrappers(&[(
         sol_alias,
         render_wrapper(
             WrapperCommand::Solstone,
@@ -558,15 +618,87 @@ fn rewrite_preflighted(
         .map_err(|error| RewriteError::Refusal(error.to_string()))?,
     )])
     .map_err(|error| RewriteError::Install(error.to_string()))?;
-    Ok(targets.solstone.clone())
+    solstone_core_setup::user_config::write_user_config(
+        &solstone_core_setup::user_config::config_path(&change.home_dir),
+        change
+            .target_path
+            .to_str()
+            .ok_or_else(|| RewriteError::Install("journal path is not UTF-8".into()))?,
+    )
+    .map_err(|error| RewriteError::Install(error.to_string()))?;
+    Ok((targets.solstone.clone(), guard))
+}
+
+fn shell_word(path: &Path) -> String {
+    format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
+}
+
+fn coordinates_agree(change: &JournalChange) -> bool {
+    if read_config_journal(&change.home_dir)
+        .ok()
+        .flatten()
+        .map(PathBuf::from)
+        .as_ref()
+        != Some(&change.target_path)
+    {
+        return false;
+    }
+    let Ok(root) = root_token_from_path(&change.identity_root) else {
+        return false;
+    };
+    let Ok(owner) = OwnerBase::at_home(change.home_dir.clone(), PlatformTag::current()) else {
+        return false;
+    };
+    let Ok(binding) = solstone_core_installation_identity::load_installation_binding(&owner, &root)
+    else {
+        return false;
+    };
+    if binding.journal_token.to_path_buf() != change.target_path {
+        return false;
+    }
+    let expected = solstone_core_installation_identity::GuardFields::from_binding(&binding);
+    let evidence = solstone_core_setup::identity_evidence::gather_setup_artifact_evidence(
+        &change.home_dir,
+        &binding.namespace,
+        false,
+    );
+    evidence.solstone_wrapper().guard() == Some(&expected)
+        && if change.service_installed {
+            evidence.service().guard() == Some(&expected)
+        } else {
+            matches!(
+                evidence.service().evidence(),
+                solstone_core_setup::identity_evidence::ArtifactSlotEvidence::Fresh
+            )
+        }
+}
+
+fn preflight_coordinates(change: &JournalChange) -> Result<(), String> {
+    solstone_core_setup::user_config::validate_user_config(
+        &solstone_core_setup::user_config::config_path(&change.home_dir),
+    )
+    .map_err(|error| {
+        format!("your settings could not be read; settings were not changed: {error}")
+    })?;
+    let root = root_token_from_path(&change.identity_root).map_err(|error| error.to_string())?;
+    let namespace = namespace_name(PlatformTag::current(), &root);
+    match gather_artifact_evidence(&change.home_dir, &namespace) {
+        solstone_core_installation_identity::ArtifactBindingEvidence::Foreign
+        | solstone_core_installation_identity::ArtifactBindingEvidence::Malformed
+        | solstone_core_installation_identity::ArtifactBindingEvidence::Ambiguous => Err(
+            "the saved journal location is not recognized or could not be read; settings were not changed".into(),
+        ),
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]
 fn rewrite(change: &JournalChange) -> Result<PathBuf, RewriteError> {
+    let mut admission = admit_rewrite(change)?;
     let _wrapper_lock =
         wrapper_lock(&change.home_dir).map_err(|error| RewriteError::Install(error.to_string()))?;
     let targets = read_wrapper_targets(change)?;
-    rewrite_preflighted(change, &targets)
+    rewrite_preflighted(change, &targets, &mut admission).map(|(binary, _)| binary)
 }
 fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) -> u8 {
     if let Err(error) =
@@ -585,13 +717,17 @@ fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) 
             eprintln!("{}", d.message.as_ref().unwrap());
             1
         }
-        Action::Noop => {
+        // A prior interrupted publication may already have changed the wrapper.
+        // Reconcile the remaining owned coordinates instead of claiming success.
+        Action::Noop if c.dry_run => 0,
+        Action::Noop if coordinates_agree(c) => {
             println!(
                 "solstone journal config: journal already set to {}",
                 c.target_path.display()
             );
             0
         }
+        Action::Noop => run_switch(c, service),
         _ if d.plan_only => {
             if matches!(d.action, Action::Move | Action::Switch | Action::Proceed)
                 && let Err(error) = refuse_journal_in_program_folder(&c.target_path, &c.sol_bin)
@@ -611,6 +747,36 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         eprintln!("{error}");
         return 1;
     }
+    if let Err(error) = preflight_coordinates(c) {
+        eprintln!("{error}");
+        return 1;
+    }
+    if let Err(error) = read_wrapper_targets(c) {
+        match error {
+            RewriteError::Refusal(message) | RewriteError::Install(message) => {
+                eprintln!("{message}")
+            }
+        }
+        return 1;
+    }
+    let mut admission = match admit_rewrite(c) {
+        Ok(value) => value,
+        Err(RewriteError::Refusal(message) | RewriteError::Install(message)) => {
+            eprintln!("{message}");
+            return 1;
+        }
+    };
+    let state = match service.prepare(c) {
+        Ok(state) => state,
+        Err(error) => {
+            eprintln!("{error}");
+            return 1;
+        }
+    };
+    let mut refreshed = c.clone();
+    refreshed.service_installed = state.0;
+    refreshed.service_running = state.1;
+    let c = &refreshed;
     let _wrapper_lock = match wrapper_lock(&c.home_dir) {
         Ok(lock) => lock,
         Err(error) => {
@@ -629,27 +795,58 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             return 1;
         }
     };
+    if let Err(error) = preflight_coordinates(c) {
+        eprintln!("{error}");
+        return 1;
+    }
+    if c.service_running
+        && !matches!(
+            service.run(&c.sol_bin, &["journal", "service", "stop"]),
+            ServiceCommandResult::Exited { code: 0 }
+        )
+    {
+        eprintln!("could not stop service before changing journal folder");
+        return 2;
+    }
     if let Err(e) = solstone_core_journal::ensure_journal_dir_with_label(&c.target_path, "config") {
+        drop(_wrapper_lock);
+        drop(admission);
+        maybe_restart_current_service(c, service);
         eprintln!(
             "solstone journal config: refused: cannot create {}: {e}",
             c.target_path.display()
         );
         return 1;
     }
-    let restart = match rewrite_preflighted(c, &targets) {
-        Ok(v) => v,
+    let restart = match rewrite_preflighted(c, &targets, &mut admission) {
+        Ok((binary, guard)) => {
+            if let Err(error) = service.publish(&guard) {
+                eprintln!(
+                    "your journal is now at {}; could not update its service: {error}; retry: solstone journal config journal {} --switch --yes",
+                    c.target_path.display(),
+                    shell_word(&c.target_path)
+                );
+                return 2;
+            }
+            binary
+        }
         Err(RewriteError::Refusal(message)) => {
-            eprintln!("{message}");
-            return 1;
+            eprintln!(
+                "could not finish saving the new journal location: {message}; retry: solstone journal config journal {} --switch --yes",
+                shell_word(&c.target_path)
+            );
+            return 2;
         }
         Err(RewriteError::Install(e)) => {
             eprintln!(
-                "solstone journal config: refused: cannot rewrite {}: {e}",
-                c.alias.display()
+                "could not finish saving the new journal location: {e}; retry: solstone journal config journal {} --switch --yes",
+                shell_word(&c.target_path)
             );
-            return 1;
+            return 2;
         }
     };
+    drop(_wrapper_lock);
+    drop(admission);
     if !c.service_installed {
         println!("service not installed; wrapper updated.");
         return 0;
@@ -666,6 +863,7 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             println!("wrapper updated; service restarted.");
             0
         }
+        #[cfg(test)]
         ServiceCommandResult::ExecutableMissing { error } => {
             eprintln!(
                 "solstone journal config: wrapper rewritten to {} but journal service restart could not run ({error}); restart manually",
@@ -680,23 +878,17 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             );
             2
         }
-        ServiceCommandResult::LaunchError { error } => {
-            eprintln!(
-                "solstone journal config: wrapper rewritten to {} but journal service restart could not run ({error}); restart manually",
-                c.target_path.display()
-            );
-            2
-        }
     }
 }
 fn maybe_restart_current_service(c: &JournalChange, service: &dyn ServiceCommandRunner) {
     if !c.service_running {
         return;
     }
-    if let ServiceCommandResult::ExecutableMissing { error } =
-        service.run(&c.sol_bin, &["journal", "service", "start"])
-    {
-        eprintln!("solstone journal config: rollback warning: could not restart service ({error})");
+    if !matches!(
+        service.run(&c.sol_bin, &["journal", "service", "start"]),
+        ServiceCommandResult::Exited { code: 0 }
+    ) {
+        eprintln!("could not restart service at the original journal folder");
     }
 }
 fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
@@ -720,6 +912,36 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         eprintln!("{error}");
         return 1;
     }
+    if let Err(error) = preflight_coordinates(c) {
+        eprintln!("{error}");
+        return 1;
+    }
+    if let Err(error) = read_wrapper_targets(c) {
+        match error {
+            RewriteError::Refusal(message) | RewriteError::Install(message) => {
+                eprintln!("{message}")
+            }
+        }
+        return 1;
+    }
+    let mut admission = match admit_rewrite(c) {
+        Ok(value) => value,
+        Err(RewriteError::Refusal(message) | RewriteError::Install(message)) => {
+            eprintln!("{message}");
+            return 1;
+        }
+    };
+    let state = match service.prepare(c) {
+        Ok(state) => state,
+        Err(error) => {
+            eprintln!("{error}");
+            return 1;
+        }
+    };
+    let mut refreshed = c.clone();
+    refreshed.service_installed = state.0;
+    refreshed.service_running = state.1;
+    let c = &refreshed;
     let _wrapper_lock = match wrapper_lock(&c.home_dir) {
         Ok(lock) => lock,
         Err(error) => {
@@ -738,11 +960,34 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             return 1;
         }
     };
+    if let Err(error) = preflight_coordinates(c) {
+        eprintln!("{error}");
+        return 1;
+    }
+    if !c.current_path.exists() {
+        eprintln!("{}", missing_current(c));
+        return 1;
+    }
+    if c.target_path.exists() || c.target_path.is_symlink() {
+        eprintln!("{}", existing_target(c));
+        return 1;
+    }
+    if !c.target_path.parent().is_some_and(Path::is_dir) {
+        eprintln!("{}", missing_parent(c));
+        return 1;
+    }
+    if filesystem_device(&c.current_path)
+        .zip(c.target_path.parent().and_then(filesystem_device))
+        .is_some_and(|(a, b)| a != b)
+    {
+        eprintln!("{}", cross_filesystem(c));
+        return 1;
+    }
     if c.service_running {
         match service.run(&c.sol_bin, &["journal", "service", "stop"]) {
             ServiceCommandResult::Exited { code: 0 } => {}
-            ServiceCommandResult::ExecutableMissing { error }
-            | ServiceCommandResult::LaunchError { error } => {
+            #[cfg(test)]
+            ServiceCommandResult::ExecutableMissing { error } => {
                 eprintln!("solstone journal config: could not stop service before move ({error})");
                 return 2;
             }
@@ -753,30 +998,44 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         }
     }
     if let Err(e) = fs::rename(&c.current_path, &c.target_path) {
+        drop(_wrapper_lock);
+        drop(admission);
         maybe_restart_current_service(c, service);
         eprintln!("solstone journal config: move failed: {e}");
         return 1;
     }
-    let restart = match rewrite_preflighted(c, &targets) {
-        Ok(v) => v,
+    let restart = match rewrite_preflighted(c, &targets, &mut admission) {
+        Ok((binary, guard)) => {
+            if let Err(error) = service.publish(&guard) {
+                eprintln!(
+                    "your journal is now at {}; could not update its service: {error}; retry: solstone journal config journal {} --switch --yes",
+                    c.target_path.display(),
+                    shell_word(&c.target_path)
+                );
+                return 2;
+            }
+            binary
+        }
         Err(RewriteError::Refusal(message)) => {
             eprintln!("{message}");
-            let _ = fs::rename(&c.target_path, &c.current_path);
-            maybe_restart_current_service(c, service);
+            eprintln!(
+                "journal remains at {}; retry: solstone journal config journal {} --switch --yes",
+                c.target_path.display(),
+                shell_word(&c.target_path)
+            );
             return 1;
         }
         Err(RewriteError::Install(e)) => {
-            let restored = fs::rename(&c.target_path, &c.current_path).is_ok();
-            maybe_restart_current_service(c, service);
-            let suffix = if restored {
-                "; restored original journal"
-            } else {
-                ""
-            };
-            eprintln!("solstone journal config: move failed during wrapper update: {e}{suffix}");
+            eprintln!(
+                "journal remains at {}; could not finish saving the new location: {e}; retry: solstone journal config journal {} --switch --yes",
+                c.target_path.display(),
+                shell_word(&c.target_path)
+            );
             return 2;
         }
     };
+    drop(_wrapper_lock);
+    drop(admission);
     if !c.service_installed {
         println!("service not installed; journal moved; wrapper updated.");
         return 0;
@@ -942,6 +1201,29 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    #[cfg(unix)]
+    let relocation = match crate::service::JournalRelocation::prepare(
+        &owner_home,
+        &wrapper.sol_bin,
+        &current,
+        &identity_root,
+    ) {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::from(1);
+        }
+    };
+    #[cfg(unix)]
+    let service_state = (relocation.installed(), relocation.running());
+    #[cfg(unix)]
+    drop(relocation);
+    #[cfg(not(unix))]
+    let service_state = (false, false);
+    let service = RealServiceRunner {
+        #[cfg(unix)]
+        relocation: std::cell::RefCell::new(None),
+    };
     let c = JournalChange {
         paths_equal: current == target,
         current_exists: current.exists(),
@@ -952,8 +1234,8 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
             .map(|(a, b)| a == b),
         current_device,
         target_parent_device,
-        service_installed: installed(),
-        service_running: running(),
+        service_installed: service_state.0,
+        service_running: service_state.1,
         action: o.action.map(Into::into),
         yes: o.yes,
         dry_run: o.dry_run,
@@ -967,7 +1249,7 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
         target_active,
     };
     let d = decide(&c);
-    ExitCode::from(execute(&c, &d, &RealServiceRunner))
+    ExitCode::from(execute(&c, &d, &service))
 }
 
 #[cfg(test)]
@@ -983,16 +1265,41 @@ mod tests {
     struct FakeServiceRunner {
         results: Mutex<VecDeque<ServiceCommandResult>>,
         calls: Mutex<Vec<(PathBuf, Vec<String>)>>,
+        published: Mutex<Vec<solstone_core_installation_identity::GuardFields>>,
+        publish_fails: bool,
+        prepare_fails: bool,
+        prepare_calls: AtomicUsize,
     }
     impl FakeServiceRunner {
         fn new(results: impl IntoIterator<Item = ServiceCommandResult>) -> Self {
             Self {
                 results: Mutex::new(results.into_iter().collect()),
                 calls: Mutex::new(Vec::new()),
+                published: Mutex::new(Vec::new()),
+                publish_fails: false,
+                prepare_fails: false,
+                prepare_calls: AtomicUsize::new(0),
             }
         }
     }
     impl ServiceCommandRunner for FakeServiceRunner {
+        fn prepare(&self, change: &JournalChange) -> Result<(bool, bool), String> {
+            self.prepare_calls.fetch_add(1, Ordering::Relaxed);
+            if self.prepare_fails {
+                return Err("injected service-lock refusal".into());
+            }
+            Ok((change.service_installed, change.service_running))
+        }
+        fn publish(
+            &self,
+            guard: &solstone_core_installation_identity::GuardFields,
+        ) -> Result<(), String> {
+            if self.publish_fails {
+                return Err("injected service publication failure".into());
+            }
+            self.published.lock().unwrap().push(guard.clone());
+            Ok(())
+        }
         fn run(&self, executable: &Path, args: &[&str]) -> ServiceCommandResult {
             self.calls.lock().unwrap().push((
                 executable.to_path_buf(),
@@ -1016,7 +1323,7 @@ mod tests {
                 TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
             ));
             fs::create_dir_all(&root).unwrap();
-            Self(root)
+            Self(fs::canonicalize(root).unwrap())
         }
     }
 
@@ -1365,18 +1672,9 @@ mod tests {
             ServiceCommandResult::Exited { code: 0 },
         ]);
         assert_eq!(run_move(&c, &service), 1);
-        assert_eq!(
-            *service.calls.lock().unwrap(),
-            vec![
-                (
-                    PathBuf::from("/service/solstone"),
-                    vec!["journal".into(), "service".into(), "stop".into()],
-                ),
-                (
-                    PathBuf::from("/service/solstone"),
-                    vec!["journal".into(), "service".into(), "start".into()],
-                ),
-            ]
+        assert!(
+            service.calls.lock().unwrap().is_empty(),
+            "refused before stopping the service"
         );
 
         let root = test_root("move-restart-refusal");
@@ -1410,15 +1708,21 @@ mod tests {
             assert_eq!(run_switch(&c, &service), 0);
             assert_eq!(
                 *service.calls.lock().unwrap(),
-                vec![(
-                    PathBuf::from("/service/solstone"),
-                    vec![
-                        "journal".into(),
-                        "service".into(),
-                        "restart".into(),
-                        "--if-installed".into(),
-                    ],
-                )]
+                vec![
+                    (
+                        PathBuf::from("/service/solstone"),
+                        vec!["journal".into(), "service".into(), "stop".into()]
+                    ),
+                    (
+                        PathBuf::from("/service/solstone"),
+                        vec![
+                            "journal".into(),
+                            "service".into(),
+                            "restart".into(),
+                            "--if-installed".into()
+                        ]
+                    ),
+                ]
             );
         }
 
@@ -1461,18 +1765,9 @@ mod tests {
                 ServiceCommandResult::Exited { code: 0 },
             ]);
             assert_eq!(run_move(&c, &service), 1);
-            assert_eq!(
-                *service.calls.lock().unwrap(),
-                vec![
-                    (
-                        PathBuf::from("/service/solstone"),
-                        vec!["journal".into(), "service".into(), "stop".into()],
-                    ),
-                    (
-                        PathBuf::from("/service/solstone"),
-                        vec!["journal".into(), "service".into(), "start".into()],
-                    ),
-                ]
+            assert!(
+                service.calls.lock().unwrap().is_empty(),
+                "refused before stopping the service"
             );
         }
     }
@@ -1499,7 +1794,7 @@ mod tests {
     #[test]
     fn rewrite_leaves_an_unmanaged_journal_alias_byte_identical() {
         let root = test_root("rewrite-journal-alias");
-        let c = move_change(&root);
+        let mut c = move_change(&root);
         let journal_alias = c.alias.with_file_name("journal");
         for kind in ["foreign", "symlink", "unreadable"] {
             let _ = fs::remove_file(&journal_alias);
@@ -1519,7 +1814,14 @@ mod tests {
                 }
                 _ => unreachable!(),
             };
-            assert!(rewrite(&c).is_ok(), "{kind}");
+            if let Err(error) = rewrite(&c) {
+                match error {
+                    RewriteError::Refusal(message) | RewriteError::Install(message) => {
+                        panic!("{kind}: {message}")
+                    }
+                }
+            }
+            c.current_path = c.target_path.clone();
             match kind {
                 "foreign" => assert_eq!(fs::read(&journal_alias).unwrap(), before.unwrap()),
                 "symlink" => assert!(
@@ -1852,5 +2154,345 @@ mod tests {
                 .starts_with("your settings file at ")
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn folder_changes_publish_owner_config_and_keep_adopted_identity() {
+        for moving in [false, true] {
+            for installed in [false, true] {
+                let root = test_root("coherent-folder");
+                let mut c = move_change(&root);
+                let mut initial = c.clone();
+                initial.target_path = c.current_path.clone();
+                rewrite(&initial).unwrap_or_else(|_| panic!("initial adoption"));
+                let before = parse_wrapper(
+                    WrapperCommand::Solstone,
+                    &fs::read_to_string(&c.alias).unwrap(),
+                )
+                .unwrap()
+                .guard
+                .unwrap();
+                let config = solstone_core_setup::user_config::config_path(&c.home_dir);
+                fs::write(
+                    &config,
+                    format!(
+                        "journal = {:?}\ncount = 7\n[owner]\nenabled = true\n",
+                        c.current_path.to_str().unwrap()
+                    ),
+                )
+                .unwrap();
+                fs::write(c.current_path.join("original.txt"), "owner bytes").unwrap();
+                c.target_path = root.join("new journal-日誌");
+                c.service_installed = installed;
+                c.service_running = false;
+                let service = FakeServiceRunner::new([]);
+                let code = if moving {
+                    run_move(&c, &service)
+                } else {
+                    run_switch(&c, &service)
+                };
+                assert_eq!(code, 0);
+                let wrapper = parse_wrapper(
+                    WrapperCommand::Solstone,
+                    &fs::read_to_string(&c.alias).unwrap(),
+                )
+                .unwrap();
+                let after = wrapper.guard.unwrap();
+                assert!(before.same_identity(&after));
+                assert_eq!(after.journal_token.to_path_buf(), c.target_path);
+                assert_eq!(service.published.lock().unwrap().as_slice(), &[after]);
+                assert!(
+                    service.calls.lock().unwrap().is_empty(),
+                    "inactive and absent services stay inactive"
+                );
+                let content = fs::read_to_string(config).unwrap();
+                assert!(content.contains("count = 7") && content.contains("enabled = true"));
+                assert_eq!(
+                    solstone_core_journal::read_config_journal(&c.home_dir)
+                        .unwrap()
+                        .map(PathBuf::from),
+                    Some(c.target_path.clone())
+                );
+                let original = if moving {
+                    &c.target_path
+                } else {
+                    &c.current_path
+                };
+                assert_eq!(
+                    fs::read_to_string(original.join("original.txt")).unwrap(),
+                    "owner bytes"
+                );
+                assert_eq!(c.current_path.exists(), !moving);
+            }
+        }
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn rename_failure_after_stop_keeps_the_old_binding_and_restarts_the_old_journal() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = test_root("rename-permission");
+        let mut c = move_change(&root);
+        let admission = admit_rewrite(&c)
+            .ok()
+            .expect("admitted current installation");
+        let before = admission.binding().clone();
+        drop(admission);
+        let parent = root.join("read-only-target");
+        fs::create_dir(&parent).unwrap();
+        c.target_path = parent.join("target");
+        c.service_installed = true;
+        c.service_running = true;
+        fs::write(c.current_path.join("owner.txt"), "unchanged").unwrap();
+        let service = FakeServiceRunner::new([
+            ServiceCommandResult::Exited { code: 0 },
+            ServiceCommandResult::Exited { code: 0 },
+        ]);
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o500)).unwrap();
+        let result = run_move(&c, &service);
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(result, 1);
+        assert_eq!(
+            fs::read_to_string(c.current_path.join("owner.txt")).unwrap(),
+            "unchanged"
+        );
+        assert!(!c.target_path.exists());
+        let after = admit_rewrite(&c)
+            .ok()
+            .expect("admitted current installation");
+        assert_eq!(after.binding(), &before);
+        let calls = service.calls.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].1, vec!["journal", "service", "stop"]);
+        assert_eq!(calls[1].1, vec!["journal", "service", "start"]);
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn malformed_owner_config_refuses_before_service_stop_or_move() {
+        let root = test_root("bad-user-config");
+        let mut c = move_change(&root);
+        c.service_installed = true;
+        c.service_running = true;
+        let config = solstone_core_setup::user_config::config_path(&c.home_dir);
+        fs::create_dir_all(config.parent().unwrap()).unwrap();
+        fs::write(&config, "journal = [").unwrap();
+        let original = fs::read(&c.alias).unwrap();
+        let service = FakeServiceRunner::new([]);
+        assert_eq!(run_move(&c, &service), 1);
+        assert!(c.current_path.exists() && !c.target_path.exists());
+        assert!(service.calls.lock().unwrap().is_empty());
+        assert_eq!(fs::read(&c.alias).unwrap(), original);
+        assert_eq!(fs::read_to_string(config).unwrap(), "journal = [");
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn service_publication_failure_is_recoverable_even_when_wrapper_already_names_target() {
+        let root = test_root("publication-retry");
+        let mut c = move_change(&root);
+        c.service_installed = true;
+        c.service_running = false;
+        fs::write(c.current_path.join("original.txt"), "owner bytes").unwrap();
+        let mut failed = FakeServiceRunner::new([]);
+        failed.publish_fails = true;
+        assert_eq!(run_move(&c, &failed), 2);
+        assert!(!c.current_path.exists());
+        assert_eq!(
+            fs::read_to_string(c.target_path.join("original.txt")).unwrap(),
+            "owner bytes"
+        );
+        c.current_path = c.target_path.clone();
+        c.paths_equal = true;
+        let retry = FakeServiceRunner::new([]);
+        assert_eq!(execute(&c, &decide(&c), &retry), 0);
+        assert_eq!(retry.published.lock().unwrap().len(), 1);
+        assert!(retry.calls.lock().unwrap().is_empty());
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn retry_finishes_identity_publication_when_wrapper_replacement_failed() {
+        let root = test_root("identity-publication-retry");
+        let mut c = move_change(&root);
+        c.service_installed = true;
+        c.service_running = false;
+        let mut initial = c.clone();
+        initial.target_path = c.current_path.clone();
+        rewrite(&initial).unwrap_or_else(|_| panic!("initial adoption"));
+        let wrapper_before = fs::read(&c.alias).unwrap();
+        let config_path = solstone_core_setup::user_config::config_path(&c.home_dir);
+        let config_before = fs::read(&config_path).unwrap();
+        fs::write(c.current_path.join("original.txt"), "owner bytes").unwrap();
+        let targets = read_wrapper_targets(&c).unwrap_or_else(|_| panic!("managed targets"));
+        let mut admission = admit_rewrite(&c).unwrap_or_else(|_| panic!("retained admission"));
+        fs::rename(&c.current_path, &c.target_path).unwrap();
+        let failed = rewrite_preflighted_with(&c, &targets, &mut admission, |contents| {
+            solstone_core_setup::wrapper::write_wrappers_atomically_with(contents, |_, _| {
+                Err(io::Error::other("injected publication failure"))
+            })
+        });
+        assert!(matches!(failed, Err(RewriteError::Install(_))));
+        drop(admission);
+        assert_eq!(fs::read(&c.alias).unwrap(), wrapper_before);
+        assert_eq!(fs::read(&config_path).unwrap(), config_before);
+        let owner = OwnerBase::at_home(c.home_dir.clone(), PlatformTag::current()).unwrap();
+        let token = root_token_from_path(&c.identity_root).unwrap();
+        let binding =
+            solstone_core_installation_identity::load_installation_binding(&owner, &token).unwrap();
+        assert_eq!(binding.journal_token.to_path_buf(), c.target_path);
+        let service = FakeServiceRunner::new([]);
+        assert_eq!(run_switch(&c, &service), 0);
+        let final_wrapper = parse_wrapper(
+            WrapperCommand::Solstone,
+            &fs::read_to_string(&c.alias).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            final_wrapper.guard,
+            Some(solstone_core_installation_identity::GuardFields::from_binding(&binding))
+        );
+        assert_eq!(
+            read_config_journal(&c.home_dir).unwrap().map(PathBuf::from),
+            Some(c.target_path.clone())
+        );
+        assert_eq!(
+            fs::read_to_string(c.target_path.join("original.txt")).unwrap(),
+            "owner bytes"
+        );
+        assert!(service.calls.lock().unwrap().is_empty());
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn switch_wrapper_write_failure_keeps_both_journals_and_retries_without_an_old_root_start() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = test_root("switch-wrapper-permission");
+        let mut c = move_change(&root);
+        let mut initial = c.clone();
+        initial.target_path = c.current_path.clone();
+        rewrite(&initial).unwrap_or_else(|_| panic!("initial adoption"));
+        fs::create_dir(&c.target_path).unwrap();
+        fs::write(c.current_path.join("original.txt"), "source owner bytes").unwrap();
+        fs::write(c.target_path.join("original.txt"), "target owner bytes").unwrap();
+        let old_wrapper = fs::read(&c.alias).unwrap();
+        let config = solstone_core_setup::user_config::config_path(&c.home_dir);
+        let old_config = fs::read(&config).unwrap();
+        c.service_installed = true;
+        c.service_running = true;
+        let stopped = FakeServiceRunner::new([ServiceCommandResult::Exited { code: 0 }]);
+        let bin = c.alias.parent().unwrap();
+        fs::set_permissions(bin, fs::Permissions::from_mode(0o500)).unwrap();
+        let result = run_switch(&c, &stopped);
+        fs::set_permissions(bin, fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(result, 2, "partial publication has a recoverable exit");
+        assert_eq!(fs::read(&c.alias).unwrap(), old_wrapper);
+        assert_eq!(fs::read(&config).unwrap(), old_config);
+        let owner = OwnerBase::at_home(c.home_dir.clone(), PlatformTag::current()).unwrap();
+        let token = root_token_from_path(&c.identity_root).unwrap();
+        let binding =
+            solstone_core_installation_identity::load_installation_binding(&owner, &token).unwrap();
+        assert_eq!(binding.journal_token.to_path_buf(), c.target_path);
+        assert_eq!(
+            stopped.calls.lock().unwrap()[0].1,
+            vec!["journal", "service", "stop"]
+        );
+        assert_eq!(
+            stopped.calls.lock().unwrap().len(),
+            1,
+            "no unintended-root start"
+        );
+        c.service_running = false;
+        let retry = FakeServiceRunner::new([]);
+        assert_eq!(run_switch(&c, &retry), 0);
+        assert!(
+            retry.calls.lock().unwrap().is_empty(),
+            "stopped state is preserved"
+        );
+        assert_eq!(
+            retry.published.lock().unwrap().as_slice(),
+            &[solstone_core_installation_identity::GuardFields::from_binding(&binding)]
+        );
+        assert_eq!(
+            read_config_journal(&c.home_dir).unwrap().map(PathBuf::from),
+            Some(c.target_path.clone())
+        );
+        assert_eq!(
+            fs::read_to_string(c.current_path.join("original.txt")).unwrap(),
+            "source owner bytes"
+        );
+        assert_eq!(
+            fs::read_to_string(c.target_path.join("original.txt")).unwrap(),
+            "target owner bytes"
+        );
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn relocation_waits_for_setup_before_taking_service_or_wrapper_authority() {
+        use nix::fcntl::{Flock, FlockArg};
+        use std::sync::{Arc, mpsc};
+        use std::time::Duration;
+        let root = test_root("setup-relocation-overlap");
+        let c = move_change(&root);
+        let mut initial = c.clone();
+        initial.target_path = c.current_path.clone();
+        rewrite(&initial).unwrap_or_else(|_| panic!("initial adoption"));
+        let setup = admit_rewrite(&initial).unwrap_or_else(|_| panic!("retained setup"));
+        let service = Arc::new(FakeServiceRunner::new([]));
+        let worker_service = Arc::clone(&service);
+        let worker_change = c.clone();
+        let (arrived_tx, arrived_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            BEFORE_RELOCATION_ADMISSION.with(|slot| {
+                *slot.borrow_mut() = Some(Box::new(move || {
+                    arrived_tx.send(()).unwrap();
+                    let _ = release_rx.recv();
+                }));
+            });
+            run_move(&worker_change, &*worker_service)
+        });
+        arrived_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(service.prepare_calls.load(Ordering::Relaxed), 0);
+        let service_lock = crate::service::service_lock(&c.home_dir).unwrap();
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(c.home_dir.join(".local/bin/.sol.lock"))
+            .unwrap();
+        let wrapper_lock = Flock::lock(file, FlockArg::LockExclusiveNonblock).unwrap();
+        assert!(c.current_path.exists() && !c.target_path.exists());
+        let bytes = fs::read_to_string(&c.alias).unwrap();
+        write_wrappers_atomically(&[(c.alias.clone(), bytes)]).unwrap();
+        drop(wrapper_lock);
+        drop(service_lock);
+        drop(setup);
+        release_tx.send(()).unwrap();
+        assert_eq!(worker.join().unwrap(), 0);
+        assert!(!c.current_path.exists() && c.target_path.exists());
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn service_lock_refusal_keeps_the_adopted_coordinate_and_source_location() {
+        let root = test_root("service-lock-refused");
+        let c = move_change(&root);
+        let mut initial = c.clone();
+        initial.target_path = c.current_path.clone();
+        rewrite(&initial).unwrap_or_else(|_| panic!("initial adoption"));
+        let owner = OwnerBase::at_home(c.home_dir.clone(), PlatformTag::current()).unwrap();
+        let token = root_token_from_path(&c.identity_root).unwrap();
+        let before =
+            solstone_core_installation_identity::load_installation_binding(&owner, &token).unwrap();
+        let mut service = FakeServiceRunner::new([]);
+        service.prepare_fails = true;
+        assert_eq!(run_move(&c, &service), 1);
+        let after =
+            solstone_core_installation_identity::load_installation_binding(&owner, &token).unwrap();
+        assert_eq!(before, after);
+        assert!(c.current_path.exists() && !c.target_path.exists());
+        assert!(service.calls.lock().unwrap().is_empty());
     }
 }

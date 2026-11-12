@@ -16,6 +16,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- restoring a backup during setup keeps the new journal's running services and troubleshooting logs intact, so new audio can be transcribed without restarting.
+- changing your journal folder on linux or mac now updates its saved location and service together, while keeping your other settings.
+- starting encrypted backup could take several minutes on slower computers. removed a repeated check that contributed to the delay.
+
 - importing the same journal archive again skips recordings already present, even after your journal has added processing results. existing duplicate copies stay as they are.
 - `solstone journal archive merge --dry-run` now counts recordings it would skip, rather than files in the archive.
 - when a phone sends your calendar again, for example after you pair it with your journal again, events your journal already has are no longer added a second time.

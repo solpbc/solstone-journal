@@ -483,6 +483,37 @@ impl SetupAdmission {
         &self.binding
     }
 
+    /// Publish a journal-folder change through this retained adopted admission.
+    ///
+    /// Acquire this admission without an explicit retarget before taking service
+    /// or wrapper locks. The caller validates placement and completes any file
+    /// move before this publication. Installation identity and generation stay
+    /// unchanged. Drop the admission before starting a process that reads it.
+    pub fn retarget_journal(&mut self, journal: JournalToken) -> Result<(), IdentityError> {
+        let namespace = &self._lease._namespace;
+        let snapshot = read_namespace(namespace, self.binding.namespace.clone())?;
+        let mut record = snapshot
+            .record
+            .ok_or(IdentityError::UnsafeState("namespace record is missing"))?;
+        if record.state != LifecycleState::Adopted
+            || !snapshot.marker
+            || InstallationBinding::from_record(self.binding.namespace.clone(), &record)
+                != self.binding
+        {
+            return Err(IdentityError::UnsafeState(
+                "the installation changed while changing its journal folder; try again",
+            ));
+        }
+        if record.journal_token != journal {
+            record.journal_token = journal.clone();
+            replace_record(namespace, &record, StageKind::Update)?;
+            self.binding =
+                InstallationBinding::from_record(self.binding.namespace.clone(), &record);
+            self.effective_journal = journal;
+        }
+        Ok(())
+    }
+
     /// Journal selected for this invocation after implicit-selection preservation.
     pub fn effective_journal(&self) -> &JournalToken {
         &self.effective_journal
@@ -1181,6 +1212,27 @@ pub fn admit_setup_with_effective_journal_validator(
     request: SetupAdmissionRequest,
     validate_effective_journal: &dyn Fn(&JournalToken) -> Result<(), IdentityError>,
 ) -> Result<SetupAdmission, IdentityError> {
+    admit_setup_with_policy(request, validate_effective_journal, false)
+}
+
+/// Retain relocation authority without changing an existing adopted binding.
+/// Pending setup and tombstones require their own recovery. A proven managed
+/// legacy installation may perform its first adoption at its current journal;
+/// it cannot replace an existing identity or select a future move target.
+pub fn admit_journal_relocation(
+    mut request: SetupAdmissionRequest,
+    validate_effective_journal: &dyn Fn(&JournalToken) -> Result<(), IdentityError>,
+) -> Result<SetupAdmission, IdentityError> {
+    request.journal_is_explicit = false;
+    request.accept_prepared_retarget = false;
+    admit_setup_with_policy(request, validate_effective_journal, true)
+}
+
+fn admit_setup_with_policy(
+    request: SetupAdmissionRequest,
+    validate_effective_journal: &dyn Fn(&JournalToken) -> Result<(), IdentityError>,
+    relocation: bool,
+) -> Result<SetupAdmission, IdentityError> {
     validate_effective_journal(&request.journal_token)?;
     validate_setup_evidence(&request.artifacts, request.legacy_manifest)?;
     let namespace_name = namespace_name(request.owner.platform(), &request.root_token);
@@ -1197,9 +1249,12 @@ pub fn admit_setup_with_effective_journal_validator(
             provider,
             owner_admission,
             validate_effective_journal,
+            relocation,
         )
     }
 
+    #[cfg(not(target_os = "linux"))]
+    let mut created_legacy = false;
     #[cfg(not(target_os = "linux"))]
     loop {
         let provider = open_provider(&request.owner, true)?;
@@ -1210,6 +1265,7 @@ pub fn admit_setup_with_effective_journal_validator(
             .get(&namespace_name)
             .filter(|snapshot| snapshot.record.is_some())
         {
+            validate_relocation_state(snapshot, relocation, created_legacy)?;
             let namespace = open_namespace(&provider, &namespace_name, false)?;
             return admit_existing_setup(
                 request.clone(),
@@ -1222,6 +1278,7 @@ pub fn admit_setup_with_effective_journal_validator(
             );
         }
 
+        validate_relocation_legacy(&request, relocation)?;
         validate_initial_evidence(&request)?;
         let namespace = open_namespace(&provider, &namespace_name, true)?;
         remove_stale_stages(&namespace)?;
@@ -1241,7 +1298,10 @@ pub fn admit_setup_with_effective_journal_validator(
         // platforms whose file locks are process-scoped.
         drop(owner_lock);
         match publish_prepared(&namespace, stage) {
-            Ok(()) => continue,
+            Ok(()) => {
+                created_legacy = true;
+                continue;
+            }
             Err(PublishPreparedError::AlreadyExists) => continue,
             Err(PublishPreparedError::Identity(error)) => return Err(error),
         }
@@ -1255,7 +1315,9 @@ fn admit_setup_linux(
     provider: SecureDir,
     owner_admission: OwnerAdmissionLease,
     validate_effective_journal: &dyn Fn(&JournalToken) -> Result<(), IdentityError>,
+    relocation: bool,
 ) -> Result<SetupAdmission, IdentityError> {
+    let mut created_legacy = false;
     loop {
         let owner_lock = lock_owner(&provider)?;
         let registry = enumerate_registry(&provider)?;
@@ -1263,6 +1325,7 @@ fn admit_setup_linux(
             .get(&namespace_name)
             .filter(|snapshot| snapshot.record.is_some())
         {
+            validate_relocation_state(snapshot, relocation, created_legacy)?;
             let namespace = open_namespace(&provider, &namespace_name, false)?;
             return admit_existing_setup(
                 request,
@@ -1275,6 +1338,7 @@ fn admit_setup_linux(
             );
         }
 
+        validate_relocation_legacy(&request, relocation)?;
         validate_initial_evidence(&request)?;
         let namespace = open_namespace(&provider, &namespace_name, true)?;
         remove_stale_stages(&namespace)?;
@@ -1293,10 +1357,41 @@ fn admit_setup_linux(
         // legacy or non-cooperating contenders.
         drop(owner_lock);
         match publish_prepared(&namespace, stage) {
-            Ok(()) | Err(PublishPreparedError::AlreadyExists) => {}
+            Ok(()) => created_legacy = true,
+            Err(PublishPreparedError::AlreadyExists) => {}
             Err(PublishPreparedError::Identity(error)) => return Err(error),
         }
     }
+}
+
+fn validate_relocation_state(
+    snapshot: &NamespaceSnapshot,
+    relocation: bool,
+    created_legacy: bool,
+) -> Result<(), IdentityError> {
+    if relocation
+        && !snapshot.record.as_ref().is_some_and(|record| {
+            record.state == LifecycleState::Adopted
+                || (created_legacy && record.state == LifecycleState::Prepared)
+        })
+    {
+        return Err(IdentityError::AdmissionRefused(
+            "finish setup or recovery before changing the journal folder",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_relocation_legacy(
+    request: &SetupAdmissionRequest,
+    relocation: bool,
+) -> Result<(), IdentityError> {
+    if relocation && !matches!(request.artifacts, ArtifactBindingEvidence::LegacyUnguarded) {
+        return Err(IdentityError::AdmissionRefused(
+            "finish journal setup before changing its folder",
+        ));
+    }
+    Ok(())
 }
 
 /// Admits a clean uninstall and calculates the owner-wide cleanup tail before
@@ -5984,6 +6079,65 @@ mod tests {
             ));
         }
         assert!(matches!(owner_base(), Err(IdentityError::InvalidInput(_))));
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn relocation_admission_delays_the_coordinate_change_and_keeps_identity() {
+        let _serial = serial();
+        let fixture = TestRoot::new();
+        let request = fixture.request(b"/relocation/install", b"/relocation/current");
+        let adopted = admit_setup(request.clone()).unwrap();
+        let before = adopted.binding().clone();
+        drop(adopted);
+        let record_path = fixture
+            .namespace_path(b"/relocation/install")
+            .join("record");
+        let original = fs::read(&record_path).unwrap();
+        let mut request = fixture.request(b"/relocation/install", b"/relocation/future");
+        request.artifacts = ArtifactBindingEvidence::Guarded(GuardFields::from_binding(&before));
+        let mut relocation = admit_journal_relocation(request, &|_| Ok(())).unwrap();
+        assert_eq!(relocation.binding(), &before);
+        assert_eq!(fs::read(&record_path).unwrap(), original);
+        let new = JournalToken::from_raw_absolute(b"/relocation/future".to_vec()).unwrap();
+        relocation.retarget_journal(new.clone()).unwrap();
+        let after = relocation.binding().clone();
+        assert!(
+            GuardFields::from_binding(&before).same_identity(&GuardFields::from_binding(&after))
+        );
+        assert_eq!(after.root_token, before.root_token);
+        assert_eq!(after.journal_token, new);
+        drop(relocation);
+        assert_eq!(
+            load_installation_binding(&fixture.owner, &before.root_token).unwrap(),
+            after
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn relocation_refuses_existing_prepared_and_tombstoned_records_without_replacement() {
+        let _serial = serial();
+        for state in [LifecycleState::Prepared, LifecycleState::Tombstoned] {
+            let fixture = TestRoot::new();
+            let request = fixture.request(b"/relocation/state", b"/relocation/current");
+            let adopted = admit_setup(request).unwrap();
+            let before = adopted.binding().clone();
+            drop(adopted);
+            let record_path = fixture.namespace_path(b"/relocation/state").join("record");
+            let mut record = read_record(&record_path);
+            record.state = state;
+            fs::write(&record_path, encode_record(&record).unwrap()).unwrap();
+            let original = fs::read(&record_path).unwrap();
+            let mut request = fixture.request(b"/relocation/state", b"/relocation/future");
+            request.artifacts =
+                ArtifactBindingEvidence::Guarded(GuardFields::from_binding(&before));
+            assert!(admit_journal_relocation(request, &|_| Ok(())).is_err());
+            assert_eq!(fs::read(&record_path).unwrap(), original);
+            let after = read_record(&record_path);
+            assert_eq!(after.id, record.id);
+            assert_eq!(after.generation, record.generation);
+        }
     }
 }
 

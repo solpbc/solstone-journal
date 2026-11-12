@@ -419,6 +419,204 @@ fn install(
     Ok(0)
 }
 
+/// A journal-folder change holds the service lock before taking the wrapper
+/// lock. Observation failures are refusals, and publication preserves the
+/// existing registration's port and sign-in intent.
+pub(crate) struct JournalRelocation {
+    lock: Option<solstone_core_journal_io::ExistingParentLock>,
+    platform: Platform,
+    home: PathBuf,
+    executable_dir: PathBuf,
+    identity_root: PathBuf,
+    published_guard: Option<GuardFields>,
+    initial: UnitTruth,
+    runtime: RuntimeTruth,
+    journal: PathBuf,
+    port: String,
+}
+
+impl JournalRelocation {
+    pub(crate) fn prepare(
+        home: &Path,
+        executable: &Path,
+        journal: &Path,
+        identity_root: &Path,
+    ) -> Result<Self, String> {
+        let lock = service_lock(home)?;
+        let platform = platform()?;
+        let target = unit_path(platform, home);
+        let initial = classify_unit(platform, &target)?;
+        if matches!(initial, UnitTruth::Foreign | UnitTruth::Unknown(_)) {
+            return Err(truth_error("change journal folder", &target, &initial));
+        }
+        let runtime = observe_runtime(platform, &target)?;
+        if matches!(runtime, RuntimeTruth::Foreign(_) | RuntimeTruth::Unknown(_)) {
+            return Err(runtime_error("change journal folder", runtime));
+        }
+        if matches!(initial, UnitTruth::Absent) && !matches!(runtime, RuntimeTruth::Absent) {
+            return Err("service registration has no matching managed file".into());
+        }
+        let port = match &initial {
+            UnitTruth::Managed(snapshot) => match platform {
+                Platform::Linux => systemd_route_repair_port(snapshot, &target)?,
+                Platform::Darwin => solstone_core_service_unit::launchd_plist_port(&snapshot.bytes)
+                    .ok_or_else(|| "service registration has no valid port".to_owned())?,
+            },
+            _ => DEFAULT_SERVICE_PORT.into(),
+        };
+        Ok(Self {
+            lock: Some(lock),
+            platform,
+            home: home.to_owned(),
+            executable_dir: executable
+                .parent()
+                .ok_or("service executable has no parent")?
+                .to_owned(),
+            identity_root: identity_root.to_owned(),
+            published_guard: None,
+            initial,
+            runtime,
+            journal: journal.to_owned(),
+            port,
+        })
+    }
+
+    pub(crate) fn installed(&self) -> bool {
+        matches!(self.initial, UnitTruth::Managed(_))
+    }
+    pub(crate) fn running(&self) -> bool {
+        matches!(self.runtime, RuntimeTruth::Managed { active: true })
+    }
+
+    pub(crate) fn stop(&mut self) -> Result<(), String> {
+        let target = unit_path(self.platform, &self.home);
+        revalidate_initial(self.platform, &target, &self.initial)?;
+        let runtime = observe_runtime(self.platform, &target)?;
+        if stop_requires_manager(&self.initial, runtime)? {
+            let result = match self.platform {
+                Platform::Linux => run_fixed(systemctl(&["--user", "stop", UNIT]), STOP_TIMEOUT)?,
+                Platform::Darwin => run_fixed(
+                    launchctl(&[
+                        "kill",
+                        "SIGTERM",
+                        &format!("gui/{}/{LABEL}", nix::unistd::Uid::effective()),
+                    ]),
+                    STOP_TIMEOUT,
+                )?,
+            };
+            require_success(result, "stop service before changing journal folder")?;
+            wait_runtime_quiescent(self.platform, &target)?;
+        }
+        clear_readiness(&self.journal).map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn publish(&mut self, guard: &GuardFields) -> Result<(), String> {
+        if !self.installed() {
+            self.journal = guard.journal_token.to_path_buf();
+            self.published_guard = Some(guard.clone());
+            return Ok(());
+        }
+        let target = unit_path(self.platform, &self.home);
+        revalidate_initial(self.platform, &target, &self.initial)?;
+        let runtime = observe_runtime(self.platform, &target)?;
+        if matches!(runtime, RuntimeTruth::Foreign(_) | RuntimeTruth::Unknown(_)) {
+            return Err(runtime_error("change journal folder", runtime));
+        }
+        if matches!(runtime, RuntimeTruth::Managed { active: true }) {
+            return Err("service became active during the journal-folder change".into());
+        }
+        let runtime_dir = version_independent_runtime_dir(&self.executable_dir);
+        let environment = build_service_environment(
+            path_text(&self.home)?,
+            std::env::var("PATH").ok().as_deref(),
+            path_text(&runtime_dir)?,
+            guard,
+        );
+        let launcher = self.home.join(".local/bin/solstone");
+        let bytes = match self.platform {
+            Platform::Linux => {
+                render_systemd_unit(&environment, path_text(&launcher)?, &self.port).into_bytes()
+            }
+            Platform::Darwin => {
+                render_launchd_plist(&environment, path_text(&launcher)?, &self.port)
+            }
+        };
+        if self.platform == Platform::Darwin && matches!(runtime, RuntimeTruth::Managed { .. }) {
+            remove_runtime_registration(self.platform, &target)?;
+        }
+        revalidate_initial(self.platform, &target, &self.initial)?;
+        require_published(atomic_replace_detailed(&target, &bytes, 0o644))?;
+        self.initial = classify_unit(self.platform, &target)?;
+        self.journal = guard.journal_token.to_path_buf();
+        self.published_guard = Some(guard.clone());
+        if self.platform == Platform::Linux {
+            require_success(
+                run_fixed(systemctl(&["--user", "daemon-reload"]), MUTATION_TIMEOUT)?,
+                "reload service after changing journal folder",
+            )?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn start(&mut self) -> Result<(), String> {
+        let target = unit_path(self.platform, &self.home);
+        revalidate_initial(self.platform, &target, &self.initial)?;
+        let runtime = observe_runtime(self.platform, &target)?;
+        if matches!(runtime, RuntimeTruth::Foreign(_) | RuntimeTruth::Unknown(_)) {
+            return Err(runtime_error(
+                "start after changing journal folder",
+                runtime,
+            ));
+        }
+        clear_readiness(&self.journal).map_err(|error| error.to_string())?;
+        if self.platform == Platform::Darwin && matches!(runtime, RuntimeTruth::Absent) {
+            require_success(
+                run_fixed(
+                    launchctl(&[
+                        "bootstrap",
+                        &format!("gui/{}", nix::unistd::Uid::effective()),
+                        path_text(&target)?,
+                    ]),
+                    START_TIMEOUT,
+                )?,
+                "load service after changing journal folder",
+            )?;
+        }
+        let result = match self.platform {
+            Platform::Linux => run_fixed(
+                systemctl(&["--user", "--no-block", "start", UNIT]),
+                START_TIMEOUT,
+            )?,
+            Platform::Darwin => run_fixed(
+                launchctl(&[
+                    "kickstart",
+                    &format!("gui/{}/{LABEL}", nix::unistd::Uid::effective()),
+                ]),
+                START_TIMEOUT,
+            )?,
+        };
+        require_success(result, "start after changing journal folder")?;
+        // The notified supervisor must read identity. A concurrent setup may
+        // hold identity while waiting to publish its service unit, so do not
+        // retain service authority across that dependency.
+        drop(self.lock.take());
+        wait_started(&self.journal, READY_TIMEOUT, POLL_INTERVAL)?;
+        if let Some(expected) = &self.published_guard {
+            let owner = OwnerBase::at_home(self.home.clone(), PlatformTag::current())
+                .map_err(|error| error.to_string())?;
+            let token =
+                root_token_from_path(&self.identity_root).map_err(|error| error.to_string())?;
+            let binding =
+                load_installation_binding(&owner, &token).map_err(|error| error.to_string())?;
+            if GuardFields::from_binding(&binding) != *expected {
+                return Err("installation changed while waiting for the new journal folder".into());
+            }
+        }
+        let _lock = service_lock(&self.home)?;
+        revalidate_initial(self.platform, &target, &self.initial)
+    }
+}
+
 /// Republishes an already-classified Linux unit for journal-route repair.
 ///
 /// The caller owns [`service_lock`] for this entire operation. The unit is
@@ -663,10 +861,23 @@ fn kickstart(platform: Platform, home: &Path) -> Result<PathBuf, String> {
     let _lock = service_lock(home)?;
     let target = unit_path(platform, home);
     require_managed(platform, &target)?;
-    require_owned_runtime(platform, &target, true)?;
+    let runtime = require_owned_runtime(platform, &target, true)?;
     let journal = resolved_journal()?;
     clear_readiness(&journal)
         .map_err(|error| format!("could not clear the service's ready state: {error}"))?;
+    if platform == Platform::Darwin && matches!(runtime, RuntimeTruth::Absent) {
+        require_success(
+            run_fixed(
+                launchctl(&[
+                    "bootstrap",
+                    &format!("gui/{}", nix::unistd::Uid::effective()),
+                    path_text(&target)?,
+                ]),
+                START_TIMEOUT,
+            )?,
+            "load installed service",
+        )?;
+    }
     let result = match platform {
         Platform::Linux => run_fixed(systemctl(&["--user", "start", UNIT]), START_TIMEOUT)?,
         Platform::Darwin => {
@@ -2013,7 +2224,25 @@ fn launchctl(args: &[&str]) -> Command {
     command
 }
 
+#[cfg(all(test, feature = "full-tests"))]
+thread_local! {
+    // Only native service tests install this replay; normal commands remain fixed.
+    static MANAGER_REPLAY: std::cell::RefCell<Option<std::collections::VecDeque<(String, CommandResult)>>> = const { std::cell::RefCell::new(None) };
+}
+
 fn run_fixed(mut command: Command, timeout: Duration) -> Result<CommandResult, String> {
+    #[cfg(all(test, feature = "full-tests"))]
+    if let Some(result) = MANAGER_REPLAY.with(|replay| {
+        let mut replay = replay.borrow_mut();
+        replay.as_mut().map(|steps| {
+            let (expected, result) = steps.pop_front().expect("unexpected manager command");
+            assert_eq!(command.get_args().next().unwrap(), expected.as_str());
+            result
+        })
+    }) {
+        return Ok(result);
+    }
+
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -2244,6 +2473,113 @@ mod tests {
             "Installation: waiting\na recent heartbeat from another run is present."
         ));
         assert!(!is_final_sync_diagnosis(READY_TIMEOUT_MESSAGE));
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn inactive_darwin_relocation_rewrites_the_guard_and_preserves_the_port() {
+        struct ReplayDrop;
+        impl Drop for ReplayDrop {
+            fn drop(&mut self) {
+                MANAGER_REPLAY.with(|r| {
+                    r.replace(None);
+                });
+            }
+        }
+        let _replay = ReplayDrop;
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().canonicalize().unwrap();
+        let target = unit_path(Platform::Darwin, &home);
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let mut old = test_guard();
+        old.journal_token =
+            solstone_core_installation_identity::journal_token_from_path(&home.join("old"))
+                .unwrap();
+        let mut new = old.clone();
+        new.journal_token = solstone_core_installation_identity::journal_token_from_path(
+            &home.join("new folder-日誌"),
+        )
+        .unwrap();
+        let environment =
+            build_service_environment(home.to_str().unwrap(), None, "/runtime/bin", &old);
+        let launcher = home.join(".local/bin/solstone");
+        let bytes = render_launchd_plist(&environment, launcher.to_str().unwrap(), "6123");
+        std::fs::write(&target, bytes).unwrap();
+        let initial = classify_unit(Platform::Darwin, &target).unwrap();
+        assert!(matches!(initial, UnitTruth::Managed(_)));
+        let uid = nix::unistd::Uid::effective();
+        let stdout = format!(
+            "gui/{uid}/{LABEL} = {{\n\tpath = {}\n\ttype = LaunchAgent\n\tstate = waiting\n\tprogram = {}\n\targuments = {{\n\t\t{}\n\t\tjournal\n\t\tsupervisor\n\t\t6123\n\t}}\n}}\n",
+            target.display(),
+            launcher.display(),
+            launcher.display()
+        );
+        let absent = || CommandResult {
+            code: 113,
+            stdout: vec![],
+            stderr: format!(
+                "Bad request.\nCould not find service \"{LABEL}\" in domain for user gui: {uid}\n"
+            )
+            .into_bytes(),
+        };
+        MANAGER_REPLAY.with(|r| {
+            r.replace(Some(std::collections::VecDeque::from([
+                (
+                    "print".into(),
+                    CommandResult {
+                        code: 0,
+                        stdout: stdout.into_bytes(),
+                        stderr: vec![],
+                    },
+                ),
+                (
+                    "bootout".into(),
+                    CommandResult {
+                        code: 0,
+                        stdout: vec![],
+                        stderr: vec![],
+                    },
+                ),
+                ("print".into(), absent()),
+            ])))
+        });
+        let mut relocation = JournalRelocation {
+            lock: Some(service_lock(&home).unwrap()),
+            platform: Platform::Darwin,
+            home: home.clone(),
+            executable_dir: home.join("runtime/bin"),
+            identity_root: home.clone(),
+            published_guard: None,
+            initial,
+            runtime: RuntimeTruth::Managed { active: false },
+            journal: old.journal_token.to_path_buf(),
+            port: "6123".into(),
+        };
+        relocation.publish(&new).unwrap();
+        let published = std::fs::read(&target).unwrap();
+        assert_eq!(
+            solstone_core_service_unit::launchd_plist_port(&published).as_deref(),
+            Some("6123")
+        );
+        let plist = plist::Value::from_reader(std::io::Cursor::new(&published)).unwrap();
+        let environment = plist
+            .as_dictionary()
+            .unwrap()
+            .get("EnvironmentVariables")
+            .unwrap()
+            .as_dictionary()
+            .unwrap();
+        let values = environment
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_string().unwrap().to_owned()))
+            .collect();
+        assert_eq!(parse_service_guard_environment(&values).unwrap(), Some(new));
+        MANAGER_REPLAY.with(|r| {
+            assert!(
+                r.borrow().as_ref().unwrap().is_empty(),
+                "all native manager observations consumed; no start requested"
+            )
+        });
     }
 
     fn test_guard() -> GuardFields {

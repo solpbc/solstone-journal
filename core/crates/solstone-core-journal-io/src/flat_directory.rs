@@ -520,6 +520,48 @@ pub fn list_flat_directory(
     list_flat_directory_matching(directory, maximum, |_| true)
 }
 
+/// Visit selected native entries without a resident directory list. Names are
+/// selected before metadata reads; selected entries retain no-follow inspection.
+pub(crate) fn visit_flat_directory_matching(
+    directory: &FlatDirectory,
+    include: impl Fn(&OsStr) -> bool,
+    mut visit: impl FnMut(FlatDirectoryEntry) -> Result<(), FlatDirectoryError>,
+) -> Result<(), FlatDirectoryError> {
+    directory.revalidate()?;
+    let mut opened = nix::dir::Dir::openat(directory, ".", DIRECTORY_FLAGS, Mode::empty())
+        .map_err(|e| {
+            errno_error(
+                "open copy-policy directory",
+                directory.diagnostic_path().to_path_buf(),
+                e,
+            )
+        })?;
+    for listed in opened.iter() {
+        let listed = listed.map_err(|e| {
+            errno_error(
+                "iterate copy-policy directory",
+                directory.diagnostic_path().to_path_buf(),
+                e,
+            )
+        })?;
+        let bytes = listed.file_name().to_bytes();
+        if matches!(bytes, b"." | b"..") {
+            continue;
+        }
+        let name = OsString::from_vec(bytes.to_vec());
+        if !include(&name) {
+            continue;
+        }
+        let entry = stat_entry(directory, &name)?.ok_or_else(|| {
+            FlatDirectoryError::EnumerationChanged {
+                path: directory.diagnostic_entry(&name),
+            }
+        })?;
+        visit(entry)?;
+    }
+    directory.revalidate()
+}
+
 /// Select names before inspecting their metadata. The bound still counts every
 /// listed name, and selected entries retain the strict disappearance refusal.
 pub(crate) fn list_flat_directory_matching(

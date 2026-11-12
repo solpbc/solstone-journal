@@ -98,8 +98,26 @@ fn top_level_string(item: &Item) -> Option<String> {
     item.as_value()?.as_str().map(ToOwned::to_owned)
 }
 
-/// Write the setup-owned journal entry in the exact Python reference format.
+/// Validate an existing config before changing other installation coordinates.
+/// Missing config is a fresh installation; unreadable or malformed config is not.
+pub fn validate_user_config(path: &Path) -> io::Result<()> {
+    read_user_document(path).map(|_| ())
+}
+
+fn read_user_document(path: &Path) -> io::Result<DocumentMut> {
+    match fs::read_to_string(path) {
+        Ok(content) => content
+            .parse::<DocumentMut>()
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(DocumentMut::new()),
+        Err(error) => Err(error),
+    }
+}
+
+/// Atomically update only the setup-owned journal entry, preserving owner settings.
 pub fn write_user_config(path: &Path, journal: &str) -> io::Result<PathBuf> {
+    let mut document = read_user_document(path)?;
+    document["journal"] = toml_edit::value(journal);
     let parent = path.parent().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -108,8 +126,7 @@ pub fn write_user_config(path: &Path, journal: &str) -> io::Result<PathBuf> {
     })?;
     fs::create_dir_all(parent)?;
 
-    let escaped = journal.replace('\\', "\\\\").replace('"', "\\\"");
-    let content = format!("journal = \"{escaped}\"\n");
+    let content = document.to_string();
     let (temp_path, mut file) = create_temp_file(parent)?;
     let result = (|| {
         file.write_all(content.as_bytes())?;
@@ -197,18 +214,36 @@ mod tests {
     }
 
     #[test]
-    fn fresh_write_is_single_key_and_escapes_reference_characters() {
+    fn fresh_write_is_single_key_and_round_trips_reference_characters() {
         let home = temp_root("fresh");
         let path = config_path(&home);
         write_user_config(&path, r#"/a\b"c"#).unwrap();
         assert_eq!(
-            fs::read_to_string(&path).unwrap(),
-            "journal = \"/a\\\\b\\\"c\"\n"
-        );
-        assert_eq!(
             read_user_config(&path).get("journal"),
             Some(&r#"/a\b"c"#.to_owned())
         );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn journal_update_preserves_owner_toml_and_refuses_malformed_input() {
+        let home = temp_root("preserved");
+        let path = config_path(&home);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let content = "# owner choice\njournal = \"/old\"\ncount = 3\n[custom]\nenabled = true\nnames = [\"one\", \"two\"]\n";
+        fs::write(&path, content).unwrap();
+        write_user_config(&path, "/new journal-日誌").unwrap();
+        let document = fs::read_to_string(&path)
+            .unwrap()
+            .parse::<toml_edit::DocumentMut>()
+            .unwrap();
+        assert_eq!(document["journal"].as_str(), Some("/new journal-日誌"));
+        assert_eq!(document["count"].as_integer(), Some(3));
+        assert_eq!(document["custom"]["enabled"].as_bool(), Some(true));
+        assert_eq!(document["custom"]["names"].as_array().unwrap().len(), 2);
+        fs::write(&path, "journal = [").unwrap();
+        assert!(write_user_config(&path, "/another").is_err());
+        assert_eq!(fs::read_to_string(path).unwrap(), "journal = [");
     }
 
     #[test]

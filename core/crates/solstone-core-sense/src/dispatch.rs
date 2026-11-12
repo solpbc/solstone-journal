@@ -1523,19 +1523,23 @@ fn run_job(
             launch_managed_request(Disposition::InheritedParentScope, launch)
         }
     };
-    let Ok(authority) = launched else {
-        worker_context.tally.failure();
-        complete(
-            state,
-            outbound,
-            &worker_context.journal,
-            &key,
-            Some(&file),
-            Some(format!("{} spawn failed", job.item.handler)),
-            None,
-            worker_context.batch.marker_policy,
-        );
-        return;
+    let authority = match launched {
+        Ok(authority) => authority,
+        Err(error) => {
+            log::warn!("sense: {} launch failed: {error}", job.item.handler);
+            worker_context.tally.failure();
+            complete(
+                state,
+                outbound,
+                &worker_context.journal,
+                &key,
+                Some(&file),
+                Some(format!("{} spawn failed", job.item.handler)),
+                None,
+                worker_context.batch.marker_policy,
+            );
+            return;
+        }
     };
     let Ok(mut process) = authority.into_managed() else {
         worker_context.tally.failure();

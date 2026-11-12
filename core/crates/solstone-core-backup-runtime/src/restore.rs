@@ -389,6 +389,35 @@ pub(crate) fn restore_args(snapshot_id: &str, tree_path: &str, target: &str) -> 
     args
 }
 
+#[cfg(not(target_os = "ios"))]
+struct PreparedRestore {
+    args: Vec<String>,
+    _logs: tempfile::NamedTempFile,
+}
+
+#[cfg(not(target_os = "ios"))]
+fn prepare_restore_args(
+    snapshot: &str,
+    tree: &str,
+    target: &Path,
+) -> std::io::Result<PreparedRestore> {
+    use std::io::Write;
+    let mut logs = tempfile::NamedTempFile::new()?;
+    let root =
+        solstone_core_journal_io::JournalRoot::open(target).map_err(std::io::Error::other)?;
+    solstone_core_journal_io::operational_log::visit_runtime_log_paths(&root, |member| {
+        // Restore patterns are rooted at the selected subtree, not its source filesystem.
+        writeln!(logs, "/{member}")
+    })?;
+    logs.flush()?;
+    let mut args = restore_args(snapshot, tree, &target.display().to_string());
+    args.extend([
+        "--exclude-file".to_owned(),
+        crate::restic_filesystem_path(logs.path()),
+    ]);
+    Ok(PreparedRestore { args, _logs: logs })
+}
+
 #[cfg(target_os = "ios")]
 struct IosTargetRunner<'a> {
     inner: &'a dyn crate::runner::ToolRunner,
@@ -795,8 +824,8 @@ struct InitRestore<'a> {
 impl InitRestore<'_> {
     /// restic's report of what the restore would do; only ever a whole one.
     fn report(&self, delete: bool) -> Option<restore_sweep::Report> {
-        let target = self.target.display().to_string();
-        let mut args = restore_args(self.snapshot_id, self.tree_path, &target);
+        let prepared = prepare_restore_args(self.snapshot_id, self.tree_path, self.target).ok()?;
+        let mut args = prepared.args.clone();
         args.extend(["--dry-run".to_owned(), "-v".to_owned(), "-v".to_owned()]);
         if delete {
             args.push("--delete".to_owned());
@@ -1201,10 +1230,27 @@ fn restore_journal_with(
             }
         }
     }
+    #[cfg(not(target_os = "ios"))]
+    let prepared_restore = match prepare_restore_args(&snapshot.id, &tree_path, target_path) {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            log::warn!("restore log selection failed: {error}");
+            return finish(
+                journal,
+                services.clock,
+                recorder,
+                error_draft(RESTORE_REASON_RESTORE_IO_FAILED),
+            );
+        }
+    };
+    #[cfg(not(target_os = "ios"))]
+    let copy_args = prepared_restore.args.clone();
+    #[cfg(target_os = "ios")]
+    let copy_args = restore_args(&snapshot.id, &tree_path, &target_path.display().to_string());
     let restored = match restic(
         services,
         &admitted,
-        restore_args(&snapshot.id, &tree_path, &target_path.display().to_string()),
+        copy_args,
         &destination,
         &canonical,
         &env,

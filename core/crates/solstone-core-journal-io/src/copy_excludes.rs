@@ -37,6 +37,10 @@ pub const COPY_EXCLUDES: &[&str] = &[
     // its counterparts of the pid, start time and socket above. Another
     // machine's copies would name a process this one is not running.
     "health/supervisor.process_instance",
+    // A restore runs inside this computer's admitted process generation. The
+    // snapshot's process identities and lease files cannot replace that authority.
+    "health/parent-loss",
+    "health/speakers-analyze",
     "health/callosum.pipe-*",
     "health/parakeet-cpp.placement",
     "health/scheduler.json",
@@ -82,6 +86,24 @@ pub fn copy_excluded(member: &str) -> bool {
         let pattern: Vec<_> = pattern.split('/').collect();
         prefix_matches(&pattern, &components)
     })
+}
+
+/// Filename classification only. Callers must separately require a regular file;
+/// JSONL history, malformed names, directories and nested raw content are owner data.
+pub fn is_runtime_log_path(member: &str) -> bool {
+    use crate::operational_log::{OplogFormat, OplogNameClassification, classify_oplog_name};
+    let parts = member.split('/').collect::<Vec<_>>();
+    if parts.len() != 4 || parts[1].len() != 8 || !parts[1].bytes().all(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    let roots_match = if cfg!(windows) {
+        parts[0].eq_ignore_ascii_case("chronicle") && parts[2].eq_ignore_ascii_case("health")
+    } else {
+        parts[0] == "chronicle" && parts[2] == "health"
+    };
+    roots_match
+        && matches!(classify_oplog_name(std::ffi::OsStr::new(parts[3])),
+        OplogNameClassification::Candidate(Ok(name)) if name.format() == OplogFormat::Log)
 }
 
 /// Exact database filenames in mixed owner/application namespaces.
@@ -206,6 +228,11 @@ mod tests {
             "health/callosum.sock",
             "health/callosum.pipe-secret",
             "health/supervisor.process_instance",
+            "health/parent-loss/active-generation.json",
+            "health/parent-loss/coordinator.lease",
+            "health/parent-loss/generations/3/admissions/sense-1/acknowledgement.json",
+            "health/speakers-analyze/install-generation.json",
+            "health/speakers-analyze/owner.json",
             "health/locks/backup-activity.lock",
             "chronicle/20261003/health/daily-units/u-entities%3Aentity_suggest.f-personal.execution.lock",
             "chronicle/20261003/health/daily-units/u-entities%3Aentity_suggest.f-personal.json.lock",
@@ -247,6 +274,11 @@ mod tests {
             "entities/indexer/brain-fingerprint.key",
             "facets/cache/note.tmp",
             "health/retention.log",
+            "health/parent-loss-notes/original.json",
+            "health/speakers-analyze-notes/owner.json",
+            "chronicle/20261112/health/120000_60/oplog--raw.log",
+            "chronicle/20261112/health/120000_60/health/parent-loss/active-generation.json",
+            "chronicle/notes/health/oplog--owner.log",
             "health/pruning-runs/run.jsonl",
             "chronicle/20260101/health/talent-provenance/run.json",
             "chronicle/20261003/health/daily-units/u-entities%3Aentity_suggest.f-personal.json",

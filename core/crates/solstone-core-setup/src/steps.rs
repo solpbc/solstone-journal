@@ -5621,7 +5621,7 @@ mod tests {
     }
 
     #[test]
-    fn journal_fresh_write_replaces_user_config_and_config_bootstrap_preserves_existing() {
+    fn journal_fresh_write_preserves_user_settings_and_existing_journal_config() {
         let (args, resolved, root, home) = fixture("journal-fresh", &["--accept-existing-journal"]);
         fs::create_dir_all(config_path(&home).parent().unwrap()).unwrap();
         fs::write(config_path(&home), "other = \"drop\"\n").unwrap();
@@ -5644,7 +5644,7 @@ mod tests {
         assert_eq!(
             fs::read_to_string(config_path(&home)).unwrap(),
             format!(
-                "journal = {}\n",
+                "other = \"drop\"\njournal = {}\n",
                 serde_json::to_string(&resolved.journal_path.to_string_lossy()).unwrap()
             )
         );

@@ -16,7 +16,7 @@ full-tests = []
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 chrono.workspace = true
-toml_edit.workspace = true
+toml_edit = { workspace = true, features = ["display"] }
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-journal-io.workspace = true

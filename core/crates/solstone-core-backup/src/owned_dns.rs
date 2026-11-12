@@ -84,10 +84,10 @@ pub fn resolve_owned_http_host(
     let member = solstone_core_installed_payload::resolve_current_member(CORE_MEMBER)
         .map_err(|_| io::Error::other("installed HTTP DNS member unavailable"))?;
     check(cancellation, deadline)?;
-    member
-        .revalidate()
-        .map_err(|_| io::Error::other("installed HTTP DNS member changed"))?;
-    check(cancellation, deadline)?;
+    // Resolution already admitted the package and validated this member and its
+    // native dependencies. No external work has happened since that validation.
+    // Repeating it here consumes the request's short handoff budget; retain the
+    // distinct revalidation after the owned child has actually run.
     let args = [
         ENTRY.into(),
         host.into(),

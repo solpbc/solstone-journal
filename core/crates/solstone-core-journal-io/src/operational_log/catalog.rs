@@ -671,6 +671,59 @@ fn list_health(
         .map_err(|error| map_directory_error(error, health.day()))
 }
 
+/// Stream ordinary canonical runtime log names into a private exclusion file.
+/// Both native implementations retain directories and inspect selected leaves
+/// without following links. Neither directory names nor argv grow in memory.
+pub fn visit_runtime_log_paths(
+    root: &JournalRoot,
+    mut visit: impl FnMut(&str) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    #[cfg(unix)]
+    use crate::flat_directory::{
+        open_flat_directory_bound as open_directory, visit_flat_directory_matching as visit_entries,
+    };
+    #[cfg(windows)]
+    use crate::windows_sync_dir::{
+        open_windows_flat_directory_bound as open_directory,
+        visit_windows_flat_directory_matching as visit_entries,
+    };
+    root.revalidate_canonical_binding()
+        .map_err(std::io::Error::other)?;
+    let Some(chronicle) = open_directory(root, OsStr::new(CHRONICLE_DIR), root.canonical_path())
+        .map_err(std::io::Error::other)?
+    else {
+        return Ok(());
+    };
+    visit_entries(&chronicle, |name| name.to_str().is_some_and(is_day_key), |entry| {
+        if entry.kind != JournalEntryKind::Directory { return Ok(()); }
+        let day = entry.name.to_str().expect("selected ASCII day");
+        let failure = |error| FlatDirectoryError::Io {
+            operation: "select runtime copy logs", path: root.canonical_path().join("chronicle").join(day), source: error,
+        };
+        let day_root = JournalRoot::open(root.canonical_path()).map_err(|e| failure(std::io::Error::other(e)))?;
+        if day_root.identity() != root.identity() { return Err(failure(std::io::Error::other("journal changed while selecting logs"))); }
+        let Some(health) = open_existing_day_health_directory(day_root, day).map_err(|e| failure(std::io::Error::other(e)))? else { return Ok(()); };
+        visit_entries(health.health(), |name| matches!(classify_oplog_name(name), OplogNameClassification::Candidate(Ok(parsed)) if parsed.format() == super::name::OplogFormat::Log), |entry| {
+            if entry.kind == JournalEntryKind::RegularFile {
+                let member = format!("chronicle/{day}/health/{}", entry.name.to_str().expect("canonical ASCII log"));
+                visit(&member).map_err(&failure)?;
+            }
+            Ok(())
+        })?;
+        health.revalidate_binding().map_err(|e| failure(std::io::Error::other(e)))
+    }).map_err(std::io::Error::other)?;
+    let current = open_directory(root, OsStr::new(CHRONICLE_DIR), root.canonical_path())
+        .map_err(std::io::Error::other)?
+        .ok_or_else(|| std::io::Error::other("chronicle disappeared while selecting logs"))?;
+    if current.identity() != chronicle.identity() {
+        return Err(std::io::Error::other(
+            "chronicle changed while selecting logs",
+        ));
+    }
+    root.revalidate_canonical_binding()
+        .map_err(std::io::Error::other)
+}
+
 fn map_directory_error(error: FlatDirectoryError, day: &str) -> OplogCatalogError {
     let kind = match error {
         FlatDirectoryError::IdentityChanged { .. } => "oplog_catalog_identity_changed",
@@ -973,5 +1026,83 @@ mod tests {
             "oplog_catalog_candidate_limit"
         );
         assert_eq!(CATALOG_ENTRY_OPEN_CALLS.with(Cell::get), 0);
+    }
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn copy_log_selection_streams_regular_logs_and_keeps_owner_lookalikes() {
+        let temporary = TempDir::new().unwrap();
+        let directory = health(&temporary);
+        fs::create_dir_all(&directory).unwrap();
+        let log = "oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log";
+        fs::write(directory.join(log), "runtime").unwrap();
+        fs::write(
+            directory.join(log.replace(".log", ".jsonl")),
+            "owner history",
+        )
+        .unwrap();
+        fs::write(directory.join("oplog--not-a-name.log"), "owner original").unwrap();
+        fs::create_dir(directory.join(log.replace("8f03cabe", "8f03cabf"))).unwrap();
+        // A capture stream named health may have more entries than the diagnostic catalog.
+        for n in 0..4100 {
+            fs::create_dir(directory.join(format!("{n:06}_60"))).unwrap();
+        }
+        let root = JournalRoot::open(temporary.path()).unwrap();
+        let mut selected = Vec::new();
+        visit_runtime_log_paths(&root, |member| {
+            selected.push(member.to_owned());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(selected, vec![format!("chronicle/20260807/health/{log}")]);
+        assert_eq!(
+            fs::read_to_string(directory.join("oplog--not-a-name.log")).unwrap(),
+            "owner original"
+        );
+    }
+
+    #[cfg(all(feature = "full-tests", unix))]
+    #[test]
+    fn copy_log_selection_never_selects_through_symlinked_ancestors_or_leaves() {
+        use std::os::unix::fs::symlink;
+        for relative in [
+            "chronicle",
+            "chronicle/20260807",
+            "chronicle/20260807/health",
+        ] {
+            let temporary = TempDir::new().unwrap();
+            let outside = TempDir::new().unwrap();
+            let link = temporary.path().join(relative);
+            fs::create_dir_all(link.parent().unwrap()).unwrap();
+            fs::write(outside.path().join("owner.txt"), "untouched").unwrap();
+            symlink(outside.path(), &link).unwrap();
+            let root = JournalRoot::open(temporary.path()).unwrap();
+            let mut selected = Vec::new();
+            let _ = visit_runtime_log_paths(&root, |member| {
+                selected.push(member.to_owned());
+                Ok(())
+            });
+            assert!(selected.is_empty(), "{relative}");
+            assert_eq!(
+                fs::read_to_string(outside.path().join("owner.txt")).unwrap(),
+                "untouched"
+            );
+        }
+        let temporary = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let directory = health(&temporary);
+        fs::create_dir_all(&directory).unwrap();
+        let target = outside.path().join("owner.txt");
+        fs::write(&target, "untouched").unwrap();
+        let log = "oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log";
+        symlink(&target, directory.join(log)).unwrap();
+        let root = JournalRoot::open(temporary.path()).unwrap();
+        let mut selected = Vec::new();
+        visit_runtime_log_paths(&root, |member| {
+            selected.push(member.to_owned());
+            Ok(())
+        })
+        .unwrap();
+        assert!(selected.is_empty());
+        assert_eq!(fs::read_to_string(target).unwrap(), "untouched");
     }
 }

@@ -678,6 +678,15 @@ fn prepare_backup_args(root: &Path) -> std::io::Result<PreparedBackup> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
+    let admitted =
+        solstone_core_journal_io::JournalRoot::open(root).map_err(std::io::Error::other)?;
+    solstone_core_journal_io::operational_log::visit_runtime_log_paths(&admitted, |member| {
+        let pattern = crate::restic_paths::rooted_exclude(root, member);
+        if pattern.contains(['\r', '\n']) {
+            return Err(std::io::Error::other("journal path contains a line break"));
+        }
+        writeln!(excludes, "{}", pattern.replace('$', "$$"))
+    })?;
     excludes.flush()?;
     let mut args = backup_args(root);
     args.extend([

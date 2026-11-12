@@ -220,6 +220,10 @@ pub fn without_copy_excludes(argv: &[String]) -> Vec<String> {
                 Some(pattern) => kept.extend([argument.clone(), pattern.clone()]),
                 None => kept.push(argument.clone()),
             }
+        } else if argument == "--exclude-file" {
+            // Its contents and lifetime are checked by the runner while the
+            // child is active; the generated path is not stable across calls.
+            assert!(arguments.next().is_some(), "missing exclusion file path");
         } else {
             kept.push(argument.clone());
         }
@@ -391,6 +395,25 @@ impl RestoreRecorder for RestoreRecorderSpy {
 /// A restore argv as the journal builds it: the snapshot tree onto a target,
 /// keeping this machine's resident identity, then the optional lock exclude.
 fn admitted_restore_argv(argv: &[String]) -> bool {
+    // The private restore log file is generated per call and retained through
+    // the runner. Validate its readability, then compare the stable policy.
+    let mut stable = Vec::new();
+    let mut index = 0;
+    while index < argv.len() {
+        if argv[index] == "--exclude-file" {
+            let Some(path) = argv.get(index + 1) else {
+                return false;
+            };
+            if std::fs::read(path).is_err() {
+                return false;
+            }
+            index += 2;
+        } else {
+            stable.push(argv[index].clone());
+            index += 1;
+        }
+    }
+    let argv = stable.as_slice();
     let [command, snapshot, target, _, rest @ ..] = argv else {
         return false;
     };

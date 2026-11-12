@@ -5,7 +5,11 @@
 
 use super::*;
 use crate::runner::run_restic;
-use std::cell::Cell;
+use solstone_core_journal_io::operational_log::{
+    OplogFormat, OplogWriter, catalog_oplogs, create_oplog_at,
+};
+use solstone_core_journal_io::{FileLease, LeaseOptions, acquire_file_lease};
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -21,6 +25,9 @@ enum Stop {
 struct Restic {
     stop: Cell<Stop>,
     restores: Cell<usize>,
+    exclusions: RefCell<Vec<PathBuf>>,
+    make_late_log: Cell<bool>,
+    late_log: RefCell<Option<OplogWriter>>,
 }
 
 impl Restic {
@@ -28,6 +35,9 @@ impl Restic {
         Self {
             stop: Cell::new(stop),
             restores: Cell::new(0),
+            exclusions: RefCell::new(Vec::new()),
+            make_late_log: Cell::new(false),
+            late_log: RefCell::new(None),
         }
     }
 
@@ -42,6 +52,32 @@ impl ToolRunner for Restic {
         let restore = request.argv.first().is_some_and(|arg| arg == "restore");
         let check = request.argv.first().is_some_and(|arg| arg == "check");
         let real_restore = restore && !flag("--dry-run");
+        if let Some(index) = request.argv.iter().position(|arg| arg == "--exclude-file") {
+            let path = PathBuf::from(&request.argv[index + 1]);
+            fs::read(&path).expect("restore exclusion file is readable during its child");
+            self.exclusions.borrow_mut().push(path);
+        }
+        if real_restore && self.make_late_log.replace(false) {
+            let at = request
+                .argv
+                .iter()
+                .position(|arg| arg == "--target")
+                .unwrap();
+            let target = PathBuf::from(&request.argv[at + 1]);
+            let mut writer = create_oplog_at(
+                solstone_core_journal_io::JournalRoot::open(&target).unwrap(),
+                "late",
+                "worker",
+                OplogFormat::Log,
+                chrono::DateTime::parse_from_rfc3339("2026-11-12T12:00:00+00:00").unwrap(),
+            )
+            .unwrap();
+            writer
+                .append_bytes_checked(b"late before restore\n", &|| Ok(()))
+                .unwrap();
+            self.late_log.replace(Some(writer));
+        }
+
         if real_restore {
             self.restores.set(self.restores.get() + 1);
         }
@@ -75,17 +111,41 @@ impl ToolRunner for Restic {
     }
 }
 
+const AUTHORITY: &[&str] = &[
+    "health/parent-loss/active-generation.json",
+    "health/parent-loss/generations/3/admissions/sense-target/acknowledgement.json",
+    "health/speakers-analyze/install-generation.json",
+    "health/speakers-analyze/owner.json",
+];
+const LEASES: &[&str] = &[
+    "health/parent-loss/coordinator.lease",
+    "health/speakers-analyze/install-generation.lock",
+];
+const OWNER_CONTROLS: &[&str] = &[
+    "health/retention.log",
+    "health/parent-loss-notes/active-generation.json",
+    "chronicle/20261112/health/120000_60/oplog--raw.log",
+    "chronicle/20261112/health/120000_60/health/parent-loss/active-generation.json",
+];
+
 struct Fixture {
     journal: tempfile::TempDir,
     _repository: tempfile::TempDir,
     destination: Destination,
     key: String,
     binary: PathBuf,
+    logs: Vec<RefCell<OplogWriter>>,
+    _leases: Vec<FileLease>,
+    extra_controls: &'static [&'static str],
 }
 
 impl Fixture {
     /// A journal, backed up, then lived in: changed, added to and removed from.
     fn lived_in() -> Self {
+        Self::lived_in_with_controls(&[])
+    }
+
+    fn lived_in_with_controls(extra_controls: &'static [&'static str]) -> Self {
         let binary = PathBuf::from(
             std::env::var_os("SOLSTONE_NATIVE_RESTIC").expect("native restic required"),
         );
@@ -128,7 +188,48 @@ impl Fixture {
         write(root, "entities/cache/entity.json", "owner cache");
         write(root, "cache/model", "snapshot's model");
         write(root, ".trash/kept/item.json", "trashed before the backup");
+        for path in AUTHORITY.iter().chain(LEASES) {
+            write(root, path, "foreign source authority");
+        }
+        for path in OWNER_CONTROLS.iter().chain(extra_controls) {
+            write(root, path, "owner original");
+        }
+        let instant = chrono::DateTime::parse_from_rfc3339("2026-11-12T12:00:00+00:00").unwrap();
+        let opened = solstone_core_journal_io::JournalRoot::open(root).unwrap();
+        let mut older_log = create_oplog_at(
+            solstone_core_journal_io::JournalRoot::open(root).unwrap(),
+            "service",
+            "supervisor",
+            OplogFormat::Log,
+            instant,
+        )
+        .unwrap();
+        older_log
+            .append_bytes_checked(b"before snapshot\n", &|| Ok(()))
+            .unwrap();
         restic(&["backup", &root.display().to_string()]);
+        older_log
+            .append_bytes_checked(b"destination before restore\n", &|| Ok(()))
+            .unwrap();
+        let mut newer_log =
+            create_oplog_at(opened, "sense", "sense", OplogFormat::Log, instant).unwrap();
+        newer_log
+            .append_bytes_checked(b"destination before restore\n", &|| Ok(()))
+            .unwrap();
+        for path in AUTHORITY.iter().chain(LEASES) {
+            write(root, path, "destination authority");
+        }
+        let leases = LEASES
+            .iter()
+            .map(|path| {
+                acquire_file_lease(root.join(path), LeaseOptions::default())
+                    .unwrap()
+                    .unwrap()
+            })
+            .collect();
+        for path in OWNER_CONTROLS.iter().chain(extra_controls) {
+            write(root, path, "edited owner original");
+        }
 
         write(root, "notes/changed.md", "edited since");
         write(root, "notes/newer.md", "written since");
@@ -147,6 +248,9 @@ impl Fixture {
             destination,
             key,
             binary,
+            logs: vec![RefCell::new(older_log), RefCell::new(newer_log)],
+            _leases: leases,
+            extra_controls,
         }
     }
 
@@ -239,6 +343,9 @@ impl Fixture {
 
     fn assert_is_the_snapshot(&self) {
         let root = self.journal.path();
+        for path in self.extra_controls {
+            assert_eq!(read(root, path), "owner original", "{path}");
+        }
         assert_eq!(read(root, "notes/same.md"), "same");
         assert_eq!(read(root, "notes/changed.md"), "as backed up");
         assert_eq!(read(root, "notes/removed-since.md"), "still here then");
@@ -261,6 +368,9 @@ impl Fixture {
         assert_eq!(read(root, "entities/cache/entity.json"), "owner cache");
         assert_eq!(read(root, "cache/model"), "this computer's model");
         assert_eq!(read(root, "health/service.log"), "this computer's log");
+        for path in OWNER_CONTROLS.iter().chain(self.extra_controls) {
+            assert_eq!(read(root, path), "owner original", "{path}");
+        }
         // The trash is the snapshot's too.
         assert_eq!(
             read(root, ".trash/kept/item.json"),
@@ -326,6 +436,35 @@ fn a_failed_restore_or_check_removes_nothing() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+#[ignore = "requires native restic; set SOLSTONE_NATIVE_RESTIC"]
+fn unsafe_log_selection_never_starts_the_restore_child() {
+    use std::os::unix::fs::symlink;
+    let fixture = Fixture::lived_in();
+    let root = fixture.journal.path();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("owner.txt"), "untouched").unwrap();
+    fs::rename(root.join("chronicle"), root.join("original-chronicle")).unwrap();
+    symlink(outside.path(), root.join("chronicle")).unwrap();
+    let runner = Restic::stopping(Stop::Never);
+    let outcome = fixture.restore(&runner);
+    assert_eq!(outcome.status, "error");
+    assert_eq!(runner.restores.get(), 0);
+    assert_eq!(read(root, "notes/changed.md"), "edited since");
+    assert_eq!(read(root, "notes/newer.md"), "written since");
+    assert_eq!(
+        fs::read_to_string(outside.path().join("owner.txt")).unwrap(),
+        "untouched"
+    );
+    // Restore the safe namespace before the readiness reader inspects it.
+    fs::remove_file(root.join("chronicle")).unwrap();
+    fs::rename(root.join("original-chronicle"), root.join("chronicle")).unwrap();
+    assert!(restore_sweep::is_init_restore(root));
+    is_ok(&fixture.restore(&Restic::stopping(Stop::Never)));
+    fixture.assert_is_the_snapshot();
+}
+
 #[test]
 #[ignore = "requires native restic; set SOLSTONE_NATIVE_RESTIC"]
 fn without_the_marker_a_restore_stays_an_overlay() {
@@ -384,4 +523,167 @@ fn restoring_an_older_backup_keeps_the_newer_one_through_the_first_prune() {
         "the backup newer than the one restored survives rotation: {after:?}"
     );
     assert_eq!(after.len(), 3, "{after:?}");
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "requires native restic; set SOLSTONE_NATIVE_RESTIC"]
+fn legacy_restore_and_retry_keep_live_authority_and_original_log_writers() {
+    use std::io::{Read, Seek, SeekFrom};
+    use std::os::unix::fs::MetadataExt;
+    for stop in [Stop::Never, Stop::AfterRestore] {
+        let fixture = Fixture::lived_in();
+        let root = fixture.journal.path();
+        let identities: Vec<_> = LEASES
+            .iter()
+            .map(|p| {
+                let m = fs::metadata(root.join(p)).unwrap();
+                (m.dev(), m.ino())
+            })
+            .collect();
+        let check_runtime = || {
+            for path in AUTHORITY.iter().chain(LEASES) {
+                assert_eq!(read(root, path), "destination authority", "{path}");
+            }
+            for (path, identity) in LEASES.iter().zip(&identities) {
+                let m = fs::metadata(root.join(path)).unwrap();
+                assert_eq!((m.dev(), m.ino()), *identity, "{path}");
+                assert!(
+                    acquire_file_lease(
+                        root.join(path),
+                        LeaseOptions {
+                            attempts: 1,
+                            ..LeaseOptions::default()
+                        }
+                    )
+                    .unwrap()
+                    .is_none(),
+                    "a real contender must remain excluded: {path}"
+                );
+            }
+            for log in &fixture.logs {
+                log.borrow_mut()
+                    .append_bytes_checked(b"destination after restore\n", &|| Ok(()))
+                    .unwrap();
+            }
+            let catalog = catalog_oplogs(
+                solstone_core_journal_io::JournalRoot::open(root).unwrap(),
+                &[chrono::NaiveDate::from_ymd_opt(2026, 11, 12).unwrap()],
+            )
+            .unwrap();
+            assert_eq!(catalog.entries().len(), 2);
+            for (entry, mut file) in catalog.into_catalogued_entries() {
+                file.seek(SeekFrom::Start(entry.payload_offset() as u64))
+                    .unwrap();
+                let mut bytes = String::new();
+                file.read_to_string(&mut bytes).unwrap();
+                assert!(
+                    bytes.contains("destination before restore"),
+                    "{:?}",
+                    entry.leaf()
+                );
+                assert!(
+                    bytes.contains("destination after restore"),
+                    "{:?}",
+                    entry.leaf()
+                );
+                assert!(
+                    fixture
+                        .logs
+                        .iter()
+                        .any(|writer| writer.borrow().identity() == entry.identity())
+                );
+            }
+        };
+        let outcome = fixture.restore(&Restic::stopping(stop));
+        if stop == Stop::AfterRestore {
+            assert_eq!(outcome.status, "error");
+            // Real copy has changed ordinary owner bytes before this failure.
+            assert_eq!(read(root, "notes/changed.md"), "as backed up");
+            assert!(matches!(
+                read_whole_journal_restore(root),
+                WholeJournalRestoreReadiness::Pending(_)
+            ));
+            check_runtime();
+            is_ok(&fixture.restore(&Restic::stopping(Stop::Never)));
+        } else {
+            is_ok(&outcome);
+        }
+        check_runtime();
+        fixture.assert_is_the_snapshot();
+        assert!(matches!(
+            read_whole_journal_restore(root),
+            WholeJournalRestoreReadiness::Absent
+        ));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "requires native restic; set SOLSTONE_NATIVE_RESTIC"]
+fn typed_log_selection_preserves_owner_history_and_sweeps_log_named_owner_entries() {
+    use std::os::unix::fs::symlink;
+    const LOG: &str = "oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log";
+    let fixture = Fixture::lived_in_with_controls(&[
+        "chronicle/20261112/health/oplog--not-a-name.log",
+        "chronicle/20261112/health/oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.jsonl",
+        "chronicle/20261112/health/oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a022--daily-think~7df259e6285645a5f9ea769caa484e07.log/owner.txt",
+    ]);
+    let root = fixture.journal.path();
+    let absent = root.join("chronicle/20261112/health").join(LOG);
+    fs::create_dir(&absent).unwrap();
+    fs::write(absent.join("newer.txt"), "newer owner content").unwrap();
+    let external = tempfile::TempDir::new().unwrap();
+    let original = external.path().join("owner.txt");
+    fs::write(&original, "unchanged").unwrap();
+    let link = absent.with_file_name(LOG.replace("8f03cabe", "8f03cabf"));
+    symlink(&original, &link).unwrap();
+    is_ok(&fixture.restore(&Restic::stopping(Stop::Never)));
+    fixture.assert_is_the_snapshot();
+    assert!(!absent.exists());
+    assert!(fs::symlink_metadata(&link).is_err());
+    assert_eq!(fs::read_to_string(original).unwrap(), "unchanged");
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "requires native restic; set SOLSTONE_NATIVE_RESTIC"]
+fn late_log_writers_and_private_exclusion_files_survive_until_child_settlement() {
+    use std::io::{Read, Seek, SeekFrom};
+    for stop in [Stop::Never, Stop::BeforeRestore, Stop::AfterRestore] {
+        let fixture = Fixture::lived_in();
+        let runner = Restic::stopping(stop);
+        runner.make_late_log.set(true);
+        let outcome = fixture.restore(&runner);
+        assert_eq!(
+            outcome.status,
+            if stop == Stop::Never { "ok" } else { "error" }
+        );
+        assert!(!runner.exclusions.borrow().is_empty());
+        for path in runner.exclusions.borrow().iter() {
+            assert!(
+                !path.exists(),
+                "exclusion file removed after child: {path:?}"
+            );
+        }
+        let mut late = runner.late_log.borrow_mut();
+        let writer = late.as_mut().unwrap();
+        writer
+            .append_bytes_checked(b"late after restore\n", &|| Ok(()))
+            .unwrap();
+        let catalog = catalog_oplogs(
+            solstone_core_journal_io::JournalRoot::open(fixture.journal.path()).unwrap(),
+            &[chrono::NaiveDate::from_ymd_opt(2026, 11, 12).unwrap()],
+        )
+        .unwrap();
+        let (_, mut file) = catalog
+            .into_catalogued_entries()
+            .into_iter()
+            .find(|(entry, _)| entry.identity() == writer.identity())
+            .expect("late original writer remains discoverable");
+        file.seek(SeekFrom::Start(0)).unwrap();
+        let mut bytes = String::new();
+        file.read_to_string(&mut bytes).unwrap();
+        assert!(bytes.contains("late before restore") && bytes.contains("late after restore"));
+    }
 }

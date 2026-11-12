@@ -94,10 +94,15 @@ fn remove_journal_files(journal: &Path, directory: &Path) -> io::Result<()> {
             .map_err(io::Error::other)?
             .to_string_lossy()
             .replace('\\', "/");
-        if kept(&rel) || rel == "backup-activity.lock" {
+        let kind = entry.file_type()?;
+        if kept(&rel)
+            || rel == "backup-activity.lock"
+            || (kind.is_file()
+                && solstone_core_journal_io::copy_excludes::is_runtime_log_path(&rel))
+        {
             continue;
         }
-        if entry.file_type()?.is_dir() {
+        if kind.is_dir() {
             remove_journal_files(journal, &path)?;
             // Not empty means it holds something a restore leaves alone.
             let _ = fs::remove_dir(&path);
@@ -232,6 +237,11 @@ pub(crate) fn remove_extras(journal: &Path, report: &Report) -> usize {
         let Ok(meta) = fs::symlink_metadata(&path) else {
             continue;
         };
+        if meta.file_type().is_file()
+            && solstone_core_journal_io::copy_excludes::is_runtime_log_path(rel)
+        {
+            continue;
+        }
         if meta.file_type().is_dir() {
             directories.push(path);
             continue;

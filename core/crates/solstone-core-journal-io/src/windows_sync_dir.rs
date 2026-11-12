@@ -299,6 +299,41 @@ pub fn list_windows_flat_directory(
     Ok(Some(entries))
 }
 
+/// Stream selected native entries, retaining only one native enumeration buffer.
+pub(crate) fn visit_windows_flat_directory_matching(
+    directory: &WindowsFlatDirectory,
+    include: impl Fn(&OsStr) -> bool,
+    mut visit: impl FnMut(FlatDirectoryEntry) -> Result<(), FlatDirectoryError>,
+) -> Result<(), FlatDirectoryError> {
+    directory.revalidate()?;
+    visit_directory(
+        directory.directory.as_raw_handle(),
+        &directory.diagnostic_path,
+        true,
+        |listed| {
+            if !include(&listed.name) {
+                return Ok(());
+            }
+            let name = validate_portable_name(&listed.name)?;
+            let path = directory.diagnostic_entry(&name);
+            let handle = open_relative(
+                directory.directory.as_raw_handle(),
+                &name,
+                FILE_READ_ATTRIBUTES,
+                0,
+                &path,
+                FILE_OPEN,
+            )?;
+            let entry = entry_from_handle(name, handle.as_raw_handle(), &path)?;
+            if entry_identity(handle.as_raw_handle(), &path)?.file_id() != listed.file_id {
+                return Err(FlatDirectoryError::EnumerationChanged { path });
+            }
+            visit(entry)
+        },
+    )?;
+    directory.revalidate()
+}
+
 pub(crate) struct WindowsNativeListed {
     pub entry: FlatDirectoryEntry,
     pub directory: Option<WindowsFlatDirectory>,
@@ -784,8 +819,21 @@ fn list_directory(
     path: &Path,
     native: bool,
 ) -> Result<Vec<ListedEntry>, FlatDirectoryError> {
-    let mut buffer = vec![0u8; DIRECTORY_BUFFER_BYTES];
     let mut entries = Vec::new();
+    visit_directory(directory, path, native, |entry| {
+        entries.push(entry);
+        Ok(())
+    })?;
+    Ok(entries)
+}
+
+fn visit_directory(
+    directory: std::os::windows::io::RawHandle,
+    path: &Path,
+    native: bool,
+    mut visit: impl FnMut(ListedEntry) -> Result<(), FlatDirectoryError>,
+) -> Result<(), FlatDirectoryError> {
+    let mut buffer = vec![0u8; DIRECTORY_BUFFER_BYTES];
     let mut restart_scan = true;
     loop {
         let mut status = IO_STATUS_BLOCK::default();
@@ -809,7 +857,15 @@ fn list_directory(
         };
         if result == STATUS_SUCCESS {
             restart_scan = false;
-            parse_directory_buffer(&buffer, path, &mut entries, native)?;
+            let used = status.Information;
+            if used == 0 || used > buffer.len() {
+                return Err(invalid_listing(path));
+            }
+            let mut entries = Vec::new();
+            parse_directory_buffer(&buffer[..used], path, &mut entries, native)?;
+            for entry in entries {
+                visit(entry)?;
+            }
             continue;
         }
         // SAFETY: converts only the NTSTATUS returned by the preceding call.
@@ -824,7 +880,7 @@ fn list_directory(
             source: io::Error::from_raw_os_error(error as i32),
         });
     }
-    Ok(entries)
+    Ok(())
 }
 
 fn parse_directory_buffer(
