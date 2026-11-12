@@ -279,6 +279,11 @@ pub async fn run_native_service_with_hosted_parent(
     options: CortexOptions,
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<(), CortexServiceError> {
+    // Listen for the stop signal before anything slow. Recovery below walks the
+    // whole cortex store, which takes seconds on a large journal, and a stop
+    // that arrived before the listener existed killed the process outright,
+    // before it could record that it had stopped.
+    let termination = TerminationListener::install();
     if options.verbose {
         eprintln!("cortex: starting native service");
     }
@@ -307,7 +312,7 @@ pub async fn run_native_service_with_hosted_parent(
         apps_root,
         templates_dir,
         hosted_parent.clone(),
-        shutdown_with_hosted_parent(hosted_parent.clone(), Arc::clone(&parent_loss)),
+        shutdown_with_hosted_parent(hosted_parent.clone(), Arc::clone(&parent_loss), termination),
     )
     .await;
     let service_stopped = result.is_ok();
@@ -547,18 +552,34 @@ fn drain_outbound(connection: &CallosumSocketConnection, receiver: &mpsc::Receiv
     }
 }
 
-async fn shutdown_signal() -> ShutdownMode {
+/// The host's request to stop, listened for from process entry.
+struct TerminationListener {
+    #[cfg(unix)]
+    terminate: Option<tokio::signal::unix::Signal>,
+}
+
+impl TerminationListener {
+    fn install() -> Self {
+        Self {
+            #[cfg(unix)]
+            terminate: tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .ok(),
+        }
+    }
+}
+
+async fn shutdown_signal(listener: TerminationListener) -> ShutdownMode {
     #[cfg(unix)]
     {
-        if let Ok(mut signal) =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        {
+        if let Some(mut signal) = listener.terminate {
             tokio::select! {
                 _ = signal.recv() => return ShutdownMode::Immediate,
                 _ = tokio::signal::ctrl_c() => return ShutdownMode::Drain,
             }
         }
     }
+    #[cfg(not(unix))]
+    let _ = listener;
     let _ = tokio::signal::ctrl_c().await;
     ShutdownMode::Drain
 }
@@ -566,12 +587,13 @@ async fn shutdown_signal() -> ShutdownMode {
 async fn shutdown_with_hosted_parent(
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
     parent_loss: Arc<Mutex<Option<ParentLossReason>>>,
+    termination: TerminationListener,
 ) -> ShutdownMode {
     let Some(parent) = hosted_parent else {
-        return shutdown_signal().await;
+        return shutdown_signal(termination).await;
     };
     tokio::select! {
-        mode = shutdown_signal() => mode,
+        mode = shutdown_signal(termination) => mode,
         _ = parent.await_retire_expected_request() => ShutdownMode::Immediate,
         reason = parent.await_parent_loss() => {
             *parent_loss
@@ -579,6 +601,32 @@ async fn shutdown_with_hosted_parent(
                 .expect("hosted parent-loss reason lock poisoned") = Some(reason);
             ShutdownMode::Immediate
         }
+    }
+}
+
+/// A stop the host sends while Cortex is still starting is held, not fatal:
+/// recovery walks the whole store first, and on a large journal a stop used to
+/// land in that window and kill the process before it recorded its stop.
+#[cfg(all(test, unix, feature = "full-tests"))]
+mod early_stop_tests {
+    use super::*;
+
+    #[test]
+    fn a_stop_sent_before_the_main_loop_is_held_for_it() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let mode = runtime.block_on(async {
+            let listener = TerminationListener::install();
+            // The stop arrives while startup work would still be running.
+            nix::sys::signal::raise(nix::sys::signal::Signal::SIGTERM).expect("raise SIGTERM");
+            std::thread::sleep(Duration::from_millis(50));
+            tokio::time::timeout(Duration::from_secs(5), shutdown_signal(listener))
+                .await
+                .expect("the held stop resolves shutdown")
+        });
+        assert_eq!(mode, ShutdownMode::Immediate);
     }
 }
 
