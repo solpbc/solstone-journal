@@ -416,7 +416,7 @@
       image: "describe this segment's photos and add the descriptions to your journal.",
       audio: "transcribe this segment's audio and add the words to your journal.",
       screen: "describe this segment's screen and add the descriptions to your journal.",
-    })[modality] || "process this segment and add what it finds to your journal.";
+    })[modality] || "process this segment and add the results to your journal.";
     // A Granola meeting's own strings. Granola's notes sit apart from its
     // speech, and its speaker labels are shown as Granola's, never as a voice
     // the journal recognised.

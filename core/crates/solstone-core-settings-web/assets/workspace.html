@@ -2768,7 +2768,7 @@ button:focus:not(:focus-visible) {
           <details class="granola-guide" id="granolaGuide">
             <summary>how to get your key</summary>
             <div class="granola-guide-body">
-              <p>API access comes with Granola Business and Enterprise. the free Basic version doesn't include it.</p>
+              <p>API access comes with Granola Business and Enterprise. Granola Basic doesn't include it.</p>
               <ol>
                 <li>open the Granola app on your computer.</li>
                 <li>click your workspace name at the bottom left, then <strong>Settings</strong>.</li>
@@ -2776,7 +2776,7 @@ button:focus:not(:focus-visible) {
                 <li>click <strong>Create new key</strong>, tick <strong>Personal notes</strong>, and click <strong>Generate API Key</strong>.</li>
                 <li>copy the key, which starts with <code>grn_</code>, and paste it below.</li>
               </ol>
-              <p>Personal notes covers the notes you own and the ones shared with you. on an Enterprise plan, an admin may need to allow API access first.</p>
+              <p>Personal notes covers the notes you own and the ones shared with you. on Granola Enterprise, an admin may need to allow API access first.</p>
             </div>
           </details>
           <div class="settings-field granola-key-field">
@@ -5800,7 +5800,7 @@ function renderGranola() {
   if (mode === 'attention') {
     granolaEl('granolaAttentionReason').textContent = data.attention;
     granolaEl('granolaAttentionKept').textContent = data.meetings > 0
-      ? `the ${granolaMeetings(data.meetings)} already in your journal stay.`
+      ? `the ${granolaMeetings(data.meetings)} already in your journal ${data.meetings === 1 ? 'stays' : 'stay'}.`
       : 'nothing in your journal was changed.';
   }
 
@@ -5823,7 +5823,7 @@ function renderGranola() {
   const offKept = granolaEl('granolaOffKept');
   offKept.hidden = mode !== 'off';
   if (mode === 'off') {
-    offKept.textContent = `disconnected. the ${granolaMeetings(data.meetings)} from Granola stay in your journal. connect again to keep them up to date; nothing comes in twice.`;
+    offKept.textContent = `disconnected. the ${granolaMeetings(data.meetings)} from Granola ${data.meetings === 1 ? 'stays' : 'stay'} in your journal. connect again to keep them up to date; nothing comes in twice.`;
   }
 
   // A refused key is the one fault whose fix is a new key, so the field opens for it.
