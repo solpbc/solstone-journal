@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
+use solstone_core_format::content::body_hidden_days::{HiddenDays, RowDays, read_hidden_days};
 use solstone_core_format::content::body_records::{
     BODY_RECORD_STREAMS, BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, one_copy_per_row,
     parse_source_time, source_label, user_entered,
@@ -49,13 +50,74 @@ struct BuildRecord {
     document: u32,
 }
 
-/// What a day's document depends on: what its segments did, either way.
+/// How far back an experience can start and still have pieces on a day.
+const REACH_DAYS: i64 = 14;
+
+/// What a day's document depends on: what its segments did, either way, and
+/// which days within an experience's reach the owner hid. Nothing is added
+/// while none is, so a journal with no hidden day builds as it did.
 fn build_token(journal: &Path, day: &str) -> String {
-    format!(
+    let markers = format!(
         "{}+{}",
         marker_token(journal, day, HealthMarkerKind::Stream),
         marker_token(journal, day, HealthMarkerKind::Body)
-    )
+    );
+    match read_hidden_days(journal) {
+        HiddenDays::Unreadable => format!("{markers}+hidden:unreadable"),
+        HiddenDays::Days(hidden) => {
+            let reach = days_reaching(day);
+            let within: Vec<&str> = hidden
+                .iter()
+                .filter(|hidden| reach.contains(*hidden))
+                .map(String::as_str)
+                .collect();
+            if within.is_empty() {
+                markers
+            } else {
+                format!("{markers}+hidden:{}", within.join(","))
+            }
+        }
+    }
+}
+
+/// `day` and the days before it an experience on it can have started on.
+fn days_reaching(day: &str) -> BTreeSet<String> {
+    let Ok(date) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
+        return BTreeSet::from([day.to_owned()]);
+    };
+    (0..=REACH_DAYS)
+        .map(|back| {
+            (date - chrono::Duration::days(back))
+                .format("%Y%m%d")
+                .to_string()
+        })
+        .collect()
+}
+
+/// A day's rows the owner hasn't hidden: none on a hidden day, and on another
+/// day none of a night or workout that started on one. While the hidden days
+/// can't be read every row stays: search leaves the document out meanwhile.
+fn shown_rows(
+    journal: &Path,
+    day: &str,
+    mut rows: BTreeMap<String, Vec<BodyRow>>,
+) -> BTreeMap<String, Vec<BodyRow>> {
+    let HiddenDays::Days(hidden) = read_hidden_days(journal) else {
+        return rows;
+    };
+    if hidden.contains(day) {
+        return BTreeMap::new();
+    }
+    if hidden.is_empty() {
+        return rows;
+    }
+    for (source, rows) in &mut rows {
+        let zone = solstone_core_journal_config::placed_zone(journal, source);
+        let days = RowDays::new(day, zone, rows.iter());
+        rows.retain(|row| !days.hidden(row, &hidden));
+    }
+    rows.retain(|_, rows| !rows.is_empty());
+    rows
 }
 
 /// A day's rows per source. A window's unreadable file stops the day: writing a
@@ -338,7 +400,7 @@ fn rebuild_day(journal: &Path, day: &str) -> Result<(), ProjectionError> {
     // The marker is read first: a change that lands while this reads moves it, and
     // the next pass builds again.
     let source = build_token(journal, day);
-    let rows = read_rows(journal, day)?;
+    let rows = shown_rows(journal, day, read_rows(journal, day)?);
     let document = document_path(journal, day);
     let record = record_path(journal, day);
     let write_error = |path: &Path, error: std::io::Error| ProjectionError::Write {
@@ -668,6 +730,61 @@ mod tests {
         days.reconcile(root);
         assert!(document(root, "20261010").is_none());
         assert!(!record_path(root, "20261010").exists());
+    }
+
+    #[test]
+    fn a_hidden_day_takes_its_night_whole_and_the_next_day_keeps_its_own() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = journal.path();
+        window(
+            root,
+            "20261010",
+            "224000_300",
+            &[night(RowKind::Experience, "n", None)],
+        );
+        let mut tile = night(RowKind::ExperienceTile, "n-1", Some("n"));
+        tile.index = Some(1);
+        tile.count = Some(90);
+        window(root, "20261011", "000000_300", &[tile]);
+        window(
+            root,
+            "20261011",
+            "120000_3600",
+            &[reading("r", "2026-10-11 12:01:00 -0600", "70")],
+        );
+        let mut days = BodyDays::default();
+        days.reconcile(root);
+        let next = document(root, "20261011").unwrap();
+        assert!(next.contains("sleep continuing: night"), "{next}");
+
+        // Hiding the day the night starts: that day has no document, and the
+        // next day loses the night's later part and keeps its own reading.
+        let hide = |day: &str, hidden: bool| {
+            crate::body_hidden::set_body_days_hidden(
+                root,
+                &BTreeSet::from([day.to_owned()]),
+                hidden,
+            )
+            .unwrap();
+        };
+        hide("20261010", true);
+        days.reconcile(root);
+        assert!(document(root, "20261010").is_none());
+        let after = document(root, "20261011").unwrap();
+        assert!(!after.contains("continuing"), "{after}");
+        assert!(after.contains("12:01"), "{after}");
+
+        // Hiding the next day instead leaves the night.
+        hide("20261010", false);
+        hide("20261011", true);
+        days.reconcile(root);
+        assert!(document(root, "20261011").is_none());
+        assert!(document(root, "20261010").unwrap().contains("night"));
+
+        // Unhiding brings each back as it was.
+        hide("20261011", false);
+        days.reconcile(root);
+        assert_eq!(document(root, "20261011").unwrap(), next);
     }
 
     #[test]
