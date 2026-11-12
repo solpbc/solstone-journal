@@ -4638,7 +4638,11 @@ mod tests {
     }
 
     // ---- what stays flat ----
+    //
+    // These time two starts against each other, so they wait on the wall clock
+    // and run with full-tests, one test at a time, never in the parallel unit run.
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn write_exited_history(
         ledger: &ParentLossLedger,
         generation: ParentLossGeneration,
@@ -4684,6 +4688,7 @@ mod tests {
 
     /// Close a synthetic legacy-shaped generation of `completed` exited
     /// entries and 3 live ones, then time the start after it.
+    #[cfg(all(test, feature = "full-tests"))]
     fn close_then_restart(completed: usize) -> (Duration, Duration) {
         let directory = tempfile::Builder::new()
             .prefix("pl-outstanding-")
@@ -4720,6 +4725,7 @@ mod tests {
         (closing, began.elapsed())
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn open_generation_at(path: &Path) -> (ParentLossLedger, ActiveGeneration) {
         let ledger = ParentLossLedger::open(path).unwrap();
         let active = ledger.reserve_generation(instance(10, 1), []).unwrap();
@@ -4734,6 +4740,7 @@ mod tests {
         (ledger, active)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn a_closed_history_costs_the_next_start_nothing() {
         let (small_close, small_next) = close_then_restart(1_000);
