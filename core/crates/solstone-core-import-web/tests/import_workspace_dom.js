@@ -4310,7 +4310,7 @@ function importDeleteHarness({ rows = [], fetchAnswers = {} } = {}) {
     let nextList = null;
     async function loadImports() { listReads += 1; if (nextList) importsCache = nextList; return nextList !== false; }`, context);
   vm.runInContext(functionSource(workspace, 'sourceLabel'), context);
-  vm.runInContext(`${importDeleteBlock()}\nthis.api = { IMPORT_DELETE_COPY, importPick, importOneListLines, importSetBody, importSetOutcome,
+  vm.runInContext(`${importDeleteBlock()}\nthis.api = { IMPORT_DELETE_COPY, importPick, importOneListLines, importOneBody, importSetBody, importSetOutcome,
     openImportDeleteDialog, importOneSpec, deleteChosenImports, toggleImportPick, paintImportPick, enterImportPick, exitImportPick,
     selectAllImports, deleteSetFromList, deleteOneFromList, importSourceName };`, context);
   return { api: context.api, context, byId, tableRows, notices, requests };
@@ -4421,6 +4421,45 @@ function runImportSetDialogListsFiveThenMore() {
   const five = h.api.importSetBody('erase', items.slice(0, 5))[0];
   assert.strictEqual(five.children.length, 5, 'five or fewer: no more line');
   assert.strictEqual(h.api.importSetBody('erase', items)[2].textContent, C.erase.ownMany);
+  cases += 1;
+}
+
+// A day's hide holds against a body import coming in again: said once after
+// the lines that say what brings it back, for one body import or a set holding
+// any, and never for an import that brings in no body data.
+function runImportDeleteSaysOnceThatAHiddenDayStaysHidden() {
+  const h = importDeleteHarness();
+  const C = h.api.IMPORT_DELETE_COPY;
+  const hideDay = (nodes) => Array.from(nodes).filter((node) => node.matches('.import-delete-hide-day'));
+  const afterAgain = (nodes) => {
+    const list = Array.from(nodes);
+    const line = list.findIndex((node) => node.matches('.import-delete-hide-day'));
+    const again = list.map((node) => node.matches('.import-delete-again')).lastIndexOf(true);
+    return line > again;
+  };
+  for (const step of ['move', 'erase']) {
+    for (const kind of ['apple_health', 'strava', 'oura']) {
+      for (const workouts of [1, 0]) {
+        const preview = { id: '20261102_161200', source: kind, segments: 2, days: ['20261005'], originals: 0, shared_days: 0, workouts };
+        const nodes = h.api.importOneBody(step, { id: '20261102_161200', source: kind, kind }, preview);
+        const lines = hideDay(nodes);
+        assert.strictEqual(lines.length, 1, `${step} ${kind}: once`);
+        assert.strictEqual(lines[0].textContent, C.hideDay, `${step} ${kind}: its own key`);
+        assert.ok(afterAgain(nodes), `${step} ${kind}: after what brings it back`);
+      }
+    }
+    const other = { id: '20261102_161200', source: 'chatgpt', segments: 2, days: ['20261005'], originals: 0 };
+    assert.strictEqual(hideDay(h.api.importOneBody(step, { id: other.id, kind: 'chatgpt' }, other)).length, 0, `${step}: not for a chat import`);
+    assert.strictEqual(hideDay(h.api.importOneBody(step, { id: other.id, kind: 'oura' }, null)).length, 1, `${step}: once with no preview`);
+
+    const mixed = ['apple_health', 'strava', 'oura', 'chatgpt'].map((kind, index) => ({ id: `2026110${index}_120000`, source: kind, kind }));
+    const set = h.api.importSetBody(step, mixed);
+    assert.strictEqual(hideDay(set).length, 1, `${step}: once for a mixed set`);
+    assert.strictEqual(Array.from(set).filter((node) => node.matches('.import-delete-again')).length, 3, `${step}: the again lines don't change`);
+    assert.ok(afterAgain(set), `${step}: after the again lines`);
+    assert.strictEqual(hideDay(h.api.importSetBody(step, mixed.slice(1, 2))).length, 1, `${step}: once for a set of one body kind`);
+    assert.strictEqual(hideDay(h.api.importSetBody(step, mixed.slice(3))).length, 0, `${step}: not for a set with no body import`);
+  }
   cases += 1;
 }
 
@@ -4726,6 +4765,7 @@ Promise.resolve()
   .then(runImportDetailDeleteButton)
   .then(runImportDeleteDialog)
   .then(runImportSetDialogListsFiveThenMore)
+  .then(runImportDeleteSaysOnceThatAHiddenDayStaysHidden)
   .then(runImportSelectMode)
   .then(runImportSetRefusalsStaySelected)
   .then(runAlreadyImportedCopyNamesOnlyALiveImport)
