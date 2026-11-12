@@ -1620,6 +1620,9 @@ pub struct SummaryCounts {
     /// stored, kept as first written.
     #[serde(default)]
     pub deferred: u64,
+    /// Documents the source moved further than a day, kept where first saved.
+    #[serde(default)]
+    pub moved_far: u64,
     /// Oura nights that overlap another of its nights in this import.
     pub overlapping_nights: u64,
     /// Entries not added because the journal can't tell whether they were in what
@@ -1670,6 +1673,7 @@ impl SummaryCounts {
             took_facet: 0,
             activities_refused: Vec::new(),
             deferred: 0,
+            moved_far: 0,
             overlapping_nights: 0,
             unsure: Vec::new(),
             moved: 0,
@@ -2018,6 +2022,19 @@ pub fn summary_text(
             } else {
                 "times"
             }
+        );
+    }
+    if counts.moved_far > 0 {
+        let _ = writeln!(
+            text,
+            "{source} moved {} by more than a day; your journal keeps {} where it first saved {}.\n",
+            if counts.moved_far == 1 {
+                "1 entry".to_owned()
+            } else {
+                format!("{} entries", counts.moved_far)
+            },
+            if counts.moved_far == 1 { "it" } else { "them" },
+            if counts.moved_far == 1 { "it" } else { "them" },
         );
     }
     if counts.moved > 0 {

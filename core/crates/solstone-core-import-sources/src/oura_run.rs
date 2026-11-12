@@ -191,6 +191,10 @@ pub struct ScanFindings {
     /// Documents whose stored experience the owner deleted.
     #[serde(default)]
     pub stayed_deleted: u64,
+    /// Documents Oura moved further than a day, kept where the journal first
+    /// wrote them.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub moved_far: u64,
     /// Documents held back, by endpoint, because a window they could already be in
     /// couldn't be read as rows.
     #[serde(default)]
@@ -262,6 +266,9 @@ enum Verdict {
     Hold,
     /// The owner deleted its stored experience, or where it would go.
     StayedDeleted,
+    /// Kept as first written: Oura moved it further than a day, and the journal
+    /// still holds it on the day it first wrote it.
+    MovedFar,
 }
 
 /// A span's two ends as instants, for telling a revised time from a rendering.
@@ -556,7 +563,24 @@ impl Lookup<'_> {
         let new_day = day_key(start.with_timezone(&self.zone).date_naive());
         let account = format!("{}\u{1f}{id}", self.source.stream);
         if firsts.is_empty() {
-            if self.fetched.is_some_and(|fetched| fetched.contains(id)) {
+            if let Some(fetched) = self.fetched
+                && fetched.contains(id)
+            {
+                // Oura can move a document further than the days looked at here;
+                // then the journal still holds it where an Oura run first wrote it.
+                for day in fetched.days_of(id) {
+                    if days.contains(&day) {
+                        continue;
+                    }
+                    self.load(&day)?;
+                    let far = self.days.get(&day).expect("loaded above");
+                    if far.unparseable {
+                        return Ok(Verdict::Hold);
+                    }
+                    if far.firsts.contains_key(id) {
+                        return Ok(Verdict::MovedFar);
+                    }
+                }
                 return Ok(Verdict::StayedDeleted);
             }
             // Its own window is one the owner deleted: it stays deleted, as any new
@@ -889,6 +913,13 @@ pub fn scan_pages(
                 }
                 Verdict::StayedDeleted => {
                     findings.stayed_deleted += 1;
+                    continue;
+                }
+                Verdict::MovedFar => {
+                    findings.moved_far += 1;
+                    findings
+                        .holes
+                        .extend(holes_of([&read.row], HoleReason::Deferred));
                     continue;
                 }
             };

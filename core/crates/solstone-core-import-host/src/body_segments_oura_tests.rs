@@ -2243,3 +2243,57 @@ fn nothing_oura_scores_or_judges_reaches_the_days_document_or_search() {
         }
     }
 }
+
+#[test]
+fn a_document_oura_moves_more_than_a_day_stays_where_it_was_and_isnt_called_the_owners_delete() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let pages =
+        |name: &str, tags: Vec<Value>| stage(&scratch.path().join(name), &[("enhanced_tag", tags)]);
+    run(
+        root,
+        &pages("1", vec![tag("t1", "2026-01-05T09:15:00-07:00")]),
+        "20261104_120000",
+        None,
+    );
+    // Oura moves the tag three days on; nothing was deleted.
+    let outcome = run(
+        root,
+        &pages("2", vec![tag("t1", "2026-01-08T09:15:00-07:00")]),
+        "20261104_120001",
+        None,
+    );
+    let t1 = placed(root, "t1");
+    assert_eq!(t1.len(), 1, "{}", outcome.summary);
+    assert_eq!(t1[0].0.as_str(), "20260105");
+    assert!(
+        outcome.summary.contains("by more than a day"),
+        "{}",
+        outcome.summary
+    );
+    assert!(
+        !outcome.summary.contains("because you deleted"),
+        "{}",
+        outcome.summary
+    );
+
+    // The twin: once the owner deletes it where it was, the same move is their
+    // delete, and stays out.
+    delete(root, "20260105", "090000_3600");
+    let again = run(
+        root,
+        &pages("3", vec![tag("t1", "2026-01-08T09:15:00-07:00")]),
+        "20261104_120002",
+        None,
+    );
+    assert!(placed(root, "t1").is_empty(), "{}", again.summary);
+    assert!(
+        again
+            .summary
+            .contains("1 entry wasn't added, because you deleted"),
+        "{}",
+        again.summary
+    );
+    assert!(!again.summary.contains("by more than a day"));
+}

@@ -16,7 +16,7 @@
 //! an erased day stays out of later syncs. A journal that has none yet starts
 //! it from the Oura rows it holds.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, OpenOptions};
 use std::io::Write as _;
 use std::path::Path;
@@ -42,7 +42,8 @@ fn mark(id: &str) -> String {
 /// What the record holds, read once per run.
 #[derive(Debug, Default)]
 pub struct Fetched {
-    marks: HashSet<String>,
+    /// Each mark, with the days it was recorded on.
+    marks: HashMap<String, BTreeSet<String>>,
 }
 
 impl Fetched {
@@ -58,7 +59,7 @@ impl Fetched {
             }
             Err(error) => return Err(format!("{}: {error}", path.display())),
         };
-        let mut marks = HashSet::new();
+        let mut marks: HashMap<String, BTreeSet<String>> = HashMap::new();
         let lines: Vec<&str> = text
             .lines()
             .filter(|line| !line.trim().is_empty())
@@ -72,13 +73,15 @@ impl Fetched {
                 }
                 return Err(format!("{}: a line can't be read", path.display()));
             };
+            let day = entry.get("day").and_then(Value::as_str);
             for value in entry
                 .get("ids")
                 .and_then(Value::as_array)
                 .map_or(&[][..], Vec::as_slice)
             {
                 if let Some(mark) = value.as_str() {
-                    marks.insert(mark.to_owned());
+                    let days = marks.entry(mark.to_owned()).or_default();
+                    days.extend(day.map(str::to_owned));
                 }
             }
         }
@@ -124,7 +127,9 @@ impl Fetched {
         for (day, marks) in by_day {
             text.push_str(&json!({"day": day, "ids": marks}).to_string());
             text.push('\n');
-            fetched.marks.extend(marks);
+            for mark in marks {
+                fetched.marks.entry(mark).or_default().insert(day.clone());
+            }
         }
         solstone_core_journal_io::atomic_replace(
             journal.join(FETCHED_REL),
@@ -138,7 +143,17 @@ impl Fetched {
     /// Whether an Oura run brought a row with this id in before.
     #[must_use]
     pub fn contains(&self, id: &str) -> bool {
-        self.marks.contains(&mark(id))
+        self.marks.contains_key(&mark(id))
+    }
+
+    /// The days an Oura run recorded a row with this id on: where the journal
+    /// first held it.
+    #[must_use]
+    pub fn days_of(&self, id: &str) -> Vec<String> {
+        self.marks
+            .get(&mark(id))
+            .map(|days| days.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// Add the rows a day now holds that the record doesn't have yet. Call it
@@ -152,7 +167,7 @@ impl Fetched {
         let new: BTreeSet<String> = ids
             .into_iter()
             .map(mark)
-            .filter(|mark| !self.marks.contains(mark))
+            .filter(|mark| !self.marks.contains_key(mark))
             .collect();
         if new.is_empty() {
             return Ok(());
@@ -172,7 +187,9 @@ impl Fetched {
         file.write_all(line.as_bytes())
             .and_then(|()| file.sync_data())
             .map_err(|error| format!("{}: {error}", path.display()))?;
-        self.marks.extend(new);
+        for mark in new {
+            self.marks.entry(mark).or_default().insert(day.to_owned());
+        }
         Ok(())
     }
 }

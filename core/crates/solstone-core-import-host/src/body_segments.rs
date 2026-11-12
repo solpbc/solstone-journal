@@ -1856,6 +1856,7 @@ fn summary_of(state: &RunState) -> SummaryCounts {
         took_facet: state.totals.took_facet,
         activities_refused: state.totals.activities_refused.iter().cloned().collect(),
         deferred: state.findings.deferred,
+        moved_far: state.findings.moved_far,
         overlapping_nights: state.findings.overlapping_nights,
         unsure: state
             .findings
