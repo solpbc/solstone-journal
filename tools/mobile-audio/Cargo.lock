@@ -2010,6 +2010,7 @@ name = "solstone-core-format"
 version = "2.0.76"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "glob",
  "pulldown-cmark",
  "serde",

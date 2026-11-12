@@ -5692,6 +5692,7 @@ name = "solstone-core-format"
 version = "2.0.76"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "glob",
  "pulldown-cmark",
  "serde",
@@ -5920,6 +5921,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-local",
+ "solstone-core-location",
  "solstone-core-segment",
  "solstone-core-system",
  "tempfile",
