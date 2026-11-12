@@ -24,6 +24,7 @@
   const STILL_WORKING_MS = 10000;
   const SCROLL_ENTRIES = 50;
   const HOVER_INTENT_MS = 100;
+  const PRESS_HOLD_MS = 1000;
   const MOVE_MARKS = ['view:ready', 'view:update', 'router:start', 'router:reread', 'workspace:inserted', 'view:scripts-loaded'];
 
   let active = false;
@@ -183,10 +184,44 @@
     ]);
   }
 
+  // While a view transition runs, the browser hit-tests the page as its root
+  // element, so a press reaches no link and its mousedown takes focus to the
+  // body. A press during the router's own transition ends it, so the tap
+  // lands on the page. A move made while a press is down doesn't animate,
+  // because a tap that started before the transition would end inside it.
+  const presses = new Map();
+  let skippedAt = -Infinity;
+  function onPress(event) {
+    presses.set(event.pointerId, Date.now());
+    if (transition) {
+      skippedAt = Date.now();
+      try { transition.skipTransition(); } catch (_) {}
+    }
+  }
+  function onRelease(event) {
+    presses.delete(event.pointerId);
+  }
+  function pressDown() {
+    const now = Date.now();
+    // A release the page never saw (a mouse let go outside the window) ends
+    // the press after a second, so it can't keep transitions off.
+    presses.forEach((at, id) => { if (now - at > PRESS_HOLD_MS) presses.delete(id); });
+    return presses.size > 0;
+  }
+  // An engine that still sends a press during a transition to the root
+  // element, or keeps that target for the tap after the press ended it,
+  // leaves focus where the move put it, never on the body. Outside these the
+  // root is never a press's target: the body fills the page.
+  function onRootMouseDown(event) {
+    if (event.target !== document.documentElement) return;
+    if (transition || Date.now() - skippedAt < PRESS_HOLD_MS) event.preventDefault();
+  }
+
   function canAnimate() {
     return typeof document.startViewTransition === 'function'
       && document.visibilityState === 'visible'
-      && !window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+      && !window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+      && !pressDown();
   }
 
   // Runs `place` inside a view transition where one can run, and settles once
@@ -213,12 +248,17 @@
     });
     transition = started;
     ['ready', 'finished'].forEach((name) => started[name]?.catch?.(() => {}));
+    // The transition runs on past its callback, through the animation, and a
+    // press in that time is lost the same way: it is the running one until
+    // it finishes.
+    const over = () => { if (transition === started) transition = null; };
+    if (typeof started.finished?.then === 'function') started.finished.then(over, over);
     return started.updateCallbackDone.then(
       () => ran,
       () => ran || run()
     ).finally(() => {
       ran = null;
-      if (transition === started) transition = null;
+      if (typeof started.finished?.then !== 'function') over();
     });
   }
 
@@ -541,6 +581,10 @@
     window.addEventListener('popstate', onPopState);
     document.addEventListener('pointerdown', onPointerDown, { passive: true });
     document.addEventListener('pointerover', onPointerOver, { passive: true });
+    window.addEventListener('pointerdown', onPress, { capture: true, passive: true });
+    window.addEventListener('pointerup', onRelease, { capture: true, passive: true });
+    window.addEventListener('pointercancel', onRelease, { capture: true, passive: true });
+    window.addEventListener('mousedown', onRootMouseDown, { capture: true });
     window.appEvents?.onConnectionState?.(onConnection);
   }
 
