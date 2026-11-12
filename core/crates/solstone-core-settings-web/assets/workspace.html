@@ -2322,6 +2322,7 @@ button:focus:not(:focus-visible) {
 .granola-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--orange) 88%, var(--surface-dark)); }
 .granola-actions button:disabled { opacity: 0.6; cursor: default; }
 .granola-note { margin: 0.6em 0 0; color: var(--ink-faint); font-size: 0.85em; }
+.granola-key:not([hidden]) + #granolaConnected { margin-top: 1.25em; padding-top: 1em; border-top: 1px solid var(--hairline); }
 .granola-load-error { margin: 0.5em 0 0; color: var(--danger); font-size: 0.9em; }
 @media (max-width: 480px) {
   .granola-actions button { min-height: 44px; }
@@ -5831,7 +5832,10 @@ function renderGranola() {
   const showKey = !data.connected || granola.replacing || keyFault;
   const replacingKey = data.connected && showKey;
   granolaEl('granolaKeyForm').hidden = !showKey;
-  granolaEl('granolaConnected').hidden = !data.connected;
+  // Mid-replacement, the key form is the whole task. On a refused key a retry
+  // can't help, so only disconnect stays beside it.
+  granolaEl('granolaConnected').hidden = !data.connected || granola.replacing;
+  granolaEl('granolaCheck').hidden = keyFault;
   granolaEl('granolaKeyLabel').textContent = replacingKey ? 'new personal API key' : 'personal API key';
   granolaEl('granolaConnect').textContent = granola.busy === 'connect'
     ? 'checking the key…'
