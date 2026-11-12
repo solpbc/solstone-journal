@@ -21,13 +21,11 @@ use solstone_core_journal_io::{LockOptions, hold_lock};
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(all(test, feature = "full-tests"))]
 use std::time::Duration;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-static NEXT_VOICEPRINT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 type MergeInjector<'a> = &'a (dyn Fn(&str, usize) -> bool + 'static);
 
 fn test_encoder() -> EncoderIdentity {
@@ -79,12 +77,12 @@ fn commit_entity_merge_with_injector(
 }
 
 fn voiceprint_journal() -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "solstone-voiceprint-{}-{}",
-        std::process::id(),
-        NEXT_VOICEPRINT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir_all(&path).unwrap();
+    // A retained fixture must stay unique when a later process reuses a PID.
+    let path = tempfile::Builder::new()
+        .prefix("solstone-voiceprint-")
+        .tempdir()
+        .unwrap()
+        .keep();
     fs::canonicalize(path).unwrap()
 }
 
