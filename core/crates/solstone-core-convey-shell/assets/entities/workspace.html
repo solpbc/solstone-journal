@@ -1,4 +1,5 @@
 <!-- first-read: /app/entities/ -> /app/entities/api/state /app/settings/api/facets /app/entities/api/journal/summary?offset=0&limit=50&hidden=exclude -->
+<!-- view-contract -->
 <link rel="stylesheet" href="/static/date-nav.css">
 <script src="/static/date-nav.js"></script>
 <link rel="stylesheet" href="/static/day-grid.css">
@@ -2145,7 +2146,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   <!-- Journal entity detail view (all-facet mode) -->
   <div id="journal-entity-detail-view" class="entity-detail-view" style="display: none;">
     <div class="entity-detail-header">
-      <a class="entity-detail-back" href="#" onclick="event.preventDefault(); navigateToList()">← back to entities</a>
+      <a class="entity-detail-back" href="#" data-entities-action="list">← back to entities</a>
       <div class="entity-detail-title">
         <h2 class="entity-detail-name" id="journal-detail-name"></h2>
         <span class="entity-detail-type" id="journal-detail-type"></span>
@@ -2291,8 +2292,8 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   <div id="entity-detail-view" class="entity-detail-view" style="display: none;">
     <div class="entity-detail-header">
       <div class="entity-detail-link-row">
-        <a class="entity-detail-back" href="#" onclick="event.preventDefault(); navigateToList()">← back to entities</a>
-        <a class="entity-detail-allfacets" href="#" onclick="event.preventDefault(); selectEntityScope(null);">edit <span id="detail-allfacets-name"></span> in all facets →</a>
+        <a class="entity-detail-back" href="#" data-entities-action="list">← back to entities</a>
+        <a class="entity-detail-allfacets" href="#" data-entities-action="all-facets">edit <span id="detail-allfacets-name"></span> in all facets →</a>
       </div>
       <div class="entity-detail-title">
         <h2 class="entity-detail-name" id="detail-name"></h2>
@@ -2381,20 +2382,168 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   <div class="modal-content">
     <div class="modal-header">
       <h3>detach</h3>
-      <button class="close" aria-label="close" onclick="closeDetachConfirmModal()">&times;</button>
+      <button class="close" aria-label="close" data-entities-action="detach-close">&times;</button>
     </div>
     <div class="modal-body">
       <p id="detachConfirmMessage"></p>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeDetachConfirmModal()">cancel</button>
-      <button id="confirmDetachBtn" class="btn btn-primary" onclick="confirmDetach()">detach</button>
+      <button class="btn btn-secondary" data-entities-action="detach-close">cancel</button>
+      <button id="confirmDetachBtn" class="btn btn-primary" data-entities-action="detach-confirm">detach</button>
     </div>
   </div>
 </div>
 
 <script>
-  const reportEntitiesReady = window.createViewReady('entities');
+// Entities on the view contract: everything below the module-level part runs
+// when the view is mounted, and what it adds to the page goes when it is
+// disposed. Its own moves (a facet, a folder, a page, a search, an entity and
+// back) are its own history entries on its one address path.
+(() => {
+  window.SolViews.register('entities', { mount: mountEntities });
+
+  const ENTITIES_PATH = '/app/entities/';
+  const ENTITIES_SCROLLS = 50;
+  // The scroll of each of this page's entities entries, by history entry id:
+  // numbers only, so nothing of a mount is kept. The router restores scroll
+  // within 300 ms of a move; the list can take longer than that to draw.
+  const entityScrolls = new Map();
+
+  function entitiesAddress(pathname) {
+    return /^\/app\/entities(\/|$)/.test(pathname || '');
+  }
+
+  function entitiesHere() {
+    return entitiesAddress(window.location.pathname);
+  }
+
+  function entitiesEntryId() {
+    return window.history.state?.solRoute?.id || null;
+  }
+
+  function rememberEntitiesScroll(id, y) {
+    if (!id) return;
+    entityScrolls.delete(id);
+    entityScrolls.set(id, y);
+    while (entityScrolls.size > ENTITIES_SCROLLS) entityScrolls.delete(entityScrolls.keys().next().value);
+  }
+
+  // ENTITIES NOTICES (module level)
+  let entitiesHooks = null;
+  // END ENTITIES NOTICES
+
+  function mountEntities(ctx) {
+  // Everything from here to the end of the mount is this mount's, and a
+  // second mount starts it all again. A notice from an earlier mount finds
+  // none until this one publishes its hooks.
+  entitiesHooks = null;
+  let noticeHooks = null;
+
+  // Timers belong to this mount.
+  const setTimeout = ctx.setTimeout;
+  const clearTimeout = ctx.clearTimeout;
+
+  // Reads belong to this mount and end with it. A write is never cut short,
+  // but an answer that comes after the view has gone continues nothing: no
+  // drawing, no address, no notice. Each read is asked of its own, as it was
+  // before the contract, so a refresh after a write never shares an older read.
+  function ended(promise) {
+    return promise.then(
+      (value) => (ctx.disposed ? window.SolStore.never() : value),
+      (error) => (ctx.disposed ? window.SolStore.never() : Promise.reject(error))
+    );
+  }
+  function apiJson(url, opts) {
+    return ended(ctx.read(url, Object.assign({}, opts, { fresh: true })));
+  }
+  function fetch(input, init) {
+    return ended(ctx.fetch(input, init)).then((response) => {
+      if (response && typeof response.json === 'function') {
+        const json = response.json.bind(response);
+        const text = response.text.bind(response);
+        response.json = () => ended(json());
+        response.text = () => ended(text());
+      }
+      return response;
+    });
+  }
+
+  // The mount reports ready once; each own move after it reports again, so a
+  // move within entities ends on a `view:ready` mark of its own.
+  let moveReady = null;
+  function reportEntitiesReady(state) {
+    ctx.ready(state);
+    if (moveReady) {
+      const report = moveReady;
+      moveReady = null;
+      report(state);
+    }
+  }
+
+  // One of entities' own entries, always on its own path. Nothing is written
+  // once the address is another view's. A page that has learned the journal
+  // is another build loads the address instead, as the router does.
+  function ownEntry(kind, url) {
+    if (ctx.disposed || !entitiesHere()) return false;
+    if (window.appEvents?.buildChanged?.()) {
+      if (kind === 'push') window.location.assign(url);
+      else window.location.replace(url);
+      return false;
+    }
+    moveReady = window.beginViewReady('entities', { update: true });
+    if (kind === 'push') ctx.history.push(url);
+    else ctx.history.replace(url);
+    return true;
+  }
+
+  // Focus is never left on the page itself. A move of the view's own takes
+  // focus that is nowhere, on `<main>`, or on something the move hid or took
+  // out, to `target` (or `<main>`). A redraw takes focus only when it dropped
+  // focus that was inside the view.
+  function entityRendered(node) {
+    if (typeof node.checkVisibility === 'function') return node.checkVisibility();
+    if (typeof node.getClientRects === 'function') return node.getClientRects().length > 0;
+    return !node.closest?.('[hidden]');
+  }
+  function entityFocusLost(own) {
+    const active = document.activeElement;
+    const main = document.getElementById('main-content');
+    if (!active || active === document.body || active === document.documentElement) return true;
+    if (active === main) return own;
+    return !active.isConnected || !entityRendered(active);
+  }
+  function placeEntityFocus(node) {
+    const main = document.getElementById('main-content');
+    const into = node && node.isConnected && entityRendered(node) ? node : main;
+    if (!into) return;
+    if (!into.hasAttribute('tabindex') && !/^(A|BUTTON|INPUT|SELECT|TEXTAREA)$/.test(into.tagName)) {
+      into.setAttribute('tabindex', '-1');
+    }
+    try { into.focus({ preventScroll: true }); } catch (_) { into.focus(); }
+  }
+  function holdFocus(own, done, target) {
+    const was = document.activeElement;
+    const main = document.getElementById('main-content');
+    const inside = !!(was && main && was !== main && main.contains(was));
+    const settle = () => {
+      if (ctx.disposed || !entitiesHere()) return;
+      if (!own && !inside) return;
+      if (!entityFocusLost(own)) return;
+      placeEntityFocus(typeof target === 'function' ? target() : target);
+    };
+    return Promise.resolve(done).then(settle, settle);
+  }
+  // After a move between the list and an entity: the entity's name, or on
+  // the list the row of the entity just left.
+  function restoredFocusTarget() {
+    for (const [view, heading] of [['journal-entity-detail-view', 'journal-detail-name'], ['entity-detail-view', 'detail-name']]) {
+      const node = document.getElementById(view);
+      if (node && node.style.display !== 'none') return document.getElementById(heading);
+    }
+    if (!lastDetailId) return null;
+    return Array.from(document.querySelectorAll('[data-entity-id]')).find((row) => row.dataset.entityId === lastDetailId) || null;
+  }
+
 
 let ENT_COPY = {};
 let ATTENDANCE_KINDS = new Set();
@@ -2818,7 +2967,7 @@ function applyObservationDayGrid(data, token) {
 async function loadObservationDayGrid(facet, entityId, token) {
   try {
     const response = await fetch(
-      `api/${encodeURIComponent(facet)}/entity/${encodeURIComponent(entityId)}/grid`,
+      `/app/entities/api/${encodeURIComponent(facet)}/entity/${encodeURIComponent(entityId)}/grid`,
       { cache: 'no-store' },
     );
     if (!response.ok) throw new Error('observation grid failed');
@@ -2872,7 +3021,7 @@ async function fetchAllDetailObservations() {
     let afterId = 0;
     let hasMore = true;
     while (hasMore) {
-      const url = `api/${encodeURIComponent(currentFacet)}/observations?name=${encodeURIComponent(entity.name)}&limit=200&after_id=${encodeURIComponent(afterId)}`;
+      const url = `/app/entities/api/${encodeURIComponent(currentFacet)}/observations?name=${encodeURIComponent(entity.name)}&limit=200&after_id=${encodeURIComponent(afterId)}`;
       const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) throw new Error('failed to load observations');
       const data = await res.json();
@@ -3697,7 +3846,7 @@ function entityPathForFacet(facet, hash = location.hash) {
     params.delete('facet');
   }
   const query = params.toString();
-  return `${location.pathname}${query ? `?${query}` : ''}${hash}`;
+  return `${ENTITIES_PATH}${query ? `?${query}` : ''}${hash}`;
 }
 
 function renderScopeNotice() {
@@ -3720,7 +3869,7 @@ function closeScopeMenu({restoreFocus = false} = {}) {
   layer.hidden = true;
   trigger.setAttribute('aria-expanded', 'false');
   if (scopeOutsideClick) {
-    document.removeEventListener('pointerdown', scopeOutsideClick, true);
+    scopeOutsideClick();
     scopeOutsideClick = null;
   }
   if (restoreFocus) trigger.focus();
@@ -3745,19 +3894,18 @@ function openScopeMenu() {
   if (!control || !trigger || !layer || !listbox || !layer.hidden) return;
   layer.hidden = false;
   trigger.setAttribute('aria-expanded', 'true');
-  scopeOutsideClick = (event) => {
+  scopeOutsideClick = ctx.on(document, 'pointerdown', (event) => {
     if (!control.contains(event.target)) closeScopeMenu();
-  };
-  document.addEventListener('pointerdown', scopeOutsideClick, true);
+  }, true);
 }
 
 function selectEntityScope(facet) {
   const nextFacet = facet && facetRoster.some((item) => item.name === facet) ? facet : null;
   closeScopeMenu();
   if (nextFacet === currentFacet) return;
-  history.pushState(null, '', entityPathForFacet(nextFacet));
+  if (!ownEntry('push', entityPathForFacet(nextFacet))) return;
   restoreEntityScopeFromLocation();
-  loadEntities();
+  holdFocus(true, loadEntities(), () => document.getElementById('entities-scope-trigger'));
 }
 
 function renderScopeControl() {
@@ -3869,7 +4017,7 @@ function restoreEntityScopeFromLocation() {
   if (requestedFacet && !selectedFacet) {
     currentFacet = null;
     scopeNotice = ENT_COPY.ENT_SCOPE_FACET_MISSING || '';
-    history.replaceState(null, '', entityPathForFacet(null));
+    ownEntry('replace', entityPathForFacet(null));
   } else {
     currentFacet = selectedFacet?.name || null;
     scopeNotice = '';
@@ -3905,20 +4053,42 @@ function handleHashChange() {
 
 function syncEntityRoute() {
   restoreEntityScopeFromLocation();
-  loadEntities();
+  return loadEntities();
 }
 
-window.addEventListener('hashchange', handleHashChange);
-window.addEventListener('popstate', syncEntityRoute);
+// Back and forward between two of entities' own entries: the router leaves
+// them to the view. Anything else is the router's.
+ctx.on(window, 'hashchange', () => {
+  if (entitiesHere()) handleHashChange();
+});
+ctx.on(window, 'popstate', () => {
+  if (!entitiesHere()) return;
+  if (window.appEvents?.buildChanged?.()) {
+    window.location.reload();
+    return;
+  }
+  const id = entitiesEntryId();
+  moveReady = window.beginViewReady('entities', { update: true });
+  holdFocus(true, syncEntityRoute(), restoredFocusTarget).then(() => {
+    if (!ctx.disposed && entitiesEntryId() === id && entityScrolls.has(id)) {
+      window.scrollTo(0, entityScrolls.get(id));
+    }
+  });
+});
+
+let lastDetailId = null;
 
 function navigateToEntity(entityId) {
-  history.pushState(null, '', `${location.pathname}${location.search}#${entityId}`);
+  if (!ownEntry('push', `${ENTITIES_PATH}${location.search}#${entityId}`)) return;
   handleHashChange();
+  holdFocus(true, null, restoredFocusTarget);
 }
 
 function navigateToList() {
-  history.pushState(null, '', `${location.pathname}${location.search}`);
+  if (!ownEntry('push', `${ENTITIES_PATH}${location.search}`)) return;
   showListView();
+  reportEntitiesReady(journalSummary || entitiesData ? 'content' : 'empty');
+  holdFocus(true, null, restoredFocusTarget);
 }
 
 // Hide all views
@@ -3946,6 +4116,7 @@ function showListView() {
 
 function showDetailView(entityId) {
   hideAllViews();
+  lastDetailId = entityId;
 
   if (currentFacet) {
     // Facet-specific detail view
@@ -3974,7 +4145,7 @@ function showFacetDetailView(entityId) {
   loadObservationDayGrid(currentFacet, entityId, openToken);
 
   // Fetch entity details
-  fetch(`api/${encodeURIComponent(currentFacet)}/entity/${encodeURIComponent(entityId)}`)
+  fetch(`/app/entities/api/${encodeURIComponent(currentFacet)}/entity/${encodeURIComponent(entityId)}`)
     .then(response => response.json())
     .then(data => {
       if (!detailObservationTokenCurrent(openToken)) return;
@@ -3983,10 +4154,12 @@ function showFacetDetailView(entityId) {
       }
       currentDetailEntity = data.entity;
       renderDetailView(data.entity, data.observations, data);
+      reportEntitiesReady('content');
     })
     .catch(error => {
       if (!detailObservationTokenCurrent(openToken)) return;
       console.error('Error loading entity details:', error);
+      reportEntitiesReady('error');
       resetObservationGridContext();
       document.getElementById('detail-name').textContent = '';
       document.getElementById('detail-allfacets-name').textContent = '';
@@ -4121,7 +4294,7 @@ function showJournalDetailView(entityId) {
   resetJournalTrustSurface();
 
   // Fetch journal entity details
-  fetch(`api/journal/entity/${encodeURIComponent(entityId)}`)
+  fetch(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}`)
     .then(response => response.json())
     .then(data => {
       if (!detailObservationTokenCurrent(openToken)) return;
@@ -4130,10 +4303,12 @@ function showJournalDetailView(entityId) {
       }
       currentDetailEntity = data.entity;
       renderJournalDetailView(data.entity);
+      reportEntitiesReady('content');
     })
     .catch(error => {
       if (!detailObservationTokenCurrent(openToken)) return;
       console.error('Error loading journal entity details:', error);
+      reportEntitiesReady('error');
       document.getElementById('journal-detail-name').textContent = knownName;
       setJournalEditLoading("this entity couldn't be loaded, so it can't be edited.", 'unavailable');
       const container = document.getElementById('journal-detail-facets');
@@ -4486,7 +4661,7 @@ async function runJournalMergeSearch(entity, term) {
   const request = ++journalMergeRequest;
   const params = new URLSearchParams({q: term, limit: '25', sort: 'name'});
   try {
-    const page = await window.apiJson(`/app/entities/api/journal/summary?${params.toString()}`);
+    const page = await apiJson(`/app/entities/api/journal/summary?${params.toString()}`);
     if (request !== journalMergeRequest || currentDetailEntity?.id !== entity.id) return;
     renderJournalMergeResults((page.items || [])
       .filter((candidate) => candidate.id !== entity.id && candidate.blocked !== true)
@@ -4563,7 +4738,7 @@ function renderJournalTrustControls(entity) {
   };
   input.onkeydown = (event) => handleJournalMergeKeys(event, entity);
   input.onfocus = () => { if (!input.value.trim()) showJournalMergeSuggestions(); };
-  input.onblur = () => { window.setTimeout(closeJournalMergeResults, 150); };
+  input.onblur = () => { setTimeout(closeJournalMergeResults, 150); };
   if (pendingJournalMergeDone?.merge_id) {
     showJournalMergeDone(pendingJournalMergeDone);
   }
@@ -4572,8 +4747,8 @@ function renderJournalTrustControls(entity) {
 async function loadJournalTrustDetails(entityId) {
   try {
     const [history, candidates] = await Promise.all([
-      window.apiJson(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}/history`),
-      window.apiJson('/app/entities/api/merge-candidates?status=open')
+      apiJson(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}/history`),
+      apiJson('/app/entities/api/merge-candidates?status=open')
     ]);
     if (currentDetailEntity?.id !== entityId) return;
     renderJournalEntityHistory(entityId, history.items || []);
@@ -4669,7 +4844,7 @@ async function previewJournalEntityMerge(sourceId, targetId) {
   button.disabled = true;
   hideInlineError('journal-detail-trust-error');
   try {
-    const preview = await window.apiJson('/app/entities/api/merge', {
+    const preview = await apiJson('/app/entities/api/merge', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({source_slug: sourceId, target_slug: targetId})
@@ -4714,13 +4889,13 @@ async function commitJournalEntityMerge(sourceId, targetId, targetName, button) 
   if (!window.confirm(prompt)) return;
   button.disabled = true;
   try {
-    const result = await window.apiJson('/app/entities/api/merge', {
+    const result = await apiJson('/app/entities/api/merge', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({source_slug: sourceId, target_slug: targetId, commit: true})
     });
     pendingJournalMergeDone = result.merge_id ? result : null;
-    location.hash = targetId;
+    if (ownEntry('push', `${ENTITIES_PATH}${location.search}#${targetId}`)) handleHashChange();
     await loadJournalEntities({refresh: true});
   } catch (err) {
     // A repeat merge settles durable recovery under entity-trust before
@@ -4748,7 +4923,7 @@ async function restoreJournalEntityVersion(entityId, versionId, button) {
   if (!window.confirm(ENT_COPY.ENT_TRUST_RESTORE_CONFIRM || '')) return;
   button.disabled = true;
   try {
-    await window.apiJson(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}/restore`, {
+    await apiJson(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}/restore`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({version_id: versionId})
@@ -4787,7 +4962,7 @@ document.getElementById('journal-detail-edit-form').addEventListener('submit', f
   saveBtn.disabled = true;
   saveBtn.textContent = 'saving…';
 
-  fetch(`api/journal/entity/${encodeURIComponent(entityId)}`, {
+  fetch(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, type, aka })
@@ -4842,7 +5017,7 @@ function blockJournalEntity() {
   btn.disabled = true;
   btn.textContent = 'hiding…';
 
-  fetch(`api/journal/entity/${encodeURIComponent(entityId)}/block`, {
+  fetch(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}/block`, {
     method: 'POST'
   })
   .then(response => response.json())
@@ -4871,7 +5046,7 @@ function unblockJournalEntity() {
   btn.disabled = true;
   btn.textContent = 'unhiding…';
 
-  fetch(`api/journal/entity/${encodeURIComponent(entityId)}/unblock`, {
+  fetch(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}/unblock`, {
     method: 'POST'
   })
   .then(response => response.json())
@@ -5166,15 +5341,16 @@ function wireEntityDeleteDialog(nodes) {
   const act = erase => {
     if (!entityDialog) return;
     const spec = entityDialog.spec;
+    const opener = entityDialog.returnFocus;
     closeEntityDeleteDialog(false);
-    spec.act(erase);
+    holdFocus(true, spec.act(erase), () => opener);
   };
   nodes.confirm.addEventListener('click', () => act(false));
   nodes.eraseConfirm.addEventListener('click', () => act(true));
   nodes.modal.addEventListener('click', event => {
     if (event.target === nodes.modal) closeEntityDeleteDialog();
   });
-  document.addEventListener('keydown', event => {
+  ctx.on(document, 'keydown', event => {
     if (event.key === 'Escape' && entityDialog) {
       event.preventDefault();
       closeEntityDeleteDialog();
@@ -5204,6 +5380,7 @@ function closeEntityDeleteDialog(restoreFocus = true) {
   nodes.body.replaceChildren();
   document.body.style.overflow = overflow;
   if (restoreFocus && returnFocus && document.contains(returnFocus)) returnFocus.focus();
+  if (restoreFocus) holdFocus(true, null, () => returnFocus);
 }
 
 // One entity's dialog. The preview fills its list when it arrives; a preview
@@ -5859,7 +6036,7 @@ function startDescriptionEdit(entity) {
 }
 
 function saveDescription(entity, newDescription) {
-  fetch(`api/${encodeURIComponent(currentFacet)}/entity/${encodeURIComponent(entity.id)}/description`, {
+  fetch(`/app/entities/api/${encodeURIComponent(currentFacet)}/entity/${encodeURIComponent(entity.id)}/description`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -5887,9 +6064,11 @@ function saveDescription(entity, newDescription) {
 }
 
 let pendingDetachEntity = null;
+let detachOpener = null;
 
 function showDetachConfirmModal(entity) {
   pendingDetachEntity = entity;
+  detachOpener = document.activeElement;
   const title = facetTitle(currentFacet);
   const message = (ENT_COPY.ENT_DETACH_CONFIRM || '')
     .replace('{name}', entity.name)
@@ -5901,6 +6080,9 @@ function showDetachConfirmModal(entity) {
 function closeDetachConfirmModal() {
   document.getElementById('detachConfirmModal').style.display = 'none';
   pendingDetachEntity = null;
+  const opener = detachOpener;
+  detachOpener = null;
+  holdFocus(true, null, () => opener);
 }
 
 function confirmDetach() {
@@ -5915,7 +6097,7 @@ function detachEntity(entity) {
   const detachedFacet = currentFacet;
   const entityId = entity.id;
   const entityName = entity.name;
-  fetch(`api/${encodeURIComponent(currentFacet)}/entity/${encodeURIComponent(entity.id)}`, {
+  fetch(`/app/entities/api/${encodeURIComponent(currentFacet)}/entity/${encodeURIComponent(entity.id)}`, {
     method: 'DELETE'
   })
   .then(async response => ({
@@ -5963,7 +6145,7 @@ function detachEntity(entity) {
 }
 
 function reattachEntity(entity) {
-  fetch(`api/${encodeURIComponent(currentFacet)}`, {
+  fetch(`/app/entities/api/${encodeURIComponent(currentFacet)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -6003,7 +6185,7 @@ function attachEntityToFacet(entity, description) {
   attachBtn.textContent = 'attaching…';
   attachError.style.display = 'none';
 
-  fetch(`api/${encodeURIComponent(currentFacet)}`, {
+  fetch(`/app/entities/api/${encodeURIComponent(currentFacet)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -6044,7 +6226,7 @@ function resetEntitiesLoading() {
 async function loadEntitiesState() {
   resetEntitiesLoading();
   try {
-    const state = await window.apiJson('/app/entities/api/state');
+    const state = await apiJson('/app/entities/api/state');
     ENT_COPY = state.entities_copy || {};
     ATTENDANCE_KINDS = new Set(state.attendance_kinds || []);
     return true;
@@ -6076,7 +6258,7 @@ async function fetchJournalSummary({allowTypeReset = true} = {}) {
   if (journalEntitySearch) params.set('q', journalEntitySearch);
   params.set('hidden', journalFolder === 'hidden' ? 'only' : 'exclude');
   try {
-    return await window.apiJson(`/app/entities/api/journal/summary?${params.toString()}`);
+    return await apiJson(`/app/entities/api/journal/summary?${params.toString()}`);
   } catch (err) {
     if (allowTypeReset && journalEntityType && err?.reasonCode === 'invalid_entity_type') {
       journalEntityType = '';
@@ -6101,7 +6283,7 @@ async function loadEntityScopeMetadata(stateLoaded = null) {
   readJournalListState();
   try {
     const [facetPayload, summary] = await Promise.all([
-      window.apiJson('/app/settings/api/facets'),
+      apiJson('/app/settings/api/facets'),
       fetchJournalSummary(),
     ]);
     if (stateLoaded && !await stateLoaded) return false;
@@ -6133,6 +6315,8 @@ function refreshEntitiesAfterMutation() {
   return loadEntities();
 }
 
+let entitiesFirstDraw = null;
+
 // Edit form submission
 async function initEntities() {
   // The state read and the scope reads don't depend on each other, so they
@@ -6142,7 +6326,7 @@ async function initEntities() {
     return;
   }
   loadEntityTypes();  // Load entity types first for UI elements
-  loadEntities();
+  entitiesFirstDraw = loadEntities();
   loadTidyGroups();
 
   // Entity search
@@ -6178,7 +6362,7 @@ async function initEntities() {
     });
   }
 
-  document.addEventListener('keydown', function(e) {
+  ctx.on(document, 'keydown', function(e) {
     if (e.key === 'Escape') {
       const detachConfirmModal = document.getElementById('detachConfirmModal');
       if (detachConfirmModal.style.display === 'flex') {
@@ -6188,20 +6372,15 @@ async function initEntities() {
   });
 
   // Modal close on outside click
-  window.onclick = function(event) {
+  ctx.on(window, 'click', function(event) {
     const detachConfirmModal = document.getElementById('detachConfirmModal');
     if (event.target == detachConfirmModal) {
       closeDetachConfirmModal();
     }
-  };
+  });
   entitiesInitialized = true;
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initEntities);
-} else {
-  initEntities();
-}
 
 async function loadEntities() {
   // Hide all views and show loading
@@ -6226,7 +6405,7 @@ async function loadEntities() {
 
   // Facet-specific mode
   try {
-    const data = await window.apiJson(`api/${encodeURIComponent(currentFacet)}`);
+    const data = await apiJson(`/app/entities/api/${encodeURIComponent(currentFacet)}`);
     entitiesData = {
       attached: data.attached || [],
       detected: data.detected || [],
@@ -6388,9 +6567,8 @@ function writeJournalListState({replace = false} = {}) {
   if (journalFolder) params.set('folder', journalFolder); else params.delete('folder');
   if (journalEntityPage > 0) params.set('page', String(journalEntityPage + 1)); else params.delete('page');
   const query = params.toString();
-  const url = `${location.pathname}${query ? `?${query}` : ''}${location.hash}`;
-  if (replace) history.replaceState(null, '', url);
-  else history.pushState(null, '', url);
+  const url = `${ENTITIES_PATH}${query ? `?${query}` : ''}${location.hash}`;
+  return ownEntry(replace ? 'replace' : 'push', url);
 }
 
 function hideJournalListError() {
@@ -7055,7 +7233,7 @@ function createHiddenRow(entry) {
 }
 
 async function postDetectedName(verb, name) {
-  return window.apiJson(`api/${encodeURIComponent(currentFacet)}/detected/${verb}`, {
+  return apiJson(`/app/entities/api/${encodeURIComponent(currentFacet)}/detected/${verb}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
@@ -7064,7 +7242,7 @@ async function postDetectedName(verb, name) {
 
 // Read the facet's lists again, without leaving the page.
 async function reloadDetectedLists() {
-  const data = await window.apiJson(`api/${encodeURIComponent(currentFacet)}`);
+  const data = await apiJson(`/app/entities/api/${encodeURIComponent(currentFacet)}`);
   entitiesData = {
     ...entitiesData,
     attached: data.attached || [],
@@ -7203,7 +7381,7 @@ function attachDetectedEntity(entity, button) {
   button.disabled = true;
   button.style.opacity = '0.5';
 
-  fetch(`api/${encodeURIComponent(currentFacet)}`, {
+  fetch(`/app/entities/api/${encodeURIComponent(currentFacet)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -7275,7 +7453,7 @@ function tidyPlural(n, one, many) {
 }
 
 function tidyPostJson(path, payload) {
-  return window.apiJson(path, {
+  return apiJson(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -7300,7 +7478,7 @@ function tidyRecordsUnreadable(paths) {
 }
 
 async function fetchTidyPage(offset) {
-  return window.apiJson(`/app/entities/api/journal/tidy-up?offset=${offset}&limit=${TIDY_PAGE_SIZE}`);
+  return apiJson(`/app/entities/api/journal/tidy-up?offset=${offset}&limit=${TIDY_PAGE_SIZE}`);
 }
 
 /// Starts a groups read and keeps it, so a view that needs the result while
@@ -8292,5 +8470,67 @@ async function renderJournalDetailIdNote(entity) {
   host.append(note);
 }
 
+// ENTITIES MOUNT
+// The markup's own controls: the back links, "edit … in all facets" and the
+// detach dialog. They go with the markup.
+document.querySelectorAll('[data-entities-action]').forEach((node) => {
+  node.addEventListener('click', (event) => {
+    const action = node.getAttribute('data-entities-action');
+    if (action === 'list' || action === 'all-facets') event.preventDefault();
+    if (action === 'list') navigateToList();
+    else if (action === 'all-facets') selectEntityScope(null);
+    else if (action === 'detach-close') closeDetachConfirmModal();
+    else if (action === 'detach-confirm') confirmDetach();
+  });
+});
+
+// A link to entities' own path with another query or hash (the rail's or the
+// dock's "entities" while an entity, a folder or a search is showing) is
+// entities' own entry: the router leaves it, and this listener runs after
+// the router's. The same address again stays the router's fresh mount.
+ctx.on(document, 'click', (event) => {
+  if (event.defaultPrevented || event.button !== 0) return;
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const link = event.target?.closest?.('a[href]');
+  if (!link || (link.target && link.target !== '_self') || link.hasAttribute('download')) return;
+  let url;
+  try { url = new URL(link.href, window.location.href); } catch (_) { return; }
+  if (url.origin !== window.location.origin || !entitiesAddress(url.pathname) || !entitiesHere()) return;
+  if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash === window.location.hash) return;
+  event.preventDefault();
+  if (!ownEntry('push', `${ENTITIES_PATH}${url.search}${url.hash}`)) return;
+  holdFocus(true, syncEntityRoute(), restoredFocusTarget);
+});
+
+// The scroll of the entry on screen, for coming back to it.
+ctx.on(window, 'scroll', () => {
+  if (entitiesHere()) rememberEntitiesScroll(entitiesEntryId(), window.scrollY || 0);
+}, { passive: true });
+
+// The journal serves `/app/entities` at `/app/entities/` (a 308 that keeps
+// the hash), so an in-page arrival at it takes the same address.
+if (window.location.pathname === '/app/entities') {
+  ctx.history.replace(`${ENTITIES_PATH}${window.location.search}${window.location.hash}`);
+}
+
+const arrivedAt = entitiesEntryId();
+initEntities().then(() => entitiesFirstDraw).then(() => {
+  if (!ctx.disposed && arrivedAt && entitiesEntryId() === arrivedAt && entityScrolls.has(arrivedAt)) {
+    window.scrollTo(0, entityScrolls.get(arrivedAt));
+  }
+});
 restoreTidyOp();
+
+ctx.onDispose(() => {
+  if (entitiesHooks === noticeHooks) entitiesHooks = null;
+  noticeHooks = null;
+  closeEntityDeleteDialog(false);
+  closeScopeMenu();
+  hideObservationDayGrid();
+});
+  return {
+    dispose() {}
+  };
+  }
+})();
 </script>

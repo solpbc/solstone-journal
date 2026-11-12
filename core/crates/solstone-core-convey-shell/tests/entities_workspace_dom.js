@@ -267,6 +267,9 @@ function pickHarness() {
     facetRoster: [],
     tidyState: { data: null },
     JOURNAL_ENTITY_PAGE_SIZE: 50,
+    // The mount's context and focus helper, as the slices call them.
+    ctx: { on: (target, type, fn, options) => { target.addEventListener?.(type, fn, options); return () => {}; } },
+    holdFocus: (_own, done) => Promise.resolve(done),
   };
   vm.createContext(context);
   return { context, doc, log, answers };
@@ -615,6 +618,7 @@ async function detectedHideCases(workspace, copy) {
       return typeof answer === 'function' ? answer() : answer;
     };
     h.context.window.JournalFormat = { day: (key) => `DAY:${key}` };
+    h.context.apiJson = (...args) => h.context.window.apiJson(...args);
     vm.runInContext(`
       let ENT_COPY = ${JSON.stringify(copy)};
       let entitiesData = ${JSON.stringify(data)};
@@ -657,11 +661,11 @@ async function detectedHideCases(workspace, copy) {
   {
     const h = setup({ attached: [], detected: [row('Ada'), row('Bob'), row('Cy')], hidden: [] });
     h.context.api.renderDetectedTable('');
-    h.answers['POST api/work/detected/hide'] = { success: true, changed: true, search_queued: true };
+    h.answers['POST /app/entities/api/work/detected/hide'] = { success: true, changed: true, search_queued: true };
     hideButtons(h)[1].fire('click');
     await flush();
     const call = h.log.apis.find((c) => c.method === 'POST');
-    check(call.url === 'api/work/detected/hide' && call.body.name === 'Bob', 'a hide posts the name, with no confirm first');
+    check(call.url === '/app/entities/api/work/detected/hide' && call.body.name === 'Bob', 'a hide posts the name, with no confirm first');
     const names = el(h, 'all-entities-tbody').children.map((r) => r.children[2].textContent);
     check(names.length === 2 && !names.some((n) => n.startsWith('Bob')), 'the row leaves the list');
     check(el(h, 'detected-hidden-foot').hidden === false
@@ -672,11 +676,11 @@ async function detectedHideCases(workspace, copy) {
     check(receipt.title === fill('ENT_DETECTED_HIDE_DONE', { name: 'Bob', facet: 'Title of work' }) && receipt.message === copy.ENT_DETECTED_HIDE_DONE_DETAIL,
       'the receipt says the name is hidden here and stays hidden');
     check(receipt.buttons.length === 1 && receipt.buttons[0].label === copy.ENT_DETECTED_UNHIDE, 'its one button unhides');
-    h.answers['POST api/work/detected/unhide'] = { success: true, changed: true, search_queued: true };
-    h.answers['GET api/work'] = { attached: [], detected: [row('Ada'), row('Bob'), row('Cy')], hidden: [], hidden_unreadable: false };
+    h.answers['POST /app/entities/api/work/detected/unhide'] = { success: true, changed: true, search_queued: true };
+    h.answers['GET /app/entities/api/work'] = { attached: [], detected: [row('Ada'), row('Bob'), row('Cy')], hidden: [], hidden_unreadable: false };
     await receipt.buttons[0].onClick();
     await flush();
-    check(h.log.apis.some((c) => c.url === 'api/work/detected/unhide' && c.body.name === 'Bob'), 'the receipt unhides');
+    check(h.log.apis.some((c) => c.url === '/app/entities/api/work/detected/unhide' && c.body.name === 'Bob'), 'the receipt unhides');
     check(h.log.receipts.length === 1, 'an unhide from the receipt makes no second card');
     check(el(h, 'all-entities-tbody').children.length === 3 && el(h, 'detected-hidden-foot').hidden === true, 'the name is back, read again');
   }
@@ -685,7 +689,7 @@ async function detectedHideCases(workspace, copy) {
   {
     const h = setup({ attached: [], detected: [row('Ada')], hidden: [] });
     h.context.api.renderDetectedTable('');
-    h.answers['POST api/work/detected/hide'] = { success: true, changed: true, search_queued: true };
+    h.answers['POST /app/entities/api/work/detected/hide'] = { success: true, changed: true, search_queued: true };
     hideButtons(h)[0].fire('click');
     await flush();
     check(h.doc.activeElement === el(h, 'entity-search'), 'no rows left: focus goes to the search');
@@ -698,16 +702,16 @@ async function detectedHideCases(workspace, copy) {
   {
     const h = setup({ attached: [], detected: [row('Ada')], hidden: [] });
     h.context.api.renderDetectedTable('');
-    h.answers['POST api/work/detected/hide'] = { success: true, changed: true, search_queued: false };
+    h.answers['POST /app/entities/api/work/detected/hide'] = { success: true, changed: true, search_queued: false };
     hideButtons(h)[0].fire('click');
     await flush();
     const receipt = h.log.receipts.at(-1);
     check(receipt.message === copy.ENT_DETECTED_HIDE_NO_SEARCH && receipt.autoDismiss === undefined, 'the no-search card stays until dismissed');
     check(receipt.buttons.map((b) => b.label).join() === [copy.ENT_DETECTED_HIDE_TRY_AGAIN, copy.ENT_DETECTED_UNHIDE].join(), 'try again, then unhide');
-    h.answers['POST api/work/detected/hide'] = { success: true, changed: false, search_queued: true };
+    h.answers['POST /app/entities/api/work/detected/hide'] = { success: true, changed: false, search_queued: true };
     await receipt.buttons[0].onClick();
     await flush();
-    check(h.log.apis.filter((c) => c.url === 'api/work/detected/hide').length === 2, 'try again hides again');
+    check(h.log.apis.filter((c) => c.url === '/app/entities/api/work/detected/hide').length === 2, 'try again hides again');
     check(h.log.receipts.at(-1).message === copy.ENT_DETECTED_HIDE_DONE_DETAIL, 'once queued, the first receipt');
   }
 
@@ -715,7 +719,7 @@ async function detectedHideCases(workspace, copy) {
   {
     const h = setup({ attached: [], detected: [row('Ada')], hidden: [] });
     h.context.api.renderDetectedTable('');
-    h.answers['POST api/work/detected/hide'] = new Error('refused');
+    h.answers['POST /app/entities/api/work/detected/hide'] = new Error('refused');
     hideButtons(h)[0].fire('click');
     await flush();
     check(h.log.errors.at(-1) === fill('ENT_DETECTED_HIDE_FAILED', { name: 'Ada' }), 'a failed hide says nothing changed');
@@ -751,16 +755,16 @@ async function detectedHideCases(workspace, copy) {
     h.doc.getElementById('entity-search').value = '';
     h.context.api.renderDetectedTable('');
 
-    h.answers['POST api/work/detected/unhide'] = { success: true, changed: true, search_queued: true };
-    h.answers['GET api/work'] = { attached: [], detected: [row('Ada'), row('Dr. Ellis')], hidden: [hidden[1]], hidden_unreadable: false };
+    h.answers['POST /app/entities/api/work/detected/unhide'] = { success: true, changed: true, search_queued: true };
+    h.answers['GET /app/entities/api/work'] = { attached: [], detected: [row('Ada'), row('Dr. Ellis')], hidden: [hidden[1]], hidden_unreadable: false };
     const first = unhideButtons(h)[0];
     first.fire('click');
     await flush();
-    check(h.log.apis.some((c) => c.url === 'api/work/detected/unhide' && c.body.name === 'Dr. Ellis'), 'unhide posts the name');
+    check(h.log.apis.some((c) => c.url === '/app/entities/api/work/detected/unhide' && c.body.name === 'Dr. Ellis'), 'unhide posts the name');
     check(el(h, 'all-entities-tbody').children.length === 2 && unhideButtons(h).length === 1, 'the name is back in the list, read again');
     check(h.doc.activeElement === unhideButtons(h)[0], 'focus goes to the next unhide');
     check(h.log.receipts.length === 0, 'an unhide needs no receipt');
-    h.answers['GET api/work'] = { attached: [], detected: [row('Ada'), row('Dr. Ellis'), row('the clinic')], hidden: [], hidden_unreadable: false };
+    h.answers['GET /app/entities/api/work'] = { attached: [], detected: [row('Ada'), row('Dr. Ellis'), row('the clinic')], hidden: [], hidden_unreadable: false };
     unhideButtons(h)[0].fire('click');
     await flush();
     check(el(h, 'detected-hidden-foot').hidden === true, 'none left: the foot line goes');
@@ -780,8 +784,8 @@ async function detectedHideCases(workspace, copy) {
     const h = setup({ attached: [], detected: [], hidden: [{ name: 'Bob Smith', type: 'Person', count: 1, last_seen: '20261101' }] });
     h.context.api.renderDetectedTable('');
     el(h, 'detected-hidden-toggle').onclick();
-    h.answers['POST api/work/detected/unhide'] = { success: true, changed: true, search_queued: true, still_hidden_by: { id: 'bob', name: 'Robert Smith' } };
-    h.answers['GET api/work'] = { attached: [], detected: [], hidden: [], hidden_unreadable: false };
+    h.answers['POST /app/entities/api/work/detected/unhide'] = { success: true, changed: true, search_queued: true, still_hidden_by: { id: 'bob', name: 'Robert Smith' } };
+    h.answers['GET /app/entities/api/work'] = { attached: [], detected: [], hidden: [], hidden_unreadable: false };
     unhideButtons(h)[0].fire('click');
     await flush();
     const card = h.log.receipts.at(-1);
@@ -797,7 +801,7 @@ async function detectedHideCases(workspace, copy) {
     const h = setup({ attached: [], detected: [], hidden: [{ name: 'Bob', type: 'Person', count: 1, last_seen: '20261101' }] });
     h.context.api.renderDetectedTable('');
     el(h, 'detected-hidden-toggle').onclick();
-    h.answers['POST api/work/detected/unhide'] = new Error('refused');
+    h.answers['POST /app/entities/api/work/detected/unhide'] = new Error('refused');
     unhideButtons(h)[0].fire('click');
     await flush();
     check(h.log.errors.at(-1) === fill('ENT_DETECTED_UNHIDE_FAILED', { name: 'Bob' }) && unhideButtons(h).length === 1, 'a failed unhide says nothing changed');
@@ -883,6 +887,8 @@ async function main() {
       confirm: () => true,
       apiJson: async () => { calls += 1; throw mergeFailure; },
     },
+    // The view's reads and writes go through its mount's `apiJson`.
+    apiJson: (...args) => mergeContext.window.apiJson(...args),
     showInlineError: (_id, message) => { shownError = message; },
   };
   vm.runInNewContext(workspace.slice(errorStart, errorEnd) + workspace.slice(mergeStart, mergeEnd), mergeContext);
@@ -963,7 +969,7 @@ async function main() {
 
   const windowListeners = {};
   const window = { createViewReady: () => () => {},
-    location: {pathname: '/app/entities', search: '', hash: ''},
+    location: {pathname: '/app/entities/', search: '', hash: ''},
     history: {
       pushed: [],
       replaced: [],
@@ -977,12 +983,17 @@ async function main() {
       },
     },
     addEventListener(name, listener) { (windowListeners[name] ||= []).push(listener); },
+    removeEventListener(name, listener) {
+      windowListeners[name] = (windowListeners[name] || []).filter((candidate) => candidate !== listener);
+    },
     emit(name) { (windowListeners[name] || []).forEach((listener) => listener()); },
+    beginViewReady: () => () => {},
     logError() {},
     SurfaceState: {replaceLoading() {}, error() {}},
     CONVEY_COPY: {RELOAD_HINT: ''},
   };
   window.window = window;
+  // What the mount gives the slices: its context and its own-entry helpers.
   const context = {
     window,
     document,
@@ -990,6 +1001,24 @@ async function main() {
     history: window.history,
     location: window.location,
     console,
+    ENTITIES_PATH: '/app/entities/',
+    ctx: {
+      disposed: false,
+      on(target, type, fn, options) {
+        target.addEventListener(type, fn, options);
+        return () => target.removeEventListener(type, fn, options);
+      },
+    },
+    entitiesHere: () => /^\/app\/entities(\/|$)/.test(window.location.pathname),
+    entitiesEntryId: () => null,
+    entityScrolls: new Map(),
+    ownEntry(kind, url) {
+      if (kind === 'push') window.history.pushState(null, '', url);
+      else window.history.replaceState(null, '', url);
+      return true;
+    },
+    holdFocus: (_own, done) => Promise.resolve(done),
+    restoredFocusTarget: () => null,
   };
   const scopeSource = `${workspace.slice(start, scopeEnd)}\nfunction loadEntities() { window.__scopeLoads = (window.__scopeLoads || 0) + 1; showListView(); }`;
   vm.runInNewContext(scopeSource, context, {filename: 'entities-scope.js'});
@@ -1037,18 +1066,18 @@ async function main() {
     'scope control shows counts from the journal summary and includes zero-entity facets',
   );
 
-  setLocation(window, '/app/entities?facet=work');
+  setLocation(window, '/app/entities/?facet=work');
   entities.restore();
   entities.showList();
   check(entities.currentFacet() === 'work' && document.getElementById('entities-list-view').style.display === 'block', 'facet query selects the facet-scoped list');
   check(document.getElementById('entities-list-region').style.getPropertyValue('--entities-facet-color') === '#2f6fdd', 'facet tint stays on the local list region');
 
-  setLocation(window, '/app/entities');
+  setLocation(window, '/app/entities/');
   entities.restore();
   entities.showList();
   check(entities.currentFacet() === null && document.getElementById('journal-entities-view').style.display === 'block', 'plain Entities URL selects the journal-wide list');
 
-  setLocation(window, '/app/entities?facet=personal');
+  setLocation(window, '/app/entities/?facet=personal');
   entities.restore();
   entities.showList();
   check(document.getElementById('facet-entities-empty-view').style.display === 'block', 'zero-entity facets use the page-level empty state');
@@ -1059,17 +1088,17 @@ async function main() {
     'page-level empty state uses its own scoped copy',
   );
 
-  setLocation(window, '/app/entities?facet=work');
+  setLocation(window, '/app/entities/?facet=work');
   entities.restore();
   const journalOption = document.getElementById('entities-scope-control').querySelectorAll('[role="option"]')[0];
   journalOption.emit('click');
-  check(window.history.pushed.at(-1) === '/app/entities' && window.location.search === '', 'scope selection pushes the journal-wide query state');
-  setLocation(window, '/app/entities?facet=work');
+  check(window.history.pushed.at(-1) === '/app/entities/' && window.location.search === '', 'scope selection pushes the journal-wide query state');
+  setLocation(window, '/app/entities/?facet=work');
   window.emit('popstate');
   check(entities.currentFacet() === 'work' && document.getElementById('entities-list-view').style.display === 'block', 'popstate restores the prior scoped list');
   check((window.__scopeLoads || 0) >= 2, 'scope selections and popstate rerender through the page loader');
 
-  setLocation(window, '/app/entities?facet=missing');
+  setLocation(window, '/app/entities/?facet=missing');
   entities.restore();
   check(window.location.search === '' && entities.currentFacet() === null, 'unknown facets canonicalize to the journal-wide URL');
   check(
@@ -1344,7 +1373,7 @@ async function main() {
 
   // Tidy-up: bulk hide batches and resume, undo numbers, merge planning.
   const tidyStart = workspace.indexOf('// Tidy-up:');
-  const tidyEnd = workspace.indexOf('restoreTidyOp();', tidyStart);
+  const tidyEnd = workspace.indexOf('// ENTITIES MOUNT', tidyStart);
   check(tidyStart !== -1 && tidyEnd !== -1, 'workspace exposes the tidy-up block');
   function tidyHarness(api, {stored = null} = {}) {
     const storage = new Map(stored ? [['entities.tidyOperation', stored]] : []);
@@ -1360,6 +1389,8 @@ async function main() {
       groupedCount: (n) => String(n),
       renderJournalEntities: () => {},
       loadJournalEntities: async () => {},
+      // The mount's own apiJson, as the view calls it.
+      apiJson: (...args) => context.window.apiJson(...args),
       window: { createViewReady: () => () => {},
         logError: () => {},
         crypto: {getRandomValues: (bytes) => bytes.fill(7)},
@@ -1538,7 +1569,7 @@ async function main() {
     // The state read and the scope reads start together; the scope is drawn
     // with the state's copy, so it waits for that read.
     const initStart = workspace.indexOf('async function loadEntitiesState()');
-    const initEnd = workspace.indexOf("if (document.readyState === 'loading') {\n  document.addEventListener('DOMContentLoaded', initEntities);");
+    const initEnd = workspace.indexOf('async function loadEntities()', initStart);
     check(initStart !== -1 && initEnd !== -1, 'workspace exposes the entities start-up');
     const asked = [];
     const answers = new Map();
@@ -1558,6 +1589,8 @@ async function main() {
         CONVEY_COPY: {RELOAD_HINT: ''},
       },
       document: {getElementById: () => null, querySelector: () => null, addEventListener: noop},
+      ctx: {on: noop},
+      apiJson: (...args) => initContext.window.apiJson(...args),
       URLSearchParams,
       location: {search: '', hash: ''},
       Set, String, Promise,
