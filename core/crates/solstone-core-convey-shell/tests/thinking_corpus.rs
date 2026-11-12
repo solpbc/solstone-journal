@@ -510,6 +510,7 @@ fn project_byo_setup_copy(setup: &mut Map<String, Value>) {
         "tuning",
         "endpoint_image_checking",
         "endpoint_image_not_read",
+        "endpoint_schema_not_followed",
         "endpoint_image_unchecked",
         "endpoint_reason_unreachable",
         "endpoint_reason_timeout",

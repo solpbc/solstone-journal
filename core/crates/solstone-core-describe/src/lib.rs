@@ -20,6 +20,7 @@ pub(crate) mod screen_ocr;
 pub mod selection;
 pub mod session;
 mod settings;
+mod text_gate;
 mod winnow;
 
 pub use bound::DescribeWorkBound;

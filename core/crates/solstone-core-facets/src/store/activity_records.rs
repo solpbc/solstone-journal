@@ -574,7 +574,8 @@ pub fn is_retired_plan(record: &ActivityRecord) -> bool {
 }
 
 pub use solstone_core_format::content::{
-    BODY_RECORD_SOURCE, EDIT_REMOVED, activity_field_held, edit_removed, is_body_record,
+    BODY_RECORD_SOURCE, EDIT_REMOVED, EDIT_STRETCH, STRETCH_ID, STRETCH_SEGMENTS,
+    activity_field_held, correction_segments, edit_removed, is_body_record,
 };
 use solstone_core_format::content::{edit_names, owner_edit};
 
@@ -840,6 +841,7 @@ pub fn update_activity_record_with(
         note,
         timestamp,
         || Ok(()),
+        None,
     )
 }
 
@@ -886,6 +888,35 @@ pub fn update_activity_record_checked(
         note,
         timestamp,
         checkpoint,
+        None,
+    )
+}
+
+/// [`update_activity_record`] for an owner edit that carries `extra` in its
+/// history entry, beside what it set and what those fields held before.
+#[allow(clippy::too_many_arguments)]
+pub fn update_activity_record_noting(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    record_id: &str,
+    patch: &Map<String, Value>,
+    actor: &str,
+    note: &str,
+    timestamp: &str,
+    extra: &Map<String, Value>,
+) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
+    update_activity_record_with_check(
+        root,
+        facet,
+        day,
+        record_id,
+        |_| Some(patch.clone()),
+        actor,
+        note,
+        timestamp,
+        || Ok(()),
+        Some(extra),
     )
 }
 
@@ -900,6 +931,7 @@ fn update_activity_record_with_check(
     note: &str,
     timestamp: &str,
     checkpoint: impl Fn() -> Result<(), String>,
+    extra: Option<&Map<String, Value>>,
 ) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
     let current_id = admit_activity_destination(root, facet)?;
     let mut derive = Some(derive);
@@ -953,6 +985,14 @@ fn update_activity_record_with_check(
                 {
                     edit.insert(EDIT_SET.to_owned(), Value::Object(patch.clone()));
                     edit.insert(EDIT_BEFORE.to_owned(), Value::Object(before));
+                }
+                if let Some(extra) = extra
+                    && let Some(Value::Object(edit)) = edited
+                        .get_mut("edits")
+                        .and_then(Value::as_array_mut)
+                        .and_then(|edits| edits.last_mut())
+                {
+                    edit.extend(extra.clone());
                 }
                 result = Some(edited.clone());
                 edited

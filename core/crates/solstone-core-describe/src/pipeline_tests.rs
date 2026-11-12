@@ -308,6 +308,7 @@ fn decoded(frame_ids: &[u64]) -> DescribeResult {
         qualified_count: frame_ids.len(),
         decode_failed: false,
         winnow: None,
+        text_changed: Default::default(),
     }
 }
 

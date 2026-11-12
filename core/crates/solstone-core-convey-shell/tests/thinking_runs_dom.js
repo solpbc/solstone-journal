@@ -3780,6 +3780,7 @@ async function main() {
     byo_setup: {
       endpoint_image_checking: 'endpoint_image_checking:{model}',
       endpoint_image_not_read: 'endpoint_image_not_read:{model}',
+      endpoint_schema_not_followed: 'endpoint_schema_not_followed:{model}',
       endpoint_image_unchecked: 'endpoint_image_unchecked:{model}:{reason}',
       endpoint_reason_unreachable: 'endpoint_reason_unreachable',
       endpoint_reason_timeout: 'endpoint_reason_timeout',
@@ -3930,6 +3931,29 @@ async function main() {
     checkRecordedBeforeCheck.getAvailability > 0,
     'GET availability ran before check'
   );
+
+  // Case 3b: images read, but structured output refused
+  resetForm();
+  nextCheckHandler = Promise.resolve({
+    image_check: { status: 'read' },
+    schema_check: { status: 'not_followed' },
+  });
+  await thinking.saveLocalEndpoint();
+  assertButtonsRestoredAndNoChecking();
+  assert.strictEqual(window.location.hash, '#byo-setup', 'stays on form when schema refused');
+  assert(statusNode.textContent.includes('endpoint_schema_not_followed:model-sentinel'));
+  assert(!statusNode.textContent.includes('endpoint_image_not_read'));
+  assert.strictEqual(statusNode.dataset.tone, 'error');
+
+  // Case 3c: both checks fail, both lines show
+  resetForm();
+  nextCheckHandler = Promise.resolve({
+    image_check: { status: 'not_read' },
+    schema_check: { status: 'not_followed' },
+  });
+  await thinking.saveLocalEndpoint();
+  assert(statusNode.textContent.includes('endpoint_schema_not_followed:model-sentinel'));
+  assert(statusNode.textContent.includes('endpoint_image_not_read:model-sentinel'));
 
   // Case 4: unchecked with reason timeout
   resetForm();

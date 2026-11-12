@@ -148,8 +148,10 @@ window.SolViews.register('transcripts', {
 `mount(ctx)` returns its dispose function, or `{ dispose, update }` when the
 view takes a change of parameters in place. A view's scripts run once in the
 life of the page (they only register); the view starts each time it is
-mounted. Home (with its week and originals pages), transcripts, more, body and
-activities are on the contract; every other view is not, and keeps its full page loads.
+mounted. Home (with its week and originals pages), transcripts, more, body,
+activities and the map are on the contract; every other view is not, and keeps its full page loads.
+A view may await in `mount` only on a promise that settles, and a superseded
+mount publishes nothing.
 
 **Everything a view adds outside its own markup goes through `ctx`**, and is
 taken back when the view goes: `ctx.on(target, type, fn, options)` for the

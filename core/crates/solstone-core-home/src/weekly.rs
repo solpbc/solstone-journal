@@ -733,10 +733,10 @@ fn encode_uri_ref(uri: &str) -> String {
     encoded
 }
 
-/// The activities page for an activity reference
-/// (`sol://facets/{facet}/activities/{day}#{id}`), opened on that activity
-/// with its corrections showing. `None` for any other reference.
-fn activity_correction_href(uri: &str) -> Option<String> {
+/// The facet, day and id an activity reference
+/// (`sol://facets/{facet}/activities/{day}#{id}`) names. `None` for any other
+/// reference.
+fn activity_reference(uri: &str) -> Option<(String, String, String)> {
     let rest = uri.trim().strip_prefix("sol://")?;
     let (path, id) = rest.split_once('#')?;
     let mut parts = path.split('/');
@@ -757,11 +757,207 @@ fn activity_correction_href(uri: &str) -> Option<String> {
     {
         return None;
     }
+    Some((facet.to_owned(), day.to_owned(), id.to_owned()))
+}
+
+/// The day, stream (when named) and segment a segment reference
+/// (`sol://{day}/{segment}` or `sol://{day}/{stream}/{segment}`) names.
+fn segment_reference(uri: &str) -> Option<(String, Option<String>, String)> {
+    let rest = uri.trim().strip_prefix("sol://")?;
+    if rest.contains('#') {
+        return None;
+    }
+    let parts = rest.split('/').collect::<Vec<_>>();
+    let (day, stream, segment) = match parts.as_slice() {
+        [day, segment] => (*day, None, *segment),
+        [day, stream, segment] if *stream != "talents" => (*day, Some(*stream), *segment),
+        _ => return None,
+    };
+    let is_segment = segment.split_once('_').is_some_and(|(time, length)| {
+        time.len() == 6
+            && time.bytes().all(|b| b.is_ascii_digit())
+            && !length.is_empty()
+            && length.bytes().all(|b| b.is_ascii_digit())
+    });
+    (week_day(day).is_some() && is_segment && stream.is_none_or(|s| !s.is_empty())).then(|| {
+        (
+            day.to_owned(),
+            stream.map(str::to_owned),
+            segment.to_owned(),
+        )
+    })
+}
+
+/// The activities page opened on one activity; `correct` opens its
+/// corrections too.
+fn activity_href(facet: &str, day: &str, id: &str, correct: bool) -> String {
     let facet = encode_uri_ref(facet);
     let id = encode_uri_ref(id);
-    Some(format!(
-        "/app/activities/{day}?facet={facet}&correct=1#{facet}/{id}"
-    ))
+    let correct = if correct { "&correct=1" } else { "" };
+    format!("/app/activities/{day}?facet={facet}{correct}#{facet}/{id}")
+}
+
+/// Words too common to say what a sentence is about.
+const COMMON_WORDS: &[&str] = &[
+    "the", "and", "for", "you", "your", "yours", "with", "that", "this", "from", "into", "onto",
+    "about", "was", "were", "are", "has", "had", "have", "his", "her", "hers", "their", "them",
+    "they", "she", "him", "its", "our", "not", "but", "all", "any", "out", "off", "then", "than",
+    "who", "what", "when", "where", "which", "while", "will", "would", "could", "should", "can",
+    "did", "does", "done", "also", "after", "before", "over", "some", "more", "most", "just",
+    "how", "why", "there", "here", "been", "being", "one", "two", "via", "per", "each", "other",
+];
+
+/// The words that say what a text is about: lowercased, three letters or
+/// more, not a common word, with a link's address left out.
+pub fn content_words(text: &str) -> BTreeSet<String> {
+    let mut words = BTreeSet::new();
+    let mut rest = text;
+    // A link's address says where it points, not what happened.
+    let mut plain = String::with_capacity(text.len());
+    while let Some(at) = rest.find("](") {
+        plain.push_str(&rest[..at]);
+        rest = rest[at + 2..]
+            .split_once(')')
+            .map_or("", |(_, after)| after);
+    }
+    plain.push_str(rest);
+    for word in plain
+        .split(|c: char| !c.is_alphanumeric())
+        .map(str::to_lowercase)
+    {
+        if word.chars().count() >= 3 && !COMMON_WORDS.contains(&word.as_str()) {
+            words.insert(word);
+        }
+    }
+    words
+}
+
+/// The one of `texts` that clearly shares the most words with `words`: at
+/// least two, and more than any other text not in its group. Texts in one
+/// group say the same thing (copies of one stretch), so a tie inside a group
+/// is no doubt.
+pub fn clearest_match<'a, T>(
+    words: &BTreeSet<String>,
+    texts: &'a [(T, BTreeSet<String>)],
+    same_group: impl Fn(&T, &T) -> bool,
+) -> Option<&'a T> {
+    let scored = texts
+        .iter()
+        .map(|(item, other)| (item, words.intersection(other).count()))
+        .collect::<Vec<_>>();
+    let (at, &(best, score)) = scored
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, (_, score))| *score)?;
+    (score >= 2
+        && scored
+            .iter()
+            .enumerate()
+            .all(|(i, (item, other))| i == at || *other < score || same_group(best, item)))
+    .then_some(best)
+}
+
+/// An activity a week memory is about.
+struct MemoryActivity {
+    facet: String,
+    day: String,
+    id: String,
+    /// The memory cites this activity, or a moment inside it.
+    cited: bool,
+}
+
+fn record_string(record: &serde_json::Map<String, Value>, key: &str) -> String {
+    record
+        .get(key)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn record_segments(record: &serde_json::Map<String, Value>) -> BTreeSet<&str> {
+    record
+        .get("segments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect()
+}
+
+/// Which activity a week memory is about: the one it cites; else the one
+/// holding the moment it cites; else, on its day, the one whose words it
+/// clearly shares. Most memories come from the briefing and cite nothing, so
+/// the last is what lets the owner correct one where they see it.
+fn memory_activity(journal: &Path, memory: &TrustedMemory) -> Option<MemoryActivity> {
+    if let Some((facet, day, id)) = memory
+        .source
+        .refs
+        .iter()
+        .find_map(|r| activity_reference(r))
+    {
+        return Some(MemoryActivity {
+            facet,
+            day,
+            id,
+            cited: true,
+        });
+    }
+    let moment = memory.source.refs.iter().find_map(|r| segment_reference(r));
+    let day = moment
+        .as_ref()
+        .map_or_else(|| memory.day.clone(), |(day, _, _)| day.clone());
+    let facets = solstone_core_facets::list_declared_facet_names(journal).ok()?;
+    let mut records = Vec::new();
+    for facet in facets {
+        let Ok(rows) = solstone_core_facets::load_activity_records(journal, &facet, &day, false)
+        else {
+            continue;
+        };
+        records.extend(rows.into_iter().map(|row| (facet.clone(), row)));
+    }
+    if let Some((_, stream, segment)) = moment
+        && let Some((facet, row)) = records.iter().find(|(_, row)| {
+            record_segments(row).contains(segment.as_str())
+                && stream
+                    .as_deref()
+                    .is_none_or(|stream| row.get("stream").and_then(Value::as_str) == Some(stream))
+        })
+    {
+        return Some(MemoryActivity {
+            facet: facet.clone(),
+            day,
+            id: record_string(row, "id"),
+            cited: true,
+        });
+    }
+    let texts = records
+        .iter()
+        .map(|(facet, row)| {
+            let story = row
+                .get("story")
+                .and_then(|story| story.get("body"))
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let words = content_words(&format!(
+                "{} {} {} {story}",
+                record_string(row, "title"),
+                record_string(row, "description"),
+                record_string(row, "details"),
+            ));
+            ((facet, row), words)
+        })
+        .collect::<Vec<_>>();
+    let ((facet, row), _) = clearest_match(&content_words(&memory.text), &texts, |a, b| {
+        a.1.get("stream") == b.1.get("stream")
+            && !record_segments(a.1).is_disjoint(&record_segments(b.1))
+    })
+    .map(|item| (*item, ()))?;
+    Some(MemoryActivity {
+        facet: (*facet).clone(),
+        day,
+        id: record_string(row, "id"),
+        cited: false,
+    })
 }
 
 const SAID_HEADING: &str = "said by you";
@@ -891,16 +1087,22 @@ pub fn page_model(
                     .map(|r| (r.as_str(), "open that moment →"))
                     .unwrap_or((mem.source.uri.as_str(), "open it in thinking →"));
 
-                let peek_href = format!("/source?ref={}", encode_uri_ref(peek_ref));
+                let about = memory_activity(journal, mem);
+                // A moment opens on its activity, where "that's not right" is.
+                let peek_href = match &about {
+                    Some(about) if about.cited && peek_ref != mem.source.uri => {
+                        activity_href(&about.facet, &about.day, &about.id, false)
+                    }
+                    _ => format!("/source?ref={}", encode_uri_ref(peek_ref)),
+                };
                 let source_href = format!("/source?ref={}", encode_uri_ref(&mem.source.uri));
-                // "this isn't right" opens the activity the memory cites, with
-                // its corrections open; otherwise where the memory came from.
-                let menu_href = mem
-                    .source
-                    .refs
-                    .iter()
-                    .find_map(|r| activity_correction_href(r))
-                    .unwrap_or_else(|| peek_href.clone());
+                // "this isn't right" opens the activity the memory is about,
+                // with its corrections open; when none is clear, that day's
+                // activities, where each one can be corrected.
+                let menu_href = match &about {
+                    Some(about) => activity_href(&about.facet, &about.day, &about.id, true),
+                    None => format!("/app/activities/{}", mem.day),
+                };
 
                 let briefing_date = mem
                     .source
@@ -1260,6 +1462,11 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    fn activity_correction_href(uri: &str) -> Option<String> {
+        let (facet, day, id) = activity_reference(uri)?;
+        Some(activity_href(&facet, &day, &id, true))
+    }
 
     #[test]
     fn an_activity_reference_opens_that_activity_with_its_corrections() {

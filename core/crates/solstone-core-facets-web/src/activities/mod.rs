@@ -353,20 +353,9 @@ async fn update(
 const RETHOUGHT_FIELDS: [&str; 3] = ["details", "playback", "description"];
 
 /// Ask the journal to think the corrected day again, once the correction has
-/// been saved. The correction stands either way; the reply says whether the
-/// ask was saved too, so a client never repeats the correction to get one.
-fn think_again(root: &Path, day: &str, facet: &str, activity: Option<&str>) -> Map<String, Value> {
-    let activities = activity
-        .map(|activity| solstone_core_system::owner_ask::AskedActivity {
-            facet: facet.to_owned(),
-            activity: activity.to_owned(),
-        })
-        .into_iter()
-        .collect::<Vec<_>>();
-    think_again_over(root, day, &activities)
-}
-
-/// [`think_again`] for every activity in `activities`, and the day's briefing.
+/// been saved: every activity in `activities`, and the day's briefing. The
+/// correction stands either way; the reply says whether the ask was saved too,
+/// so a client never repeats the correction to get one.
 fn think_again_over(
     root: &Path,
     day: &str,
@@ -477,12 +466,40 @@ async fn remove_edit(
         &removed_at,
     ) {
         Ok(Some(record)) => {
+            // A correction made over a stretch comes off every activity it
+            // stands on, and each of them is thought about again.
+            let others = record
+                .get("edits")
+                .and_then(Value::as_array)
+                .and_then(|edits| edits.get(position))
+                .and_then(Value::as_object)
+                .and_then(solstone_core_facets::stretch::edit_stretch_id)
+                .map(|stretch| {
+                    solstone_core_facets::stretch::remove_over_stretch(
+                        &root,
+                        &day,
+                        &facet,
+                        &span_id,
+                        stretch,
+                        &removed_at,
+                    )
+                    .0
+                })
+                .unwrap_or_default();
             // No talent reads a body record, so taking back its edit owes nothing.
-            let ask = if solstone_core_facets::is_body_record(&record) {
-                not_asked()
-            } else {
-                think_again(&root, &day, &facet, Some(&span_id))
-            };
+            let ask =
+                if solstone_core_facets::is_body_record(&record) {
+                    not_asked()
+                } else {
+                    let activities =
+                        std::iter::once((facet.clone(), span_id.clone()))
+                            .chain(others.into_iter().map(|copy| (copy.facet, copy.id)))
+                            .map(|(facet, activity)| {
+                                solstone_core_system::owner_ask::AskedActivity { facet, activity }
+                            })
+                            .collect::<Vec<_>>();
+                    think_again_over(&root, &day, &activities)
+                };
             if let Err(error) = solstone_core_facets::append_action_log_for_day(
                 &root,
                 Some(&facet),
@@ -593,18 +610,42 @@ async fn mutate_update(
         .with_timezone(&Utc)
         .format("%Y-%m-%dT%H:%M:%SZ")
         .to_string();
-    match solstone_core_facets::update_activity_record(
-        root, &facet, &day, &span_id, patch, actor, &note, &timestamp,
-    ) {
-        Ok(Some(record)) => {
-            let ask = if actor == "owner:update" && !solstone_core_facets::is_body_record(&record) {
-                let rethought = patch
-                    .keys()
-                    .any(|key| RETHOUGHT_FIELDS.contains(&key.as_str()));
-                think_again(root, &day, &facet, rethought.then_some(span_id.as_str()))
-            } else {
-                not_asked()
-            };
+    // The owner's account and recording mark hold for every activity over the
+    // same stretch, in any facet; each of those is thought about again too.
+    let saved = if actor == "owner:update" {
+        solstone_core_facets::stretch::correct_over_stretch(
+            root, &facet, &day, &span_id, patch, &note, &timestamp,
+        )
+        .map(|saved| (saved.record, saved.copies))
+    } else {
+        solstone_core_facets::update_activity_record(
+            root, &facet, &day, &span_id, patch, actor, &note, &timestamp,
+        )
+        .map(|record| (record, Vec::new()))
+    };
+    match saved {
+        Ok((Some(record), copies)) => {
+            let ask =
+                if actor == "owner:update" && !solstone_core_facets::is_body_record(&record) {
+                    let rethought = patch
+                        .keys()
+                        .any(|key| RETHOUGHT_FIELDS.contains(&key.as_str()));
+                    let activities =
+                        rethought
+                            .then(|| {
+                                std::iter::once((facet.clone(), span_id.clone()))
+                                    .chain(copies.into_iter().map(|copy| (copy.facet, copy.id)))
+                            })
+                            .into_iter()
+                            .flatten()
+                            .map(|(facet, activity)| {
+                                solstone_core_system::owner_ask::AskedActivity { facet, activity }
+                            })
+                            .collect::<Vec<_>>();
+                    think_again_over(root, &day, &activities)
+                } else {
+                    not_asked()
+                };
             if let Err(error) = solstone_core_facets::append_action_log_for_day(
                 root,
                 Some(&facet),
@@ -618,7 +659,8 @@ async fn mutate_update(
             }
             with_ask(record, ask)
         }
-        Ok(None) | Err(solstone_core_facets::ActivityRecordStoreError::MissingDayFile { .. }) => {
+        Ok((None, _))
+        | Err(solstone_core_facets::ActivityRecordStoreError::MissingDayFile { .. }) => {
             not_found(span_id)
         }
         Err(error) => store_error(error),
@@ -724,7 +766,7 @@ fn set_hidden(
 /// Queue for search what a hide or unhide of one activity changes: its
 /// outputs folder and its day file.
 fn queue_hidden_activity(root: &Path, facet: &str, day: &str, span_id: &str) {
-    let day_dir = Path::new("facets").join(facet).join("activities");
+    let day_dir = root.join("facets").join(facet).join("activities");
     for path in [
         day_dir.join(day).join(span_id),
         day_dir.join(format!("{day}.jsonl")),
@@ -3413,6 +3455,147 @@ mod tests {
                 .iter()
                 .any(|ask| ask.to_seed.is_empty() && ask.thaw)
         );
+    }
+
+    /// One stream's stretch held by an activity in "work" and, overlapping
+    /// it by one segment, in "home"; beside them an activity of "home" over
+    /// other segments and one of "other" over the same key on another stream.
+    fn stretch_journal() -> tempfile::TempDir {
+        let root = phase_root("established_empty");
+        for (facet, title) in [("work", "Work"), ("home", "Home"), ("other", "Other")] {
+            solstone_core_facets::create_facet(root.path(), facet, title, "", "", "", None)
+                .unwrap();
+        }
+        for (facet, record) in [
+            (
+                "work",
+                json!({"id":"rec","activity":"meeting","title":"Seed","segments":["090000_300","090500_300"],"stream":"default","edits":[]}),
+            ),
+            (
+                "home",
+                json!({"id":"copy","activity":"video","title":"Watching","segments":["090500_300","091000_300"],"stream":"default","edits":[]}),
+            ),
+            (
+                "home",
+                json!({"id":"apart","activity":"chores","title":"Apart","segments":["100000_300"],"stream":"default","edits":[]}),
+            ),
+            (
+                "other",
+                json!({"id":"elsewhere","activity":"call","title":"Phone","segments":["090000_300"],"stream":"phone","edits":[]}),
+            ),
+        ] {
+            let _ = solstone_core_facets::append_activity_record(
+                root.path(),
+                facet,
+                CORRECTED_DAY,
+                record.as_object().unwrap().clone(),
+            )
+            .unwrap();
+        }
+        root
+    }
+
+    async fn owner_post(root: &Path, facet: &str, id: &str, path: &str, body: Value) -> Value {
+        let response = gated(root, fixed_clock())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/app/activities/api/day/{CORRECTED_DAY}/record/{id}/{path}?facet={facet}"
+                    ))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(ACTOR_HEADER, ACTOR_OWNER)
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    fn stored(root: &Path, facet: &str, id: &str) -> ActivityRecord {
+        solstone_core_facets::get_activity_record(root, facet, CORRECTED_DAY, id)
+            .unwrap()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_correction_holds_for_every_copy_of_its_stretch_and_comes_off_them_all() {
+        use solstone_core_facets::stretch::correction_segments;
+        let root = stretch_journal();
+        let asked = |facet: &str, activity: &str| solstone_core_system::owner_ask::AskedActivity {
+            facet: facet.into(),
+            activity: activity.into(),
+        };
+        let body = owner_post(
+            root.path(),
+            "work",
+            "rec",
+            "update",
+            json!({"patch":{"details":"Juliet ran the demo, not me.","title":"Run-through"}}),
+        )
+        .await;
+        assert_eq!(body["asked"], true);
+        let body = owner_post(
+            root.path(),
+            "work",
+            "rec",
+            "update",
+            json!({"patch":{"playback":true}}),
+        )
+        .await;
+        assert_eq!(body["asked"], true);
+        let (rec, copy) = (
+            stored(root.path(), "work", "rec"),
+            stored(root.path(), "home", "copy"),
+        );
+        assert_eq!(copy["details"], "Juliet ran the demo, not me.");
+        assert_eq!(copy["playback"], true);
+        // The title is the corrected activity's own.
+        assert_eq!(rec["title"], "Run-through");
+        assert_eq!(copy["title"], "Watching");
+        // The copy knows the part of its time the correction speaks for.
+        assert_eq!(
+            correction_segments(&copy, "details"),
+            Some(vec!["090500_300".to_owned()])
+        );
+        assert_eq!(correction_segments(&rec, "details"), None);
+        for (facet, id) in [("home", "apart"), ("other", "elsewhere")] {
+            let other = stored(root.path(), facet, id);
+            assert_eq!(other["details"], "", "{id}");
+            assert!(other.get("playback").is_none(), "{id}");
+        }
+        let both = std::collections::BTreeSet::from([asked("home", "copy"), asked("work", "rec")]);
+        assert!(asks(root.path()).iter().all(|ask| ask.to_seed == both));
+
+        // Taken back from the copy, the account comes off the corrected
+        // activity too; the recording mark stays on both.
+        let position = copy["edits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|edit| edit["set"].get("details").is_some())
+            .unwrap();
+        let body = owner_post(
+            root.path(),
+            "home",
+            "copy",
+            "edits/remove",
+            json!({"position":position,"timestamp":"2026-05-15T12:00:00Z","actor":"owner:update"}),
+        )
+        .await;
+        assert_eq!(body["asked"], true);
+        let (rec, copy) = (
+            stored(root.path(), "work", "rec"),
+            stored(root.path(), "home", "copy"),
+        );
+        assert_eq!(rec["details"], "");
+        assert_eq!(copy["details"], "");
+        assert_eq!(rec["playback"], true);
+        assert_eq!(copy["playback"], true);
+        assert!(asks(root.path()).last().unwrap().to_seed == both);
     }
 
     #[tokio::test]

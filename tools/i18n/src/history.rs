@@ -3,6 +3,7 @@
 
 use crate::fault::{Fault, sort_faults};
 use crate::hexutil::to_hex;
+use crate::locale::resolve_namespace_owner;
 use crate::metadata::MessageMetadata;
 use crate::model::{ArgumentSpec, ProtectedSlotSpec, SelectorSpec};
 use crate::publish::atomic_write_file;
@@ -211,7 +212,7 @@ impl HistoryRegistry {
                 }
             };
 
-            let expected_owner = match namespace_owners.get(ns) {
+            let expected_owner = match resolve_namespace_owner(namespace_owners, ns) {
                 Some(o) => o,
                 None => {
                     faults.push(Fault::new("owner-conflict", "*", id));

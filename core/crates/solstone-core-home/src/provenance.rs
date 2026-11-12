@@ -188,7 +188,11 @@ fn classify_record(
     // 1. Key import.<source> -> Import { source }
     if let Some(source) = stem.strip_prefix("import.") {
         return ProvenancePart::Import {
-            source: source.to_owned(),
+            source: if stem.starts_with(solstone_core_format::content::granola::STREAM_PREFIX) {
+                "granola".to_owned()
+            } else {
+                source.to_owned()
+            },
         };
     }
 
@@ -457,6 +461,7 @@ pub fn provenance_label(part: &ProvenancePart, parenthetical: Option<&str>) -> S
                 "kindle" => "Kindle".to_owned(),
                 "obsidian" => "notes".to_owned(),
                 "evernote" => "Evernote".to_owned(),
+                "granola" => "Granola".to_owned(),
                 "ics" => "calendar".to_owned(),
                 "document" => "documents".to_owned(),
                 "image" => "images".to_owned(),
@@ -653,6 +658,22 @@ mod tests {
     use serde_json::json;
     use std::fs;
     use tempfile::TempDir;
+
+    #[test]
+    fn per_note_granola_streams_keep_one_source_identity() {
+        let record:solstone_core_segment::StreamRecord=serde_json::from_value(json!({"name":"any","kind":"import","host":null,"platform":null,"created_at":1,"last_day":null,"last_segment":null,"seq":1})).unwrap();
+        for stem in [
+            "import.granola.not_1d3tmYTlCICgjy",
+            "import.granola.not_2d3tmYTlCICgjy",
+        ] {
+            assert_eq!(
+                classify_record(stem, &record, &BTreeMap::new(), &BTreeMap::new()),
+                ProvenancePart::Import {
+                    source: "granola".into()
+                }
+            );
+        }
+    }
 
     fn make_journal() -> TempDir {
         TempDir::new().expect("temp dir creates")

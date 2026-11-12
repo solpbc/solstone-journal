@@ -235,7 +235,7 @@ pub use network_writes::{
 #[cfg(feature = "host")]
 pub use thinking::{
     AccessClientHandle, AccessSnapshot, ConfidentialAccess, ConfidentialPoll,
-    ConfidentialRuntimeOverride, EndpointImageCheckOverride, PollOutcome,
+    ConfidentialRuntimeOverride, EndpointCheckOverride, PollOutcome,
 };
 
 use assets::lookup;

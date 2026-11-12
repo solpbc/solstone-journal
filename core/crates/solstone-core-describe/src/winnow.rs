@@ -31,6 +31,8 @@ pub enum WinnowVerdict {
     SceneCut,
     StrideDropped,
     Kept,
+    /// Below the hash threshold, but the text gate saw new lines on screen.
+    TextChanged,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -39,6 +41,7 @@ pub struct WinnowCounters {
     pub scene_cut: usize,
     pub stride_dropped: usize,
     pub kept: usize,
+    pub text_changed: usize,
 }
 
 /// Streaming form of [`winnow`], sharing the same last-kept reference rules.
@@ -86,6 +89,15 @@ impl WinnowState {
         self.last_kept = Some(frame);
         self.counters.kept += 1;
         WinnowVerdict::Kept
+    }
+
+    /// Keep a frame [`Self::decide`] called [`WinnowVerdict::BelowThreshold`]. It becomes the
+    /// reference, so later hash comparisons start from it.
+    pub fn promote(&mut self, frame: HashedFrame) -> WinnowVerdict {
+        self.last_kept = Some(frame);
+        self.counters.kept += 1;
+        self.counters.text_changed += 1;
+        WinnowVerdict::TextChanged
     }
 
     pub fn counters(&self) -> WinnowCounters {
@@ -220,6 +232,32 @@ mod tests {
                 WinnowVerdict::BelowThreshold,
                 WinnowVerdict::Kept
             ]
+        );
+    }
+
+    #[test]
+    fn a_promoted_frame_becomes_the_reference() {
+        let mut state = WinnowState::new(config());
+        let frame = |timestamp, hash| HashedFrame { timestamp, hash };
+        assert_eq!(state.decide(frame(0.0, 0)), WinnowVerdict::Kept);
+        assert_eq!(
+            state.decide(frame(6.0, 0b11)),
+            WinnowVerdict::BelowThreshold
+        );
+        assert_eq!(state.promote(frame(6.0, 0b11)), WinnowVerdict::TextChanged);
+        // Three bits from the first frame, one from the promoted one.
+        assert_eq!(
+            state.decide(frame(12.0, 0b111)),
+            WinnowVerdict::BelowThreshold
+        );
+        let counters = state.counters();
+        assert_eq!(
+            (
+                counters.kept,
+                counters.text_changed,
+                counters.dhash_qualified
+            ),
+            (2, 1, 1)
         );
     }
 

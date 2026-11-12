@@ -5203,6 +5203,8 @@ dependencies = [
  "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-speaker-resolve",
+ "solstone-core-system-health",
+ "solstone-core-transcripts",
  "solstone-core-trash",
  "tempfile",
  "tokio",

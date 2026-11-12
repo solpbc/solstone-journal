@@ -35,6 +35,7 @@ pub use speculative_facets::{
     FACET_CANDIDATE_MIN_SEGMENTS, FACET_CANDIDATE_WINDOW_DAYS, SpeculativeFacetCandidate,
     SpeculativeFacetSample, aggregate_speculative_facets,
 };
+pub use store::stretch;
 pub use store::{
     ActivityIconMigrationReport, ActivityRecord, ActivityRecordStoreError, AppendOutcome,
     AwarenessStoreError, BODY_RECORD_SOURCE, BackfillReport, BodyAccountRefresh, BulkBlockReport,

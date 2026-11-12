@@ -658,10 +658,24 @@ fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
     match backend {
         "oura" => crate::body_commands::sync_oura(&body_command(options), journal_path),
         "plaud" => run_plaud_sync(journal_path, options),
+        "granola" => {
+            let result = if options.save && !options.dry_run {
+                solstone_core_import::granola::sync(journal_path)
+                    .and_then(|()| solstone_core_import::granola::status(journal_path))
+            } else {
+                solstone_core_import::granola::status(journal_path)
+            };
+            match result {
+                Ok(status) => success(format!("{status}\n")),
+                Err(error) => failure("", &format!("{error}\n"), 1),
+            }
+        }
         "audio" => run_audio_sync(journal_path, options),
         _ => failure(
             "",
-            &format!("Unknown sync backend: {backend}\nAvailable backends: plaud, audio, oura\n"),
+            &format!(
+                "Unknown sync backend: {backend}\nAvailable backends: plaud, audio, oura, granola\n"
+            ),
             1,
         ),
     }

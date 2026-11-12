@@ -70,6 +70,48 @@ pub fn activity_field_held(record: &JsonObject, field: &str) -> bool {
         .any(|edit| owner_edit(edit) && !edit_removed(edit) && edit_names(edit, field))
 }
 
+/// What an owner correction edit carries when it was made over a stretch of
+/// segments: the same correction stands on every activity over that stretch,
+/// in any facet, and each of them names it by the one id.
+pub const EDIT_STRETCH: &str = "stretch";
+/// The stretch's id, alike on every activity the correction stands on.
+pub const STRETCH_ID: &str = "id";
+/// On an activity the correction reached from another, the segments of this
+/// activity that the corrected one covers.
+pub const STRETCH_SEGMENTS: &str = "segments";
+
+/// The segments of this activity that the owner's standing value of `field`
+/// speaks for, when it came from another activity over part of the same
+/// stretch. `None` when it speaks for the whole activity, or nothing holds it.
+pub fn correction_segments(record: &JsonObject, field: &str) -> Option<Vec<String>> {
+    let edit = record
+        .get("edits")
+        .and_then(Value::as_array)?
+        .iter()
+        .filter_map(Value::as_object)
+        .rfind(|edit| owner_edit(edit) && !edit_removed(edit) && edit_names(edit, field))?;
+    let segments = edit
+        .get(EDIT_STRETCH)?
+        .get(STRETCH_SEGMENTS)?
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let all = record
+        .get("segments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    (!segments.is_empty()
+        && !all
+            .iter()
+            .all(|segment| segments.iter().any(|s| s == segment)))
+    .then_some(segments)
+}
+
 /// The fields of a body record that are the owner's words, when held.
 const BODY_WORD_FIELDS: [&str; 3] = ["title", "description", "details"];
 

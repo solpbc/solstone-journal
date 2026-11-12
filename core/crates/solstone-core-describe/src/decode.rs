@@ -9,6 +9,7 @@ use ffmpeg_next as ffmpeg;
 use image::{DynamicImage, ImageBuffer, ImageFormat, Rgb, imageops::FilterType};
 
 use crate::hash::dhash;
+use crate::text_gate::TextGate;
 use crate::{HashedFrame, WinnowConfig, WinnowCounters, WinnowState, WinnowVerdict};
 
 /// Demuxers this call site reads; every other demuxer compiled into FFmpeg is refused.
@@ -69,6 +70,7 @@ pub struct WinnowMetrics {
     pub scene_cut: usize,
     pub stride_dropped: usize,
     pub kept: usize,
+    pub text_changed: usize,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -82,6 +84,9 @@ pub struct DescribeResult {
     pub decode_failed: bool,
     /// `None` has the same meaning as Python's empty `{}` failure metrics.
     pub winnow: Option<WinnowMetrics>,
+    /// Frames kept because their text changed under the hash threshold. A later open of
+    /// the same video replays these instead of reading text again, so frame ids agree.
+    pub text_changed: BTreeSet<u64>,
 }
 
 pub fn process_video(path: &Path, config: WinnowConfig) -> DescribeResult {
@@ -132,11 +137,13 @@ pub(crate) enum RedecodeFail {
 pub(crate) fn redecode_frame(
     path: &Path,
     config: WinnowConfig,
+    text_changed: &BTreeSet<u64>,
     frame_id: u64,
     timestamp: f64,
     checkpoint: &dyn Fn() -> bool,
 ) -> Result<Vec<u8>, RedecodeFail> {
     let mut pull = FramePull::open(path, config, true).map_err(|_| RedecodeFail::Missing)?;
+    pull.replay_text_changes(text_changed.clone());
     loop {
         match pull.next(checkpoint) {
             PullNext::Cancelled => return Err(RedecodeFail::Cancelled),
@@ -159,6 +166,7 @@ pub(crate) fn redecode_frame(
 pub(crate) struct FramePull {
     encode: bool,
     retain_pngs: Option<BTreeSet<u64>>,
+    replay_text_changes: BTreeSet<u64>,
     state: Option<PullState>,
     result: DescribeResult,
     pending: VecDeque<QualifiedFrame>,
@@ -171,6 +179,12 @@ pub(crate) struct FramePull {
 struct PngPlan<'a> {
     encode: bool,
     retain: Option<&'a BTreeSet<u64>>,
+}
+
+/// Who decides on a frame below the hash threshold: the live gate, or an earlier pass.
+struct Gate<'a, 'g> {
+    live: Option<&'a mut TextGate<'g>>,
+    replay: &'a BTreeSet<u64>,
 }
 
 struct PullState {
@@ -243,6 +257,7 @@ impl FramePull {
             raw: 0,
             winnow: Some(WinnowState::new(config)),
             retain_pngs: None,
+            replay_text_changes: BTreeSet::new(),
         })
     }
 
@@ -300,6 +315,7 @@ impl FramePull {
             raw: 1,
             winnow: Some(winnow),
             retain_pngs: None,
+            replay_text_changes: BTreeSet::new(),
         })
     }
 
@@ -308,7 +324,21 @@ impl FramePull {
         self.retain_pngs = Some(ids);
     }
 
+    /// Keep these frames as the text gate kept them on an earlier pass over this video.
+    pub(crate) fn replay_text_changes(&mut self, ids: BTreeSet<u64>) {
+        self.replay_text_changes = ids;
+    }
+
     pub(crate) fn next(&mut self, checkpoint: &dyn Fn() -> bool) -> PullNext {
+        self.next_gated(checkpoint, None)
+    }
+
+    /// Like [`Self::next`], with the text gate deciding on frames below the hash threshold.
+    pub(crate) fn next_gated(
+        &mut self,
+        checkpoint: &dyn Fn() -> bool,
+        gate: Option<&mut TextGate<'_>>,
+    ) -> PullNext {
         if self.finished && self.pending.is_empty() {
             return PullNext::Done;
         }
@@ -331,6 +361,10 @@ impl FramePull {
             PngPlan {
                 encode: self.encode,
                 retain: self.retain_pngs.as_ref(),
+            },
+            Gate {
+                live: gate,
+                replay: &self.replay_text_changes,
             },
             checkpoint,
         );
@@ -408,6 +442,7 @@ enum PumpStatus {
     Cancelled,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn pump(
     state: &mut PullState,
     result: &mut DescribeResult,
@@ -415,6 +450,7 @@ fn pump(
     raw: &mut usize,
     winnow: &mut WinnowState,
     png: PngPlan<'_>,
+    mut gate: Gate<'_, '_>,
     checkpoint: &dyn Fn() -> bool,
 ) -> PumpStatus {
     loop {
@@ -440,6 +476,7 @@ fn pump(
                             &mut state.frame_id,
                             raw,
                             winnow,
+                            &mut gate,
                             result,
                             pending,
                         )
@@ -465,6 +502,7 @@ fn pump(
                     &mut state.frame_id,
                     raw,
                     winnow,
+                    &mut gate,
                     result,
                     pending,
                 )
@@ -515,6 +553,7 @@ fn receive_frames(
     frame_id: &mut u64,
     raw: &mut usize,
     state: &mut WinnowState,
+    gate: &mut Gate<'_, '_>,
     result: &mut DescribeResult,
     pending: &mut VecDeque<QualifiedFrame>,
 ) -> Result<(), ffmpeg::Error> {
@@ -532,8 +571,20 @@ fn receive_frames(
                 rgb_scaler_for(scaler, &decoded)?.run(&decoded, &mut rgb)?;
                 let frame = rgb_frame(&rgb).ok_or(ffmpeg::Error::InvalidData)?;
                 let hash = dhash(&frame);
-                let verdict = state.decide(HashedFrame { timestamp, hash });
-                if matches!(verdict, WinnowVerdict::Kept | WinnowVerdict::SceneCut) {
+                let hashed = HashedFrame { timestamp, hash };
+                let mut verdict = state.decide(hashed);
+                let promote = match gate.live.as_deref_mut() {
+                    Some(live) => live.frame(timestamp, &frame, verdict),
+                    None => gate.replay.contains(frame_id),
+                };
+                if promote && verdict == WinnowVerdict::BelowThreshold {
+                    verdict = state.promote(hashed);
+                    result.text_changed.insert(*frame_id);
+                }
+                if matches!(
+                    verdict,
+                    WinnowVerdict::Kept | WinnowVerdict::SceneCut | WinnowVerdict::TextChanged
+                ) {
                     if result.first_hash.is_none() {
                         result.first_hash = Some(hash);
                     }
@@ -566,7 +617,7 @@ fn receive_frames(
     Ok(())
 }
 
-fn encode_png(frame: &RgbFrame) -> Option<Vec<u8>> {
+pub(crate) fn encode_png(frame: &RgbFrame) -> Option<Vec<u8>> {
     let image =
         ImageBuffer::<Rgb<u8>, _>::from_raw(frame.width, frame.height, frame.pixels.clone())?;
     encode_image_png(image)
@@ -653,6 +704,7 @@ fn metrics(raw: usize, counters: WinnowCounters) -> WinnowMetrics {
         scene_cut: counters.scene_cut,
         stride_dropped: counters.stride_dropped,
         kept: counters.kept,
+        text_changed: counters.text_changed,
     }
 }
 
@@ -755,5 +807,121 @@ mod image_tests {
         // Categorization stays inside its own token budget.
         let (width, height) = vlm_target_dimensions(3440, 1440, Some(1024)).expect("resized");
         assert!(u64::from(width) * u64::from(height) <= 1024 * 32 * 32);
+    }
+}
+
+#[cfg(all(test, not(feature = "full-tests")))]
+mod text_gate_tests {
+    use std::collections::BTreeSet;
+    use std::path::{Path, PathBuf};
+
+    use super::{FramePull, PullNext, redecode_frame};
+    use crate::WinnowConfig;
+    use crate::screen_ocr::{OcrFailure, OcrWorker, OcrWorkerFactory, RawOccurrence};
+    use crate::text_gate::TextGate;
+
+    /// Every read finds four lines no earlier read had.
+    #[derive(Default)]
+    struct FreshText {
+        seed: u64,
+    }
+
+    impl OcrWorker for FreshText {
+        fn recognize(&mut self, _png: &[u8]) -> Result<Vec<RawOccurrence>, OcrFailure> {
+            Ok((0..4)
+                .map(|order| {
+                    let words = (0..5)
+                        .map(|_| {
+                            (0..6)
+                                .map(|_| {
+                                    self.seed = self
+                                        .seed
+                                        .wrapping_mul(6_364_136_223_846_793_005)
+                                        .wrapping_add(1_442_695_040_888_963_407);
+                                    char::from(b'a' + (self.seed >> 59) as u8 % 26)
+                                })
+                                .collect::<String>()
+                        })
+                        .collect::<Vec<_>>();
+                    RawOccurrence {
+                        line_order: order,
+                        text: words.join(" "),
+                        confidence: Some(0.99),
+                        geometry: Vec::new(),
+                        recurrence: 0,
+                    }
+                })
+                .collect())
+        }
+    }
+
+    impl OcrWorkerFactory for FreshText {
+        fn recipe_id(&mut self) -> String {
+            "fresh".to_owned()
+        }
+
+        fn create(&mut self) -> Result<Option<Box<dyn OcrWorker>>, OcrFailure> {
+            Ok(Some(Box::new(FreshText::default())))
+        }
+    }
+
+    fn fixture(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/describe_corpus")
+            .join(name)
+    }
+
+    fn drain(pull: &mut FramePull, mut gate: Option<&mut TextGate<'_>>) -> Vec<(u64, f64)> {
+        let mut frames = Vec::new();
+        loop {
+            match pull.next_gated(&|| false, gate.as_deref_mut()) {
+                PullNext::Frame(frame) => frames.push((frame.frame_id, frame.timestamp)),
+                PullNext::Done => return frames,
+                PullNext::Cancelled => panic!("nothing cancels this pull"),
+            }
+        }
+    }
+
+    fn open(video: &Path, encode: bool) -> FramePull {
+        FramePull::open(video, WinnowConfig::default(), encode)
+            .unwrap_or_else(|_| panic!("fixture opens"))
+    }
+
+    #[test]
+    fn a_reopened_video_keeps_exactly_the_frames_the_text_gate_kept() {
+        // Frame 2 is a scene cut; frames 3 to 12 move a few pixels each, under the hash threshold.
+        let video = fixture("stride_floor_vp8_screen.webm");
+        let mut ocr = FreshText::default();
+        let mut gate = TextGate::new(&mut ocr);
+        let mut pull = open(&video, false);
+        let gated = drain(&mut pull, Some(&mut gate));
+        let result = pull.metadata();
+        let ids = gated.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+        assert_eq!(ids, [1, 2, 7, 12]);
+        assert_eq!(result.text_changed, BTreeSet::from([7, 12]));
+        assert_eq!(result.winnow.map(|metrics| metrics.text_changed), Some(2));
+
+        let mut plain = open(&video, false);
+        assert_eq!(
+            drain(&mut plain, None)
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>(),
+            [1, 2]
+        );
+
+        let mut replay = open(&video, true);
+        replay.replay_text_changes(result.text_changed.clone());
+        assert_eq!(drain(&mut replay, None), gated);
+        let (id, timestamp) = gated[3];
+        let png = redecode_frame(
+            &video,
+            WinnowConfig::default(),
+            &result.text_changed,
+            id,
+            timestamp,
+            &|| false,
+        );
+        assert!(png.is_ok_and(|png| !png.is_empty()));
     }
 }

@@ -60,6 +60,10 @@ tokio = { workspace = true, features = ["macros", "rt", "time"] }
 tempfile = "3.24.0"
 ureq = { workspace = true, features = ["rustls"] }
 
+[dev-dependencies]
+solstone-core-system-health.workspace = true
+solstone-core-transcripts.workspace = true
+
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["fs"] }
 

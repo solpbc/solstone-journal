@@ -299,8 +299,9 @@ pub fn prepare(
             Some(schema) => {
                 crate::story::repeat_account_first(schema);
                 format!(
-                    "{instruction}\n\nStart your JSON with the field `{}`: copy those words exactly.",
-                    crate::story::REPEATED_ACCOUNT
+                    "{instruction}\n\nStart your JSON with the field `{}`: copy those words exactly. Then `{}`: each person those words name, and what they say that person did. Then the body: its first sentence says what those words say happened.",
+                    crate::story::REPEATED_ACCOUNT,
+                    crate::story::ACCOUNT_ROLES
                 )
             }
             None => instruction,
@@ -1375,7 +1376,7 @@ mod tests {
             } else {
                 assert!(
                     told.ends_with(&format!(
-                        "{last}\n\nStart your JSON with the field `correction`: copy those words exactly."
+                        "{last}\n\nStart your JSON with the field `correction`: copy those words exactly. Then `who_did_what`: each person those words name, and what they say that person did. Then the body: its first sentence says what those words say happened."
                     )),
                     "{talent}"
                 );
@@ -1392,6 +1393,45 @@ mod tests {
                 "{talent}"
             );
         }
+    }
+
+    #[test]
+    fn a_correction_from_another_copy_names_the_part_of_the_time_it_covers() {
+        // This activity runs 9:00 to 9:10; the corrected copy covered 9:05 on.
+        let base = json!({"id":"video_090000_300","activity":"video","segments":["090000_300","090500_300"]});
+        let stretch = json!({"id":"work/rec/t/1","segments":["090500_300"]});
+        let mut copy = base.clone();
+        copy["details"] = json!("Juliet ran the demo.");
+        copy["playback"] = json!(true);
+        copy["edits"] = json!([
+            {"actor":"owner:update","timestamp":"t","fields":["details"],"set":{"details":"Juliet ran the demo."},"before":{},"stretch":stretch},
+            {"actor":"owner:update","timestamp":"t","fields":["playback"],"set":{"playback":true},"before":{},"stretch":stretch},
+        ]);
+        for talent in ["participation", "work", "conversation"] {
+            let told = render_shipped_talent(talent, copy.clone());
+            assert!(
+                told.contains(
+                    "About 9:05 AM to 9:10 AM, part of this activity:\n\nJuliet ran the demo."
+                ),
+                "{talent}"
+            );
+            assert!(
+                told.contains("From 9:05 AM to 9:10 AM, part of this activity, a recording or video was playing."),
+                "{talent}"
+            );
+            assert!(
+                told.contains("your own recorded voice playing back"),
+                "{talent}"
+            );
+        }
+        // Made on this activity itself, or covering all of it, it speaks for
+        // the whole activity.
+        let mut whole = copy.clone();
+        whole["edits"][0]["stretch"] = json!({"id":"x","segments":["090000_300","090500_300"]});
+        whole["edits"][1] = json!({"actor":"owner:update","timestamp":"t","fields":["playback"],"set":{"playback":true},"before":{},"stretch":{"id":"y"}});
+        let told = render_shipped_talent("work", whole);
+        assert!(!told.contains("part of this activity"));
+        assert!(told.contains("This was a recording or video playing."));
     }
 
     #[test]
@@ -1412,8 +1452,9 @@ mod tests {
         recording["playback"] = json!(true);
         for talent in ["work", "conversation"] {
             let (first, required) = fields(talent, told.clone());
-            assert_eq!(first[0], "correction", "{talent}");
+            assert_eq!(first[..2], ["correction", "who_did_what"], "{talent}");
             assert_eq!(required[0], "correction", "{talent}");
+            assert_eq!(required[1], "who_did_what", "{talent}");
             // Only an account: nothing to copy from a recording, and no field
             // with nothing standing.
             for activity in [base.clone(), recording.clone()] {

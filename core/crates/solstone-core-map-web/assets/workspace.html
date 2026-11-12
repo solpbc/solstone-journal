@@ -1,3 +1,8 @@
+<!-- first-read: /app/map/week/{day} -> /app/map/api/week/{day} -->
+<!-- first-read: /app/map/{day} -> /app/map/api/day/{day} -->
+<!-- first-read: /app/map/places -> /app/map/api/places -->
+<!-- first-read: /app/map/ -> /app/map/api/index -->
+<!-- view-contract -->
 <link rel="stylesheet" href="/static/date-nav.css">
 <script src="/static/date-nav.js"></script>
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
@@ -567,14 +572,13 @@ button.map-month-row:hover { background: var(--cream); }
 <script>
 (() => {
   "use strict";
-  const reportMapReady = window.createViewReady('map');
 
   const DAY_RE = /^\d{8}$/;
   const MONTH_RE = /^\d{6}$/;
   const escapeHtml = (value) => window.AppServices.escapeHtml(String(value ?? ""));
-  const shell = document.getElementById("map-shell");
-  const root = document.getElementById("map-view-root");
-  const gate = document.getElementById("map-state-gate");
+  let shell = null;
+  let root = null;
+  let gate = null;
   const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
     "August", "September", "October", "November", "December"];
   const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -584,6 +588,105 @@ button.map-month-row:hover { background: var(--cream); }
     full: "the complete picture",
   };
   let mapState = null;
+  let ctx = null;
+  let epoch = 0;
+  let pageAbort = null;
+  let accuracyTimer = null;
+  let monthOff = [];
+  let monthObserver = null;
+  const STALE = Object.freeze({ stale: true });
+
+  function alive() {
+    return !!(ctx && !ctx.disposed);
+  }
+
+  function reportMapReady(state) {
+    if (alive()) ctx.ready(state);
+  }
+
+  function showDayChrome() {
+    shell?.removeAttribute("data-map-page");
+    shell?.removeAttribute("data-map-empty");
+  }
+
+  function focusNode(node) {
+    if (!node || typeof node.focus !== "function") return;
+    if (!node.hasAttribute("tabindex")) node.setAttribute("tabindex", "-1");
+    try { node.focus({ preventScroll: true }); }
+    catch (_) { node.focus(); }
+  }
+
+  // The day's own heading once it is drawn; the workspace until then, and
+  // when the day has nothing to draw. Never the document.
+  function focusArrived() {
+    const heading = root && root.hidden !== true && root.querySelector ? root.querySelector("h1, h2") : null;
+    const visible = heading && !heading.closest("[hidden]") ? heading : null;
+    focusNode(visible || document.getElementById("main-content"));
+  }
+
+  function removeMap() {
+    if (mapState && mapState.map && typeof mapState.map.remove === "function") {
+      try { mapState.map.remove(); } catch (_) {}
+    }
+    mapState = null;
+  }
+
+  function releaseMonth() {
+    monthOff.forEach((fn) => { try { fn(); } catch (_) {} });
+    monthOff = [];
+    if (monthObserver) {
+      try { monthObserver.disconnect(); } catch (_) {}
+      monthObserver = null;
+    }
+  }
+
+  function releasePage() {
+    epoch += 1;
+    if (pageAbort) {
+      try { pageAbort.abort(); } catch (_) {}
+      pageAbort = null;
+    }
+    removeMap();
+    if (accuracyTimer != null && ctx && typeof ctx.clearTimeout === "function") ctx.clearTimeout(accuracyTimer);
+    accuracyTimer = null;
+    releaseMonth();
+  }
+
+  function beginPage() {
+    releasePage();
+    pageAbort = window.SolStore.createAbort();
+    return epoch;
+  }
+
+  // Settles when the mount or the page has moved on. A cut-off read from the
+  // store never resolves, and awaiting that inside mount would keep the view.
+  function readJson(url) {
+    if (!alive()) return Promise.resolve(STALE);
+    const asked = epoch;
+    const signal = pageAbort
+      ? window.SolStore.eitherSignal(ctx.signal, pageAbort.signal)
+      : ctx.signal;
+    const pending = ctx.read(url, { signal });
+    return new Promise((resolve, reject) => {
+      let done = false;
+      const current = () => asked === epoch && alive();
+      const finish = (aborted, value, error) => {
+        if (done) return;
+        done = true;
+        if (signal && typeof signal.removeEventListener === "function") signal.removeEventListener("abort", onAbort);
+        if (aborted || !current()) resolve(STALE);
+        else if (error) reject(error);
+        else resolve(value);
+      };
+      const onAbort = () => finish(true);
+      Promise.resolve(pending).then(
+        (value) => finish(false, value, null),
+        (error) => finish(false, null, error)
+      );
+      if (signal && signal.aborted) onAbort();
+      else if (signal && typeof signal.addEventListener === "function") signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
 
   function asArray(value) {
     return Array.isArray(value) ? value : [];
@@ -688,10 +791,14 @@ button.map-month-row:hover { background: var(--cream); }
       detail: err,
       retry: true,
     }));
-    gate.querySelector(".surface-state-retry")?.addEventListener("click", retry, { once: true });
+    gate.querySelector(".surface-state-retry")?.addEventListener("click", () => {
+      if (!alive()) return;
+      retry();
+    }, { once: true });
   }
 
   function renderJournalEmpty() {
+    shell?.removeAttribute("data-map-page");
     shell.setAttribute("data-map-empty", "");
     setGate(window.SurfaceState.empty({
       icon: window.ConveyIcons?.svg("map-pin"),
@@ -970,9 +1077,8 @@ button.map-month-row:hover { background: var(--cream); }
     return `<p>with location accuracy, a visit can say "near" the places within your phone's margin of error. every record says why it reads the way it does.</p>`;
   }
 
-  let accuracyTimer = null;
-
   async function accuracyAction(action, data) {
+    const mine = epoch;
     root.querySelectorAll("[data-accuracy]").forEach((button) => { button.disabled = true; });
     try {
       const status = await window.apiJson(`/app/map/api/accuracy/${action}`, {
@@ -980,15 +1086,19 @@ button.map-month-row:hover { background: var(--cream); }
         headers: { "Content-Type": "application/json" },
         body: "{}",
       });
+      if (mine !== epoch || !alive()) return;
       showAccuracy(status, data);
     } catch (err) {
+      if (mine !== epoch || !alive()) return;
       if (window.logError) window.logError(err, { context: "map:accuracy" });
-      const status = await window.apiJson("/app/map/api/accuracy").catch(() => null);
+      const status = await readJson("/app/map/api/accuracy").catch(() => null);
+      if (!status || status === STALE || mine !== epoch || !alive()) return;
       showAccuracy(status, data);
     }
   }
 
   function showAccuracy(status, data) {
+    if (!alive()) return;
     const card = root.querySelector("[data-accuracy-card]");
     if (!card) return;
     const before = data.accuracy;
@@ -997,12 +1107,16 @@ button.map-month-row:hover { background: var(--cream); }
     root.querySelectorAll("[data-accuracy]").forEach((button) => {
       button.addEventListener("click", () => accuracyAction(button.getAttribute("data-accuracy"), data));
     });
-    clearTimeout(accuracyTimer);
+    if (accuracyTimer != null) ctx.clearTimeout(accuracyTimer);
+    accuracyTimer = null;
     if (["downloading", "verifying"].includes(status?.job?.state)) {
-      accuracyTimer = setTimeout(async () => {
-        if (!root.isConnected) return;
-        const next = await window.apiJson("/app/map/api/accuracy").catch(() => null);
-        if (next) showAccuracy(next, data);
+      const mine = epoch;
+      accuracyTimer = ctx.setTimeout(async () => {
+        accuracyTimer = null;
+        if (mine !== epoch || !alive()) return;
+        const next = await readJson("/app/map/api/accuracy").catch(() => null);
+        if (!next || next === STALE || mine !== epoch || !alive()) return;
+        showAccuracy(next, data);
       }, 2000);
     } else if (before && JSON.stringify(before.installed) !== JSON.stringify(status?.installed)) {
       // Names change with the download, so the day is read again.
@@ -1076,6 +1190,7 @@ button.map-month-row:hover { background: var(--cream); }
   function drawMap(data) {
     const L = window.L;
     const element = document.getElementById("map-canvas");
+    removeMap();
     if (!L || !element || !data.map) return;
     const ink = cssColor("--ink-soft", "#5B5246");
     const orange = cssColor("--orange", "#e8913a");
@@ -1142,26 +1257,49 @@ button.map-month-row:hover { background: var(--cream); }
     }
   }
 
-  async function loadDay(day) {
+  // Whether focus sits on something the next draw replaces: the day's
+  // heading, a marker or a control in the view, or the gate's retry.
+  function focusInView() {
+    for (let node = document.activeElement; node; node = node.parentNode) {
+      if (node === root || node === gate) return true;
+    }
+    return false;
+  }
+
+  async function loadDay(day, arrive) {
+    if (!alive() || !DAY_RE.test(String(day || ""))) return;
+    // The link that opened this day, or what had focus in the day a step
+    // leaves, is about to leave the page. Focus moves before that, or it
+    // falls to the document. A step that started outside the view, from
+    // date-nav's arrow, leaves focus where it is.
+    const refocus = arrive || focusInView();
+    const mine = beginPage();
+    showDayChrome();
+    if (refocus) focusNode(document.getElementById("main-content"));
     setGate(window.SurfaceState.loading({ text: "loading this day's location…" }));
     try {
-      const data = await window.apiJson(`/app/map/api/day/${encodeURIComponent(day)}`);
-      if (!root.isConnected) return;
+      const data = await readJson(`/app/map/api/day/${day}`);
+      if (data === STALE || mine !== epoch || !alive()) return;
       if (!asArray(data.entries).length && !asArray(data.devices).length) {
         if (data.journal_has_location) renderDayEmpty(data, day);
         else renderJournalEmpty();
-        reportMapReady('empty');
+        if (refocus) focusArrived();
+        reportMapReady("empty");
         return;
       }
       renderDay(data);
-      reportMapReady('content');
+      if (refocus) focusArrived();
+      reportMapReady("content");
     } catch (err) {
-      showError(err, () => loadDay(day));
-      reportMapReady('error');
+      if (mine !== epoch || !alive()) return;
+      showError(err, () => loadDay(day, arrive));
+      if (refocus) focusArrived();
+      reportMapReady("error");
     }
   }
 
   function pageShell(title, body, nav) {
+    shell?.removeAttribute("data-map-empty");
     shell.setAttribute("data-map-page", "");
     const navMarkup = nav || '<nav class="map-page-nav" aria-label="more of your location"><a class="map-link" href="/app/map/">the day</a><a class="map-link" href="/app/map/places">places</a></nav>';
     const titleMarkup = title ? `<h1 class="map-page-title">${escapeHtml(title)}</h1>` : "";
@@ -1232,6 +1370,8 @@ button.map-month-row:hover { background: var(--cream); }
     const form = root.querySelector("[data-place-form]");
     form?.addEventListener("submit", async (event) => {
       event.preventDefault();
+      const mine = epoch;
+      const placeId = place.id;
       const status = root.querySelector("[data-place-status]");
       const values = {
         name: form.elements.name.value.trim() || null,
@@ -1244,12 +1384,15 @@ button.map-month-row:hover { background: var(--cream); }
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(values),
         });
+        const here = pathView();
+        if (mine !== epoch || !alive() || here.page !== "place" || here.id !== placeId) return;
         renderPlace(next);
         const saved = root.querySelector("[data-place-status]");
         if (saved) saved.textContent = "saved.";
       } catch (err) {
+        if (mine !== epoch || !alive()) return;
         if (window.logError) window.logError(err, { context: "map:place" });
-        if (status) status.textContent = "that change couldn't be saved.";
+        if (status && status.isConnected) status.textContent = "that change couldn't be saved.";
       }
     });
   }
@@ -1291,27 +1434,39 @@ button.map-month-row:hover { background: var(--cream); }
   }
 
   async function loadPage(view) {
+    if (!alive() || !view) return;
+    const mine = beginPage();
+    const still = () => mine === epoch && alive();
     setGate(window.SurfaceState.loading({ text: "loading…" }));
     try {
       let hasContent;
       if (view.page === "places") {
-        const data = await window.apiJson("/app/map/api/places");
+        const data = await readJson("/app/map/api/places");
+        if (data === STALE || !still()) return;
         renderPlaces(data);
         hasContent = asArray(data.places).length > 0;
       } else if (view.page === "place") {
-        renderPlace(await window.apiJson(`/app/map/api/place/${encodeURIComponent(view.id)}`));
+        const data = await readJson(`/app/map/api/place/${encodeURIComponent(view.id)}`);
+        if (data === STALE || !still()) return;
+        renderPlace(data);
         hasContent = true;
       } else if (view.page === "month") {
-        const data = await window.apiJson(`/app/map/api/month/${encodeURIComponent(view.month)}`);
+        const data = await readJson(`/app/map/api/month/${encodeURIComponent(view.month)}`);
+        if (data === STALE || !still()) return;
         await renderMonth(data);
+        if (!still()) return;
         hasContent = asArray(data.days).some(day => day.has_location);
       } else {
-        const data = await window.apiJson(`/app/map/api/week/${encodeURIComponent(view.day)}`);
+        const day = view.day;
+        const data = await readJson(`/app/map/api/week/${day}`);
+        if (data === STALE || !still()) return;
         renderWeek(data);
         hasContent = asArray(data.days).some(day => day.readings || asArray(day.items).length);
       }
+      if (!still()) return;
       reportMapReady(hasContent ? 'content' : 'empty');
     } catch (err) {
+      if (!still()) return;
       showError(err, () => loadPage(view), view.page === "month" ? "couldn't open this month's location." : undefined);
       reportMapReady('error');
     }
@@ -2032,7 +2187,8 @@ button.map-month-row:hover { background: var(--cream); }
     if (!asArray(data.days).some((d) => d.has_location)) {
       let nearestLink = "";
       try {
-        const index = await window.apiJson("/app/map/api/index");
+        const index = await readJson("/app/map/api/index");
+        if (index === STALE || !alive()) return;
         const mKeys = Object.keys(index?.months || {}).filter((k) => MONTH_RE.test(k) && k !== m.month);
         if (mKeys.length > 0) {
           const targetMIndex = m.year * 12 + parseInt(m.month.slice(4, 6), 10);
@@ -2142,8 +2298,13 @@ button.map-month-row:hover { background: var(--cream); }
 
     function live(text) {
       const el = root.querySelector("[data-map-month-live]");
+      if (!el) return;
       el.textContent = "";
-      setTimeout(() => { el.textContent = text; }, 30);
+      const mine = epoch;
+      ctx.setTimeout(() => {
+        if (mine !== epoch || !el.isConnected) return;
+        el.textContent = text;
+      }, 30);
     }
 
     function renderChoices() {
@@ -2465,7 +2626,8 @@ button.map-month-row:hover { background: var(--cream); }
       drag = { x: ev.clientX, y: ev.clientY, dx: view.dx, dy: view.dy, id: ev.pointerId };
       dragged = false;
     });
-    window.addEventListener("pointermove", (ev) => {
+    releaseMonth();
+    monthOff.push(ctx.on(window, "pointermove", (ev) => {
       if (!drag || ev.pointerId !== drag.id) return;
       const mx = ev.clientX - drag.x, my = ev.clientY - drag.y;
       if (!dragged && Math.hypot(mx, my) < 5) return;
@@ -2476,12 +2638,18 @@ button.map-month-row:hover { background: var(--cream); }
       view.dx = drag.dx - mx * scale / lastK;
       view.dy = drag.dy + my * scale / lastK;
       renderMapSvg();
-    });
-    window.addEventListener("pointerup", () => {
+    }));
+    monthOff.push(ctx.on(window, "pointerup", () => {
       drag = null;
       root.querySelector("[data-map-month-map]").classList.remove("dragging");
-      if (dragged) setTimeout(() => { dragged = false; }, 0);
-    });
+      if (dragged) {
+        const mine = epoch;
+        ctx.setTimeout(() => {
+          if (mine !== epoch) return;
+          dragged = false;
+        }, 0);
+      }
+    }));
 
     root.querySelector("[data-map-month-outside]").addEventListener("click", () => {
       view.z = 1; view.dx = 0; view.dy = 0; view.all = true;
@@ -2640,57 +2808,91 @@ button.map-month-row:hover { background: var(--cream); }
       }
     });
 
-    document.addEventListener("keydown", (ev) => {
+    monthOff.push(ctx.on(document, "keydown", (ev) => {
       if (ev.key === "Escape" && (activeCell || activeDay)) {
         activeCell = null;
         activeDay = null;
         renderAll();
         live("nothing chosen");
       }
-    });
+    }));
 
     let rw = 0;
     const svgWrap = root.querySelector("[data-map-month-svg]");
-    new ResizeObserver(() => {
+    monthObserver = new ResizeObserver(() => {
       const w = svgWrap.clientWidth;
       if (Math.abs(w - rw) > 4) {
         rw = w;
         renderMapSvg();
       }
-    }).observe(svgWrap);
+    });
+    ctx.observe(monthObserver);
+    monthObserver.observe(svgWrap);
 
     renderChoices();
     renderAll();
   }
 
-  async function start() {
-    const view = pathView();
-    if (view.page) {
-      await loadPage(view);
-      return;
-    }
-    const { day } = window.solPathContext ? window.solPathContext() : {};
-    if (DAY_RE.test(String(day || ""))) {
-      await loadDay(day);
-      return;
-    }
+  function showDay(day) {
+    if (!DAY_RE.test(String(day || ""))) return;
+    // A week, a month, places or a place is a different page, so becoming a
+    // day is an arrival. A step from one day to the next is already the day
+    // and leaves focus where it is.
+    const arrive = !!(shell && (shell.hasAttribute("data-map-page") || shell.hasAttribute("data-map-empty")));
+    if (window.DateNav && typeof window.DateNav.setDay === "function") window.DateNav.setDay(day);
+    loadDay(day, arrive);
+  }
+
+  async function openUndated() {
+    const mine = beginPage();
     setGate(window.SurfaceState.loading({ text: "loading your journal's location…" }));
     try {
-      const index = await window.apiJson("/app/map/api/index");
+      const index = await readJson("/app/map/api/index");
+      if (index === STALE || mine !== epoch || !alive()) return;
+      const path = String(window.location?.pathname || "");
+      if (path !== "/app/map" && path !== "/app/map/") return;
       const end = index?.coverage?.end;
-      if (DAY_RE.test(String(end || ""))) {
-        window.location.replace(`/app/map/${end}`);
+      if (!DAY_RE.test(String(end || ""))) {
+        renderJournalEmpty();
+        reportMapReady("empty");
         return;
       }
-      renderJournalEmpty();
-      reportMapReady('empty');
+      const next = `/app/map/${end}${window.location.search || ""}${window.location.hash || ""}`;
+      ctx.history.replace(next);
+      if (window.SolViews && typeof window.SolViews.routeOf === "function") {
+        ctx.route = window.SolViews.routeOf(window.location);
+      }
+      if (window.DateNav && typeof window.DateNav.setDay === "function") window.DateNav.setDay(end);
+      loadDay(end);
     } catch (err) {
-      showError(err, start);
-      reportMapReady('error');
+      if (mine !== epoch || !alive()) return;
+      showError(err, () => openUndated());
+      reportMapReady("error");
     }
   }
 
-  window.__mapWorkspace = { start, renderDay, renderWeek, renderPlaces, renderPlace, renderMonth, monthModel, entryTitle, entryTime, entryMeta, entryWhere, entryWhy, accuracyCard, moment, thinned };
-  start();
+  const workspaceApi = {
+    renderDay, renderWeek, renderPlaces, renderPlace, renderMonth, monthModel,
+    entryTitle, entryTime, entryMeta, entryWhere, entryWhy, accuracyCard, moment, thinned,
+  };
+
+  async function mount(mountCtx) {
+    ctx = mountCtx;
+    shell = document.getElementById("map-shell");
+    root = document.getElementById("map-view-root");
+    gate = document.getElementById("map-state-gate");
+    ctx.global("__mapWorkspace", workspaceApi);
+    ctx.onDispose(() => {
+      releasePage();
+      if (ctx === mountCtx) ctx = null;
+    });
+    const page = pathView();
+    if (page.page) loadPage(page);
+    else if (mountCtx.route && DAY_RE.test(String(mountCtx.route.day || ""))) loadDay(mountCtx.route.day);
+    else await openUndated();
+    return { update(params) { showDay(params && params.day); } };
+  }
+
+  window.SolViews.register("map", { mount });
 })();
 </script>

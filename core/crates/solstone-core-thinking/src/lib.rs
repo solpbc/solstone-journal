@@ -7,6 +7,7 @@ pub mod brain;
 pub mod chatgpt;
 pub mod confidential;
 pub mod endpoint_image;
+pub mod endpoint_schema;
 pub mod generators;
 pub mod local;
 pub mod providers;

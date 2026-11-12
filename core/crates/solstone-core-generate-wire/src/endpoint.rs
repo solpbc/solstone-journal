@@ -300,6 +300,18 @@ pub(crate) fn endpoint_generate_internal_with_context<T: EndpointTransport>(
         Ok(prepared) => prepared,
         Err(reason_code) => return failure(reason_code),
     };
+    // Thinking off on the owner's own endpoint asks the model not to think, as
+    // the cloud presets do. Bundled never reaches this path, and confidential
+    // already sends its own thinking-off control.
+    let owner_endpoint = !endpoint.is_bundled && !endpoint.is_confidential;
+    let mut thinking_off = if owner_endpoint {
+        crate::thinking::endpoint_off_fields(crate::thinking::byo_thinking(config))
+    } else {
+        Vec::new()
+    };
+    if owner_endpoint {
+        crate::thinking::set_endpoint_off(&mut prepared.body, &thinking_off);
+    }
     let witness =
         gate.and_then(|gate| crate::credential_binding::capture_root_witness(gate.journal));
     if let Some(gate) = gate
@@ -374,6 +386,17 @@ pub(crate) fn endpoint_generate_internal_with_context<T: EndpointTransport>(
                 Ok(response) => response,
                 Err(reason_code) => return failure(reason_code),
             };
+            // A server that refuses a thinking-off field by name gets the request
+            // again without it, the way the cloud presets step down. Each step
+            // sends fewer fields, so this ends.
+            if matches!(response.status, 400 | 422)
+                && let Some(kept) =
+                    crate::thinking::endpoint_off_after_refusal(&thinking_off, &response.body)
+            {
+                thinking_off = kept;
+                crate::thinking::set_endpoint_off(&mut prepared.body, &thinking_off);
+                continue;
+            }
             if response.status != 400 {
                 break response;
             }
@@ -412,6 +435,9 @@ pub(crate) fn endpoint_generate_internal_with_context<T: EndpointTransport>(
                 Ok(prepared) => prepared,
                 Err(reason_code) => return failure(reason_code),
             };
+            if owner_endpoint {
+                crate::thinking::set_endpoint_off(&mut prepared.body, &thinking_off);
+            }
         }
     };
     let secret = endpoint.credential.as_deref().unwrap_or("");
@@ -473,9 +499,9 @@ struct PreparedEndpointRequest {
 }
 
 /// The completion ceiling asked of an endpoint: the talent's own visible budget,
-/// plus the owner's thinking room on their own endpoint. No thinking field is
-/// ever sent there, so the room is for a model that thinks on its own; bundled and
-/// confidential run with thinking off and get none.
+/// plus the owner's thinking room on their own endpoint. With thinking on, no
+/// thinking field is sent there, so the room is for a model that thinks on its
+/// own; bundled and confidential run with thinking off and get none.
 fn completion_ceiling(
     request: &GenerateRequest,
     endpoint: &ByoEndpoint,
@@ -1259,6 +1285,16 @@ mod tests {
             );
             let body = transport.posts.remove(0);
             for field in QWEN_SAMPLING_FIELDS {
+                if field == "chat_template_kwargs" {
+                    // Both lanes ask the model not to think; only the sampling
+                    // controls are confidential's alone.
+                    assert_eq!(
+                        body[field],
+                        json!({"enable_thinking": false}),
+                        "is_confidential={is_confidential}"
+                    );
+                    continue;
+                }
                 assert_eq!(
                     body.get(field).is_some(),
                     expected,
@@ -1377,13 +1413,8 @@ mod tests {
         );
         assert_eq!(transport.get_calls, 1);
         assert_eq!(transport.posts.len(), 1);
-        for field in [
-            "chat_template_kwargs",
-            "top_p",
-            "top_k",
-            "min_p",
-            "presence_penalty",
-        ] {
+        // Qwen sampling controls stay off a plain endpoint.
+        for field in ["top_p", "top_k", "min_p", "presence_penalty"] {
             assert!(
                 !transport.posts[0].get(field).is_some(),
                 "unexpected {field}"
@@ -1966,7 +1997,7 @@ mod tests {
             Instant::now(),
         );
         assert_eq!(owner.posts[0]["max_tokens"], 64 + 8_192);
-        // No thinking field ever goes on this wire.
+        // With thinking on, no thinking field goes on this wire.
         for field in [
             "reasoning",
             "reasoning_effort",
@@ -1974,6 +2005,81 @@ mod tests {
             "chat_template_kwargs",
         ] {
             assert!(owner.posts[0].get(field).is_none(), "{field}");
+        }
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn thinking_off_asks_the_owner_endpoint_not_to_think() {
+        let runtime = EndpointRuntime::default();
+        let mut owner = StubTransport {
+            post_script: vec![Ok(response())],
+            ..Default::default()
+        };
+        let journal = journal_path();
+        let _ = endpoint_generate_with(
+            &request(None),
+            &journal,
+            &endpoint("http://endpoint"),
+            &served_window_config(),
+            &runtime,
+            &mut owner,
+            Instant::now(),
+        );
+        assert_eq!(owner.posts[0]["reasoning_effort"], "none");
+        assert_eq!(
+            owner.posts[0]["chat_template_kwargs"],
+            json!({"enable_thinking": false})
+        );
+        assert_eq!(owner.posts[0]["max_tokens"], 64);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn a_refused_thinking_off_field_is_dropped_by_name() {
+        let runtime = EndpointRuntime::default();
+        let refusals = [
+            (
+                400,
+                r#"{"error":{"message":"Unrecognized request argument supplied: chat_template_kwargs","param":null}}"#,
+            ),
+            (
+                422,
+                r#"{"detail":[{"type":"extra_forbidden","loc":["body","reasoning_effort"]}]}"#,
+            ),
+        ];
+        let mut owner = StubTransport {
+            post_script: refusals
+                .iter()
+                .map(|(status, body)| {
+                    Ok(HttpResponse {
+                        status: *status,
+                        body: (*body).to_owned(),
+                    })
+                })
+                .chain([Ok(response())])
+                .collect(),
+            ..Default::default()
+        };
+        let journal = journal_path();
+        assert!(matches!(
+            endpoint_generate_with(
+                &request(None),
+                &journal,
+                &endpoint("http://endpoint"),
+                &served_window_config(),
+                &runtime,
+                &mut owner,
+                Instant::now(),
+            ),
+            EndpointResult::Generated(_)
+        ));
+        assert_eq!(owner.posts.len(), 3);
+        assert!(owner.posts[0].get("chat_template_kwargs").is_some());
+        assert!(owner.posts[1].get("chat_template_kwargs").is_none());
+        assert_eq!(owner.posts[1]["reasoning_effort"], "none");
+        for field in ["reasoning_effort", "chat_template_kwargs"] {
+            assert!(owner.posts[2].get(field).is_none(), "{field}");
         }
         let _ = std::fs::remove_dir_all(journal);
     }

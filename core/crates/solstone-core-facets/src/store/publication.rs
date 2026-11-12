@@ -23,7 +23,8 @@ pub(super) fn publish_saved(journal_root: &Path, saved: &Path) {
 /// Queue an activity's outputs folder, `facets/<facet>/activities/<day>/<id>`,
 /// so search reads what the activity made again after its hidden changes.
 pub(super) fn publish_activity_outputs(journal_root: &Path, facet: &str, day: &str, id: &str) {
-    let outputs = Path::new("facets")
+    let outputs = journal_root
+        .join("facets")
         .join(facet)
         .join("activities")
         .join(day)

@@ -8,13 +8,21 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- connect Granola in settings → sync with your own personal API key. your meetings come into your journal with their transcripts, summaries and private notes, and update every hour. an edit in Granola updates the same meeting; disconnecting keeps what is already in your journal.
+
+- when the words change on a screen you share while it otherwise looks the same, such as new messages in a chat pane, new rows in your inbox or scrolling to a new part of a page, your journal now keeps that moment too. a screen that sits still adds no extra work.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
+- saving your own endpoint now also checks that its model can answer in the structured form processing asks for, and tells you if it can't, so you find out before processing fails. thanks @dvanduzer for the report (#418).
 
 ### Changed
 
+- when you tell your journal what actually happened in an activity, or that it was a recording or video playing, that now holds for every activity your journal made from the same stretch of the same source, in each of your facets. each one shows your correction and is written again, and removing it from any of them removes it from all. an activity that only partly overlaps takes your correction only for the part they share.
+- in an activity you've marked as a recording or video playing, lines in your saved voice are now told as your own recorded voice playing back, not you taking part.
+- your daily briefing now reads what you told your journal about an activity as what happened, and, where you've marked a recording, tells it as you watching or listening.
+- on your week, "open that moment" now opens the activity it's from, where you can say what's not right. "this isn't right" opens the activity a memory is about, including a memory from your daily briefing that names no activity. when your journal can't tell which activity it is, it opens that day's activities.
 - on the entities page, the button on a name in a facet's detected list now hides it instead of deleting it. a hidden name stays in your journal and stays hidden however often it's detected again: its detections there are left out of search, connected agents can't reach them, and your journal won't add it to that facet. you can see the names you hid in a facet and unhide them there.
 - hiding a person or topic now also leaves its notes, and its detections in its facets, out of search, and connected agents can't reach them. its name, other names and emails can't be changed while it's hidden.
 - a hidden activity and what your journal wrote for it, such as its story, are now left out of search, and connected agents can't reach them.
@@ -22,10 +30,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when you leave a memory or a quote out of your week, that week's page is now left out of search. the memory itself stays in your journal and in search.
 - `solstone call entities delete`, `solstone call journal facet delete` and `solstone call speakers wipe --commit` now say the day something is erased in your own time zone, and `facet delete` now answers in a sentence instead of raw output.
 - things you delete together, and things you recover or erase together from the trash, now share one line in the removal history for each step.
-- the body page and the activities page now join home, the more page and transcripts: moving between them, and to another day on either, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+- the body page, the activities page and the map now join home, the more page and transcripts: moving between them, and to another day on any of those three, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+- on your own endpoint, leaving "leave room for the model to think" unticked now asks your model not to think, so a model that thinks by default usually answers sooner. tick it to let your model think. thanks @dvanduzer for the report (#418).
+- your own name no longer takes one of the 20 places in each facet's list of names that your journal reads as it processes your day, so one more of the facet's own names fits. the facets reference your agents read now explains what a facet's description and that list do, and how to curate them. thanks @dvanduzer for the report (#417).
 
 ### Fixed
 
+- after you correct an activity, your week is now remade only for the days you corrected. a corrected day's memory comes back corrected when the briefing still tells it, rather than being swapped for a different one, and your other days stay as they were.
 - when a connected agent asks your journal for something it has none of, such as a transcript of time in your terminal, the answer now always carries the note saying where to look. some agents, Claude Code among them, never saw that note before. thanks @dvanduzer for the report (#415).
 - a journal on a mac or linux computer that had been running for a long while could fail to start again after you stopped it, updated it or restarted the computer. it now starts as quickly after a month as after an hour, and it clears out the records it used to keep of every program it ever ran, which could take up gigabytes. a stray file in its folders, like the ones Finder adds, or a damaged record of a program it ran no longer stops it from starting either. a journal that's already failing to start this way starts again on its own, including after the restart that installs this update.
 - stories of long terminal and agent sessions no longer leave out part of the session, or fail to be written, when one stretch of it has no screen description.

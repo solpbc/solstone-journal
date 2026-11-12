@@ -316,7 +316,7 @@ UV := $(shell command -v uv 2>/dev/null)
 UV_OPTIONAL_GOALS := \
 	preflight install \
 	check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full \
-	check-standalone-lockfiles check-rust-screen-ocr-helper \
+	check-standalone-lockfiles check-rust-screen-ocr-helper check-rust-i18n-catalog \
 	check-rust-unit check-rust-doc check-rust-test check-rust-race \
 	check-rust-journal-mcp-endpoint check-rust-embedded-speech \
 	check-rust-android check-rust-android-prepared \
@@ -1545,6 +1545,7 @@ ci-under-poison:
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-unit
 	@$(MAKE) check-rust-screen-ocr-helper
+	@$(MAKE) check-rust-i18n-catalog
 	@$(MAKE) --no-print-directory RUST_CODE_EVIDENCE_CONTEXT=ci report-rust-code-evidence
 
 # Resolve every standalone Cargo graph too: workspace-only CI cannot see their
@@ -1682,3 +1683,9 @@ check-rust-screen-ocr-helper:
 	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/screen-ocr-helper" cargo fmt --manifest-path core/screen-ocr-helper/Cargo.toml -- --check
 	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/screen-ocr-helper" cargo clippy --manifest-path core/screen-ocr-helper/Cargo.toml --all-targets --locked --offline -- -D warnings
 	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/screen-ocr-helper" cargo test --manifest-path core/screen-ocr-helper/Cargo.toml --lib --locked --offline
+
+.PHONY: check-rust-i18n-catalog
+check-rust-i18n-catalog:
+	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo fmt --manifest-path tools/i18n/Cargo.toml -- --check
+	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo clippy --manifest-path tools/i18n/Cargo.toml --all-targets --locked --offline -- -D warnings
+	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo test --manifest-path tools/i18n/Cargo.toml --lib --locked --offline

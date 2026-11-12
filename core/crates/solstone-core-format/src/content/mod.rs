@@ -4,13 +4,15 @@
 mod action_logs;
 mod activities;
 pub use activities::{
-    BODY_ENTRY_LINE, BODY_RECORD_SOURCE, EDIT_REMOVED, activity_field_held, body_record_at,
-    body_record_indexed, edit_names, edit_removed, is_body_record, is_hidden_activity,
-    is_retired_plan, is_strava_reading, non_body_entries, ordinary_entries, owner_edit,
+    BODY_ENTRY_LINE, BODY_RECORD_SOURCE, EDIT_REMOVED, EDIT_STRETCH, STRETCH_ID, STRETCH_SEGMENTS,
+    activity_field_held, body_record_at, body_record_indexed, correction_segments, edit_names,
+    edit_removed, is_body_record, is_hidden_activity, is_retired_plan, is_strava_reading,
+    non_body_entries, ordinary_entries, owner_edit,
 };
 mod ai_chat;
 mod audio;
 pub mod body_records;
+pub mod granola;
 pub use audio::OTHER_VOICE;
 mod browser;
 mod day_accumulator;

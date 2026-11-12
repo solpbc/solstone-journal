@@ -1,0 +1,47 @@
+{
+  "id": "not_gfxp671g0ep701",
+  "object": "note",
+  "title": "Capulet standup",
+  "web_url": "https://notes.granola.ai/d/d3dd409e-7aa8-4031-a790-8027d758930e",
+  "owner": {
+    "name": "Test Owner",
+    "email": "owner@example.org"
+  },
+  "created_at": "2026-11-11T19:33:27.374Z",
+  "updated_at": "2026-11-11T19:38:20.738Z",
+  "deleted_at": null,
+  "calendar_event": null,
+  "attendees": [
+    {
+      "name": "Test Owner",
+      "email": "owner@example.org"
+    }
+  ],
+  "attachments": [],
+  "folder_membership": [],
+  "space_membership": [],
+  "transcript": [
+    {
+      "text": "Morning. Let's keep it quick. I know everyone's got a lot this week.",
+      "start_time": "2026-11-11T19:34:48.939Z",
+      "end_time": "2026-11-11T19:34:53.309Z",
+      "speaker": {
+        "source": "speaker",
+        "attribution": "them"
+      }
+    },
+    {
+      "text": "Angela, you wanna start with the beta?",
+      "start_time": "2026-11-11T19:34:53.309Z",
+      "end_time": "2026-11-11T19:34:55.249Z",
+      "speaker": {
+        "source": "speaker",
+        "attribution": "them"
+      }
+    }
+  ],
+  "summary_text": "Beta Status: Balcony App 3.0\n41 testers as of this morning, 2 new over the weekend\nTwo crash reports, both on Android 11, both triggered by opening camera during inspection\n6 total Android 11 testers; other 4 haven’t hit it yet\nLikely in the photo layer; someone is picking it up to investigate\nOffline sync bug: editing the same inspection on two devices while offline causes one edit to silently drop on reconnect\nClean repro steps in hand\nSuspected root cause: merge logic when both versions come back online\nHigh priority: offline is the core value prop of this release\nRelease Checklist and Go/No-Go\nRelease checklist owned and being tracked\nGo/no-go call proposed for Friday 13th November at 09:30\nBoth parties confirmed availability\nInvite to be sent after standup\nSchema Bridge Kickoff Concerns\nKickoff today at 15:00 with Romeo\nKey risk: if Schema Bridge depends on Montague’s mesh routing, Balcony inherits their uptime as a dependency\nIf Montague’s service goes down, Balcony could stop working entirely\nThis would be a new single point of failure outside the team’s control\nTwo asks before anything reaches customers:\nClarify whether the dependency is hard or soft\nGet the answer written down formally\nNext Steps\nRaise mesh routing dependency risk with Romeo at the 15:00 kickoff\nAdd it to the agenda right after scope; report back to the team on what he says.\nSend go/no-go calendar invite for Friday 13th November at 09:30\nBoth attendees confirmed availability.\nInvestigate Android 11 camera crash\nTwo crash reports on the same device type; suspected issue in the photo layer.",
+  "summary_markdown": "# Beta Status: Balcony App 3.0\n\n- 41 testers as of this morning, 2 new over the weekend\n- Two crash reports, both on Android 11, both triggered by opening camera during inspection\n  - 6 total Android 11 testers; other 4 haven’t hit it yet\n  - Likely in the photo layer; someone is picking it up to investigate\n- Offline sync bug: editing the same inspection on two devices while offline causes one edit to silently drop on reconnect\n  - Clean repro steps in hand\n  - Suspected root cause: merge logic when both versions come back online\n  - High priority: offline is the core value prop of this release\n\n# Release Checklist and Go/No-Go\n\n- Release checklist owned and being tracked\n- Go/no-go call proposed for Friday 13th November at 09:30\n  - Both parties confirmed availability\n  - Invite to be sent after standup\n\n# Schema Bridge Kickoff Concerns\n\n- Kickoff today at 15:00 with Romeo\n- Key risk: if Schema Bridge depends on Montague’s mesh routing, Balcony inherits their uptime as a dependency\n  - If Montague’s service goes down, Balcony could stop working entirely\n  - This would be a new single point of failure outside the team’s control\n- Two asks before anything reaches customers:\n  - Clarify whether the dependency is hard or soft\n  - Get the answer written down formally\n\n# Next Steps\n\n- **Raise mesh routing dependency risk with Romeo at the 15:00 kickoff**\n\n  Add it to the agenda right after scope; report back to the team on what he says.\n- **Send go/no-go calendar invite for Friday 13th November at 09:30**\n\n  Both attendees confirmed availability.\n- **Investigate Android 11 camera crash**\n\n  Two crash reports on the same device type; suspected issue in the photo layer.\n\n---\n\nChat with meeting transcript: [https://notes.granola.ai/t/305eb9b9-13f0-4db5-b0a5-b594778d0eb8](https://notes.granola.ai/t/305eb9b9-13f0-4db5-b0a5-b594778d0eb8)",
+  "private_notes_text": "",
+  "private_notes_markdown": ""
+}
