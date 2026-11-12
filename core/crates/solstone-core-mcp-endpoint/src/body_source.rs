@@ -1245,6 +1245,20 @@ pub(crate) fn read_source_span(
         .when_empty(note))
 }
 
+/// Whether an activity line thinking once wrote for a Strava workout is a hidden
+/// day's: it goes with its file's day, and while the hidden days can't be read
+/// no connection reads one.
+pub(crate) fn strava_line_hidden(
+    journal_root: &Path,
+    day: &str,
+    record: &serde_json::Map<String, serde_json::Value>,
+) -> bool {
+    solstone_core_format::content::is_strava_reading(record)
+        && solstone_core_format::content::body_hidden_days::read_hidden_days(journal_root)
+            .hides(day)
+            != Some(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1269,18 +1283,4 @@ mod tests {
             vec![json!({"from": "06:00", "to": "08:00"})]
         );
     }
-}
-
-/// Whether an activity line thinking once wrote for a Strava workout is a hidden
-/// day's: it goes with its file's day, and while the hidden days can't be read
-/// no connection reads one.
-pub(crate) fn strava_line_hidden(
-    journal_root: &Path,
-    day: &str,
-    record: &serde_json::Map<String, serde_json::Value>,
-) -> bool {
-    solstone_core_format::content::is_strava_reading(record)
-        && solstone_core_format::content::body_hidden_days::read_hidden_days(journal_root)
-            .hides(day)
-            != Some(false)
 }
