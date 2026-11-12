@@ -447,6 +447,9 @@ struct Envelope {
     note_changes: Option<Vec<NoteChange>>,
     /// The checked screenshot of a screenshots upload.
     screenshot: Option<crate::screenshots::CheckedScreenshot>,
+    /// How a calendar upload's answer names the files it did not write as
+    /// sent.
+    calendar: Option<crate::calendar::Receipt>,
 }
 
 fn parse_envelope(text: String, raw_files: Vec<RawFile>) -> Result<Envelope, (ReasonCode, String)> {
@@ -593,6 +596,7 @@ fn parse_envelope(text: String, raw_files: Vec<RawFile>) -> Result<Envelope, (Re
         files,
         note_changes,
         screenshot,
+        calendar: None,
     })
 }
 
@@ -777,6 +781,8 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
         write_note_changes(state, cid, envelope)
     } else if envelope.screenshot.is_some() {
         write_screenshot(state, cid, envelope)
+    } else if envelope.source == CALENDAR_SOURCE {
+        write_calendar(state, cid, envelope)
     } else {
         write_envelope_inner(state, cid, envelope)
     }
@@ -933,6 +939,70 @@ fn write_screenshot(state: &IngestState, cid: &str, mut envelope: Envelope) -> I
     completion
 }
 
+/// Write only what is new in a calendar upload. The caller holds the calendar
+/// source lock, so uploads from every device apply one at a time against the
+/// source's record of what it took in.
+fn write_calendar(state: &IngestState, cid: &str, mut envelope: Envelope) -> IngestCompletion {
+    let write_failed = || {
+        IngestCompletion::rejected(
+            ReasonCode::JournalWriteFailed,
+            outcome_error(
+                "failed",
+                ReasonCode::JournalWriteFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot record what this source has received",
+            ),
+        )
+    };
+    let files = std::mem::take(&mut envelope.files);
+    let prepared = match crate::calendar::prepare(&state.journal_root, files) {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            log::warn!("calendar received record unreadable: {error}");
+            return IngestCompletion::rejected(
+                ReasonCode::JournalReadFailed,
+                outcome_error(
+                    "retryable",
+                    ReasonCode::JournalReadFailed,
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "cannot read what this source has received; try again",
+                ),
+            );
+        }
+    };
+    if prepared.files.is_empty() {
+        // Every event here is already in the journal as these notes say: a
+        // resend, or a second device reporting what the journal already has.
+        if let Err(error) = prepared.commit(&state.journal_root) {
+            log::warn!("calendar received record not saved: {error}");
+            return write_failed();
+        }
+        let body = json!({
+            "status": "duplicate",
+            "existing_segment": envelope.segment,
+            "message": "Nothing new in this file",
+            "file_descriptors": prepared.receipt.held(),
+            "meta": envelope.meta,
+        });
+        return IngestCompletion::accepted(
+            envelope.day,
+            envelope.segment,
+            Json(body).into_response(),
+        );
+    }
+    envelope.files = prepared.files.clone();
+    envelope.calendar = Some(prepared.receipt.clone());
+    let completion = write_envelope_inner(state, cid, envelope);
+    if !matches!(completion.activity, IngestActivity::Accepted(_)) {
+        return completion;
+    }
+    if let Err(error) = prepared.commit(&state.journal_root) {
+        log::warn!("calendar received record not saved: {error}");
+        return write_failed();
+    }
+    completion
+}
+
 fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> IngestCompletion {
     let hints = StreamHints {
         kind: Some(stream_kind(&envelope.source)),
@@ -1079,7 +1149,10 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
             );
         }
     };
-    let descriptors = descriptors(&envelope.files, &applied.files);
+    let mut descriptors = descriptors(&envelope.files, &applied.files);
+    if let Some(receipt) = &envelope.calendar {
+        descriptors = receipt.restore(descriptors);
+    }
     // Re-announce retained bytes only until a successful send is recorded. Replaying
     // every successful duplicate would dirty the day again in the consumer.
     let announced_files = match solstone_core_ingest_resolve::pending_ingest_notifications(
@@ -2012,6 +2085,7 @@ mod tests {
             }],
             note_changes: None,
             screenshot: None,
+            calendar: None,
         }
     }
 
@@ -5663,6 +5737,225 @@ mod tests {
             assert!(bytes.len() > 8 * 1024 * 1024);
             let error = parse("calendar", "20261020", "163000_300", &name, &bytes).unwrap_err();
             assert_eq!(error.0, ReasonCode::CalendarNoteInvalid);
+        }
+    }
+
+    // What the calendar source already took in is not written again.
+    mod calendar_resend {
+        use super::calendar_admission::{calendar_file, golden};
+        use super::*;
+
+        /// A golden line with some fields changed, keeping its key order.
+        fn noted(index: usize, changes: Value) -> String {
+            let Value::Object(mut record) = serde_json::from_str::<Value>(golden(index)).unwrap()
+            else {
+                panic!("golden line is an object");
+            };
+            for (key, value) in changes.as_object().unwrap() {
+                record.insert(key.clone(), value.clone());
+            }
+            Value::Object(record).to_string()
+        }
+
+        fn upload(day: &str, segment: &str, source: &str, name: &str) -> Value {
+            json!({"day": day, "segment": segment, "source": source, "files": [{"submitted": name}]})
+        }
+
+        /// Every calendar note file in the chronicle, by its journal key.
+        fn calendar_files(root: &Path) -> Vec<String> {
+            fn walk(dir: &Path, base: &Path, out: &mut Vec<String>) {
+                let Ok(entries) = fs::read_dir(dir) else {
+                    return;
+                };
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        walk(&path, base, out);
+                    } else if path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| {
+                            name.starts_with("calendar_") && name.ends_with(".jsonl")
+                        })
+                    {
+                        let relative = path.strip_prefix(base).unwrap();
+                        out.push(
+                            relative
+                                .iter()
+                                .map(|part| part.to_str().unwrap())
+                                .collect::<Vec<_>>()
+                                .join("/"),
+                        );
+                    }
+                }
+            }
+            let mut files = Vec::new();
+            walk(&root.join("chronicle"), &root.join("chronicle"), &mut files);
+            files.sort();
+            files
+        }
+
+        // A phone paired again sends its calendar again, noticed at a new
+        // moment and from a new stream. The journal already has every event.
+        #[tokio::test]
+        async fn a_resend_of_events_the_journal_has_writes_nothing() {
+            let dir = root();
+            let root = dir.path();
+            let app = router(root);
+            let first = [golden(1), golden(2)];
+            let (name, bytes) = calendar_file(&first);
+            let (status, body) = call_upload(
+                &app,
+                upload("20261020", "163000_300", "calendar", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["status"], "ok");
+
+            let later = json!({"change": "added", "changed_at": "2026-11-02T10:01:00-07:00"});
+            let again = [noted(1, later.clone()), noted(2, later)];
+            let again = again.iter().map(String::as_str).collect::<Vec<_>>();
+            let (resent, resent_bytes) = calendar_file(&again);
+            let (status, body) = call_upload_as(
+                &app,
+                CID_B,
+                upload("20261102", "100000_300", "calendar", &resent),
+                &resent,
+                &resent_bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["status"], "duplicate", "{body}");
+            let descriptor = &body["file_descriptors"][0];
+            assert_eq!(descriptor["submitted"], resent.as_str());
+            assert_eq!(descriptor["disposition"], "already_held");
+            assert_eq!(descriptor["size"], resent_bytes.len() as u64);
+            assert_eq!(
+                descriptor["sha256"],
+                format!("{:x}", sha2::Sha256::digest(&resent_bytes))
+            );
+            assert_eq!(
+                calendar_files(root),
+                vec![format!("20261020/device_calendar/163000_300/{name}")]
+            );
+            assert!(!root.join("chronicle/20261102").exists());
+        }
+
+        #[tokio::test]
+        async fn a_resend_keeps_only_the_events_that_changed() {
+            let dir = root();
+            let root = dir.path();
+            let app = router(root);
+            let (name, bytes) = calendar_file(&[golden(1), golden(2)]);
+            let (status, body) = call_upload(
+                &app,
+                upload("20261020", "163000_300", "calendar", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+
+            let at = "2026-11-02T10:01:00-07:00";
+            let moved = noted(1, json!({"changed_at": at, "location": "room 9"}));
+            let same = noted(2, json!({"changed_at": at}));
+            let (resent, resent_bytes) = calendar_file(&[&moved, &same]);
+            let (status, body) = call_upload_as(
+                &app,
+                CID_B,
+                upload("20261102", "100000_300", "calendar", &resent),
+                &resent,
+                &resent_bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["status"], "ok", "{body}");
+            let descriptor = &body["file_descriptors"][0];
+            assert_eq!(descriptor["submitted"], resent.as_str());
+            assert_eq!(descriptor["disposition"], "written");
+            assert_eq!(descriptor["size"], resent_bytes.len() as u64);
+            assert_eq!(
+                descriptor["sha256"],
+                format!("{:x}", sha2::Sha256::digest(&resent_bytes))
+            );
+            let written = descriptor["written"].as_str().unwrap().to_owned();
+            let stored = calendar_files(root)
+                .into_iter()
+                .find(|file| file.starts_with("20261102/"))
+                .expect("the changed event is kept");
+            assert!(stored.ends_with(&written), "{stored} {written}");
+            assert_eq!(
+                fs::read_to_string(root.join("chronicle").join(&stored)).unwrap(),
+                format!("{moved}\n")
+            );
+        }
+
+        // A journal that took in calendar notes before it kept a record of
+        // them still answers a resend as already held.
+        #[tokio::test]
+        async fn a_journal_from_before_the_record_knows_its_events() {
+            let dir = root();
+            let root = dir.path();
+            let app = router(root);
+            let (name, bytes) = calendar_file(&[golden(0)]);
+            let (status, body) = call_upload(
+                &app,
+                upload("20261019", "094000_300", "calendar", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            fs::remove_dir_all(root.join("config/calendar")).unwrap();
+
+            let again = noted(0, json!({"changed_at": "2026-11-02T10:01:00-07:00"}));
+            let (resent, resent_bytes) = calendar_file(&[&again]);
+            let (status, body) = call_upload_as(
+                &app,
+                CID_B,
+                upload("20261102", "100000_300", "calendar", &resent),
+                &resent,
+                &resent_bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["status"], "duplicate", "{body}");
+            assert_eq!(calendar_files(root).len(), 1);
+        }
+
+        // An event the owner deleted from the journal stays deleted when the
+        // phone sends it again unchanged.
+        #[tokio::test]
+        async fn a_resend_does_not_bring_back_a_deleted_event() {
+            let dir = root();
+            let root = dir.path();
+            let app = router(root);
+            let (name, bytes) = calendar_file(&[golden(0)]);
+            let (status, body) = call_upload(
+                &app,
+                upload("20261019", "094000_300", "calendar", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            fs::remove_dir_all(root.join("chronicle/20261019/device_calendar/094000_300")).unwrap();
+
+            let again = noted(0, json!({"changed_at": "2026-11-02T10:01:00-07:00"}));
+            let (resent, resent_bytes) = calendar_file(&[&again]);
+            let (status, body) = call_upload_as(
+                &app,
+                CID_B,
+                upload("20261102", "100000_300", "calendar", &resent),
+                &resent,
+                &resent_bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["status"], "duplicate", "{body}");
+            assert!(calendar_files(root).is_empty());
         }
     }
 

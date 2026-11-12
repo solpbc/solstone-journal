@@ -113,6 +113,21 @@
   // takes a few seconds on a weak signal.
   const SCRIPT_LOAD_BOUND_MS = 60000;
 
+  // A script past its bound can still end, and it ends as it would have: a
+  // load means its code ran (so "try again" off the contract loads the page
+  // rather than run it twice), an error recovers a stale asset. This holds the
+  // clone and the chain only, never the markup the script was read from.
+  function afterBound(clone, chain) {
+    const late = (event) => {
+      clone.removeEventListener('load', late);
+      clone.removeEventListener('error', late);
+      if (event && event.type === 'load') chain.ran = true;
+      else window.recoverFromStaleAsset?.(clone.src);
+    };
+    clone.addEventListener('load', late);
+    clone.addEventListener('error', late);
+  }
+
   // `place` is where the script runs, when that isn't where it stands.
   function runScript(script, chain, place) {
     const at = place || script;
@@ -121,25 +136,32 @@
       if (place) clone.setAttribute('data-view-code', '');
       if (clone.src) {
         clone.async = false;
-        const timer = setTimeout(() => {
-          reject(new Error(`Script did not load within ${SCRIPT_LOAD_BOUND_MS} ms: ${clone.src}`));
-        }, SCRIPT_LOAD_BOUND_MS);
-        clone.addEventListener('load', () => {
+        // The script stays in the page, so whichever way it ends, it keeps no
+        // listener: one left behind would keep the markup it was read from.
+        const settle = () => {
           clearTimeout(timer);
+          clone.removeEventListener('load', onLoad);
+          clone.removeEventListener('error', onError);
+        };
+        const onLoad = () => {
+          settle();
           chain.ran = true;
           resolve();
-        }, { once: true });
-        clone.addEventListener(
-          'error',
-          () => {
-            clearTimeout(timer);
-            // A view script from an older build: reload once for the new one.
-            // A second failure stays on this view's error state.
-            window.recoverFromStaleAsset?.(clone.src);
-            reject(new Error(`Failed to load script ${clone.src}`));
-          },
-          { once: true }
-        );
+        };
+        const onError = () => {
+          settle();
+          // A view script from an older build: reload once for the new one.
+          // A second failure stays on this view's error state.
+          window.recoverFromStaleAsset?.(clone.src);
+          reject(new Error(`Failed to load script ${clone.src}`));
+        };
+        const timer = setTimeout(() => {
+          settle();
+          afterBound(clone, chain);
+          reject(new Error(`Script did not load within ${SCRIPT_LOAD_BOUND_MS} ms: ${clone.src}`));
+        }, SCRIPT_LOAD_BOUND_MS);
+        clone.addEventListener('load', onLoad);
+        clone.addEventListener('error', onError);
         at.replaceWith(clone);
         return;
       }
@@ -305,9 +327,16 @@
 
   // Answers with the fragment's text. A caller that already holds it (the
   // router keeps each pilot view's fragment for the life of the page) passes
-  // it in, and nothing is asked.
+  // it in, and nothing is asked. A caller whose read of it is still out
+  // passes that read: the fragment comes from it, or is asked for here when
+  // it ends without one.
   async function fetchFragment(url, options) {
     if (typeof options.fragmentText === 'string') return { html: options.fragmentText, startedEarly: false };
+    if (options.fragmentPending && typeof options.fragmentPending.then === 'function') {
+      const text = await options.fragmentPending;
+      if (options.signal?.aborted) return null;
+      if (typeof text === 'string') return { html: text, startedEarly: false };
+    }
     const request = window.boundedRequest
       ? await window.boundedRequest(url, { credentials: 'same-origin' })
       : await fetch(url, { credentials: 'same-origin' }).then((response) => ({
@@ -342,6 +371,8 @@
   // Options:
   // - `appName`: the view.
   // - `fragmentText`: the fragment, when the caller holds it.
+  // - `fragmentPending`: a read of the fragment already out, answering with
+  //   its text or null; never rejects.
   // - `signal`: a newer navigation took over; stop without drawing.
   // - `swap(fn)`: runs the step that replaces the page's view (the router
   //   wraps it in a view transition); resolves when it has run.
@@ -396,6 +427,11 @@
         }
         let mounted = null;
         const place = () => {
+          // A newer move took over before this one was placed (a view
+          // transition runs this later, and skipping one still runs it). It
+          // changes nothing: the view on the page stays, and this one never
+          // mounts, so no view ever mounts at another move's address.
+          if (superseded()) return Promise.resolve();
           window.SolViews.dispose();
           applyStylesheets(fragment);
           target.replaceChildren(contractMarkup(fragment));
@@ -436,6 +472,10 @@
     } catch (error) {
       if (superseded()) return;
       window.settleEarly?.();
+      // The error state is this view's, at its address: the view it replaces
+      // goes first, so nothing of it stays working behind the error, and a
+      // reconnect reads this view again.
+      if (contract) window.SolViews.dispose();
       renderFailure(target, retry, error);
       reportReady('error');
       if (typeof options.onRetry === 'function') {

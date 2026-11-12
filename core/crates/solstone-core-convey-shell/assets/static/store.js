@@ -95,6 +95,19 @@
   const LAST_LIMIT = 64;
   const last = new Map();
 
+  // What a failure was, as plain fields. An error object can hold what was
+  // on the stack when it was made, a view that has since gone included, so
+  // none is kept.
+  function describe(error) {
+    if (error === null || error === undefined) return null;
+    const status = Number(error.status);
+    return {
+      name: String(error.name || 'Error'),
+      status: Number.isFinite(status) ? status : null,
+      message: String(error.message || '')
+    };
+  }
+
   function remember(key, fields) {
     last.delete(key);
     last.set(key, Object.assign({ at: Date.now() }, fields));
@@ -145,7 +158,7 @@
         },
         (error) => {
           if (inflight.get(key) === settled) inflight.delete(key);
-          remember(key, { result: null, error });
+          remember(key, { result: null, error: describe(error) });
           return ended() ? never() : Promise.reject(error);
         }
       );
@@ -171,7 +184,7 @@
           return ended() ? never() : response;
         },
         (error) => {
-          remember(key, { result: null, error });
+          remember(key, { result: null, error: describe(error) });
           return ended() ? never() : Promise.reject(error);
         }
       );

@@ -22,6 +22,7 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
+mod calendar;
 mod carried;
 mod health;
 mod listing;

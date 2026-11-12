@@ -36,6 +36,7 @@ function makeClock() {
   };
   return {
     now: () => now,
+    count: () => timers.size,
     setTimeout: (fn, ms) => add(fn, ms, false),
     setInterval: (fn, ms) => add(fn, ms, true),
     clearTimeout: (id) => timers.delete(id),
@@ -532,6 +533,105 @@ asyncCase('generations: a caller\'s own abort still rejects, as before', async (
   controller.abort();
   await flush();
   assert.strictEqual(read.error?.name, 'AbortError');
+});
+
+// ---- abort reasons and what an abort leaves running
+
+asyncCase('bounds: an aborted read whose body nobody reads keeps no stall clock', async () => {
+  const page = makePage();
+  const before = page.clock.count();
+  const caller = new AbortController();
+  const got = settledState(page.window.fetch('/app/home/api/pulse', { signal: caller.signal }));
+  await flush();
+  // A body that has sent what it has, with nobody reading it.
+  page.server.last().respondStreaming(200, JSON_TYPE).push('{"n":');
+  await flush();
+  assert.ok(got.value, 'the headers are in');
+  assert.strictEqual(page.clock.count(), before + 1, 'the stall clock runs while the body is open');
+  caller.abort();
+  await flush();
+  assert.strictEqual(page.clock.count(), before, 'the abort ends the stall clock with the read');
+  await page.clock.advance(25000);
+  assert.strictEqual(page.clock.count(), before);
+});
+
+asyncCase('aborts: a read cut off by a new mount is aborted with the one reason built at load', async () => {
+  const page = makePage();
+  const first = settledState(page.window.apiJson('/app/home/api/pulse'));
+  await flush();
+  page.window.beginViewGeneration();
+  await flush();
+  const second = settledState(page.window.apiJson('/app/home/api/pulse'));
+  await flush();
+  page.window.beginViewGeneration();
+  await flush();
+  const [a, b] = page.server.calls.map((call) => call.init.signal.reason);
+  assert.strictEqual(a?.name, 'AbortError');
+  assert.strictEqual(a, b, 'the same reason both times, so no abort builds one');
+  assert.strictEqual(first.done, false);
+  assert.strictEqual(second.done, false);
+});
+
+asyncCase('aborts: a caller\'s reason is passed on, through the read and its retry wait', async () => {
+  const page = makePage();
+  const caller = new AbortController();
+  const reason = new DOMException('left', 'AbortError');
+  settledState(page.window.apiJson('/app/home/api/pulse', { signal: caller.signal }));
+  await flush();
+  caller.abort(reason);
+  await flush();
+  assert.strictEqual(page.server.last().init.signal.reason, reason, 'the request ends with the caller\'s reason');
+  // A read waiting to retry a dropped connection rejects with it too.
+  const waiting = new AbortController();
+  const retry = settledState(page.window.apiJson('/app/home/api/briefing', { signal: waiting.signal }));
+  await flush();
+  page.server.last().failTransport();
+  await flush();
+  const again = new DOMException('left again', 'AbortError');
+  waiting.abort(again);
+  await flush();
+  assert.strictEqual(retry.error, again, 'the retry wait settles with the reason it was aborted with');
+});
+
+asyncCase('aborts: early reads are ended with the reason built at load, adopted, refetched or left', async () => {
+  const page = makePage();
+  const generation = settledState(page.window.apiJson('/app/home/api/pulse'));
+  await flush();
+  page.window.beginViewGeneration();
+  await flush();
+  const built = page.server.calls[0].init.signal.reason;
+  assert.strictEqual(generation.done, false);
+  // Adopted, then the mount ends.
+  earlyTable(page);
+  const adopted = earlyRead(page, '/app/home/api/briefing');
+  settledState(page.window.apiJson('/app/home/api/briefing'));
+  await flush();
+  page.window.beginViewGeneration();
+  await flush();
+  assert.strictEqual(adopted.controller.signal.reason, built, 'an adopted read ends with the reason');
+  // Answered with the wrong type, so asked again.
+  earlyTable(page);
+  const wrong = earlyAnswer(page, '/app/home/api/stats', new Response('<p>', { status: 200, headers: { 'Content-Type': 'text/html' } }));
+  settledState(page.window.apiJson('/app/home/api/stats'));
+  await flush();
+  assert.strictEqual(wrong.signal.reason, built, 'a read asked again ends with the reason');
+  // Left for nothing to take.
+  earlyTable(page);
+  const left = earlyRead(page, '/app/home/api/events');
+  page.window.settleEarly();
+  assert.strictEqual(left.controller.signal.reason, built, 'an unclaimed read ends with the reason');
+});
+
+asyncCase('aborts: a deadline aborts with its own error, never with the view\'s reason', async () => {
+  const page = makePage();
+  const read = settledState(page.window.apiJson('/app/home/api/pulse'));
+  const plain = settledState(page.window.fetch('/app/home/api/briefing'));
+  await page.clock.advance(30500);
+  for (const call of page.server.calls) {
+    assert.ok(call.init.signal.reason instanceof page.window.ReadDeadlineError, call.url + ' ends with its deadline');
+  }
+  assert.strictEqual(read.error?.name, 'TimeoutError');
+  assert.strictEqual(plain.error?.name, 'TimeoutError');
 });
 
 // ---- the mount

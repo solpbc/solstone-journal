@@ -18,6 +18,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - importing the same journal archive again skips recordings already present, even after your journal has added processing results. existing duplicate copies stay as they are.
 - `solstone journal archive merge --dry-run` now counts recordings it would skip, rather than files in the archive.
+- when a phone sends your calendar again, for example after you pair it with your journal again, events your journal already has are no longer added a second time.
+- on some older linux computers, the solstone app on iphone gave up waiting for your journal, so new screenshots, Obsidian notes and calendar events stayed waiting on the phone. your journal checked its own installed files every time the app checked in, which took longer than the app waits; it now checks them once after it starts.
 - when Oura moves an entry by more than a day, your journal keeps it where it was first saved, and the summary now says so instead of saying you deleted it.
 - importing a file into a journal on windows no longer fails with "the import could not be prepared" after the journal has been running for a while.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.

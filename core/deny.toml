@@ -39,6 +39,22 @@ ignore = [
     { id = "RUSTSEC-2026-0489", reason = "sol pbc product engineering: zone-file text parser panic; hickory-proto 0.24.4 is built without the text-parsing feature, so the code is not compiled; patched 0.26.2 requires an unaccepted DNSSEC rewrite" },
     { id = "RUSTSEC-2026-0490", reason = "sol pbc product engineering: zone-file lexer panic; hickory-proto 0.24.4 is built without the text-parsing feature, so the code is not compiled; patched 0.26.2 requires an unaccepted DNSSEC rewrite" },
     { id = "RUSTSEC-2026-0491", reason = "sol pbc product engineering: header-count capacity reservation on decode is a bounded, non-cumulative transient allocation in the 5 s single-question hostname check (owner-requested, and every 60 s while a BYO hostname is configured); patched 0.26.2 requires an unaccepted DNSSEC rewrite" },
+    # Product engineering compatibility exceptions, 2026-11-12: DNSSEC
+    # validation defects in hickory-proto/resolver 0.24.4. Neither crate enables
+    # dnssec, dnssec-ring or dnssec-openssl in the workspace or any standalone
+    # audit graph, including with all features enabled. The affected DNSSEC
+    # validation code is not compiled. The 0.26.2 migration requires the same
+    # unaccepted DNSSEC rewrite as RUSTSEC-2026-0119. Re-check the feature
+    # boundary at release-cut and weekly advisory audits; revisit if DNSSEC
+    # is enabled, resolver usage changes, or a compatible patched release exists.
+    # Upstream: https://rustsec.org/advisories/RUSTSEC-2026-0505
+    # https://rustsec.org/advisories/RUSTSEC-2026-0511
+    # https://rustsec.org/advisories/RUSTSEC-2026-0512
+    # https://rustsec.org/advisories/RUSTSEC-2026-0514
+    { id = "RUSTSEC-2026-0505", reason = "hickory-proto 0.24.4 NSEC3 zone validation defect; DNSSEC features are disabled, affected code not compiled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
+    { id = "RUSTSEC-2026-0511", reason = "hickory-proto 0.24.4 empty-non-terminal DNSSEC validation defect; DNSSEC features are disabled, affected code not compiled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
+    { id = "RUSTSEC-2026-0512", reason = "hickory-proto 0.24.4 unrelated-RRset DNSSEC validation defect; DNSSEC features are disabled, affected code not compiled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
+    { id = "RUSTSEC-2026-0514", reason = "hickory-resolver 0.24.4 bogus-answer acceptance with DNSSEC validation enabled; DNSSEC features are disabled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
     # VPE exception, 2026-09-14: RUSTSEC-2024-0388 applies to derivative 2.2.0,
     # reached only through the pinned Velopack =1.2.0 Windows-installer callback
     # dependency. RustSec lists no patched derivative release; Velopack's own current

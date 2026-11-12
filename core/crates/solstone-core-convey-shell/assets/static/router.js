@@ -337,6 +337,10 @@
       entryId = newEntryId();
       window.history.pushState(stateWith(entryId, 'router'), '', url.pathname + url.search + url.hash);
     }
+    // The address is the move's from here on. A back press while the move is
+    // out is then the router's, and supersedes it; the leaving view's own
+    // entries are refused, since the address is no longer its own.
+    mountedPath = url.pathname;
 
     // The same view, another day: the view takes it in place.
     const current = window.SolViews.current();
@@ -370,13 +374,23 @@
     performance.mark('router:start', { detail: { view: name, mode } });
     let early = null;
     try {
-      await openDay(app);
+      await openDay(app, controller.signal);
+    } catch (error) {
       if (controller.signal.aborted) return true;
+      // The view can't open without its day, and the leaving view no longer
+      // owns the address. The page loads it, as a move off the contract does.
+      window.logError?.(error, { context: 'router-open-day', view: name });
+      return fullLoad(url, null, mode);
+    }
+    if (controller.signal.aborted) return true;
+    try {
       early = window.__solEarlyRoute?.(window.location.href, { fragment: !held }) || null;
       mountedPath = window.location.pathname;
       await window.mountWorkspaceFragment(app.workspace_url, {
         appName: name,
-        fragmentText: held ? held.text : undefined,
+        fragmentText: held && typeof held.text === 'string' ? held.text : undefined,
+        // A press's read of the fragment still out: the mount takes its answer.
+        fragmentPending: held && typeof held.text !== 'string' ? held.pending : undefined,
         signal: controller.signal,
         swap: async (place) => {
           await readsAnswered(early, Math.max(0, TRANSITION_WAIT_MS - (Date.now() - started)));
@@ -400,10 +414,13 @@
   // on the journal's clock. The page takes that address before the view runs,
   // so the view only ever sees a day in its path. The page's first view and
   // every move to such an address go through here.
-  async function openDay(app) {
+  // A move that was superseded during the read writes nothing: the address
+  // is the newer move's by then.
+  async function openDay(app, signal) {
     const open = entryTable()[app.name]?.openDay;
     if (!open || window.location.pathname !== open.route) return;
-    const { day } = await window.apiJson(open.url);
+    const { day } = await window.apiJson(open.url, signal ? { signal } : undefined);
+    if (signal?.aborted) return;
     if (typeof day !== 'string' || !/^\d{8}$/.test(day)) {
       throw new Error('No day to open');
     }
@@ -437,16 +454,26 @@
     const entry = entryTable()[name];
     const app = knownApp(name);
     if (!entry || !app) return;
-    const record = { text: null };
+    // The read's answer, for a move made while it is still out: the text, or
+    // null when there is none to use. Once it has answered the record keeps
+    // only the text, or goes, and only its own record: a fragment a mount kept
+    // meanwhile stays.
+    const record = { text: null, pending: null };
     fragments.set(name, record);
     prefetched.add(name);
-    fetch(entry.fragment, { credentials: 'same-origin', priority: 'low' })
-      .then((response) => (response.ok && !response.redirected ? response.text() : null))
-      .then((text) => {
-        if (text === null) fragments.delete(name);
-        else record.text = text;
+    record.pending = fetch(entry.fragment, { credentials: 'same-origin', priority: 'low' })
+      .then((response) => {
+        if (response.ok && !response.redirected) return response.text();
+        response.body?.cancel?.()?.catch?.(() => {});
+        return null;
       })
-      .catch(() => fragments.delete(name));
+      .catch(() => null)
+      .then((text) => {
+        record.pending = null;
+        if (typeof text === 'string') record.text = text;
+        else if (fragments.get(name) === record) fragments.delete(name);
+        return typeof text === 'string' ? text : null;
+      });
     const code = [...entry.scripts.filter((script) => !script.routePrefix).map((script) => script.src), ...entry.styles];
     code.forEach((href) => {
       fetch(href, { credentials: 'same-origin', priority: 'low' })
@@ -536,6 +563,14 @@
     keepFragment,
     isActive: () => active,
     // For tests and the leak check.
-    held: () => ({ scrolls: scrolls.size, fragments: fragments.size, active, mountedPath, entryId })
+    held: () => ({
+      scrolls: scrolls.size,
+      fragments: fragments.size,
+      // What each kept fragment record holds, by field.
+      records: [...fragments.values()].map((record) => Object.keys(record).filter((key) => record[key] !== null).sort().join(',')),
+      active,
+      mountedPath,
+      entryId
+    })
   };
 })();

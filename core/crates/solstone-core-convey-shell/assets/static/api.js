@@ -28,6 +28,20 @@
     }
   };
 
+  // Built once, while nothing is mid-move. Aborting with a fresh exception
+  // records the stack of whoever aborted, and that stack keeps the function
+  // that was replacing the view for as long as the signal lives. Every abort
+  // here passes a reason: this one, or one its caller already built.
+  const ABORT_REASON = typeof DOMException === 'function'
+    ? new DOMException('The view has gone', 'AbortError')
+    : null;
+
+  // The reason to pass on from an aborted signal, built by whoever aborted it.
+  function reasonOf(signal) {
+    const reason = signal?.reason;
+    return reason !== undefined && reason !== null ? reason : (ABORT_REASON || undefined);
+  }
+
   class ApiError extends Error {
     constructor({
       status,
@@ -380,10 +394,13 @@
   function waitFor(ms, signals) {
     return new Promise((resolve, reject) => {
       const live = signals.filter(Boolean);
+      // Settles with the reason the signal was aborted with. A new exception
+      // here would be built inside whoever aborted, a view's dispose included.
       const stop = () => {
         stopTimer(timer);
         live.forEach(signal => signal.removeEventListener('abort', stop));
-        reject((typeof DOMException === 'function' ? new DOMException('aborted', 'AbortError') : new Error('aborted')));
+        const aborted = live.find(signal => signal.aborted);
+        reject(reasonOf(aborted) || new Error('aborted'));
       };
       const timer = startTimer(() => {
         live.forEach(signal => signal.removeEventListener('abort', stop));
@@ -446,9 +463,9 @@
   // Resolves as the request would. `ask` makes the ordinary request. A gateway
   // failure comes back as itself, so it spends one of the ordinary retries.
   function adoptEarly(entry, signal, ask) {
-    const abort = () => entry.controller?.abort();
-    if (signal.aborted) abort();
-    else signal.addEventListener('abort', abort, { once: true });
+    const cancel = () => entry.controller?.abort(reasonOf(signal));
+    if (signal.aborted) cancel();
+    else signal.addEventListener('abort', cancel, { once: true });
     return entry.response.then((response) => {
       if (earlyIsPlain(entry, response) || isGatewayFailure(response)) {
         countEarly('adopted');
@@ -458,7 +475,7 @@
       try {
         response.body?.cancel?.()?.catch?.(() => {});
       } catch (_) {}
-      abort();
+      entry.controller?.abort(ABORT_REASON || undefined);
       return ask();
     });
   }
@@ -486,7 +503,7 @@
     if (!table) return;
     for (const href of Object.keys(table.reads)) {
       countEarly('unclaimed');
-      table.reads[href].controller?.abort();
+      table.reads[href].controller?.abort(ABORT_REASON || undefined);
       delete table.reads[href];
     }
     table.reads = null;
@@ -500,9 +517,9 @@
     let failure = null;
     let timer = null;
     const live = signals.filter(Boolean);
-    const onAbort = () => controller.abort();
+    const onAbort = (event) => controller.abort(reasonOf(event?.target));
     live.forEach(signal => {
-      if (signal.aborted) controller.abort();
+      if (signal.aborted) controller.abort(reasonOf(signal));
       else signal.addEventListener('abort', onAbort, { once: true });
     });
     const release = () => {
@@ -512,9 +529,11 @@
     const arm = (kind, ms, delay = ms) => {
       stopTimer(timer);
       if (!ms) return;
+      // A deadline aborts with its own error, which is what the read rejects
+      // with; it is never mistaken for a view that has gone.
       timer = startTimer(() => {
         failure = new ReadDeadlineError(kind, ms, url);
-        controller.abort();
+        controller.abort(failure);
       }, delay);
     };
     const ask = () => {
@@ -688,20 +707,26 @@
     const callerSignal = init?.signal || (isRequest(input) ? input.signal : null);
     let failure = null;
     let timer = null;
-    const onAbort = () => controller.abort(callerSignal.reason);
-    if (callerSignal) {
-      if (callerSignal.aborted) controller.abort(callerSignal.reason);
-      else callerSignal.addEventListener('abort', onAbort, { once: true });
-    }
     const finish = () => {
       stopTimer(timer);
       callerSignal?.removeEventListener('abort', onAbort);
     };
+    // An aborted read is over: a body nobody reads keeps no stall clock.
+    const onAbort = () => {
+      controller.abort(reasonOf(callerSignal));
+      finish();
+    };
+    if (callerSignal) {
+      if (callerSignal.aborted) controller.abort(reasonOf(callerSignal));
+      else callerSignal.addEventListener('abort', onAbort, { once: true });
+    }
     const arm = (kind, ms, delay = ms) => {
       stopTimer(timer);
+      // A deadline aborts with its own error, which is what the read rejects
+      // with; it is never mistaken for a view that has gone.
       timer = startTimer(() => {
         failure = new ReadDeadlineError(kind, ms, url);
-        controller.abort();
+        controller.abort(failure);
       }, delay);
     };
     const ask = () => {
@@ -744,13 +769,6 @@
   // onto a newer one or put its error state there. Reads the shell itself
   // makes pass `scope: 'shell'` and outlive mounts.
   let viewGeneration = new Abort();
-
-  // Built once, while nothing is mid-move. Aborting with a fresh exception
-  // records the stack of whoever aborted, and that stack keeps the function
-  // that was replacing the view for as long as the signal lives.
-  const ABORT_REASON = typeof DOMException === 'function'
-    ? new DOMException('The view has gone', 'AbortError')
-    : null;
 
   function beginViewGeneration() {
     if (ABORT_REASON) viewGeneration.abort(ABORT_REASON);

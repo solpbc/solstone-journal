@@ -13,6 +13,14 @@ ignore = [
     { id = "RUSTSEC-2026-0489", reason = "zone-file text parser panic; hickory-proto 0.24.4 built without text-parsing, code not compiled; revisit with RUSTSEC-2026-0119" },
     { id = "RUSTSEC-2026-0490", reason = "zone-file lexer panic; hickory-proto 0.24.4 built without text-parsing, code not compiled; revisit with RUSTSEC-2026-0119" },
     { id = "RUSTSEC-2026-0491", reason = "header-count decode reservation is a bounded, non-cumulative transient allocation in the shared hostname check (owner-requested, and every 60 s while a BYO hostname is configured); revisit with RUSTSEC-2026-0119" },
+    # 2026-11-12: the same three graphs reach DNSSEC validation advisories in
+    # hickory-proto/resolver 0.24.4. All standalone audit graphs leave DNSSEC
+    # features disabled, including with all features enabled. Re-check at
+    # release-cut and weekly advisory audits; rationale and revisit rule in deny.toml.
+    { id = "RUSTSEC-2026-0505", reason = "hickory-proto 0.24.4 NSEC3 zone validation defect; DNSSEC features disabled, affected code not compiled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
+    { id = "RUSTSEC-2026-0511", reason = "hickory-proto 0.24.4 empty-non-terminal DNSSEC validation defect; DNSSEC features disabled, affected code not compiled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
+    { id = "RUSTSEC-2026-0512", reason = "hickory-proto 0.24.4 unrelated-RRset DNSSEC validation defect; DNSSEC features disabled, affected code not compiled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
+    { id = "RUSTSEC-2026-0514", reason = "hickory-resolver 0.24.4 bogus-answer acceptance with DNSSEC validation enabled; DNSSEC features disabled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
     # 2026-10-26: paste 1.0.15 is a build-time macro dependency of pulp/gemm
     # in OCR and native inference. No patched release exists. Replacing that
     # transitive dependency requires an upstream change or a reviewed fork.
