@@ -1176,9 +1176,9 @@ a.body-day-cell:focus-visible {
     return svg ? `<span aria-hidden="true">${svg}</span>` : "";
   }
 
-  // The owner's hide for a day of body data (journal trash): one day at a
-  // time, no confirm, a receipt that unhides, and a mark with unhide where the
-  // hidden day shows. Each string is set where its copy key says.
+  // The owner's hide for a day of body data: one day at a time, no confirm, a
+  // receipt that unhides, and a mark with unhide where the hidden day shows.
+  // Each string is set where its copy key says.
   const HIDE_API = "/app/body/api/hidden";
   const HIDE_COPY = {
     hide: "hide this day",
