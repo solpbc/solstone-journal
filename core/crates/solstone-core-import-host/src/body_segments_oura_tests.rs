@@ -2289,3 +2289,102 @@ fn a_document_oura_moves_more_than_a_day_stays_where_it_was_and_isnt_called_the_
     assert!(placed(root, "t1").is_empty(), "{}", again.summary);
     assert!(again.holes.is_empty(), "{:?}", again.holes);
 }
+
+/// Owner search hits for `word` among body entries, once the index has taken
+/// in what changed: queued files as the journal drains them, then a scan.
+fn found(root: &Path, word: &str) -> Vec<String> {
+    solstone_core_indexer_store::todo::drain(
+        root,
+        solstone_core_indexer_store::todo::DrainOptions {
+            force: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    solstone_core_indexer_store::scan::scan_journal(root, false).unwrap();
+    let request = solstone_core_indexer_query::SearchRequest {
+        query: word.to_owned(),
+        limit: 50,
+        body_owner_words: true,
+        ..Default::default()
+    };
+    solstone_core_indexer_query::search(
+        root,
+        solstone_core_indexer_query::OwnerBoundary,
+        &request,
+        chrono::NaiveDate::from_ymd_opt(2026, 11, 12).unwrap(),
+    )
+    .map(|response| {
+        response
+            .results
+            .into_iter()
+            .map(|hit| hit.id)
+            .filter(|id| id.contains("/import.oura/"))
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+#[test]
+fn a_hidden_day_stays_hidden_through_an_oura_sync_and_comes_back_when_unhidden() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let night = |name: &str, id: &str, start: &str, end: &str| {
+        stage(
+            &scratch.path().join(name),
+            &[("sleep", vec![sleep(id, "long_sleep", start, end)])],
+        )
+    };
+    // A night starting on 2026-01-05 before the hide.
+    run(
+        root,
+        &night(
+            "1",
+            "n1",
+            "2026-01-05T22:30:00-07:00",
+            "2026-01-06T06:10:00-07:00",
+        ),
+        "20261104_120000",
+        Some("health"),
+    );
+    println!(
+        "before the hide, search \"sleep\": {:?}",
+        found(root, "sleep")
+    );
+    let day = std::collections::BTreeSet::from(["20260105".to_owned()]);
+    solstone_core_location::body_hidden::set_body_days_hidden(root, &day, true).unwrap();
+    println!("hid 20260105; search \"sleep\": {:?}", found(root, "sleep"));
+    assert!(found(root, "sleep").is_empty());
+
+    // An ordinary sync brings a second night that starts on the hidden day.
+    let outcome = run(
+        root,
+        &night(
+            "2",
+            "n2",
+            "2026-01-05T13:00:00-07:00",
+            "2026-01-05T14:00:00-07:00",
+        ),
+        "20261104_120001",
+        Some("health"),
+    );
+    let landed = placed(root, "n2");
+    println!(
+        "an Oura sync wrote {} window(s); n2 is on {:?}; search \"sleep\": {:?}",
+        outcome.published,
+        landed
+            .iter()
+            .map(|(day, key, _)| format!("{day}/{key}"))
+            .collect::<Vec<_>>(),
+        found(root, "sleep")
+    );
+    // Nothing is refused or dropped: it lands, hidden.
+    assert_eq!(landed.len(), 1);
+    assert!(found(root, "sleep").is_empty());
+
+    solstone_core_location::body_hidden::set_body_days_hidden(root, &day, false).unwrap();
+    let back = found(root, "sleep");
+    println!("unhid 20260105; search \"sleep\": {back:?}");
+    assert_eq!(back.len(), 2, "{back:?}");
+}

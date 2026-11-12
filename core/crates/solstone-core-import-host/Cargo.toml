@@ -62,6 +62,7 @@ tokio = { workspace = true, features = ["macros", "rt", "time", "net"] }
 ureq = { workspace = true, features = ["rustls"] }
 
 [dev-dependencies]
+solstone-core-indexer-query.workspace = true
 solstone-core-removals.workspace = true
 solstone-core-trash.workspace = true
 solstone-core-mcp-endpoint.workspace = true
