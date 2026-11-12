@@ -1608,9 +1608,10 @@ a.body-day-cell:focus-visible {
       const toggle = hide || unhide;
       const day = toggle ? safeDay(toggle.getAttribute(hide ? "data-body-hide" : "data-body-unhide")) : "";
       if (!day) return;
+      // A second tap waits for the first; a redraw replaces the button, and a
+      // refusal gives it back.
       toggle.disabled = true;
-      if (hide) hideBodyDay(day);
-      else unhideBodyDay(day);
+      (hide ? hideBodyDay(day) : unhideBodyDay(day)).finally(() => { toggle.disabled = false; });
     });
     if (!root || !gate) throw new Error("body has no root");
 

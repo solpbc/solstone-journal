@@ -726,9 +726,11 @@ const cases = [
     await page.mount('20260110');
     await page.settle();
     const reads = page.reads.length;
-    page.click(page.toggle('data-body-hide', '20260110'));
+    const refused = page.toggle('data-body-hide', '20260110');
+    page.click(refused);
     page.writes[0].resolve(answered({ error: 'no', reason_code: 'body_hidden_unreadable' }, false));
     await page.settle();
+    assert.strictEqual(refused.disabled, false, 'a refused hide can be tapped again');
     page.click(page.toggle('data-body-hide', '20260110'));
     page.writes[1].reject(new Error('offline'));
     await page.settle();
