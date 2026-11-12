@@ -3,6 +3,11 @@
 
 //! A span of time's body rows, counted for the transcripts panel and listed for
 //! `sol body window`.
+//!
+//! A day the owner hid gives none of its windows' rows, and the part of a night
+//! or workout that started on it leaves the windows of the days after it. The
+//! answer says when the span lies on a hidden day, so a reader can tell hidden
+//! from empty.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -16,6 +21,7 @@ use chrono::{DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, TimeZone
 use chrono_tz::Tz;
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_format::content::body_hidden_days::read_hidden_days;
 use solstone_core_format::content::body_records::{
     BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, one_copy_per_row, parse_source_time,
     source_words,
@@ -23,6 +29,7 @@ use solstone_core_format::content::body_records::{
 use solstone_core_format::content::strava_body::{STRAVA_STREAM, STRAVA_TILE_FILE, strava_rows};
 
 use crate::fmt::{clock, count_noun, grouped};
+use crate::hidden::drop_hidden_rows;
 use crate::listing::{body_streams, is_deleted, window_names};
 use crate::query::decoded_query_params;
 use crate::rows::read_window_text;
@@ -207,11 +214,30 @@ fn candidate_days(from: DateTime<FixedOffset>, to: DateTime<FixedOffset>) -> Vec
         .collect()
 }
 
-fn collect_rows(root: &Path, from: DateTime<FixedOffset>, to: DateTime<FixedOffset>) -> Vec<Found> {
+/// The days the span covers, on its own clock.
+fn span_days(from: DateTime<FixedOffset>, to: DateTime<FixedOffset>) -> BTreeSet<String> {
+    let last = (to.with_timezone(from.offset()) - Duration::nanoseconds(1)).date_naive();
+    from.date_naive()
+        .iter_days()
+        .take_while(|date| *date <= last)
+        .map(|date| date.format("%Y%m%d").to_string())
+        .collect()
+}
+
+fn collect_rows(
+    root: &Path,
+    from: DateTime<FixedOffset>,
+    to: DateTime<FixedOffset>,
+    hidden: &BTreeSet<String>,
+) -> Vec<Found> {
     let mut found = Vec::new();
+    let mut took = BTreeSet::new();
     for (stream, source) in body_streams() {
         let zone = solstone_core_journal_config::placed_zone(root, source);
         for day in candidate_days(from, to) {
+            if hidden.contains(&day) {
+                continue;
+            }
             let mut windows = Vec::new();
             for name in window_names(root, &day, stream) {
                 if is_deleted(root, &day, stream, &name) {
@@ -236,18 +262,21 @@ fn collect_rows(root: &Path, from: DateTime<FixedOffset>, to: DateTime<FixedOffs
                     windows.push((name, rows));
                 }
             }
-            for (_, rows) in one_copy_per_row(windows) {
-                for row in rows {
-                    if let Some(span) =
-                        row_span(&row, &day, zone).filter(|span| overlaps(*span, from, to))
-                    {
-                        found.push(Found {
-                            source: source.to_owned(),
-                            start: span.0,
-                            end: span.1,
-                            row,
-                        });
-                    }
+            let mut rows = one_copy_per_row(windows)
+                .into_iter()
+                .flat_map(|(_, rows)| rows)
+                .collect::<Vec<_>>();
+            drop_hidden_rows(root, source, &day, &mut rows, hidden, &mut took);
+            for row in rows {
+                if let Some(span) =
+                    row_span(&row, &day, zone).filter(|span| overlaps(*span, from, to))
+                {
+                    found.push(Found {
+                        source: source.to_owned(),
+                        start: span.0,
+                        end: span.1,
+                        row,
+                    });
                 }
             }
         }
@@ -431,13 +460,16 @@ pub(crate) fn build_window(
     from: DateTime<FixedOffset>,
     to: DateTime<FixedOffset>,
 ) -> Value {
-    let rows = collect_rows(root, from, to);
+    let hidden = read_hidden_days(root).days().cloned().unwrap_or_default();
+    let rows = collect_rows(root, from, to, &hidden);
+    let on_hidden_day = !hidden.is_disjoint(&span_days(from, to));
     let entry_total = rows.iter().filter(|item| is_entry(item)).count() as u64;
     let span_minutes = ((to - from).num_seconds() as f64 / 60.0 * 10.0).round() / 10.0;
     json!({
         "from": iso(from),
         "to": iso(to),
         "span_minutes": span_minutes,
+        "hidden": on_hidden_day,
         "has_data": entry_total > 0,
         "entry_total": entry_total,
         "entry_total_label": grouped(entry_total),

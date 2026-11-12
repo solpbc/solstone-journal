@@ -120,8 +120,21 @@ function boot(fixtures = {}) {
       }
       this.rows = found;
     },
+    focusables: {},
     querySelector(selector) {
       if (selector === 'h1, h2') return headingFrom(this._html, this);
+      const named = /^\[(data-body-(?:un)?hide)\]$/.exec(selector);
+      if (named && this._html.includes(`${named[1]}="`)) {
+        if (!this.focusables[selector]) {
+          this.focusables[selector] = {
+            selector,
+            hasAttribute() { return true; },
+            setAttribute() {},
+            focus() { document.activeElement = this; },
+          };
+        }
+        return this.focusables[selector];
+      }
       return null;
     },
   };
@@ -263,6 +276,13 @@ function boot(fixtures = {}) {
     update(day) {
       return context.window.SolViews.update({ day }, { location: this.location(day) });
     },
+    toggle(attribute, day) {
+      return {
+        disabled: false,
+        getAttribute(name) { return name === attribute ? day : ''; },
+        closest(selector) { return selector === `[${attribute}]` ? this : null; },
+      };
+    },
     button(id) {
       return {
         isConnected: true,
@@ -349,6 +369,35 @@ const EMPTY_DAY = {
 };
 
 const NOTHING_DAY = { ...EMPTY_DAY, day: '20260316', earlier_imports: [] };
+
+function answered(body, ok = true) {
+  return { ok, status: ok ? 200 : 409, json: async () => body };
+}
+
+const HIDDEN_DAY = {
+  day: '20261103',
+  day_label: 'November 3, 2026',
+  hidden: true,
+  hidden_unreadable: false,
+  hidden_with: [],
+  has_data: false,
+  nearest: { prev: '20261102', prev_label: 'Nov 2', next: '20261104', next_label: 'Nov 4' },
+};
+
+const DAY_AFTER = {
+  ...DAY,
+  day: '20261104',
+  hidden: false,
+  hidden_unreadable: false,
+  hidden_with: [{ day: '20261103', label: 'Nov 3, 2026' }],
+  earlier_imports: [],
+};
+
+const keyed = (page, key) => new RegExp(`data-copy-key="${key}"`).test(page);
+
+function gridOf(cells) {
+  return [{ year: 2026, month_labels: [], weeks: [cells.concat(Array(7 - cells.length).fill(null))] }];
+}
 
 const cases = [
   ['a first-run journal says nothing is here and names no privacy setup', async () => {
@@ -563,6 +612,156 @@ const cases = [
     assert.strictEqual(page.root.innerHTML, html, 'recover does not reload the day now showing');
     assert.strictEqual(page.reads.length, reads);
     assert.strictEqual(page.gate.hidden, true);
+  }],
+  ['a hidden day draws its mark with unhide, its nearby days, and nothing of the day', async () => {
+    const page = await load({ day: '20261103', responses: { '/app/body/api/day/20261103': HIDDEN_DAY } });
+    assert.ok(/<h2[^>]*data-copy-key="markHead"/.test(page), page);
+    assert.ok(keyed(page, 'markLine1') && keyed(page, 'markLine2'), page);
+    assert.ok(/<button[^>]*data-body-unhide="20261103"[^>]*data-copy-key="markUnhide"/.test(page), page);
+    assert.ok(/role="status"/.test(page), page);
+    assert.ok(page.includes('href="/app/body/20261102"') && page.includes('href="/app/body/20261104"'), page);
+    assert.ok(!page.includes('data-body-hide='), 'a hidden day has no hide button');
+    assert.ok(!page.includes('body-source-section') && !keyed(page, 'unreadable'), page);
+  }],
+  ['a day with data has the hide button, and a day with nothing has none', async () => {
+    const page = await load({ day: '20260110', responses: { '/app/body/api/day/20260110': DAY } });
+    assert.ok(/<button[^>]*data-body-hide="20260110"[^>]*data-copy-key="hide"[^>]*aria-label="[^"]+"/.test(page), page);
+    assert.ok(page.includes('body-day-nav'), page);
+    const empty = await load({ day: '20260316', responses: { '/app/body/api/day/20260316': NOTHING_DAY } });
+    assert.ok(!empty.includes('data-body-hide='), empty);
+  }],
+  ['the day after a hidden one says which day took part of a night, above its data', async () => {
+    const page = await load({ day: '20261104', responses: { '/app/body/api/day/20261104': DAY_AFTER } });
+    const line = /<p[^>]*data-copy-key="dayAfter"[^>]*>.*?<\/p>/.exec(page);
+    assert.ok(line, page);
+    assert.ok(line[0].includes('href="/app/body/20261103"'), line[0]);
+    assert.ok(page.indexOf('data-copy-key="dayAfter"') < page.indexOf('body-source-section'), page);
+    assert.ok(page.includes('data-body-hide="20261104"'), 'the day after can still be hidden');
+    const bare = await load({ day: '20261104', responses: { '/app/body/api/day/20261104': { ...NOTHING_DAY, day: '20261104', hidden_with: DAY_AFTER.hidden_with } } });
+    assert.ok(bare.indexOf('data-copy-key="dayAfter"') >= 0, bare);
+    assert.ok(bare.indexOf('data-copy-key="dayAfter"') < bare.indexOf('class="body-empty"'), bare);
+    const plain = await load({ day: '20260110', responses: { '/app/body/api/day/20260110': DAY } });
+    assert.ok(!keyed(plain, 'dayAfter'), plain);
+  }],
+  ['when the hidden days can\'t be read, the day and overview say so, draw everything and offer no hide', async () => {
+    const page = await load({ day: '20260110', responses: { '/app/body/api/day/20260110': { ...DAY, hidden_unreadable: true } } });
+    assert.ok(/class="[^"]*body-freshness[^"]*"[^>]*role="status"[^>]*data-copy-key="unreadable"/.test(page), page);
+    assert.ok(page.includes('body-source-section'), page);
+    assert.ok(!page.includes('data-body-hide='), page);
+    const overview = await load({ responses: { '/app/body/api/status': { ...STATUS, hidden_unreadable: true } } });
+    assert.ok(keyed(overview, 'unreadable'), overview);
+    const plain = await load({ responses: { '/app/body/api/status': STATUS } });
+    assert.ok(!keyed(plain, 'unreadable'), plain);
+  }],
+  ['a hidden day\'s cell is striped and opens its day, with the footer only when one is', async () => {
+    const cells = [
+      { day: '20260110', count: 1, intensity: 0.33, title: 't1', earlier: false, hidden: false },
+      { day: '20260111', count: 0, intensity: 0, title: 't2', earlier: false, hidden: true },
+    ];
+    const page = await load({ responses: { '/app/body/api/status': { ...STATUS, day_grid: gridOf(cells) } } });
+    assert.ok(/<a class="body-day-cell body-day-cell--hidden" href="\/app\/body\/20260111" title="t2" aria-label="t2"/.test(page), page);
+    assert.ok(/<p class="body-card-footer" data-copy-key="gridFoot">/.test(page), page);
+    const open = await load({ responses: { '/app/body/api/status': { ...STATUS, day_grid: gridOf([cells[0]]) } } });
+    assert.ok(!keyed(open, 'gridFoot') && !open.includes('body-day-cell--hidden'), open);
+    // Every day hidden: no coverage, and the grid still shows where unhide is.
+    const all = await load({ responses: { '/app/body/api/status': { ...EMPTY_STATUS, day_grid: gridOf([cells[1]]) } } });
+    assert.ok(all.includes('body-day-cell--hidden') && !all.includes('nothing here yet'), all);
+  }],
+  ['a hide redraws the day as hidden, moves focus to its unhide, and its receipt unhides', async () => {
+    const fixtures = { '/app/body/api/day/20260110': DAY };
+    const page = boot(fixtures);
+    await page.mount('20260110');
+    await page.settle();
+    const button = page.toggle('data-body-hide', '20260110');
+    page.click(button);
+    assert.strictEqual(button.disabled, true, 'a second tap waits for the first');
+    assert.strictEqual(page.writes[0].method, 'POST');
+    assert.ok(page.writes[0].url.endsWith('/app/body/api/hidden'), page.writes[0].url);
+    assert.deepStrictEqual(JSON.parse(page.writes[0].body), { days: ['20260110'], hidden: true });
+    fixtures['/app/body/api/day/20260110'] = { ...HIDDEN_DAY, day: '20260110' };
+    page.writes[0].resolve(answered({ days: ['20260110'], search_queued: true }));
+    await page.settle();
+    assert.ok(keyed(page.root.innerHTML, 'markHead'), page.root.innerHTML);
+    assert.strictEqual(page.document.activeElement && page.document.activeElement.selector, '[data-body-unhide]');
+    assert.strictEqual(page.notices.length, 1);
+    const receipt = page.notices[0];
+    assert.strictEqual(receipt.copyKey, 'receipt');
+    assert.strictEqual(receipt.app, 'body');
+    assert.strictEqual(receipt.icon, 'eye-off');
+    assert.strictEqual(receipt.autoDismiss, 8000);
+    assert.strictEqual(receipt.buttons.length, 1);
+    fixtures['/app/body/api/day/20260110'] = DAY;
+    receipt.buttons[0].onClick();
+    await page.settle();
+    assert.deepStrictEqual(JSON.parse(page.writes[1].body), { days: ['20260110'], hidden: false });
+    page.writes[1].resolve(answered({ days: [], search_queued: true }));
+    await page.settle();
+    assert.strictEqual(page.notices.length, 1, 'an unhide shows no second card');
+    assert.ok(page.root.innerHTML.includes('body-source-section'), page.root.innerHTML);
+    assert.strictEqual(page.document.activeElement && page.document.activeElement.selector, '[data-body-hide]');
+  }],
+  ['a hide search wasn\'t told of stays up and can be tried again', async () => {
+    const fixtures = { '/app/body/api/day/20260110': DAY };
+    const page = boot(fixtures);
+    await page.mount('20260110');
+    await page.settle();
+    page.click(page.toggle('data-body-hide', '20260110'));
+    fixtures['/app/body/api/day/20260110'] = { ...HIDDEN_DAY, day: '20260110' };
+    page.writes[0].resolve(answered({ days: ['20260110'], search_queued: false }));
+    await page.settle();
+    const receipt = page.notices[0];
+    assert.strictEqual(receipt.copyKey, 'receiptNoSearch');
+    assert.strictEqual(receipt.autoDismiss, undefined, 'it stays until dismissed');
+    assert.strictEqual(receipt.buttons.length, 2);
+    receipt.buttons[0].onClick();
+    assert.deepStrictEqual(JSON.parse(page.writes[1].body), { days: ['20260110'], hidden: true });
+    page.writes[1].resolve(answered({ days: ['20260110'], search_queued: true }));
+    await page.settle();
+    assert.strictEqual(page.notices[1].copyKey, 'receipt');
+    receipt.buttons[1].onClick();
+    assert.deepStrictEqual(JSON.parse(page.writes[2].body), { days: ['20260110'], hidden: false });
+  }],
+  ['a refused or unanswered hide or unhide says so and leaves the day as it was', async () => {
+    const page = boot({ '/app/body/api/day/20260110': DAY, '/app/body/api/day/20261103': HIDDEN_DAY });
+    await page.mount('20260110');
+    await page.settle();
+    const reads = page.reads.length;
+    const refused = page.toggle('data-body-hide', '20260110');
+    page.click(refused);
+    page.writes[0].resolve(answered({ error: 'no', reason_code: 'body_hidden_unreadable' }, false));
+    await page.settle();
+    assert.strictEqual(refused.disabled, false, 'a refused hide can be tapped again');
+    page.click(page.toggle('data-body-hide', '20260110'));
+    page.writes[1].reject(new Error('offline'));
+    await page.settle();
+    page.update('20261103');
+    await page.settle();
+    page.click(page.toggle('data-body-unhide', '20261103'));
+    page.writes[2].resolve(answered({ error: 'no' }, false));
+    await page.settle();
+    page.click(page.toggle('data-body-unhide', '20261103'));
+    page.writes[3].reject(new Error('offline'));
+    await page.settle();
+    assert.deepStrictEqual(page.notices.map((notice) => notice.copyKey), ['hideFailed', 'noAnswerHide', 'unhideFailed', 'noAnswerUnhide']);
+    assert.ok(page.notices.every((notice) => notice.icon === 'triangle-alert' && !notice.autoDismiss && !(notice.buttons || []).length));
+    assert.strictEqual(page.reads.length, reads + 1, 'only the step to the hidden day read');
+    assert.ok(keyed(page.root.innerHTML, 'markHead'), page.root.innerHTML);
+  }],
+  ['a hide finished after the owner left draws nothing, and its receipt still unhides', async () => {
+    const page = boot({ '/app/body/api/day/20260110': DAY, '/app/body/api/day/20260316': NOTHING_DAY });
+    await page.mount('20260110');
+    await page.settle();
+    page.click(page.toggle('data-body-hide', '20260110'));
+    page.update('20260316');
+    await page.settle();
+    const reads = page.reads.length;
+    page.writes[0].resolve(answered({ days: ['20260110'], search_queued: true }));
+    await page.settle();
+    assert.strictEqual(page.reads.length, reads, 'the day now showing is not read again');
+    assert.ok(page.root.innerHTML.includes('class="body-empty"'), page.root.innerHTML);
+    assert.ok(!keyed(page.root.innerHTML, 'markHead'), page.root.innerHTML);
+    page.notices[0].buttons[0].onClick();
+    assert.deepStrictEqual(JSON.parse(page.writes[1].body), { days: ['20260110'], hidden: false });
   }],
   ['a failed read can be tried again', async () => {
     const page = boot();

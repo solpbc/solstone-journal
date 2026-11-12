@@ -1038,6 +1038,92 @@ a.body-day-cell:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+/* A day's hide sits on the back link's row, at its right: quiet, never red,
+   because a hide is undone in one tap. */
+.body-day-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+.body-day-hide {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.body-day-hide:hover {
+  color: var(--ink);
+  background: var(--cream-bright);
+}
+
+.body-day-hide:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.body-day-hide svg,
+.body-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* A hidden day's mark: one soft card, its own heading, unhide its one action. */
+.body-hidden-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-soft);
+}
+
+.body-hidden-head svg {
+  width: 20px;
+  height: 20px;
+}
+
+.body-hidden-head .body-question-title {
+  margin: 0;
+}
+
+.body-hidden-copy {
+  margin: var(--space-3) 0 0;
+  max-width: 62ch;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.body-hidden-mark .body-btn {
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.body-hidden-near {
+  margin: var(--space-4) 0 0;
+  color: var(--ink-soft);
+}
+
+.body-hidden-with {
+  margin: 0 0 var(--space-3);
+}
+
+/* A hidden day on the heatmap: striped, and still a link to its day. */
+.body-day-cell--hidden {
+  background: repeating-linear-gradient(135deg, var(--cream-bright) 0 2px, var(--ink-faint-paper) 2px 3px);
+  border: 1px solid var(--hairline-2);
+  box-sizing: border-box;
+}
 </style>
 
 
@@ -1085,20 +1171,95 @@ a.body-day-cell:focus-visible {
     return day ? `/app/body/${escapeHtml(day)}` : "/app/body/";
   }
 
+  function icon(name) {
+    const svg = window.ConveyIcons && window.ConveyIcons.svg ? window.ConveyIcons.svg(name) : "";
+    return svg ? `<span aria-hidden="true">${svg}</span>` : "";
+  }
+
+  // The owner's hide for a day of body data: one day at a time, no confirm, a
+  // receipt that unhides, and a mark with unhide where the hidden day shows.
+  // Each string is set where its copy key says.
+  const HIDE_API = "/app/body/api/hidden";
+  const HIDE_COPY = {
+    hide: "hide this day",
+    hideLabel: "hide body data from {day}",
+    receiptTitle: "body data from {day} is hidden.",
+    receiptMessage: "it stays hidden when you import or sync it again.",
+    receiptNoSearch: "search and connected agents may still find it.",
+    tryAgain: "try again",
+    unhide: "unhide",
+    hideFailed: "couldn't hide this day. nothing changed.",
+    unhideFailed: "couldn't unhide this day. nothing changed.",
+    noAnswer: "your journal didn't answer",
+    noAnswerHide: "it may already be hidden. reload to check.",
+    noAnswerUnhide: "it may already be unhidden. reload to check.",
+    markHead: "you hid this day's body data",
+    markLine1: "it's still in your journal, and it stays hidden when you import or sync it again.",
+    markLine2: "search and the activities page leave it out, and connected agents can't reach it. a night that starts on this day is hidden with it, after midnight too.",
+    markUnhide: "unhide this day",
+    dayAfter: "the rest of a night or workout that started on {day}, a day you hid, is hidden here too.",
+    gridFoot: "striped days are ones you hid.",
+    unreadable: "your journal can't read which days you hid, so every day shows here, and you can't hide or unhide one. until it can, search and connected agents leave out all your body data.",
+  };
+
   function renderHeader(title, subtitle, backLink, options = {}) {
     const showTitle = options.showTitle !== false;
+    const hideDay = safeDay(options.hideDay);
+    const hide = hideDay
+      ? `<button type="button" class="body-day-hide" data-body-hide="${escapeHtml(hideDay)}" data-copy-key="hide" aria-label="${escapeHtml(HIDE_COPY.hideLabel.replace("{day}", workoutDayLabel(hideDay)))}">${icon("eye-off")}<span>${escapeHtml(HIDE_COPY.hide)}</span></button>`
+      : "";
     return html([
       '<header class="body-header">',
       showTitle ? `<h1 class="body-title">${escapeHtml(title)}</h1>` : "",
       subtitle ? `<p class="body-subtitle">${escapeHtml(subtitle)}</p>` : "",
-      backLink ? '<nav class="body-nav" aria-label="body views"><a class="body-link" href="/app/body/">&larr; body overview</a></nav>' : "",
+      backLink ? `<nav class="body-nav${options.day ? " body-day-nav" : ""}" aria-label="body views"><a class="body-link" href="/app/body/">&larr; body overview</a>${hide}</nav>` : "",
       '</header>',
     ]);
+  }
+
+  function renderUnreadableStrip() {
+    return `<div class="body-card body-freshness body-hidden-unreadable" role="status" data-copy-key="unreadable"><p>${escapeHtml(HIDE_COPY.unreadable)}</p></div>`;
+  }
+
+  function nearbyDays(nearest) {
+    return html([
+      nearest.prev ? `<a class="body-link" href="${bodyDayHref(nearest.prev)}">&larr; ${escapeHtml(nearest.prev_label)}</a> ` : "",
+      nearest.next ? `<a class="body-link" href="${bodyDayHref(nearest.next)}">${escapeHtml(nearest.next_label)} &rarr;</a>` : "",
+    ]);
+  }
+
+  // A hidden day says it's hidden and what that does, once, with unhide as
+  // its one action.
+  function renderHiddenMark(bodyDay) {
+    const day = safeDay(bodyDay.day);
+    const nearest = asObject(bodyDay.nearest);
+    return html([
+      '<section class="body-card body-card--soft body-hidden-mark" role="status" aria-labelledby="body-hidden-title" data-body-hidden-mark>',
+      `<div class="body-hidden-head">${icon("eye-off")}<h2 id="body-hidden-title" class="body-question-title" data-copy-key="markHead">${escapeHtml(HIDE_COPY.markHead)}</h2></div>`,
+      `<p class="body-hidden-copy" data-copy-key="markLine1">${escapeHtml(HIDE_COPY.markLine1)}</p>`,
+      `<p class="body-hidden-copy" data-copy-key="markLine2">${escapeHtml(HIDE_COPY.markLine2)}</p>`,
+      `<button type="button" class="body-btn body-btn--outline" data-body-unhide="${escapeHtml(day)}" data-copy-key="markUnhide">${icon("eye")}<span>${escapeHtml(HIDE_COPY.markUnhide)}</span></button>`,
+      (nearest.prev || nearest.next) ? `<p class="body-hidden-near">nearby days with data: ${nearbyDays(nearest)}</p>` : "",
+      '</section>',
+    ]);
+  }
+
+  // The day after a hidden one: the part of a night or workout that started
+  // then left this day, and this line says which day took it.
+  function renderHiddenWith(list) {
+    return asArray(list).map((item) => {
+      const day = safeDay(item && item.day);
+      if (!day) return "";
+      const label = workoutDayLabel(day) || String(item.label ?? "");
+      const [before, after] = HIDE_COPY.dayAfter.split("{day}");
+      return `<p class="body-muted body-hidden-with" data-copy-key="dayAfter" data-hidden-day="${escapeHtml(day)}">${escapeHtml(before)}<a class="body-link" href="${bodyDayHref(day)}">${escapeHtml(label)}</a>${escapeHtml(after ?? "")}</p>`;
+    }).join("");
   }
 
   function renderDayGrid(dayGrid) {
     const blocks = asArray(dayGrid);
     if (!blocks.length) return "";
+    const anyHidden = blocks.some((block) => asArray(block.weeks).some((week) => asArray(week).some((cell) => cell && cell.hidden)));
     return html([
       '<section class="body-card body-section" aria-labelledby="body-history-title">',
       '<h2 id="body-history-title" class="body-section-title">every day held</h2>',
@@ -1116,6 +1277,9 @@ a.body-day-cell:focus-visible {
             return '<span class="body-day-cell body-day-cell--pad" aria-hidden="true"></span>';
           }
           const title = String(cell.title ?? "");
+          if (cell.hidden) {
+            return `<a class="body-day-cell body-day-cell--hidden" href="${bodyDayHref(cell.day)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}" data-body-hidden-cell></a>`;
+          }
           if (cell.count) {
             return `<a class="body-day-cell" href="${bodyDayHref(cell.day)}" style="--heat: ${safeNumber(cell.intensity)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"></a>`;
           }
@@ -1129,6 +1293,7 @@ a.body-day-cell:focus-visible {
         '</div>',
       ])).join(""),
       '</div>',
+      anyHidden ? `<p class="body-card-footer" data-copy-key="gridFoot">${escapeHtml(HIDE_COPY.gridFoot)}</p>` : "",
       '</section>',
     ]);
   }
@@ -1176,8 +1341,13 @@ a.body-day-cell:focus-visible {
     ]);
   }
 
+  // A journal whose every day is hidden still shows its grid, where unhide is.
+  function overviewHasDays(status) {
+    return Boolean(status.coverage) || asArray(status.day_grid).length > 0;
+  }
+
   function renderOverview(status) {
-    const hasDays = Boolean(status.coverage);
+    const hasDays = overviewHasDays(status);
     const imports = status.imports;
     if (!hasDays && !asArray(imports?.new).length && !asArray(imports?.old).length) {
       return html([
@@ -1187,6 +1357,7 @@ a.body-day-cell:focus-visible {
     }
     return html([
       renderHeader("body", "your body, brought into your journal.", false),
+      status.hidden_unreadable ? renderUnreadableStrip() : "",
       renderSources(status.sources),
       renderDayGrid(status.day_grid),
       renderImports(imports),
@@ -1198,12 +1369,9 @@ a.body-day-cell:focus-visible {
     return html([
       '<section class="body-card" aria-label="empty day">',
       heldEarlier ? "" : '<p class="body-empty">nothing for this day.</p>',
-      (nearest.prev || nearest.next) ? html([
-        '<p>nearby days with data: ',
-        nearest.prev ? `<a class="body-link" href="${bodyDayHref(nearest.prev)}">&larr; ${escapeHtml(nearest.prev_label)}</a> ` : "",
-        nearest.next ? `<a class="body-link" href="${bodyDayHref(nearest.next)}">${escapeHtml(nearest.next_label)} &rarr;</a>` : "",
-        '</p>',
-      ]) : '<p class="body-muted"><a class="body-link" href="/app/body/">body overview &rarr;</a></p>',
+      (nearest.prev || nearest.next)
+        ? `<p>nearby days with data: ${nearbyDays(nearest)}</p>`
+        : '<p class="body-muted"><a class="body-link" href="/app/body/">body overview &rarr;</a></p>',
       '</section>',
     ]);
   }
@@ -1237,7 +1405,7 @@ a.body-day-cell:focus-visible {
       reach: "it leaves your journal now and can't be recovered.",
       stays: "activities, summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.",
     },
-    again: "importing a Strava download again brings this workout back.",
+    again: "importing a Strava download again brings this workout back. a day you hide stays hidden when you import it again.",
     buttons: { eraseNow: "erase now", cancel: "cancel", moveToTrash: "move to trash", back: "back", recover: "recover", openTrash: "open trash" },
     receipt: {
       moved: { title: "moved to the trash", message: "erases {date} unless you recover it." },
@@ -1354,6 +1522,71 @@ a.body-day-cell:focus-visible {
     workoutReceipt("recovered");
   }
 
+  function hideToast(copyKey, options) {
+    bodyToast({ dismissible: true, copyKey, ...options });
+  }
+
+  // Asks the journal to hide or unhide a day. Answers the route's answer, or
+  // null when the journal didn't answer, or false when it refused.
+  async function saveDayHidden(day, hidden) {
+    let response;
+    try {
+      response = await window.fetch(HIDE_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: [day], hidden }),
+      });
+    } catch (_) {
+      return null;
+    }
+    const answer = await response.json().catch(() => null);
+    if (!answer) return null;
+    return response.ok && Array.isArray(answer.days) ? answer : false;
+  }
+
+  // No confirm: the receipt and the hidden day itself both unhide. Like a
+  // workout's delete, a hide keeps going if the owner leaves, and redraws only
+  // the day it was made on.
+  async function hideBodyDay(day) {
+    const answer = await saveDayHidden(day, true);
+    if (answer === null) {
+      hideToast("noAnswerHide", { icon: "triangle-alert", title: HIDE_COPY.noAnswer, message: HIDE_COPY.noAnswerHide });
+      return;
+    }
+    if (answer === false) {
+      hideToast("hideFailed", { icon: "triangle-alert", title: HIDE_COPY.hideFailed });
+      return;
+    }
+    if (showing(day) && hooks) hooks.reloadDay("[data-body-unhide]");
+    const title = HIDE_COPY.receiptTitle.replace("{day}", workoutDayLabel(day));
+    const unhide = { label: HIDE_COPY.unhide, onClick: () => unhideBodyDay(day) };
+    if (answer.search_queued === true) {
+      hideToast("receipt", { icon: "eye-off", title, message: HIDE_COPY.receiptMessage, autoDismiss: 8000, buttons: [unhide] });
+      return;
+    }
+    hideToast("receiptNoSearch", {
+      icon: "eye-off",
+      title,
+      message: HIDE_COPY.receiptNoSearch,
+      buttons: [{ label: HIDE_COPY.tryAgain, onClick: () => hideBodyDay(day) }, unhide],
+    });
+  }
+
+  // The day coming back is the sign it worked: no receipt, and focus goes to
+  // the hide button, whose label says what it would do now.
+  async function unhideBodyDay(day) {
+    const answer = await saveDayHidden(day, false);
+    if (answer === null) {
+      hideToast("noAnswerUnhide", { icon: "triangle-alert", title: HIDE_COPY.noAnswer, message: HIDE_COPY.noAnswerUnhide });
+      return;
+    }
+    if (answer === false) {
+      hideToast("unhideFailed", { icon: "triangle-alert", title: HIDE_COPY.unhideFailed });
+      return;
+    }
+    if (showing(day) && hooks) hooks.reloadDay("[data-body-hide]");
+  }
+
   function mountBody(ctx) {
     const root = document.getElementById("body-view-root");
     const gate = document.getElementById("body-state-gate");
@@ -1363,9 +1596,22 @@ a.body-day-cell:focus-visible {
     let closeOpenDialog = null;
 
     ctx.on(document, "click", (event) => {
-      const button = event.target && event.target.closest && event.target.closest("[data-strava-delete]");
-      if (!button || ctx.disposed) return;
-      openWorkoutDialog(button, shown);
+      const target = event.target && event.target.closest ? event.target : null;
+      if (!target || ctx.disposed) return;
+      const button = target.closest("[data-strava-delete]");
+      if (button) {
+        openWorkoutDialog(button, shown);
+        return;
+      }
+      const hide = target.closest("[data-body-hide]");
+      const unhide = hide ? null : target.closest("[data-body-unhide]");
+      const toggle = hide || unhide;
+      const day = toggle ? safeDay(toggle.getAttribute(hide ? "data-body-hide" : "data-body-unhide")) : "";
+      if (!day) return;
+      // A second tap waits for the first; a redraw replaces the button, and a
+      // refusal gives it back.
+      toggle.disabled = true;
+      (hide ? hideBodyDay(day) : unhideBodyDay(day)).finally(() => { toggle.disabled = false; });
     });
     if (!root || !gate) throw new Error("body has no root");
 
@@ -1504,7 +1750,7 @@ a.body-day-cell:focus-visible {
       try {
         const status = await read("/app/body/api/status");
         if (asked !== epoch || ctx.disposed) return;
-        const hasData = Boolean(status.coverage);
+        const hasData = overviewHasDays(status);
         document.querySelector(".body-shell")?.toggleAttribute("data-body-empty", !hasData);
         reveal(renderOverview(status));
         ctx.ready(hasData ? "content" : "empty");
@@ -1515,7 +1761,7 @@ a.body-day-cell:focus-visible {
       }
     }
 
-    async function loadBodyDay(day, arrive) {
+    async function loadBodyDay(day, arrive, focus) {
       const asked = epoch;
       setLoading("loading body day…");
       try {
@@ -1523,7 +1769,8 @@ a.body-day-cell:focus-visible {
         if (asked !== epoch || ctx.disposed) return;
         reveal(renderDayView(bodyDay));
         if (arrive) focusArrived();
-        ctx.ready(bodyDay.has_data ? "content" : "empty");
+        else if (focus) focusNode(root.querySelector(focus));
+        ctx.ready(bodyDay.has_data || bodyDay.hidden ? "content" : "empty");
       } catch (err) {
         if (asked !== epoch || ctx.disposed) return;
         showError("couldn't load body day", err, () => loadBodyDay(day, arrive));
@@ -1545,8 +1792,8 @@ a.body-day-cell:focus-visible {
     }
 
     const mine = {
-      reloadDay() {
-        if (shown) loadBodyDay(shown);
+      reloadDay(focus) {
+        if (shown) loadBodyDay(shown, false, focus);
       },
     };
     hooks = mine;
@@ -1628,16 +1875,22 @@ a.body-day-cell:focus-visible {
   }
 
   function renderDayView(bodyDay) {
-    const header = renderHeader("", "", true, { showTitle: false });
+    const canHide = Boolean(bodyDay.has_data) && !bodyDay.hidden && !bodyDay.hidden_unreadable;
+    const header = renderHeader("", "", true, { showTitle: false, day: true, hideDay: canHide ? bodyDay.day : "" });
+    const strip = bodyDay.hidden_unreadable ? renderUnreadableStrip() : "";
+    if (bodyDay.hidden) return html([header, renderHiddenMark(bodyDay)]);
+    const after = renderHiddenWith(bodyDay.hidden_with);
     const earlier = renderEarlierImports(bodyDay.earlier_imports);
     const unreadable = Number(bodyDay.unreadable_windows) > 0
       ? '<p class="body-muted body-earlier">part of this day couldn\'t be read.</p>'
       : "";
     if (!bodyDay.has_data) {
-      return html([header, earlier, renderEmptyDay(bodyDay, Boolean(earlier)), unreadable]);
+      return html([header, strip, after, earlier, renderEmptyDay(bodyDay, Boolean(earlier)), unreadable]);
     }
     return html([
       header,
+      strip,
+      after,
       asArray(bodyDay.sources).map(renderSourceSection).join(""),
       renderStravaCard(bodyDay.strava),
       earlier,

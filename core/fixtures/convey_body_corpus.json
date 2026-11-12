@@ -30,7 +30,8 @@
           "imports": {
             "new": [],
             "old": []
-          }
+          },
+          "hidden_unreadable": false
         }
       },
       {
@@ -49,6 +50,9 @@
         "json": {
           "day": "20260110",
           "day_label": "January 10, 2026",
+          "hidden": false,
+          "hidden_unreadable": false,
+          "hidden_with": [],
           "has_data": false,
           "entry_total": 0,
           "entry_total_label": "0",
@@ -72,6 +76,7 @@
           "from": "2026-01-10T09:00:00-07:00",
           "to": "2026-01-10T10:00:00-07:00",
           "span_minutes": 60.0,
+          "hidden": false,
           "has_data": false,
           "entry_total": 0,
           "entry_total_label": "0",
@@ -169,14 +174,16 @@
                     "count": 1,
                     "intensity": 0.3333333333333333,
                     "title": "Jan 10, 2026 · Apple Health",
-                    "earlier": false
+                    "earlier": false,
+                    "hidden": false
                   },
                   {
                     "day": "20260111",
                     "count": 1,
                     "intensity": 0.3333333333333333,
                     "title": "Jan 11, 2026 · Oura",
-                    "earlier": false
+                    "earlier": false,
+                    "hidden": false
                   }
                 ]
               ],
@@ -200,7 +207,8 @@
               }
             ],
             "old": []
-          }
+          },
+          "hidden_unreadable": false
         }
       },
       {
@@ -236,6 +244,9 @@
         "json": {
           "day": "20260110",
           "day_label": "January 10, 2026",
+          "hidden": false,
+          "hidden_unreadable": false,
+          "hidden_with": [],
           "has_data": true,
           "entry_total": 3,
           "entry_total_label": "3",
@@ -296,6 +307,7 @@
           "from": "2026-01-10T09:00:00-07:00",
           "to": "2026-01-10T10:00:00-07:00",
           "span_minutes": 60.0,
+          "hidden": false,
           "has_data": true,
           "entry_total": 1,
           "entry_total_label": "1",

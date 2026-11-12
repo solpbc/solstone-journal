@@ -17,17 +17,15 @@ use axum::response::{IntoResponse, Response};
 use chrono::{Datelike, NaiveDate};
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_format::content::body_hidden_days::{HiddenDays, read_hidden_days};
 
 use crate::fmt::{count_noun, month_abbr, parse_day, short_day, short_day_year};
-use crate::listing::{body_days, body_streams, window_count};
+use crate::listing::{BodyDays, DaySources, body_days, body_streams, window_count};
 use crate::query::decoded_query_params;
 use crate::router::unreadable_response;
 
 const RECENT_DAY_LIMIT: usize = 14;
 const RECENT_BATCH_LIMIT_CAP: usize = 100;
-
-/// Every body day's sources, and how many a day holds at most, for the grid.
-pub(crate) type BodyDays = BTreeMap<String, BTreeSet<&'static str>>;
 
 fn source_words(source: &str) -> &str {
     solstone_core_format::content::body_records::source_words(source)
@@ -49,7 +47,7 @@ fn source_item(source: &str, days: &[&String]) -> Value {
 }
 
 /// Each source held, with its first and last day and how many days hold it.
-fn source_items(days: &BodyDays) -> Vec<Value> {
+fn source_items(days: &DaySources) -> Vec<Value> {
     body_streams()
         .iter()
         .filter_map(|(_, source)| {
@@ -63,14 +61,29 @@ fn source_items(days: &BodyDays) -> Vec<Value> {
         .collect()
 }
 
-fn coverage(days: &BodyDays) -> Value {
+fn coverage(days: &DaySources) -> Value {
     match (days.keys().next(), days.keys().next_back()) {
         (Some(start), Some(end)) => json!({"start": start, "end": end}),
         _ => Value::Null,
     }
 }
 
-fn grid_cell(day: &str, sources: Option<&BTreeSet<&'static str>>, earlier: Option<bool>) -> Value {
+fn grid_cell(
+    day: &str,
+    sources: Option<&BTreeSet<&'static str>>,
+    earlier: Option<bool>,
+    hidden: bool,
+) -> Value {
+    if hidden {
+        return json!({
+            "day": day,
+            "count": 0,
+            "intensity": 0.0,
+            "title": format!("{} · you hid this day", short_day_year(day).unwrap_or_default()),
+            "earlier": false,
+            "hidden": true,
+        });
+    }
     let count = sources.map_or(0, BTreeSet::len);
     let title = match sources {
         Some(sources) => {
@@ -97,13 +110,17 @@ fn grid_cell(day: &str, sources: Option<&BTreeSet<&'static str>>, earlier: Optio
         "intensity": count as f64 / 3.0,
         "title": title,
         "earlier": earlier.is_some() && sources.is_none(),
+        "hidden": false,
     })
 }
 
+/// The grid runs over every day holding body data, the hidden ones too: a
+/// hidden day's cell is how the owner reaches its unhide.
 fn day_grid(root: &Path, days: &BodyDays) -> Vec<Value> {
+    let held = || days.shown.keys().chain(&days.hidden);
     let (Some(first), Some(last)) = (
-        days.keys().next().and_then(|day| parse_day(day)),
-        days.keys().next_back().and_then(|day| parse_day(day)),
+        held().min().and_then(|day| parse_day(day)),
+        held().max().and_then(|day| parse_day(day)),
     ) else {
         return Vec::new();
     };
@@ -111,7 +128,7 @@ fn day_grid(root: &Path, days: &BodyDays) -> Vec<Value> {
         .iter_days()
         .take_while(|day| *day <= last)
         .map(|day| day.format("%Y%m%d").to_string())
-        .filter(|day| !days.contains_key(day))
+        .filter(|day| !days.shown.contains_key(day) && !days.hidden.contains(day))
         .collect::<Vec<_>>();
     let earlier = solstone_core_location::old_imports::covered_days_among(
         root,
@@ -126,7 +143,12 @@ fn day_grid(root: &Path, days: &BodyDays) -> Vec<Value> {
             let mut current = start;
             while current <= end {
                 let key = current.format("%Y%m%d").to_string();
-                week.push(grid_cell(&key, days.get(&key), earlier.get(&key).copied()));
+                week.push(grid_cell(
+                    &key,
+                    days.shown.get(&key),
+                    earlier.get(&key).copied(),
+                    days.hidden.contains(&key),
+                ));
                 if week.len() == 7 {
                     weeks.push(std::mem::take(&mut week));
                 }
@@ -159,14 +181,18 @@ fn month_labels(weeks: &[Vec<Value>]) -> Vec<Value> {
         .collect()
 }
 
+/// The overview. A hidden day is left out of every count, the coverage and the
+/// sources, and its cell says it's hidden.
 pub(crate) fn build_status(root: &Path) -> Result<Value, String> {
-    let days = body_days(root)?;
+    let hidden = read_hidden_days(root);
+    let days = body_days(root, &hidden)?;
     Ok(json!({
-        "coverage": coverage(&days),
-        "days": days.len(),
-        "sources": source_items(&days),
+        "coverage": coverage(&days.shown),
+        "days": days.shown.len(),
+        "sources": source_items(&days.shown),
         "day_grid": day_grid(root, &days),
         "imports": crate::audit::imports_section(root),
+        "hidden_unreadable": hidden == HiddenDays::Unreadable,
     }))
 }
 
@@ -197,7 +223,12 @@ fn invalid_limit_response(detail: &str) -> Response {
     .into_response()
 }
 
-fn recent_days(root: &Path, days: &BodyDays, before: &str, limit: usize) -> Result<Value, String> {
+fn recent_days(
+    root: &Path,
+    days: &DaySources,
+    before: &str,
+    limit: usize,
+) -> Result<Value, String> {
     let mut chosen = days
         .iter()
         .rev()
@@ -243,8 +274,8 @@ pub(crate) async fn recent_route(
             Err(_) => return invalid_limit_response("limit must be an integer"),
         },
     };
-    let days = match body_days(&root) {
-        Ok(days) => days,
+    let days = match body_days(&root, &read_hidden_days(&root)) {
+        Ok(days) => days.shown,
         Err(error) => return unreadable_response(error),
     };
     match recent_days(&root, &days, before, limit) {
@@ -255,7 +286,7 @@ pub(crate) async fn recent_route(
 
 /// `/api/index`: the journal's first and last day with windows, and each month's
 /// days, from directory listings alone.
-pub(crate) fn index_payload(days: &BodyDays) -> Value {
+pub(crate) fn index_payload(days: &DaySources) -> Value {
     let mut months = BTreeMap::<String, u64>::new();
     for day in days.keys() {
         *months.entry(day[..6].to_owned()).or_insert(0) += 1;
@@ -264,7 +295,7 @@ pub(crate) fn index_payload(days: &BodyDays) -> Value {
 }
 
 /// `/api/stats/{month}`: each day's live windows, by name.
-pub(crate) fn stats_payload(root: &Path, days: &BodyDays, month: &str) -> Value {
+pub(crate) fn stats_payload(root: &Path, days: &DaySources, month: &str) -> Value {
     let days = days
         .keys()
         .filter(|day| day[..6] == *month)

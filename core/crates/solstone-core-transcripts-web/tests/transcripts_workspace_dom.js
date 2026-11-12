@@ -1243,6 +1243,32 @@ test('body context counts what a segment holds and never states a value', async 
   assert.ok(!/HR |60-70|90-110|1,234 steps/.test(transcript), transcript);
 });
 
+// An Apple Health window's page on a day the owner hid: its card says so, has
+// no details to open, and keeps the way to the Body page, where unhide is.
+const BODY_SEGMENTS = [
+  { key: '090000_3600', stream: 'import.apple_health', start: '09:00', end: '10:00', types: ['markdown'], data_state: {} },
+];
+
+async function bodyCard(bodyWindow) {
+  const env = await createEnvironment(undefined, 'analyzed', false, BODY_SEGMENTS, { bodyWindow });
+  const picker = env.doc.getElementById('trSegmentPicker');
+  picker.value = JSON.stringify(['import.apple_health', '090000_3600']);
+  picker.dispatchEvent({ type: 'change' });
+  await env.releasePendingSegmentGets('analyzed', { chunks: [] });
+  return env.doc.querySelector('#tr-tabpanel-transcript').innerHTML;
+}
+
+test('a body segment on a hidden day says the day is hidden and keeps only the body page link', async () => {
+  const card = await bodyCard({ hidden: true, has_data: false, signals: [], events: [], sources: { chips: [] }, hourly: [] });
+  assert.ok(card.includes('tr-body-context-card'), card);
+  assert.ok(/<p data-copy-key="body-hidden">/.test(card), card);
+  assert.ok(!card.includes('data-action="open-body-window"'), card);
+  assert.ok(card.includes('href="/app/body/20200115"'), card);
+  const open = await bodyCard({ hidden: false, has_data: true, signals: [{ label: 'heart rate', count: 3, count_label: '3 readings' }], events: [], sources: { chips: [] }, hourly: [] });
+  assert.ok(!open.includes('data-copy-key="body-hidden"'), open);
+  assert.ok(open.includes('data-action="open-body-window"'), open);
+});
+
 // A screenshot is its own one-second segment in a device's screenshots stream.
 const SHOT_SEGMENTS = [
   { key: '114715_1', stream: 'phone_screenshots', start: '11:47', end: '11:48', types: ['screen'], data_state: { screen: 'analyzed' } },

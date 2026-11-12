@@ -1398,8 +1398,23 @@
         + '</div>';
     }
 
+    // The owner hid this day's body data: the card says so, and keeps only the
+    // way to the Body page, where its unhide is.
+    const BODY_HIDDEN_COPY = { hidden: "you hid this day's body data." };
+
     function renderBodyContextCard(data) {
       const payload = data.body_window;
+      if (payload && payload.hidden === true) {
+        return '<div class="tr-body-context-card">'
+          + '<h3>body context</h3>'
+          + '\n'
+          + `<p data-copy-key="body-hidden">${escapeHtml(BODY_HIDDEN_COPY.hidden)}</p>`
+          + '\n'
+          + '<div class="tr-body-context-actions">'
+          + `<a class="tr-body-link" href="/app/body/${day}">open full body day</a>`
+          + '</div>'
+          + '</div>';
+      }
       const parts = bodyWindowParts(payload, 6);
       let summary = 'body context unavailable for this day window.';
       if (payload) {

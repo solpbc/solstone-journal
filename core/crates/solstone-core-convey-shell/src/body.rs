@@ -143,6 +143,38 @@ mod tests {
         }
     }
 
+    async fn post(app: axum::Router, content_type: &str, body: &str) -> (StatusCode, Vec<u8>) {
+        let response = app
+            .oneshot(
+                Request::post("/app/body/api/hidden")
+                    .header("content-type", content_type)
+                    .body(Body::from(body.to_owned()))
+                    .expect("request builds"),
+            )
+            .await
+            .expect("router responds");
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body reads")
+            .to_vec();
+        (status, body)
+    }
+
+    #[tokio::test]
+    async fn a_body_day_hide_is_mounted_takes_json_and_refuses_a_form() {
+        let journal = EstablishedJournal::established();
+        let app = crate::router(journal.0.path().to_path_buf());
+        let hide = r#"{"days":["20260801"],"hidden":true}"#;
+        let refused = post(app.clone(), "text/plain", hide).await;
+        assert_eq!(refused.0, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        let (status, body) = post(app.clone(), "application/json", hide).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json_body(&body)["days"], serde_json::json!(["20260801"]));
+        let day = get(app, "/app/body/api/day/20260801").await;
+        assert_eq!(json_body(&day.2)["hidden"], true);
+    }
+
     #[tokio::test]
     async fn body_routes_are_native_and_unknown_body_api_html_404() {
         let journal = EstablishedJournal::established();
