@@ -5641,12 +5641,12 @@ mod tests {
             None,
         ))
         .unwrap();
+        let user_config = read_user_config(&config_path(&home));
+        assert_eq!(user_config.len(), 2);
+        assert_eq!(user_config.get("other").map(String::as_str), Some("drop"));
         assert_eq!(
-            fs::read_to_string(config_path(&home)).unwrap(),
-            format!(
-                "other = \"drop\"\njournal = {}\n",
-                serde_json::to_string(&resolved.journal_path.to_string_lossy()).unwrap()
-            )
+            user_config.get("journal").map(String::as_str),
+            Some(resolved.journal_path.to_string_lossy().as_ref())
         );
         assert_eq!(fs::read(&config).unwrap(), before);
     }
@@ -5751,8 +5751,12 @@ mod tests {
         fs::write(
             config_path(&home),
             format!(
-                "journal = \"  {}/./sub/../sub  \"\n",
-                root.join("journal").display()
+                "journal = {}\n",
+                serde_json::to_string(&format!(
+                    "  {}/./sub/../sub  ",
+                    root.join("journal").display()
+                ))
+                .unwrap()
             ),
         )
         .unwrap();

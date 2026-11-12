@@ -858,11 +858,30 @@ fn wait_started(journal: &Path, timeout: Duration, poll: Duration) -> Result<(),
 /// Asks the service manager to start the unit and returns the journal it serves;
 /// the caller owns waiting for readiness.
 fn kickstart(platform: Platform, home: &Path) -> Result<PathBuf, String> {
+    kickstart_with_journal(platform, home, resolved_journal)
+}
+
+fn kickstart_with_journal(
+    platform: Platform,
+    home: &Path,
+    resolve_journal: impl FnOnce() -> Result<PathBuf, String>,
+) -> Result<PathBuf, String> {
     let _lock = service_lock(home)?;
     let target = unit_path(platform, home);
-    require_managed(platform, &target)?;
+    let unit = require_managed(platform, &target)?;
     let runtime = require_owned_runtime(platform, &target, true)?;
-    let journal = resolved_journal()?;
+    let journal = resolve_journal()?;
+    if matches!(runtime, RuntimeTruth::Managed { active: true }) {
+        // An active manager does not republish readiness for a repeated start.
+        // Bind the caller's selected journal before preserving its ready marker.
+        if !active_service_uses_journal(platform, &unit, &journal) {
+            return Err(
+                "couldn't confirm that the service uses this journal. run 'solstone journal setup' to update its saved location."
+                    .to_owned(),
+            );
+        }
+        return Ok(journal);
+    }
     clear_readiness(&journal)
         .map_err(|error| format!("could not clear the service's ready state: {error}"))?;
     if platform == Platform::Darwin && matches!(runtime, RuntimeTruth::Absent) {
@@ -890,6 +909,48 @@ fn kickstart(platform: Platform, home: &Path) -> Result<PathBuf, String> {
     };
     require_success(result, "start service")?;
     Ok(journal)
+}
+
+fn active_service_uses_journal(platform: Platform, unit: &UnitSnapshot, journal: &Path) -> bool {
+    let environment = match platform {
+        Platform::Linux => {
+            let Ok(text) = std::str::from_utf8(&unit.bytes) else {
+                return false;
+            };
+            text.lines()
+                .filter_map(|line| line.strip_prefix("Environment="))
+                .filter_map(|line| line.trim_matches('"').split_once('='))
+                .filter(|(name, _)| SERVICE_GUARD_ENVIRONMENT_NAMES.contains(name))
+                .map(|(name, value)| (name.to_owned(), value.to_owned()))
+                .collect()
+        }
+        Platform::Darwin => {
+            let Ok(plist) = plist::Value::from_reader(std::io::Cursor::new(&unit.bytes)) else {
+                return false;
+            };
+            let Some(values) = plist
+                .as_dictionary()
+                .and_then(|dict| dict.get("EnvironmentVariables"))
+                .and_then(plist::Value::as_dictionary)
+            else {
+                return false;
+            };
+            values
+                .iter()
+                .filter(|(name, _)| SERVICE_GUARD_ENVIRONMENT_NAMES.contains(&name.as_str()))
+                .filter_map(|(name, value)| {
+                    value
+                        .as_string()
+                        .map(|value| (name.clone(), value.to_owned()))
+                })
+                .collect()
+        }
+    };
+    let Ok(Some(guard)) = parse_service_guard_environment(&environment) else {
+        return false;
+    };
+    solstone_core_installation_identity::journal_token_from_path(journal)
+        .is_ok_and(|selected| selected == guard.journal_token)
 }
 
 fn stop(platform: Platform, home: &Path) -> Result<u8, String> {
@@ -2225,9 +2286,12 @@ fn launchctl(args: &[&str]) -> Command {
 }
 
 #[cfg(all(test, feature = "full-tests"))]
+type ManagerReplay = std::collections::VecDeque<(String, Vec<String>, CommandResult)>;
+
+#[cfg(all(test, feature = "full-tests"))]
 thread_local! {
     // Only native service tests install this replay; normal commands remain fixed.
-    static MANAGER_REPLAY: std::cell::RefCell<Option<std::collections::VecDeque<(String, CommandResult)>>> = const { std::cell::RefCell::new(None) };
+    static MANAGER_REPLAY: std::cell::RefCell<Option<ManagerReplay>> = const { std::cell::RefCell::new(None) };
 }
 
 fn run_fixed(mut command: Command, timeout: Duration) -> Result<CommandResult, String> {
@@ -2235,8 +2299,16 @@ fn run_fixed(mut command: Command, timeout: Duration) -> Result<CommandResult, S
     if let Some(result) = MANAGER_REPLAY.with(|replay| {
         let mut replay = replay.borrow_mut();
         replay.as_mut().map(|steps| {
-            let (expected, result) = steps.pop_front().expect("unexpected manager command");
-            assert_eq!(command.get_args().next().unwrap(), expected.as_str());
+            let (program, expected, result) =
+                steps.pop_front().expect("unexpected manager command");
+            assert_eq!(command.get_program(), OsStr::new(&program));
+            assert_eq!(
+                command
+                    .get_args()
+                    .map(|arg| arg.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>(),
+                expected
+            );
             result
         })
     }) {
@@ -2477,6 +2549,204 @@ mod tests {
 
     #[cfg(feature = "full-tests")]
     #[test]
+    fn repeated_service_start_preserves_owned_readiness_and_refuses_other_journals() {
+        use solstone_core_system::lifecycle::{SupervisorLifecycle, WriterId};
+
+        struct ReplayDrop;
+        impl Drop for ReplayDrop {
+            fn drop(&mut self) {
+                MANAGER_REPLAY.with(|r| {
+                    r.replace(None);
+                });
+            }
+        }
+        let _replay = ReplayDrop;
+        for platform in [Platform::Linux, Platform::Darwin] {
+            for case in [
+                "ready",
+                "missing",
+                "malformed",
+                "dead",
+                "other-journal",
+                "stopped",
+                "foreign-unit",
+                "unknown-runtime",
+                "foreign-runtime",
+                "absent-unit",
+                "unguarded",
+            ] {
+                let temp = tempfile::tempdir().unwrap();
+                let home = temp.path().canonicalize().unwrap();
+                let journal = home.join("journal A-日誌");
+                fs::create_dir(&journal).unwrap();
+                let mut lifecycle = SupervisorLifecycle::boot(
+                    &journal,
+                    WriterId::parse("0123456789abcdef0123456789abcdef").unwrap(),
+                )
+                .unwrap();
+                lifecycle.signal_ready(1.0, Default::default()).unwrap();
+                let ready = journal.join("health/supervisor.ready");
+                match case {
+                    "missing" => fs::remove_file(&ready).unwrap(),
+                    "malformed" => fs::write(&ready, b"not-json").unwrap(),
+                    "dead" => {
+                        fs::write(journal.join("health/supervisor.pid"), "4294967295").unwrap();
+                        fs::write(
+                            &ready,
+                            br#"{"pid":4294967295,"ready_at":1.0,"start_time":1.0}"#,
+                        )
+                        .unwrap();
+                    }
+                    _ => {}
+                }
+                let before = fs::read(&ready).ok();
+                let inode = fs::metadata(&ready).ok().map(|m| (m.dev(), m.ino()));
+                let mut guard = test_guard();
+                guard.journal_token =
+                    solstone_core_installation_identity::journal_token_from_path(&journal).unwrap();
+                let mut environment =
+                    build_service_environment(home.to_str().unwrap(), None, "/runtime/bin", &guard);
+                if case == "unguarded" {
+                    for name in SERVICE_GUARD_ENVIRONMENT_NAMES {
+                        environment.remove(name);
+                    }
+                }
+                let target = unit_path(platform, &home);
+                fs::create_dir_all(target.parent().unwrap()).unwrap();
+                let launcher = home.join(".local/bin/solstone");
+                let bytes = match platform {
+                    Platform::Linux => {
+                        render_systemd_unit(&environment, path_text(&launcher).unwrap(), "6123")
+                            .into_bytes()
+                    }
+                    Platform::Darwin => {
+                        render_launchd_plist(&environment, path_text(&launcher).unwrap(), "6123")
+                    }
+                };
+                fs::write(&target, bytes).unwrap();
+                if case == "foreign-unit" {
+                    fs::write(&target, "foreign unit").unwrap();
+                }
+                if case == "absent-unit" {
+                    fs::remove_file(&target).unwrap();
+                }
+                let active = case != "stopped";
+                let uid = nix::unistd::Uid::effective();
+                let (program, args, mut result) = match platform {
+                    Platform::Linux => (
+                        "/usr/bin/systemctl".to_owned(),
+                        vec!["--user".into(), "show".into(), UNIT.into(), "--property=Id,LoadState,ActiveState,SubState,FragmentPath,SourcePath,DropInPaths,ExecStart,UnitFileState".into(), "--no-pager".into()],
+                        CommandResult {code:0,stdout:format!("Id={UNIT}\nLoadState=loaded\nActiveState={state}\nSubState={substate}\nFragmentPath={target}\nSourcePath=\nDropInPaths=\nExecStart={{ path={launcher} ; argv[]={launcher} journal start 6123 ; ignore_errors=no }}\nUnitFileState=enabled\n", state=if active {"active"} else {"inactive"}, substate=if active {"running"} else {"dead"}, target=target.display(),launcher=launcher.display()).into_bytes(),stderr:vec![]},
+                    ),
+                    Platform::Darwin => (
+                        "/bin/launchctl".to_owned(),
+                        vec!["print".into(),format!("gui/{uid}/{LABEL}")],
+                        CommandResult {code:0,stdout:format!("gui/{uid}/{LABEL} = {{\n\tpath = {}\n\ttype = LaunchAgent\n\tstate = {}\n\tprogram = {}\n\targuments = {{\n\t\t{}\n\t\tjournal\n\t\tstart\n\t\t6123\n\t}}\n}}\n", target.display(),if active {"running"} else {"waiting"},launcher.display(),launcher.display()).into_bytes(),stderr:vec![]},
+                    ),
+                };
+                if case == "unknown-runtime" {
+                    result.code = 1;
+                    result.stderr = b"unavailable".to_vec();
+                }
+                if case == "foreign-runtime" {
+                    result.stdout = String::from_utf8(result.stdout)
+                        .unwrap()
+                        .replace("/.local/bin/solstone", "/.local/bin/foreign")
+                        .into_bytes();
+                }
+                let mut calls = std::collections::VecDeque::new();
+                if !matches!(case, "foreign-unit" | "absent-unit") {
+                    calls.push_back((program.clone(), args, result));
+                }
+                if case == "stopped" {
+                    let args = match platform {
+                        Platform::Linux => vec!["--user".into(), "start".into(), UNIT.into()],
+                        Platform::Darwin => vec!["kickstart".into(), format!("gui/{uid}/{LABEL}")],
+                    };
+                    calls.push_back((
+                        program,
+                        args,
+                        CommandResult {
+                            code: 0,
+                            stdout: vec![],
+                            stderr: vec![],
+                        },
+                    ));
+                }
+                MANAGER_REPLAY.with(|r| {
+                    r.replace(Some(calls));
+                });
+                let mut other_lifecycle = None;
+                let selected = if case == "other-journal" {
+                    let other = home.join("journal B");
+                    fs::create_dir(&other).unwrap();
+                    let mut live = SupervisorLifecycle::boot(
+                        &other,
+                        WriterId::parse("1123456789abcdef0123456789abcdef").unwrap(),
+                    )
+                    .unwrap();
+                    live.signal_ready(1.0, Default::default()).unwrap();
+                    other_lifecycle = Some(live);
+                    other
+                } else {
+                    journal.clone()
+                };
+                let other_before = fs::read(selected.join("health/supervisor.ready")).ok();
+                let result = kickstart_with_journal(platform, &home, || Ok(selected.clone()));
+                if matches!(
+                    case,
+                    "other-journal"
+                        | "foreign-unit"
+                        | "unknown-runtime"
+                        | "foreign-runtime"
+                        | "absent-unit"
+                        | "unguarded"
+                ) {
+                    assert!(result.is_err(), "{platform:?}/{case}: {result:?}");
+                } else {
+                    assert_eq!(result.unwrap(), selected, "{platform:?}/{case}");
+                    let ready_result = wait_started(
+                        &selected,
+                        Duration::from_millis(20),
+                        Duration::from_millis(1),
+                    );
+                    assert_eq!(
+                        ready_result.is_ok(),
+                        case == "ready",
+                        "{platform:?}/{case}: {ready_result:?}"
+                    );
+                }
+                if case == "stopped" {
+                    assert!(!ready.exists());
+                } else {
+                    assert_eq!(fs::read(&ready).ok(), before, "{platform:?}/{case}");
+                    assert_eq!(
+                        fs::metadata(&ready).ok().map(|m| (m.dev(), m.ino())),
+                        inode,
+                        "{platform:?}/{case}"
+                    );
+                }
+                if case == "other-journal" {
+                    assert_eq!(
+                        fs::read(selected.join("health/supervisor.ready")).ok(),
+                        other_before
+                    );
+                }
+                MANAGER_REPLAY.with(|r| {
+                    assert!(
+                        r.borrow().as_ref().unwrap().is_empty(),
+                        "{platform:?}/{case}: all exact manager commands consumed"
+                    );
+                    r.replace(None);
+                });
+                drop(other_lifecycle);
+                drop(lifecycle);
+            }
+        }
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
     fn inactive_darwin_relocation_rewrites_the_guard_and_preserves_the_port() {
         struct ReplayDrop;
         impl Drop for ReplayDrop {
@@ -2525,7 +2795,8 @@ mod tests {
         MANAGER_REPLAY.with(|r| {
             r.replace(Some(std::collections::VecDeque::from([
                 (
-                    "print".into(),
+                    "/bin/launchctl".into(),
+                    vec!["print".into(), format!("gui/{uid}/{LABEL}")],
                     CommandResult {
                         code: 0,
                         stdout: stdout.into_bytes(),
@@ -2533,14 +2804,19 @@ mod tests {
                     },
                 ),
                 (
-                    "bootout".into(),
+                    "/bin/launchctl".into(),
+                    vec!["bootout".into(), format!("gui/{uid}/{LABEL}")],
                     CommandResult {
                         code: 0,
                         stdout: vec![],
                         stderr: vec![],
                     },
                 ),
-                ("print".into(), absent()),
+                (
+                    "/bin/launchctl".into(),
+                    vec!["print".into(), format!("gui/{uid}/{LABEL}")],
+                    absent(),
+                ),
             ])))
         });
         let mut relocation = JournalRelocation {

@@ -23,6 +23,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - restoring a backup during setup keeps the new journal's running services and troubleshooting logs intact, so new audio can be transcribed without restarting.
 - changing your journal folder on linux or mac now updates its saved location and service together, while keeping your other settings.
+- repeated service starts keep an already-running journal's ready state intact.
 - starting encrypted backup could take several minutes on slower computers. removed a repeated check that contributed to the delay.
 - on linux, after installing the command-line tools alone (`--role cli`), a new terminal now finds the `solstone` command in bash and zsh. before, only a login shell found it, and on some computers not even that.
 - importing the same journal archive again skips recordings already present, even after your journal has added processing results. existing duplicate copies stay as they are.
