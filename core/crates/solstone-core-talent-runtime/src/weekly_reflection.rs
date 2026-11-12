@@ -226,22 +226,24 @@ fn asked_days(journal: &Path, start_day: &str, end_day: &str) -> Option<BTreeSet
 /// The candidate that is a changed day's shown memory told again: the one
 /// that clearly shares the most words with it. A correction rewrites the
 /// day's briefing, and its memory should come back corrected, not as another.
+/// Two bullets that share most of their words tell one event twice, as the
+/// briefing does for each copy of a stretch: a tie between them is no doubt.
 fn successor<'a>(shown: &str, candidates: &'a [Candidate]) -> Option<&'a Candidate> {
-    let texts = candidates
+    let words = candidates
         .iter()
-        .map(|candidate| {
-            (
-                candidate,
-                solstone_core_home::weekly::content_words(&candidate.text),
-            )
-        })
+        .map(|candidate| solstone_core_home::weekly::content_words(&candidate.text))
         .collect::<Vec<_>>();
+    let texts = words.iter().cloned().enumerate().collect::<Vec<_>>();
+    let one_event = |a: &usize, b: &usize| {
+        let shared = words[*a].intersection(&words[*b]).count();
+        shared * 2 >= words[*a].len().min(words[*b].len()).max(1)
+    };
     solstone_core_home::weekly::clearest_match(
         &solstone_core_home::weekly::content_words(shown),
         &texts,
-        |_, _| false,
+        one_event,
     )
-    .copied()
+    .map(|at| &candidates[*at])
 }
 
 pub fn build(
@@ -2190,6 +2192,55 @@ mod tests {
         assert_eq!(keys[1], memory_keys(&before)[1]);
         assert_eq!(after["days"][2]["state"], "not_ready");
         assert_eq!(after["selection"], before["selection"]);
+    }
+
+    #[test]
+    fn a_memory_told_twice_by_two_copies_comes_back_once() {
+        let journal = keep_stable_week(
+            &[
+                "You watched the board meeting on the Verona Platform.",
+                "Walked the long trail.",
+            ],
+            &SECOND,
+        );
+        let before = {
+            let _guard = pin_stage_now("2026-03-16T18:00:00Z");
+            let (prepared, state) = weekly_state(journal.path());
+            publish(
+                journal.path(),
+                commit(
+                    ParsedOutput::Json(json!({"S00": "M001", "S01": "M003"})),
+                    &prepared,
+                    &state,
+                )
+                .unwrap(),
+            )
+        };
+        assert_eq!(
+            memory_keys(&before)[0].2,
+            "You watched the board meeting on the Verona Platform."
+        );
+        solstone_core_system::owner_ask::record(journal.path(), "20260308", &[], true, 1).unwrap();
+        // Two copies of one stretch, each with its bullet about the same meeting.
+        fs::write(
+            journal
+                .path()
+                .join("chronicle/20260308/talents/morning_briefing.json"),
+            json!({"yesterday": [
+                "You watched a recording of the board meeting on the Verona Platform.",
+                "You watched a recording of the Verona Platform board meeting, where Romeo presented.",
+                "Walked the long trail."
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        let _guard = pin_stage_now("2026-03-17T18:00:00Z");
+        let (_, state) = weekly_state(journal.path());
+        assert_eq!(unavailable_before_generate(&state), Some(ALL_KEPT));
+        let PrePostState::WeeklyReflection(weekly) = &state else {
+            unreachable!()
+        };
+        assert!(weekly.slots[0].candidates[0].text.contains("board meeting"));
     }
 
     #[test]
