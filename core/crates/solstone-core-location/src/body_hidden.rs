@@ -46,7 +46,15 @@ impl fmt::Display for BodyHiddenError {
 
 impl std::error::Error for BodyHiddenError {}
 
-/// Hide (`hidden`) or unhide `days`, and return every day hidden after.
+/// What a hide or unhide left: every day hidden after it, and whether every
+/// file it decides was queued for search.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HiddenDaysSaved {
+    pub days: BTreeSet<String>,
+    pub search_queued: bool,
+}
+
+/// Hide (`hidden`) or unhide `days`.
 ///
 /// # Errors
 ///
@@ -56,7 +64,7 @@ pub fn set_body_days_hidden(
     journal: &Path,
     days: &BTreeSet<String>,
     hidden: bool,
-) -> Result<BTreeSet<String>, BodyHiddenError> {
+) -> Result<HiddenDaysSaved, BodyHiddenError> {
     update(journal, days, |held| {
         for day in days {
             if hidden {
@@ -70,7 +78,7 @@ pub fn set_body_days_hidden(
 
 /// Add `incoming`, an archive's hidden days, to this journal's: an archive
 /// merge brings the owner's choice with it. Returns how many were not hidden
-/// here before.
+/// here before, and whether search was queued.
 ///
 /// # Errors
 ///
@@ -78,23 +86,23 @@ pub fn set_body_days_hidden(
 pub fn merge_hidden_body_days(
     journal: &Path,
     incoming: &BTreeSet<String>,
-) -> Result<usize, BodyHiddenError> {
+) -> Result<(usize, bool), BodyHiddenError> {
     let mut added = 0;
-    update(journal, incoming, |held| {
+    let saved = update(journal, incoming, |held| {
         for day in incoming {
             if held.insert(day.clone()) {
                 added += 1;
             }
         }
     })?;
-    Ok(added)
+    Ok((added, saved.search_queued))
 }
 
 fn update(
     journal: &Path,
     days: &BTreeSet<String>,
     change: impl FnOnce(&mut BTreeSet<String>),
-) -> Result<BTreeSet<String>, BodyHiddenError> {
+) -> Result<HiddenDaysSaved, BodyHiddenError> {
     if let Some(day) = days.iter().find(|day| !is_day(day)) {
         return Err(BodyHiddenError::NotADay(day.clone()));
     }
@@ -123,15 +131,20 @@ fn update(
         }
         held
     };
+    let mut search_queued = true;
     for day in days {
-        queue_day(journal, day);
+        search_queued &= queue_day(journal, day);
     }
-    Ok(after)
+    Ok(HiddenDaysSaved {
+        days: after,
+        search_queued,
+    })
 }
 
 /// Queue the files whose search entries `day`'s hide decides. A queue that
-/// fails is logged: the owner's retry queues again.
-fn queue_day(journal: &Path, day: &str) {
+/// fails is logged and reported: the owner's retry queues again.
+fn queue_day(journal: &Path, day: &str) -> bool {
+    let mut queued = true;
     let chronicle = journal.join("chronicle").join(day);
     let streams = BODY_RECORD_STREAMS.iter().copied().chain([STRAVA_STREAM]);
     let paths = streams
@@ -140,12 +153,14 @@ fn queue_day(journal: &Path, day: &str) {
         .chain([chronicle.join(BODY_DOCUMENT)]);
     for path in paths {
         if let Err(error) = solstone_core_indexer_store::todo::enqueue_path(journal, &path) {
+            queued = false;
             log::warn!(
                 "hidden body day {day}: couldn't queue {} for search: {error}",
                 path.display()
             );
         }
     }
+    queued
 }
 
 #[cfg(test)]
@@ -161,15 +176,21 @@ mod tests {
         let journal = tempfile::tempdir().unwrap();
         let root = journal.path();
         assert_eq!(
-            set_body_days_hidden(root, &days(&["20261103", "20261105"]), true).unwrap(),
+            set_body_days_hidden(root, &days(&["20261103", "20261105"]), true)
+                .unwrap()
+                .days,
             days(&["20261103", "20261105"])
         );
         assert_eq!(
-            set_body_days_hidden(root, &days(&["20261103"]), true).unwrap(),
+            set_body_days_hidden(root, &days(&["20261103"]), true)
+                .unwrap()
+                .days,
             days(&["20261103", "20261105"])
         );
         assert_eq!(
-            set_body_days_hidden(root, &days(&["20261103"]), false).unwrap(),
+            set_body_days_hidden(root, &days(&["20261103"]), false)
+                .unwrap()
+                .days,
             days(&["20261105"])
         );
         assert_eq!(
@@ -206,7 +227,9 @@ mod tests {
         let root = journal.path();
         set_body_days_hidden(root, &days(&["20261103"]), true).unwrap();
         assert_eq!(
-            merge_hidden_body_days(root, &days(&["20261103", "20261001"])).unwrap(),
+            merge_hidden_body_days(root, &days(&["20261103", "20261001"]))
+                .unwrap()
+                .0,
             1
         );
         assert_eq!(
