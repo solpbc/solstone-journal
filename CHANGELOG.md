@@ -17,9 +17,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - connected agents now need body, a permission of its own, to read what you imported from Apple Health, Oura or Strava: readings, sleep, workouts, mindfulness sessions and what you logged there. the transcripts permission no longer includes it. a new connection has body ticked. a connection you approved before doesn't, and can't read that data until you tick body for it in the agents app.
+- on linux, installing or updating the journal now removes older installed versions, and keeps this version and the two before it so `--version` can still go back to either. a version that is still in use stays.
 
 ### Fixed
 
+- on linux, after installing the command-line tools alone (`--role cli`), a new terminal now finds the `solstone` command in bash and zsh. before, only a login shell found it, and on some computers not even that.
 - importing the same journal archive again skips recordings already present, even after your journal has added processing results. existing duplicate copies stay as they are.
 - `solstone journal archive merge --dry-run` now counts recordings it would skip, rather than files in the archive.
 - when a phone sends your calendar again, for example after you pair it with your journal again, events your journal already has are no longer added a second time.
