@@ -50,17 +50,24 @@ const REFRESH_HISTORY_LIMIT: usize = 16;
 const REFRESH_GRACE_SECS: i64 = 30;
 const MAX_REPLAY_NOTICES: usize = 16;
 
+// Fault-injection hooks for the store's own takeover tests. Every other test in
+// the crate redeems codes concurrently, so neither hook may reach them: the stop
+// step is per thread (set and read on the test's own thread), and the hold fires
+// only for the journal it was armed for.
 #[cfg(test)]
-pub(crate) static TAKEOVER_STOP_AFTER: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+thread_local! {
+    pub(crate) static TAKEOVER_STOP_AFTER: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 #[cfg(test)]
-pub(crate) static I4_TEST_HOLD: std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>> =
-    std::sync::Mutex::new(None);
+type I4Hold = (PathBuf, Box<dyn Fn() + Send + Sync>);
+
+#[cfg(test)]
+pub(crate) static I4_TEST_HOLD: std::sync::Mutex<Option<I4Hold>> = std::sync::Mutex::new(None);
 
 #[cfg(test)]
 fn check_takeover_stop(step: usize) -> Result<(), OAuthStoreError> {
-    let stop_after = TAKEOVER_STOP_AFTER.load(std::sync::atomic::Ordering::SeqCst);
+    let stop_after = TAKEOVER_STOP_AFTER.with(std::cell::Cell::get);
     if stop_after > 0 && stop_after == step {
         return Err(OAuthStoreError::InvalidGrant);
     }
@@ -72,18 +79,17 @@ fn check_takeover_stop(_step: usize) -> Result<(), OAuthStoreError> {
 }
 
 #[cfg(test)]
-fn trigger_i4_hold() {
-    let cb = if let Ok(mut guard) = I4_TEST_HOLD.lock() {
-        guard.take()
-    } else {
-        None
+fn trigger_i4_hold(root: &Path) {
+    let cb = match I4_TEST_HOLD.lock() {
+        Ok(mut guard) if guard.as_ref().is_some_and(|(armed, _)| armed == root) => guard.take(),
+        _ => None,
     };
-    if let Some(cb) = cb {
+    if let Some((_, cb)) = cb {
         cb();
     }
 }
 #[cfg(not(test))]
-fn trigger_i4_hold() {}
+fn trigger_i4_hold(_root: &Path) {}
 
 /// A journal-root-bound OAuth ledger.
 pub struct OAuthStore {
@@ -1406,7 +1412,7 @@ impl OAuthStore {
                     ) {
                         return (EditPersistence::Drop, Err(OAuthStoreError::from(e)));
                     }
-                    trigger_i4_hold();
+                    trigger_i4_hold(&self.root);
                     if check_takeover_stop(1).is_err() {
                         return (EditPersistence::Drop, Err(OAuthStoreError::InvalidGrant));
                     }
@@ -1479,7 +1485,7 @@ impl OAuthStore {
                     {
                         return (EditPersistence::Drop, Err(OAuthStoreError::from(e)));
                     }
-                    trigger_i4_hold();
+                    trigger_i4_hold(&self.root);
                     if check_takeover_stop(1).is_err() {
                         return (EditPersistence::Drop, Err(OAuthStoreError::InvalidGrant));
                     }
@@ -1725,7 +1731,7 @@ impl OAuthStore {
                 current_source.component(),
             )
             .map_err(OAuthStoreError::from)?;
-            trigger_i4_hold();
+            trigger_i4_hold(&self.root);
 
             let is_paused = crate::agent_state::is_owner_paused_locked(&self.root, &conn_key)
                 .map_err(OAuthStoreError::from)?;
@@ -1776,7 +1782,7 @@ impl OAuthStore {
             let conn_key = format!("oauth:{grant_id}");
             crate::agent_state::set_memory_source(&self.root, &conn_key, &hex)
                 .map_err(OAuthStoreError::from)?;
-            trigger_i4_hold();
+            trigger_i4_hold(&self.root);
 
             let pending = store.pending.remove(index);
             let client_record_id = client.id.clone();
@@ -7062,7 +7068,7 @@ mod tests {
     }
     impl Drop for TakeoverGuard<'_> {
         fn drop(&mut self) {
-            super::TAKEOVER_STOP_AFTER.store(0, std::sync::atomic::Ordering::SeqCst);
+            super::TAKEOVER_STOP_AFTER.with(|stop| stop.set(0));
             if let Ok(mut g) = super::I4_TEST_HOLD.lock() {
                 *g = None;
             }
@@ -7081,7 +7087,7 @@ mod tests {
             let max_step = if is_paused { 6 } else { 4 };
             for step in 1..=max_step {
                 set_now(base_time);
-                super::TAKEOVER_STOP_AFTER.store(0, std::sync::atomic::Ordering::SeqCst);
+                super::TAKEOVER_STOP_AFTER.with(|stop| stop.set(0));
 
                 let journal = journal_root();
                 let oauth = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
@@ -7206,7 +7212,7 @@ mod tests {
                     fs::read(journal.path().join("mcp-endpoint/oauth.json")).unwrap();
 
                 // Stop after numbered write
-                super::TAKEOVER_STOP_AFTER.store(step, std::sync::atomic::Ordering::SeqCst);
+                super::TAKEOVER_STOP_AFTER.with(|stop| stop.set(step));
                 let redeem_res = oauth.store.redeem_authorization_code(
                     &auth_b.code,
                     &client_b.client_id,
@@ -7379,7 +7385,7 @@ mod tests {
                 }
 
                 // From each of those prefixes, a new targeted code for the same grant runs to IssuedTokens.
-                super::TAKEOVER_STOP_AFTER.store(0, std::sync::atomic::Ordering::SeqCst);
+                super::TAKEOVER_STOP_AFTER.with(|stop| stop.set(0));
                 let client_c = oauth
                     .store
                     .register_client(
@@ -7650,10 +7656,13 @@ mod tests {
         let rx_in_thread = std::sync::Mutex::new(rx_in_thread);
 
         if let Ok(mut g) = super::I4_TEST_HOLD.lock() {
-            *g = Some(Box::new(move || {
-                tx_to_main.send(()).unwrap();
-                rx_in_thread.lock().unwrap().recv().unwrap();
-            }));
+            *g = Some((
+                journal.path().to_path_buf(),
+                Box::new(move || {
+                    tx_to_main.send(()).unwrap();
+                    rx_in_thread.lock().unwrap().recv().unwrap();
+                }),
+            ));
         }
 
         let store_thread = OAuthStore::open(journal.path());
@@ -7829,10 +7838,13 @@ mod tests {
         let rx_in_thread = std::sync::Mutex::new(rx_in_thread);
 
         if let Ok(mut g) = super::I4_TEST_HOLD.lock() {
-            *g = Some(Box::new(move || {
-                tx_to_main.send(()).unwrap();
-                rx_in_thread.lock().unwrap().recv().unwrap();
-            }));
+            *g = Some((
+                journal.path().to_path_buf(),
+                Box::new(move || {
+                    tx_to_main.send(()).unwrap();
+                    rx_in_thread.lock().unwrap().recv().unwrap();
+                }),
+            ));
         }
 
         let store_thread = OAuthStore::open(journal.path());

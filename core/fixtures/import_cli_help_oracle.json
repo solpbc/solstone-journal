@@ -7,8 +7,8 @@
       "exit": 0,
       "stderr": "",
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout": "Syncable backends:\n  plaud\n  audio\n  oura\n",
-      "stdout_sha256": "070039abd5e455fea5b003d651652aff2ebfb0d0b4bc2d459c51fc819d5e86dd",
+      "stdout": "Syncable backends:\n  plaud\n  audio\n  oura\n  granola\n",
+      "stdout_sha256": "7148101dae887bc5d2b541cf5fdae9eb97b4156aad42224cc144dc5e39b5e385",
       "supervisor": "gate_passed"
     },
     "gate_passed/help_long": {
