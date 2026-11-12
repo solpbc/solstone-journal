@@ -275,6 +275,30 @@ function pickHarness() {
   return { context, doc, log, answers };
 }
 
+// The notices' module-level part, and the view looked up as showing: what a
+// notice's button reaches while entities is the view on the page.
+function noticesSource(workspace) {
+  const start = workspace.indexOf('// ENTITIES NOTICES (module level)');
+  const end = workspace.indexOf('// END ENTITIES NOTICES', start);
+  if (start === -1 || end < start) throw new Error('the notices are marked');
+  return `
+    const ENTITIES_PATH = '/app/entities/';
+    function entitiesHere() { return true; }
+    ${workspace.slice(start, end)}
+  `;
+}
+const SHOWING_HOOKS = `
+  entitiesShowing = () => true;
+  entitiesHooks = {
+    recover: (ids) => recoverEntities(ids, reloadEntityList),
+    open: (entityId) => navigateToEntity(entityId),
+    find: (entityId) => { selectEntityScope(null); navigateToEntity(entityId); },
+    facet: () => currentFacet,
+    unhide: (name) => unhideDetectedName(name, null),
+    retryHide: (name) => retryHide({ name }),
+  };
+`;
+
 async function entityDeleteCases(workspace) {
   const start = workspace.indexOf('// ========== ENTITY DELETE ==========');
   const end = workspace.indexOf('// ========== END ENTITY DELETE ==========');
@@ -314,8 +338,10 @@ async function entityDeleteCases(workspace) {
         else scopeMetadataDirty = true;
       }
       var __nextSummary = null;
+      ${noticesSource(workspace)}
       ${workspace.slice(listStart, listEnd)}
       ${workspace.slice(start, end)}
+      ${SHOWING_HOOKS}
       this.api = { ENTITY_DELETE_COPY, entityPick, entitySetOutcome, entityOneListLines, renderEntityDeleteAction, renderJournalEntities,
         selectJournalFolder, deleteSetFromEntityList, deleteEntityFromPane, setSummary(s) { journalSummary = s; }, setNext(s) { __nextSummary = s; },
         setFolder(f) { journalFolder = f; }, dirty(v) { scopeMetadataDirty = v; } };
@@ -633,7 +659,11 @@ async function detectedHideCases(workspace, copy) {
       function hideInlineError() {}
       function selectEntityScope(facet) { __log.scope = facet; }
       function navigateToEntity(id) { __log.navigated.push(id); }
+      ${noticesSource(workspace)}
       ${workspace.slice(start, end)}
+      function recoverEntities() {}
+      function reloadEntityList() {}
+      ${SHOWING_HOOKS}
       this.api = { renderDetectedTable, detectedNameKey, data: () => entitiesData, setFacet(f) { currentFacet = f; } };
     `.replace(/__log/g, 'this.__log'), h.context);
     h.context.__log = h.log;

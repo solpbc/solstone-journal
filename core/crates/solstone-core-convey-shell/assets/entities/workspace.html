@@ -2429,7 +2429,213 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   }
 
   // ENTITIES NOTICES (module level)
+  // A notice can stay up after this view is gone. Its buttons are built here,
+  // from plain values (ids, a name, a facet, the copy), and look the view up
+  // when clicked, so they never keep it. While entities is showing they act
+  // through the view, as they always have. Otherwise a write runs the same
+  // request and shows only its notice, and a move opens entities' address.
   let entitiesHooks = null;
+
+  function entitiesShowing() {
+    const current = window.SolViews?.current?.();
+    return !!(entitiesHooks && current && current.name === 'entities' && current.ctx && !current.ctx.disposed && entitiesHere());
+  }
+
+  function entitiesFill(template, values = {}) {
+    return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), String(template || ''));
+  }
+
+  function goToEntitiesTrash() {
+    window.location.href = '/app/settings#trash';
+  }
+
+  function openEntitiesAddress(url) {
+    if (window.solRouter?.navigate?.(url)) return;
+    window.location.assign(url);
+  }
+
+  // The receipt of a delete or a recover, made away from the view.
+  function entitiesAwayReceipt(copy, card, fill = {}, buttons = [], options = {}) {
+    const put = (text) => entitiesFill(text, { noun: copy.noun, things: copy.things, ...fill });
+    const notice = {
+      app: 'entities',
+      icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
+      title: put(card.title),
+      dismissible: true,
+      buttons,
+    };
+    const message = options.message !== undefined ? options.message : card.message && put(card.message);
+    if (message) notice.message = message;
+    if (options.settled) notice.autoDismiss = 10000;
+    window.AppServices.notifications.show(notice);
+  }
+
+  function entitiesOpenTrash(copy) {
+    return { label: copy.buttons.openTrash, onClick: goToEntitiesTrash };
+  }
+
+  function entitiesRecoverClick(trashIds, copy) {
+    const ids = trashIds.filter(Boolean);
+    return async function () {
+      if (entitiesShowing()) {
+        await entitiesHooks.recover(ids);
+        return;
+      }
+      await recoverEntitiesAway(ids, copy);
+    };
+  }
+
+  async function recoverEntitiesAway(ids, copy) {
+    if (!ids.length) return;
+    const one = ids.length === 1;
+    const R = copy.receipt;
+    const S = copy.set;
+    let response;
+    try {
+      response = await window.fetch('/app/settings/api/trash/recover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, page: 'entities' }),
+      });
+    } catch (_) {
+      entitiesAwayReceipt(copy, one ? R.noAnswerRecover : S.noAnswerRecover);
+      return;
+    }
+    const data = response.ok ? await response.json().catch(() => null) : null;
+    if (response.ok && !data) {
+      entitiesAwayReceipt(copy, one ? R.noAnswerRecover : S.noAnswerRecover);
+      return;
+    }
+    const done = Array.isArray(data && data.done) ? ids.filter((id) => data.done.includes(id)) : [];
+    if (done.length && done.length === ids.length) {
+      entitiesAwayReceipt(copy, one ? R.recovered : S.recovered, { n: ids.length }, [], { settled: true, icon: 'undo-2' });
+    } else if (done.length) {
+      const others = ids.length - done.length;
+      entitiesAwayReceipt(copy, S.partRecovered, { done: done.length, n: ids.length }, [entitiesOpenTrash(copy)], { message: others === 1 ? S.partRecoveredOne : S.partRecoveredMany });
+    } else {
+      entitiesAwayReceipt(copy, one ? R.recoverFailed : S.recoverFailed, {}, [entitiesOpenTrash(copy)]);
+    }
+  }
+
+  // An entity's page: in this facet, or in the whole journal.
+  function entitiesOpenClick(entityId, facet) {
+    return function () {
+      if (entitiesShowing()) {
+        entitiesHooks.open(entityId);
+        return;
+      }
+      const query = facet ? `?facet=${encodeURIComponent(facet)}` : '';
+      openEntitiesAddress(`${ENTITIES_PATH}${query}#${entityId}`);
+    };
+  }
+
+  function entitiesFindClick(entityId) {
+    return function () {
+      if (entitiesShowing()) {
+        entitiesHooks.find(entityId);
+        return;
+      }
+      openEntitiesAddress(`${ENTITIES_PATH}#${entityId}`);
+    };
+  }
+
+  function entitiesPostDetected(facet, verb, name) {
+    return window.apiJson(`/app/entities/api/${encodeURIComponent(facet)}/detected/${verb}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  function entitiesFailedNotice(copy, key, name) {
+    window.AppServices.notifications.show({
+      app: 'entities',
+      icon: 'triangle-alert',
+      title: entitiesFill(copy[key], { name }),
+      dismissible: true,
+    });
+  }
+
+  // A hidden name's receipt: undo, and try again when search wasn't queued.
+  function entitiesHideNotice(name, searchQueued, facet, copy, facetName) {
+    const unhide = { label: entitiesFill(copy.ENT_DETECTED_UNHIDE), dismiss: true, onClick: entitiesUnhideClick(name, facet, copy) };
+    const notice = {
+      app: 'entities',
+      icon: 'eye-off',
+      title: entitiesFill(copy.ENT_DETECTED_HIDE_DONE, { name, facet: facetName }),
+      dismissible: true,
+    };
+    if (searchQueued) {
+      notice.message = entitiesFill(copy.ENT_DETECTED_HIDE_DONE_DETAIL);
+      notice.autoDismiss = 8000;
+      notice.buttons = [unhide];
+    } else {
+      // The hide stands; hiding again queues search again.
+      notice.message = entitiesFill(copy.ENT_DETECTED_HIDE_NO_SEARCH);
+      notice.buttons = [
+        { label: entitiesFill(copy.ENT_DETECTED_HIDE_TRY_AGAIN), dismiss: true, onClick: entitiesRetryHideClick(name, facet, copy, facetName) },
+        unhide,
+      ];
+    }
+    window.AppServices.notifications.show(notice);
+  }
+
+  // A name that is still hidden by an entity: that entity's page.
+  function entitiesStillHiddenNotice(name, still, copy) {
+    const entity = still.name || still.id;
+    window.AppServices.notifications.show({
+      app: 'entities',
+      icon: 'eye-off',
+      title: entitiesFill(copy.ENT_DETECTED_STILL_HIDDEN, { name, entity }),
+      dismissible: true,
+      buttons: [{
+        label: entitiesFill(copy.ENT_DETECTED_STILL_HIDDEN_OPEN, { entity }),
+        dismiss: true,
+        onClick: entitiesFindClick(still.id),
+      }],
+    });
+  }
+
+  function entitiesShowingFacet(facet) {
+    return entitiesShowing() && entitiesHooks.facet() === facet;
+  }
+
+  function entitiesUnhideClick(name, facet, copy) {
+    return async function () {
+      if (entitiesShowingFacet(facet)) {
+        await entitiesHooks.unhide(name);
+        return;
+      }
+      let answer;
+      try {
+        answer = await entitiesPostDetected(facet, 'unhide', name);
+      } catch (err) {
+        entitiesFailedNotice(copy, 'ENT_DETECTED_UNHIDE_FAILED', name);
+        window.logError?.(err, { context: 'entities: unhide detected failed' });
+        return;
+      }
+      const still = answer && answer.still_hidden_by;
+      if (still && still.id) entitiesStillHiddenNotice(name, still, copy);
+    };
+  }
+
+  function entitiesRetryHideClick(name, facet, copy, facetName) {
+    return async function () {
+      if (entitiesShowingFacet(facet)) {
+        await entitiesHooks.retryHide(name);
+        return;
+      }
+      let answer;
+      try {
+        answer = await entitiesPostDetected(facet, 'hide', name);
+      } catch (err) {
+        entitiesFailedNotice(copy, 'ENT_DETECTED_HIDE_FAILED', name);
+        window.logError?.(err, { context: 'entities: hide detected again failed' });
+        return;
+      }
+      entitiesHideNotice(name, answer && answer.search_queued !== false, facet, copy, facetName);
+    };
+  }
   // END ENTITIES NOTICES
 
   function mountEntities(ctx) {
@@ -5427,7 +5633,7 @@ function entityReceipt(copy, fill = {}, buttons = [], options = {}) {
 }
 
 function entityOpenTrashButton() {
-  return { label: ENTITY_DELETE_COPY.buttons.openTrash, onClick: () => { window.location.href = ENTITY_TRASH_PAGE; } };
+  return entitiesOpenTrash(ENTITY_DELETE_COPY);
 }
 
 // Moves one entity to the trash, or erases it now. A refusal or a non-200
@@ -5463,7 +5669,7 @@ function showEntityOneReceipt(outcome, erase, reload) {
   switch (outcome.kind) {
     case 'moved':
       entityReceipt(R.moved, { date: entityEraseDate(outcome.eraseAt) }, [
-        { label: ENTITY_DELETE_COPY.buttons.recover, onClick: () => recoverEntities([outcome.trashId], reload) },
+        { label: ENTITY_DELETE_COPY.buttons.recover, onClick: entitiesRecoverClick([outcome.trashId], ENTITY_DELETE_COPY) },
         entityOpenTrashButton(),
       ], { settled: true, message: entityEraseDate(outcome.eraseAt) ? undefined : '' });
       return;
@@ -5829,7 +6035,7 @@ async function deleteSetFromEntityList(items, erase) {
   entityPick.notes = new Map(outcome.keep.filter(([, note]) => note));
   renderJournalEntities();
   const buttons = outcome.buttons.map(name => (name === 'recover'
-    ? { label: ENTITY_DELETE_COPY.buttons.recover, onClick: () => recoverEntities(outcome.moved.map(entry => entry.trashId), reloadEntityList) }
+    ? { label: ENTITY_DELETE_COPY.buttons.recover, onClick: entitiesRecoverClick(outcome.moved.map(entry => entry.trashId), ENTITY_DELETE_COPY) }
     : entityOpenTrashButton()));
   entityReceipt(outcome.receipt, outcome.fill, buttons, {
     settled: outcome.settled,
@@ -6125,12 +6331,12 @@ function detachEntity(entity) {
           {
             label: ENT_COPY.ENT_DETACH_REATTACH_ACTION || '',
             dismiss: true,
-            onClick: () => navigateToEntity(entityId)
+            onClick: entitiesOpenClick(entityId, detachedFacet)
           },
           {
             label: ENT_COPY.ENT_DETACH_FIND_ACTION || '',
             dismiss: true,
-            onClick: () => { selectEntityScope(null); navigateToEntity(entityId); }
+            onClick: entitiesFindClick(entityId)
           }
         ]
       });
@@ -7291,27 +7497,7 @@ function focusAfterHide(position) {
 }
 
 function showHideReceipt(entity, searchQueued) {
-  const name = entity.name;
-  const unhide = { label: detectedFill('ENT_DETECTED_UNHIDE'), dismiss: true, onClick: () => unhideDetectedName(name, null) };
-  const notice = {
-    app: 'entities',
-    icon: 'eye-off',
-    title: detectedFill('ENT_DETECTED_HIDE_DONE', { name, facet: detectedFacetTitle() }),
-    dismissible: true,
-  };
-  if (searchQueued) {
-    notice.message = detectedFill('ENT_DETECTED_HIDE_DONE_DETAIL');
-    notice.autoDismiss = 8000;
-    notice.buttons = [unhide];
-  } else {
-    // The hide stands; hiding again queues search again.
-    notice.message = detectedFill('ENT_DETECTED_HIDE_NO_SEARCH');
-    notice.buttons = [
-      { label: detectedFill('ENT_DETECTED_HIDE_TRY_AGAIN'), dismiss: true, onClick: () => retryHide(entity) },
-      unhide,
-    ];
-  }
-  window.AppServices.notifications.show(notice);
+  entitiesHideNotice(entity.name, searchQueued, currentFacet, ENT_COPY, detectedFacetTitle());
 }
 
 async function retryHide(entity) {
@@ -7360,20 +7546,7 @@ async function unhideDetectedName(name, button) {
     (left[Math.min(position, left.length - 1)] || restored || (toggle && !document.getElementById('detected-hidden-foot').hidden ? toggle : document.getElementById('entity-search')))?.focus();
   }
   const still = answer && answer.still_hidden_by;
-  if (still && still.id) {
-    const entity = still.name || still.id;
-    window.AppServices.notifications.show({
-      app: 'entities',
-      icon: 'eye-off',
-      title: detectedFill('ENT_DETECTED_STILL_HIDDEN', { name, entity }),
-      dismissible: true,
-      buttons: [{
-        label: detectedFill('ENT_DETECTED_STILL_HIDDEN_OPEN', { entity }),
-        dismiss: true,
-        onClick: () => { selectEntityScope(null); navigateToEntity(still.id); },
-      }],
-    });
-  }
+  if (still && still.id) entitiesStillHiddenNotice(name, still, ENT_COPY);
 }
 // ========== END DETECTED HIDE ==========
 
@@ -8520,6 +8693,17 @@ initEntities().then(() => entitiesFirstDraw).then(() => {
   }
 });
 restoreTidyOp();
+
+// What a notice reaches while this view is showing.
+noticeHooks = {
+  recover: (ids) => recoverEntities(ids, reloadEntityList),
+  open: (entityId) => navigateToEntity(entityId),
+  find: (entityId) => { selectEntityScope(null); navigateToEntity(entityId); },
+  facet: () => currentFacet,
+  unhide: (name) => unhideDetectedName(name, null),
+  retryHide: (name) => retryHide({ name }),
+};
+entitiesHooks = noticeHooks;
 
 ctx.onDispose(() => {
   if (entitiesHooks === noticeHooks) entitiesHooks = null;
