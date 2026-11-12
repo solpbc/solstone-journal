@@ -9,6 +9,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::json;
+use solstone_core_format::content::body_hidden_days::read_hidden_days;
 use solstone_core_transcripts::{
     RangeError, Sources, TalentSource, cluster, cluster_period, cluster_range, cluster_span,
 };
@@ -58,8 +59,10 @@ pub(crate) async fn api_read(
                 voices: solstone_core_talent_runtime::agent_speakers(&journal_root)
                     .map(|speakers| speakers.voices),
                 heard_owner: None,
-                // The owner's own page keeps showing their workouts.
-                strava_tiles: true,
+                // The owner's own page keeps showing their workouts, except on
+                // a day they hid: a workout reads only on the day it started.
+                // While the hidden days can't be read, the page shows them.
+                strava_tiles: read_hidden_days(&journal_root).hides(&day) != Some(true),
             };
             let markdown =
                 if let (Some(start), Some(end)) = (query.start.as_deref(), query.end.as_deref()) {
@@ -192,6 +195,58 @@ mod tests {
             markdown.contains("## Strava workout: Morning Run"),
             "{markdown}"
         );
+    }
+
+    /// A workout on a day the owner hid leaves that day's page, and one on a
+    /// day they didn't stays.
+    #[tokio::test]
+    async fn the_day_page_leaves_out_a_workout_on_a_hidden_day() {
+        use solstone_core_format::content::body_hidden_days::{
+            hidden_days_bytes, hidden_days_path,
+        };
+        let root = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("config")).unwrap();
+        fs::write(
+            root.path().join("config/journal.json"),
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        )
+        .unwrap();
+        for day in ["20260810", "20260811"] {
+            let tile = root
+                .path()
+                .join(format!("chronicle/{day}/import.strava/070000_300"));
+            fs::create_dir_all(&tile).unwrap();
+            fs::write(
+                tile.join("workout.json"),
+                json!({
+                    "schema": "solstone.import.strava.tile.v1",
+                    "activity_id": if day == "20260810" { 9 } else { 10 },
+                    "tile": {"index": 0, "count": 1},
+                    "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0}
+                })
+                .to_string(),
+            )
+            .unwrap();
+        }
+        let store = hidden_days_path(root.path());
+        fs::create_dir_all(store.parent().unwrap()).unwrap();
+        fs::write(
+            &store,
+            hidden_days_bytes(&std::collections::BTreeSet::from(["20260810".to_owned()])),
+        )
+        .unwrap();
+        let hidden = read_markdown(
+            root.path(),
+            "/app/transcripts/api/read/20260810?transcripts=1",
+        )
+        .await;
+        assert!(!hidden.contains("Strava workout"), "{hidden}");
+        let shown = read_markdown(
+            root.path(),
+            "/app/transcripts/api/read/20260811?transcripts=1",
+        )
+        .await;
+        assert!(shown.contains("## Strava workout: Morning Run"), "{shown}");
     }
 
     async fn read_markdown(root: &std::path::Path, uri: &str) -> String {
