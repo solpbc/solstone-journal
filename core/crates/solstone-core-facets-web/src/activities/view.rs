@@ -730,6 +730,8 @@ fn place_body_item(
     zone: chrono_tz::Tz,
     day: &str,
 ) {
+    // What kind it is, where an activity says its type.
+    item["activity_label"] = Value::String(face.anchor.activity.clone());
     if let Some(name) = solstone_core_location::body_records::face_line(face, zone, day)
         .and_then(|line| line.get("name").and_then(Value::as_str).map(str::to_owned))
     {

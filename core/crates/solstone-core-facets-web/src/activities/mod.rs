@@ -2852,6 +2852,7 @@ mod tests {
                 .is_some_and(|title| !title.is_empty()),
             "{item}"
         );
+        assert_eq!(item["activity_label"], "workout", "{item}");
         let (start, end) = (item["start_min"].as_i64(), item["end_min"].as_i64());
         assert!(
             start.is_some() && end >= start && item["start"].is_string(),

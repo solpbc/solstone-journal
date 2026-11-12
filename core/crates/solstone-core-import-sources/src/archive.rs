@@ -3008,11 +3008,11 @@ fn hide_archive_days(
 /// What a merge that failed after hiding the archive's days says of them.
 fn days_left_hidden_words(days: usize) -> String {
     if days == 1 {
-        "1 day of body data from the archive stays hidden; you can unhide it on the body page."
+        "1 day of body data was hidden in the archive, so it's hidden in this journal too; you can unhide it on the body page."
             .to_owned()
     } else {
         format!(
-            "{days} days of body data from the archive stay hidden; you can unhide them on the body page."
+            "{days} days of body data were hidden in the archive, so they're hidden in this journal too; you can unhide them on the body page."
         )
     }
 }
