@@ -5,9 +5,9 @@
 //!
 //! A hide moves no file: what is hidden is written in a journal file this
 //! module reads. A hidden activity's entry, a hidden person's notes, a name
-//! hidden in a facet's detections, an output of a hidden activity, and a week
-//! page with anything left out are kept out of the index; every other entry
-//! of the same file keeps its position. When a hide can't be decided because
+//! hidden in a facet's detections, an output of a hidden activity, a week page
+//! with anything left out, and every body file of a day the owner hid are kept
+//! out of the index; every other entry of the same file keeps its position. When a hide can't be decided because
 //! the file that says it can't be read, the file is indexed with nothing and
 //! tried again on the next scan.
 //!
@@ -22,10 +22,18 @@ use std::rc::Rc;
 
 use serde_json::Value;
 use solstone_core_entity::hidden_names::{HiddenKeys, facet_hidden_keys, link_folder_hidden};
+use solstone_core_format::content::body_hidden_days::{
+    HIDDEN_DAYS_RELATIVE_PATH, HiddenDays, is_day, read_hidden_days,
+};
+use solstone_core_format::content::body_records::{BODY_RECORD_STREAMS, BODY_RECORDS_FILE};
+use solstone_core_format::content::strava_body::{STRAVA_STREAM, STRAVA_TILE_FILE};
 use solstone_core_format::content::week_left_out::{
     LEFT_OUT_RELATIVE_PATH, LeftOut, WeekPageKeys, read_left_out, read_week_page_keys,
 };
 use solstone_core_format::content::{Family, IndexChunk, indexed, is_hidden_activity};
+
+/// The day's body document, as search names it.
+const BODY_DOCUMENT: &str = "body.md";
 use solstone_core_format::paths::resolve_journal_path;
 
 /// What of one file goes into the index.
@@ -78,6 +86,7 @@ pub(crate) struct HideCache {
     folders: HashMap<(String, String), Result<bool, String>>,
     days: HashMap<(String, String), Rc<DayRows>>,
     left_out: Option<LeftOut>,
+    hidden_days: Option<HiddenDays>,
 }
 
 impl HideCache {
@@ -114,6 +123,9 @@ impl HideCache {
                     FileHide::Index
                 }
             }
+            // Chronicle files are named from the day, without `chronicle/`.
+            [day, stream, _, file] if is_body_file(stream, file) => self.body_day(journal, day),
+            [day, BODY_DOCUMENT] if is_day(day) => self.body_day(journal, day),
             ["reflections", "weekly", file] => match file.strip_suffix(".md") {
                 Some(start) => self.week_page(journal, start),
                 None => FileHide::Index,
@@ -156,6 +168,20 @@ impl HideCache {
         )
     }
 
+    /// A body file of `day`: nothing of it while the owner hides the day.
+    fn body_day(&mut self, journal: &Path, day: &str) -> FileHide {
+        let hidden = self
+            .hidden_days
+            .get_or_insert_with(|| read_hidden_days(journal));
+        match hidden.hides(day) {
+            Some(false) => FileHide::Index,
+            Some(true) => FileHide::Skip,
+            None => FileHide::Undecidable(format!(
+                "can't tell which days of body data are hidden: {HIDDEN_DAYS_RELATIVE_PATH} can't be read"
+            )),
+        }
+    }
+
     fn week_page(&mut self, journal: &Path, start: &str) -> FileHide {
         let left_out = self.left_out.get_or_insert_with(|| read_left_out(journal));
         let keys = match left_out {
@@ -176,6 +202,12 @@ impl HideCache {
             )),
         }
     }
+}
+
+/// A body window's records or a Strava workout's piece.
+fn is_body_file(stream: &str, file: &str) -> bool {
+    (BODY_RECORD_STREAMS.contains(&stream) && file == BODY_RECORDS_FILE)
+        || (stream == STRAVA_STREAM && file == STRAVA_TILE_FILE)
 }
 
 /// A facet's detected names for a day, named as the index names them: any

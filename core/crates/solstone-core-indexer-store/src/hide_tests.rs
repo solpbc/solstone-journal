@@ -999,3 +999,136 @@ mod drained {
         );
     }
 }
+
+const HIDDEN_DAYS: &str = "solstone/apps/body/hidden-days.json";
+
+/// A day of body data on `day` from all three sources, each holding `word`,
+/// with its body document; returns the four index paths.
+fn body_day(journal: &Journal, day: &str, word: &str) -> [String; 4] {
+    use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows};
+    let row = |source: &str| {
+        let mut row = BodyRow::new(
+            RowKind::Experience,
+            format!("{source}-{word}"),
+            source,
+            "workout",
+            format!("{word} {source} walk"),
+        );
+        row.experience = Some("workout".into());
+        row.start = Some(format!(
+            "{}-{}-{} 08:00:00 +0000",
+            &day[..4],
+            &day[4..6],
+            &day[6..]
+        ));
+        row.end = Some(format!(
+            "{}-{}-{} 08:30:00 +0000",
+            &day[..4],
+            &day[4..6],
+            &day[6..]
+        ));
+        encode_rows(&[row])
+    };
+    let apple = format!("{day}/import.apple_health/080000_300/body.jsonl");
+    let oura = format!("{day}/import.oura/080000_300/body.jsonl");
+    journal.write(&format!("chronicle/{apple}"), &row("apple_health"));
+    journal.write(&format!("chronicle/{oura}"), &row("oura"));
+    let strava = format!("{day}/import.strava/080000_300/workout.json");
+    journal.json(
+        &format!("chronicle/{strava}"),
+        json!({
+            "schema": "solstone.import.strava.tile.v1",
+            "import_id": "20261004T120000",
+            "activity_id": 9,
+            "zone": "UTC",
+            "tile": {"index": 0, "count": 6},
+            "workout": {
+                "name": format!("{word} strava run"),
+                "type": "Run",
+                "start": format!("{}-{}-{}T08:00:00+00:00", &day[..4], &day[4..6], &day[6..]),
+                "elapsed_seconds": 1800,
+                "moving_seconds": 1700,
+                "distance_m": 5000.0,
+                "commute": false,
+                "entered_by_hand": false,
+                "strava_fields": {}
+            }
+        }),
+    );
+    let document = format!("{day}/body.md");
+    journal.write(
+        &format!("chronicle/{document}"),
+        &format!("# body\n\n{word} walk\n"),
+    );
+    [apple, oura, strava, document]
+}
+
+#[test]
+fn a_hidden_day_of_body_data_leaves_search_and_the_day_before_stays() {
+    let journal = Journal::new("hidden-body-day");
+    let hidden = body_day(&journal, "20260304", "wrenneedle");
+    let before = body_day(&journal, "20260303", "ternneedle");
+    journal.scan(true);
+    for rel in &hidden {
+        assert!(!journal.rows(rel).is_empty(), "{rel}");
+    }
+
+    // The owner hides the day; its files are queued, as the writer does, and
+    // one drain takes every one of them out of search.
+    journal.json(HIDDEN_DAYS, json!({"days": ["20260304"]}));
+    for rel in &hidden {
+        crate::todo::enqueue_path(journal.path(), &journal.path().join("chronicle").join(rel))
+            .unwrap();
+    }
+    crate::todo::drain_now(journal.path()).unwrap();
+    assert!(journal.search("wrenneedle").is_empty());
+    for rel in &hidden {
+        assert!(journal.rows(rel).is_empty(), "{rel}");
+        assert!(
+            journal.stored_mtime(rel).is_some_and(|mtime| mtime > 0),
+            "{rel}"
+        );
+    }
+    // The day before keeps every entry, through a full scan too.
+    journal.scan(true);
+    for rel in &before {
+        assert!(!journal.rows(rel).is_empty(), "{rel}");
+    }
+    assert!(journal.search("wrenneedle").is_empty());
+
+    // Unhidden, it comes back.
+    journal.json(HIDDEN_DAYS, json!({"days": []}));
+    for rel in &hidden {
+        crate::todo::enqueue_path(journal.path(), &journal.path().join("chronicle").join(rel))
+            .unwrap();
+    }
+    crate::todo::drain_now(journal.path()).unwrap();
+    for rel in &hidden {
+        assert!(!journal.rows(rel).is_empty(), "{rel}");
+    }
+}
+
+#[test]
+fn body_files_wait_while_the_hidden_days_cant_be_read_and_other_files_dont() {
+    let journal = Journal::new("hidden-body-day-damaged");
+    let hidden = body_day(&journal, "20260304", "wrenneedle");
+    journal.lines(
+        ACTIVITIES,
+        &[
+            activity("a", "alphaneedle", false),
+            body_record("e", "echoneedle"),
+        ],
+    );
+    journal.write(HIDDEN_DAYS, "{ damaged");
+    journal.scan(true);
+    for rel in &hidden {
+        assert!(journal.rows(rel).is_empty(), "{rel}");
+        assert_eq!(journal.stored_mtime(rel), Some(-1), "{rel}");
+    }
+    // An ordinary activity beside a body record is found as ever.
+    assert_eq!(journal.search("alphaneedle").len(), 1);
+
+    journal.json(HIDDEN_DAYS, json!({"days": []}));
+    journal.scan(false);
+    assert_eq!(journal.search("wrenneedle").len(), 4);
+}
