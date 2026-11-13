@@ -29,13 +29,13 @@ fn helper_binary() -> &'static str {
     env!("CARGO_BIN_EXE_solstone-core-ced-analyze")
 }
 
-fn compile_stub(output: &Path, abi: i32) -> bool {
+/// Compiles the stub engine. A missing compiler fails the test: these cases
+/// exist to cross a real process boundary, so passing without one would
+/// prove nothing.
+fn compile_stub(output: &Path, abi: i32) {
     let compiler = std::env::var("CC").unwrap_or_else(|_| "cc".to_owned());
-    if Command::new(&compiler).arg("--version").output().is_err() {
-        return false;
-    }
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ced_stub.c");
-    let mut command = Command::new(compiler);
+    let mut command = Command::new(&compiler);
     if std::env::consts::OS == "macos" {
         command.arg("-dynamiclib");
     } else {
@@ -47,13 +47,14 @@ fn compile_stub(output: &Path, abi: i32) -> bool {
         .arg("-o")
         .arg(output)
         .output()
-        .expect("start C compiler");
+        .unwrap_or_else(|error| {
+            panic!("start C compiler `{compiler}` (set CC to a working one): {error}")
+        });
     assert!(
         output.status.success(),
         "compile CED stub failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    true
 }
 
 fn write_f32le(path: &Path, values: &[f32]) {
@@ -70,20 +71,17 @@ struct Fixture {
     model: PathBuf,
 }
 
-fn fixture() -> Option<Fixture> {
+fn fixture() -> Fixture {
     let dir = tempfile::tempdir().expect("temp dir");
     let library = dir.path().join("libced.so");
-    if !compile_stub(&library, 1) {
-        eprintln!("skipping: no usable C compiler");
-        return None;
-    }
+    compile_stub(&library, 1);
     let model = dir.path().join("model.gguf");
     fs::write(&model, b"real model bytes").unwrap();
-    Some(Fixture {
+    Fixture {
         _dir: dir,
         library,
         model,
-    })
+    }
 }
 
 /// Runs the real compiled helper as a subprocess. The returned exit code
@@ -129,7 +127,7 @@ fn run_helper(args: &[&str], request: &Value) -> (bool, Value, String, Option<i3
 
 #[test]
 fn real_subprocess_probe_succeeds_against_a_loadable_stub() {
-    let Some(fixture) = fixture() else { return };
+    let fixture = fixture();
     let request = json!({
         "schema": PROBE_REQUEST_SCHEMA,
         "models": {
@@ -149,10 +147,7 @@ fn real_subprocess_probe_succeeds_against_a_loadable_stub() {
 fn real_subprocess_probe_reports_unloadable_for_a_wrong_abi_stub() {
     let dir = tempfile::tempdir().expect("temp dir");
     let library = dir.path().join("libced.so");
-    if !compile_stub(&library, 2) {
-        eprintln!("skipping: no usable C compiler");
-        return;
-    }
+    compile_stub(&library, 2);
     let model = dir.path().join("model.gguf");
     fs::write(&model, b"model").unwrap();
     let request = json!({
@@ -180,10 +175,7 @@ fn real_subprocess_probe_reports_unloadable_for_a_wrong_abi_stub() {
 fn real_subprocess_probe_reports_model_load_failed_for_null_load_marker() {
     let dir = tempfile::tempdir().expect("temp dir");
     let library = dir.path().join("libced.so");
-    if !compile_stub(&library, 1) {
-        eprintln!("skipping: no usable C compiler");
-        return;
-    }
+    compile_stub(&library, 1);
     let model = dir.path().join("model.gguf");
     fs::write(&model, b"NULL_LOAD").unwrap();
     let request = json!({
@@ -198,7 +190,7 @@ fn real_subprocess_probe_reports_model_load_failed_for_null_load_marker() {
 
 #[test]
 fn real_subprocess_classify_matches_the_two_window_contract() {
-    let Some(fixture) = fixture() else { return };
+    let fixture = fixture();
     let dir = tempfile::tempdir().expect("temp dir");
     let audio_path = dir.path().join("audio.f32le");
     // Window 0: a leading negative sample trips the stub's classify failure.
