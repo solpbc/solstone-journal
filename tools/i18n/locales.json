@@ -149,6 +149,10 @@
     {
       "namespace": "browser",
       "owner": "browser"
+    },
+    {
+      "namespace": "trust",
+      "owner": "transparency"
     }
   ],
   "bundles": [
@@ -207,6 +211,12 @@
     },
     {
       "id": "browser",
+      "locales": [
+        "en-US"
+      ]
+    },
+    {
+      "id": "transparency",
       "locales": [
         "en-US"
       ]
