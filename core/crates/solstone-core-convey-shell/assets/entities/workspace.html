@@ -4264,11 +4264,27 @@ function syncEntityRoute() {
 
 // Back and forward between two of entities' own entries: the router leaves
 // them to the view. Anything else is the router's.
+// Back or forward takes the page to another of entities' entries, and a
+// dialog opened on the one left goes with it: on a phone, back is how a
+// dialog is put away. The redraw places focus.
+function closeDialogsForMove() {
+  closeEntityDeleteDialog(false);
+  const modal = document.getElementById('detachConfirmModal');
+  if (modal && modal.style.display === 'flex') {
+    modal.style.display = 'none';
+    pendingDetachEntity = null;
+    detachOpener = null;
+  }
+}
+
 ctx.on(window, 'hashchange', () => {
-  if (entitiesHere()) handleHashChange();
+  if (!entitiesHere()) return;
+  closeDialogsForMove();
+  handleHashChange();
 });
 ctx.on(window, 'popstate', () => {
   if (!entitiesHere()) return;
+  closeDialogsForMove();
   if (window.appEvents?.buildChanged?.()) {
     window.location.reload();
     return;

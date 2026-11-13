@@ -1050,6 +1050,7 @@ async function main() {
     },
     holdFocus: (_own, done) => Promise.resolve(done),
     restoredFocusTarget: () => null,
+    closeEntityDeleteDialog: () => {},
   };
   const scopeSource = `${workspace.slice(start, scopeEnd)}\nfunction loadEntities() { window.__scopeLoads = (window.__scopeLoads || 0) + 1; showListView(); }`;
   vm.runInNewContext(scopeSource, context, {filename: 'entities-scope.js'});
