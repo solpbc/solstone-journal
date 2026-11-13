@@ -297,7 +297,7 @@ fn workspace_uses_full_collision_safe_segment_identity_and_fallible_loading() {
         "legacyMatches.length === 1",
         "legacyKey = decodeURIComponent(rawHash)",
         "const nextSegments = validatedSegments(data.segments)",
-        "window.apiJson(segmentsApiUrl",
+        "apiJson(segmentsApiUrl",
         "stream_layout: segmentLayout(selectedSegment)",
         "throw new Error('invalid segment layout')",
     ] {
