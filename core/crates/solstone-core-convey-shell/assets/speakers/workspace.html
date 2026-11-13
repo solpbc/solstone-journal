@@ -1361,6 +1361,351 @@
 </div>
 </div>
 
+<style>
+.spk-overview {
+  width: min(1120px, 100%);
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 32px 16px 56px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.spk-overview-section {
+  padding: 28px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.spk-overview-section:last-child {
+  border-bottom: 0;
+}
+
+.spk-overview-section[hidden] {
+  display: none;
+}
+
+.spk-day-grid-copy {
+  margin: 6px 0 0;
+  color: var(--ink-soft-paper);
+  font-size: var(--text-min);
+}
+
+.spk-day-grid-host {
+  min-width: 0;
+}
+
+.spk-day-grid-legend {
+  margin-top: var(--space-2);
+}
+
+.spk-overview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.spk-overview-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.spk-overview-panel {
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 18px;
+}
+
+.spk-overview-muted {
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+
+.spk-overview-discovery-notice {
+  margin: 0 0 16px;
+}
+
+.spk-overview-discovery-notice[hidden] {
+  display: none;
+}
+
+.spk-overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.spk-overview-btn,
+.spk-overview-link,
+.spk-overview-select {
+  min-height: 38px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+
+.spk-overview-btn,
+.spk-overview-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.spk-overview-btn-primary {
+  background: var(--surface-dark);
+  border-color: var(--surface-dark);
+  color: var(--ink-on-dark);
+}
+
+/* A destructive confirm, as tokens.css names it. */
+.spk-overview-btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--ink-on-danger);
+}
+
+.spk-overview-select {
+  padding: 7px 10px;
+}
+
+.spk-progress {
+  height: 8px;
+  background: var(--hairline);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 12px 0 8px;
+}
+
+.spk-progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--surface-dark);
+}
+
+.spk-owner-samples,
+.spk-known-grid,
+.spk-discovery-clusters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+/* Unlabeled voices stay discoverable without crowding named suggestions. */
+.spk-discovery-clusters > details { grid-column: 1 / -1; }
+.spk-discovery-clusters > details > summary { cursor: pointer; padding: 12px 0; }
+.spk-discovery-clusters > details > .spk-discovery-card { margin-top: 12px; }
+
+/* Same treatment for placeholder-named ("Speaker 1") known-voice cards. */
+.spk-known-grid > details { grid-column: 1 / -1; }
+.spk-known-grid > details > summary { cursor: pointer; padding: 12px 0; }
+.spk-known-grid > details > .spk-known-card { margin-top: 12px; }
+
+.spk-owner-sample,
+.spk-known-card,
+.spk-discovery-card {
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 14px;
+}
+
+.spk-known-card {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.spk-card-title {
+  margin: 0 0 8px;
+  font-weight: 700;
+}
+
+.spk-card-line {
+  margin: 4px 0;
+  color: var(--ink-soft-paper);
+  font-size: 14px;
+}
+
+.spk-cohesion {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.spk-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hairline-2);
+}
+
+.spk-dot-filled {
+  background: var(--surface-dark);
+}
+
+.spk-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.spk-discovery-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.spk-overview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.spk-overview-filter {
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+
+/* G1-208: the phone page ran 26,832px because all 51 known voices stack one
+   per row. Show the first twelve and let the owner ask for the rest; the
+   desktop grid is two or three across and stays whole. */
+.spk-known-more {
+  display: none;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .spk-overview {
+    width: min(100vw - 24px, 1120px);
+    padding-top: 20px;
+  }
+
+  .spk-overview-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .spk-sentence-actions {
+    grid-column: 2;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .spk-select-small { max-width: 100%; }
+  .spk-discovery-clusters {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Every control on this page is thumb-driven from the tablet down, the same
+   reasoning that gave the day grid one cell ladder (G1-213). */
+@media (max-width: 768px) {
+  .spk-overview-btn,
+  .spk-overview-link,
+  .spk-overview-select,
+  .spk-overview-filter {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 480px) {
+  .spk-overview-filter,
+  .spk-overview-select {
+    width: 100%;
+  }
+
+  .spk-known-grid[data-capped] > a.spk-known-card:nth-of-type(n + 13) {
+    display: none;
+  }
+
+  .spk-known-grid[data-capped] + .spk-known-more {
+    display: inline-flex;
+  }
+}
+</style>
+
+<div id="speakersOverviewView" hidden>
+<div class="spk-overview" data-spk-overview>
+  <section class="spk-overview-section spk-day-grid-card" id="spkDayGridCard" hidden>
+    <div class="spk-overview-header">
+      <div>
+        <h2 class="spk-overview-title" data-copy="SPK_GRID_TITLE"></h2>
+        <p class="spk-day-grid-copy" id="spkDayGridCopy"></p>
+      </div>
+    </div>
+    <div class="spk-day-grid-host" id="spkDayGridHost"></div>
+    <div class="spk-day-grid-legend" id="spkDayGridLegend"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="your-voice" id="spkOverviewYourVoiceSection" tabindex="-1" aria-labelledby="spkOverviewYourVoiceHeader">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_YOUR_VOICE_HEADER" id="spkOverviewYourVoiceHeader"></h2>
+    </div>
+    <div id="spkOverviewOwner" class="spk-overview-panel"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="quality">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_QUALITY_HEADER"></h2>
+    </div>
+    <div id="spkOverviewQuality" class="spk-overview-panel"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="known-voices">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_KNOWN_VOICES_HEADER"></h2>
+      <div class="spk-overview-controls">
+        <input id="spkKnownFilter" class="spk-overview-filter" type="search" autocomplete="off" placeholder="find a voice by name" aria-label="find a voice by name">
+        <select id="spkKnownSort" class="spk-overview-select" aria-label="sort voices"></select>
+      </div>
+    </div>
+    <p class="spk-overview-muted" data-copy="SPK_OVERVIEW_KNOWN_VOICES_QUALITY_HINT"></p>
+    <div id="spkKnownVoices"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="new-voices" id="spkNewVoicesSection">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_NEW_VOICES_HEADER"></h2>
+      <button id="spkDiscoveryScan" class="spk-overview-btn" type="button">look for new voices</button>
+    </div>
+    <div id="spkStatementHandoffNotice" class="spk-overview-muted" hidden></div>
+    <div id="spkOverviewDiscoveryNotice" class="spk-overview-discovery-notice" hidden></div>
+    <div id="spkDiscoveryClusters" class="spk-discovery-clusters"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="today">
+    <a id="spkTodayReview" class="spk-overview-link" href=""></a>
+  </section>
+</div>
+</div>
+
 <script>
 (() => {
   const DAY_RE = /^\d{8}$/;
@@ -3935,351 +4280,6 @@
 
 })();
 </script>
-
-<style>
-.spk-overview {
-  width: min(1120px, 100%);
-  min-width: 0;
-  box-sizing: border-box;
-  margin: 0 auto;
-  padding: 32px 16px 56px;
-  background: var(--panel);
-  color: var(--ink);
-}
-
-.spk-overview-section {
-  padding: 28px 0;
-  border-bottom: 1px solid var(--hairline);
-}
-
-.spk-overview-section:last-child {
-  border-bottom: 0;
-}
-
-.spk-overview-section[hidden] {
-  display: none;
-}
-
-.spk-day-grid-copy {
-  margin: 6px 0 0;
-  color: var(--ink-soft-paper);
-  font-size: var(--text-min);
-}
-
-.spk-day-grid-host {
-  min-width: 0;
-}
-
-.spk-day-grid-legend {
-  margin-top: var(--space-2);
-}
-
-.spk-overview-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.spk-overview-title {
-  margin: 0;
-  font-size: 24px;
-  line-height: 1.2;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
-.spk-overview-panel {
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--paper);
-  padding: 18px;
-}
-
-.spk-overview-muted {
-  color: var(--ink-faint);
-  font-size: 14px;
-}
-
-.spk-overview-discovery-notice {
-  margin: 0 0 16px;
-}
-
-.spk-overview-discovery-notice[hidden] {
-  display: none;
-}
-
-.spk-overview-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.spk-overview-btn,
-.spk-overview-link,
-.spk-overview-select {
-  min-height: 38px;
-  border: 1px solid var(--hairline-2);
-  border-radius: 6px;
-  background: var(--paper);
-  color: var(--ink);
-  font: inherit;
-}
-
-.spk-overview-btn,
-.spk-overview-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 12px;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.spk-overview-btn-primary {
-  background: var(--surface-dark);
-  border-color: var(--surface-dark);
-  color: var(--ink-on-dark);
-}
-
-/* A destructive confirm, as tokens.css names it. */
-.spk-overview-btn-danger {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: var(--ink-on-danger);
-}
-
-.spk-overview-select {
-  padding: 7px 10px;
-}
-
-.spk-progress {
-  height: 8px;
-  background: var(--hairline);
-  border-radius: 999px;
-  overflow: hidden;
-  margin: 12px 0 8px;
-}
-
-.spk-progress-fill {
-  height: 100%;
-  width: 0;
-  background: var(--surface-dark);
-}
-
-.spk-owner-samples,
-.spk-known-grid,
-.spk-discovery-clusters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-}
-
-/* Unlabeled voices stay discoverable without crowding named suggestions. */
-.spk-discovery-clusters > details { grid-column: 1 / -1; }
-.spk-discovery-clusters > details > summary { cursor: pointer; padding: 12px 0; }
-.spk-discovery-clusters > details > .spk-discovery-card { margin-top: 12px; }
-
-/* Same treatment for placeholder-named ("Speaker 1") known-voice cards. */
-.spk-known-grid > details { grid-column: 1 / -1; }
-.spk-known-grid > details > summary { cursor: pointer; padding: 12px 0; }
-.spk-known-grid > details > .spk-known-card { margin-top: 12px; }
-
-.spk-owner-sample,
-.spk-known-card,
-.spk-discovery-card {
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--paper);
-  padding: 14px;
-}
-
-.spk-known-card {
-  display: block;
-  color: inherit;
-  text-decoration: none;
-}
-
-.spk-card-title {
-  margin: 0 0 8px;
-  font-weight: 700;
-}
-
-.spk-card-line {
-  margin: 4px 0;
-  color: var(--ink-soft-paper);
-  font-size: 14px;
-}
-
-.spk-cohesion {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.spk-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--hairline-2);
-}
-
-.spk-dot-filled {
-  background: var(--surface-dark);
-}
-
-.spk-dots {
-  display: inline-flex;
-  gap: 4px;
-}
-
-.spk-discovery-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.spk-overview-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.spk-overview-filter {
-  min-height: 38px;
-  padding: 7px 10px;
-  border: 1px solid var(--hairline-2);
-  border-radius: 6px;
-  background: var(--paper);
-  color: var(--ink);
-  font: inherit;
-}
-
-/* G1-208: the phone page ran 26,832px because all 51 known voices stack one
-   per row. Show the first twelve and let the owner ask for the rest; the
-   desktop grid is two or three across and stays whole. */
-.spk-known-more {
-  display: none;
-  width: 100%;
-  min-height: 44px;
-  margin-top: 12px;
-  align-items: center;
-  justify-content: center;
-  padding: 10px 14px;
-  border: 1px solid var(--hairline-2);
-  border-radius: 6px;
-  background: var(--paper);
-  color: var(--ink);
-  font: inherit;
-  cursor: pointer;
-}
-
-@media (max-width: 720px) {
-  .spk-overview {
-    width: min(100vw - 24px, 1120px);
-    padding-top: 20px;
-  }
-
-  .spk-overview-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .spk-sentence-actions {
-    grid-column: 2;
-    flex-wrap: wrap;
-    min-width: 0;
-  }
-  .spk-select-small { max-width: 100%; }
-  .spk-discovery-clusters {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Every control on this page is thumb-driven from the tablet down, the same
-   reasoning that gave the day grid one cell ladder (G1-213). */
-@media (max-width: 768px) {
-  .spk-overview-btn,
-  .spk-overview-link,
-  .spk-overview-select,
-  .spk-overview-filter {
-    min-height: 44px;
-  }
-}
-
-@media (max-width: 480px) {
-  .spk-overview-filter,
-  .spk-overview-select {
-    width: 100%;
-  }
-
-  .spk-known-grid[data-capped] > a.spk-known-card:nth-of-type(n + 13) {
-    display: none;
-  }
-
-  .spk-known-grid[data-capped] + .spk-known-more {
-    display: inline-flex;
-  }
-}
-</style>
-
-<div id="speakersOverviewView" hidden>
-<div class="spk-overview" data-spk-overview>
-  <section class="spk-overview-section spk-day-grid-card" id="spkDayGridCard" hidden>
-    <div class="spk-overview-header">
-      <div>
-        <h2 class="spk-overview-title" data-copy="SPK_GRID_TITLE"></h2>
-        <p class="spk-day-grid-copy" id="spkDayGridCopy"></p>
-      </div>
-    </div>
-    <div class="spk-day-grid-host" id="spkDayGridHost"></div>
-    <div class="spk-day-grid-legend" id="spkDayGridLegend"></div>
-  </section>
-
-  <section class="spk-overview-section" data-section="your-voice" id="spkOverviewYourVoiceSection" tabindex="-1" aria-labelledby="spkOverviewYourVoiceHeader">
-    <div class="spk-overview-header">
-      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_YOUR_VOICE_HEADER" id="spkOverviewYourVoiceHeader"></h2>
-    </div>
-    <div id="spkOverviewOwner" class="spk-overview-panel"></div>
-  </section>
-
-  <section class="spk-overview-section" data-section="quality">
-    <div class="spk-overview-header">
-      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_QUALITY_HEADER"></h2>
-    </div>
-    <div id="spkOverviewQuality" class="spk-overview-panel"></div>
-  </section>
-
-  <section class="spk-overview-section" data-section="known-voices">
-    <div class="spk-overview-header">
-      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_KNOWN_VOICES_HEADER"></h2>
-      <div class="spk-overview-controls">
-        <input id="spkKnownFilter" class="spk-overview-filter" type="search" autocomplete="off" placeholder="find a voice by name" aria-label="find a voice by name">
-        <select id="spkKnownSort" class="spk-overview-select" aria-label="sort voices"></select>
-      </div>
-    </div>
-    <p class="spk-overview-muted" data-copy="SPK_OVERVIEW_KNOWN_VOICES_QUALITY_HINT"></p>
-    <div id="spkKnownVoices"></div>
-  </section>
-
-  <section class="spk-overview-section" data-section="new-voices" id="spkNewVoicesSection">
-    <div class="spk-overview-header">
-      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_NEW_VOICES_HEADER"></h2>
-      <button id="spkDiscoveryScan" class="spk-overview-btn" type="button">look for new voices</button>
-    </div>
-    <div id="spkStatementHandoffNotice" class="spk-overview-muted" hidden></div>
-    <div id="spkOverviewDiscoveryNotice" class="spk-overview-discovery-notice" hidden></div>
-    <div id="spkDiscoveryClusters" class="spk-discovery-clusters"></div>
-  </section>
-
-  <section class="spk-overview-section" data-section="today">
-    <a id="spkTodayReview" class="spk-overview-link" href=""></a>
-  </section>
-</div>
-</div>
 
 <script>
 (() => {
