@@ -22,8 +22,8 @@ use solstone_core_journal_io::paths::{
 use solstone_core_transcripts::{SegmentClock, segment_clock};
 
 use crate::dispatch::{
-    DispatchError, DispatchPrincipal, Prepared, codec, differing_capture_zone, live_allows,
-    segment_assignment_probe_path, segment_boundary, source_label, source_labels,
+    DispatchError, DispatchPrincipal, Prepared, codec, differing_capture_zone, source_label,
+    source_labels,
 };
 use crate::permissions::ConnectionReadSnapshot;
 use crate::possible_names::ConnectionPossibleNames;
@@ -139,28 +139,33 @@ pub(crate) fn day_segments(
     Ok(matching)
 }
 
-/// Whether this connection may read the segment now: its scope, then the
-/// owner's deletion.
+/// Whether this connection may read the segment now: the test a read of it
+/// makes, then the owner's deletion.
 fn readable(
     journal_root: &Path,
     snapshot: &ConnectionReadSnapshot,
+    hides: &crate::body_source::BodyHides,
     facet: Option<&str>,
     day: &str,
     item: &SpanSegment,
 ) -> bool {
-    segment_boundary(snapshot, facet).is_some_and(|boundary| {
-        live_allows(
-            journal_root,
-            &boundary,
-            &segment_assignment_probe_path(day, &item.stream, &item.name),
-            Some(&item.stream),
-        )
-    }) && crate::source_release::check_segment_transcript_release(
+    crate::may_see::segment_shown(
         journal_root,
+        snapshot,
+        hides,
+        facet,
         day,
         &item.stream,
         &item.name,
+        &item.segment,
     )
+    .is_some()
+        && crate::source_release::check_segment_transcript_release(
+            journal_root,
+            day,
+            &item.stream,
+            &item.name,
+        )
 }
 
 /// Whether the label names anything this connection can read on the day.
@@ -171,9 +176,10 @@ pub(crate) fn day_holds_readable(
     day: &str,
     source: &SourceFilter,
 ) -> Result<bool, DispatchError> {
+    let hides = crate::body_source::BodyHides::read(journal_root);
     Ok(day_segments(journal_root, day, None, None, Some(source))?
         .iter()
-        .any(|item| readable(journal_root, snapshot, None, day, item)))
+        .any(|item| readable(journal_root, snapshot, &hides, None, day, item)))
 }
 
 /// The stretches of a day's list no segment this connection can read covers.
@@ -188,9 +194,10 @@ pub(crate) fn day_gaps(
 ) -> Result<Vec<Value>, DispatchError> {
     let from = time_from.and_then(parse_minutes).unwrap_or(0);
     let to = time_to.and_then(parse_minutes).unwrap_or(86_400);
+    let hides = crate::body_source::BodyHides::read(journal_root);
     let spans: Vec<(u32, u32)> = day_segments(journal_root, day, time_from, time_to, source)?
         .iter()
-        .filter(|item| readable(journal_root, snapshot, facet, day, item))
+        .filter(|item| readable(journal_root, snapshot, &hides, facet, day, item))
         .filter_map(|item| {
             item.clock
                 .as_ref()
@@ -307,21 +314,18 @@ pub(crate) fn read_segment_span(
         .iter()
         .filter(|item| lower.is_none_or(|lower| item.key() >= lower))
     {
-        let scoped =
-            segment_boundary(snapshot, reference.facet.as_deref()).is_some_and(|boundary| {
-                live_allows(
-                    journal_root,
-                    &boundary,
-                    &segment_assignment_probe_path(&reference.day, &item.stream, &item.name),
-                    Some(&item.stream),
-                )
-            });
-        if !scoped {
-            continue;
-        }
-        // What the owner hid of a segment reads as not there.
-        let Some(left_out) = hides.shown(journal_root, &reference.day, &item.stream, &item.segment)
-        else {
+        // The test a read of this segment alone makes: out of scope, and
+        // what the owner hid of it, read as not there.
+        let Some(left_out) = crate::may_see::segment_shown(
+            journal_root,
+            snapshot,
+            &hides,
+            reference.facet.as_deref(),
+            &reference.day,
+            &item.stream,
+            &item.name,
+            &item.segment,
+        ) else {
             continue;
         };
         let released = || {

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use serde_json::{Map, Value, json};
 use solstone_core_format::content::{ContentResolution, Family, classify};
-use solstone_core_indexer_store::classification::{FacetDeclarationSet, classify_source};
+use solstone_core_indexer_store::classification::FacetDeclarationSet;
 use solstone_core_journal_io::is_day_key;
 use solstone_core_journal_io::paths::{
     PathOrDay, Segment, iter_segments_skipping_unreadable_streams,
@@ -17,8 +17,7 @@ use solstone_core_journal_io::paths::{
 use solstone_core_transcripts::segment_clock;
 
 use crate::dispatch::{
-    DispatchPrincipal, codec, differing_capture_zone, segment_assignment_probe_path, source_label,
-    source_labels,
+    DispatchPrincipal, codec, differing_capture_zone, source_label, source_labels,
 };
 use crate::permissions::ConnectionReadSnapshot;
 use crate::possible_names::ConnectionPossibleNames;
@@ -151,6 +150,8 @@ pub(crate) fn issue_segment_links(
     let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
     // Read once a link is issued: most subjects name no segment.
     let mut sources = None;
+    // What the owner hid of their body data, read once a segment is judged.
+    let mut hides = None;
 
     let mut day_cache: BTreeMap<String, Vec<Segment>> = BTreeMap::new();
 
@@ -164,16 +165,21 @@ pub(crate) fn issue_segment_links(
             let Some(clock) = segment_clock(identity.name) else {
                 continue;
             };
-            let probe_path = segment_assignment_probe_path(&day, identity.stream, identity.name);
-            let classification = classify_source(
-                journal_root,
-                &probe_path,
-                Some(identity.stream),
-                &declarations,
-            );
             // Scope comes first: a segment this connection may not read leaves
-            // no trace, not even in `more_segments`.
-            if !transcript_boundary.allows_classification(journal_root, &classification) {
+            // no trace, not even in `more_segments`. The test is the one a
+            // read of the linked segment makes again.
+            if crate::may_see::segment_shown_within(
+                journal_root,
+                &transcript_boundary,
+                &declarations,
+                hides.get_or_insert_with(|| crate::body_source::BodyHides::read(journal_root)),
+                &day,
+                identity.stream,
+                identity.name,
+                &candidate,
+            )
+            .is_none()
+            {
                 continue;
             }
             if !crate::source_release::check_segment_transcript_release(

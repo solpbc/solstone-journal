@@ -1102,6 +1102,10 @@ pub(crate) fn read_source_span(
     reference: SourceSpanReference,
 ) -> Result<Prepared, DispatchError> {
     let not_found = || DispatchError::Tool(ToolError::ReferenceNotFound);
+    // Only a body source has a span of its own, as only one is listed with one.
+    if !BODY_RECORD_STREAMS.contains(&reference.stream.as_str()) {
+        return Err(not_found());
+    }
     let position = request
         .cursor
         .as_deref()

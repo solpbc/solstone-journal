@@ -167,7 +167,6 @@ fn project_sunday(
     let gate = crate::body_source::window_gate(journal, snapshot);
     // A body record or Strava line this connection would read with the body
     // permission, so the week says it needs it.
-    let holds_body = crate::body_source::holds_body(snapshot);
     let mut body_withheld = false;
     let mut body = Vec::new();
     // The windows body faces were composed from, for the audit.
@@ -235,28 +234,17 @@ fn project_sunday(
                 .and_then(|faces| faces.get(&day_str))
                 .map_or(&[][..], Vec::as_slice);
 
-            let superseded =
-                solstone_core_facets::superseded_record_ids(journal, f_dir, &day_str, &rows);
+            // The same test every read of one of these records makes again.
+            let judged =
+                crate::may_see::ActivityDay::new(journal, snapshot, f_dir, &day_str, &rows);
             for (row, rec_id) in rows.into_iter().zip(line_identities) {
-                if row.get("hidden").and_then(Value::as_bool).unwrap_or(false)
-                    || solstone_core_facets::is_retired_plan(&row)
-                    || row
-                        .get("id")
-                        .and_then(Value::as_str)
-                        .is_some_and(|id| superseded.contains(id))
-                {
-                    continue;
-                }
-                if crate::body_source::strava_line_hidden(journal, snapshot, &day_str, &row) {
-                    body_withheld = body_withheld
-                        || crate::body_source::strava_line_needs_body(
-                            journal, snapshot, &day_str, &row,
-                        );
-                    continue;
-                }
-                if solstone_core_facets::is_body_record(&row) && !holds_body {
-                    body_withheld = true;
-                    continue;
+                match judged.shows(&row) {
+                    crate::may_see::Shown::Yes => {}
+                    crate::may_see::Shown::No => continue,
+                    crate::may_see::Shown::NeedsBody => {
+                        body_withheld = true;
+                        continue;
+                    }
                 }
                 if solstone_core_facets::is_body_record(&row) {
                     let id = row.get("id").and_then(Value::as_str);
