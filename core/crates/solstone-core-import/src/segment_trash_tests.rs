@@ -200,7 +200,11 @@ fn erasing_the_import_erases_its_earlier_segment_too() {
     let (first, _) = delete(root.path(), FIRST);
     let (import, _) = delete(root.path(), LAST);
     erase(root.path(), &import.id);
-    assert!(solstone_core_trash::item(root.path(), &first.id).unwrap().is_none());
+    assert!(
+        solstone_core_trash::item(root.path(), &first.id)
+            .unwrap()
+            .is_none()
+    );
     assert!(solstone_core_trash::list(root.path()).unwrap().is_empty());
 }
 

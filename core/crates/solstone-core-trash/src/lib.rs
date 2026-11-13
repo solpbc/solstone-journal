@@ -635,9 +635,10 @@ fn not_before_needing(journal: &Path, item: &Item) -> Result<String, TrashError>
         if other.id == item.id || other.state == State::Erasing {
             continue;
         }
-        let needs_it = other.needs.iter().any(|needed| {
-            item.paths.iter().any(|held| holds_needed(held, needed))
-        });
+        let needs_it = other
+            .needs
+            .iter()
+            .any(|needed| item.paths.iter().any(|held| holds_needed(held, needed)));
         if needs_it
             && let Some(theirs) = other.erase_at()
             && latest.is_none_or(|mine| theirs > mine)
@@ -671,9 +672,10 @@ pub fn needing(journal: &Path, item: &Item) -> Result<Vec<Item>, TrashError> {
         .filter(|other| {
             other.id != item.id
                 && other.state == State::Trashed
-                && other.needs.iter().any(|needed| {
-                    item.paths.iter().any(|held| holds_needed(held, needed))
-                })
+                && other
+                    .needs
+                    .iter()
+                    .any(|needed| item.paths.iter().any(|held| holds_needed(held, needed)))
         })
         .collect())
 }

@@ -5,10 +5,10 @@
 //! and erasing it erases what needs it.
 
 use super::*;
+use crate::tests::tempfile_dir;
 use chrono::Duration;
 use solstone_core_removals::Page;
 use std::fs;
-use crate::tests::tempfile_dir;
 
 const RECORD: &str = "imports/20261101_090000";
 const FIRST: &str = "chronicle/20261101/import.document/090000_300";

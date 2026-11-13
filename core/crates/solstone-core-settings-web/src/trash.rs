@@ -108,7 +108,10 @@ fn view(journal_root: &Path, item: &Item) -> Value {
 /// The import a segment needs to come back, and where it stands: `live` in
 /// the journal, `trashed` waiting in the trash (recover it first), or `gone`.
 fn needed_import(journal_root: &Path, item: &Item) -> Option<Value> {
-    let record = item.needs.iter().find(|need| need.starts_with("imports/"))?;
+    let record = item
+        .needs
+        .iter()
+        .find(|need| need.starts_with("imports/"))?;
     let id = record.strip_prefix("imports/")?;
     let holder = solstone_core_trash::list(journal_root)
         .ok()?
@@ -670,7 +673,9 @@ mod tests {
         };
         write(
             &format!("imports/{id}/imported.json"),
-            json!({"source_type": "audio", "segments": listed}).to_string().as_bytes(),
+            json!({"source_type": "audio", "segments": listed})
+                .to_string()
+                .as_bytes(),
         );
         write(
             &format!("imports/{id}/import.json"),
@@ -681,7 +686,10 @@ mod tests {
         write(&format!("imports/{id}/talk.m4a"), b"upload");
         let mut ids = Vec::new();
         for key in segments {
-            write(&format!("chronicle/20260731/import.audio/{key}/audio.flac"), b"raw");
+            write(
+                &format!("chronicle/20260731/import.audio/{key}/audio.flac"),
+                b"raw",
+            );
         }
         let index = RetentionIndex::new(root);
         for key in segments {
@@ -724,23 +732,42 @@ mod tests {
         assert_eq!(row(&segment)["import"]["state"], "trashed");
         assert_eq!(row(&segment)["import"]["label"], "talk.m4a");
         let body = json!({"ids": [segment.clone()]}).to_string();
-        let (_, refused) =
-            call(root.path(), Method::POST, "/app/settings/api/trash/recover", &body).await;
+        let (_, refused) = call(
+            root.path(),
+            Method::POST,
+            "/app/settings/api/trash/recover",
+            &body,
+        )
+        .await;
         assert_eq!(refused["failed"][0]["reason"], "import_in_trash");
         // Together, the import comes back before the segment that needs it.
         let body = json!({"ids": [segment.clone(), import.clone()]}).to_string();
-        let (_, both) =
-            call(root.path(), Method::POST, "/app/settings/api/trash/recover", &body).await;
+        let (_, both) = call(
+            root.path(),
+            Method::POST,
+            "/app/settings/api/trash/recover",
+            &body,
+        )
+        .await;
         assert_eq!(both["failed"], json!([]), "{both}");
-        assert!(root.path().join("imports/20260731_090000/talk.m4a").is_file());
+        assert!(
+            root.path()
+                .join("imports/20260731_090000/talk.m4a")
+                .is_file()
+        );
     }
 
     #[tokio::test]
     async fn emptying_the_trash_answers_for_a_segment_its_import_took() {
         let root = journal();
         let (segment, import) = import_deleted_by_segments(root.path());
-        let (_, emptied) =
-            call(root.path(), Method::POST, "/app/settings/api/trash/empty", "").await;
+        let (_, emptied) = call(
+            root.path(),
+            Method::POST,
+            "/app/settings/api/trash/empty",
+            "",
+        )
+        .await;
         assert_eq!(emptied["failed"], json!([]), "{emptied}");
         let done = emptied["done"].as_array().unwrap();
         assert!(done.contains(&json!(segment)) && done.contains(&json!(import)));

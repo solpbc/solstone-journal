@@ -297,10 +297,7 @@ struct PreviewBody {
 /// What deleting these segments would do to the imports that made them, for
 /// the delete dialog: which it takes whole with their uploads, and which it
 /// leaves. Reads only.
-pub(crate) async fn preview_imports(
-    State(state): State<Arc<AppState>>,
-    body: Bytes,
-) -> Response {
+pub(crate) async fn preview_imports(State(state): State<Arc<AppState>>, body: Bytes) -> Response {
     let Ok(request) = serde_json::from_slice::<PreviewBody>(&body) else {
         return invalid_segment("Invalid segment in the set", StatusCode::BAD_REQUEST);
     };
@@ -318,7 +315,11 @@ pub(crate) async fn preview_imports(
             .segments
             .iter()
             .map(|segment| {
-                solstone_core_retention::layout::segment_rel(&segment.day, &segment.stream, &segment.key)
+                solstone_core_retention::layout::segment_rel(
+                    &segment.day,
+                    &segment.stream,
+                    &segment.key,
+                )
             })
             .collect();
         solstone_core_import::segment_trash::preview(&root, &paths)

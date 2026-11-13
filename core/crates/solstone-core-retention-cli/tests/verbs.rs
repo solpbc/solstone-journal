@@ -2391,16 +2391,29 @@ fn remove_segments_of_an_imports_last_segment_takes_the_import_and_its_upload() 
         .as_bytes(),
     );
     write(&format!("imports/{id}/photo.heic"), b"photo");
-    write("chronicle/20260701/import.image/090000_1/image.md", b"a photo");
+    write(
+        "chronicle/20260701/import.image/090000_1/image.md",
+        b"a photo",
+    );
     let output = bed.run(
         "remove-segments",
-        &["--journal", &journal, "--segment", "20260701/import.image/090000_1"],
+        &[
+            "--journal",
+            &journal,
+            "--segment",
+            "20260701/import.image/090000_1",
+        ],
     );
     assert_eq!(output.status.code(), Some(0), "{:?}", receipt(&output));
     assert_eq!(receipt(&output)["trashed"][0]["import"], id);
     assert!(!bed.journal().join(format!("imports/{id}")).exists());
     let items = solstone_core_trash::list(bed.journal()).unwrap();
     assert_eq!(items.len(), 1);
-    assert!(matches!(&items[0].unit, solstone_core_removals::Unit::Import { id: taken, .. } if taken == id));
-    assert_eq!(items[0].action, solstone_core_removals::Action::RetentionTool);
+    assert!(
+        matches!(&items[0].unit, solstone_core_removals::Unit::Import { id: taken, .. } if taken == id)
+    );
+    assert_eq!(
+        items[0].action,
+        solstone_core_removals::Action::RetentionTool
+    );
 }

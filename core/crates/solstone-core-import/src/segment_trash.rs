@@ -72,7 +72,10 @@ fn counts(source: &str) -> bool {
 }
 
 /// The one import that lists `segment`, if exactly one does.
-fn sole_lister<'l>(listing: &'l BTreeMap<String, BTreeSet<String>>, segment: &str) -> Option<&'l str> {
+fn sole_lister<'l>(
+    listing: &'l BTreeMap<String, BTreeSet<String>>,
+    segment: &str,
+) -> Option<&'l str> {
     let listers = listing.get(segment)?;
     match (listers.first(), listers.len()) {
         (Some(id), 1) => Some(id.as_str()),
@@ -154,7 +157,10 @@ fn taken_whole(journal: &Path, id: &str, things: &ImportThings, chosen: &BTreeSe
         && things.files.is_empty()
         && things.shared.is_empty()
         && !things.segments.is_empty()
-        && things.segments.iter().all(|segment| chosen.contains(segment))
+        && things
+            .segments
+            .iter()
+            .all(|segment| chosen.contains(segment))
         && attempt_holder(journal, id) != AttemptHolder::Held
 }
 
@@ -189,7 +195,9 @@ pub fn choose(journal: &Path, segments: Vec<Chosen>) -> Vec<Choice> {
                     import_trash::import_things(journal, id)
                         .filter(|things| taken_whole(journal, id, things, &chosen_paths))
                 });
-                things.as_ref().map(|things| (id.to_owned(), things.clone()))
+                things
+                    .as_ref()
+                    .map(|things| (id.to_owned(), things.clone()))
             }),
             _ => None,
         };
@@ -325,8 +333,8 @@ impl Kind for ImportSegments<'_> {
         let inner = self.recordings.hold(journal, item)?;
         // Only a recover starting now is refused: one a stop left part way is
         // finished, never left stuck between the trash and the journal.
-        let returning = (item.state == solstone_core_trash::State::Trashed)
-            .then(|| item.needs.clone());
+        let returning =
+            (item.state == solstone_core_trash::State::Trashed).then(|| item.needs.clone());
         Ok(Box::new(NeedsHold {
             inner,
             journal: journal.to_path_buf(),
