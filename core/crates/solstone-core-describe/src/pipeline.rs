@@ -997,31 +997,56 @@ fn run_prepared(
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if let Some(plan) = plan.as_ref() {
         faces.apply(|faces| {
-            for (frame_id, row) in &plan.reusable_rows {
-                if row.data.pointer("/content/meeting/participants").is_some() {
-                    let timestamp = row
-                        .data
-                        .get("timestamp")
-                        .and_then(Value::as_f64)
-                        .ok_or_else(|| {
-                            crate::faces::FaceError::at(
-                                "frame_metadata",
-                                "meeting timestamp missing",
-                            )
-                        })?;
-                    let png = owned_frame_png(
-                        true,
-                        options.video,
-                        options.config,
-                        &text_changed,
-                        *frame_id,
-                        timestamp,
-                        &[],
-                        checkpoint,
-                    )
-                    .map_err(crate::faces::FaceError::from)?;
-                    faces.add_frame(&row.data, &png, staged_ocr.borrow().as_ref(), ocr_factory)?;
-                }
+            let meeting_rows = plan
+                .reusable_rows
+                .iter()
+                .filter(|(_, row)| {
+                    row.data
+                        .pointer("/content/meeting/participants")
+                        .and_then(Value::as_array)
+                        .is_some_and(|parts| !parts.is_empty())
+                })
+                .collect::<Vec<_>>();
+            if meeting_rows.is_empty() {
+                return Ok(());
+            }
+            // Replay the original winnow once, encoding only meeting frames.
+            // Retain one native PNG at a time and stop after the last request.
+            let mut pull = crate::decode::FramePull::open(options.video, options.config, true)
+                .map_err(|_| {
+                    crate::faces::FaceError::at("frame_decode", "could not reopen video")
+                })?;
+            pull.replay_text_changes(text_changed.clone());
+            pull.retain_pngs(meeting_rows.iter().map(|(id, _)| **id).collect());
+            for (frame_id, row) in meeting_rows {
+                let timestamp = row
+                    .data
+                    .get("timestamp")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| {
+                        crate::faces::FaceError::at("frame_metadata", "meeting timestamp missing")
+                    })?;
+                let frame = match pull.next(checkpoint) {
+                    PullNext::Frame(frame)
+                        if frame.frame_id == *frame_id
+                            && frame.timestamp.to_bits() == timestamp.to_bits() =>
+                    {
+                        frame
+                    }
+                    PullNext::Cancelled => return Err(RunError::Cancelled.into()),
+                    _ => {
+                        return Err(crate::faces::FaceError::at(
+                            "frame_decode",
+                            "meeting frame did not reappear with the same timestamp",
+                        ));
+                    }
+                };
+                faces.add_frame(
+                    &row.data,
+                    &frame.png,
+                    staged_ocr.borrow().as_ref(),
+                    ocr_factory,
+                )?;
             }
             Ok(())
         })?;
