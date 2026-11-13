@@ -6555,7 +6555,7 @@ async function initEntities() {
         journalSearchDebounce = null;
         journalEntitySearch = term;
         journalEntityPage = 0;
-        writeJournalListState({replace: true});
+        if (!writeJournalListState({replace: true})) return;
         loadJournalEntities({silent: true, queryChanged: true});
       }, 220);
     });
@@ -6859,10 +6859,10 @@ function renderJournalEntities() {
       button.disabled = disabled;
       button.onclick = () => {
         journalEntityPage += delta;
-        writeJournalListState();
-        loadJournalEntities({silent: true}).then(() => {
+        if (!writeJournalListState()) return;
+        holdFocus(true, loadJournalEntities({silent: true}).then(() => {
           countEl.tabIndex = -1; countEl.focus(); countEl.scrollIntoView({block: 'center'});
-        });
+        }), countEl);
       };
       pager.append(button);
     }
@@ -6897,13 +6897,18 @@ function selectJournalFolder(folder) {
   if (searchInput) searchInput.value = '';
   if (folder === 'ids') { tidyState.idsPage = 0; captureIdSelection(); }
   if (folder === 'duplicates') tidyState.dupsPage = 0;
-  writeJournalListState();
+  if (!writeJournalListState()) return;
+  // The folders are drawn again, so focus goes to the one chosen.
+  const chosen = () => Array.from(document.querySelectorAll('#journal-folders .journal-folder'))
+    .find((button) => button.dataset.folder === folder) || null;
   if (folder === 'ids' || folder === 'duplicates') {
     renderJournalEntities();
+    reportEntitiesReady('content');
     if (!tidyState.data && !tidyState.loading) loadTidyGroups();
+    holdFocus(true, null, chosen);
     return;
   }
-  loadJournalEntities({silent: true, queryChanged: true});
+  holdFocus(true, loadJournalEntities({silent: true, queryChanged: true}), chosen);
 }
 
 function renderJournalFolders() {

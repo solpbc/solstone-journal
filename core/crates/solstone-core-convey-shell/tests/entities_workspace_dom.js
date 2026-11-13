@@ -270,6 +270,7 @@ function pickHarness() {
     // The mount's context and focus helper, as the slices call them.
     ctx: { on: (target, type, fn, options) => { target.addEventListener?.(type, fn, options); return () => {}; } },
     holdFocus: (_own, done) => Promise.resolve(done),
+    reportEntitiesReady: () => {},
   };
   vm.createContext(context);
   return { context, doc, log, answers };
@@ -328,7 +329,7 @@ async function entityDeleteCases(workspace) {
       function renderDupsPanel() {}
       function captureIdSelection() {}
       function loadTidyGroups() {}
-      function writeJournalListState() {}
+      function writeJournalListState() { return true; }
       async function loadJournalEntities() { renderJournalEntities(); }
       function navigateToEntity(id) { __log.navigated.push(id); }
       function navigateToList() { __log.toList += 1; }
@@ -1655,6 +1656,8 @@ async function main() {
   await entityDeleteCases(workspace);
   const entitiesCopy = JSON.parse(fs.readFileSync(path.join(manifestDir, '../solstone-core-entities/src/data/entities_copy.json'), 'utf8'));
   await detectedHideCases(workspace, entitiesCopy);
+  // Entities on the view contract: the real fragment mounted in a page.
+  cases += await require('./entities_contract_dom.js')(manifestDir);
 
   console.log(`DOM CASES: ${cases} passed`);
 }
