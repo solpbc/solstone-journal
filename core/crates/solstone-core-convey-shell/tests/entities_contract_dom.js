@@ -1200,6 +1200,21 @@ module.exports = async function entitiesContractCases(manifestDir) {
     assert.strictEqual(p.doc.activeElement.getAttribute('data-entity-id'), 'p3', 'focus is on the row of the entity left');
   });
 
+  await test('back to a list that was never scrolled shows it at its top', async () => {
+    const p = await boot(env);
+    assert.strictEqual(p.window.scrollY, 0);
+    listRows(p)[3].click();
+    await settle();
+    p.window.scrollTo(0, 700);
+    p.window.history.back();
+    await settle();
+    assert.ok(p.visible('journal-entities-view'), 'the list');
+    assert.strictEqual(p.window.scrollY, 0, 'at its top, not the entity page\'s scroll');
+    p.window.history.forward();
+    await settle();
+    assert.strictEqual(p.window.scrollY, 700, 'forward to the entity keeps its scroll');
+  });
+
   await test('a delete from the entity\'s page goes back to the list with focus in the view', async () => {
     const serve = journal(copy);
     const answers = (url, opts) => (opts?.method === 'DELETE' ? { success: true, trash: { id: 't1', erase_at: null } } : serve(url, opts));

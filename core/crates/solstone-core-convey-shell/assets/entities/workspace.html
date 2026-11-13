@@ -2698,6 +2698,8 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
       return false;
     }
     moveReady = window.beginViewReady('entities', { update: true });
+    // The entry left keeps its scroll, scrolled or not, for coming back to it.
+    if (kind === 'push') rememberEntitiesScroll(entitiesEntryId(), window.scrollY || 0);
     if (kind === 'push') ctx.history.push(url);
     else ctx.history.replace(url);
     return true;
@@ -4304,8 +4306,9 @@ ctx.on(window, 'popstate', () => {
   const id = entitiesEntryId();
   moveReady = window.beginViewReady('entities', { update: true });
   holdFocus(true, syncEntityRoute(), restoredFocusTarget).then(() => {
-    if (!ctx.disposed && entitiesEntryId() === id && entityScrolls.has(id)) {
-      window.scrollTo(0, entityScrolls.get(id));
+    // An entry with no scroll kept is at its top.
+    if (!ctx.disposed && entitiesEntryId() === id) {
+      window.scrollTo(0, entityScrolls.has(id) ? entityScrolls.get(id) : 0);
     }
   });
 });
