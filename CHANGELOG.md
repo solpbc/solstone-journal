@@ -29,6 +29,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix: a connected agent that had already found one of your earlier Strava records by searching could still read that record after you hid its day, or after you connected that agent again without the body permission, until your journal next restarted. now that agent can't read it from that moment. only an agent you had connected could do this, and only for a record your journal had already shown it.
 - on windows, after you removed the journal app and installed it again, it could open to nothing but "installation identity record is tombstoned", and "try again" didn't help. it now starts setup instead, with your journal folder already filled in, and setup picks up your journal where it is, with everything in it.
 - an activity whose pages, notes or summaries hold a heading the journal also uses, such as "Highlights" or "Note", now gets its list of people. before, the list was never made for it. on a long activity, a line shaped like a date and time range no longer cuts short what the list is made from. activities from before you update stay as they are.
 - "finish them" on home now says what finishing does: any original a stopped deletion hadn't deleted yet goes back in its segment. before, it said nothing was put back.
