@@ -19,8 +19,10 @@ use solstone_core_import_host::cli_argv::{
     force_day_notice_with, grammar_outcome_before_preflight, preview_arguments_with,
 };
 use solstone_core_import_host::registry::IndexScan;
+#[cfg(not(windows))]
+use solstone_core_import_sources::document::SystemPdfWorker;
 use solstone_core_import_sources::document::{
-    self, DocumentModelClient, PdfWorker, SystemDocumentModelClient, SystemPdfWorker,
+    self, DocumentModelClient, PdfWorker, SystemDocumentModelClient,
 };
 use solstone_core_import_sources::image::SystemWireClient as ImageWire;
 use solstone_core_segment::{SUPERVISOR_MESSAGE, SupervisorRefusal, require_solstone};

@@ -72,7 +72,7 @@ pub fn one_shot_stub(root: &std::path::Path, text: &str) -> PathBuf {
     one_shot_stub_with_schema_validation(root, text, serde_json::Value::Null)
 }
 
-#[cfg(all(test, feature = "full-tests"))]
+#[cfg(all(test, unix, feature = "full-tests"))]
 /// Install a stub that only accepts `generate --one-shot`.
 pub fn generate_one_shot_stub(root: &std::path::Path, text: &str) -> PathBuf {
     let path = root.join("generate-one-shot-stub.sh");
@@ -101,7 +101,7 @@ pub fn one_shot_stub_with_schema_validation(
     one_shot_stub_with(root, text, schema_validation, serde_json::Value::Null)
 }
 
-#[cfg(all(test, feature = "full-tests"))]
+#[cfg(all(test, unix, feature = "full-tests"))]
 /// Install a one-shot v2 response stub reporting the supplied input budget.
 pub fn one_shot_stub_with_input_budget(
     root: &std::path::Path,
@@ -134,7 +134,7 @@ fn one_shot_stub_with(
     path
 }
 
-#[cfg(all(test, feature = "full-tests"))]
+#[cfg(all(test, unix, feature = "full-tests"))]
 /// Install a one-shot v2 refused-response stub and return its executable path.
 pub fn refused_one_shot_stub(
     root: &std::path::Path,

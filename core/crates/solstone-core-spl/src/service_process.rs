@@ -28,8 +28,9 @@ use solstone_core_journal_config::{
 use solstone_core_system::lifecycle::{
     HostedServiceParentRuntime, HostedServiceShutdownEvidence, ParentLossReason,
 };
+#[cfg(unix)]
+use tokio::io::AsyncWriteExt;
 use tokio::{
-    io::AsyncWriteExt,
     sync::{Notify, watch},
     task::JoinHandle,
     time::timeout,

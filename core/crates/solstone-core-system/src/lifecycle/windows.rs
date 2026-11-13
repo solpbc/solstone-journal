@@ -1063,12 +1063,16 @@ mod platform {
                     "injected Windows lifecycle deletion failure",
                 ));
             }
-            match remove_file(
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "system internal: retire the supervisor's own verified lifecycle artifact or sync heartbeat"
+            )]
+            let removed = remove_file(
                 self.root.canonical_path(),
                 &Self::relative_path(directory, name),
             )
-            .map_err(|error| WindowsRemovalFailure::new(error.to_string()))?
-            {
+            .map_err(|error| WindowsRemovalFailure::new(error.to_string()))?;
+            match removed {
                 Removed::Unlinked => Ok(()),
                 Removed::AlreadyAbsent => Err(WindowsRemovalFailure::new(
                     "retained entry disappeared during deletion",

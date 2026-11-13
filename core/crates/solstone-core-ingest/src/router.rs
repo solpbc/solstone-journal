@@ -2381,13 +2381,13 @@ mod tests {
                 attempt: 1,
                 root: bound.canonical_path().to_string_lossy().into_owned(),
                 root_identity: bound.identity().observation_id(),
-                source: source,
+                source,
                 snapshot_id: snapshot.into(),
                 subtree: "/journal".into(),
             };
-            std::fs::create_dir_all((&journal).join("health")).unwrap();
+            std::fs::create_dir_all(journal.join("health")).unwrap();
             std::fs::write(
-                (&journal).join("health").join("whole-journal-restore.json"),
+                journal.join("health").join("whole-journal-restore.json"),
                 serde_json::to_vec(&record).unwrap(),
             )
             .unwrap();
@@ -2410,7 +2410,7 @@ mod tests {
         )
         .expect("clear");
         #[cfg(windows)]
-        std::fs::remove_file((&journal).join("health").join("whole-journal-restore.json")).unwrap();
+        std::fs::remove_file(journal.join("health").join("whole-journal-restore.json")).unwrap();
         let resumed = write_envelope(
             &direct_state(&journal),
             CID_A,

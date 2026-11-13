@@ -440,13 +440,13 @@ mod tests {
         }
     }
 
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, unix, feature = "full-tests"))]
     use std::fs;
 
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, unix, feature = "full-tests"))]
     use serde_json::json;
 
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, unix, feature = "full-tests"))]
     use super::*;
 
     #[cfg(all(test, feature = "full-tests"))]

@@ -2737,11 +2737,13 @@ mod tests {
     };
     use serde_json::{Map, Value, json};
     use sha2::{Digest, Sha256};
+    #[cfg(unix)]
+    use solstone_core_import::relocate_import;
     #[cfg(feature = "full-tests")]
     use solstone_core_import::{AttemptState, admit_running_attempt, get_attempt_facts};
     use solstone_core_import::{
         ImportError, ImportMetadata, ManifestWriteRequest, SourceHash, hash_source,
-        read_import_metadata, relocate_import, write_import_metadata, write_manifest,
+        read_import_metadata, write_import_metadata, write_manifest,
     };
     use tempfile::TempDir;
     use tower::ServiceExt;

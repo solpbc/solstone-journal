@@ -5,9 +5,9 @@
 
 use super::*;
 use crate::runner::run_restic;
-use solstone_core_journal_io::operational_log::{
-    OplogFormat, OplogWriter, catalog_oplogs, create_oplog_at,
-};
+#[cfg(unix)]
+use solstone_core_journal_io::operational_log::catalog_oplogs;
+use solstone_core_journal_io::operational_log::{OplogFormat, OplogWriter, create_oplog_at};
 use solstone_core_journal_io::{FileLease, LeaseOptions, acquire_file_lease};
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -134,7 +134,9 @@ struct Fixture {
     destination: Destination,
     key: String,
     binary: PathBuf,
-    logs: Vec<RefCell<OplogWriter>>,
+    /// Live writers held open through every restore on every platform; the
+    /// unix cases also append through them and match them to the catalog.
+    _logs: Vec<RefCell<OplogWriter>>,
     _leases: Vec<FileLease>,
     extra_controls: &'static [&'static str],
 }
@@ -248,7 +250,7 @@ impl Fixture {
             destination,
             key,
             binary,
-            logs: vec![RefCell::new(older_log), RefCell::new(newer_log)],
+            _logs: vec![RefCell::new(older_log), RefCell::new(newer_log)],
             _leases: leases,
             extra_controls,
         }
@@ -561,7 +563,7 @@ fn legacy_restore_and_retry_keep_live_authority_and_original_log_writers() {
                     "a real contender must remain excluded: {path}"
                 );
             }
-            for log in &fixture.logs {
+            for log in &fixture._logs {
                 log.borrow_mut()
                     .append_bytes_checked(b"destination after restore\n", &|| Ok(()))
                     .unwrap();
@@ -589,7 +591,7 @@ fn legacy_restore_and_retry_keep_live_authority_and_original_log_writers() {
                 );
                 assert!(
                     fixture
-                        .logs
+                        ._logs
                         .iter()
                         .any(|writer| writer.borrow().identity() == entry.identity())
                 );

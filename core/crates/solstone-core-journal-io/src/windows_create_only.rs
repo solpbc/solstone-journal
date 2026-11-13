@@ -375,14 +375,17 @@ pub(super) fn write_bytes_exclusive_detailed_bound(
     write_reader_exclusive_detailed_inner(&path, &mut reader, options, Some((parent, checkpoint)))
 }
 
+/// A bound parent directory and the checkpoint run against it before publication.
+type BoundParent<'a> = (
+    &'a crate::windows_sync_dir::WindowsFlatDirectory,
+    &'a dyn Fn() -> Result<(), String>,
+);
+
 fn write_reader_exclusive_detailed_inner(
     path: &Path,
     reader: &mut impl Read,
     options: crate::atomic::AtomicWriteOptions,
-    bound: Option<(
-        &crate::windows_sync_dir::WindowsFlatDirectory,
-        &dyn Fn() -> Result<(), String>,
-    )>,
+    bound: Option<BoundParent<'_>>,
 ) -> Result<ExclusivePublication, DetailedAtomicError> {
     if let Some(mode) = options.mode
         && mode > 0o777

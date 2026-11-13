@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fs::{self, File, OpenOptions};
-use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::fs::OpenOptions;
+use std::fs::{self, File};
+#[cfg(unix)]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -10,17 +14,22 @@ use chrono::{DateTime, Utc};
 #[cfg(unix)]
 use nix::fcntl::{Flock, FlockArg};
 use serde_json::{Map, Value};
+#[cfg(unix)]
 use sha2::{Digest, Sha256};
 
 use crate::fingerprint::{CanonicalInput, canonical_fingerprint, canonical_json, hmac_sha256};
 use crate::fixture::{brain_state_keys, local_contract, projection_fixture};
 use crate::inspect::{FINGERPRINT_KEY_BYTES, project_brain_state};
+#[cfg(unix)]
+use crate::load_existing_fingerprint_key;
+#[cfg(any(unix, feature = "full-tests"))]
+use crate::probe_file_lease_held;
 use crate::record::{evidence_component_for_reason, validate_brain_state_record};
 use crate::runtime_health::{inspect_runtime_health, inspection_from_fixture};
 use crate::{
     InspectionStatus, brain_fingerprint_key_path, brain_refresh_lease_path, brain_state_path,
     build_active_brain_fingerprint, derive_active_brain_lane, inspect_brain_state,
-    load_existing_fingerprint_key, present_brain_inspection, probe_file_lease_held,
+    present_brain_inspection,
 };
 
 static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -80,6 +89,7 @@ fn write_valid_bundled_record(journal: &TestJournal) {
     .expect("write record");
 }
 
+#[cfg(unix)]
 fn snapshot_tree(root: &Path) -> Vec<(PathBuf, Option<String>, u128, u32)> {
     fn walk(root: &Path, current: &Path, output: &mut Vec<(PathBuf, Option<String>, u128, u32)>) {
         let metadata = fs::metadata(current).expect("snapshot metadata");
@@ -93,13 +103,10 @@ fn snapshot_tree(root: &Path) -> Vec<(PathBuf, Option<String>, u128, u32)> {
             hasher.update(bytes);
             format!("{:x}", hasher.finalize())
         });
-        #[cfg(unix)]
         let mode = {
             use std::os::unix::fs::PermissionsExt;
             metadata.permissions().mode()
         };
-        #[cfg(not(unix))]
-        let mode = 0;
         let modified = metadata
             .modified()
             .expect("mtime")

@@ -499,6 +499,7 @@ pub fn insert_tile_claims(
             .map_err(|e| AudioArchiveError::Io(std::io::Error::other(e.to_string())))?;
     }
 
+    #[cfg(unix)]
     let was_missing = !path.exists();
 
     let mut conn = Connection::open(&path).map_err(|error| {

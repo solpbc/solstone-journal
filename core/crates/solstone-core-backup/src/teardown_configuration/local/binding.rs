@@ -79,7 +79,7 @@ mod native {
                 path: diagnostic.clone(),
             })?);
         }
-        current.ok_or_else(|| FlatDirectoryError::NotDirectory { path: diagnostic })
+        current.ok_or(FlatDirectoryError::NotDirectory { path: diagnostic })
     }
     pub(super) fn identity(parent: &Parent) -> solstone_core_journal_io::ObjectIdentity {
         parent.object_identity()

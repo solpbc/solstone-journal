@@ -591,7 +591,9 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_canonical_utc, read_contained_artifact, validate_relative_artifact_path};
+    #[cfg(unix)]
+    use super::read_contained_artifact;
+    use super::{is_canonical_utc, validate_relative_artifact_path};
     #[cfg(unix)]
     use std::fs;
 

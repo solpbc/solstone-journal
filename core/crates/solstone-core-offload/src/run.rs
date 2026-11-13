@@ -346,7 +346,7 @@ mod current {
     thread_local! {
         static CHECKPOINT: std::cell::RefCell<Option<TestCheckpoint>> = const { std::cell::RefCell::new(None) };
     }
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(super) fn with_checkpoint<T>(
         hook: impl FnMut(Checkpoint, &Path) + 'static,
         run: impl FnOnce() -> T,
@@ -1148,9 +1148,9 @@ mod current {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     use std::cell::RefCell;
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     use std::collections::VecDeque;
     #[cfg(any(unix, windows))]
     use std::io;
@@ -1184,7 +1184,7 @@ mod tests {
         content::{ClosedHandlerSet, JournalMedia},
         policy::policy_from_journal_config,
     };
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     use std::fs;
     #[cfg(any(unix, windows))]
     use std::path::Path;
@@ -1269,12 +1269,12 @@ mod tests {
         assert_eq!(check(&transient), None);
     }
 
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     struct Script {
         outputs: RefCell<VecDeque<ToolOutput>>,
         calls: RefCell<Vec<Vec<String>>>,
     }
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     impl ToolRunner for Script {
         fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
             self.calls.borrow_mut().push(

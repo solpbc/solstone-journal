@@ -931,6 +931,7 @@ pub fn run_with_windows_detailed_atomic_faults_and_barrier<T>(
 
 /// Run `op` with injected faults and two deterministic barrier callbacks.
 #[cfg(any(test, feature = "test-hooks"))]
+#[allow(clippy::too_many_arguments)] // test hook: each barrier is a (step, ordinal, callback) triple
 pub fn run_with_windows_detailed_atomic_faults_and_two_barriers<T>(
     faults: impl IntoIterator<Item = (&'static str, usize, i32)>,
     first_step: &'static str,
@@ -1034,26 +1035,25 @@ fn pause_at_terminal_move_receipt(parent_path: &Path, stage_name: &OsStr) {
     if std::env::var("JOURNAL_IO_TEST_PAUSE_AT").ok().as_deref() != Some("terminal-move") {
         return;
     }
-    if let Ok(marker) = std::env::var("JOURNAL_IO_TEST_MARKER") {
-        if let Ok(file) = File::open(parent_path.join(stage_name)) {
-            if let Ok(identity) = file_identity(file.as_raw_handle()) {
-                let moves_so_far = WINDOWS_TERMINAL_MOVE_RECEIPT_COUNT.load(Ordering::Relaxed);
-                let file_id_hex = identity
-                    .file_id()
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<String>();
-                let payload = format!(
-                    "pid={}\nstage={}\nvolume_serial={}\nfile_id={}\nterminal_move_snapshot_present=1\nterminal_move_snapshot_count={}\n",
-                    std::process::id(),
-                    stage_name.to_string_lossy(),
-                    identity.volume_serial(),
-                    file_id_hex,
-                    moves_so_far,
-                );
-                let _ = fs::write(marker, payload);
-            }
-        }
+    if let Ok(marker) = std::env::var("JOURNAL_IO_TEST_MARKER")
+        && let Ok(file) = File::open(parent_path.join(stage_name))
+        && let Ok(identity) = file_identity(file.as_raw_handle())
+    {
+        let moves_so_far = WINDOWS_TERMINAL_MOVE_RECEIPT_COUNT.load(Ordering::Relaxed);
+        let file_id_hex = identity
+            .file_id()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let payload = format!(
+            "pid={}\nstage={}\nvolume_serial={}\nfile_id={}\nterminal_move_snapshot_present=1\nterminal_move_snapshot_count={}\n",
+            std::process::id(),
+            stage_name.to_string_lossy(),
+            identity.volume_serial(),
+            file_id_hex,
+            moves_so_far,
+        );
+        let _ = fs::write(marker, payload);
     }
     loop {
         thread::sleep(Duration::from_millis(25));

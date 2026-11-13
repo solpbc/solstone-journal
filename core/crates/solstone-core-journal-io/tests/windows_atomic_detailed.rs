@@ -133,15 +133,15 @@ fn confirm_still_blocked_and_kill(child: &mut Child, context: &str) -> ExitStatu
 fn wait_for_move_receipt(child: &Child, marker: &Path) -> MoveReceipt {
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline {
-        if let Ok(bytes) = fs::read(marker) {
-            if let Some(receipt) = parse_move_receipt(&bytes) {
-                assert_eq!(
-                    receipt.pid,
-                    child.id(),
-                    "terminal-move acknowledgement token does not match the spawned child"
-                );
-                return receipt;
-            }
+        if let Ok(bytes) = fs::read(marker)
+            && let Some(receipt) = parse_move_receipt(&bytes)
+        {
+            assert_eq!(
+                receipt.pid,
+                child.id(),
+                "terminal-move acknowledgement token does not match the spawned child"
+            );
+            return receipt;
         }
         thread::sleep(Duration::from_millis(10));
     }

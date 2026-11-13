@@ -84,6 +84,7 @@ pub(super) trait WindowsJobApi {
     ) -> io::Result<JobMembership>;
 }
 
+#[cfg(test)]
 pub(super) fn create_kill_on_close_job(api: &impl WindowsJobApi) -> io::Result<JobHandle> {
     create_kill_on_close_job_with_limits(api, None)
 }
@@ -187,9 +188,10 @@ impl WindowsJobApi for SystemWindowsJobApi {
             return Err(io::Error::last_os_error());
         }
 
-        let mut cpu = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION::default();
-        cpu.ControlFlags =
-            JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
+        let mut cpu = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION {
+            ControlFlags: JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+            ..Default::default()
+        };
         cpu.Anonymous.CpuRate = limits.cpu_rate_per_10_000;
         // SAFETY: `cpu` is initialized and remains live for the synchronous call.
         #[allow(unsafe_code)]

@@ -52,10 +52,7 @@ fn wide(value: &OsStr) -> Vec<u16> {
 }
 
 fn io_error(context: &str) -> io::Error {
-    io::Error::new(
-        io::ErrorKind::Other,
-        format!("{context}: {}", io::Error::last_os_error()),
-    )
+    io::Error::other(format!("{context}: {}", io::Error::last_os_error()))
 }
 
 fn current_process_token() -> io::Result<OwnedHandle> {
@@ -68,8 +65,7 @@ fn current_process_token() -> io::Result<OwnedHandle> {
         return Err(io_error("open current process token"));
     }
     if raw.is_null() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
+        return Err(io::Error::other(
             "OpenProcessToken returned a null token handle",
         ));
     }
@@ -107,10 +103,7 @@ fn token_privileges(token: &OwnedHandle) -> io::Result<Vec<LUID_AND_ATTRIBUTES>>
     #[allow(unsafe_code)]
     let last_error = unsafe { GetLastError() };
     if sizing != 0 || last_error != ERROR_INSUFFICIENT_BUFFER || required == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            "size TokenPrivileges buffer",
-        ));
+        return Err(io::Error::other("size TokenPrivileges buffer"));
     }
 
     let required = usize::try_from(required).map_err(|_| {

@@ -1072,9 +1072,14 @@ impl Talents {
             }
         }
         #[cfg(not(unix))]
-        solstone_core_journal_io::remove_file(&self.path, OWNER_LINE_LABELS_FILE)
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+        {
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "system internal: undoing the labels file this change itself created"
+            )]
+            let removed = solstone_core_journal_io::remove_file(&self.path, OWNER_LINE_LABELS_FILE);
+            removed.map(|_| ()).map_err(|error| error.to_string())
+        }
     }
 }
 

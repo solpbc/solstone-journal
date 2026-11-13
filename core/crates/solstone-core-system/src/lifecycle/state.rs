@@ -159,12 +159,14 @@ pub enum SelfHeartbeatRemoval {
     NoCleanupAuthority,
     Removed,
     NotClean { outcome: ClaimRemovalOutcome },
-    NotCleanError { source: ClaimRemovalError },
+    // Boxed so `LifecycleError`, which carries this outcome, stays small.
+    NotCleanError { source: Box<ClaimRemovalError> },
     VerificationFailed { reason: String },
 }
 
 /// Failure to remove a retained admission-wait marker through the only safe
 /// identity-bound claim primitive.
+#[cfg(unix)]
 #[derive(Debug, Error)]
 pub enum AdmissionWaitMarkerCleanupError {
     #[error("admission-wait marker has no retained observation")]
@@ -282,7 +284,9 @@ pub fn clear_self_heartbeat(
     match claim_and_remove_observed(sync, OsStr::new(self_filename), prior, &claim) {
         Ok(ClaimRemovalOutcome::Removed) => Ok(SelfHeartbeatRemoval::Removed),
         Ok(outcome) => Ok(SelfHeartbeatRemoval::NotClean { outcome }),
-        Err(source) => Ok(SelfHeartbeatRemoval::NotCleanError { source }),
+        Err(source) => Ok(SelfHeartbeatRemoval::NotCleanError {
+            source: Box::new(source),
+        }),
     }
 }
 
@@ -299,7 +303,9 @@ pub(crate) fn clear_lifecycle_artifact(
     match claim_and_remove_observed(directory, OsStr::new(name), prior, &claim) {
         Ok(ClaimRemovalOutcome::Removed) => Ok(SelfHeartbeatRemoval::Removed),
         Ok(outcome) => Ok(SelfHeartbeatRemoval::NotClean { outcome }),
-        Err(source) => Ok(SelfHeartbeatRemoval::NotCleanError { source }),
+        Err(source) => Ok(SelfHeartbeatRemoval::NotCleanError {
+            source: Box::new(source),
+        }),
     }
 }
 

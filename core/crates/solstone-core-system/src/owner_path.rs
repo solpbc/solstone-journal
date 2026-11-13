@@ -71,10 +71,10 @@ fn installed_commands_dir() -> Option<String> {
 /// Add the installed commands to the owner's `Path` (the install hook).
 #[cfg(windows)]
 pub fn add_commands_to_owner_path() {
-    if let Some(dir) = installed_commands_dir() {
-        if let Err(error) = registry::update(|path| with_entry(path, &dir)) {
-            eprintln!("journal commands were not added to PATH: {error}");
-        }
+    if let Some(dir) = installed_commands_dir()
+        && let Err(error) = registry::update(|path| with_entry(path, &dir))
+    {
+        eprintln!("journal commands were not added to PATH: {error}");
     }
 }
 

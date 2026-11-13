@@ -818,7 +818,7 @@ pub fn set_hosted_admission_test_fault(fault: Option<HostedAdmissionTestFault>) 
     HOSTED_ADMISSION_TEST_FAULT.with(|slot| slot.set(fault));
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 pub(crate) fn hosted_admission_test_fault() -> Option<HostedAdmissionTestFault> {
     HOSTED_ADMISSION_TEST_FAULT.with(Cell::get)
 }

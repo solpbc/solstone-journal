@@ -206,7 +206,7 @@ impl WindowsProcessApi for SystemWindowsProcessApi {
                 pid,
             )
         };
-        if handle == std::ptr::null_mut() {
+        if handle.is_null() {
             if io::Error::last_os_error().raw_os_error()
                 == Some(windows_sys::Win32::Foundation::ERROR_INVALID_PARAMETER as i32)
             {

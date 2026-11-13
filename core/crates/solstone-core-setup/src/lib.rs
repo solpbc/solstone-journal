@@ -4113,14 +4113,18 @@ mod tests {
         assert_eq!(record.generation, binding.generation);
     }
 
+    #[cfg(unix)]
     struct PanickingRunner;
+    #[cfg(unix)]
     impl CommandRunner for PanickingRunner {
         fn run(&mut self, _request: &CommandRequest) -> Result<CommandOutput, String> {
             panic!("command runner must not be called when setup refuses argument on Unix");
         }
     }
 
+    #[cfg(unix)]
     struct PanickingServiceOps;
+    #[cfg(unix)]
     impl ServiceOps for PanickingServiceOps {
         fn is_installed(
             &mut self,

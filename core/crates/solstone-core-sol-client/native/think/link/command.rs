@@ -1879,7 +1879,10 @@ impl PrivateStagingDir {
                 std::process::id(),
                 sequence
             ));
+            #[cfg(unix)]
             let mut builder = DirBuilder::new();
+            #[cfg(not(unix))]
+            let builder = DirBuilder::new();
             #[cfg(unix)]
             builder.mode(0o700);
             match builder.create(&path) {
@@ -1913,6 +1916,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::{Path, PathBuf};
+    #[cfg(unix)]
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicU64, Ordering};
 

@@ -85,6 +85,7 @@ impl WideNulMut {
         self.units.as_mut_ptr()
     }
 
+    #[cfg(test)]
     pub(super) fn units_len(&self) -> usize {
         self.units.len()
     }
@@ -112,11 +113,6 @@ impl WideEnvironmentBlock {
 
     pub(super) fn as_ptr(&self) -> *const u16 {
         self.units.as_ptr()
-    }
-
-    #[cfg(windows)]
-    pub(super) fn units_len(&self) -> usize {
-        self.units.len()
     }
 
     pub(super) fn units(&self) -> &[u16] {

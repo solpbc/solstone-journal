@@ -198,6 +198,8 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shel
 :: solstone-core legs build with the features every shipped journal carries
 :: (core\distribution\shipped-core-features.txt), so they test what owners run
 :: and share one dependency build with the agent-connector build below.
+call :phase lint
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-clippy.ps1 -Runner "%CD%\core\target\x86_64-pc-windows-msvc\debug\solstone-ci.exe" || exit /b 1
 call :phase native-dispatch
 echo === cargo test --locked (Windows brain owner dispatcher) ===
 call :run_exact_integration "solstone-core-journal-bin" "windows_hosted_native_exit" "unhosted_journal_brain_owner_dispatches_to_native_binary" || exit /b 1

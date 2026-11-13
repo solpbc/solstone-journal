@@ -126,8 +126,9 @@ impl OplogWriter {
         identity: OplogFileIdentity,
         leaf: String,
     ) -> Self {
+        // Windows holds no self-lease (`StagedLease` is `()`), so there is nothing to retain.
         #[cfg(windows)]
-        let _ = lease;
+        let () = lease;
         Self {
             file,
             #[cfg(unix)]

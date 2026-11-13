@@ -8403,12 +8403,12 @@ fn activity_changes_stay_out_until_the_file_is_indexed_again() {
     );
     plant_activity_proof(journal.path(), sym, 0, false);
     assert_eq!(activity_hits_for(&journal, "symactivityneedle").len(), 1);
-    let sym_path = journal.path().join(sym);
     let sym_target = journal.path().join("symlink-target.jsonl");
     fs::write(&sym_target, sym_body).unwrap();
-    let sym_bytes = fs::read(&sym_path).unwrap();
     #[cfg(unix)]
     {
+        let sym_path = journal.path().join(sym);
+        let sym_bytes = fs::read(&sym_path).unwrap();
         fs::remove_file(&sym_path).unwrap();
         std::os::unix::fs::symlink(&sym_target, &sym_path).unwrap();
         assert!(activity_hits_for(&journal, "symactivityneedle").is_empty());

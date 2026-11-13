@@ -13,14 +13,14 @@ use std::time::Instant;
 use serde_json::Value;
 use solstone_core_local::install::{lease, status};
 #[cfg(not(windows))]
+use solstone_core_system::process::SystemProcessInstanceSource;
+#[cfg(not(windows))]
 use solstone_core_system::process::signal_exact_instance;
 use solstone_core_system::process::{
     Disposition, ManagedLaunchRequest, ProcessInstance, SpawnOptions, launch_managed_request,
 };
 #[cfg(any(not(windows), test))]
-use solstone_core_system::process::{
-    InstanceVerdict, ProcessInstanceSource, SignalKind, SystemProcessInstanceSource,
-};
+use solstone_core_system::process::{InstanceVerdict, ProcessInstanceSource, SignalKind};
 
 #[cfg(windows)]
 #[path = "thinking_install_windows.rs"]

@@ -12,6 +12,7 @@ use std::env;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(not(windows))]
 use std::time::Duration;
 
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -27,9 +28,12 @@ use solstone_core_system::process::{
 use crate::args::{CliError, generation_write_error, installation_error};
 #[cfg(not(windows))]
 use crate::model_assets::resolve_model_asset_path;
+#[cfg(not(windows))]
 use crate::resolve_model_asset;
 
+#[cfg(not(windows))]
 const HELPER_BINARY_NAME: &str = "solstone-core-speakers-analyze";
+#[cfg(not(windows))]
 const HELPER_BINARY_ENV: &str = "SOLSTONE_SPEAKERS_ANALYZE_BINARY";
 const GENERATION_ENV_KEY: &str = "SOL_SPEAKERS_ANALYZE_INSTALL_GENERATION_ID";
 const GENERATION_FD_ENV_KEY: &str = "SOL_SPEAKERS_ANALYZE_INSTALL_GENERATION_FD";
@@ -619,6 +623,7 @@ fn installation_proof() -> Result<Value, CliError> {
     }))
 }
 
+#[cfg(not(windows))]
 fn check_platform_coverage() -> Result<(), CliError> {
     let (platform, architecture) = runtime_platform();
     let covered = matches!(
@@ -637,6 +642,7 @@ fn runtime_platform() -> (&'static str, &'static str) {
     }
 }
 
+#[cfg(not(windows))]
 fn helper_path() -> Result<PathBuf, CliError> {
     let executable =
         env::current_exe().map_err(|error| installation_error(format!("helper-path: {error}")))?;
@@ -656,6 +662,7 @@ fn helper_path() -> Result<PathBuf, CliError> {
     Ok(candidate)
 }
 
+#[cfg(not(windows))]
 fn validate_model_assets() -> Result<(), CliError> {
     resolve_model_asset(WESPEAKER_ASSET)
         .map_err(|error| installation_error(format!("asset-missing: {error}")))?;
@@ -688,6 +695,7 @@ fn file_stamp(path: &Path) -> Result<Value, CliError> {
     }))
 }
 
+#[cfg(not(windows))]
 fn borrowed_generation_matches(
     generation_path: &Path,
     lease_path: &Path,
@@ -722,7 +730,7 @@ fn duplicate_for_inheritance(lease: &solstone_core_journal_io::FileLease) -> Res
         .map_err(|error| installation_error(format!("generation-fd: {error}")))
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn duplicate_for_inheritance(_: &solstone_core_journal_io::FileLease) -> Result<i32, CliError> {
     Err(installation_error("generation-fd: unsupported platform"))
 }
@@ -750,7 +758,7 @@ fn inherited_generation_ofd_holds_lock(fd: &str) -> bool {
     solstone_core_journal_io::probe_exclusive_flock_no_release(fd).unwrap_or(false)
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn inherited_generation_ofd_holds_lock(_: &str) -> bool {
     false
 }
@@ -762,6 +770,7 @@ fn random_hex() -> Result<String, CliError> {
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
+#[cfg(not(windows))]
 fn inherited_from_env() -> Option<(String, String, String)> {
     match (
         env::var(GENERATION_ENV_KEY),
@@ -773,6 +782,7 @@ fn inherited_from_env() -> Option<(String, String, String)> {
     }
 }
 
+#[cfg(not(windows))]
 fn inheritance_map(id: &str, fd: &str, token: &str) -> BTreeMap<OsString, OsString> {
     BTreeMap::from([
         (OsString::from(GENERATION_ENV_KEY), OsString::from(id)),
@@ -907,7 +917,7 @@ fn is_executable(path: &Path) -> bool {
         .is_some_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn is_executable(path: &Path) -> bool {
     path.is_file()
 }

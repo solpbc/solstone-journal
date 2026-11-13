@@ -134,6 +134,7 @@ thread_local! {
     static FAIL_POLL_START: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+#[cfg(not(windows))]
 #[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn fail_next_poll_start() {
     FAIL_POLL_START.with(|fail| fail.set(true));

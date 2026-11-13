@@ -220,7 +220,8 @@ fn is_executable(path: &Path) -> bool {
     }
 }
 
-#[cfg(test)]
+// Every test here exercises unix executable bits or unix OsString encoding.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::test_support::reserve_temp_path;

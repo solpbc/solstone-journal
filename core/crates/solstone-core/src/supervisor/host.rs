@@ -13,9 +13,11 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use solstone_core_cli::SupervisorOptions;
+#[cfg(unix)]
+use solstone_core_installation_identity::IdentityError;
 use solstone_core_installation_identity::{
-    Generation, IdentityError, journal_path_matches_token, journal_token_from_path,
-    load_installation_binding, root_token_from_path,
+    Generation, journal_path_matches_token, journal_token_from_path, load_installation_binding,
+    root_token_from_path,
 };
 use solstone_core_journal_io::legacy_log_alias::cleanup_legacy_log_aliases;
 #[cfg(unix)]
@@ -240,6 +242,7 @@ fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
 /// closure retires from. Every remaining cause converges on a retry: a missed
 /// deadline under load, a coordinator still adjudicating the last run, or a
 /// process from the last run still exiting.
+#[cfg(any(unix, test))]
 fn format_lifecycle_recovery_copy(
     journal: &Path,
     reason: runtime::ParentLossCoordinatorBootstrapFailure,
@@ -285,7 +288,7 @@ fn last_run_is_still_closing(
     )
 }
 
-#[cfg(not(unix))]
+#[cfg(all(not(unix), test))]
 fn last_run_is_still_closing(
     _journal: &Path,
     _reason: runtime::ParentLossCoordinatorBootstrapFailure,
@@ -481,6 +484,7 @@ pub async fn run_hosted(
                 reason: SupervisorBootRefusal::AdmissionWaitTerminal,
             };
         }
+        #[cfg(unix)]
         Err(runtime::RuntimeBootError::BootstrapRecoveryRequired(reason)) => {
             return SupervisorHostOutcome::Refused {
                 reason: SupervisorBootRefusal::LifecycleRecovery(format_lifecycle_recovery_copy(
@@ -655,11 +659,13 @@ mod tests {
     use tempfile::tempdir;
 
     use super::super::receipt::{read_hosted_supervisor_receipt, write_hosted_supervisor_receipt};
+    #[cfg(any(unix, feature = "full-tests"))]
+    use super::SupervisorBootRefusal;
     #[cfg(unix)]
     use super::lifecycle_boot_refusal;
     use super::{
-        InstallationBindingRefusal, ShutdownCause, SupervisorBootRefusal, SupervisorHostOutcome,
-        SupervisorSignal, SyncFailureKind, classify_shutdown,
+        InstallationBindingRefusal, ShutdownCause, SupervisorHostOutcome, SupervisorSignal,
+        SyncFailureKind, classify_shutdown,
     };
     #[cfg(unix)]
     use solstone_core_system::lifecycle::{

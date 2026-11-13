@@ -135,7 +135,7 @@ mod tests {
                 attempt: 1,
                 root: bound.canonical_path().to_string_lossy().into_owned(),
                 root_identity: bound.identity().observation_id(),
-                source: source,
+                source,
                 snapshot_id: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                     .into(),
                 subtree: "/journal".into(),

@@ -692,7 +692,7 @@ fn preflight_coordinates(change: &JournalChange) -> Result<(), String> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn rewrite(change: &JournalChange) -> Result<PathBuf, RewriteError> {
     let mut admission = admit_rewrite(change)?;
     let _wrapper_lock =
@@ -809,6 +809,8 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         return 2;
     }
     if let Err(e) = solstone_core_journal::ensure_journal_dir_with_label(&c.target_path, "config") {
+        // The unix wrapper lock is a guard; release it before the admission.
+        #[cfg(unix)]
         drop(_wrapper_lock);
         drop(admission);
         maybe_restart_current_service(c, service);
@@ -845,6 +847,8 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             return 2;
         }
     };
+    // The unix wrapper lock is a guard; release it before the admission.
+    #[cfg(unix)]
     drop(_wrapper_lock);
     drop(admission);
     if !c.service_installed {
@@ -998,6 +1002,8 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         }
     }
     if let Err(e) = fs::rename(&c.current_path, &c.target_path) {
+        // The unix wrapper lock is a guard; release it before the admission.
+        #[cfg(unix)]
         drop(_wrapper_lock);
         drop(admission);
         maybe_restart_current_service(c, service);
@@ -1034,6 +1040,8 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             return 2;
         }
     };
+    // The unix wrapper lock is a guard; release it before the admission.
+    #[cfg(unix)]
     drop(_wrapper_lock);
     drop(admission);
     if !c.service_installed {

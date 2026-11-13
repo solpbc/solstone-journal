@@ -4,6 +4,7 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -93,6 +94,7 @@ fn stream_record_seq(journal_root: &Path, stream: &str) -> Option<u64> {
     value.get("seq").and_then(Value::as_u64)
 }
 
+#[cfg(unix)]
 fn stream_record_kind(journal_root: &Path, stream: &str) -> Option<String> {
     let path = journal_root.join("streams").join(format!("{stream}.json"));
     let value: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
@@ -401,6 +403,8 @@ async fn ac1_fresh_text_import_success_direct_and_routes() {
 // AC2: Zero-segment clean outcome through producer
 // ---------------------------------------------------------------------------
 
+// The callosum listener here is a Unix socket.
+#[cfg(unix)]
 #[tokio::test]
 async fn ac2_zero_segment_through_producer_routes_success_zero_events_zero() {
     let temp = TempDir::new().unwrap();
@@ -1248,6 +1252,8 @@ fn ac5_3_absent_and_malformed_attempt_facts_return_typed_errors() {
 // AC6: Callosum events & stream record sequence
 // ---------------------------------------------------------------------------
 
+// The callosum listener here is a Unix socket.
+#[cfg(unix)]
 #[tokio::test]
 async fn ac6_callosum_exact_events_and_stream_record_on_text_import() {
     let temp = TempDir::new().unwrap();

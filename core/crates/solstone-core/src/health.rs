@@ -37,6 +37,7 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
     let socket_path = journal.join("health").join("callosum.sock");
     let fetch = match inspect_socket(&socket_path) {
         SocketInspection::InvalidUtf8 => Err(PresentedHealthError::InvalidUtf8),
+        #[cfg(not(windows))]
         SocketInspection::NotFound => Err(PresentedHealthError::NotFound {
             path: socket_path
                 .to_str()
@@ -44,6 +45,7 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
                 .to_owned(),
         }),
         SocketInspection::NotRunning => Err(PresentedHealthError::NotRunning),
+        #[cfg(not(windows))]
         SocketInspection::NotInspectable(reason) => {
             Err(PresentedHealthError::NotInspectable { reason })
         }
@@ -105,11 +107,14 @@ fn no_supervisor_sync_diagnosis(journal: &Path) -> Option<String> {
 
 enum PresentedHealthError {
     InvalidUtf8,
+    /// Socket-file outcomes; Windows has no socket file (tests still read the copy).
+    #[cfg(any(not(windows), test))]
     NotFound {
         path: String,
     },
     /// Windows: no live resident, so there is nothing to ask.
     NotRunning,
+    #[cfg(any(not(windows), test))]
     NotInspectable {
         reason: String,
     },
@@ -120,14 +125,18 @@ enum PresentedHealthError {
 }
 
 fn should_rescan_sync(fetch: &Result<SupervisorStatus, PresentedHealthError>) -> bool {
-    matches!(
-        fetch,
-        Err(PresentedHealthError::InvalidUtf8
-            | PresentedHealthError::NotFound { .. }
+    match fetch {
+        Err(
+            PresentedHealthError::InvalidUtf8
             | PresentedHealthError::NotRunning
-            | PresentedHealthError::NotInspectable { .. }
-            | PresentedHealthError::RuntimeUnavailable { .. })
-    )
+            | PresentedHealthError::RuntimeUnavailable { .. },
+        ) => true,
+        #[cfg(any(not(windows), test))]
+        Err(
+            PresentedHealthError::NotFound { .. } | PresentedHealthError::NotInspectable { .. },
+        ) => true,
+        _ => false,
+    }
 }
 
 fn ced_line(ced: &CedVerdict) -> String {
@@ -187,6 +196,7 @@ fn present_health(
             "Cannot connect: callosum socket path is not valid UTF-8\n".to_owned(),
             std::process::ExitCode::FAILURE,
         ),
+        #[cfg(any(not(windows), test))]
         Err(PresentedHealthError::NotFound { path }) => (
             stdout,
             format!(
@@ -200,6 +210,7 @@ fn present_health(
             "Cannot connect: your journal isn't running\n".to_owned(),
             std::process::ExitCode::FAILURE,
         ),
+        #[cfg(any(not(windows), test))]
         Err(PresentedHealthError::NotInspectable { reason }) => (
             stdout,
             format!(
@@ -254,9 +265,11 @@ fn invalid_status_message(path: &str) -> String {
 
 enum SocketInspection {
     InvalidUtf8,
+    #[cfg(not(windows))]
     NotFound,
     #[cfg_attr(not(windows), allow(dead_code))]
     NotRunning,
+    #[cfg(not(windows))]
     NotInspectable(String),
     Present,
 }

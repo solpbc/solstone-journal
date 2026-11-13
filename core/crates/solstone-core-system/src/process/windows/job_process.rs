@@ -676,7 +676,8 @@ pub(super) enum NativeLaunchError {
     BeforeCreate(io::Error),
     AfterCreate {
         source: io::Error,
-        owner: UnfinalizedWindowsJob,
+        // Boxed so `Result<_, NativeLaunchError>` stays small.
+        owner: Box<UnfinalizedWindowsJob>,
     },
 }
 #[cfg(windows)]
@@ -974,13 +975,13 @@ pub(super) fn launch_windows_native_job_process(
     if let Err(source) = child_end_cleanup {
         return Err(NativeLaunchError::AfterCreate {
             source,
-            owner: UnfinalizedWindowsJob {
+            owner: Box::new(UnfinalizedWindowsJob {
                 job,
                 created,
                 _pipes: Some(pipes),
                 _forwarding_stdio: Vec::new(),
                 hard_stop_issued: false,
-            },
+            }),
         });
     }
     let finalized = match finalize_created_process(
@@ -1007,13 +1008,13 @@ pub(super) fn launch_windows_native_job_process(
         Err(failed) => {
             return Err(NativeLaunchError::AfterCreate {
                 source: failed.error,
-                owner: UnfinalizedWindowsJob {
+                owner: Box::new(UnfinalizedWindowsJob {
                     job,
                     created: failed.created,
                     _pipes: Some(pipes),
                     _forwarding_stdio: Vec::new(),
                     hard_stop_issued: false,
-                },
+                }),
             });
         }
     };
@@ -1149,13 +1150,13 @@ pub(super) fn launch_windows_forwarder(
         Err(source) => {
             return Err(NativeLaunchError::AfterCreate {
                 source,
-                owner: UnfinalizedWindowsJob {
+                owner: Box::new(UnfinalizedWindowsJob {
                     job,
                     created,
                     _pipes: None,
                     _forwarding_stdio: handles.into(),
                     hard_stop_issued: false,
-                },
+                }),
             });
         }
     };

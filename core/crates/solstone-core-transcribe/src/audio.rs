@@ -80,15 +80,14 @@ pub(crate) fn run_vad(
         #[cfg(windows)]
         resources,
     );
+    // A failed helper run returns its error as is, before the input is released.
     #[cfg(windows)]
-    let temporary = {
-        if result.is_err() {
-            return result;
-        }
+    let result = Ok(result?);
+    #[cfg(windows)]
+    let temporary =
         std::sync::Arc::try_unwrap(temporary).map_err(|_| TranscribeError::VadTemporary {
             detail: "could not remove VAD input directory: input remains in use".to_owned(),
-        })?
-    };
+        })?;
     let cleanup_result = temporary
         .close()
         .map_err(|error| TranscribeError::VadTemporary {
@@ -424,6 +423,75 @@ fn parse_vad_error(exit: Option<i32>, stderr: &[u8]) -> TranscribeError {
     }
 }
 
+#[cfg(windows)]
+pub fn resolve_vad_binary() -> Result<PathBuf, TranscribeError> {
+    solstone_core_local::install::onnx_readiness::verified_windows_onnx_package()
+        .map(|package| package.vad_worker)
+        .map_err(|detail| TranscribeError::VadBinary { detail })
+}
+
+#[cfg(windows)]
+pub(crate) fn vad_binary_candidate_from<F>(
+    current_executable: Result<PathBuf, io::Error>,
+    _lookup_env: F,
+) -> Result<PathBuf, TranscribeError>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let executable = current_executable.map_err(|error| TranscribeError::VadBinary {
+        detail: format!("could not determine current executable for VAD helper: {error}"),
+    })?;
+    let binary = resolve_vad_binary()?;
+    if !executable
+        .parent()
+        .zip(binary.parent())
+        .is_some_and(|(requested, declared)| {
+            solstone_core_local::install::windows_member_path::matches_declared_member_path(
+                requested, declared,
+            )
+        })
+    {
+        return Err(TranscribeError::VadBinary {
+            detail: "VAD helper lookup is outside the running signed app payload".to_owned(),
+        });
+    }
+    Ok(binary)
+}
+
+#[cfg(windows)]
+fn invoke_vad_helper(
+    binary: &Path,
+    request: &[u8],
+    resources: solstone_core_system::process::BoundedHelperResources,
+) -> Result<VadResult, TranscribeError> {
+    use crate::windows_onnx::{
+        ONNX_STDERR_LIMIT, ONNX_STDIN_LIMIT, ONNX_STDOUT_LIMIT, OnnxHelper, run_onnx_helper,
+    };
+    use solstone_core_system::process::BoundedHelperBudget;
+    let output = run_onnx_helper(
+        OnnxHelper::Vad,
+        binary,
+        request,
+        BoundedHelperBudget {
+            timeout: std::time::Duration::from_secs(2400),
+            stdin_limit_bytes: ONNX_STDIN_LIMIT,
+            stdout_limit_bytes: ONNX_STDOUT_LIMIT,
+            stderr_limit_bytes: ONNX_STDERR_LIMIT,
+        },
+        resources,
+    )
+    .map_err(|error| TranscribeError::VadTemporary {
+        detail: error.to_string(),
+    })?;
+    if output.exit_code == 0 {
+        json_line(&output.stdout, "VAD response")
+            .and_then(parse_vad_response)
+            .map_err(|detail| vad_contract_error(Some(0), &output.stdout, detail))
+    } else {
+        Err(parse_vad_error(Some(output.exit_code), &output.stderr))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io;
@@ -661,74 +729,5 @@ mod tests {
 
         assert!(matches!(error, TranscribeError::VadBinary { .. }));
         assert_eq!(error.exit_code(), 78);
-    }
-}
-
-#[cfg(windows)]
-pub fn resolve_vad_binary() -> Result<PathBuf, TranscribeError> {
-    solstone_core_local::install::onnx_readiness::verified_windows_onnx_package()
-        .map(|package| package.vad_worker)
-        .map_err(|detail| TranscribeError::VadBinary { detail })
-}
-
-#[cfg(windows)]
-pub(crate) fn vad_binary_candidate_from<F>(
-    current_executable: Result<PathBuf, io::Error>,
-    _lookup_env: F,
-) -> Result<PathBuf, TranscribeError>
-where
-    F: Fn(&str) -> Option<String>,
-{
-    let executable = current_executable.map_err(|error| TranscribeError::VadBinary {
-        detail: format!("could not determine current executable for VAD helper: {error}"),
-    })?;
-    let binary = resolve_vad_binary()?;
-    if !executable
-        .parent()
-        .zip(binary.parent())
-        .is_some_and(|(requested, declared)| {
-            solstone_core_local::install::windows_member_path::matches_declared_member_path(
-                requested, declared,
-            )
-        })
-    {
-        return Err(TranscribeError::VadBinary {
-            detail: "VAD helper lookup is outside the running signed app payload".to_owned(),
-        });
-    }
-    Ok(binary)
-}
-
-#[cfg(windows)]
-fn invoke_vad_helper(
-    binary: &Path,
-    request: &[u8],
-    resources: solstone_core_system::process::BoundedHelperResources,
-) -> Result<VadResult, TranscribeError> {
-    use crate::windows_onnx::{
-        ONNX_STDERR_LIMIT, ONNX_STDIN_LIMIT, ONNX_STDOUT_LIMIT, OnnxHelper, run_onnx_helper,
-    };
-    use solstone_core_system::process::BoundedHelperBudget;
-    let output = run_onnx_helper(
-        OnnxHelper::Vad,
-        binary,
-        request,
-        BoundedHelperBudget {
-            timeout: std::time::Duration::from_secs(2400),
-            stdin_limit_bytes: ONNX_STDIN_LIMIT,
-            stdout_limit_bytes: ONNX_STDOUT_LIMIT,
-            stderr_limit_bytes: ONNX_STDERR_LIMIT,
-        },
-        resources,
-    )
-    .map_err(|error| TranscribeError::VadTemporary {
-        detail: error.to_string(),
-    })?;
-    if output.exit_code == 0 {
-        json_line(&output.stdout, "VAD response")
-            .and_then(parse_vad_response)
-            .map_err(|detail| vad_contract_error(Some(0), &output.stdout, detail))
-    } else {
-        Err(parse_vad_error(Some(output.exit_code), &output.stderr))
     }
 }

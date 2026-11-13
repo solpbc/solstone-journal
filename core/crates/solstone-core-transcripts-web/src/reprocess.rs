@@ -316,6 +316,9 @@ fn sibling_sense_binary_beside(current: &Path) -> Result<PathBuf, String> {
             return Err(format!("helper-not-executable:{}", path.display()));
         }
     }
+    // No executable bit to check off unix; the lookup above is the existence check.
+    #[cfg(not(unix))]
+    let _ = metadata;
     Ok(path)
 }
 

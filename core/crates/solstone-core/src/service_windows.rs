@@ -1167,6 +1167,7 @@ fn hook_cleanup_inventory(
     steps
 }
 
+#[allow(clippy::too_many_arguments)] // The failed step plus the inventory inputs that name the steps it skips.
 fn stop_after_failed_cleanup_step(
     journal: Option<&Path>,
     mut results: Vec<CleanUninstallStepResult>,
@@ -2285,7 +2286,7 @@ fn run_resume_after_update() -> ExitCode {
     record_after_update(
         &ctx,
         match &outcome {
-            Ok(outcome) => *outcome,
+            Ok(outcome) => outcome,
             Err(_) => "failed",
         },
     );

@@ -1193,10 +1193,12 @@ fn create_symlink(_target: &Path, _link: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::{Path, PathBuf};
 
+    #[cfg(unix)]
     use serde_json::Value;
 
     use super::*;
@@ -1208,6 +1210,7 @@ mod tests {
             .expect("tempdir")
     }
 
+    #[cfg(unix)]
     fn copy_tree_files_for_test(src_dir: &Path, dst_dir: &Path) -> io::Result<()> {
         fs::create_dir_all(dst_dir)?;
         for entry in fs::read_dir(src_dir)? {
@@ -1223,6 +1226,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(unix)]
     fn fixture_root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../../core/fixtures/native-sol/skills-parity-v1/vectors.json")
@@ -1238,6 +1242,7 @@ mod tests {
             .expect("source checkout payload root should canonicalize")
     }
 
+    #[cfg(unix)]
     fn subst(text: &str, values: &BTreeMap<String, String>) -> String {
         let mut output = text.to_string();
         let mut replacements = values.iter().collect::<Vec<_>>();
@@ -1248,6 +1253,7 @@ mod tests {
         output
     }
 
+    #[cfg(unix)]
     fn setup_vector(ops: &[Value], values: &BTreeMap<String, String>) {
         for op in ops {
             let kind = op["op"].as_str().expect("setup op should have kind");
@@ -1323,6 +1329,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     fn base64_decode(input: &str) -> Vec<u8> {
         const TABLE: &[u8; 64] =
             b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

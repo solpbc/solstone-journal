@@ -29,7 +29,7 @@ use std::process::ExitStatus;
 
 pub use common::CensusRow;
 pub(crate) use common::TerminationEvidence;
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 pub(crate) use common::hosted_admission_test_fault;
 pub(crate) use common::parse_linux_boot_id;
 #[cfg(not(windows))]
@@ -62,6 +62,7 @@ pub(crate) use platform::current_windows_process_instance;
 pub(crate) use platform::exact_descendant_tree;
 #[cfg(target_os = "linux")]
 pub(crate) use platform::hold_while_instance_live;
+#[cfg(unix)]
 pub(crate) use platform::launch_managed_generation_child;
 #[cfg(target_os = "macos")]
 pub(crate) use platform::macos_sweep_table;
