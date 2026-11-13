@@ -8,35 +8,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- on the body page you can now hide a day of body data: that day's readings from Apple Health, Oura and Strava, and a night or workout that starts on it, after midnight too. it stays in your journal, and it stays hidden when you import or sync it again or merge a journal archive that holds it. search and the activities page leave it out, and connected agents can't reach it. unhide brings it back as it was, and anything you hid on its own stays hidden.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
-### Changed
-
-- connected agents now need body, a permission of its own, to read what you imported from Apple Health, Oura or Strava: readings, sleep, workouts, mindfulness sessions and what you logged there. the transcripts permission no longer includes it. a new connection has body ticked. a connection you approved before doesn't, and can't read that data until you tick body for it in the agents app.
-- on linux, installing or updating the journal now removes older installed versions, and keeps this version and the two before it so `--version` can still go back to either. a version that is still in use stays.
-
 ### Fixed
 
-- security fix: on linux, local thinking now starts with a new key every time, and only your own account can get it from your journal. before, a web page open in your browser, or another account on the same computer, could use local thinking, read its replies, and make it fetch images from addresses they chose. nothing in your journal could be read this way.
-- on a large journal, a connected agent's search for a common word could run past the agent's time limit, most often on the first search after the journal started. those searches now come back in about half the time. on a journal you already had, the faster search starts once your journal has been busy for a little while after you update.
-- on transcripts and the other pages you step through by day, stepping onto the first or last day with an arrow now moves focus to the date between the arrows. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
-- on a phone, the list of facets on the entities page now opens on screen, so you can choose one. before, it opened below the bottom of the screen.
-- restoring a backup during setup keeps the new journal's running services and troubleshooting logs intact, so new audio can be transcribed without restarting.
-- changing your journal folder on linux or mac now updates its saved location and service together, while keeping your other settings.
-- repeated service starts keep an already-running journal's ready state intact.
-- starting encrypted backup could take several minutes on slower computers. removed a repeated check that contributed to the delay.
-- on linux, after installing the command-line tools alone (`--role cli`), a new terminal now finds the `solstone` command in bash and zsh. before, only a login shell found it, and on some computers not even that.
-- importing the same journal archive again skips recordings already present, even after your journal has added processing results. existing duplicate copies stay as they are.
-- when a connected agent reads a week that doesn't have its weekly page yet, such as the current week, `get_week` no longer marks every day as having nothing in your journal, which made busy days look empty. it still lists the week's activities and memories.
-- `solstone journal archive merge --dry-run` now counts recordings it would skip, rather than files in the archive.
-- when a phone sends your calendar again, for example after you pair it with your journal again, events your journal already has are no longer added a second time.
-- on some older linux computers, the solstone app on iphone gave up waiting for your journal, so new screenshots, Obsidian notes and calendar events stayed waiting on the phone. your journal checked its own installed files every time the app checked in, which took longer than the app waits; it now checks them once after it starts.
-- when Oura moves an entry by more than a day, your journal keeps it where it was first saved, and the summary now says so instead of saying you deleted it.
-- importing a file into a journal on windows no longer fails with "the import could not be prepared" after the journal has been running for a while.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
@@ -67,6 +45,39 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
 
+## [2.0.78] - 2026-11-13
+
+### Added
+
+- on the body page you can now hide a day of body data: that day's readings from Apple Health, Oura and Strava, and a night or workout that starts on it, including the part after midnight. it stays in your journal, and it stays hidden when you import or sync it again or merge a journal archive that holds it. search and the activities page leave it out, and connected agents can't reach it. unhide brings it back as it was, and anything you hid on its own stays hidden.
+
+### Changed
+
+- connected agents now need body, a permission of its own, to read what you imported from Apple Health, Oura or Strava: readings, sleep, workouts, mindfulness sessions and what you logged there. the transcripts permission no longer includes it. a new connection has body ticked. a connection you approved before doesn't, and can't read that data until you tick body for it in the agents app.
+- on linux, unless you installed the journal as a `.deb` or `.rpm` package, installing or updating it now removes older installed versions, and keeps this version and the two before it so the installer's `--version` can still take you back to either. a version that is still in use stays.
+- entities and speakers now work like home, transcripts and search: moving between them and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+
+### Fixed
+
+- security fix: on linux, local thinking now starts with a new key every time, and only your own account can get it from your journal. before, a web page open in your browser, or another account on the same computer, could use local thinking, read its replies, and make it fetch images from addresses they chose.
+- on a large journal, a connected agent's search for a common word could take longer than the agent would wait, most often on the first search after your journal started. those searches are now much quicker. on a journal you already had, the faster search starts once your journal has been busy for a little while after you update.
+- on transcripts and the other pages you step through by day, stepping onto the first or last day with an arrow now moves focus to the date between the arrows. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
+- on a phone, the list of facets on the entities page now opens on screen, so you can choose one. before, it opened below the bottom of the screen.
+- after restoring a backup during setup, new audio is now transcribed without restarting your journal, and it keeps its own troubleshooting logs rather than the backup's. backups now leave those logs out.
+- changing your journal folder on linux no longer leaves your journal looking in the old folder, so it starts from the new one, and keeps your other settings.
+- on linux, running `solstone journal service start` while your journal is already running no longer waits two minutes and then says it didn't become ready. your journal keeps running as it was.
+- on linux and mac, turning on encrypted backup operated by sol pbc sometimes took a few minutes on slower computers. your journal no longer repeats a check of its own program files before it connects, which added to the wait.
+- on linux, after installing the command-line tools alone (`--role cli`), a new terminal now finds the `solstone` command in bash and zsh when you have a `~/.bashrc` or `~/.zshrc`, and the installer names the files it changed. before, only a login shell found it, and on some computers not even that.
+- importing the same journal archive again skips recordings already present, even after your journal has added processing results. existing duplicate copies stay as they are.
+- when a connected agent reads a week that doesn't have its weekly page yet, such as the current week, `get_week` no longer marks every day as having nothing in your journal, which made busy days look empty. it still lists the week's activities and memories.
+- `solstone journal archive merge --dry-run` now counts recordings it would skip, rather than files in the archive.
+- when a phone sends your calendar again, for example after you pair it with your journal again, events your journal already has are no longer added a second time.
+- on some older linux computers, the solstone app on iphone gave up waiting for your journal, so new Obsidian notes and calendar events stayed waiting on the phone. your journal checked its own installed files every time the app checked in, which took longer than the app waits; it now checks them once after it starts.
+- when Oura moves an entry by more than a day, your journal keeps it where it was first saved, and the summary now says so instead of saying you deleted it.
+- importing a file into a journal on windows no longer fails with "the import could not be prepared."
+- on the activities page, a workout, night or mindfulness session from Apple Health, Oura or Strava now shows on the day at its own times, with its name and what kind it is. before, it sat under "without a time" with no name.
+- moving quickly between pages in the dashboard now always lands on the page you chose, and a tap on the side rail or dock while a page is still changing is no longer lost.
+
 ## [2.0.76] - 2026-11-12
 
 ### Added
@@ -89,7 +100,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `solstone call entities delete`, `solstone call journal facet delete` and `solstone call speakers wipe --commit` now say the day something is erased in your own time zone, and `facet delete` now answers in a sentence instead of raw output.
 - things you delete together, and things you recover or erase together from the trash, now share one line in the removal history for each step.
 - on the month map, when a 1 km area would be too small to see, the map now draws the larger area that holds it, so areas no longer overlap. choose a larger area to zoom in to the areas inside it. the list of areas beside the map still shows each 1 km area and its days. thanks @dvanduzer for the suggestion (#419).
-- the body page, the activities page, the map, search, entities and speakers now work like home, the more page and transcripts: moving between them, or to another day or search on them, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+- the body page, the activities page, the map and search now work like home, the more page and transcripts: moving between them, or to another day or search on them, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 - on your own endpoint, leaving "leave room for the model to think" unticked now asks your model not to think, so a model that thinks by default usually answers sooner. tick it to let your model think. thanks @dvanduzer for the report (#418).
 - your own name no longer takes one of the 20 places in each facet's list of names that your journal reads as it processes your day, so one more of the facet's own names fits. the facets reference your agents read now explains what a facet's description and that list do, and how to curate them. thanks @dvanduzer for the report (#417).
 
