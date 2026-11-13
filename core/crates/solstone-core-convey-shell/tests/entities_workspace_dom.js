@@ -1019,6 +1019,7 @@ async function main() {
     },
     emit(name) { (windowListeners[name] || []).forEach((listener) => listener()); },
     beginViewReady: () => () => {},
+    scrollTo() {},
     logError() {},
     SurfaceState: {replaceLoading() {}, error() {}},
     CONVEY_COPY: {RELOAD_HINT: ''},
