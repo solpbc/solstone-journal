@@ -2174,23 +2174,36 @@ fn native_config_branches_remain_poison_clean_through_dispatcher() {
     let service_unit = context.home.join(".config/systemd/user/solstone.service");
     fs::create_dir_all(service_unit.parent().expect("service parent"))
         .expect("create service parent");
-    fs::write(&service_unit, "unit").expect("write service unit");
-    let stopped_target = context.home.join("stopped-service-journal");
-    let stopped_target_arg = stopped_target.display().to_string();
-    let stopped = run_dispatcher_with_output(
+    fs::write(&service_unit, "unit").expect("write foreign service unit");
+    let wrapper_before = fs::read(&solstone).expect("read wrapper before foreign-unit refusal");
+    let foreign_target = context.home.join("foreign-service-journal");
+    let foreign_target_arg = foreign_target.display().to_string();
+    let foreign = run_dispatcher_with_output(
         &context,
         "config",
-        &["journal", &stopped_target_arg, "--switch", "--yes"],
+        &["journal", &foreign_target_arg, "--switch", "--yes"],
     )
-    .expect("run native config stopped-service branch through dispatcher");
-    assert_eq!(stopped.status.code(), Some(0));
+    .expect("run native config foreign-service branch through dispatcher");
+    let foreign_stderr = String::from_utf8_lossy(&foreign.stderr);
     assert_eq!(
-        stopped.stdout,
-        b"service installed but not running; wrapper updated.\n"
+        foreign.status.code(),
+        Some(1),
+        "stdout={} stderr={foreign_stderr}",
+        String::from_utf8_lossy(&foreign.stdout)
     );
     assert!(
+        foreign_stderr.contains("not recognized as a service file created by journal"),
+        "stderr={foreign_stderr}"
+    );
+    assert_eq!(
+        fs::read(&solstone).expect("read wrapper after foreign-unit refusal"),
+        wrapper_before,
+        "a refused journal-folder change left the wrapper changed"
+    );
+    assert!(!foreign_target.exists());
+    assert!(
         !context.poison_marker.exists(),
-        "config stopped-service branch reached poison"
+        "config foreign-service branch reached poison"
     );
 }
 
