@@ -2217,8 +2217,6 @@ fn run_before_uninstall() -> ExitCode {
     }
 }
 
-/// Whether this install root has no saved binding: `journal setup` has not
-/// run for it yet, or it has already been uninstalled.
 /// Whether this install has an adopted journal, as the Windows journal app asks
 /// at every launch before it offers setup or opens the journal.
 #[derive(Debug, PartialEq, Eq)]
