@@ -2369,6 +2369,21 @@
         + `</div>`;
     }
 
+    // A missing original a trash item holds: the reason says so, and the way to
+    // the trash goes with it, where it can be recovered until it's erased.
+    const MEDIA_TRASH_COPY = Object.freeze({
+      link: 'open trash',
+      desc: "you can recover it there until it's erased."
+    });
+
+    function mediaInTrash(data, modality) {
+      return data?.media_removal?.[modality + '_in_trash'] === true;
+    }
+
+    function mediaTrashLink() {
+      return `<a href="/app/settings#trash" data-role="media-open-trash">${escapeHtml(MEDIA_TRASH_COPY.link)}</a>`;
+    }
+
     function renderDataStateAffordance(modality, state, data) {
       const icon = emptyIconForModality(modality);
       if (state === 'pending') {
@@ -2398,10 +2413,12 @@
         return renderFailedDataState(modality);
       }
       if (state === 'purged') {
+        const inTrash = mediaInTrash(data, modality);
         return window.SurfaceState.empty({
           icon,
           heading: data.media_removal[modality],
-          desc: ''
+          desc: inTrash ? MEDIA_TRASH_COPY.desc : '',
+          action: inTrash ? mediaTrashLink() : ''
         });
       }
       return '';
@@ -3603,12 +3620,10 @@
 
       const audioPurged = data.media_purged?.audio && !data.audio_file && showAudio;
       const screenPurged = data.media_purged?.screen && showScreen && chunks.some(c => c.type === 'screen');
-      if (audioPurged) {
-        html += `<div class="tr-purge-notice" role="presentation">${escapeHtml(data.media_removal.audio)}</div>`;
-      }
-      if (screenPurged) {
-        html += `<div class="tr-purge-notice" role="presentation">${escapeHtml(data.media_removal.screen)}</div>`;
-      }
+      const purgeNotice = (modality) => `<div class="tr-purge-notice" role="presentation">${escapeHtml(data.media_removal[modality])}`
+        + (mediaInTrash(data, modality) ? ` · ${mediaTrashLink()}` : '') + '</div>';
+      if (audioPurged) html += purgeNotice('audio');
+      if (screenPurged) html += purgeNotice('screen');
 
       // Render items (chunks or groups)
       displayItems.forEach((item, idx) => {

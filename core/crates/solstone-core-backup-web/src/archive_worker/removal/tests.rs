@@ -1288,6 +1288,36 @@ fn policy_only_approval_settles_locally_and_frees_the_slot() {
     assert_eq!(report["attempts"][0]["native"]["effect"], "deleted");
     assert_eq!(report["mutation"]["publication"], "published");
     assert!(!raw.exists());
+    // It waits in the trash, settled once the journal was handed back, and
+    // the history says trashed, never removed.
+    let items = solstone_core_trash::list(journal.path()).unwrap();
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert!(matches!(
+        &items[0].unit,
+        solstone_core_removals::Unit::Originals { files, .. } if files == &["audio.flac".to_owned()]
+    ));
+    let held = journal
+        .path()
+        .join(solstone_core_trash::TRASH_DIR)
+        .join(&items[0].id)
+        .join("files/chronicle/20261009/120000_60_policy/audio.flac");
+    assert_eq!(fs::read(held).unwrap(), b"raw");
+    let history: Vec<_> = solstone_core_removals::history(journal.path(), 50)
+        .unwrap()
+        .entries
+        .into_iter()
+        .map(|entry| (entry.event, entry.action, entry.surface))
+        .collect();
+    assert_eq!(
+        history,
+        [(
+            solstone_core_removals::Event::Trashed,
+            solstone_core_removals::Action::OriginalsRelease,
+            solstone_core_removals::Surface::Web {
+                page: solstone_core_removals::Page::Home
+            }
+        )]
+    );
     assert!(load_at_root(&root).unwrap().marks.is_empty());
     assert!(!operation::is_busy(&deps.operations));
     assert!(ActivityLease::try_acquire(Arc::clone(&root)).is_ok());
@@ -1379,6 +1409,19 @@ fn policy_only_uncertain_remnant_stays_in_the_slot_and_status_reports_it() {
         "held"
     );
     assert!(!segment.join("audio.flac").exists());
+    // The held result keeps the journal: the trash's item waits, still
+    // holding the original, for the sweep once the hold is let go.
+    let waiting = solstone_core_trash::stopped(journal.path()).unwrap();
+    assert_eq!(waiting.len(), 1, "{waiting:?}");
+    assert_eq!(waiting[0].state, solstone_core_trash::State::Detaching);
+    assert!(
+        journal
+            .path()
+            .join(solstone_core_trash::TRASH_DIR)
+            .join(&waiting[0].id)
+            .join("files/chronicle/20261009/120000_60_policy/audio.flac")
+            .is_file()
+    );
     {
         let state = deps.operations.lock().unwrap();
         let returned = state.archive_returns().next().unwrap();

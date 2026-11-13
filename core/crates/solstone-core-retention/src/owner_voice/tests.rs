@@ -577,9 +577,15 @@ fn a_recovered_original_is_not_released_again_by_voice_only() {
         Action::RetentionTool,
         Surface::Cli,
     )
-    .unwrap();
-    let _ = crate::door::release_raw(journal, &proven, RawReleaseClass::Owner, at());
-    assert!(keep_after(journal, linked).is_empty());
+    .unwrap()
+    .linked;
+    let (outcome, _) = crate::door::release_raw(journal, &proven, RawReleaseClass::Owner, at());
+    let released = crate::original_trash::released(&outcome);
+    assert!(
+        keep_after(journal, linked, Some(&released))
+            .unsettled
+            .is_empty()
+    );
     assert!(!fixture.original.exists());
     let item = solstone_core_trash::list(journal).unwrap().remove(0);
     solstone_core_trash::attach(

@@ -300,12 +300,16 @@ pub async fn approval_status(
     deps: Option<Extension<solstone_core_backup_web::BackupWebDeps>>,
     id: Result<RoutePath<String>, PathRejection>,
 ) -> Response {
-    let response = approval_receiving(deps, id, false).await;
+    with_trash(journal_root, approval_receiving(deps, id, false).await).await
+}
+
+/// An approval answer with what its release took that waits in the trash,
+/// for the owner's result. Read from the trash when asked.
+async fn with_trash(journal_root: PathBuf, response: Response) -> Response {
     if !response.status().is_success() {
         return response;
     }
-    // What the release took that waits in the trash, for the owner's result.
-    let Ok(bytes) = axum::body::to_bytes(response.into_body(), 4 * 1024 * 1024).await else {
+    let Ok(bytes) = axum::body::to_bytes(response.into_body(), 32 * 1024 * 1024).await else {
         return approval_unavailable("approve.unavailable", StatusCode::SERVICE_UNAVAILABLE);
     };
     let Ok(mut status) = serde_json::from_slice::<Value>(&bytes) else {
@@ -325,6 +329,7 @@ pub async fn approval_status(
 }
 
 pub async fn cancel_approval(
+    State(journal_root): State<PathBuf>,
     deps: Option<Extension<solstone_core_backup_web::BackupWebDeps>>,
     id: Result<RoutePath<String>, PathRejection>,
     body: Result<Bytes, axum::extract::rejection::BytesRejection>,
@@ -345,7 +350,7 @@ pub async fn cancel_approval(
     {
         return approval_unavailable(REQUEST_INVALID, StatusCode::BAD_REQUEST);
     }
-    approval_receiving(deps, id, true).await
+    with_trash(journal_root, approval_receiving(deps, id, true).await).await
 }
 
 // Direct fixture entry for the same retained worker used by the public handler.

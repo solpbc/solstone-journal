@@ -591,12 +591,17 @@ fn erase_linked_within(journal: &Path, erased: &Item) {
         if !other.linked || other.state != State::Trashed || other.id == erased.id || !inside {
             continue;
         }
-        let (action, surface, operation) = pending.clone().map_or(
-            (Action::Erase, timer_surface(), None),
-            |pending| (pending.action, pending.surface, pending.operation),
-        );
+        let (action, surface, operation) = pending
+            .clone()
+            .map_or((Action::Erase, timer_surface(), None), |pending| {
+                (pending.action, pending.surface, pending.operation)
+            });
         if let Err(error) = erase_as(journal, &other.id, action, surface, operation) {
-            log::warn!("trash item {}: not erased with {}: {error}", other.id, erased.id);
+            log::warn!(
+                "trash item {}: not erased with {}: {error}",
+                other.id,
+                erased.id
+            );
         }
     }
 }
@@ -2986,7 +2991,6 @@ mod tests {
         }
     }
 
-    /// A temporary journal root, removed when dropped.
     const AUDIO: &str = "chronicle/20261108/phone/070000_300/audio.flac";
 
     fn link(root: &Path, kind: &Fake, paths: &[&str]) -> Linked {
@@ -3015,7 +3019,7 @@ mod tests {
             "linking changes nothing in place"
         );
         fs::remove_file(root.join(AUDIO)).unwrap();
-        let item = finish_linked(&root, &kind, linked).unwrap().unwrap();
+        let item = finish_linked(&root, &kind, linked, None).unwrap().unwrap();
         assert_eq!(item.state, State::Trashed);
         assert_eq!(item.paths, vec![AUDIO.to_owned()]);
         assert_eq!(item.bytes, 5);
@@ -3061,7 +3065,7 @@ mod tests {
         let (_dir, root) = journal();
         let kind = Fake::default();
         let linked = link(&root, &kind, &[AUDIO]);
-        assert!(finish_linked(&root, &kind, linked).unwrap().is_none());
+        assert!(finish_linked(&root, &kind, linked, None).unwrap().is_none());
         assert_eq!(fs::read(root.join(AUDIO)).unwrap(), b"sound");
         assert!(all_items(&root).unwrap().is_empty());
         assert!(events(&root).is_empty());
@@ -3080,7 +3084,7 @@ mod tests {
         let kind = Fake::default();
         let linked = link(&root, &kind, &[AUDIO, other]);
         fs::remove_file(root.join(other)).unwrap();
-        let item = finish_linked(&root, &kind, linked).unwrap().unwrap();
+        let item = finish_linked(&root, &kind, linked, None).unwrap().unwrap();
         assert_eq!(item.paths, vec![other.to_owned()]);
         assert_eq!(item.bytes, 7);
         assert_eq!(fs::read(root.join(AUDIO)).unwrap(), b"sound");
@@ -3132,7 +3136,7 @@ mod tests {
         let linked = link(&root, &kind, &[AUDIO]);
         fs::remove_file(root.join(AUDIO)).unwrap();
         fs::write(root.join(AUDIO), b"another").unwrap();
-        let item = finish_linked(&root, &kind, linked).unwrap().unwrap();
+        let item = finish_linked(&root, &kind, linked, None).unwrap().unwrap();
         let held = root
             .join(TRASH_DIR)
             .join(&item.id)
@@ -3140,6 +3144,30 @@ mod tests {
             .join(AUDIO);
         assert_eq!(fs::read(held).unwrap(), b"sound");
         assert_eq!(fs::read(root.join(AUDIO)).unwrap(), b"another");
+    }
+
+    /// The mechanism's report decides where the caller has it: a file it
+    /// didn't report removing (replaced before it ran, and refused) is not
+    /// this item's, whatever is at the name now.
+    #[test]
+    fn only_what_the_mechanism_reports_removed_is_kept() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let linked = link(&root, &kind, &[AUDIO]);
+        let before = item(&root, linked.id()).unwrap().unwrap();
+        assert!(
+            before.erase_at().unwrap() > Utc::now() + Duration::days(6),
+            "provisional"
+        );
+        fs::remove_file(root.join(AUDIO)).unwrap();
+        fs::write(root.join(AUDIO), b"newer").unwrap();
+        assert!(
+            finish_linked(&root, &kind, linked, Some(&[]))
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(fs::read(root.join(AUDIO)).unwrap(), b"newer");
+        assert!(events(&root).is_empty());
     }
 
     /// The recording left for its own item before the release: that item
@@ -3154,14 +3182,14 @@ mod tests {
         let linked = link(&root, &kind, &[AUDIO]);
         let elsewhere = root.join("moved-away.flac");
         fs::rename(root.join(AUDIO), &elsewhere).unwrap();
-        assert!(finish_linked(&root, &kind, linked).unwrap().is_none());
+        assert!(finish_linked(&root, &kind, linked, None).unwrap().is_none());
         assert_eq!(fs::read(elsewhere).unwrap(), b"sound");
 
         // Released, then the recording went: the trash's is the last name.
         let (_dir, root) = journal();
         let linked = link(&root, &kind, &[AUDIO]);
         fs::remove_file(root.join(AUDIO)).unwrap();
-        assert!(finish_linked(&root, &kind, linked).unwrap().is_some());
+        assert!(finish_linked(&root, &kind, linked, None).unwrap().is_some());
     }
 
     /// The owner's days count from when it settled, not when it was linked.
@@ -3176,7 +3204,7 @@ mod tests {
         stale.erase_at = "2026-01-02T00:00:00.000Z".into();
         publish(&root, &stale).unwrap();
         fs::remove_file(root.join(AUDIO)).unwrap();
-        let item = finish_linked(&root, &kind, linked).unwrap().unwrap();
+        let item = finish_linked(&root, &kind, linked, None).unwrap().unwrap();
         assert!(item.erase_at().unwrap() > Utc::now() + Duration::days(6));
         sweep(&root, &[&kind], Utc::now());
         assert_eq!(list(&root).unwrap().len(), 1);
@@ -3190,7 +3218,7 @@ mod tests {
         let kind = Fake::default();
         let linked = link(&root, &kind, &[AUDIO]);
         fs::remove_file(root.join(AUDIO)).unwrap();
-        let originals = finish_linked(&root, &kind, linked).unwrap().unwrap();
+        let originals = finish_linked(&root, &kind, linked, None).unwrap().unwrap();
         // The fake's references leave a tombstone; the recording is still here.
         fs::remove_file(root.join(SEGMENT).join("tombstone.json")).unwrap();
         let recording = trash(&root, &kind);
@@ -3206,7 +3234,7 @@ mod tests {
         let kind = Fake::default();
         let linked = link(&root, &kind, &[AUDIO]);
         fs::remove_file(root.join(AUDIO)).unwrap();
-        let item = finish_linked(&root, &kind, linked).unwrap().unwrap();
+        let item = finish_linked(&root, &kind, linked, None).unwrap().unwrap();
         erase(&root, &item.id, Action::Erase, web()).unwrap();
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
         assert!(!root.join(AUDIO).exists());
@@ -3231,6 +3259,7 @@ mod tests {
         assert!(all_items(&root).unwrap().is_empty());
     }
 
+    /// A temporary journal root, removed when dropped.
     mod tempfile_dir {
         use std::path::{Path, PathBuf};
 

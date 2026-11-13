@@ -758,7 +758,7 @@ async function createEnvironment(
     },
     SurfaceState: {
       loading: () => '<div class="surface-state surface-state--loading"></div>',
-      empty: (opts = {}) => `<div class="surface-state surface-state--empty"><h2 class="surface-state-heading">${opts.heading || ''}</h2><p class="surface-state-desc">${opts.desc || ''}</p></div>`,
+      empty: (opts = {}) => `<div class="surface-state surface-state--empty"><h2 class="surface-state-heading">${opts.heading || ''}</h2><p class="surface-state-desc">${opts.desc || ''}</p>${opts.action ? `<div class="surface-state-action">${opts.action}</div>` : ''}</div>`,
       error: () => '<div class="surface-state surface-state--error"></div>',
     },
     JournalFormat: options.journalFormat || {
@@ -968,6 +968,8 @@ async function createEnvironment(
                 data_state: dataState,
                 holds_location: payloadOverride?.holds_location,
                 media_sizes: payloadOverride?.media_sizes,
+                media_purged: payloadOverride?.media_purged,
+                media_removal: payloadOverride?.media_removal,
                 location_readings: payloadOverride?.location_readings,
                 signals: { events: [] },
                 speaker_labels: payloadOverride?.speaker_labels,
@@ -1241,6 +1243,39 @@ test('body context counts what a segment holds and never states a value', async 
   assert.ok(transcript.includes('heart rate · 3 readings'), transcript);
   assert.ok(transcript.includes('step count · 2 entries'), transcript);
   assert.ok(!/HR |60-70|90-110|1,234 steps/.test(transcript), transcript);
+});
+
+// A missing original a trash item holds: the notice above the transcript and
+// the purged state each carry the reason and the way to the trash; one that
+// isn't in the trash carries neither link nor recover line.
+test('a missing original in the trash carries the way to the trash', async () => {
+  const removal = (inTrash) => ({ audio: 'AUDIO-REASON', screen: null, audio_in_trash: inTrash, screen_in_trash: false });
+  for (const inTrash of [true, false]) {
+    const notice = await createEnvironment(undefined, 'analyzed', false);
+    getZoomPills(notice.doc)[0].dispatchEvent({ type: 'click' });
+    await notice.releasePendingSegmentGets('analyzed', {
+      chunks: [{ type: 'audio', time: '11:45', text: 'hello', timestamp: 0 }],
+      media_purged: { audio: true, screen: false },
+      media_removal: removal(inTrash),
+    });
+    const transcript = notice.doc.querySelector('#tr-tabpanel-transcript').innerHTML;
+    const line = (transcript.match(/<div class="tr-purge-notice"[^>]*>([\s\S]*?)<\/div>/) || [])[1] || '';
+    assert.ok(line.startsWith('AUDIO-REASON'), transcript);
+    assert.strictEqual(line.includes('href="/app/settings#trash"'), inTrash, line);
+
+    const empty = await createEnvironment(undefined, 'analyzed', false);
+    getZoomPills(empty.doc)[0].dispatchEvent({ type: 'click' });
+    await empty.releasePendingSegmentGets('purged', {
+      chunks: [],
+      data_state: { audio: 'purged' },
+      media_purged: { audio: true, screen: false },
+      media_removal: removal(inTrash),
+    });
+    const state = empty.doc.querySelector('#tr-tabpanel-transcript').innerHTML;
+    assert.ok(/class="surface-state-heading">AUDIO-REASON</.test(state), state);
+    assert.strictEqual(/class="surface-state-desc">[^<]+</.test(state), inTrash, state);
+    assert.strictEqual(/class="surface-state-action"><a href="\/app\/settings#trash"/.test(state), inTrash, state);
+  }
 });
 
 // An Apple Health window's page on a day the owner hid: its card says so, has

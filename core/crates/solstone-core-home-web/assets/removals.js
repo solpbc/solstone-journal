@@ -49,20 +49,40 @@
     "bulk.keep": "keep selected",
     "confirm.heading_one": "delete this original?",
     "confirm.heading_many": "delete these originals?",
-    "confirm.body_policy_one": "this deletes 1 original from {date} · {stream}. nothing else goes with it. it can't be undone.",
-    "confirm.body_policy_many": "this deletes {n} originals from {date} · {stream}. nothing else goes with them. it can't be undone.",
+    "confirm.days_one": "1 day",
+    "confirm.days_many": "{n} days",
+    "confirm.body_policy_one": "this moves 1 original from {date} · {stream} to the trash. nothing else goes with it. the trash erases it after {days}, and its space comes back then. you can recover it until then.",
+    "confirm.body_policy_many": "this moves {n} originals from {date} · {stream} to the trash. nothing else goes with them. the trash erases them after {days}, and their space comes back then. you can recover them until then.",
+    "confirm.body_policy_one_nodays": "this moves 1 original from {date} · {stream} to the trash. nothing else goes with it. it waits in the trash, then the trash erases it and its space comes back. you can recover it until then.",
+    "confirm.body_policy_many_nodays": "this moves {n} originals from {date} · {stream} to the trash. nothing else goes with them. they wait in the trash, then the trash erases them and their space comes back. you can recover them until then.",
     "confirm.body_offload_one": "this deletes 1 original from {date} · {stream}. your backup has a copy that can't be checked from here. nothing else goes with it. it can't be undone.",
     "confirm.body_offload_many": "this deletes {n} originals from {date} · {stream}. your backup has a copy that can't be checked from here. nothing else goes with them. it can't be undone.",
-    "confirm.body_policy_selected": "this deletes {n} originals. nothing else goes with them. it can't be undone.",
+    "confirm.body_policy_selected": "this moves {n} originals to the trash. nothing else goes with them. the trash erases them after {days}, and their space comes back then. you can recover them until then.",
+    "confirm.body_policy_selected_nodays": "this moves {n} originals to the trash. nothing else goes with them. they wait in the trash, then the trash erases them and their space comes back. you can recover them until then.",
     "confirm.body_offload_selected": "this deletes {n} originals. your backup has a copy that can't be checked from here. nothing else goes with them. it can't be undone.",
+    "confirm.mixed_lead": "this deletes {o} of these originals and moves {p} to the trash. nothing else goes with them.",
+    "confirm.mixed_offload_one": "the one it deletes was copied off your device by your backup. your backup has a copy that can't be checked from here. deleting it can't be undone.",
+    "confirm.mixed_offload_many": "the ones it deletes were copied off your device by your backup. your backup has a copy that can't be checked from here. deleting them can't be undone.",
+    "confirm.mixed_policy_one": "the one it moves to the trash is erased after {days}, and its space comes back then. you can recover it until then.",
+    "confirm.mixed_policy_many": "the ones it moves to the trash are erased after {days}, and their space comes back then. you can recover them until then.",
+    "confirm.mixed_policy_one_nodays": "the one it moves to the trash waits there, then the trash erases it and its space comes back. you can recover it until then.",
+    "confirm.mixed_policy_many_nodays": "the ones it moves to the trash wait there, then the trash erases them and their space comes back. you can recover them until then.",
+    "confirm.go_trash": "move to trash",
     "confirm.go_one": "delete it",
     "confirm.go_many": "delete them",
     "confirm.cancel": "cancel",
     "confirm.recover.heading": "finish the deletions that stopped?",
-    "confirm.recover.body": "this completes every deletion that stopped partway. it writes the record that those originals are gone. it does not put anything back.",
+    "confirm.recover.body": "this finishes every deletion that stopped partway. any original it hadn't deleted yet goes back in its segment. the rest stay deleted, and those your retention settings marked are in the trash.",
     "confirm.recover.go": "finish them",
     "done.clause_deleted_one": "deleted 1 original.",
     "done.clause_deleted_many": "deleted {n} originals.",
+    "done.clause_trashed_one": "moved 1 original to the trash.",
+    "done.clause_trashed_many": "moved {n} originals to the trash.",
+    "done.space_one": "it's erased {erase}, and its space comes back then. you can erase it sooner from the trash.",
+    "done.space_many": "they're erased {erase}, and their space comes back then. you can erase them sooner from the trash.",
+    "done.space_one_nodate": "its space comes back when it's erased from the trash.",
+    "done.space_many_nodate": "their space comes back when they're erased from the trash.",
+    "done.open_trash": "open trash",
     "done.clause_not_removed_one": "1 more couldn't be deleted.",
     "done.clause_not_removed_many": "{m} more couldn't be deleted.",
     "done.clause_halted": "it stopped there.",
@@ -87,7 +107,7 @@
     "done.recover_failed": "they couldn't be finished. what's left is still there.",
     "done.recover_unknown": "finishing stopped before what happened could be confirmed. it's unclear what was completed.",
     "failed.badge": "didn't finish",
-    "failed.body": "a deletion you started stopped partway. finishing it completes that deletion. it does not put anything back.",
+    "failed.body": "a deletion you started stopped partway. finishing it puts back any original it hadn't deleted yet, and the rest stay deleted.",
     "failed.finish": "finish the deletion"
   });
 
@@ -95,6 +115,9 @@
   const APPROVE_URL = '/app/home/api/approve';
   const DECLINE_URL = '/app/home/api/decline';
   const RECOVER_URL = '/app/home/api/recover';
+  // Originals your retention settings marked wait here, and are recovered or
+  // erased sooner here.
+  const TRASH_URL = '/app/settings#trash';
   const MAX_SELECTED_MARKS = 32;
   const POLL_INTERVAL_MS = 2000;
   let retired = false;
@@ -116,6 +139,9 @@
   let totalRows = 0;
   let previousOffsets = [];
   let expanded = false;
+  // The days a moved original waits in the trash, from the list; null when it
+  // didn't say, and the dialog uses its forms without a number.
+  let trashDays = null;
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -166,6 +192,15 @@
     return amount >= 1024 && unit === 'TiB'
       ? (amount / 1024).toFixed(1) + ' PiB'
       : amount.toFixed(1) + ' ' + unit;
+  }
+
+  // The day the trash erases what moved there, as the trash page's receipts
+  // write it (`tomorrow`, `tue nov 17`): the journal's day. Empty when it can't
+  // be read, and the sentence leaves the date out.
+  function eraseDate(eraseAt) {
+    const instant = new Date(eraseAt);
+    if (!eraseAt || Number.isNaN(instant.getTime()) || !window.JournalClock) return '';
+    return window.JournalFormat.day(window.JournalClock.dayKey(instant)).toLowerCase();
   }
 
   function streamLabel(stream) {
@@ -339,27 +374,48 @@
         + '</section>';
     }
     const confirmRows = confirmation.rows;
+    const days = trashDays === null ? null : copyForCount('confirm.days', trashDays, { n: trashDays });
+    // A policy key with its day count, or its form without a number.
+    const policyKey = function (key) { return days === null ? key + '_nodays' : key; };
     if (confirmRows.length === 1) {
       const row = confirmRows[0];
       const count = rowCount(row);
       const stream = streamLabel(row.stream);
+      const policy = origin(row) === 'policy';
       const bodyKey = 'confirm.body_' + origin(row) + '_' + cardinality(count);
-      const values = { n: count, date: identityLabel(row), stream: stream };
-      const body = stream === null ? copyWithoutDefaultStream(bodyKey, values) : copy(bodyKey, values);
-      return '<section class="removals-card-confirm" role="dialog">'
-        + '<h3>' + copyForCount('confirm.heading', count) + '</h3>'
-        + '<p>' + body + '</p>'
-        + '<button type="button" data-removal-action="confirm">' + copyForCount('confirm.go', count) + '</button>'
-        + '<button type="button" data-removal-action="cancel">' + copy("confirm.cancel") + '</button>'
-        + '</section>';
+      const values = { n: count, date: identityLabel(row), stream: stream, days: days };
+      const key = policy ? policyKey(bodyKey) : bodyKey;
+      const body = stream === null ? copyWithoutDefaultStream(key, values) : copy(key, values);
+      return confirmSection(copyForCount('confirm.heading', count), [body],
+        policy ? copy('confirm.go_trash') : copyForCount('confirm.go', count), policy);
     }
-    const n = selectionOriginals(confirmRows);
-    const offload = confirmRows.some(function (row) { return origin(row) === 'offload'; });
-    const bodyKey = offload ? 'confirm.body_offload_selected' : 'confirm.body_policy_selected';
-    return '<section class="removals-card-confirm" role="dialog">'
-      + '<h3>' + copy("confirm.heading_many") + '</h3>'
-      + '<p>' + copy(bodyKey, { n: n }) + '</p>'
-      + '<button type="button" data-removal-action="confirm">' + copy("confirm.go_many") + '</button>'
+    // Counted by origin over the selection, as the note above the list counts them.
+    const byOrigin = { policy: 0, offload: 0 };
+    confirmRows.forEach(function (row) { byOrigin[origin(row)] += rowCount(row); });
+    const n = byOrigin.policy + byOrigin.offload;
+    const heading = copy("confirm.heading_many");
+    if (byOrigin.offload === 0) {
+      return confirmSection(heading, [copy(policyKey('confirm.body_policy_selected'), { n: n, days: days })],
+        copy('confirm.go_trash'), true);
+    }
+    if (byOrigin.policy === 0) {
+      return confirmSection(heading, [copy('confirm.body_offload_selected', { n: n })], copy("confirm.go_many"), false);
+    }
+    // Both kinds: part of it can't be undone, so it keeps the warning look.
+    return confirmSection(heading, [
+      copy('confirm.mixed_lead', { o: byOrigin.offload, p: byOrigin.policy }),
+      copyForCount('confirm.mixed_offload', byOrigin.offload),
+      copy(policyKey('confirm.mixed_policy_' + cardinality(byOrigin.policy)), { days: days })
+    ], copy("confirm.go_many"), false);
+  }
+
+  // A move to the trash is reversible, so its dialog isn't the warning box and
+  // its button isn't danger.
+  function confirmSection(heading, paragraphs, go, toTrash) {
+    return '<section class="removals-card-confirm' + (toTrash ? ' removals-card-confirm--trash' : '') + '" role="dialog">'
+      + '<h3>' + heading + '</h3>'
+      + paragraphs.map(function (text) { return '<p>' + text + '</p>'; }).join('')
+      + '<button type="button" data-removal-action="confirm"' + (toTrash ? ' class="removals-go-trash"' : '') + '>' + go + '</button>'
       + '<button type="button" data-removal-action="cancel">' + copy("confirm.cancel") + '</button>'
       + '</section>';
   }
@@ -557,6 +613,8 @@
       confirmation = null;
     }
     reviewContext = nextContext;
+    trashDays = trustworthy && Number.isInteger(response.trash_days)
+      && response.trash_days >= 1 && response.trash_days <= 30 ? response.trash_days : null;
     listState = trustworthy || oversized ? response.state : 'list.register_unavailable';
     rows = trustworthy || oversized ? response.removals : [];
     if (trustworthy || oversized) {
@@ -590,20 +648,37 @@
     let key = 'operation.' + action.phase;
     if (!action.settled && action.cancellationRequested) key = 'operation.stopping';
     else if (!action.settled && action.stopInFlight) key = 'operation.stop_pending';
-    let html = '<section class="removals-card-outcome" data-removal-operation><p>' + copy(key) + '</p>';
+    let html = '<p>' + copy(key) + '</p>';
     if (action.observationUnavailable) html += '<p>' + copy('operation.unavailable') + '</p>';
     const targets = action.report?.outcome?.targets;
+    let toTrashOnly = false;
     if (Array.isArray(targets) && targets.every(target => Array.isArray(target.removed) && Array.isArray(target.not_removed))) {
+      // Deleted outright (copied off by your backup), then moved to the trash
+      // (marked by your retention settings), then what wasn't deleted.
       const removed = targets.flatMap(target => target.removed);
+      const trashed = targets.flatMap(target => Array.isArray(target.trashed) ? target.trashed : []);
       if (removed.length) {
         html += '<p>' + copyForCount('done.clause_deleted', removed.length, { n: removed.length }) + '</p>';
         html += '<ul>' + removed.map(name => '<li>' + escapeHtml(name) + '</li>').join('') + '</ul>';
+      }
+      if (trashed.length) {
+        html += '<p>' + copyForCount('done.clause_trashed', trashed.length, { n: trashed.length }) + '</p>';
+        html += '<ul>' + trashed.map(name => '<li>' + escapeHtml(name) + '</li>').join('') + '</ul>';
+        const erase = eraseDate(action.report?.trash?.erase_at);
+        html += '<p data-removal-space>' + (erase
+          ? copyForCount('done.space', trashed.length, { erase: erase })
+          : copy('done.space_' + cardinality(trashed.length) + '_nodate')) + '</p>';
       }
       const refusals = targets.flatMap(target => target.not_removed);
       if (refusals.length) {
         html += '<p>' + copyForCount('done.clause_not_removed', refusals.length, { m: refusals.length }) + '</p>';
         html += '<ul>' + refusals.map(item => '<li>' + copy('done.refused_item', { name: item.entry, reason: item.reason }) + '</li>').join('') + '</ul>';
       }
+      if (trashed.length) {
+        html += '<p><a href="' + TRASH_URL + '" data-removal-open-trash>' + copy('done.open_trash') + '</a></p>';
+      }
+      toTrashOnly = trashed.length > 0 && removed.length === 0 && refusals.length === 0
+        && !action.observationUnavailable && (key === 'operation.running' || key === 'operation.completed');
     } else {
       html += '<p>' + copy('operation.record_unavailable') + '</p>';
     }
@@ -611,7 +686,9 @@
       html += '<button type="button" data-removal-action="stop"'
         + (action.stopInFlight || action.cancellationRequested ? ' disabled' : '') + '>' + copy('operation.stop') + '</button>';
     }
-    return html + '</section>';
+    // A result that only moved originals to the trash takes the neutral box.
+    return '<section class="removals-card-outcome' + (toTrashOnly ? ' removals-card-outcome--trash' : '')
+      + '" data-removal-operation>' + html + '</section>';
   }
 
   function schedulePoll(action) {
@@ -640,6 +717,8 @@
         if (Array.isArray(response.report?.outcome?.targets)
             && response.report.outcome.targets.every(target => Array.isArray(target.removed)
               && target.removed.every(name => typeof name === 'string')
+              && (target.trashed === undefined
+                || (Array.isArray(target.trashed) && target.trashed.every(name => typeof name === 'string')))
               && Array.isArray(target.not_removed)
               && target.not_removed.every(item => typeof item?.entry === 'string' && typeof item.reason === 'string'))) {
           action.report = response.report;

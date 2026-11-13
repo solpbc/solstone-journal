@@ -67,7 +67,7 @@ use solstone_core_retention::policy::Policy;
 use solstone_core_retention::receipt::{Outcome, Target};
 use solstone_core_retention::remove_marked::remove_marked;
 use solstone_core_retention::scan::scan_segment;
-use solstone_core_retention::sweep::{Plan, Skip, execute as execute_sweep, plan as plan_sweep};
+use solstone_core_retention::sweep::{Plan, Skip, plan as plan_sweep};
 use solstone_core_retention::tombstone::RemovalReason;
 
 /// Everything removed, and the index told.
@@ -295,7 +295,7 @@ fn link_originals(
     journal: &Path,
     releases: &[original_trash::Release],
     class: RawReleaseClass,
-) -> Result<Vec<original_trash::Linked>, String> {
+) -> Result<original_trash::Linking, String> {
     original_trash::link_before(
         journal,
         releases,
@@ -308,11 +308,46 @@ fn link_originals(
     })
 }
 
-/// Keep in the trash what the run released; the trash records it. Returns
-/// what the trash's sweep still has to settle.
-fn keep_originals(journal: &Path, linked: Vec<original_trash::Linked>) -> Option<String> {
-    let unsettled = original_trash::keep_after(journal, linked);
-    (!unsettled.is_empty()).then(|| unsettled.join("; "))
+/// Leave out of a release every original of a segment the trash couldn't
+/// hold: nothing would keep it. Says which, for the receipt.
+fn without_busy(
+    proven: Vec<solstone_core_retention::eligibility::ProvenRaw>,
+    busy: &[(Target, String)],
+) -> (
+    Vec<solstone_core_retention::eligibility::ProvenRaw>,
+    serde_json::Value,
+) {
+    let kept = proven
+        .into_iter()
+        .filter(|item| {
+            !busy.iter().any(|(target, _)| {
+                target.day == item.day()
+                    && target.stream == item.stream()
+                    && target.dir == item.dir()
+            })
+        })
+        .collect();
+    let named = busy
+        .iter()
+        .map(|(target, reason)| {
+            serde_json::json!({
+                "day": target.day, "stream": target.stream, "dir": target.dir, "reason": reason,
+            })
+        })
+        .collect::<Vec<_>>();
+    (kept, serde_json::Value::Array(named))
+}
+
+/// Keep in the trash what the run released; the trash records it. Answers
+/// with each item, the day it is erased on, and what the sweep still owes.
+fn keep_originals(
+    journal: &Path,
+    linked: Vec<original_trash::Linked>,
+    outcome: &Outcome,
+) -> serde_json::Value {
+    let released = original_trash::released(outcome);
+    let kept = original_trash::keep_after(journal, linked, Some(&released));
+    original_trash::cli_answer(journal, &kept)
 }
 
 /// Move named segments to the trash. ⛔ Never erases: a delete from the command
@@ -466,17 +501,18 @@ fn run_release_raw(args: &Args) -> ExitCode {
         }
     }
 
-    let linked = match link_originals(
+    let linking = match link_originals(
         args,
         &journal,
         &original_trash::of_proven(&proven),
         RawReleaseClass::Owner,
     ) {
-        Ok(linked) => linked,
+        Ok(linking) => linking,
         Err(error) => return fail(&error),
     };
+    let (proven, busy) = without_busy(proven, &linking.busy);
     let (outcome, tally) = release_raw(&journal, &proven, RawReleaseClass::Owner, at);
-    let trash_unsettled = keep_originals(&journal, linked);
+    let trash = keep_originals(&journal, linking.linked, &outcome);
     // Raw-file release has no `.removing_` rename, so door::release_raw cannot
     // currently produce a staged row. Keep this defensive registration path for a
     // future door change, and preserve the completed outcome if its register write fails.
@@ -520,7 +556,8 @@ fn run_release_raw(args: &Args) -> ExitCode {
             "held": held,
             "evidence": { "on_record": tally.on_record, "on_legacy_rows": tally.on_legacy_rows },
             "register_error": (!register_errors.is_empty()).then(|| register_errors.join("; ")),
-            "trash_unsettled": trash_unsettled,
+            "trash": trash,
+            "busy": busy,
         }),
     )
 }
@@ -875,17 +912,18 @@ fn run_sweep(args: &Args) -> ExitCode {
         .iter()
         .flat_map(|candidate| candidate.proven.iter().cloned())
         .collect();
-    let linked = match link_originals(
+    let linking = match link_originals(
         args,
         &journal,
         &original_trash::of_proven(&proven),
         RawReleaseClass::Owner,
     ) {
-        Ok(linked) => linked,
+        Ok(linking) => linking,
         Err(error) => return fail(&error),
     };
-    let (outcome, tally) = execute_sweep(&journal, &plan, now);
-    let trash_unsettled = keep_originals(&journal, linked);
+    let (proven, busy) = without_busy(proven, &linking.busy);
+    let (outcome, tally) = release_raw(&journal, &proven, RawReleaseClass::Owner, now);
+    let trash = keep_originals(&journal, linking.linked, &outcome);
     finish(
         &journal,
         outcome,
@@ -894,7 +932,8 @@ fn run_sweep(args: &Args) -> ExitCode {
             "executed": true,
             "plan": plan_json(&plan),
             "evidence": { "on_record": tally.on_record, "on_legacy_rows": tally.on_legacy_rows },
-            "trash_unsettled": trash_unsettled,
+            "trash": trash,
+            "busy": busy,
         }),
     )
 }
@@ -1196,25 +1235,52 @@ fn run_remove_marked(args: &Args) -> ExitCode {
             );
         }
     };
-    let linked = match link_originals(
+    let linking = match link_originals(
         args,
         &journal,
         &original_trash::of_preflight(&marks),
         RawReleaseClass::Policy,
     ) {
-        Ok(linked) => linked,
+        Ok(linking) => linking,
         Err(error) => return verb_fail("remove-marked", &error),
     };
+    // A mark whose segment the trash couldn't hold stops the run there, as
+    // the door would: nothing of it, or after it, is released.
+    let stop = original_trash::first_busy(&marks, &linking.busy);
     let mut register_errors = Vec::new();
-    let outcome = remove_marked(&journal, &marks, &policy, today, now, &mut register_errors);
-    let trash_unsettled = keep_originals(&journal, linked);
+    let outcome = match stop {
+        None => remove_marked(&journal, &marks, &policy, today, now, &mut register_errors),
+        Some(index) => {
+            let reason = format!(
+                "the originals for {} couldn't be started on because something else is using them. the rest of the removal list wasn't attempted ({} remaining).",
+                ids[index].as_str(),
+                ids.len().saturating_sub(index)
+            );
+            let before = match preflight(&journal, &ids[..index]) {
+                Ok(marks) if index > 0 => Some(marks),
+                _ => None,
+            };
+            match before {
+                None => solstone_core_retention::receipt::Outcome::halted_before_start(reason),
+                Some(marks) => {
+                    let mut outcome =
+                        remove_marked(&journal, &marks, &policy, today, now, &mut register_errors);
+                    if outcome.halted.is_none() {
+                        outcome.halted = Some(solstone_core_retention::receipt::RunHalt { reason });
+                    }
+                    outcome
+                }
+            }
+        }
+    };
+    let trash = keep_originals(&journal, linking.linked, &outcome);
     finish(
         &journal,
         outcome,
         serde_json::json!({
             "verb": "remove-marked",
             "register_error": (!register_errors.is_empty()).then(|| register_errors.join("; ")),
-            "trash_unsettled": trash_unsettled,
+            "trash": trash,
         }),
     )
 }

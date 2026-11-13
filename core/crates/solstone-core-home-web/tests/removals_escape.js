@@ -133,7 +133,7 @@ function escaped(value) {
   })[char]);
 }
 
-async function boot(source, lists, responses, labels = null) {
+async function boot(source, lists, responses, labels = null, options = {}) {
   let root = new Element();
   const timers = new Map();
   let nextTimer = 0;
@@ -178,6 +178,7 @@ async function boot(source, lists, responses, labels = null) {
   class FixtureDate extends Date { constructor(...args) { super(...(args.length ? args : [2026, 8, 5])); } }
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8'), { window, Date: FixtureDate });
   if (labels) window.JournalFormat.installStreamLabels({ status: 'complete', labels });
+  if (options.clock) window.JournalClock = options.clock;
   const load = () => vm.runInNewContext(source, { document, Promise, setImmediate, window, Set }, { filename: 'removals.js' });
   load();
   vm.runInNewContext(`${viewRuntime}\n${HOME_STANDIN}`, { window, document, Set, Map, Promise }, { filename: 'view-runtime.js' });
@@ -186,6 +187,7 @@ async function boot(source, lists, responses, labels = null) {
   const card = root.children[0];
   assert(card, 'card mounted');
   card.calls = calls;
+  card.window = window;
   card.timerCount = () => timers.size;
   card.tick = async function () {
     const entry = timers.entries().next().value;
@@ -250,6 +252,14 @@ function marked(id, origin, count, stream) {
     bytes: count,
     size: `${count} B`
   };
+}
+
+function confirmSection(card) {
+  return card.innerHTML.match(/<section class="removals-card-confirm[^"]*"[\s\S]*?<\/section>/)?.[0] || '';
+}
+
+function copyFor(copy, prefix, count) {
+  return copy[`${prefix}_${Number(count) === 1 ? 'one' : 'many'}`];
 }
 
 function outcome(card) {
@@ -385,21 +395,33 @@ async function main() {
   assert(escapedCard.innerHTML.includes(copy['failed.body']), 'failed.body bytes missing');
   assert(!escapedCard.innerHTML.includes('<img'), 'journal markup must not become live DOM');
 
+  // Originals your retention settings marked move to the trash: their dialog
+  // takes the trash's day count when the list carries it, and the form without
+  // a number when it doesn't. Originals your backup copied keep theirs.
   const confirmationRows = [
-    ['policy-one', 'policy', 1, 'kitchen-mic', 'confirm.body_policy_one'],
-    ['policy-many', 'policy', 2, 'kitchen-mic', 'confirm.body_policy_many'],
-    ['offload-one', 'offload', 1, 'kitchen-mic', 'confirm.body_offload_one'],
-    ['offload-many', 'offload', 2, 'kitchen-mic', 'confirm.body_offload_many']
+    ['policy-one', 'policy', 1, 'kitchen-mic', 'confirm.body_policy_one_nodays', undefined],
+    ['policy-many', 'policy', 2, 'kitchen-mic', 'confirm.body_policy_many_nodays', undefined],
+    ['policy-one-days', 'policy', 1, 'kitchen-mic', 'confirm.body_policy_one', 1],
+    ['policy-many-days', 'policy', 2, 'kitchen-mic', 'confirm.body_policy_many', 7],
+    ['policy-bad-days', 'policy', 2, 'kitchen-mic', 'confirm.body_policy_many_nodays', 31],
+    ['offload-one', 'offload', 1, 'kitchen-mic', 'confirm.body_offload_one', 7],
+    ['offload-many', 'offload', 2, 'kitchen-mic', 'confirm.body_offload_many', undefined]
   ];
-  for (const [id, origin, count, streamName, key] of confirmationRows) {
+  for (const [id, origin, count, streamName, key, trashDays] of confirmationRows) {
     const row = marked(id, origin, count, streamName);
     const card = await boot(
       source,
-      { state: 'list.ready', removals: [row] },
+      { state: 'list.ready', removals: [row], ...(trashDays === undefined ? {} : { trash_days: trashDays }) },
       { approve: { state: 'approve.refused_before_start', refusals: [] } }
     );
     await confirmation(card, id);
-    assert(card.innerHTML.includes(rendered(copy, key, { n: count, date: row.day, stream: streamName })));
+    const days = trashDays === 1 ? copy['confirm.days_one'] : rendered(copy, 'confirm.days_many', { n: trashDays });
+    assert(card.innerHTML.includes(rendered(copy, key, { n: count, date: row.day, stream: streamName, days })), `${id} renders ${key}`);
+    const section = confirmSection(card);
+    const toTrash = origin === 'policy';
+    assert.strictEqual(section.includes('removals-card-confirm--trash'), toTrash, `${id}: the neutral box only for a move to the trash`);
+    assert.strictEqual(section.includes('class="removals-go-trash"'), toTrash, `${id}: the primary button only for a move to the trash`);
+    assert(section.includes(toTrash ? copy['confirm.go_trash'] : copyFor(copy, 'confirm.go', count)), `${id} names its act`);
   }
 
   // A seeded provenance label names the row; the stream key stays in its title.
@@ -425,7 +447,7 @@ async function main() {
   assert(!defaultCard.innerHTML.includes('20260101 ·'));
   assert(!defaultCard.innerHTML.includes('_default'));
   await confirmation(defaultCard, 'default');
-  assert(defaultCard.innerHTML.includes(defaultStreamRendered(copy, 'confirm.body_policy_many', {
+  assert(defaultCard.innerHTML.includes(defaultStreamRendered(copy, 'confirm.body_policy_many_nodays', {
     n: 2,
     date: '20260101',
     stream: '_default'
@@ -503,10 +525,6 @@ async function main() {
   assert(outcome(declineRefreshCard).includes(copy['done.kept_policy']));
   assertDeclineOutcomeHasNoDeletingCopy(declineRefreshCard, copy);
 
-  function confirmSection(card) {
-    return card.innerHTML.match(/<section class="removals-card-confirm"[\s\S]*?<\/section>/)?.[0] || '';
-  }
-
   assert(escapedCard.innerHTML.includes('data-removal-select'), 'marked row is selectable');
   assert(
     !escapedCard.innerHTML.split('data-removal-row')[2]?.includes('data-removal-select'),
@@ -535,8 +553,9 @@ async function main() {
   await settle();
   const selectedConfirm = confirmSection(bulkCard);
   assert(selectedConfirm.includes(copy['confirm.heading_many']));
-  assert(selectedConfirm.includes(copy['confirm.go_many']));
-  assert(selectedConfirm.includes(rendered(copy, 'confirm.body_policy_selected', { n: 7 })));
+  assert(selectedConfirm.includes(copy['confirm.go_trash']), 'a selection all marked by your retention settings moves to the trash');
+  assert(selectedConfirm.includes('removals-card-confirm--trash'));
+  assert(selectedConfirm.includes(rendered(copy, 'confirm.body_policy_selected_nodays', { n: 7 })));
   assert(!selectedConfirm.includes(copy['confirm.heading_one']));
   assert(!selectedConfirm.includes('20260101'));
   assert(!selectedConfirm.includes('kitchen-mic'));
@@ -548,6 +567,47 @@ async function main() {
     JSON.parse(posts(bulkCard, '/app/home/api/approve')[0].options.body).mark_ids,
     ['bulk-a', 'bulk-b']
   );
+
+  // A selection holding both kinds: a lead with both counts, then what happens
+  // to each kind, and the warning look, because part of it can't be undone.
+  for (const trashDays of [undefined, 7]) {
+    const mixRows = [
+      marked('mix-p1', 'policy', 2, 'kitchen-mic'),
+      marked('mix-o1', 'offload', 1, 'kitchen-mic'),
+      marked('mix-p2', 'policy', 1, 'kitchen-mic')
+    ];
+    const card = await boot(
+      source,
+      { state: 'list.ready', removals: mixRows, ...(trashDays ? { trash_days: trashDays } : {}) },
+      { approve: { state: 'approve.refused_before_start', refusals: [] } }
+    );
+    click(card, 'select-all');
+    await settle();
+    click(card, 'delete-selected');
+    await settle();
+    const section = confirmSection(card);
+    const paragraphs = Array.from(section.matchAll(/<p>([\s\S]*?)<\/p>/g)).map((match) => match[1]);
+    const days = rendered(copy, 'confirm.days_many', { n: trashDays });
+    assert.deepStrictEqual(paragraphs, [
+      rendered(copy, 'confirm.mixed_lead', { o: 1, p: 3 }),
+      copy['confirm.mixed_offload_one'],
+      rendered(copy, trashDays ? 'confirm.mixed_policy_many' : 'confirm.mixed_policy_many_nodays', { days })
+    ], 'the lead, then the deleted kind, then the moved kind');
+    assert(section.includes(copy['confirm.go_many']), 'a mixed selection keeps its delete button');
+    assert(!section.includes('removals-card-confirm--trash') && !section.includes('removals-go-trash'), 'and the warning look');
+  }
+  {
+    const offRows = [marked('off-a', 'offload', 1, 'kitchen-mic'), marked('off-b', 'offload', 2, 'kitchen-mic')];
+    const card = await boot(source, { state: 'list.ready', removals: offRows, trash_days: 7 }, {});
+    click(card, 'select-all');
+    await settle();
+    click(card, 'delete-selected');
+    await settle();
+    const section = confirmSection(card);
+    assert(section.includes(rendered(copy, 'confirm.body_offload_selected', { n: 3 })));
+    assert(section.includes(copy['confirm.go_many']));
+    assert(!section.includes('removals-card-confirm--trash') && !section.includes('removals-go-trash'), 'originals your backup copied keep the warning look');
+  }
 
   const over = Array.from({ length: 33 }, (_, index) => marked(`cap-${index}`, 'policy', 1, 'kitchen-mic'));
   const overCard = await boot(
@@ -754,12 +814,12 @@ async function main() {
   click(oneSelectCard, 'delete-selected');
   await settle();
   const oneSelectConfirm = confirmSection(oneSelectCard);
-  assert(oneSelectConfirm.includes(rendered(copy, 'confirm.body_policy_one', {
+  assert(oneSelectConfirm.includes(rendered(copy, 'confirm.body_policy_one_nodays', {
     n: 1,
     date: '20260101',
     stream: 'kitchen-mic'
   })));
-  assert(!oneSelectConfirm.includes(rendered(copy, 'confirm.body_policy_selected', { n: 1 })));
+  assert(!oneSelectConfirm.includes(rendered(copy, 'confirm.body_policy_selected_nodays', { n: 1 })));
 
   const selectMix = [
     marked('sel-a', 'policy', 1, 'kitchen-mic'),
@@ -866,7 +926,7 @@ async function main() {
   click(noteCard, 'delete-selected');
   await settle();
   assert(
-    confirmSection(noteCard).includes(rendered(copy, 'confirm.body_policy_selected', { n: 8 })),
+    confirmSection(noteCard).includes(rendered(copy, 'confirm.body_policy_selected_nodays', { n: 8 })),
     'the bulk confirmation still counts originals across the selection'
   );
   click(noteCard, 'confirm');
@@ -1057,6 +1117,55 @@ async function asyncReceiving(source) {
     pending.resolve(status('completed', true, true, effect)); stop.resolve(status('running', false, true)); await settle();
     assert.strictEqual(next.innerHTML, before); assert.strictEqual(card.calls.length, calls);
     assert.strictEqual(card.timerCount(), 0);
+  }
+  // What moved to the trash reads as moved, after what was deleted, with when
+  // its space comes back and the way to the trash. A report without `trashed`
+  // still reads, with neither.
+  {
+    const policyList = { state: 'list.ready', review_context: 'ctx-trash', trash_days: 7, removals: [marked('pol', 'policy', 2, '_default')] };
+    const report = (removed, trashed, eraseAt) => ({
+      outcome: { targets: [{ removed, trashed, not_removed: [] }], halted: null },
+      trash: { count: (trashed || []).length, erase_at: eraseAt }
+    });
+    const clock = { today: () => '20260905', dayKey: () => '20260906', parts: () => ({ year: 2026 }), now: () => new Date() };
+    const cases = [
+      { removed: [], trashed: ['chronicle/<a>.flac', 'chronicle/b.webm'], eraseAt: '2026-09-06T12:00:00Z', clock, neutral: true },
+      { removed: ['chronicle/c.flac'], trashed: ['chronicle/<a>.flac'], eraseAt: '2026-09-06T12:00:00Z', clock, neutral: false },
+      { removed: [], trashed: ['chronicle/<a>.flac'], eraseAt: null, clock: null, neutral: true },
+      { removed: [], trashed: ['chronicle/<a>.flac'], eraseAt: '2026-09-06T12:00:00Z', clock: null, neutral: true },
+      { removed: ['chronicle/c.flac'], trashed: undefined, eraseAt: null, clock, neutral: false }
+    ];
+    for (const item of cases) {
+      const card = await boot(source, policyList, {
+        approve: { state: 'approve.started', generation: gen },
+        receive() { return status('completed', true, false, report(item.removed, item.trashed, item.eraseAt)); }
+      }, null, { clock: item.clock });
+      click(card, 'approve', 'pol'); click(card, 'confirm'); await settle(); await settle();
+      const op = card.innerHTML.match(/<section class="removals-card-outcome[^"]*" data-removal-operation>[\s\S]*?<\/section>/)?.[0] || '';
+      assert(op.includes(copy['operation.completed']), 'the settled result renders');
+      const trashed = item.trashed || [];
+      const n = trashed.length;
+      const deletedAt = item.removed.length ? op.indexOf(rendered(copy, item.removed.length === 1 ? 'done.clause_deleted_one' : 'done.clause_deleted_many', { n: item.removed.length })) : -1;
+      assert(!item.removed.length || deletedAt >= 0, 'what was deleted is said');
+      assert.strictEqual(op.includes('data-removal-space'), n > 0, 'the space line only with something in the trash');
+      assert.strictEqual(op.includes('href="/app/settings#trash"'), n > 0, 'the way to the trash only with something in it');
+      assert.strictEqual(op.startsWith('<section class="removals-card-outcome removals-card-outcome--trash"'), item.neutral && n > 0, 'the neutral box only when everything moved to the trash');
+      if (!n) {
+        assert(!op.includes(copy['done.clause_trashed_one']) && !op.includes(copy['done.open_trash']));
+        continue;
+      }
+      const trashedAt = op.indexOf(rendered(copy, n === 1 ? 'done.clause_trashed_one' : 'done.clause_trashed_many', { n }));
+      assert(trashedAt >= 0, 'what moved to the trash is said');
+      assert(deletedAt < trashedAt, 'deleted first');
+      assert(op.includes('chronicle/&lt;a&gt;.flac') && !op.includes('chronicle/<a>.flac'), 'the names it moved are escaped');
+      const which = n === 1 ? 'one' : 'many';
+      const space = item.eraseAt && item.clock
+        ? rendered(copy, `done.space_${which}`, { erase: card.window.JournalFormat.day(item.clock.dayKey()).toLowerCase() })
+        : copy[`done.space_${which}_nodate`];
+      const spaceAt = op.indexOf(space);
+      assert(spaceAt > trashedAt, 'the space line follows what moved');
+      assert(op.indexOf(copy['done.open_trash']) > spaceAt, 'then the way to the trash');
+    }
   }
   // Immutable predecessor statuses are data only. The added Boolean below is
   // an explicitly synthetic supplement, qualified by separate owning controls.

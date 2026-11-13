@@ -17,6 +17,9 @@
 //! release part way anywhere in the journal), each path is settled by what the
 //! trash's name is the name of, never by whether a name is present:
 //!
+//! - where the caller has the mechanism's own report of what it removed
+//!   ([`finish_linked`]), a path it didn't report is dropped: a file replaced
+//!   before the mechanism ran was refused by it, and is not this item's;
 //! - the journal's name is the same file: the mechanism didn't remove it, so
 //!   the trash's name is dropped;
 //! - the thing it belongs to has left the journal since (the recording went to
@@ -31,12 +34,14 @@
 //!
 //! While the request that linked an item is running it holds the item's run
 //! lock, and nothing else settles it; a stop leaves the item
-//! [`State::Detaching`] with `linked` set, for the sweep. ⛔ Every acquisition
-//! here other than the run lock taken in [`detach_linked`] on a fresh item is
-//! a try: the kind's hold (the door's admission is a zero-timeout try), the
-//! run lock in the sweep, so the order (hold, run lock, trash lock in
-//! [`detach_linked`]; run lock, hold, trash lock in settling) can never wait
-//! in a cycle. Keep it that way.
+//! [`State::Detaching`] with `linked` set, for the sweep. The order is hold,
+//! run lock, trash lock in [`detach_linked`], and run lock, hold, trash lock in
+//! settling. The door's admission is a zero-timeout try, the sweep's run lock
+//! is a try, and the run lock [`detach_linked`] takes is on an item nothing
+//! else knows yet; the segment and trash locks are bounded waits (ten seconds
+//! by default). So no cycle can wait forever, but a detach can wait that long
+//! on the trash's lock while it holds the journal's admission. ⛔ Never make
+//! any of these an unbounded wait.
 
 use std::path::{Path, PathBuf};
 
@@ -75,6 +80,7 @@ impl Linked {
 /// owner act's, when it trashes several things together. Nothing in the
 /// journal changes. A path that isn't there, or can't be kept durably, refuses
 /// the whole item and leaves nothing behind: the caller then removes nothing.
+/// A caller that would rather skip a path already gone leaves it out first.
 #[expect(
     clippy::too_many_arguments,
     reason = "the detach's own arguments, and the kind's kept bytes and the act's operation"
@@ -101,7 +107,10 @@ pub fn detach_linked(
         action,
         surface,
         trashed_at: now.to_rfc3339_opts(SecondsFormat::Millis, true),
-        erase_at: now.to_rfc3339_opts(SecondsFormat::Millis, true),
+        // Provisional, so a reader before it settles never sees an erase that
+        // has already come; settling counts the days again from then.
+        erase_at: (now + Duration::days(i64::from(erase_after_days(journal))))
+            .to_rfc3339_opts(SecondsFormat::Millis, true),
         paths,
         bytes: 0,
         pending: None,
@@ -162,15 +171,18 @@ pub fn detach_linked(
 }
 
 /// Settle an item [`detach_linked`] published, once the mechanism has run:
-/// keep what left the journal, drop what is still there. `None` when nothing
-/// left, and then no item remains. An error leaves the item for the sweep,
-/// as does a hold that refuses because the journal is busy.
+/// keep what left the journal, drop what is still there. `released` is the
+/// mechanism's own report of the journal-relative paths it removed, where the
+/// caller has it; only those are kept. `None` when nothing left, and then no
+/// item remains. An error leaves the item for the sweep, as does a hold that
+/// refuses because the journal is busy.
 pub fn finish_linked(
     journal: &Path,
     kind: &dyn Kind,
     mut linked: Linked,
+    released: Option<&[String]>,
 ) -> Result<Option<Item>, TrashError> {
-    let result = settle(journal, kind, &linked.id);
+    let result = settle(journal, kind, &linked.id, released);
     drop(linked.running.take());
     if result.is_ok() {
         remove_run_lock(journal, &linked.id);
@@ -191,7 +203,7 @@ pub(crate) fn resume(journal: &Path, kind: &dyn Kind, id: &str) -> Result<(), Tr
     ) else {
         return Ok(());
     };
-    let result = settle(journal, kind, id).map(|_| ());
+    let result = settle(journal, kind, id, None).map(|_| ());
     drop(running);
     if result.is_ok() {
         remove_run_lock(journal, id);
@@ -227,17 +239,22 @@ pub(crate) fn tidy_run_locks(journal: &Path) {
         else {
             continue;
         };
-        let waiting = read_item(journal, &id)
-            .ok()
-            .flatten()
-            .is_some_and(|item| item.state == State::Detaching);
+        // An item that can't be read may still be waiting: keep its lock.
+        let waiting = read_item(journal, &id).map_or(true, |item| {
+            item.is_some_and(|item| item.state == State::Detaching)
+        });
         if !waiting && !running(journal, &id) {
             remove_run_lock(journal, &id);
         }
     }
 }
 
-fn settle(journal: &Path, kind: &dyn Kind, id: &str) -> Result<Option<Item>, TrashError> {
+fn settle(
+    journal: &Path,
+    kind: &dyn Kind,
+    id: &str,
+    reported: Option<&[String]>,
+) -> Result<Option<Item>, TrashError> {
     let item = read_item(journal, id)?.ok_or(TrashError::NotInTrash)?;
     // The kind's hold, and its check passing: for the door, nothing is part
     // way through a release anywhere in the journal, so no stage still holds
@@ -266,7 +283,9 @@ fn settle(journal: &Path, kind: &dyn Kind, id: &str) -> Result<Option<Item>, Tra
             continue;
         }
         let live = journal_entry(journal, path)?;
-        let released = if copies.contains(path) {
+        let released = if reported.is_some_and(|reported| !reported.contains(path)) {
+            false
+        } else if copies.contains(path) {
             !kind.present(journal, path)
         } else if path_lexists(&live)? && same_file(&live, &held).map_err(io)? {
             false

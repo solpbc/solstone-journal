@@ -7708,6 +7708,7 @@ const REMOVAL_EVENT = { trashed: 'moved to the trash', recovered: 'recovered', e
 const REMOVAL_KIND = {
   segment: ['segment', 'segments'],
   original: ['original media', 'originals'],
+  originals: ['original media', 'original media'],
   memory: ['memory an agent saved', 'memories agents saved'],
   workout: ['workout', 'workouts'],
   import: ['import', 'imports'],
@@ -7719,6 +7720,9 @@ const REMOVAL_KIND = {
   backup: ['backup copies', 'backup copies'],
 };
 const REMOVAL_KIND_FALLBACK = ['something else', 'other things'];
+// A group of a kind whose one item isn't one thing: an originals item is one
+// segment's originals, so "{n} originals" would count segments as files.
+const REMOVAL_KIND_GROUP = { originals: 'original media from {n} segments' };
 const REMOVAL_NAMELESS = new Set(['entity', 'facet', 'detected_entities']);
 // The Import page's own name for each source, for the trash page and this
 // history alike. A source not listed here shows no qualifier.
@@ -7796,6 +7800,7 @@ function removalQualifiers(unit) {
   switch (unit.kind) {
     case 'segment': return [unit.day && removalDay(unit.day), removalSegmentTime(unit.segment)].filter(Boolean);
     case 'original': return [unit.file, unit.day && removalDay(unit.day), removalSegmentTime(unit.segment)].filter(Boolean);
+    case 'originals': return [unit.day && removalDay(unit.day), removalSegmentTime(unit.segment)].filter(Boolean);
     case 'memory': return [unit.day && removalDay(unit.day), removalSegmentTime(unit.segment)].filter(Boolean);
     // Never the import's file name: this history outlives it.
     case 'import': return [removalSourceName(unit.source), removalImportedDay(unit.id)].filter(Boolean);
@@ -7884,7 +7889,10 @@ function removalGroupWhat(group) {
   line.style.display = 'inline-flex';
   if (kinds.size === 1) {
     const unit = group.units[0].unit;
-    line.append(removalEl('span', 'removal-what', `${count} ${removalFill((REMOVAL_KIND[unit.kind] || REMOVAL_KIND_FALLBACK)[1], unit)}`));
+    const grouped = REMOVAL_KIND_GROUP[unit.kind];
+    line.append(removalEl('span', 'removal-what', grouped
+      ? grouped.replace('{n}', count)
+      : `${count} ${removalFill((REMOVAL_KIND[unit.kind] || REMOVAL_KIND_FALLBACK)[1], unit)}`));
     const days = new Set(group.units.map(entry => entry.unit.day).filter(Boolean));
     if (days.size === 1) line.append(removalEl('span', 'removal-qual', removalDay([...days][0])));
   } else {
@@ -8044,6 +8052,12 @@ const TRASH_COPY = {
   mergeTrashed: 'the facet these were merged into, {title}, is in the trash. recover that first, then this.',
   mergeNoManifest: 'recovering puts these back where the merge left them, outside any facet.',
   mergeGone: "the facet these were merged into is no longer in your journal, so they can't be recovered.",
+  // An originals row, by where its segment stands.
+  originalsLive: "recovering puts it back in its segment. if your retention settings still mark it, it's back on home's list the next time that list rebuilds.",
+  originalsSegmentTrashed: 'its segment is in the trash. recover the segment first, then this.',
+  originalsSegmentGone: "its segment is no longer in your journal, so this can't be recovered.",
+  originalsStaysOne: "its segment and everything made from it aren't erased with it.",
+  originalsStaysMany: "their segments and everything made from them aren't erased with them.",
   stopped: {
     detaching: 'this stopped part way into the trash. your journal keeps trying to finish moving it.',
     attaching: 'this stopped part way through being recovered. your journal keeps trying to finish putting it back.',
@@ -8069,19 +8083,23 @@ const TRASH_COPY = {
     redirected: "this facet's name now leads to another facet, so it can't be recovered.",
     taken: "this can't be recovered, because another entity in your journal is in its place.",
     busy: 'something else is changing this right now. try again in a minute.',
+    // Only for a row whose own line doesn't already say its segment is in the trash.
+    recordingInTrash: 'recover its segment from the trash first, then this.',
   },
 };
 const TRASH_KIND_LABEL = {
   segment: 'segment', memory: 'memory an agent saved', import: 'import', workout: 'workout',
   entity: 'entity', facet: 'facet', speakers: 'what your journal keeps about voices',
   facet_file: 'files a facet merge left out', facet_file_unfinished: "files from a facet merge that didn't finish",
+  // Originals released from a segment, by what was released.
+  originals: 'original media', originals_audio: 'original audio', originals_screen: 'original screen media',
 };
 const TRASH_WORDS = {
   segment: ['segment', 'segments'], memory: ['memory', 'memories'], import: ['import', 'imports'], workout: ['workout', 'workouts'],
   entity: ['entity', 'entities'], facet: ['facet', 'facets'],
 };
 // Refusals that trying again won't change: the result line drops its "try again".
-const TRASH_STUCK = new Set(['merge_dest_missing', 'taken', 'name_redirected']);
+const TRASH_STUCK = new Set(['merge_dest_missing', 'taken', 'name_redirected', 'recording_in_trash', 'segment_gone']);
 
 let trashItems = [];
 let trashConfirmed = null;
@@ -8151,6 +8169,7 @@ function trashRowBody(item, stoppedState) {
   const unfinished = item.kind === 'facet_file' && item.dest_state === 'none';
   what.append(removalEl('span', 'removal-what', unfinished
     ? TRASH_KIND_LABEL.facet_file_unfinished
+    : item.kind === 'originals' ? trashOriginalsLabel(item.modalities)
     : TRASH_KIND_LABEL[item.kind] || TRASH_KIND_LABEL.segment));
   // An import shows the owner's own file name: two imports of one source on one
   // day are otherwise the same row. It comes from the item's own record.
@@ -8183,7 +8202,8 @@ function trashRowBody(item, stoppedState) {
     default:
       qualifiers = [item.day && removalDay(item.day), removalSegmentTime(item.segment)];
   }
-  if (item.kind === 'segment' && item.stream) qualifiers.push(window.JournalFormat.stream(item.stream));
+  // Originals read as their segment's row does: its day, time range and stream.
+  if ((item.kind === 'segment' || item.kind === 'originals') && item.stream) qualifiers.push(window.JournalFormat.stream(item.stream));
   qualifiers.filter(Boolean).forEach(text => what.append(removalEl('span', 'removal-qual', text)));
   body.append(what);
   // A row that stopped part way says which way, in place of its date.
@@ -8202,14 +8222,24 @@ function trashRowBody(item, stoppedState) {
     const facets = trashFacetCount(item.facets);
     if (facets) extra.push(facets === 1 ? TRASH_COPY.facetOne : trashFill(TRASH_COPY.facetMany, { n: facets }));
   }
-  const size = item.kind === 'segment' || isImport || item.kind === 'speakers' ? trashSize(item.bytes) : '';
+  const size = item.kind === 'segment' || item.kind === 'originals' || isImport || item.kind === 'speakers' ? trashSize(item.bytes) : '';
   if (size) extra.push(size);
   if (extra.length) when.append(document.createTextNode(` · ${extra.join(' · ')}`));
   body.append(when);
   trashRowLines(item).forEach(text => body.append(removalEl('span', 'trash-returned', text)));
   const note = trashNotes.get(item.id);
-  if (note) body.append(removalEl('span', 'trash-row-note', note));
+  // A row whose segment is in the trash already says so.
+  const said = note === TRASH_COPY.notes.recordingInTrash && item.segment_state === 'trashed';
+  if (note && !said) body.append(removalEl('span', 'trash-row-note', note));
   return body;
+}
+
+// What was released from the segment: its audio, its screen media, or both.
+function trashOriginalsLabel(modalities) {
+  const released = new Set(Array.isArray(modalities) ? modalities : []);
+  if (released.size === 1 && released.has('audio')) return TRASH_KIND_LABEL.originals_audio;
+  if (released.size === 1 && released.has('screen')) return TRASH_KIND_LABEL.originals_screen;
+  return TRASH_KIND_LABEL.originals;
 }
 
 // What recovering a row does, said before anyone presses it.
@@ -8230,6 +8260,14 @@ function trashRowLines(item) {
         case 'trashed': return item.dest_title ? [trashFill(TRASH_COPY.mergeTrashed, { title: item.dest_title })] : [];
         case 'gone': return [TRASH_COPY.mergeGone];
         case 'live': return item.dest_title ? [trashFill(TRASH_COPY.mergeLive, { title: item.dest_title })] : [];
+        default: return [];
+      }
+    case 'originals':
+      // Every live row says what recovering does, so it doesn't read as back for good.
+      switch (item.segment_state) {
+        case 'live': return [TRASH_COPY.originalsLive];
+        case 'trashed': return [TRASH_COPY.originalsSegmentTrashed];
+        case 'gone': return [TRASH_COPY.originalsSegmentGone];
         default: return [];
       }
     default:
@@ -8283,6 +8321,7 @@ function trashRowNote(entry) {
     case 'busy': return N.busy;
     case 'taken': return N.taken;
     case 'name_redirected': return N.redirected;
+    case 'recording_in_trash': return N.recordingInTrash;
     case 'waits_facets':
       return others(detail.title, count(detail.others), N.waitsFacetNone, N.waitsFacetOne, N.waitsFacetMany, 'title');
     case 'waits_wipe': {
@@ -8407,10 +8446,11 @@ function trashConfirmCopy(act, items) {
   // What stays: anything that mentions an entity or a facet, and a facet's
   // segments; what an import or a workout made elsewhere includes entities;
   // a segment's or a memory's summaries. Nothing elsewhere mentions the
-  // voices wipe or a merge's files.
+  // voices wipe or a merge's files. Originals take their own line: their
+  // segment isn't erased with them.
   const named = items.some(item => item.kind === 'entity' || item.kind === 'facet');
   const made = items.some(item => item.kind === 'import' || item.kind === 'workout');
-  const quiet = items.every(item => item.kind === 'speakers' || item.kind === 'facet_file');
+  const quiet = items.every(item => item.kind === 'speakers' || item.kind === 'facet_file' || item.kind === 'originals');
   if (named) {
     paragraphs.push(one ? TRASH_COPY.mentionsOne : TRASH_COPY.mentionsMany);
     if (items.some(item => item.kind === 'facet')) paragraphs.push(one ? TRASH_COPY.sortedOne : TRASH_COPY.sortedMany);
@@ -8419,6 +8459,7 @@ function trashConfirmCopy(act, items) {
   } else if (!quiet) {
     paragraphs.push(one ? TRASH_COPY.staysOne : TRASH_COPY.staysMany);
   }
+  if (items.some(item => item.kind === 'originals')) paragraphs.push(one ? TRASH_COPY.originalsStaysOne : TRASH_COPY.originalsStaysMany);
   if (memory) paragraphs.push(one ? TRASH_COPY.agentOne : TRASH_COPY.agentMany);
   return { title, paragraphs, confirm: TRASH_COPY.eraseNow };
 }

@@ -363,7 +363,13 @@ fn run_pending(slot: &SharedOperationSlot, ticket: &ArchiveTicket) {
         Action::OriginalsRelease,
         Surface::Web { page: Page::Home },
     ) {
-        Ok(linked) => linked,
+        // A segment something else holds can't go to the trash now, so the
+        // approval doesn't start: the owner tries again.
+        Ok(linking) if linking.busy.is_empty() => linking.linked,
+        Ok(linking) => {
+            let _ignored = original_trash::keep_after(&journal, linking.linked, Some(&[]));
+            return retain_unused(slot, input, UnusedRefusal::Trash);
+        }
         Err(_) => return retain_unused(slot, input, UnusedRefusal::Trash),
     };
     let ApprovalInput {
@@ -381,11 +387,12 @@ fn run_pending(slot: &SharedOperationSlot, ticket: &ArchiveTicket) {
     let prepared = prepare_read(slot, begin, repository, restic.invocation());
     match prepared {
         Some(worker) => {
-            remove(slot, worker, checked, today, now);
-            original_trash::keep_after(&journal, linked);
+            let released = remove(slot, worker, checked, today, now);
+            let _settled = original_trash::keep_after(&journal, linked, released.as_deref());
         }
         None => {
-            original_trash::keep_after(&journal, linked);
+            // Nothing ran: nothing was released.
+            let _settled = original_trash::keep_after(&journal, linked, Some(&[]));
             // A parked whole failure keeps the selected context beside it rather
             // than manufacturing a retry; a released one leaves nothing to keep.
             let mut state = slot.lock().unwrap_or_else(|error| error.into_inner());
@@ -651,13 +658,15 @@ fn locked_response(
 }
 
 /// Called synchronously inside the worker holding the original admission.
+/// Returns the door's report of the paths it released, `None` when that isn't
+/// known (the actor stopped before reporting).
 pub fn remove(
     slot: &SharedOperationSlot,
     worker: PreparedArchiveWorker,
     checked: CheckedReviewContext,
     today: NaiveDate,
     now: DateTime<Utc>,
-) {
+) -> Option<Vec<String>> {
     // The outside owner never enters the actor's unwind boundary.
     let PreparedArchiveWorker {
         ticket,
@@ -666,7 +675,7 @@ pub fn remove(
         outside,
     } = worker;
     if let Err(reason) = entry(slot, &ticket, &read, &outside) {
-        return return_owned(
+        return_owned(
             slot,
             ticket,
             Some(custody),
@@ -676,10 +685,13 @@ pub fn remove(
             },
             Terminal::error(reason),
         );
+        return Some(Vec::new());
     }
     let mut terminal = Terminal::error("failed");
+    let mut released: Option<Vec<String>> = None;
     let actor = catch_unwind(AssertUnwindSafe(|| {
         let proof = remove_reviewed_with_owned_archive(checked, read, today, now);
+        released = Some(original_trash::released(proof.outcome()));
         project(
             &mut terminal,
             proof.outcome(),
@@ -801,6 +813,7 @@ pub fn remove(
         }
     };
     return_owned(slot, ticket, Some(custody), payload, terminal);
+    released
 }
 
 enum Actor {
@@ -834,14 +847,18 @@ fn remove_local(
             ArchivePayload::BeginHeld(Box::new(begin)),
             Terminal::error(reason),
         );
-        original_trash::keep_after(&journal, linked);
+        let _settled = original_trash::keep_after(&journal, linked, Some(&[]));
         return;
     }
     drop(begin);
     let mut terminal = Terminal::error("failed");
+    // The door's report of what it released, for the trash; unknown after a
+    // panic, when the trash settles by what is on disk instead.
+    let mut released: Option<Vec<String>> = None;
     let actor = catch_unwind(AssertUnwindSafe(|| {
         // What it releases waits in the trash, which records it there.
         let removal = remove_reviewed(checked, today, now);
+        released = Some(original_trash::released(removal.outcome()));
         project(
             &mut terminal,
             removal.outcome(),
@@ -894,7 +911,7 @@ fn remove_local(
     // settle what the door released. A held result keeps the journal, and its
     // items wait for the sweep.
     return_owned(slot, ticket, None, payload, terminal);
-    original_trash::keep_after(&journal, linked);
+    let _settled = original_trash::keep_after(&journal, linked, released.as_deref());
 }
 
 fn project(terminal: &mut Terminal, outcome: &Outcome, report: Value) {
