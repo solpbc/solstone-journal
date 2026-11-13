@@ -22,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a segment's transcript now says when its original audio or screen media is in the trash, with a link to the trash.
 - connected agents now need body, a permission of its own, to read what you imported from Apple Health, Oura or Strava: readings, sleep, workouts, mindfulness sessions and what you logged there. the transcripts permission no longer includes it. a new connection has body ticked. a connection you approved before doesn't, and can't read that data until you tick body for it in the agents app.
 - on linux, installing or updating the journal now removes older installed versions, and keeps this version and the two before it so `--version` can still go back to either. a version that is still in use stays.
+- the sources page and the support page now work like home, transcripts and search: moving between them and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 
 ### Fixed
 
