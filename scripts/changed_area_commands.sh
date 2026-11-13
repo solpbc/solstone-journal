@@ -65,7 +65,7 @@ case " $packages " in
 esac
 if [ -n "$gates" ]; then
 	say "  (this tree moves a platform cfg gate in a shared crate, so other targets owe their own compile:)"
-	say "  make check-rust-ios   # on a Mac (pro5e), before landing"
+	say "  make check-rust-ios   # on a Mac, before landing"
 	[ -n "$windows_gate" ] && say "  make win-host-ci      # on sol-winbuild, before landing"
 fi
 if [ -n "${HOPPER_LID:-}" ]; then
