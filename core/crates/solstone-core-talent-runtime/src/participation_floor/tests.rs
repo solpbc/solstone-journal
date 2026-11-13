@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use solstone_core_generate::ContentPart;
-use solstone_core_transcripts::{ENTRY_SOURCE_MAX_BYTES, EntrySource};
+use solstone_core_transcripts::{ENTRY_SOURCE_MAX_BYTES, EntrySource, TranscriptLayout};
 
 use super::*;
 use crate::ExecutionContext;
@@ -502,8 +502,15 @@ fn test_case_4_oversized_speech_file() {
         "expected source to be None for file > 64 KiB"
     );
 
-    let sample =
-        sample_to_budget(&loaded.text, &loaded.sources, &context.journal, day, 500).unwrap();
+    let sample = sample_to_budget(
+        &loaded.text,
+        &loaded.sources,
+        &loaded.layout,
+        &context.journal,
+        day,
+        500,
+    )
+    .unwrap();
 
     assert!(sample.transcript.contains("OVERSIZED_FIRST"));
     assert!(sample.transcript.contains("OVERSIZED_LAST"));
@@ -535,12 +542,23 @@ fn test_case_5_fixed_budget_sample_to_budget() {
         voice_named: std::collections::BTreeSet::new(),
     })];
 
+    let layout = TranscriptLayout {
+        groups: vec![0],
+        entries: vec![transcript.find("### Screen Activity").unwrap()],
+    };
     let journal = Path::new("/var/tmp");
     let total_tokens = solstone_core_tokens::count(transcript);
 
     // Total tokens ~ 60, budget will thin 6 frames to 4 frames (F0, F1, F3, F5)
-    let s1 =
-        sample_to_budget(transcript, &sources, journal, "20261029", total_tokens - 10).unwrap();
+    let s1 = sample_to_budget(
+        transcript,
+        &sources,
+        &layout,
+        journal,
+        "20261029",
+        total_tokens - 10,
+    )
+    .unwrap();
     assert!(s1.transcript.contains("2 frames left out"));
     assert_eq!(s1.event["frames_omitted"], 2);
     assert!(s1.transcript.contains("F0"));
@@ -550,15 +568,22 @@ fn test_case_5_fixed_budget_sample_to_budget() {
     assert!(!s1.transcript.contains("F4"));
     assert!(s1.transcript.contains("F5"));
 
-    let s2 = sample_to_budget(transcript, &sources, journal, "20261029", 5000).unwrap();
+    let s2 = sample_to_budget(transcript, &sources, &layout, journal, "20261029", 5000).unwrap();
     assert_eq!(s2.transcript, transcript);
     assert!(!s2.transcript.contains("frames left out"));
     assert_eq!(s2.event["frames_omitted"], 0);
     assert_eq!(s2.event["entries_omitted"], 0);
 
     // Call s1 again: deterministic
-    let s1_again =
-        sample_to_budget(transcript, &sources, journal, "20261029", total_tokens - 10).unwrap();
+    let s1_again = sample_to_budget(
+        transcript,
+        &sources,
+        &layout,
+        journal,
+        "20261029",
+        total_tokens - 10,
+    )
+    .unwrap();
     assert_eq!(s1.transcript, s1_again.transcript);
     assert_eq!(s1.event, s1_again.event);
 }
@@ -1025,8 +1050,15 @@ fn test_case_10_pool_kinds() {
     // Separately call sample_to_budget with a small budget: each kind is pool, not speech
     let loaded =
         crate::transcript::load_transcript(&context.journal, request.as_object().unwrap()).unwrap();
-    let small_sample =
-        sample_to_budget(&loaded.text, &loaded.sources, &context.journal, day, 40).unwrap();
+    let small_sample = sample_to_budget(
+        &loaded.text,
+        &loaded.sources,
+        &loaded.layout,
+        &context.journal,
+        day,
+        40,
+    )
+    .unwrap();
     assert_eq!(small_sample.event["speech_lines_omitted"], 0);
     assert!(!small_sample.transcript.contains("Speech lines left out"));
     let pool_omitted = small_sample.event["entries_omitted"].as_u64().unwrap()
@@ -1179,4 +1211,99 @@ fn test_case_13_event_on_unchanged_fit() {
 
     let transcript = prep.config["transcript"].as_str().unwrap();
     assert!(!transcript.contains("left out"));
+}
+
+// A page, a note or a summary can hold a line shaped like the transcript's own
+// headings. It stays that entry's content: it neither adds an entry nor starts
+// a segment group.
+#[test]
+fn heading_shaped_lines_inside_an_entry_stay_its_content() {
+    let day = "20261029";
+    let (_root, paths, context) = setup_env(day);
+    let seg_key = "090000_300";
+    let seg_dir = context.journal.join("chronicle").join(day).join(seg_key);
+    fs::create_dir_all(seg_dir.join("talents")).unwrap();
+    let pages = [
+        json!({"t": "segment_start", "ts": 1, "title": "Garden hose", "blocks": [
+            {"type": "heading", "text": "Highlights"},
+            {"type": "text", "text": "PAGE_BEFORE fifty feet"},
+            {"type": "heading", "text": "Note"},
+            {"type": "text", "text": "PAGE_MIDDLE ships free"}
+        ]}),
+        json!({"t": "segment_start", "ts": 2, "title": "2026-10-29 23:00:00 - 23:05:00", "blocks": [
+            {"type": "text", "text": "PAGE_AFTER the schedule"}
+        ]}),
+    ];
+    fs::write(
+        seg_dir.join("browser_pages.jsonl"),
+        pages
+            .iter()
+            .map(|page| format!("{page}\n"))
+            .collect::<String>(),
+    )
+    .unwrap();
+    fs::write(
+        seg_dir.join("talents/sense.md"),
+        "SENSE_HEAD read about a hose\n\n### Transcript\nSENSE_TAIL nobody spoke\n",
+    )
+    .unwrap();
+    let request = json!({
+        "name": "participation",
+        "day": day,
+        "facet": "work",
+        "span": [seg_key],
+        "activity": {
+            "id": "act-heading-shaped",
+            "destination_id": "act-heading-shaped",
+            "segments": [seg_key],
+            "activity_type": "browsing"
+        }
+    });
+
+    let prepared = prepare(
+        request.as_object().unwrap().clone(),
+        &paths,
+        &context,
+        PrepareMode::Preview,
+    )
+    .unwrap();
+    let event = prepared.participation_floor.as_ref().unwrap();
+    assert_eq!(event["entries_kept"], 1);
+    assert_eq!(event["sense_kept"], 1);
+
+    let loaded = crate::transcript::load_transcript(&context.journal, &prepared.config).unwrap();
+    let parsed = parse_all(
+        &loaded.text,
+        &loaded.sources,
+        &loaded.layout,
+        &context.journal,
+        day,
+    )
+    .unwrap();
+    assert_eq!(parsed.groups.len(), 1);
+    let group = &parsed.groups[0];
+    assert_eq!(
+        (group.start_time.as_str(), group.end_time.as_str()),
+        ("09:00:00", "09:05:00")
+    );
+    let headings: Vec<&str> = group.entries.iter().map(|e| e.heading.as_str()).collect();
+    assert_eq!(headings, ["### Browser Content", "### sense summary"]);
+    let EntryKind::Pool(PoolKind::Ordinary(lines)) = &group.entries[0].kind else {
+        panic!("browser content is an ordinary pool entry");
+    };
+    let page = lines.concat();
+    for held in [
+        "### Highlights",
+        "PAGE_BEFORE",
+        "### Note",
+        "PAGE_MIDDLE",
+        "## 2026-10-29 23:00:00 - 23:05:00",
+        "PAGE_AFTER",
+    ] {
+        assert!(page.contains(held), "{held} stays in the page: {page:?}");
+    }
+    let EntryKind::Sense { body } = &group.entries[1].kind else {
+        panic!("sense summary is a sense entry");
+    };
+    assert!(body.contains("### Transcript") && body.contains("SENSE_TAIL"));
 }

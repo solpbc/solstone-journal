@@ -6,29 +6,15 @@ use std::fs;
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
-use solstone_core_transcripts::{ENTRY_SOURCE_MAX_BYTES, EntrySource, is_speech_transcript_file};
+use solstone_core_transcripts::{
+    ENTRY_SOURCE_MAX_BYTES, EntrySource, TranscriptLayout, is_speech_transcript_file,
+};
 
 use crate::prepare::SPARSE_INPUT_NOTE;
 
 const FRAMING_TOKENS: u32 = 256;
 const MIN_ENTRY_CAP: usize = 4;
 const INCOMPLETE_MEMORY_NOTICE: &str = "agent memory context is incomplete.";
-
-const ENTRY_HEADINGS: &[&str] = &[
-    "### Transcript",
-    "### ChatGPT Conversation",
-    "### Claude Conversation",
-    "### Gemini Conversation",
-    "### Calendar Event",
-    "### Note",
-    "### Highlights",
-    "### agent memory original",
-    "### Screen Activity",
-    "### Browser Content",
-    "### Protected video",
-    "### desktop activity",
-    "### sense summary",
-];
 
 #[derive(Debug, Clone)]
 pub(crate) struct FloorSample {
@@ -56,6 +42,7 @@ fn format_disclosure_transcript(
 pub(crate) fn apply(
     composed: &mut Map<String, Value>,
     sources: &[Option<EntrySource>],
+    layout: &TranscriptLayout,
     journal: &Path,
 ) -> Result<Value, String> {
     let max_output_tokens = match composed.get("max_output_tokens") {
@@ -93,7 +80,7 @@ pub(crate) fn apply(
 
     if preserved_tokens.saturating_add(FRAMING_TOKENS) > floor_input {
         // Over-floor path: request framing alone exceeds floor
-        let parsed = parse_all(text_to_parse, sources, journal, day)?;
+        let parsed = parse_all(text_to_parse, sources, layout, journal, day)?;
         let disclosure = over_floor_disclosure(
             parsed.total_speech_lines,
             parsed.total_sense_segments,
@@ -122,7 +109,7 @@ pub(crate) fn apply(
         <= floor_input
     {
         // Fits whole without sampling
-        let parsed = parse_all(text_to_parse, sources, journal, day)?;
+        let parsed = parse_all(text_to_parse, sources, layout, journal, day)?;
         let event = build_event(
             parsed.total_speech_lines,
             0,
@@ -138,7 +125,7 @@ pub(crate) fn apply(
     }
 
     let transcript_budget = floor_input - preserved_tokens - FRAMING_TOKENS;
-    let sampled = sample_to_budget(transcript, sources, journal, day, transcript_budget)?;
+    let sampled = sample_to_budget(transcript, sources, layout, journal, day, transcript_budget)?;
     composed.insert("transcript".to_owned(), Value::String(sampled.transcript));
     Ok(sampled.event)
 }
@@ -146,6 +133,7 @@ pub(crate) fn apply(
 pub(crate) fn sample_to_budget(
     transcript: &str,
     sources: &[Option<EntrySource>],
+    layout: &TranscriptLayout,
     journal: &Path,
     day: &str,
     transcript_budget: u32,
@@ -153,7 +141,7 @@ pub(crate) fn sample_to_budget(
     let (has_sparse, text_without_sparse) = strip_sparse_prefix(transcript);
     let (has_incomplete_trailer, text_to_parse) = strip_incomplete_trailer(text_without_sparse);
 
-    let parsed = parse_all(text_to_parse, sources, journal, day)?;
+    let parsed = parse_all(text_to_parse, sources, layout, journal, day)?;
 
     if solstone_core_tokens::count(transcript) <= transcript_budget {
         return Ok(FloorSample {
@@ -542,33 +530,6 @@ fn build_event(
     })
 }
 
-fn is_segment_group_heading(line: &str) -> bool {
-    let Some(rest) = line.strip_prefix("## ") else {
-        return false;
-    };
-    if rest.len() != 30 {
-        return false;
-    }
-    let bytes = rest.as_bytes();
-    bytes[0..4].iter().all(u8::is_ascii_digit)
-        && bytes[4] == b'-'
-        && bytes[5..7].iter().all(u8::is_ascii_digit)
-        && bytes[7] == b'-'
-        && bytes[8..10].iter().all(u8::is_ascii_digit)
-        && bytes[10] == b' '
-        && bytes[11..13].iter().all(u8::is_ascii_digit)
-        && bytes[13] == b':'
-        && bytes[14..16].iter().all(u8::is_ascii_digit)
-        && bytes[16] == b':'
-        && bytes[17..19].iter().all(u8::is_ascii_digit)
-        && &bytes[19..22] == b" - "
-        && bytes[22..24].iter().all(u8::is_ascii_digit)
-        && bytes[24] == b':'
-        && bytes[25..27].iter().all(u8::is_ascii_digit)
-        && bytes[27] == b':'
-        && bytes[28..30].iter().all(u8::is_ascii_digit)
-}
-
 fn parse_segment_key_and_times(heading: &str) -> (String, String, String, f64) {
     let rest = heading.strip_prefix("## ").unwrap_or(heading);
     let start_time = rest[11..19].to_owned();
@@ -592,10 +553,6 @@ fn parse_segment_key_and_times(heading: &str) -> (String, String, String, f64) {
     let seg_key = format!("{:02}{:02}{:02}_{len}", s_h, s_m, s_s);
 
     (seg_key, start_time, end_time, start_secs as f64)
-}
-
-fn is_entry_heading(line: &str) -> bool {
-    ENTRY_HEADINGS.contains(&line.trim())
 }
 
 fn is_frame_heading(line: &str) -> bool {
@@ -703,9 +660,13 @@ struct ParsedAll {
     total_pool_entries: usize,
 }
 
+/// Splits the transcript into its groups and entries at the headings the
+/// renderer says it wrote. An entry's content is free text, so a line in it
+/// shaped like a heading stays content.
 fn parse_all(
     text: &str,
     sources: &[Option<EntrySource>],
+    layout: &TranscriptLayout,
     journal: &Path,
     day: &str,
 ) -> Result<ParsedAll, String> {
@@ -733,9 +694,12 @@ fn parse_all(
         }
     };
 
+    let mut at = 0;
     for line in text.split_inclusive('\n') {
+        let line_start = at;
+        at += line.len();
         let trimmed_line = line.trim();
-        if is_segment_group_heading(trimmed_line) {
+        if layout.groups.binary_search(&line_start).is_ok() {
             flush_group(
                 &mut raw_groups,
                 &mut current_heading,
@@ -744,7 +708,7 @@ fn parse_all(
                 &mut current_entry_body,
             );
             current_heading = Some(trimmed_line.to_owned());
-        } else if is_entry_heading(trimmed_line) {
+        } else if layout.entries.binary_search(&line_start).is_ok() {
             flush_entry(
                 &mut current_entries,
                 &mut current_entry_heading,

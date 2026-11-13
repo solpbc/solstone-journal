@@ -15,10 +15,10 @@ use solstone_core_speaker_resolve::resolve::{ResolveOutcome, resolve};
 use solstone_core_speaker_resolve::segment_catalog::resolve_exact_dir;
 use solstone_core_talent_config::{get_output_name, get_talent_filter, source_is_enabled};
 use solstone_core_transcripts::{
-    EntrySource, MemoryContext, ScreenCut, SourceCounts, Sources, TalentSource, VoiceNames,
-    cluster_for_screen_talent_with_memory, cluster_period_for_screen_talent_with_memory,
-    cluster_period_with_memory, cluster_span_for_screen_talent_with_memory,
-    cluster_span_with_memory, cluster_with_memory,
+    EntrySource, MemoryContext, ScreenCut, SourceCounts, Sources, TalentSource, TranscriptLayout,
+    VoiceNames, cluster_for_screen_talent_with_memory,
+    cluster_period_for_screen_talent_with_memory, cluster_period_with_memory,
+    cluster_span_for_screen_talent_with_memory, cluster_span_with_memory, cluster_with_memory,
 };
 
 pub(crate) struct LoadedTranscript {
@@ -28,6 +28,7 @@ pub(crate) struct LoadedTranscript {
     pub memory_sources: Vec<ConsumedOriginal>,
     pub memory_incomplete: bool,
     pub sources: Vec<Option<EntrySource>>,
+    pub layout: TranscriptLayout,
 }
 
 pub(crate) fn sources_from_config(config: &Map<String, Value>) -> Sources {
@@ -265,6 +266,7 @@ pub(crate) fn load_transcript(
         memory_sources,
         memory_incomplete,
         sources: transcript.sources,
+        layout: transcript.layout,
     })
 }
 

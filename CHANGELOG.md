@@ -25,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- an activity whose pages, notes or summaries hold a heading the journal also uses, such as "Highlights" or "Note", now gets its list of people. before, the list was never made for it. on a long activity, a line shaped like a date and time range no longer cuts short what the list is made from. activities from before you update stay as they are.
 - "finish them" on home now says what finishing does: any original a stopped deletion hadn't deleted yet goes back in its segment. before, it said nothing was put back.
 - security fix: on linux, local thinking now starts with a new key every time, and only your own account can get it from your journal. before, a web page open in your browser, or another account on the same computer, could use local thinking, read its replies, and make it fetch images from addresses they chose. nothing in your journal could be read this way.
 - on a large journal, a connected agent's search for a common word could run past the agent's time limit, most often on the first search after the journal started. those searches now come back in about half the time. on a journal you already had, the faster search starts once your journal has been busy for a little while after you update.

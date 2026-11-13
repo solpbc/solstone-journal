@@ -149,6 +149,21 @@ pub struct ScreenTranscript {
     pub cuts: Vec<ScreenCut>,
     /// What each rendered entry was rendered from, in transcript order.
     pub sources: Vec<Option<EntrySource>>,
+    pub layout: TranscriptLayout,
+}
+
+/// Where the renderer wrote the transcript's own headings, as byte offsets
+/// of their lines in the text, in transcript order.
+///
+/// An entry's content is free text: a page, a note or a summary can hold a
+/// line shaped exactly like one of these headings. A reader that needs the
+/// transcript's structure takes it from here, never from the text.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TranscriptLayout {
+    /// Each segment group's `## ` heading.
+    pub groups: Vec<usize>,
+    /// Each entry's `### ` heading, one per entry in `sources`.
+    pub entries: Vec<usize>,
 }
 
 /// A numeric speaker occurrence the canonical speech formatter actually rendered.
@@ -173,6 +188,7 @@ impl ScreenTranscript {
             text,
             cuts: Vec::new(),
             sources: Vec::new(),
+            layout: TranscriptLayout::default(),
         }
     }
 }
@@ -1674,8 +1690,11 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
     let mut pending_cuts = Vec::new();
     let mut sources = Vec::new();
     let mut source_ranges = Vec::new();
+    let mut group_lines = Vec::new();
+    let mut entry_lines = Vec::new();
     for group in groups {
         let first = &group[0];
+        group_lines.push(lines.len());
         lines.push(format!(
             "## {} - {}",
             first.segment_start.format("%Y-%m-%d %H:%M:%S"),
@@ -1710,6 +1729,7 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
                 )),
                 _ => continue,
             }
+            entry_lines.push(entry_heading_line);
             sources.push(entry.source);
             let trimmed = if entry.prefix == "memory_original" {
                 entry.content.as_str()
@@ -1781,10 +1801,21 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
         .collect::<Vec<_>>();
     cuts.sort_by_key(|cut| cut.byte_offset);
     cuts.dedup_by_key(|cut| cut.byte_offset);
+    let layout = TranscriptLayout {
+        groups: group_lines
+            .into_iter()
+            .map(|line| line_offsets[line])
+            .collect(),
+        entries: entry_lines
+            .into_iter()
+            .map(|line| line_offsets[line])
+            .collect(),
+    };
     ScreenTranscript {
         text,
         cuts,
         sources,
+        layout,
     }
 }
 
