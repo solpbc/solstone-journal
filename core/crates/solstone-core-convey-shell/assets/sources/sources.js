@@ -294,43 +294,72 @@
     root.appendChild(list);
   }
 
+  // The state a drawn payload reports as the view's readiness.
+  function readiness(payload) {
+    if (failed(payload.status, payload.body)) return 'error';
+    return payload.body.clients.length === 0 ? 'empty' : 'content';
+  }
+
+  // A view that has gone draws nothing: `opts.ended` says so, after the read
+  // and after its body, since either can answer once the view is gone.
   async function load(doc, root, opts) {
+    const ended = () => typeof opts.ended === 'function' && opts.ended();
     let status = 0;
     let body = null;
     try {
       const response = await opts.fetch(CLIENTS, { method: 'GET' });
+      if (ended()) return null;
       status = response.status;
       body = await response.json();
     } catch (error) {
       status = 0;
       body = null;
     }
+    if (ended()) return null;
     const payload = { status: status, body: body };
     opts.last = payload;
     render(doc, root, payload, opts);
+    // The view's first draw is its readiness; a retry draws again, quietly.
+    if (typeof opts.ready === 'function' && !opts.reported) {
+      opts.reported = true;
+      opts.ready(readiness(payload));
+    }
     return payload;
   }
 
-  function boot(view) {
-    const doc = view && view.document;
-    const root = doc && doc.getElementById && doc.getElementById('sources-root');
-    if (!root || !view.matchMedia) return Promise.resolve();
-    const media = view.matchMedia('(max-width: 700px)');
-    const state = {
+  function stateFor(media, fetchFn) {
+    return {
       now: Date.now(),
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       layout: media.matches ? 'cards' : 'wide',
-      fetch: function (url, init) { return view.fetch(url, init); },
+      fetch: fetchFn,
       last: null,
     };
-    if (media.addEventListener) {
-      media.addEventListener('change', () => {
-        state.layout = media.matches ? 'cards' : 'wide';
-        state.now = Date.now();
-        if (state.last) render(doc, root, state.last, state);
-      });
-    }
-    return load(doc, root, state);
+  }
+
+  function onLayout(doc, root, media, state) {
+    return () => {
+      state.layout = media.matches ? 'cards' : 'wide';
+      state.now = Date.now();
+      if (state.last) render(doc, root, state.last, state);
+    };
+  }
+
+  // Sources on the view contract. Everything is the mount's: its read is the
+  // view's (`ctx.fetch`, adopted from the page's early read), and the layout
+  // listener goes with it.
+  function mount(ctx) {
+    const doc = global.document;
+    const root = doc.getElementById('sources-root');
+    if (!root) throw new Error('sources has no root');
+    const media = global.matchMedia('(max-width: 700px)');
+    const state = stateFor(media, ctx.fetch);
+    state.ended = () => ctx.disposed;
+    state.ready = ctx.ready;
+    ctx.on(media, 'change', onLayout(doc, root, media, state));
+    load(doc, root, state).catch((error) => {
+      if (!ctx.disposed) global.logError?.(error, { context: 'sources' });
+    });
   }
 
   const api = {
@@ -341,11 +370,11 @@
     kindWord: kindWord,
     render: render,
     load: load,
-    boot: boot,
+    mount: mount,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  if (global.document && global.document.getElementById && global.document.getElementById('sources-root')) {
-    api.boot(global);
+  if (global.SolViews && typeof global.SolViews.register === 'function') {
+    global.SolViews.register('sources', { mount: mount });
   }
 })(typeof window !== 'undefined' ? window : globalThis);
