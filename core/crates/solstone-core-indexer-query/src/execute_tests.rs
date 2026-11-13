@@ -61,6 +61,19 @@ fn insert(
             params![content, path, day, facet, agent, stream, idx],
         )
         .expect("seed chunk");
+    record_chunk_source(connection);
+}
+
+/// Record the chunk just inserted in the path lookup, as every index writer
+/// does in the same transaction.
+fn record_chunk_source(connection: &Connection) {
+    connection
+        .execute(
+            "INSERT OR REPLACE INTO chunk_sources(rowid, path, stream) \
+             SELECT rowid, path, stream FROM chunks WHERE rowid = last_insert_rowid()",
+            [],
+        )
+        .expect("record chunk source");
 }
 
 fn read_only(root: &Path) -> Connection {
@@ -625,6 +638,154 @@ fn connection_recency_uses_day_path_idx_and_start_after_not_rowid() {
     fs::remove_dir_all(root).expect("cleanup connection recency index");
 }
 
+/// Every page of a connection's recency search for `query`, two hits at a
+/// time, as (day, path, idx).
+fn connection_pages(root: &Path, query: &str) -> Vec<Vec<(String, String, i64)>> {
+    let boundary = connection_boundary(&["Transcripts"], ConnectionScope::WholeJournal);
+    let mut pages = Vec::new();
+    let mut start_after = None;
+    loop {
+        let response = crate::search_connection(
+            root,
+            &boundary,
+            &ConnectionSearchRequest {
+                query: query.to_owned(),
+                limit: 2,
+                start_after: start_after.clone(),
+                ..ConnectionSearchRequest::default()
+            },
+            reference_date(),
+        )
+        .expect("connection search");
+        let page: Vec<_> = response
+            .results
+            .iter()
+            .map(|hit| {
+                (
+                    hit.metadata.day.clone(),
+                    hit.metadata.path.clone(),
+                    hit.metadata.idx,
+                )
+            })
+            .collect();
+        let Some(last) = response.results.last() else {
+            break;
+        };
+        start_after = Some(crate::ConnectionStartAfter {
+            day: last.metadata.day.clone(),
+            path: last.metadata.path.clone(),
+            idx: last.metadata.idx,
+        });
+        pages.push(page);
+    }
+    pages
+}
+
+#[test]
+fn connection_recency_from_the_path_lookup_keys_answers_as_the_rows_do() {
+    let (root, connection) = seeded_root("connection-keys");
+    let rows = [
+        ("20260101/talents/a.md", "20260101", 0),
+        ("20260101/talents/a.md", "20260101", 1),
+        ("20260103/talents/b.md", "20260103", 0),
+        ("entities/c/entity.md", "20260102", 0),
+        ("entities/c/entity.md", "20260104", 1),
+        ("undated/d.md", "", 0),
+        ("20260105/talents/e.md", "20260105", 2),
+    ];
+    for (path, day, idx) in rows {
+        insert(&connection, "copper kettle", path, day, "", "flow", "", idx);
+    }
+    // Newest of all, and refused without an admission: the keys' first
+    // candidates are refused by the plan, so the search reads past them.
+    let names = "20260106/default/100000_60/talents/possible_names.json";
+    for idx in 0..3 {
+        insert(
+            &connection,
+            "possible name: copper",
+            names,
+            "20260106",
+            "",
+            "possible_names",
+            "default",
+            idx,
+        );
+    }
+    // Body data, which a connection without the body permission is only told
+    // it would have found.
+    let body = "20260102/body.md";
+    insert(
+        &connection,
+        "copper reading",
+        body,
+        "20260102",
+        "",
+        "body",
+        "",
+        0,
+    );
+    for path in rows.iter().map(|row| row.0).chain([names, body]) {
+        if connection
+            .query_row(
+                "SELECT 1 FROM chunk_classification WHERE path = ?1",
+                [path],
+                |_| Ok(()),
+            )
+            .is_err()
+        {
+            seed_classification(&connection, path, "transcripts", "journal_wide", &[]);
+        }
+    }
+    finish_classification(&connection);
+    drop(connection);
+
+    let set_keys_ready = |ready: i64| {
+        Connection::open(db_path(&root))
+            .expect("open writer")
+            .execute("UPDATE chunk_source_keys SET ready = ?1", [ready])
+            .expect("set keys readiness");
+    };
+    let withheld = |query: &str| {
+        crate::connection_search_withheld_body(
+            &root,
+            &connection_boundary(&["Transcripts", "Body"], ConnectionScope::WholeJournal),
+            &ConnectionSearchRequest {
+                query: query.to_owned(),
+                limit: 1,
+                relax: true,
+                ..ConnectionSearchRequest::default()
+            },
+            reference_date(),
+            std::sync::Arc::new(|_: &str, _: i64| true),
+        )
+        .expect("withheld body probe")
+    };
+    let keyed = (
+        connection_pages(&root, "copper"),
+        withheld("copper"),
+        withheld("kettle"),
+    );
+    set_keys_ready(0);
+    let from_rows = connection_pages(&root, "copper");
+    assert_eq!(keyed, (from_rows.clone(), true, false));
+    assert_eq!((withheld("copper"), withheld("kettle")), (true, false));
+    assert_eq!(
+        from_rows.concat().len(),
+        rows.len(),
+        "every row but the refused possible names"
+    );
+
+    // A matched row the lookup doesn't hold, as a binary from before it
+    // wrote, reads the rows instead.
+    set_keys_ready(1);
+    Connection::open(db_path(&root))
+        .expect("open writer")
+        .execute("DELETE FROM chunk_sources WHERE path = 'undated/d.md'", [])
+        .expect("drop a lookup row");
+    assert_eq!(connection_pages(&root, "copper"), from_rows);
+    fs::remove_dir_all(root).expect("cleanup connection keys index");
+}
+
 #[test]
 fn relevance_pagination_uses_rowid_without_gaps_or_repeats() {
     let (root, connection) = seeded_root("relevance-pagination");
@@ -1036,6 +1197,7 @@ fn seed_chunk(
         params![content, path, day, agent, stream],
     )
     .expect("seed chunk");
+    record_chunk_source(conn);
 }
 
 #[test]
@@ -2007,9 +2169,11 @@ fn indexed_entry_is_bounded_and_does_not_prune_or_open_source_files() {
         read_indexed_entry(&root, "different", 7, id, 16384).unwrap(),
         IndexedEntry::NotFound
     );
+    // A row id that is gone, at a position the path still holds, reads as
+    // reindexed through the path lookup.
     assert_eq!(
         read_indexed_entry(&root, path, 7, chat_id + 1, 16384).unwrap(),
-        IndexedEntry::NotFound
+        IndexedEntry::Reindexed(content.clone())
     );
     assert_eq!(
         read_indexed_entry(&root, chat_path, 0, chat_id, 16384).unwrap(),

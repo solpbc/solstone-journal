@@ -146,19 +146,14 @@ pub fn connection_search_withheld_body(
     )?;
     // An activity file's rows are judged by the admission: body entries and
     // Strava lines only.
-    plan.where_clause.push_str(&format!(
-        " AND ({BODY_MATERIAL_FUNCTION}(chunks.path) OR chunks.path LIKE 'facets/%/activities/%.jsonl')"
-    ));
-    let found: Option<i64> = connection
-        .connection
-        .query_row(
-            &format!("SELECT 1 FROM chunks WHERE {} LIMIT 1", plan.where_clause),
-            params_from_iter(plan.params.iter()),
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| connection.classify(error))?;
-    Ok(found.is_some())
+    push_keyed(
+        &mut plan,
+        &format!(
+            " AND ({BODY_MATERIAL_FUNCTION}(chunks.path) OR chunks.path LIKE 'facets/%/activities/%.jsonl')"
+        ),
+        &[],
+    );
+    connection.any_row(&plan)
 }
 
 fn search_connection_admitting(
@@ -273,16 +268,17 @@ fn append_connection_start_after(
     let Some(start_after) = start_after else {
         return;
     };
-    plan.where_clause.push_str(
+    push_keyed(
+        plan,
         " AND (COALESCE(day, '') < ? OR (COALESCE(day, '') = ? AND (path < ? OR (path = ? AND idx < CAST(? AS INTEGER)))))",
+        &[
+            start_after.day.clone(),
+            start_after.day.clone(),
+            start_after.path.clone(),
+            start_after.path.clone(),
+            start_after.idx.to_string(),
+        ],
     );
-    plan.params.extend([
-        start_after.day.clone(),
-        start_after.day.clone(),
-        start_after.path.clone(),
-        start_after.path.clone(),
-        start_after.idx.to_string(),
-    ]);
 }
 
 /// Return whether one exact journal path and chunk index are represented in the index.
@@ -465,9 +461,10 @@ pub(crate) fn plan_from_outcome_with_boundary(
     let predicate = QueryPredicate::new(outcome, temporal, predicate_input(request));
     let mut plan = match &predicate.outcome {
         CompileOutcome::Compiled { expression } => SqlPlan {
-            where_clause: "chunks MATCH ?".to_string(),
+            where_clause: MATCH_CLAUSE.to_string(),
             params: vec![expression.clone()],
             has_live_match_expression: true,
+            key: None,
         },
         CompileOutcome::NoInput
         | CompileOutcome::FiltersOnly
@@ -475,9 +472,22 @@ pub(crate) fn plan_from_outcome_with_boundary(
             where_clause: "1=1".to_string(),
             params: Vec::new(),
             has_live_match_expression: false,
+            key: None,
         },
     };
+    if boundary.is_some() {
+        plan.key = Some(KeyPlan {
+            match_expression: match &predicate.outcome {
+                CompileOutcome::Compiled { expression } => Some(expression.clone()),
+                _ => None,
+            },
+            clause: visible_rows("1=1"),
+            params: Vec::new(),
+        });
+    }
     plan.where_clause = visible_rows(&plan.where_clause);
+    // Both admissions read a row's words, so the keys can't apply them: a
+    // candidate the keys pick is admitted or not with its row.
     plan.where_clause.push_str(POSSIBLE_NAME_ROWS_ADMITTED);
     plan.where_clause.push_str(BODY_ENTRY_ROWS_ADMITTED);
     if let Some(boundary) = boundary {
@@ -504,13 +514,13 @@ fn append_filters(plan: &mut SqlPlan, predicate: &QueryPredicate) {
     // boundary; a facet outside scope is indistinguishable from no such facet.
     match &predicate.effective_date {
         EffectiveDateConstraint::None => {}
-        EffectiveDateConstraint::Exact(day) => append_filter(plan, "day=?", day.clone()),
+        EffectiveDateConstraint::Exact(day) => append_keyed_filter(plan, "day=?", day.clone()),
         EffectiveDateConstraint::Range { day_from, day_to } => {
             if let Some(day_from) = day_from {
-                append_filter(plan, "day>=?", day_from.clone());
+                append_keyed_filter(plan, "day>=?", day_from.clone());
             }
             if let Some(day_to) = day_to {
-                append_filter(plan, "day<=?", day_to.clone());
+                append_keyed_filter(plan, "day<=?", day_to.clone());
             }
         }
     }
@@ -532,7 +542,7 @@ fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary
     if boundary.categories().is_empty()
         || matches!(boundary.scope(), ConnectionScope::ChosenFacets { ids } if ids.is_empty())
     {
-        plan.where_clause.push_str(" AND 0");
+        push_keyed(plan, " AND 0", &[]);
         return;
     }
     let categories = category_placeholders(boundary.categories().len());
@@ -541,9 +551,11 @@ fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary
     let mut clause = format!(
         "EXISTS (SELECT 1 FROM chunk_classification cc WHERE cc.path=chunks.path AND cc.eligible=1 AND cc.unclassified=0 AND (CASE WHEN {BODY_MATERIAL_FUNCTION}(chunks.path) THEN 'body' ELSE cc.category END) IN ({categories})"
     );
-    for category in boundary.categories() {
-        plan.params.push(category_sql_name(*category).to_string());
-    }
+    let mut params: Vec<String> = boundary
+        .categories()
+        .iter()
+        .map(|category| category_sql_name(*category).to_string())
+        .collect();
     match boundary.scope() {
         ConnectionScope::WholeJournal => {}
         ConnectionScope::ChosenFacets { ids } => {
@@ -554,22 +566,45 @@ fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary
             clause.push_str(&placeholders);
             clause.push_str("))))");
             for _ in 0..2 {
-                for id in ids {
-                    plan.params.push(id.clone());
-                }
+                params.extend(ids.iter().cloned());
             }
         }
     }
     clause.push(')');
-    plan.where_clause.push_str(" AND ");
-    plan.where_clause.push_str(&clause);
+    push_keyed(plan, &format!(" AND {clause}"), &params);
     if !boundary
         .categories()
         .contains(&AdmittedCategory::ScreenText)
     {
-        plan.where_clause
-            .push_str(" AND NOT solstone_screen_text_path(chunks.path)");
+        push_keyed(plan, " AND NOT solstone_screen_text_path(chunks.path)", &[]);
     }
+}
+
+/// Append one clause, over the keys alone, to both the plan and its keys.
+fn push_keyed(plan: &mut SqlPlan, clause: &str, params: &[String]) {
+    plan.where_clause.push_str(clause);
+    plan.params.extend(params.iter().cloned());
+    if let Some(key) = &mut plan.key {
+        key.clause.push_str(clause);
+        key.params.extend(params.iter().cloned());
+    }
+}
+
+/// A keyed plan's match expression, and its clause and parameters without the
+/// match, for checking rows the match already picked. `None` when the plan
+/// has no match, or its clause doesn't start with it.
+fn keyed_row_clause<'a>(
+    plan: &'a SqlPlan,
+    key: &'a KeyPlan,
+) -> Option<(&'a String, String, &'a [String])> {
+    let expression = key.match_expression.as_ref()?;
+    let rest = plan.where_clause.strip_prefix(MATCH_CLAUSE)?;
+    (plan.params.first() == Some(expression))
+        .then(|| (expression, format!("1=1{rest}"), &plan.params[1..]))
+}
+
+fn append_keyed_filter(plan: &mut SqlPlan, clause: &str, value: String) {
+    push_keyed(plan, &format!(" AND {clause}"), &[value]);
 }
 
 fn category_placeholders(count: usize) -> String {
@@ -633,7 +668,22 @@ pub(crate) struct SqlPlan {
     pub(crate) where_clause: String,
     pub(crate) params: Vec<String>,
     pub(crate) has_live_match_expression: bool,
+    /// For a connection's search: what of `where_clause` the chunk path
+    /// lookup's keys (path, day and position) can decide alone. The rows it
+    /// admits include every row the plan admits, so it can pick candidates
+    /// in recency order without reading their words, and the plan itself
+    /// still decides each one.
+    pub(crate) key: Option<KeyPlan>,
 }
+
+pub(crate) struct KeyPlan {
+    pub(crate) match_expression: Option<String>,
+    pub(crate) clause: String,
+    pub(crate) params: Vec<String>,
+}
+
+/// How every live match expression starts a plan's clause.
+const MATCH_CLAUSE: &str = "chunks MATCH ?";
 
 /// An opaque resolved query plan.
 pub struct SearchPlan(pub(crate) SqlPlan);
@@ -1238,6 +1288,7 @@ pub(crate) fn entry_row_predicate(
         where_clause: visible_rows("chunks.rowid=? AND chunks.path=? AND chunks.idx=?"),
         params: Vec::new(),
         has_live_match_expression: false,
+        key: None,
     };
     if let QueryBoundary::Connection(connection_boundary) = boundary {
         append_connection_prefilter(&mut plan, connection_boundary);
@@ -1442,6 +1493,7 @@ pub fn read_activity_observation(
             where_clause: clause,
             params: Vec::new(),
             has_live_match_expression: false,
+            key: None,
         };
         append_connection_prefilter(&mut plan, connection_boundary);
         clause = plan.where_clause;
@@ -1581,6 +1633,7 @@ pub fn read_indexed_path_entries(
         where_clause: visible_rows(&rows_of_path),
         params: Vec::new(),
         has_live_match_expression: false,
+        key: None,
     };
     append_connection_prefilter(&mut plan, boundary);
     let mut values = vec![Value::Integer(
@@ -1640,6 +1693,7 @@ pub fn indexed_path_has_later_chunk(
         where_clause: visible_rows(&format!("{rows_of_path} AND idx>0")),
         params: Vec::new(),
         has_live_match_expression: false,
+        key: None,
     };
     append_connection_prefilter(&mut plan, boundary);
     values.extend(plan.params.into_iter().map(Value::Text));
@@ -1924,7 +1978,178 @@ impl QueryConnection {
     ) -> Result<Vec<SearchHit>, IndexAccessError> {
         const CONNECTION_RECENCY_ORDER: &str =
             "ORDER BY COALESCE(day, '') DESC, path DESC, idx DESC";
-        self.fetch_hits_with_ordering(plan, limit, 0, CONNECTION_RECENCY_ORDER)
+        self.fetch_hook()?;
+        if let Some(key) = &plan.key
+            && solstone_core_indexer_store::chunk_sources::chunk_keys_ready(&self.connection)
+            && let Some(hits) = self.fetch_connection_hits_by_keys(plan, key, limit)?
+        {
+            return Ok(hits);
+        }
+        self.query_hits(plan, limit, 0, CONNECTION_RECENCY_ORDER)
+    }
+
+    /// The connection's recency order, picked from the path lookup's keys so
+    /// that only the returned rows' words are read: a common word matches
+    /// most of the index, and reading every match's row to sort it is what
+    /// made a first search after a restart, with the index not yet in
+    /// memory, outrun an agent's deadline. The keys put the candidates in
+    /// order once, and the full plan decides them a batch at a time. `None`
+    /// when a matched row has no keys, or the plan has no match to pick from,
+    /// so the caller reads the rows instead.
+    fn fetch_connection_hits_by_keys(
+        &mut self,
+        plan: &SqlPlan,
+        key: &KeyPlan,
+        limit: usize,
+    ) -> Result<Option<Vec<SearchHit>>, IndexAccessError> {
+        if limit == 0 {
+            return Ok(Some(Vec::new()));
+        }
+        let Some((expression, row_clause, row_params)) = keyed_row_clause(plan, key) else {
+            return Ok(None);
+        };
+        // A matched row with no keys sorts first, so the first candidate shows
+        // whether the keys cover the match.
+        let sql = format!(
+            "WITH matched(rid) AS MATERIALIZED (SELECT rowid FROM chunks WHERE chunks MATCH ?) \
+             SELECT matched.rid, chunks.rowid IS NULL \
+             FROM matched LEFT JOIN chunk_sources AS chunks ON chunks.rowid = matched.rid \
+             WHERE chunks.rowid IS NULL OR ({}) \
+             ORDER BY chunks.rowid IS NULL DESC, COALESCE(chunks.day, '') DESC, chunks.path DESC, \
+             chunks.idx DESC, matched.rid DESC",
+            key.clause
+        );
+        let (extra_columns, joins) = self.hit_projection()?;
+        let batch = limit.min(500);
+        let mut values = vec![Value::Text(expression.clone())];
+        values.extend(key.params.iter().cloned().map(Value::Text));
+        let mut statement = self
+            .connection
+            .prepare(&sql)
+            .map_err(|error| self.classify(error))?;
+        let mut candidates = statement
+            .query(params_from_iter(values.iter()))
+            .map_err(|error| self.classify(error))?;
+        let mut hits = Vec::new();
+        let mut pending = Vec::with_capacity(batch);
+        let mut first = true;
+        loop {
+            let row = candidates.next().map_err(|error| self.classify(error))?;
+            let done = row.is_none();
+            if let Some(row) = row {
+                let unkeyed: bool = row.get(1).map_err(|error| self.classify(error))?;
+                if first && unkeyed {
+                    return Ok(None);
+                }
+                first = false;
+                pending.push(row.get::<_, i64>(0).map_err(|error| self.classify(error))?);
+                if pending.len() < batch {
+                    continue;
+                }
+            }
+            if !pending.is_empty() {
+                let sql = format!(
+                    "SELECT content, path, day, facet, agent, stream, idx, 0.0, chunks.rowid, {extra_columns} \
+                     FROM chunks{joins} WHERE chunks.rowid IN ({}) AND {row_clause}",
+                    category_placeholders(pending.len())
+                );
+                let mut values: Vec<Value> = pending.iter().copied().map(Value::Integer).collect();
+                values.extend(row_params.iter().cloned().map(Value::Text));
+                let mut admitted: BTreeMap<i64, SearchHit> = self
+                    .hit_rows(&sql, &values)?
+                    .into_iter()
+                    .map(|hit| (hit.row_id, hit))
+                    .collect();
+                for row_id in pending.drain(..) {
+                    if let Some(hit) = admitted.remove(&row_id) {
+                        hits.push(hit);
+                        if hits.len() == limit {
+                            return Ok(Some(hits));
+                        }
+                    }
+                }
+            }
+            if done {
+                return Ok(Some(hits));
+            }
+        }
+    }
+
+    /// Whether `plan` admits any row, with the keys picking the candidates
+    /// when they can, so a common word that admits none doesn't read every
+    /// match's row to say so.
+    pub(crate) fn any_row(&mut self, plan: &SqlPlan) -> Result<bool, IndexAccessError> {
+        if let Some(key) = &plan.key
+            && solstone_core_indexer_store::chunk_sources::chunk_keys_ready(&self.connection)
+            && let Some(found) = self.any_row_by_keys(plan, key)?
+        {
+            return Ok(found);
+        }
+        self.has_rows(plan)
+    }
+
+    /// `None` when a matched row has no keys, or the plan has no match.
+    fn any_row_by_keys(
+        &mut self,
+        plan: &SqlPlan,
+        key: &KeyPlan,
+    ) -> Result<Option<bool>, IndexAccessError> {
+        const BATCH: usize = 500;
+        let Some((expression, row_clause, row_params)) = keyed_row_clause(plan, key) else {
+            return Ok(None);
+        };
+        let sql = format!(
+            "WITH matched(rid) AS MATERIALIZED (SELECT rowid FROM chunks WHERE chunks MATCH ?) \
+             SELECT matched.rid, chunks.rowid IS NULL \
+             FROM matched LEFT JOIN chunk_sources AS chunks ON chunks.rowid = matched.rid \
+             WHERE chunks.rowid IS NULL OR ({})",
+            key.clause
+        );
+        let mut values = vec![Value::Text(expression.clone())];
+        values.extend(key.params.iter().cloned().map(Value::Text));
+        let mut statement = self
+            .connection
+            .prepare(&sql)
+            .map_err(|error| self.classify(error))?;
+        let mut candidates = statement
+            .query(params_from_iter(values.iter()))
+            .map_err(|error| self.classify(error))?;
+        let mut pending = Vec::with_capacity(BATCH);
+        loop {
+            let row = candidates.next().map_err(|error| self.classify(error))?;
+            let done = row.is_none();
+            if let Some(row) = row {
+                if row
+                    .get::<_, bool>(1)
+                    .map_err(|error| self.classify(error))?
+                {
+                    return Ok(None);
+                }
+                pending.push(row.get::<_, i64>(0).map_err(|error| self.classify(error))?);
+                if pending.len() < BATCH {
+                    continue;
+                }
+            }
+            if !pending.is_empty() {
+                let sql = format!(
+                    "SELECT 1 FROM chunks WHERE chunks.rowid IN ({}) AND {row_clause} LIMIT 1",
+                    category_placeholders(pending.len())
+                );
+                let mut values: Vec<Value> = pending.drain(..).map(Value::Integer).collect();
+                values.extend(row_params.iter().cloned().map(Value::Text));
+                let found: Option<i64> = self
+                    .connection
+                    .query_row(&sql, params_from_iter(values.iter()), |row| row.get(0))
+                    .optional()
+                    .map_err(|error| self.classify(error))?;
+                if found.is_some() {
+                    return Ok(Some(true));
+                }
+            }
+            if done {
+                return Ok(Some(false));
+            }
+        }
     }
 
     fn fetch_hits_with_ordering(
@@ -1934,6 +2159,11 @@ impl QueryConnection {
         offset: usize,
         ordering: &str,
     ) -> Result<Vec<SearchHit>, IndexAccessError> {
+        self.fetch_hook()?;
+        self.query_hits(plan, limit, offset, ordering)
+    }
+
+    fn fetch_hook(&mut self) -> Result<(), IndexAccessError> {
         #[cfg(any(test, feature = "test-hooks"))]
         {
             if self.injected_fetch_failure {
@@ -1945,17 +2175,31 @@ impl QueryConnection {
             }
             self.fetch_hits_calls += 1;
         }
+        Ok(())
+    }
+
+    fn query_hits(
+        &mut self,
+        plan: &SqlPlan,
+        limit: usize,
+        offset: usize,
+        ordering: &str,
+    ) -> Result<Vec<SearchHit>, IndexAccessError> {
         let (extra_columns, joins) = self.hit_projection()?;
         let sql = format!(
             "SELECT content, path, day, facet, agent, stream, idx, bm25(chunks), chunks.rowid, {extra_columns} FROM chunks{joins} WHERE {} {ordering} LIMIT ? OFFSET ?",
             plan.where_clause
         );
-        let mut values = plan.params.clone();
-        values.push(usize_to_sql(limit));
-        values.push(usize_to_sql(offset));
+        let mut values: Vec<Value> = plan.params.iter().cloned().map(Value::Text).collect();
+        values.push(Value::Text(usize_to_sql(limit)));
+        values.push(Value::Text(usize_to_sql(offset)));
+        self.hit_rows(&sql, &values)
+    }
+
+    fn hit_rows(&self, sql: &str, values: &[Value]) -> Result<Vec<SearchHit>, IndexAccessError> {
         let mut statement = self
             .connection
-            .prepare(&sql)
+            .prepare(sql)
             .map_err(|error| self.classify(error))?;
         let rows = statement
             .query_map(params_from_iter(values.iter()), |row| {
