@@ -206,6 +206,14 @@ pub enum Unit {
         segment: String,
         file: String,
     },
+    /// The original recording files released together from one segment that
+    /// stays, by their bare names: one item in the trash.
+    Originals {
+        day: String,
+        stream: String,
+        segment: String,
+        files: Vec<String>,
+    },
     /// A workout from a connected source, by the source's own id, and the day
     /// it began on, a date with no content, for the history's row.
     Workout {

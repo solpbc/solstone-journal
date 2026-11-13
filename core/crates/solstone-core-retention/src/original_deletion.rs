@@ -15,6 +15,8 @@ use crate::marks::RemovalClass;
 const EVENTS_FILE: &str = "events.jsonl";
 const RETENTION_TRACT: &str = "retention";
 const ORIGINAL_DELETED_EVENT: &str = "original_deleted";
+/// The trash put a released original back: the name reads as present again.
+pub const ORIGINAL_RECOVERED_EVENT: &str = "original_recovered";
 
 /// Provenance of a released original media file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -82,6 +84,9 @@ impl RawReleaseClass {
 
 /// Read and return all recorded original-media deletions from a segment's event log.
 ///
+/// The latest row per name decides: an [`ORIGINAL_RECOVERED_EVENT`] after a
+/// deletion means the trash put the file back, so the name is not returned.
+///
 /// Refuses symlinked leaves and directory collisions without following links.
 #[must_use]
 pub fn recorded_original_deletions(segment_dir: &Path) -> BTreeMap<String, RawReleaseClass> {
@@ -129,12 +134,16 @@ pub fn recorded_original_deletions(segment_dir: &Path) -> BTreeMap<String, RawRe
         let Some(event) = obj.get("event").and_then(Value::as_str) else {
             continue;
         };
-        if event != ORIGINAL_DELETED_EVENT {
+        if event != ORIGINAL_DELETED_EVENT && event != ORIGINAL_RECOVERED_EVENT {
             continue;
         }
         let Some(name) = obj.get("name").and_then(Value::as_str) else {
             continue;
         };
+        if event == ORIGINAL_RECOVERED_EVENT {
+            map.remove(name);
+            continue;
+        }
         let Some(class_str) = obj.get("class").and_then(Value::as_str) else {
             continue;
         };
@@ -226,6 +235,27 @@ mod tests {
         assert_eq!(records.len(), 2);
         assert_eq!(records.get("raw.flac"), Some(&RawReleaseClass::Policy));
         assert_eq!(records.get("screen.webm"), Some(&RawReleaseClass::Offload));
+    }
+
+    #[test]
+    fn a_recovered_original_reads_as_present_until_it_is_released_again() {
+        let temp = tempfile::tempdir().unwrap();
+        let segment_dir = temp.path();
+        let events_path = segment_dir.join(EVENTS_FILE);
+        let deleted = r#"{"tract":"retention","event":"original_deleted","ts":1000,"name":"raw.flac","class":"policy_raw_release"}"#;
+        let recovered = r#"{"tract":"retention","event":"original_recovered","ts":2000,"name":"raw.flac","item":"x"}"#;
+        fs::write(&events_path, format!("{deleted}\n{recovered}\n")).unwrap();
+        assert!(recorded_original_deletions(segment_dir).is_empty());
+
+        fs::write(
+            &events_path,
+            format!("{deleted}\n{recovered}\n{}\n", deleted.replace("1000", "3000")),
+        )
+        .unwrap();
+        assert_eq!(
+            recorded_original_deletions(segment_dir).get("raw.flac"),
+            Some(&RawReleaseClass::Policy)
+        );
     }
 
     #[test]

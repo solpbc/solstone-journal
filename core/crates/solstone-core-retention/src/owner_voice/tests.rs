@@ -255,6 +255,24 @@ fn deletion_state_truth_table() {
         );
     }
 
+    // An original the trash put back after a release is never owed again:
+    // voice-only doesn't release a recovered original.
+    let recovered = fixture("analyzed");
+    fs::write(
+        recovered.segment.join(EVENTS_FILE),
+        format!(
+            "{}\n{}\n",
+            json!({"tract": "retention", "event": "original_deleted", "name": "120000_300.m4a", "class": "policy_raw_release"}),
+            json!({"tract": "retention", "event": "original_recovered", "name": "120000_300.m4a", "item": "x"}),
+        ),
+    )
+    .unwrap();
+    assert!(recovered.original.exists());
+    assert_eq!(
+        owner_voice_deletion_state(&recovered.segment, &recovered.jsonl),
+        OwedState::NotOwed
+    );
+
     let unreadable = fixture("analyzed");
     fs::create_dir(unreadable.segment.join(EVENTS_FILE)).unwrap();
     assert_eq!(

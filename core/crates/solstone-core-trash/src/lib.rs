@@ -85,6 +85,9 @@ pub const ERASE_AFTER_DAYS_KEY: &str = "erase_after_days";
 
 pub use solstone_core_journal::is_trash_root_name;
 
+mod linked;
+pub use linked::{Linked, detach_linked, finish_linked};
+
 /// Where an item stands.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -150,6 +153,11 @@ pub struct Item {
     /// set); otherwise the item's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation: Option<String>,
+    /// Its files were linked here before a mechanism of the kind's own removed
+    /// them from the journal ([`detach_linked`]): settled by what left, never
+    /// moved.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub linked: bool,
 }
 
 impl Item {
@@ -250,6 +258,11 @@ pub trait Kind {
     /// kind's hold to refuse, not this.
     fn returns(&self, _journal: &Path, _item: &Item, _path: &str) -> bool {
         true
+    }
+
+    /// The unit for an item [`detach_linked`] kept only `paths` of.
+    fn narrowed(&self, unit: &Unit, _paths: &[String]) -> Unit {
+        unit.clone()
     }
 }
 
@@ -363,6 +376,7 @@ fn detach_as(
         refs: Vec::new(),
         label,
         operation,
+        linked: false,
     };
     let hold = kind.hold(journal, &item).map_err(TrashError::Held)?;
     hold.check().map_err(TrashError::Held)?;
@@ -597,6 +611,9 @@ pub fn stopped(journal: &Path) -> Result<Vec<Item>, TrashError> {
     let mut items: Vec<Item> = all_items(journal)?
         .into_iter()
         .filter(|item| matches!(item.state, State::Detaching | State::Attaching))
+        // A linked item waits on its own request's removal, outside the
+        // trash's lock: it is moving, not stopped, while that holds it.
+        .filter(|item| !(item.linked && linked::running(journal, &item.id)))
         .collect();
     items.sort_by(|left, right| left.trashed_at.cmp(&right.trashed_at));
     Ok(items)
@@ -1256,6 +1273,9 @@ fn timer_surface() -> Surface {
 fn resume_detach(journal: &Path, kinds: &[&dyn Kind], id: &str) -> Result<(), TrashError> {
     let item = read_item(journal, id)?.ok_or(TrashError::NotInTrash)?;
     let kind = kind_for(kinds, &item.unit)?;
+    if item.linked {
+        return linked::resume(journal, kind, id);
+    }
     let hold = kind.hold(journal, &item).map_err(TrashError::Held)?;
     hold.check().map_err(TrashError::Held)?;
     let _lock = lock(journal)?;
@@ -1476,6 +1496,7 @@ fn describe(unit: &Unit) -> &'static str {
         Unit::Segment { .. } => "recording",
         Unit::Import { .. } => "import",
         Unit::Workout { .. } => "workout",
+        Unit::Originals { .. } => "original",
         _ => "thing",
     }
 }
@@ -2202,6 +2223,7 @@ mod tests {
             label: None,
             refs: Vec::new(),
             operation: None,
+            linked: false,
         };
         fs::create_dir(root.join(TRASH_DIR).join(&stale.id)).unwrap();
         publish_new(&root, &stale).unwrap();
@@ -2798,6 +2820,7 @@ mod tests {
             label: None,
             refs: Vec::new(),
             operation: None,
+            linked: false,
         };
         ensure_trash(&root).unwrap();
         fs::create_dir(root.join(TRASH_DIR).join(&item.id)).unwrap();
@@ -2931,6 +2954,140 @@ mod tests {
     }
 
     /// A temporary journal root, removed when dropped.
+    const AUDIO: &str = "chronicle/20261108/phone/070000_300/audio.flac";
+
+    fn link(root: &Path, kind: &Fake, paths: &[&str]) -> Linked {
+        detach_linked(
+            root,
+            kind,
+            unit(),
+            Action::OriginalsRelease,
+            web(),
+            paths.iter().map(|path| (*path).to_owned()).collect(),
+            &[("class", b"policy_raw_release")],
+        )
+        .unwrap()
+    }
+
+    /// The mechanism removed the journal's name: the trash keeps the file,
+    /// records it trashed, and recovering puts the same bytes back.
+    #[test]
+    fn a_linked_file_the_release_removed_is_kept_and_comes_back() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let linked = link(&root, &kind, &[AUDIO]);
+        assert!(root.join(AUDIO).is_file(), "linking changes nothing in place");
+        fs::remove_file(root.join(AUDIO)).unwrap();
+        let item = finish_linked(&root, &kind, linked).unwrap().unwrap();
+        assert_eq!(item.state, State::Trashed);
+        assert_eq!(item.paths, vec![AUDIO.to_owned()]);
+        assert_eq!(item.bytes, 5);
+        assert_eq!(kept(&root, &item.id, "class").unwrap().unwrap(), b"policy_raw_release");
+        let held = root.join(TRASH_DIR).join(&item.id).join(FILES_DIR).join(AUDIO);
+        assert_eq!(fs::read(&held).unwrap(), b"sound");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            assert_eq!(fs::metadata(&held).unwrap().nlink(), 1, "the trash's name is the last");
+        }
+        assert_eq!(list(&root).unwrap().len(), 1);
+        assert_eq!(events(&root), vec![(Event::Trashed, Action::OriginalsRelease)]);
+        attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
+        assert_eq!(fs::read(root.join(AUDIO)).unwrap(), b"sound");
+        assert!(list(&root).unwrap().is_empty());
+        assert!(!root.join(TRASH_DIR).join(format!("{}.run.lock", item.id)).exists());
+    }
+
+    /// The mechanism refused: the journal still has the file, so the trash
+    /// drops its second name and keeps no item.
+    #[test]
+    fn a_linked_file_the_release_left_leaves_no_item() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let linked = link(&root, &kind, &[AUDIO]);
+        assert!(finish_linked(&root, &kind, linked).unwrap().is_none());
+        assert_eq!(fs::read(root.join(AUDIO)).unwrap(), b"sound");
+        assert!(all_items(&root).unwrap().is_empty());
+        assert!(events(&root).is_empty());
+        assert!(kind.seen.borrow().is_empty(), "no references for what stayed");
+    }
+
+    /// Of two files, the release removed one: the item keeps only that one.
+    #[test]
+    fn a_linked_item_keeps_only_what_left() {
+        let (_dir, root) = journal();
+        let other = "chronicle/20261108/phone/070000_300/screen.webm";
+        fs::write(root.join(other), b"pixels!").unwrap();
+        let kind = Fake::default();
+        let linked = link(&root, &kind, &[AUDIO, other]);
+        fs::remove_file(root.join(other)).unwrap();
+        let item = finish_linked(&root, &kind, linked).unwrap().unwrap();
+        assert_eq!(item.paths, vec![other.to_owned()]);
+        assert_eq!(item.bytes, 7);
+        assert_eq!(fs::read(root.join(AUDIO)).unwrap(), b"sound");
+        let dropped = root.join(TRASH_DIR).join(&item.id).join(FILES_DIR).join(AUDIO);
+        assert!(!dropped.exists());
+        assert_eq!(kind.seen.borrow()[0], (Change::Detached, vec![other.to_owned()]));
+    }
+
+    /// A stop after linking: a live request's item is left alone and isn't
+    /// shown as stopped; once its request is gone the sweep settles it by
+    /// what left, either way.
+    #[test]
+    fn a_stopped_linked_item_is_settled_by_the_sweep_only_once_its_request_is_gone() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let linked = link(&root, &kind, &[AUDIO]);
+        let id = linked.id().to_owned();
+        fs::remove_file(root.join(AUDIO)).unwrap();
+        sweep(&root, &[&kind], Utc::now());
+        assert_eq!(item(&root, &id).unwrap().unwrap().state, State::Detaching);
+        assert!(stopped(&root).unwrap().is_empty(), "running, not stopped");
+        drop(linked);
+        assert_eq!(stopped(&root).unwrap().len(), 1);
+        sweep(&root, &[&kind], Utc::now());
+        assert_eq!(item(&root, &id).unwrap().unwrap().state, State::Trashed);
+
+        let (_dir, root) = journal();
+        let linked = link(&root, &kind, &[AUDIO]);
+        let id = linked.id().to_owned();
+        drop(linked);
+        sweep(&root, &[&kind], Utc::now());
+        assert!(item(&root, &id).unwrap().is_none());
+        assert_eq!(fs::read(root.join(AUDIO)).unwrap(), b"sound");
+    }
+
+    /// Erase takes the trash's name, the last one, and records it erased.
+    #[test]
+    fn erasing_a_linked_item_frees_the_file() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let linked = link(&root, &kind, &[AUDIO]);
+        fs::remove_file(root.join(AUDIO)).unwrap();
+        let item = finish_linked(&root, &kind, linked).unwrap().unwrap();
+        erase(&root, &item.id, Action::Erase, web()).unwrap();
+        assert!(!root.join(TRASH_DIR).join(&item.id).exists());
+        assert!(!root.join(AUDIO).exists());
+    }
+
+    /// A path that isn't there refuses before anything is published.
+    #[test]
+    fn linking_a_missing_file_refuses_and_leaves_nothing() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let refused = detach_linked(
+            &root,
+            &kind,
+            unit(),
+            Action::OriginalsRelease,
+            web(),
+            vec!["chronicle/20261108/phone/070000_300/gone.flac".into()],
+            &[],
+        );
+        assert!(matches!(refused, Err(TrashError::Missing(_))));
+        assert!(all_items(&root).unwrap().is_empty());
+    }
+
     mod tempfile_dir {
         use std::path::{Path, PathBuf};
 
