@@ -666,6 +666,104 @@ async function run() {
   const nextBtn28 = documentObj.querySelector('[data-date-nav-next]');
   assert.strictEqual(nextBtn28.disabled, false, 'next button is enabled when not at coverage end');
 
+  // A day step taken in place (a view's update calls setDay) onto the last or
+  // first day turns off the arrow that was pressed. A browser drops focus from
+  // a button it turns off, so the stand-in does too. Focus goes to the date
+  // button, never to the page. One run per view whose update steps the day,
+  // each with its own date settings. Compare by identity: a failing compare of
+  // two stand-in elements would print the whole stand-in tree.
+  {
+    const focusName = () => {
+      const el = documentObj.activeElement;
+      return el ? `${el.tagName} ${Object.keys(el.attributes).join(' ')}` : 'none';
+    };
+    const dropsFocusWhenOff = (button) => {
+      let off = button.disabled;
+      Object.defineProperty(button, 'disabled', {
+        configurable: true,
+        get: () => off,
+        set: (value) => {
+          off = Boolean(value);
+          if (off && documentObj.activeElement === button) documentObj.activeElement = body;
+        },
+      });
+      button.focus = () => {
+        if (!off) documentObj.activeElement = button;
+      };
+    };
+    const savedApiJson = windowObj.apiJson;
+    const coverage = { start: '20260801', end: '20260929' };
+    windowObj.apiJson = async (url) => {
+      if (url.includes('api/index')) return { coverage, months: { '202608': 1, '202609': 1 } };
+      return {};
+    };
+    const mountControl = async (name, day) => {
+      locationObj.pathname = `/app/${name}/${day}`;
+      documentObj.dispatchEvent({ type: 'workspace:mounted', detail: { appName: name } });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const control = {
+        prev: documentObj.querySelector('[data-date-nav-prev]'),
+        next: documentObj.querySelector('[data-date-nav-next]'),
+        trigger: documentObj.querySelector('[data-date-nav-trigger]'),
+      };
+      assert.ok(control.prev && control.next && control.trigger, `${name}: the arrows and the date button exist`);
+      Object.values(control).forEach(dropsFocusWhenOff);
+      documentObj.activeElement = body;
+      return control;
+    };
+    const views = [
+      { name: 'activities', allowFuture: true },
+      { name: 'body', allowFuture: false },
+      { name: 'map', allowFuture: false },
+      { name: 'speakers', allowFuture: false },
+      { name: 'transcripts', allowFuture: false },
+    ];
+    for (const { name, allowFuture } of views) {
+      windowObj.solShellData.apps.push({
+        id: name,
+        name,
+        date_nav: { allow_future: allowFuture, unit: 'item' },
+      });
+      const { prev, next, trigger } = await mountControl(name, '20260928');
+      next.focus();
+      context.window.DateNav.setDay('20260929');
+      if (allowFuture) {
+        assert.ok(next.disabled === false, `${name}: future days keep the next arrow on`);
+        assert.ok(documentObj.activeElement === next, `${name}: the next arrow keeps focus, not ${focusName()}`);
+      } else {
+        assert.ok(next.disabled === true, `${name}: a step onto the last day turns the next arrow off`);
+        assert.ok(documentObj.activeElement === trigger, `${name}: after a step onto the last day focus is on the date button, not ${focusName()}`);
+      }
+      context.window.DateNav.setDay('20260802');
+      prev.focus();
+      context.window.DateNav.setDay('20260801');
+      assert.ok(prev.disabled === true, `${name}: a step onto the first day turns the previous arrow off`);
+      assert.ok(documentObj.activeElement === trigger, `${name}: after a step onto the first day focus is on the date button, not ${focusName()}`);
+      context.window.DateNav.setDay('20260915');
+      next.focus();
+      context.window.DateNav.setDay('20260916');
+      assert.ok(documentObj.activeElement === next, `${name}: an arrow that stays on keeps focus, not ${focusName()}`);
+    }
+
+    // The calendar's month arrows: a move onto the first month hands focus to
+    // the title between them.
+    await mountControl('transcripts', '20260928');
+    documentObj.querySelector('[data-date-nav-trigger]').click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const panelPrev = documentObj.querySelector('[data-date-nav-panel-prev]');
+    const title = documentObj.querySelector('[data-date-nav-title]');
+    assert.ok(panelPrev && title, 'the calendar has its month arrows and title');
+    [panelPrev, title].forEach(dropsFocusWhenOff);
+    assert.ok(panelPrev.disabled === false, 'the calendar can move back a month');
+    panelPrev.focus();
+    panelPrev.click();
+    assert.ok(panelPrev.disabled === true, 'a move onto the first month turns the previous month arrow off');
+    assert.ok(documentObj.activeElement === title, `after a move onto the first month focus is on the title, not ${focusName()}`);
+    documentObj.querySelector('[data-date-nav-trigger]').click();
+    windowObj.apiJson = savedApiJson;
+    documentObj.activeElement = body;
+  }
+
   // 6. DayGrid.mount
   context.window.JournalClock.seed({ tz: 'Asia/Tokyo', label: 'Tokyo' });
   const gridHost = new MockElement('div', documentObj);

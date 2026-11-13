@@ -772,14 +772,35 @@
     return false;
   }
 
+  // A button turned off while it has focus drops focus to the page. So an
+  // arrow about to be turned off first hands its focus to the button between
+  // the arrows, which names where the step landed and doesn't step back on a
+  // second press; to the other arrow only when that button can't take it.
+  function setArrows(prev, next, prevOff, nextOff, middle) {
+    const held = document.activeElement;
+    const losing = held === prev ? prevOff : held === next ? nextOff : false;
+    if (losing && !held.disabled) {
+      const other = held === prev ? next : prev;
+      const otherOff = held === prev ? nextOff : prevOff;
+      const to = middle && !middle.disabled && !middle.hidden ? middle : otherOff ? null : other;
+      if (to) to.focus({ preventScroll: true });
+    }
+    prev.disabled = prevOff;
+    next.disabled = nextOff;
+  }
+
   function updateArrowState() {
     if (!state.prev || !state.next) return;
     const usePanel = state.open;
-    state.prev.disabled = usePanel ? !canNavigatePanel(-1) : !canNavigateDay(-1);
-    state.next.disabled = usePanel ? !canNavigatePanel(1) : !canNavigateDay(1);
+    setArrows(
+      state.prev,
+      state.next,
+      usePanel ? !canNavigatePanel(-1) : !canNavigateDay(-1),
+      usePanel ? !canNavigatePanel(1) : !canNavigateDay(1),
+      state.trigger
+    );
     if (state.panelPrev && state.panelNext) {
-      state.panelPrev.disabled = !canNavigatePanel(-1);
-      state.panelNext.disabled = !canNavigatePanel(1);
+      setArrows(state.panelPrev, state.panelNext, !canNavigatePanel(-1), !canNavigatePanel(1), state.title);
     }
   }
 
