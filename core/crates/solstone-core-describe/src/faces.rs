@@ -101,6 +101,19 @@ fn crop_reference(prefix: &str, frame: u64, face: usize, bytes: &[u8]) -> String
         Sha256::digest(bytes)
     )
 }
+/// Bind face evidence to the frame rows, excluding the processing header.
+/// Readers hold the screen output claim and compare this with the face header
+/// before consuming the sidecar; a mismatch requires rebuilding that evidence.
+pub fn screen_body_digest(screen: &Path) -> io::Result<String> {
+    let bytes = fs::read(screen)?;
+    // Processing/retry metadata lives on the first line and may change while
+    // describe deliberately retains the previous frame reading unchanged.
+    let body = bytes
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map_or(&[][..], |index| &bytes[index + 1..]);
+    Ok(format!("{:x}", Sha256::digest(body)))
+}
 
 pub struct FacePass {
     models: Option<FaceModels>,
@@ -240,17 +253,8 @@ impl FacePass {
             .collect::<BTreeSet<_>>();
         let path = sidecar_path(video);
         let header = json!({"schema_version":SCHEMA_VERSION,"detector":{"id":"opencv-yunet-2023mar","sha256":solstone_core_transcribe::YUNET_SHA256},"embedder":{"id":"opencv-sface-2021dec","sha256":solstone_core_transcribe::SFACE_SHA256,"width":WIDTH},"source_name":video.file_name().and_then(|s|s.to_str()),"embeddings":npy.file_name().and_then(|s|s.to_str())});
-        // Immutable payload names keep the previous header valid even if the
-        // process dies before publishing this header. Readers hold screen claims
-        // while reading the set, so old payloads can be retired after publication.
-        files.push(crate::publication::StagedFile::prepare(&path, stop, |w| {
-            writeln!(w, "{header}")?;
-            for row in &self.rows {
-                serde_json::to_writer(&mut *w, row)?;
-                writeln!(w)?;
-            }
-            Ok(())
-        })?);
+        // The manifest is staged at install, after describe has published the
+        // exact screen bytes that it must bind. Payloads are prepared here.
         let directory = segment.join(format!("{}-crops", self.prefix));
         let mut stale = Vec::new();
         match fs::read_dir(&directory) {
@@ -279,6 +283,10 @@ impl FacePass {
         }
         Ok(PreparedFaces {
             files,
+            manifest: path,
+            screen: video.with_extension("jsonl"),
+            header,
+            rows: self.rows.clone(),
             segment: segment.to_owned(),
             directory,
             crops: self.crops.clone(),
@@ -290,6 +298,10 @@ impl FacePass {
 
 pub(crate) struct PreparedFaces {
     files: Vec<crate::publication::StagedFile>,
+    manifest: PathBuf,
+    screen: PathBuf,
+    header: Value,
+    rows: Vec<FaceRow>,
     segment: PathBuf,
     directory: PathBuf,
     crops: Vec<(String, Vec<u8>)>,
@@ -302,6 +314,16 @@ impl PreparedFaces {
         for file in &self.files {
             file.validate_stage()?;
         }
+        let mut header = self.header.clone();
+        header["screen_body_sha256"] = Value::String(screen_body_digest(&self.screen)?);
+        let manifest = crate::publication::StagedFile::prepare(&self.manifest, &|| false, |w| {
+            writeln!(w, "{header}")?;
+            for row in &self.rows {
+                serde_json::to_writer(&mut *w, row)?;
+                writeln!(w)?;
+            }
+            Ok(())
+        })?;
         if !self.crops.is_empty() {
             solstone_core_journal_io::create_directory_with_mode(&self.directory, 0o700)
                 .map_err(io::Error::other)?;
@@ -317,6 +339,9 @@ impl PreparedFaces {
         for file in &self.files {
             file.install()?;
         }
+        // Immutable payloads land first. The screen digest makes an older
+        // manifest detectably stale if a crash followed screen publication.
+        manifest.install()?;
         for name in &self.stale {
             #[expect(
                 clippy::disallowed_methods,
@@ -554,6 +579,7 @@ mod tests {
         let raw = root.path().join("screen.webm");
         let screen = raw.with_extension("jsonl");
         fs::write(&raw, b"synthetic raw observation").unwrap();
+        fs::write(&screen, b"header\noriginal screen body\n").unwrap();
         let claims = OutputClaims::acquire([screen], Default::default()).unwrap();
         let input = InputObservation::capture_checked(&claims, &raw, &|| false).unwrap();
         let commit = input.commit_checked(&claims, &|| false).unwrap();
@@ -575,6 +601,26 @@ mod tests {
         let old_embeddings = fs::read(&old_npy).unwrap();
         let old_crop = root.path().join(&old.crops[0].0);
 
+        fs::write(
+            raw.with_extension("jsonl"),
+            b"retry header\noriginal screen body\n",
+        )
+        .unwrap();
+        assert_eq!(
+            header["screen_body_sha256"],
+            screen_body_digest(&raw.with_extension("jsonl")).unwrap()
+        );
+
+        // A crash after describe publishes a replacement screen must also be
+        // detectable before any replacement face manifest becomes visible.
+        let replacement_screen = b"replacement header\nreplacement screen body\n";
+        fs::write(raw.with_extension("jsonl"), replacement_screen).unwrap();
+        let replacement_digest = screen_body_digest(&raw.with_extension("jsonl")).unwrap();
+        assert_ne!(
+            header["screen_body_sha256"].as_str(),
+            Some(replacement_digest.as_str())
+        );
+
         let new = make_pass(0.5, vec![4, 5, 6]);
         let staged = new.prepare(&raw, &|| false).unwrap();
         // Simulate a crash after the new payloads land but before the header.
@@ -595,6 +641,8 @@ mod tests {
             .unwrap()
             .install(&commit)
             .unwrap();
+        let header: Value = serde_json::from_slice(&fs::read(sidecar_path(&raw)).unwrap()).unwrap();
+        assert_eq!(header["screen_body_sha256"], replacement_digest);
         assert!(!old_npy.exists());
         assert!(!old_crop.exists());
         assert_eq!(
