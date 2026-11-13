@@ -1140,6 +1140,36 @@ module.exports = async function entitiesContractCases(manifestDir) {
     assert.strictEqual(p.main.textContent, homeText, 'nothing is drawn');
   });
 
+  await test('back with the delete dialog or the detach dialog open closes it and gives the page its scroll back', async () => {
+    const p = await boot(env);
+    listRows(p)[3].click();
+    await settle();
+    const button = p.byId('journal-detail-delete-btn');
+    button.focus();
+    button.click();
+    await settle();
+    assert.strictEqual(p.byId('entityDeleteModal').style.display, 'flex', 'the dialog is open');
+    assert.strictEqual(p.doc.body.style.overflow, 'hidden');
+    p.window.history.back();
+    await settle();
+    assert.ok(p.visible('journal-entities-view'), 'back shows the list');
+    assert.strictEqual(p.byId('entityDeleteModal').style.display, 'none', 'the dialog went with the entity\'s page');
+    assert.strictEqual(p.doc.body.style.overflow, '', 'the list scrolls');
+    focusIsSomewhere(p, 'after back');
+    assert.strictEqual(p.writes().length, 0, 'nothing was deleted');
+    // The detach dialog, on a facet's entity, the same way.
+    const q = await boot(env, '/app/entities/?facet=work');
+    p.window.history.pushState(null, '', '/app/entities/?facet=work');
+    q.context.window.solRouter.viewEntry('push', '/app/entities/?facet=work#w1');
+    q.window.fire({ type: 'popstate' });
+    await settle();
+    q.byId('detachConfirmModal').style.display = 'flex';
+    q.window.history.back();
+    await settle();
+    assert.strictEqual(q.byId('detachConfirmModal').style.display, 'none', 'the detach dialog went too');
+    focusIsSomewhere(q, 'after back from detach');
+  });
+
   await test('a delete from the entity\'s page goes back to the list with focus in the view', async () => {
     const serve = journal(copy);
     const answers = (url, opts) => (opts?.method === 'DELETE' ? { success: true, trash: { id: 't1', erase_at: null } } : serve(url, opts));
