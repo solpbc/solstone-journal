@@ -56,6 +56,7 @@ mod may_see_tests;
 mod memory;
 mod memory_recall;
 mod memory_tools;
+mod names;
 mod oauth;
 mod owner_memories;
 mod owner_state;

@@ -711,6 +711,29 @@ pub(crate) fn execute_list(
                 entity_id: entity_ref.entity_id,
                 folded_name: fold_literal(&name),
             })
+        } else if let Some((entity_id, facet_dir)) = crate::names::parse_entity(entity_str)
+            .and_then(|(entity_id, facet)| {
+                facets_to_search
+                    .iter()
+                    .find(|(id, _, _)| id == &facet)
+                    .or_else(|| facets_to_search.iter().find(|(_, dir, _)| dir == &facet))
+                    .map(|(_, dir, _)| (entity_id, dir.clone()))
+            })
+        {
+            // An entity's name in a facet this list reaches: the entity this
+            // connection's own list shows there, or not found. Anything else
+            // written with an `@` is read as the words it is.
+            if !snapshot.categories.contains(&AdmittedCategory::Entities) {
+                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+            }
+            let item = read_scoped_entities(journal_root, &facet_dir)?
+                .into_iter()
+                .find(|item| item.entity_id == entity_id)
+                .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+            Some(EntityFilter::Token {
+                entity_id,
+                folded_name: fold_literal(&entity_name(&item.identity)),
+            })
         } else {
             Some(EntityFilter::Literal(fold_literal(entity_str)))
         }
@@ -1032,21 +1055,19 @@ pub(crate) fn execute_list(
     let mut body_near: BTreeMap<String, Vec<BesideLine>> = BTreeMap::new();
     let mut capture_on: BTreeMap<String, Vec<BesideLine>> = BTreeMap::new();
     for item in &page {
-        let reference = codec()
-            .mint(
-                principal.connection,
-                snapshot.generation,
-                ReferenceTarget::Activity(ActivityReference {
-                    facet_id: item.facet_id.clone(),
-                    facet_dir: item.facet_dir.clone(),
-                    day: item.day.clone(),
-                    record_identity: item.rec_identity.clone(),
-                    file_digest: item.file_digest.clone(),
-                    unit_index: None,
-                    source_binding: None,
-                }),
-            )
-            .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
+        let reference = crate::dispatch::activity_reference(
+            principal,
+            snapshot,
+            ActivityReference {
+                facet_id: item.facet_id.clone(),
+                facet_dir: item.facet_dir.clone(),
+                day: item.day.clone(),
+                record_identity: item.rec_identity.clone(),
+                file_digest: item.file_digest.clone(),
+                unit_index: None,
+                source_binding: None,
+            },
+        )?;
 
         let face = item.group.as_ref().map(|(stretch, group)| {
             let face = body[*stretch].1.compose(journal_root, group);
@@ -1220,22 +1241,29 @@ pub(crate) fn execute_get_sources(
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedGetActivitySources,
 ) -> Result<Prepared, DispatchError> {
-    let ReferenceTarget::Activity(activity_ref) = codec()
-        .resolve(
-            &request.reference,
-            ReferenceKind::Activity,
-            principal.connection,
-            snapshot.generation,
-        )
-        .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?
-    else {
-        return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+    // An activity's name, or a sealed reference from an earlier release.
+    let address: ActivityAddress = if crate::names::is_name(&request.reference) {
+        crate::names::parse_activity(&request.reference)
+            .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?
+    } else {
+        let ReferenceTarget::Activity(activity_ref) = codec()
+            .resolve(
+                &request.reference,
+                ReferenceKind::Activity,
+                principal.connection,
+                snapshot.generation,
+            )
+            .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?
+        else {
+            return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+        };
+        activity_ref.into()
     };
     sources_of(
         journal_root,
         principal,
         snapshot,
-        &activity_ref.into(),
+        &address,
         request.cursor.as_deref(),
     )
 }
@@ -1343,6 +1371,11 @@ pub(crate) fn sources_of(
         };
         let stream = identity.stream;
         let seg_key = identity.name;
+        // Scope first, before anything of the segment is opened.
+        if !crate::may_see::segment_in_scope(journal_root, snapshot, &place.day, stream, seg_key) {
+            any_denied_or_unreadable = true;
+            continue;
+        }
         // A workout tile holds no transcript: nothing of it is a source.
         if solstone_core_segment::is_body_only_segment(&segment)
             && !crate::may_see::is_body_window(&segment)

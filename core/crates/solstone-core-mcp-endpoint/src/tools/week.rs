@@ -15,9 +15,9 @@ use solstone_core_home::weekly::{
 };
 
 use super::ToolError;
-use crate::dispatch::{DispatchPrincipal, available_facets, codec};
+use crate::dispatch::{DispatchPrincipal, available_facets};
 use crate::permissions::ConnectionReadSnapshot;
-use crate::references::{ActivityReference, ReferenceTarget};
+use crate::references::ActivityReference;
 use crate::segment_links::{LinkSubject, LiveTranscriptPages, issue_segment_links};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -377,21 +377,20 @@ fn project_sunday(
     let mut checker = LiveTranscriptPages::new(std::sync::Arc::clone(&possible_names));
     for group in ranked {
         let rep = group.representative;
-        let reference = codec()
-            .mint(
-                principal.connection,
-                snapshot.generation,
-                ReferenceTarget::Activity(ActivityReference {
-                    facet_id: rep.facet_id.clone(),
-                    facet_dir: rep.facet_dir.clone(),
-                    day: rep.day.clone(),
-                    record_identity: rep.record_identity.clone(),
-                    file_digest: rep.file_digest.clone(),
-                    unit_index: None,
-                    source_binding: None,
-                }),
-            )
-            .map_err(|_| ToolError::ReferenceNotFound)?;
+        let reference = crate::dispatch::activity_reference(
+            principal,
+            snapshot,
+            ActivityReference {
+                facet_id: rep.facet_id.clone(),
+                facet_dir: rep.facet_dir.clone(),
+                day: rep.day.clone(),
+                record_identity: rep.record_identity.clone(),
+                file_digest: rep.file_digest.clone(),
+                unit_index: None,
+                source_binding: None,
+            },
+        )
+        .map_err(|_| ToolError::ReferenceNotFound)?;
 
         let (start, end, duration) =
             crate::tools::activities::activity_times_and_duration(&rep.record);
@@ -536,12 +535,7 @@ fn project_sunday(
     body.sort_by(|left, right| (&left.0, &left.1).cmp(&(&right.0, &right.1)));
     let mut body_items = Vec::new();
     for (day, _, target, facet_title, face) in body {
-        let reference = codec()
-            .mint(
-                principal.connection,
-                snapshot.generation,
-                ReferenceTarget::Activity(target),
-            )
+        let reference = crate::dispatch::activity_reference(principal, snapshot, target)
             .map_err(|_| ToolError::ReferenceNotFound)?;
         body_items.push(crate::tools::activities::body_activity(
             &face,

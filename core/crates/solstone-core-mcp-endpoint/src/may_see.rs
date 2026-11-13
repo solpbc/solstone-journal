@@ -150,10 +150,7 @@ pub(crate) fn activity_place(
     if !solstone_core_journal_io::is_day_key(day) {
         return None;
     }
-    let (facet_id, facet_dir, _) = available_facets(journal_root, snapshot)
-        .ok()?
-        .into_iter()
-        .find(|(id, dir, _)| id == facet || dir == facet)?;
+    let (facet_id, facet_dir) = reached_facet(journal_root, snapshot, facet)?;
     let day = solstone_core_facets::list_activity_day_stems(journal_root, &facet_dir)
         .ok()?
         .into_iter()
@@ -224,13 +221,34 @@ pub(crate) fn activity_at(
     })
 }
 
+/// The facet `facet` names among those this connection reaches: by its id
+/// first, so a folder that happens to be named like another facet's id never
+/// stands in for it, then by its folder.
+pub(crate) fn reached_facet(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    facet: &str,
+) -> Option<(String, String)> {
+    let facets = available_facets(journal_root, snapshot).ok()?;
+    facets
+        .iter()
+        .find(|(id, _, _)| id == facet)
+        .or_else(|| facets.iter().find(|(_, dir, _)| dir == facet))
+        .map(|(id, dir, _)| (id.clone(), dir.clone()))
+}
+
 /// Whether a segment holding only body records is a window a source's list
-/// shows: it holds a records file with something still in it. A Strava tile
+/// shows: it holds a records file with something still in it, under a key on
+/// the source's grid. A Strava tile
 /// and a window whose rows all moved away are read through the activity
 /// recorded for them, never as a segment.
 pub(crate) fn is_body_window(segment: &Segment) -> bool {
     segment.path().join(BODY_RECORDS_FILE).is_file()
         && !crate::body_source::holds_only_moved(segment.path())
+        && segment
+            .name()
+            .to_str()
+            .is_some_and(|name| crate::body_source::grid_clock(name).is_some())
 }
 
 /// What of one segment this connection may read: `None` when nothing, else
@@ -262,6 +280,25 @@ pub(crate) fn segment_shown(
         name,
         segment,
     )
+}
+
+/// Whether a segment is inside this connection's scope and categories, decided
+/// from where it is filed alone: nothing of the segment is opened.
+pub(crate) fn segment_in_scope(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    day: &str,
+    stream: &str,
+    name: &str,
+) -> bool {
+    segment_boundary(snapshot, None).is_some_and(|boundary| {
+        live_allows(
+            journal_root,
+            &boundary,
+            &segment_assignment_probe_path(day, stream, name),
+            Some(stream),
+        )
+    })
 }
 
 /// [`segment_shown`] for a caller judging many segments in one answer, which

@@ -16,12 +16,10 @@ use solstone_core_journal_io::paths::{
 };
 use solstone_core_transcripts::segment_clock;
 
-use crate::dispatch::{
-    DispatchPrincipal, codec, differing_capture_zone, source_label, source_labels,
-};
+use crate::dispatch::{DispatchPrincipal, differing_capture_zone, source_label, source_labels};
 use crate::permissions::ConnectionReadSnapshot;
 use crate::possible_names::ConnectionPossibleNames;
-use crate::references::{ReferenceTarget, SegmentReference};
+use crate::references::SegmentReference;
 
 pub(crate) trait TranscriptPageCheck {
     fn check_first_page(
@@ -205,7 +203,7 @@ pub(crate) fn issue_segment_links(
                 ) {
                     continue;
                 }
-                let target = ReferenceTarget::Segment(SegmentReference {
+                let target = SegmentReference {
                     day: day.clone(),
                     stream: identity.stream.to_string(),
                     segment: identity.name.to_string(),
@@ -213,8 +211,10 @@ pub(crate) fn issue_segment_links(
                     source_index: None,
                     byte_offset: None,
                     statement_ordinal: None,
-                });
-                if let Ok(token) = codec().mint(principal.connection, snapshot.generation, target) {
+                };
+                if let Ok(token) =
+                    crate::dispatch::segment_reference(journal_root, principal, snapshot, target)
+                {
                     let mut link_val = json!({
                         "time": clock.label,
                         "source": source_label(

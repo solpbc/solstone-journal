@@ -4,10 +4,10 @@
 //! A read succeeds exactly when the connection's own lists show the thing.
 //!
 //! For each state of a journal and each kind of connection, every activity,
-//! segment and entity the journal's files hold is read by its address alone,
-//! the way anything an agent could write for itself would reach it. What the
-//! connection is shown comes from its own answers over the real dispatch, never
-//! from the functions under test.
+//! segment and entity the journal's files hold is read by a name written from
+//! those files, the way an agent could write one for itself, through the real
+//! dispatch. What the connection is shown comes from its own lists' answers,
+//! never from the functions under test.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -422,8 +422,32 @@ fn shown(root: &Path) -> Shown {
         references(answer, &mut found);
     }
     let generation = snapshot(root).generation;
+    // A facet's id, by the folder a name is written with.
+    let facet_id = |folder: &str| {
+        fs::read_to_string(root.join("facets").join(folder).join("facet.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .and_then(|facet| facet["id"].as_str().map(str::to_owned))
+    };
     let mut shown = Shown::default();
     for reference in found {
+        if crate::names::is_name(&reference) {
+            if let Some((entity, facet)) = crate::names::parse_entity(&reference) {
+                shown
+                    .entities
+                    .insert((facet_id(&facet).expect("a listed facet"), entity));
+            } else if let Some((day, stream, segment)) = segment_named(root, &reference) {
+                shown.segments.insert((day, stream, segment));
+            } else if let Some(activity) = crate::names::parse_activity(&reference) {
+                shown.activities.insert((
+                    facet_id(&activity.facet).expect("a listed facet"),
+                    activity.day,
+                    activity.record_identity,
+                ));
+            }
+            continue;
+        }
+        // A sealed reference, which a list still gives for what has no name.
         for kind in [
             ReferenceKind::Activity,
             ReferenceKind::Segment,
@@ -450,6 +474,52 @@ fn shown(root: &Path) -> Shown {
         }
     }
     shown
+}
+
+/// The segment a listed name stands for, found from the files: the stream
+/// folder on that day whose code the name ends with, holding that key.
+fn segment_named(root: &Path, name: &str) -> Option<(String, String, String)> {
+    let parts: Vec<&str> = name.split('/').collect();
+    let [day, key, code] = parts.as_slice() else {
+        return None;
+    };
+    folders(&root.join("chronicle").join(day))
+        .into_iter()
+        .find(|stream| {
+            root.join("chronicle")
+                .join(day)
+                .join(stream)
+                .join(key)
+                .is_dir()
+                && crate::names::source_code(root, stream).as_deref() == Some(*code)
+        })
+        .map(|stream| ((*day).to_owned(), stream, (*key).to_owned()))
+}
+
+/// One tool call through the real dispatch, keeping why it was refused.
+fn wire(root: &Path, tool: &str, arguments: Value) -> Result<Value, DispatchError> {
+    let entry = crate::registry::tool_by_wire_name(tool).expect("a known tool");
+    crate::dispatch::dispatch_authenticated_tool_call(
+        root,
+        PRINCIPAL,
+        entry.tool_name,
+        Some(&arguments),
+        chrono::Utc::now(),
+    )
+    .map(|output| output.value)
+}
+
+fn read(root: &Path, tool: &str, reference: &str) -> Result<Value, DispatchError> {
+    wire(root, tool, json!({ "reference": reference }))
+}
+
+/// Refused as something that isn't there, or as a kind of thing this
+/// connection holds no permission for: neither says whether it exists.
+fn refused<T>(result: &Result<T, DispatchError>) -> bool {
+    matches!(
+        result,
+        Err(DispatchError::Tool(ToolError::ReferenceNotFound) | DispatchError::PermissionDenied(_))
+    )
 }
 
 fn not_found<T>(result: &Result<T, DispatchError>) -> bool {
@@ -487,14 +557,19 @@ impl Tally {
     }
 }
 
-/// Read everything the journal's files hold by address, and hold each read to
-/// what the connection's own lists show.
-fn hold_reads_to_lists(root: &Path, state: &str, kinds: &[&str], tallies: &mut [Tally; 3]) {
+/// Read everything the journal's files hold by a name written from them, and
+/// hold each read to what the connection's own lists show.
+fn hold_reads_to_lists(
+    root: &Path,
+    state: &str,
+    kinds: &[&str],
+    by_id: bool,
+    tallies: &mut [Tally; 3],
+) {
     // `get_activity_sources` is offered only with transcripts or body beside
     // facets: without either, no activity's sources are read.
     let reads_sources = kinds.contains(&"transcripts") || kinds.contains(&"body");
     let shown = shown(root);
-    let snapshot = snapshot(root);
     let facet_ids = |folder: &str| {
         fs::read_to_string(root.join("facets").join(folder).join("facet.json"))
             .ok()
@@ -556,34 +631,25 @@ fn hold_reads_to_lists(root: &Path, state: &str, kinds: &[&str], tallies: &mut [
                         && moment(&record).is_some_and(|moment| listed_moments.contains(&moment))));
             // By folder and by id: both name the same facet.
             for facet in [folder.as_str(), facet_id.as_str()] {
-                if facet == facet_id && folder.starts_with('.') {
+                if facet == facet_id && (folder.starts_with('.') || !by_id) {
                     continue;
                 }
-                let address = ActivityAddress {
-                    facet: facet.to_owned(),
-                    day: DAY.to_owned(),
-                    record_identity: id.to_owned(),
-                    file_digest: None,
-                    unit_index: None,
-                    source_binding: None,
-                };
-                let fetched = crate::dispatch::fetch_activity(root, PRINCIPAL, &snapshot, &address);
+                let name = format!("{DAY}/{facet}/{id}");
+                let fetched = read(root, "fetch", &name);
                 assert_eq!(
                     fetched.is_ok(),
                     listed,
-                    "{state}: fetch of {facet}/{id}, listed {listed}"
+                    "{state}: fetch of {name}, listed {listed}: {fetched:?}"
                 );
                 assert!(
-                    fetched.is_ok() || not_found(&fetched),
-                    "{state}: {facet}/{id}"
+                    fetched.is_ok() || refused(&fetched),
+                    "{state}: {name}: {fetched:?}"
                 );
-                let sources = crate::tools::activities::sources_of(
-                    root, PRINCIPAL, &snapshot, &address, None,
-                );
+                let sources = read(root, "get_activity_sources", &name);
                 assert_eq!(
-                    !not_found(&sources),
+                    !refused(&sources),
                     listed && reads_sources,
-                    "{state}: sources of {facet}/{id}, listed {listed}"
+                    "{state}: sources of {name}, listed {listed}: {sources:?}"
                 );
                 tallies[0].count(listed);
             }
@@ -596,26 +662,19 @@ fn hold_reads_to_lists(root: &Path, state: &str, kinds: &[&str], tallies: &mut [
                 shown
                     .segments
                     .contains(&(DAY.to_owned(), stream.clone(), segment.clone()));
-            let read = crate::dispatch::read_segment(
-                root,
-                PRINCIPAL,
-                &snapshot,
-                &SegmentAddress {
-                    day: DAY.to_owned(),
-                    stream: stream.clone(),
-                    segment: segment.clone(),
-                    version: None,
-                },
-                None,
+            let name = format!(
+                "{DAY}/{segment}/{}",
+                crate::names::source_code(root, &stream).unwrap()
             );
+            let transcript = read(root, "get_transcript", &name);
             assert_eq!(
-                read.is_ok(),
+                transcript.is_ok(),
                 listed,
-                "{state}: read of {stream}/{segment}, listed {listed}"
+                "{state}: read of {stream}/{segment} as {name}, listed {listed}: {transcript:?}"
             );
             assert!(
-                read.is_ok() || not_found(&read),
-                "{state}: {stream}/{segment}"
+                transcript.is_ok() || refused(&transcript),
+                "{state}: {stream}/{segment}: {transcript:?}"
             );
             tallies[1].count(listed);
         }
@@ -626,15 +685,19 @@ fn hold_reads_to_lists(root: &Path, state: &str, kinds: &[&str], tallies: &mut [
         for entity in folders(&root.join("facets").join(&folder).join("entities")) {
             let listed = shown.entities.contains(&(facet_id.clone(), entity.clone()));
             for facet in [folder.as_str(), facet_id.as_str()] {
-                let read = crate::dispatch::read_entity(root, &snapshot, facet, &entity);
+                if facet == facet_id && !by_id {
+                    continue;
+                }
+                let name = format!("{entity}@{facet}");
+                let found = read(root, "get_entity", &name);
                 assert_eq!(
-                    read.is_ok(),
+                    found.is_ok(),
                     listed,
-                    "{state}: entity {entity} of {facet}, listed {listed}"
+                    "{state}: entity {name}, listed {listed}: {found:?}"
                 );
                 assert!(
-                    read.is_ok() || not_found(&read),
-                    "{state}: {facet}/{entity}"
+                    found.is_ok() || refused(&found),
+                    "{state}: {name}: {found:?}"
                 );
                 tallies[2].count(listed);
             }
@@ -724,28 +787,74 @@ fn states() -> Vec<State> {
     ]
 }
 
-#[test]
-fn every_read_by_address_succeeds_exactly_when_the_connections_lists_show_it() {
+/// One state of the journal, read by every kind of connection.
+fn every_read_by_name_succeeds_exactly_when_the_connections_lists_show_it(state: usize) {
+    // A facet named by its id is read in the first state alone: it resolves
+    // the same way in every one.
+    let by_id = state == 0;
+    let (state, apply) = states().swap_remove(state);
     // Activities, segments, entities.
     let mut tallies = [Tally::default(), Tally::default(), Tally::default()];
-    for (state, apply) in states() {
-        let journal = journal();
-        let root = journal.path();
-        apply(root);
-        for (connection, kinds, scope) in connections() {
-            grant(root, &kinds, scope);
-            hold_reads_to_lists(
-                root,
-                &format!("{state} / {connection}"),
-                &kinds,
-                &mut tallies,
-            );
-        }
+    let journal = journal();
+    let root = journal.path();
+    apply(root);
+    for (connection, kinds, scope) in connections() {
+        grant(root, &kinds, scope);
+        hold_reads_to_lists(
+            root,
+            &format!("{state} / {connection}"),
+            &kinds,
+            by_id,
+            &mut tallies,
+        );
     }
     // Neither side of the comparison is empty for any kind.
     for (kind, tally) in ["activities", "segments", "entities"].iter().zip(&tallies) {
-        assert!(tally.read > 20 && tally.refused > 20, "{kind}: {tally:?}");
+        assert!(
+            tally.read >= 4 && tally.refused >= 4,
+            "{state}: {kind}: {tally:?}"
+        );
     }
+}
+
+#[test]
+fn reads_match_lists_as_recorded() {
+    every_read_by_name_succeeds_exactly_when_the_connections_lists_show_it(0);
+}
+
+#[test]
+fn reads_match_lists_with_the_days_body_data_hidden() {
+    every_read_by_name_succeeds_exactly_when_the_connections_lists_show_it(1);
+}
+
+#[test]
+fn reads_match_lists_while_hidden_days_cant_be_read() {
+    every_read_by_name_succeeds_exactly_when_the_connections_lists_show_it(2);
+}
+
+#[test]
+fn reads_match_lists_with_a_segment_deleted() {
+    every_read_by_name_succeeds_exactly_when_the_connections_lists_show_it(3);
+}
+
+#[test]
+fn reads_match_lists_with_a_segment_moved_to_another_facet() {
+    every_read_by_name_succeeds_exactly_when_the_connections_lists_show_it(4);
+}
+
+#[test]
+fn reads_match_lists_with_an_activity_hidden() {
+    every_read_by_name_succeeds_exactly_when_the_connections_lists_show_it(5);
+}
+
+#[test]
+fn reads_match_lists_with_a_facets_declaration_gone() {
+    every_read_by_name_succeeds_exactly_when_the_connections_lists_show_it(6);
+}
+
+#[test]
+fn every_state_has_its_test() {
+    assert_eq!(states().len(), 7);
 }
 
 /// The gaps the sealed references covered, each named: what a list leaves out
@@ -951,4 +1060,289 @@ fn body_data_by_address_needs_the_permission_and_a_day_that_shows() {
     }
     assert!(not_found(&window(root)));
     assert!(read(root, "walk_1").0.is_ok());
+}
+
+/// A name stays the same from one answer to the next, through a change of
+/// permission, and says nothing of where its segment came from.
+#[test]
+fn a_name_stays_the_same_and_is_decided_again_at_every_read() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ALL, ReadScope::WholeJournal);
+    let listed = |root: &Path| {
+        let mut found = Vec::new();
+        for (tool, arguments) in [
+            ("list_activities", json!({"day": DAY})),
+            ("list_transcripts", json!({"day": DAY})),
+            (
+                "list_transcripts",
+                json!({"day": DAY, "source": BODY_LABEL}),
+            ),
+            ("list_entities", json!({})),
+            ("get_week", json!({"week": WEEK})),
+        ] {
+            let mut answer = wire(root, tool, arguments).unwrap();
+            // A span and a cursor stay sealed, and differ on every call.
+            if let Some(answer) = answer.as_object_mut() {
+                answer.remove("span_reference");
+                answer.remove("next_cursor");
+            }
+            references(&answer, &mut found);
+        }
+        found.retain(|reference| crate::names::is_name(reference));
+        found.sort();
+        found
+    };
+    let first = listed(root);
+    assert!(first.len() >= 12, "{first:?}");
+    assert_eq!(first, listed(root), "the same names on a second call");
+    for name in &first {
+        assert!(name.len() < 80, "{name}");
+        for stream in ["desk", "import", "apple_health", "strava", "phone_calendar"] {
+            assert!(!name.contains(stream), "{name} names a stream");
+        }
+    }
+    let walk = format!("{DAY}/health/walk_1");
+    let standup = format!("{DAY}/work/meeting_1");
+    assert!(
+        first.contains(&walk) && first.contains(&standup),
+        "{first:?}"
+    );
+    let spoken = format!(
+        "{DAY}/090000_300/{}",
+        crate::names::source_code(root, "desk").unwrap()
+    );
+    assert!(first.contains(&spoken), "{first:?}");
+
+    // Narrowed to one facet: the other facet's names read nothing, at once.
+    grant(
+        root,
+        ALL,
+        ReadScope::Facets {
+            ids: vec![HEALTH.to_owned()],
+        },
+    );
+    assert!(read(root, "fetch", &walk).is_ok());
+    assert!(refused(&read(root, "fetch", &standup)));
+    assert!(refused(&read(root, "get_transcript", &spoken)));
+    assert!(refused(&read(root, "get_entity", "alice@work")));
+    assert!(read(root, "get_entity", "bob@health").is_ok());
+    // Widened again: the names kept from before read again, with no new list.
+    grant(root, ALL, ReadScope::WholeJournal);
+    assert!(read(root, "fetch", &standup).is_ok());
+    assert!(read(root, "get_activity_sources", &standup).is_ok());
+    assert!(read(root, "get_transcript", &spoken).is_ok());
+    assert!(read(root, "get_entity", "alice@work").is_ok());
+    // A person's name narrows a list of activities, as a sealed one did.
+    let by_name = wire(
+        root,
+        "list_activities",
+        json!({"day": DAY, "entity": "alice@work"}),
+    )
+    .unwrap();
+    assert!(
+        by_name["activities"].as_array().unwrap().is_empty(),
+        "{by_name}"
+    );
+    // A name for nobody in a facet this connection reaches is not found, and
+    // so is anybody's without the entities permission.
+    let ghost = wire(
+        root,
+        "list_activities",
+        json!({"day": DAY, "entity": "ghost@work"}),
+    );
+    assert!(refused(&ghost), "{ghost:?}");
+    grant(root, &["facets", "transcripts"], ReadScope::WholeJournal);
+    for entity in ["alice@work", "ghost@work"] {
+        let filtered = wire(
+            root,
+            "list_activities",
+            json!({"day": DAY, "entity": entity}),
+        );
+        assert!(refused(&filtered), "{entity}: {filtered:?}");
+    }
+}
+
+/// What an agent writes for itself resolves only to what a list could have
+/// named. Nothing in it is joined into a path.
+#[test]
+fn a_name_an_agent_makes_up_reads_nothing_a_list_wouldnt_show() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ALL, ReadScope::WholeJournal);
+    let code = crate::names::source_code(root, "desk").unwrap();
+    let strava = crate::names::source_code(root, "import.strava").unwrap();
+    let calendar = crate::names::source_code(root, "phone_calendar").unwrap();
+    let body = crate::names::source_code(root, BODY_STREAM).unwrap();
+    for (tool, name, what) in [
+        (
+            "fetch",
+            format!("{DAY}/.merge-scratch/scratch_1"),
+            "a merge's scratch folder",
+        ),
+        (
+            "fetch",
+            format!("{DAY}/work/../health/walk_1"),
+            "a path through a facet",
+        ),
+        (
+            "fetch",
+            format!("{DAY}/../facets/work/meeting_1"),
+            "a path out of the facets",
+        ),
+        (
+            "fetch",
+            format!("{DAY}/work/meeting_2"),
+            "a hidden activity",
+        ),
+        ("fetch", format!("{DAY}/work/plan_1"), "a retired plan"),
+        (
+            "fetch",
+            format!("{DAY}/health/exercise_2"),
+            "a superseded Strava line",
+        ),
+        (
+            "fetch",
+            "20261011/work/meeting_1".to_owned(),
+            "a day the facet has no file for",
+        ),
+        (
+            "fetch",
+            format!("{DAY}/work/meeting_9"),
+            "an id the file doesn't hold",
+        ),
+        (
+            "fetch",
+            format!("{DAY}/090000_300/{code}"),
+            "a segment's name",
+        ),
+        (
+            "get_activity_sources",
+            format!("{DAY}/work/meeting_2"),
+            "a hidden activity",
+        ),
+        (
+            "get_activity_sources",
+            format!("{DAY}/health/exercise_2"),
+            "a superseded line",
+        ),
+        (
+            "get_activity_sources",
+            format!("{DAY}/.merge-scratch/scratch_1"),
+            "scratch",
+        ),
+        (
+            "get_transcript",
+            format!("{DAY}/070000_300/{strava}"),
+            "a Strava workout tile",
+        ),
+        (
+            "get_transcript",
+            format!("{DAY}/065000_300/{body}"),
+            "a window whose rows moved",
+        ),
+        (
+            "get_transcript",
+            format!("{DAY}/120000_300/{calendar}"),
+            "a calendar note",
+        ),
+        (
+            "get_transcript",
+            format!("{DAY}/090000_300/desk"),
+            "a stream's own name",
+        ),
+        (
+            "get_transcript",
+            format!("{DAY}/desk/090000_300"),
+            "a path to a segment",
+        ),
+        (
+            "get_transcript",
+            format!("{DAY}/090000_300/{code}/audio.jsonl"),
+            "a file in a segment",
+        ),
+        (
+            "get_transcript",
+            format!("{DAY}/work/meeting_1"),
+            "an activity's name",
+        ),
+        ("get_entity", "alice@.merge-scratch".to_owned(), "scratch"),
+        (
+            "get_entity",
+            "alice@health".to_owned(),
+            "another facet's person",
+        ),
+        (
+            "get_entity",
+            "../alice@work".to_owned(),
+            "a path to a person",
+        ),
+        ("get_entity", "carol@work".to_owned(), "nobody"),
+    ] {
+        let result = read(root, tool, &name);
+        assert!(
+            matches!(
+                result,
+                Err(DispatchError::Tool(ToolError::ReferenceNotFound))
+            ),
+            "{tool} of {what} ({name}): {result:?}"
+        );
+    }
+    // The same activity with facets taken away is refused for the permission,
+    // whether or not it is there.
+    grant(root, &["transcripts"], ReadScope::WholeJournal);
+    for name in [
+        format!("{DAY}/work/meeting_1"),
+        format!("{DAY}/work/meeting_9"),
+    ] {
+        assert!(matches!(
+            read(root, "fetch", &name),
+            Err(DispatchError::PermissionDenied(_))
+        ));
+    }
+}
+
+/// A sealed reference from before this release still reads, for one release.
+#[test]
+fn a_sealed_reference_still_reads() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ALL, ReadScope::WholeJournal);
+    let generation = snapshot(root).generation;
+    let text = fs::read(root.join(format!("facets/work/activities/{DAY}.jsonl"))).unwrap();
+    let digest = {
+        use sha2::{Digest, Sha256};
+        crate::activity_admit::hex_encode(&Sha256::digest(&text))
+    };
+    let sealed = |target| codec().mint(CONNECTION, generation, target).unwrap();
+    let activity = sealed(ReferenceTarget::Activity(
+        crate::references::ActivityReference {
+            facet_id: WORK.to_owned(),
+            facet_dir: "work".to_owned(),
+            day: DAY.to_owned(),
+            record_identity: "meeting_1".to_owned(),
+            file_digest: digest,
+            unit_index: None,
+            source_binding: None,
+        },
+    ));
+    assert!(read(root, "fetch", &activity).is_ok());
+    assert!(read(root, "get_activity_sources", &activity).is_ok());
+    let entity = sealed(ReferenceTarget::Entity(
+        crate::references::EntityReference {
+            facet_id: WORK.to_owned(),
+            entity_id: "alice".to_owned(),
+        },
+    ));
+    assert!(read(root, "get_entity", &entity).is_ok());
+    // A sealed reference keeps its pin: a day file that changed since refuses.
+    let mut changed = text;
+    changed.extend_from_slice(b"\n");
+    fs::write(
+        root.join(format!("facets/work/activities/{DAY}.jsonl")),
+        changed,
+    )
+    .unwrap();
+    assert!(refused(&read(root, "fetch", &activity)));
+    assert!(read(root, "fetch", &format!("{DAY}/work/meeting_1")).is_ok());
 }
