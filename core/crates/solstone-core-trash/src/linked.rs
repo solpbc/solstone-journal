@@ -21,8 +21,8 @@
 //! erased:
 //!
 //! - the journal's name is the same file: the mechanism didn't remove it;
-//! - the thing it belongs to has left the journal since (the recording went to
-//!   the trash) and another name still holds the file: that thing's own item;
+//! - another item in the trash holds the same file (the recording, trashed
+//!   since with this file in it): that item keeps it;
 //! - for a copy, made where the filesystem has no hard links: the journal's
 //!   name holds the same bytes.
 //!
@@ -46,15 +46,15 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{Duration, SecondsFormat, Utc};
-use solstone_core_journal_io::entry::{link_count, same_file, sync_dir};
+use solstone_core_journal_io::entry::{same_file, sync_dir};
 use solstone_core_journal_io::locking::{FileLock, LockOptions, hold_lock};
 use solstone_core_journal_io::paths::path_lexists;
 use solstone_core_removals::{Action, Event, Surface, Unit};
 
 use super::{
     FILES_DIR, Item, Kind, SCHEMA, State, TrashError, abandon, describe, ensure_trash,
-    ensure_trash_parent, erase_after_days, files_rel, item_id, journal_entry, keep, kept, lock,
-    publish, publish_new, read_item, removal, trash_entry, trash_root, tree_bytes,
+    ensure_trash_parent, erase_after_days, files_rel, holders, item_id, journal_entry, keep, kept,
+    lock, publish, publish_new, read_item, removal, trash_entry, trash_root, tree_bytes,
 };
 
 /// What the item keeps: the paths it holds as copies, one per line.
@@ -78,9 +78,13 @@ impl Linked {
 /// the kind's own removes them from the journal. `kept` are bytes the kind
 /// keeps with the item ([`keep`]) for its references; `operation` is the
 /// owner act's, when it trashes several things together. Nothing in the
-/// journal changes. A path that isn't there, or can't be kept durably, refuses
-/// the whole item and leaves nothing behind: the caller then removes nothing.
-/// A caller that would rather skip a path already gone leaves it out first.
+/// journal changes. Which paths are there is decided under the kind's hold,
+/// after whatever it puts right first (the door's recovery puts back an
+/// original a stop left part way), so a path the mechanism could still remove
+/// is never left out: one that isn't there is left out, as is one another
+/// linked item already holds. None left is [`TrashError::Missing`]. A path
+/// that can't be kept durably refuses the whole item and leaves nothing
+/// behind: the caller then removes nothing.
 #[expect(
     clippy::too_many_arguments,
     reason = "the detach's own arguments, and the kind's kept bytes and the act's operation"
@@ -124,11 +128,22 @@ pub fn detach_linked(
     ensure_trash(journal)?;
     let running = run_lock(journal, &item.id, LockOptions::default())?;
     let _lock = lock(journal)?;
-    for path in &item.paths {
-        if !kind.present(journal, path) {
-            return Err(TrashError::Missing(describe(&item.unit).to_owned()));
-        }
+    let linked_elsewhere = |path: &String| {
+        holders(journal, path, &item.id).is_ok_and(|holders| {
+            holders.iter().any(|id| {
+                read_item(journal, id)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|other| other.linked && other.paths.contains(path))
+            })
+        })
+    };
+    item.paths
+        .retain(|path| kind.present(journal, path) && !linked_elsewhere(path));
+    if item.paths.is_empty() {
+        return Err(TrashError::Missing(describe(&item.unit).to_owned()));
     }
+    item.unit = kind.narrowed(&item.unit, &item.paths);
     item.bytes = item
         .paths
         .iter()
@@ -280,7 +295,7 @@ fn settle(journal: &Path, kind: &dyn Kind, id: &str) -> Result<Option<Item>, Tra
         } else if path_lexists(&live)? && same_file(&live, &held).map_err(io)? {
             true
         } else {
-            !kind.returns(journal, &item, path) && link_count(&held).map_err(io)? > 1
+            held_by_another(journal, &item, path, &held)?
         };
         let released = !held_elsewhere;
         if released {
@@ -324,6 +339,30 @@ fn settle(journal: &Path, kind: &dyn Kind, id: &str) -> Result<Option<Item>, Tra
     item.state = State::Trashed;
     publish(journal, &item)?;
     Ok(Some(item))
+}
+
+/// Whether another item in the trash holds the same file at `path`: the
+/// recording, trashed since with this file in it. Positive evidence, never a
+/// link count, which names outside the trash also raise.
+fn held_by_another(
+    journal: &Path,
+    item: &Item,
+    path: &str,
+    held: &Path,
+) -> Result<bool, TrashError> {
+    for id in holders(journal, path, &item.id)? {
+        let Some(other) = read_item(journal, &id)? else {
+            continue;
+        };
+        if other.linked {
+            continue;
+        }
+        let theirs = trash_entry(journal, &files_rel(&other.id, path))?;
+        if path_lexists(&theirs)? && same_file(&theirs, held).map_err(io)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Whether two files hold the same bytes, for a copy.

@@ -45,6 +45,10 @@ pub const RECORDING_IN_TRASH: &str = "recording_in_trash";
 /// journal (erased, or removed for good).
 pub const SEGMENT_GONE: &str = "segment_gone";
 
+/// Refused: a different file is at an original's name now, which recovering
+/// would put aside and erase.
+pub const NAME_TAKEN: &str = "name_taken";
+
 /// Where an originals item's segment stands.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SegmentState {
@@ -249,15 +253,9 @@ pub fn link_before(
     let operation = solstone_core_removals::OperationId::fresh(chrono::Utc::now());
     let mut linking = Linking::default();
     for release in releases {
-        let paths: Vec<String> = release
-            .paths
-            .iter()
-            .filter(|path| Originals.present(journal, path))
-            .cloned()
-            .collect();
-        if paths.is_empty() {
-            continue;
-        }
+        // Which are there is decided under the door's hold, after its
+        // recovery has put back anything a stop left part way.
+        let paths = release.paths.clone();
         let files = paths
             .iter()
             .filter_map(|path| path.rsplit_once('/').map(|(_, name)| name.to_owned()))
@@ -279,6 +277,8 @@ pub fn link_before(
             Some(operation.as_str().to_owned()),
         ) {
             Ok(item) => linking.linked.push(item),
+            // Nothing of this segment is there to release.
+            Err(solstone_core_trash::TrashError::Missing(_)) => {}
             Err(solstone_core_trash::TrashError::Held(reason)) => {
                 linking.busy.push((release.target.clone(), reason));
                 // A caller that releases all or nothing need not wait out the rest.
@@ -490,6 +490,23 @@ impl Kind for Originals {
                 }
                 SegmentState::Gone => {
                     return Err(serde_json::json!({ "code": SEGMENT_GONE }).to_string());
+                }
+            }
+        }
+        // A different file at a name would be put aside and erased by the
+        // recover: the owner's newer file is never the cost of a recover.
+        if item.state == solstone_core_trash::State::Trashed {
+            for path in &item.paths {
+                let live = journal.join(path);
+                if std::fs::symlink_metadata(&live).is_err() {
+                    continue;
+                }
+                let ours = solstone_core_trash::held_file(journal, &item.id, path)
+                    .map_err(|error| error.to_string())?;
+                let same =
+                    solstone_core_journal_io::entry::same_file(&live, &ours).unwrap_or(false);
+                if !same {
+                    return Err(serde_json::json!({ "code": NAME_TAKEN }).to_string());
                 }
             }
         }
@@ -949,6 +966,64 @@ mod tests {
                 .unwrap()
                 .state,
             solstone_core_trash::State::Trashed
+        );
+    }
+
+    /// A stop part way left the original in a stage: the door's recovery,
+    /// run under the hold before the trash decides what is there, puts it
+    /// back, so the trash keeps it and the release never loses it.
+    #[test]
+    fn an_original_a_stop_left_in_a_stage_is_put_back_and_kept() {
+        use sha2::{Digest, Sha256};
+        let bed = Bed::new();
+        let bytes = b"audio1";
+        let stage = bed.0.join(format!(
+            "chronicle/{DAY}/{STREAM}/.tmp-offload-{}",
+            "1".repeat(32)
+        ));
+        fs::create_dir(&stage).unwrap();
+        fs::write(stage.join("removal-original"), bytes).unwrap();
+        let digest: String = Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        fs::write(
+            stage.join("removal-record"),
+            serde_json::to_vec(&serde_json::json!({
+                "version": 1, "source": DIR, "name": "a.flac",
+                "digest": {"size": bytes.len(), "sha256": digest},
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(!bed.segment().join("a.flac").exists());
+        let unsettled = release(&bed, &[proof("a.flac", 6)]);
+        assert!(unsettled.is_empty(), "{unsettled:?}");
+        let items = solstone_core_trash::list(&bed.0).unwrap();
+        assert_eq!(items.len(), 1, "kept in the trash, never released unkept");
+        let held =
+            solstone_core_trash::held_file(&bed.0, &items[0].id, &items[0].paths[0]).unwrap();
+        assert_eq!(fs::read(held).unwrap(), bytes);
+    }
+
+    /// A different file at the name now would be put aside and erased by a
+    /// recover: the recover refuses, and both stay.
+    #[test]
+    fn a_recover_onto_a_different_file_refuses_and_keeps_both() {
+        let bed = Bed::new();
+        fs::write(bed.segment().join("a.flac"), b"audio1").unwrap();
+        release(&bed, &[proof("a.flac", 6)]);
+        let item = solstone_core_trash::list(&bed.0).unwrap().remove(0);
+        fs::write(bed.segment().join("a.flac"), b"newer!").unwrap();
+        let refused =
+            solstone_core_trash::attach(&bed.0, &[&Originals], &item.id, Action::Recover, web())
+                .unwrap_err();
+        assert!(refused.to_string().contains(NAME_TAKEN), "{refused}");
+        assert_eq!(fs::read(bed.segment().join("a.flac")).unwrap(), b"newer!");
+        assert!(
+            solstone_core_trash::item(&bed.0, &item.id)
+                .unwrap()
+                .is_some()
         );
     }
 

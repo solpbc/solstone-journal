@@ -295,6 +295,7 @@ fn link_originals(
     journal: &Path,
     releases: &[original_trash::Release],
     class: RawReleaseClass,
+    stop_at_busy: bool,
 ) -> Result<original_trash::Linking, String> {
     original_trash::link_before(
         journal,
@@ -302,7 +303,7 @@ fn link_originals(
         class,
         Action::RetentionTool,
         surface(args),
-        false,
+        stop_at_busy,
     )
     .map_err(|error| {
         format!("the trash couldn't take these originals, so nothing was released: {error}")
@@ -511,6 +512,7 @@ fn run_release_raw(args: &Args) -> ExitCode {
         &journal,
         &original_trash::of_proven(&proven),
         RawReleaseClass::Owner,
+        false,
     ) {
         Ok(linking) => linking,
         Err(error) => return fail(&error),
@@ -922,6 +924,7 @@ fn run_sweep(args: &Args) -> ExitCode {
         &journal,
         &original_trash::of_proven(&proven),
         RawReleaseClass::Owner,
+        false,
     ) {
         Ok(linking) => linking,
         Err(error) => return fail(&error),
@@ -1245,6 +1248,8 @@ fn run_remove_marked(args: &Args) -> ExitCode {
         &journal,
         &original_trash::of_preflight(&marks),
         RawReleaseClass::Policy,
+        // The run stops at the first busy mark, so the rest needn't be waited on.
+        true,
     ) {
         Ok(linking) => linking,
         Err(error) => return verb_fail("remove-marked", &error),

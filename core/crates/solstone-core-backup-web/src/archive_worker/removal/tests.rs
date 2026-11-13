@@ -1448,6 +1448,35 @@ fn policy_only_uncertain_remnant_stays_in_the_slot_and_status_reports_it() {
     blocked(&deps.operations, &root, &clock);
 }
 
+/// A segment something else holds can't go to the trash now, so the approval
+/// doesn't start: nothing is released, and no item is left.
+#[test]
+fn a_busy_segment_refuses_the_approval_and_releases_nothing() {
+    let (journal, root, marks) = policy_fixture(&["audio.flac"], false);
+    let segment = journal.path().join("chronicle/20261009/120000_60_policy");
+    let _held = solstone_core_journal_io::locking::hold_lock(
+        &segment,
+        solstone_core_journal_io::LockOptions::default(),
+    )
+    .unwrap();
+    let (deps, started) = policy_start(&journal, &root, &marks);
+    let started = started.unwrap();
+    let observed = status(&deps.operations, started.generation()).unwrap();
+    assert_eq!(observed.state, ApprovalState::Refused, "{observed:?}");
+    assert_eq!(observed.reason_code.as_deref(), Some("trash_unavailable"));
+    assert!(segment.join("audio.flac").exists());
+    assert!(
+        solstone_core_trash::list(journal.path())
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        solstone_core_trash::stopped(journal.path())
+            .unwrap()
+            .is_empty()
+    );
+}
+
 #[test]
 fn unbound_offload_row_refuses_before_start() {
     let (journal, root, marks) = policy_fixture(&["audio.flac"], true);

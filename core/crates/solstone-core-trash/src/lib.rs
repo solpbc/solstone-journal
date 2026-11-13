@@ -3191,26 +3191,57 @@ mod tests {
         linked::NO_HARD_LINKS.with(|cell| cell.set(false));
     }
 
-    /// The recording left for its own item before the release: that item
-    /// holds the bytes, so the trash's second name goes and no item is kept.
+    /// The recording went to the trash, this file in it, before the release:
+    /// that item holds the file, so the trash's second name goes. A name
+    /// outside the trash that also holds it proves nothing, and ours stays.
     #[test]
-    fn a_file_another_item_holds_is_left_to_it() {
+    fn a_file_only_another_trash_item_holds_is_left_to_it() {
         let (_dir, root) = journal();
         let kind = Fake {
             homeless: vec![AUDIO.into()],
             ..Fake::default()
         };
         let linked = link(&root, &kind, &[AUDIO]);
-        let elsewhere = root.join("moved-away.flac");
-        fs::rename(root.join(AUDIO), &elsewhere).unwrap();
+        let recording = trash(&root, &kind);
+        assert!(
+            root.join(TRASH_DIR)
+                .join(&recording.id)
+                .join(FILES_DIR)
+                .join(AUDIO)
+                .is_file()
+        );
         assert!(finish_linked(&root, &kind, linked).unwrap().is_none());
-        assert_eq!(fs::read(elsewhere).unwrap(), b"sound");
 
-        // Released, then the recording went: the trash's is the last name.
         let (_dir, root) = journal();
         let linked = link(&root, &kind, &[AUDIO]);
+        let outside = root.join("backup-copy.flac");
+        fs::hard_link(root.join(AUDIO), &outside).unwrap();
         fs::remove_file(root.join(AUDIO)).unwrap();
-        assert!(finish_linked(&root, &kind, linked).unwrap().is_some());
+        assert!(
+            finish_linked(&root, &kind, linked).unwrap().is_some(),
+            "an outside name proves nothing"
+        );
+    }
+
+    /// Two acts can't both keep the same file: the second finds it already
+    /// held by a linked item, and has nothing to link.
+    #[test]
+    fn a_file_another_linked_item_holds_is_not_linked_twice() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let first = link(&root, &kind, &[AUDIO]);
+        let second = detach_linked(
+            &root,
+            &kind,
+            unit(),
+            Action::OriginalsRelease,
+            web(),
+            vec![AUDIO.into()],
+            &[],
+            None,
+        );
+        assert!(matches!(second, Err(TrashError::Missing(_))));
+        drop(first);
     }
 
     /// The owner's days count from when it settled, not when it was linked.
