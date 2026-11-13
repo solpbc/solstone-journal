@@ -453,7 +453,7 @@ fn a_source_listing_says_only_what_it_knows() {
         "{note}"
     );
 
-    // Another stream's label reaches nothing, even with that stream on the day.
+    // Another stream's label lists that stream's segments, not this source's.
     let phone = root.join("chronicle").join(DAY).join("phone/090000_300");
     fs::create_dir_all(&phone).unwrap();
     fs::write(phone.join("audio.jsonl"), "{}\n{\"text\":\"hello\"}\n").unwrap();
@@ -467,8 +467,12 @@ fn a_source_listing_says_only_what_it_knows() {
         "list_transcripts",
         json!({"day": DAY, "source": phone_label}),
     );
-    assert!(other.get("gaps").is_none(), "{other}");
-    assert!(other["transcripts"].as_array().unwrap().is_empty());
+    assert_eq!(other["transcripts"].as_array().unwrap().len(), 1, "{other}");
+    assert_eq!(other["transcripts"][0]["source"], phone_label, "{other}");
+    assert_eq!(
+        other["gaps"],
+        json!([{"from": "00:00", "to": "09:00"}, {"from": "09:05", "to": "24:00"}])
+    );
 
     // Needs a day, refuses a facet, and says so.
     for arguments in [
@@ -1013,7 +1017,10 @@ fn a_kind_lists_only_the_windows_holding_it_and_says_when_none_do() {
         root,
         json!({"day": "20261011", "source": LABEL, "kind": "blood oxygen"}),
     );
-    assert!(nothing.starts_with("No body source"), "{nothing}");
+    assert!(
+        nothing.starts_with("No source with that label"),
+        "{nothing}"
+    );
     // A range with no window at all reads as it would without a kind.
     let quiet = call(
         root,

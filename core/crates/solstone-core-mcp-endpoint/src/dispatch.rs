@@ -759,9 +759,7 @@ fn get_week(
         crate::tools::week::read_week(journal_root, request.week.as_deref(), principal, snapshot)
             .map_err(DispatchError::Tool)?;
     // A said entry's `uri` locates its source; it is not prose.
-    Ok(Prepared::new(read.value, read.count, read.targets)
-        .served_as_is(&["uri"])
-        .when_empty("no week to read. this is a complete answer, not an error."))
+    Ok(Prepared::new(read.value, read.count, read.targets).served_as_is(&["uri"]))
 }
 
 fn execute_validated(
@@ -2826,15 +2824,35 @@ fn list_transcripts(
             Ok(cursor)
         })
         .transpose()?;
+    // A body source's label lists that source's windows, its own way. Any
+    // other label a list shows narrows this list to the segments it names.
+    let mut source_filter: Option<crate::segment_span::SourceFilter> = None;
     if let Some(source) = request.source.as_deref() {
-        return crate::body_source::list_source(
-            journal_root,
-            principal,
-            snapshot,
-            &request,
-            source,
-            cursor.as_ref(),
-        );
+        if crate::body_source::is_body_source(journal_root, source) {
+            return crate::body_source::list_source(
+                journal_root,
+                principal,
+                snapshot,
+                &request,
+                source,
+                cursor.as_ref(),
+            );
+        }
+        let filter = crate::segment_span::SourceFilter::new(journal_root, source);
+        // A label that names nothing here is said so, with nothing claimed
+        // about the day.
+        if let Some(day) = request.day.as_deref()
+            && !crate::segment_span::day_holds_readable(journal_root, snapshot, day, &filter)?
+        {
+            return Ok(Prepared::new(json!({ "transcripts": [] }), 0, Vec::new())
+                .when_empty(crate::body_source::NOTHING_READABLE));
+        }
+        // A kind belongs to a body source's entries. Said only of a source
+        // this connection already reads.
+        if request.kind.is_some() {
+            return Err(DispatchError::Tool(ToolError::SourceArguments));
+        }
+        source_filter = Some(filter);
     }
 
     // A segment is read as what it is: a body window under body, any other
@@ -2914,6 +2932,12 @@ fn list_transcripts(
             };
             let stream = identity.stream.to_string();
             let name = identity.name.to_string();
+            if source_filter
+                .as_ref()
+                .is_some_and(|source| !source.admits(&stream))
+            {
+                continue;
+            }
             // Calendar notes are not something the owner did; they are found
             // through search, not listed as a moment of the day.
             if solstone_core_segment::is_calendar_stream(journal_root, &stream) {
@@ -3018,12 +3042,20 @@ fn list_transcripts(
                 &name,
             );
             let page = if allowed && segments.len() < request.limit {
-                Some(solstone_core_transcripts::read_segment_transcript_page(
-                    &segment,
-                    None,
-                    speakers.as_ref(),
-                    possible_names.labels(segment.path()).as_ref(),
-                ))
+                // Read as get_transcript serves it, so `lines` counts nothing
+                // the owner hid.
+                let left_out = hides
+                    .shown(journal_root, day, &stream, &segment)
+                    .unwrap_or_default();
+                Some(
+                    solstone_core_transcripts::read_segment_transcript_page_leaving_out(
+                        &segment,
+                        None,
+                        speakers.as_ref(),
+                        possible_names.labels(segment.path()).as_ref(),
+                        &left_out,
+                    ),
+                )
             } else {
                 None
             };
@@ -3084,7 +3116,19 @@ fn list_transcripts(
                 "time": time_str,
                 "source": source_label(&sources, &stream),
                 "reference": reference,
+                // How much was said, so a segment can be chosen without reading it.
+                "lines": page.entries.len(),
             });
+            if let Some(clock) = &clock {
+                seg_val["seconds"] = json!(
+                    clock
+                        .exclusive_end_seconds
+                        .saturating_sub(clock.start_seconds)
+                );
+            }
+            if page.next.is_some() {
+                seg_val["more_lines"] = Value::Bool(true);
+            }
             if let Some(zone) =
                 differing_capture_zone(journal_root, &owner_zone, day, &name, &segment)
             {
@@ -3106,7 +3150,7 @@ fn list_transcripts(
                             time_from: request.time_from.clone(),
                             time_to: request.time_to.clone(),
                             facet: request.facet_id.clone(),
-                            source: None,
+                            source: request.source.clone(),
                             kind: None,
                             last_day,
                             last_stream,
@@ -3132,9 +3176,37 @@ fn list_transcripts(
     if unreadable > 0 {
         response_val["unreadable"] = json!(unreadable);
     }
-    let other_sources = request.day.as_deref().map_or_else(Vec::new, |day| {
-        crate::body_source::other_sources(journal_root, snapshot, &hides, day)
-    });
+    // A day's list can be read in one go, and says what it doesn't cover.
+    if let Some(day) = request.day.as_deref() {
+        response_val["gaps"] = json!(crate::segment_span::day_gaps(
+            journal_root,
+            snapshot,
+            request.facet_id.as_deref(),
+            day,
+            request.time_from.as_deref(),
+            request.time_to.as_deref(),
+            source_filter.as_ref(),
+        )?);
+        if count > 0 {
+            response_val["span_reference"] = json!(crate::segment_span::span_reference(
+                principal,
+                snapshot,
+                day,
+                request.time_from.as_deref(),
+                request.time_to.as_deref(),
+                request.facet_id.as_deref(),
+                request.source.as_deref(),
+            )?);
+        }
+    }
+    // A list narrowed to one source says nothing of the day's other sources.
+    let other_sources = request
+        .day
+        .as_deref()
+        .filter(|_| request.source.is_none())
+        .map_or_else(Vec::new, |day| {
+            crate::body_source::other_sources(journal_root, snapshot, &hides, day)
+        });
     if let Some(note) = request.day.as_deref().and_then(|day| {
         crate::body_source::listing_earlier_import_note(journal_root, snapshot, day)
     }) {
@@ -3187,6 +3259,15 @@ fn get_transcript(
         ReferenceTarget::Segment(reference) => reference,
         ReferenceTarget::SourceSpan(span) => {
             return crate::body_source::read_source_span(
+                journal_root,
+                principal,
+                snapshot,
+                &request,
+                span,
+            );
+        }
+        ReferenceTarget::SegmentSpan(span) => {
+            return crate::segment_span::read_segment_span(
                 journal_root,
                 principal,
                 snapshot,

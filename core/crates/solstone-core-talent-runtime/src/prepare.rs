@@ -137,6 +137,7 @@ pub fn prepare(
     }
     let sources = composed.get("sources").and_then(Value::as_object).cloned();
     let mut entry_sources = Vec::new();
+    let mut entry_layout = solstone_core_transcripts::TranscriptLayout::default();
     if composed
         .get("day")
         .and_then(Value::as_str)
@@ -159,6 +160,7 @@ pub fn prepare(
         let mut transcript = loaded.text;
         let counts = loaded.counts;
         entry_sources = loaded.sources;
+        entry_layout = loaded.layout;
         let mut screen_cuts = loaded.screen_cuts;
         composed.insert("transcript".to_owned(), Value::String(transcript.clone()));
         composed.insert("source_counts".to_owned(), Value::from(counts));
@@ -361,8 +363,13 @@ pub fn prepare(
         && composed.get("messages").is_none()
     {
         Some(
-            crate::participation_floor::apply(&mut composed, &entry_sources, &context.journal)
-                .map_err(PrepareFailure::Refusal)?,
+            crate::participation_floor::apply(
+                &mut composed,
+                &entry_sources,
+                &entry_layout,
+                &context.journal,
+            )
+            .map_err(PrepareFailure::Refusal)?,
         )
     } else {
         None

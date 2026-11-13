@@ -42,11 +42,18 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedGetWeek, ToolE
 
     let week = match params.week {
         None | Some(Value::Null) => None,
+        // Any day names its week, written either way a day is elsewhere.
         Some(Value::String(s)) => {
-            if s.len() != 8 || !s.bytes().all(|b| b.is_ascii_digit()) || week_day(&s).is_none() {
+            if s.len() > super::MAX_DAY_BYTES {
                 return Err(ToolError::InvalidInput);
             }
-            Some(s)
+            let Some(day) = super::normalize_day(Some(s))? else {
+                return Err(ToolError::InvalidInput);
+            };
+            if week_day(&day).is_none() {
+                return Err(ToolError::InvalidInput);
+            }
+            Some(day)
         }
         Some(_) => return Err(ToolError::InvalidInput),
     };
@@ -70,10 +77,8 @@ pub(crate) fn read_week(
         let Some(date) = week_day(day) else {
             return Err(ToolError::InvalidInput);
         };
-        if date.weekday() != chrono::Weekday::Sun {
-            return Ok(empty_week());
-        }
-        date
+        // The week a day falls in starts on the Sunday on or before it.
+        date - TimeDelta::days(date.weekday().num_days_from_sunday() as i64)
     } else {
         let owner_zone = solstone_core_journal_config::owner_zone(journal);
         let today = chrono::Utc::now().with_timezone(&owner_zone).date_naive();
@@ -82,14 +87,6 @@ pub(crate) fn read_week(
     };
 
     project_sunday(journal, sunday_date, principal, snapshot)
-}
-
-fn empty_week() -> WeekRead {
-    WeekRead {
-        value: json!({"week": null}),
-        count: 0,
-        targets: Vec::new(),
-    }
 }
 
 fn project_sunday(
@@ -159,6 +156,10 @@ fn project_sunday(
         record_identity: String,
         duration: u64,
         sort_key: (String, String, i64, String),
+        /// The other facets holding a copy of this moment, by title, and
+        /// those copies' records.
+        also_in: Vec<String>,
+        copies: Vec<Map<String, Value>>,
     }
 
     let mut collected = Vec::new();
@@ -297,11 +298,31 @@ fn project_sunday(
                     record_identity: rec_id,
                     duration: dur.unwrap_or(0),
                     sort_key,
+                    also_in: Vec::new(),
+                    copies: Vec::new(),
                 });
             }
         }
     }
 
+    // A moment recorded in several facets counts once, and its time once,
+    // as list_activities lists it.
+    collected.sort_by(|a, b| a.sort_key.cmp(&b.sort_key));
+    let collected: Vec<Collected> = solstone_core_facets::merge_moment_copies(
+        collected,
+        |item| item.day.as_str(),
+        |item| &item.record,
+    )
+    .into_iter()
+    .map(|moment| {
+        let mut primary = moment.primary;
+        for copy in moment.copies {
+            primary.also_in.push(copy.facet_title);
+            primary.copies.push(copy.record);
+        }
+        primary
+    })
+    .collect();
     let activities_total = collected.len();
     let mut groups: BTreeMap<String, Vec<Collected>> = BTreeMap::new();
     for item in collected {
@@ -361,6 +382,7 @@ fn project_sunday(
         now.offset().fix().local_minus_utc(),
     );
 
+    let sources = crate::dispatch::source_labels(journal);
     let mut activities = Vec::new();
     let mut memories = Vec::new();
     let possible_names = crate::possible_names::ConnectionPossibleNames::new(journal, snapshot);
@@ -385,11 +407,13 @@ fn project_sunday(
 
         let (start, end, duration) =
             crate::tools::activities::activity_times_and_duration(&rep.record);
-        let people = crate::tools::activities::activity_people(&rep.record);
+        let people = crate::tools::activities::activity_people_across(
+            std::iter::once(&rep.record).chain(rep.copies.iter()),
+        );
         let entities = crate::tools::activities::activity_entities(&rep.record);
         let title = crate::tools::activities::activity_title(&rep.record);
 
-        activities.push(json!({
+        let mut activity = json!({
             "title": title,
             "facet": rep.facet_title,
             "day": rep.day,
@@ -403,7 +427,20 @@ fn project_sunday(
             "entities": entities,
             "reference": reference.clone(),
             "zone": zone_str,
-        }));
+        });
+        if let Some(kind) = crate::tools::activities::activity_kind(&rep.record) {
+            activity["kind"] = json!(kind);
+        }
+        if let Some(stream) = rep.record.get("stream").and_then(Value::as_str) {
+            activity["source"] = json!(crate::dispatch::source_label(&sources, stream));
+        }
+        if people.unnamed_voices > 0 {
+            activity["unnamed_voices"] = json!(people.unnamed_voices);
+        }
+        if !rep.also_in.is_empty() {
+            activity["also_in"] = json!(rep.also_in);
+        }
+        activities.push(activity);
 
         let time_str = match (&start, &end) {
             (Some(s), Some(e)) => Some(format!("{s} - {e}")),
@@ -593,7 +630,6 @@ mod tests {
     use crate::tools::ToolError;
 
     const CONNECTION: &str = "bearer:week";
-    const EMPTY_NOTE: &str = "no week to read. this is a complete answer, not an error.";
     const WHOLE_JOURNAL: &str =
         "this connection can read a week only with access to the whole journal.";
 
@@ -1126,9 +1162,10 @@ mod tests {
         let value = probe(root.path(), json!({})).unwrap();
         assert!(value["week"]["start"].is_string());
         assert_eq!(value["activities"], json!([]));
+        // Any day names the week it falls in.
         assert_eq!(
-            probe(root.path(), json!({"week": "20260309"})).unwrap(),
-            json!({"week": null, "note": EMPTY_NOTE})
+            probe(root.path(), json!({"week": "20260309"})).unwrap()["week"]["start"],
+            "20260308"
         );
     }
 
@@ -1261,7 +1298,7 @@ mod tests {
         let _ = fs::remove_dir_all(&missing);
         assert!(!missing.exists());
         for week in [
-            "2026-03-08",
+            "2026/03/08",
             "..",
             r"C:\20260308",
             "20260308/../..",
@@ -1312,17 +1349,18 @@ mod tests {
             assert!(output.value["week"]["start"].is_string());
             assert!(output.empty_note.is_none());
         }
+        // A day inside a week, in either form a day is written, reads that week.
         let mon_root = journal("solstone-week-empty-mon-");
         whole(mon_root.path());
+        for day in ["20260309", "2026-03-09"] {
+            let mon_out = dispatch_week(mon_root.path(), json!({"week": day})).unwrap();
+            assert_eq!(mon_out.value["week"]["start"], "20260308", "{day}");
+            assert!(mon_out.empty_note.is_none());
+        }
         assert_eq!(
-            probe(mon_root.path(), json!({"week": "20260309"})).unwrap(),
-            json!({"week": null, "note": EMPTY_NOTE})
+            validate(Some(&json!({"week": "2026-03-08"}))).unwrap().week,
+            Some("20260308".to_owned())
         );
-        let mon_out = dispatch_week(mon_root.path(), json!({"week": "20260309"})).unwrap();
-        assert_eq!(mon_out.value, json!({"week": null}));
-        assert_eq!(mon_out.empty_note.as_deref(), Some(EMPTY_NOTE));
-        let rendered = tool_result(mon_out.value, mon_out.empty_note.as_deref());
-        assert_eq!(rendered["structuredContent"]["note"], EMPTY_NOTE);
 
         assert_eq!(validate(None).unwrap().week, None);
         assert_eq!(validate(Some(&Value::Null)).unwrap().week, None);
@@ -1330,7 +1368,7 @@ mod tests {
     }
 
     #[test]
-    fn a_real_non_sunday_does_not_read_the_file() {
+    fn a_day_inside_a_week_never_reads_a_file_named_for_that_day() {
         let root = journal("solstone-week-monday-");
         whole(root.path());
         write_raw(
@@ -1339,9 +1377,12 @@ mod tests {
             r#"{"version":1,"sentinel":"SENTINEL_MONDAY"}"#,
         );
         let value = probe(root.path(), json!({"week": "20260309"})).unwrap();
-        assert_eq!(value, json!({"week": null, "note": EMPTY_NOTE}));
+        assert_eq!(value["week"]["start"], "20260308");
         assert!(!value.to_string().contains("SENTINEL_MONDAY"));
-        assert_eq!(page(root.path()).entries[0].outcome, RecordedOutcome::Empty);
+        assert_eq!(
+            page(root.path()).entries[0].outcome,
+            RecordedOutcome::Served
+        );
     }
 
     #[test]

@@ -49,10 +49,11 @@ pub(crate) struct ValidatedGetActivitySources {
 struct ListParams {
     #[serde(default)]
     day: Option<String>,
-    #[serde(default)]
-    from: Option<String>,
-    #[serde(default)]
-    to: Option<String>,
+    // `from` and `to` are the names this tool took first; they stay accepted.
+    #[serde(default, alias = "from")]
+    day_from: Option<String>,
+    #[serde(default, alias = "to")]
+    day_to: Option<String>,
     #[serde(default)]
     facet: Option<String>,
     #[serde(default)]
@@ -93,21 +94,21 @@ pub(crate) fn validate_list(
     validate_limit(params.limit)?;
 
     if !optional_string_within_limit(&params.day, MAX_DAY_BYTES)
-        || !optional_string_within_limit(&params.from, MAX_DAY_BYTES)
-        || !optional_string_within_limit(&params.to, MAX_DAY_BYTES)
+        || !optional_string_within_limit(&params.day_from, MAX_DAY_BYTES)
+        || !optional_string_within_limit(&params.day_to, MAX_DAY_BYTES)
         || !optional_string_within_limit(&params.facet, MAX_FACET_BYTES)
         || !optional_string_within_limit(&params.cursor, MAX_OPAQUE_REFERENCE_BYTES)
     {
         return Err(ToolError::InvalidInput);
     }
 
-    if params.day.is_some() && (params.from.is_some() || params.to.is_some()) {
+    if params.day.is_some() && (params.day_from.is_some() || params.day_to.is_some()) {
         return Err(ToolError::ActivityDayArguments);
     }
 
     let normalized_day = super::normalize_day(params.day)?;
-    let normalized_from = super::normalize_day(params.from)?;
-    let normalized_to = super::normalize_day(params.to)?;
+    let normalized_from = super::normalize_day(params.day_from)?;
+    let normalized_to = super::normalize_day(params.day_to)?;
 
     let (from, to) = if let Some(day) = normalized_day.clone() {
         (day.clone(), day)
@@ -306,36 +307,100 @@ pub(crate) struct ActivityPeople {
     pub heard: Vec<String>,
     pub mentioned: Vec<String>,
     pub on_screen: Vec<String>,
+    /// Voices heard that the journal has no name for.
+    pub unnamed_voices: usize,
+}
+
+/// A voice the journal has no name for, as participation records it:
+/// `Speaker 3`. It is a voice, not a person.
+fn is_unnamed_voice(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    let Some(rest) = lower.strip_prefix("speaker") else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    !rest.is_empty() && rest.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// How strongly a role places someone in an activity; a name recorded under
+/// two roles is listed under the stronger.
+fn role_rank(role: &str) -> u8 {
+    match role {
+        "attendee" => 3,
+        "heard" => 2,
+        "visible" => 0,
+        _ => 1,
+    }
 }
 
 /// Classifies an activity's participants into participants, heard, mentioned,
 /// and on-screen names.
+#[cfg(test)]
 pub(crate) fn activity_people(record: &Map<String, Value>) -> ActivityPeople {
+    activity_people_across(std::iter::once(record))
+}
+
+/// The people of one moment, read from every facet's copy of it. Each name is
+/// listed once, under the strongest role any copy gives it, in the order the
+/// copies first name it. A voice with no name is counted, never listed.
+pub(crate) fn activity_people_across<'a>(
+    records: impl Iterator<Item = &'a Map<String, Value>>,
+) -> ActivityPeople {
+    // Name as first written, and its strongest role so far.
+    let mut named: Vec<(String, u8)> = Vec::new();
     let mut people = ActivityPeople::default();
-    let Some(entries) = record.get("participation").and_then(Value::as_array) else {
-        return people;
-    };
-    for entry in entries.iter().filter_map(Value::as_object) {
-        let Some(name) = entry.get("name").and_then(Value::as_str) else {
+    for record in records {
+        let Some(entries) = record.get("participation").and_then(Value::as_array) else {
             continue;
         };
-        let trimmed = name.trim();
-        if trimmed.is_empty() {
-            continue;
+        let mut voices = 0;
+        for entry in entries.iter().filter_map(Value::as_object) {
+            let Some(name) = entry.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+            let trimmed = name.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let role = entry
+                .get("role")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if is_unnamed_voice(trimmed) {
+                // Counted only where it was heard: an attendee or a heard voice.
+                if role_rank(role) >= 2 {
+                    voices += 1;
+                }
+                continue;
+            }
+            let rank = role_rank(role);
+            match named
+                .iter_mut()
+                .find(|(known, _)| known.eq_ignore_ascii_case(trimmed))
+            {
+                Some((_, known_rank)) => *known_rank = (*known_rank).max(rank),
+                None => named.push((trimmed.to_owned(), rank)),
+            }
         }
-        let name_str = trimmed.to_string();
-        match entry
-            .get("role")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-        {
-            "attendee" => people.participants.push(name_str),
-            "heard" => people.heard.push(name_str),
-            "visible" => people.on_screen.push(name_str),
-            _ => people.mentioned.push(name_str),
+        // Copies hear the same recording, so the most any one copy counted.
+        people.unnamed_voices = people.unnamed_voices.max(voices);
+    }
+    for (name, rank) in named {
+        match rank {
+            3 => people.participants.push(name),
+            2 => people.heard.push(name),
+            0 => people.on_screen.push(name),
+            _ => people.mentioned.push(name),
         }
     }
     people
+}
+
+/// What kind of activity the journal recorded: meeting, writing and so on,
+/// in its own word.
+pub(crate) fn activity_kind(record: &Map<String, Value>) -> Option<String> {
+    let kind = record.get("activity").and_then(Value::as_str)?.trim();
+    (!kind.is_empty()).then(|| kind.replace('_', " "))
 }
 
 pub(crate) fn activity_entities(record: &Map<String, Value>) -> Vec<String> {
@@ -689,6 +754,12 @@ pub(crate) fn execute_list(
         /// A body record's group as this connection reads it, and the
         /// stretch it was read in; composed once the item is on the page.
         group: Option<(usize, solstone_core_location::body_records::Group)>,
+        /// Whether this record passes the entity filter, when one is given.
+        matched: bool,
+        /// The other facets holding a copy of this moment, by title, and
+        /// those copies' records.
+        also_in: Vec<String>,
+        copies: Vec<Map<String, Value>>,
     }
 
     let mut collected = Vec::new();
@@ -809,28 +880,28 @@ pub(crate) fn execute_list(
                                 day: day.clone(),
                                 file_digest: file_digest.clone(),
                                 group: None,
+                                matched: true,
+                                also_in: Vec::new(),
+                                copies: Vec::new(),
                             },
                         );
                     }
                     continue;
                 }
                 let entities = activity_entities(&record);
-                if let Some(ref filter) = entity_filter {
-                    let matched = match filter {
-                        EntityFilter::Token {
-                            entity_id,
-                            folded_name,
-                        } => entities
-                            .iter()
-                            .any(|e| e == entity_id || fold_literal(e) == *folded_name),
-                        EntityFilter::Literal(target) => entities
-                            .iter()
-                            .any(|entity| fold_literal(entity).contains(target)),
-                    };
-                    if !matched {
-                        continue;
-                    }
-                }
+                // A copy that doesn't match is kept until the moment is
+                // folded: another facet's copy of it may.
+                let matched = entity_filter.as_ref().is_none_or(|filter| match filter {
+                    EntityFilter::Token {
+                        entity_id,
+                        folded_name,
+                    } => entities
+                        .iter()
+                        .any(|e| e == entity_id || fold_literal(e) == *folded_name),
+                    EntityFilter::Literal(target) => entities
+                        .iter()
+                        .any(|entity| fold_literal(entity).contains(target)),
+                });
                 let rec_identity =
                     crate::activity_admit::compute_record_identity(&record, &trimmed);
                 let sort_key = sort_activity_key(&day, facet_id, &record);
@@ -844,10 +915,35 @@ pub(crate) fn execute_list(
                     file_digest: file_digest.clone(),
                     rec_identity,
                     group: None,
+                    matched,
+                    also_in: Vec::new(),
+                    copies: Vec::new(),
                 });
             }
         }
     }
+
+    // A moment recorded in several facets is listed once, from the facet it
+    // belongs to most, with the others named beside it. It passes an entity
+    // filter when any facet's copy does.
+    collected.sort_by(|a, b| a.sort_key.cmp(&b.sort_key));
+    let collected: Vec<CollectedItem> = solstone_core_facets::merge_moment_copies(
+        collected,
+        |item| item.day.as_str(),
+        |item| &item.record,
+    )
+    .into_iter()
+    .filter(|moment| moment.primary.matched || moment.copies.iter().any(|copy| copy.matched))
+    .map(|moment| {
+        let mut primary = moment.primary;
+        for copy in moment.copies {
+            primary.also_in.push(copy.facet_title);
+            primary.copies.push(copy.record);
+        }
+        primary
+    })
+    .collect();
+    let mut collected = collected;
 
     // Body groups, read a stretch of days at a time from the day before the
     // first this page can show, until the page and the item after it are
@@ -946,6 +1042,7 @@ pub(crate) fn execute_list(
     let mut calendars = BTreeMap::new();
     let mut locations = BTreeMap::new();
 
+    let sources = crate::dispatch::source_labels(journal_root);
     let mut activities = Vec::new();
     // Beside lines between body faces and capture activities, both ways, only
     // between items this connection reads. Worked out when read; never stored.
@@ -1010,7 +1107,8 @@ pub(crate) fn execute_list(
             continue;
         }
         let (start, end, duration) = activity_times_and_duration(&item.record);
-        let people = activity_people(&item.record);
+        let people =
+            activity_people_across(std::iter::once(&item.record).chain(item.copies.iter()));
         let entities = activity_entities(&item.record);
         let title = activity_title(&item.record);
 
@@ -1029,6 +1127,18 @@ pub(crate) fn execute_list(
             "reference": reference,
             "zone": zone_str,
         });
+        if let Some(kind) = activity_kind(&item.record) {
+            activity["kind"] = json!(kind);
+        }
+        if let Some(stream) = item.record.get("stream").and_then(Value::as_str) {
+            activity["source"] = json!(crate::dispatch::source_label(&sources, stream));
+        }
+        if people.unnamed_voices > 0 {
+            activity["unnamed_voices"] = json!(people.unnamed_voices);
+        }
+        if !item.also_in.is_empty() {
+            activity["also_in"] = json!(item.also_in);
+        }
         if sees_calendar && let Some(span) = solstone_core_facets::activity_span(&item.record) {
             let calendar = calendars
                 .entry(item.day.clone())

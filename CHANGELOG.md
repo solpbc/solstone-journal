@@ -21,11 +21,16 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - erasing a segment from the trash now erases any originals deleted from it that are waiting there too.
 - a segment's transcript now says when its original audio or screen media is in the trash, with a link to the trash.
 - connected agents now need body, a permission of its own, to read what you imported from Apple Health, Oura or Strava: readings, sleep, workouts, mindfulness sessions and what you logged there. the transcripts permission no longer includes it. a new connection has body ticked. a connection you approved before doesn't, and can't read that data until you tick body for it in the agents app.
+- connected agents can now read what was said on a day in one go, in time order. before, they read one segment at a time. they can also ask for one source's segments, by the label their list shows for it. what each agent may see hasn't changed.
+- an activity that belongs to more than one facet now shows once to a connected agent, under the facet it belongs to most, with the others named beside it. before, it showed once for each facet, so an agent's count of your week ran high.
+- connected agents now see what kind each activity was, such as a meeting or writing, and where it came from. a voice your journal has no name for is counted, and no longer listed as a person called Speaker 1.
+- an agent asking about a week by a day in the middle of it now gets that week. before, it got nothing unless it named the sunday.
 - on linux, installing or updating the journal now removes older installed versions, and keeps this version and the two before it so `--version` can still go back to either. a version that is still in use stays.
 
 ### Fixed
 
 - on windows, after you removed the journal app and installed it again, it could open to nothing but "installation identity record is tombstoned", and "try again" didn't help. it now starts setup instead, with your journal folder already filled in, and setup picks up your journal where it is, with everything in it.
+- an activity whose pages, notes or summaries hold a heading the journal also uses, such as "Highlights" or "Note", now gets its list of people. before, the list was never made for it. on a long activity, a line shaped like a date and time range no longer cuts short what the list is made from. activities from before you update stay as they are.
 - "finish them" on home now says what finishing does: any original a stopped deletion hadn't deleted yet goes back in its segment. before, it said nothing was put back.
 - security fix: on linux, local thinking now starts with a new key every time, and only your own account can get it from your journal. before, a web page open in your browser, or another account on the same computer, could use local thinking, read its replies, and make it fetch images from addresses they chose. nothing in your journal could be read this way.
 - on a large journal, a connected agent's search for a common word could run past the agent's time limit, most often on the first search after the journal started. those searches now come back in about half the time. on a journal you already had, the faster search starts once your journal has been busy for a little while after you update.

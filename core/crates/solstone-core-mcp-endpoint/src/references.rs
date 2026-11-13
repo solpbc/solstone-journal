@@ -30,6 +30,7 @@ pub(crate) enum ReferenceKind {
     Activity,
     ActivityList,
     SourceSpan,
+    SegmentSpan,
 }
 
 impl ReferenceKind {
@@ -46,6 +47,7 @@ impl ReferenceKind {
             Self::Activity => 9,
             Self::ActivityList => 10,
             Self::SourceSpan => 11,
+            Self::SegmentSpan => 12,
         }
     }
 
@@ -62,6 +64,7 @@ impl ReferenceKind {
             9 => Some(Self::Activity),
             10 => Some(Self::ActivityList),
             11 => Some(Self::SourceSpan),
+            12 => Some(Self::SegmentSpan),
             _ => None,
         }
     }
@@ -183,6 +186,42 @@ pub(crate) struct SourceSpanReference {
     pub position: Option<SourceSpanPosition>,
 }
 
+/// Where a span read of a day's segments stands: the segment to read next, and
+/// the place inside it when its transcript ran past one page.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct SegmentSpanPosition {
+    pub stream: String,
+    pub segment: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inside: Option<SegmentSpanInside>,
+}
+
+/// A place inside one segment's transcript, as `get_transcript` pages it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct SegmentSpanInside {
+    pub version: u64,
+    pub source_index: usize,
+    pub byte_offset: u64,
+    pub statement_ordinal: u64,
+}
+
+/// What a day's `list_transcripts` matched, read in time order: the same day,
+/// time range, facet and source label the list was given.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct SegmentSpanReference {
+    pub day: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_to: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facet: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<SegmentSpanPosition>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct FacetListCursor {
     pub last_facet_id: String,
@@ -266,6 +305,7 @@ pub(crate) enum ReferenceTarget {
     Activity(ActivityReference),
     ActivityList(ActivityListCursor),
     SourceSpan(SourceSpanReference),
+    SegmentSpan(SegmentSpanReference),
 }
 
 impl ReferenceTarget {
@@ -282,6 +322,7 @@ impl ReferenceTarget {
             Self::Activity(_) => ReferenceKind::Activity,
             Self::ActivityList(_) => ReferenceKind::ActivityList,
             Self::SourceSpan(_) => ReferenceKind::SourceSpan,
+            Self::SegmentSpan(_) => ReferenceKind::SegmentSpan,
         }
     }
 }
@@ -422,7 +463,8 @@ impl ReferenceCodec {
         Ok(bound.target)
     }
 
-    /// A reference `get_transcript` takes: one segment, or a body source's span.
+    /// A reference `get_transcript` takes: one segment, a body source's span,
+    /// or the span of a day's listed segments.
     pub(crate) fn resolve_segment_or_span(
         &self,
         value: &str,
@@ -437,6 +479,7 @@ impl ReferenceCodec {
         }
         let kind = match ReferenceKind::from_tag(token[1]) {
             Some(ReferenceKind::SourceSpan) => ReferenceKind::SourceSpan,
+            Some(ReferenceKind::SegmentSpan) => ReferenceKind::SegmentSpan,
             _ => ReferenceKind::Segment,
         };
         self.resolve(value, kind, connection, generation)
@@ -516,7 +559,7 @@ mod tests {
     }
 
     #[test]
-    fn reference_kind_tags_roundtrip_1_through_11() {
+    fn reference_kind_tags_roundtrip_1_through_12() {
         for (kind, expected_tag) in [
             (ReferenceKind::Entry, 1),
             (ReferenceKind::Segment, 2),
@@ -529,11 +572,12 @@ mod tests {
             (ReferenceKind::Activity, 9),
             (ReferenceKind::ActivityList, 10),
             (ReferenceKind::SourceSpan, 11),
+            (ReferenceKind::SegmentSpan, 12),
         ] {
             assert_eq!(kind.tag(), expected_tag);
             assert_eq!(ReferenceKind::from_tag(expected_tag), Some(kind));
         }
-        for unknown in [0, 12, 255] {
+        for unknown in [0, 13, 255] {
             assert_eq!(ReferenceKind::from_tag(unknown), None);
         }
     }

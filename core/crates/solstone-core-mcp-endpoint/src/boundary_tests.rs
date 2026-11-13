@@ -12585,11 +12585,18 @@ fn get_week_empty_sunday() {
 }
 
 #[test]
-fn get_week_non_sunday_returns_null_week() {
+fn get_week_reads_the_week_any_day_falls_in() {
     let journal = base_activity_journal();
-    let res = probe(&journal, "get_week", json!({"week": "20260309"})).unwrap();
-    assert!(res["week"].is_null());
-    assert!(res["note"].as_str().unwrap().starts_with("no week to read"));
+    let sunday = probe(&journal, "get_week", json!({"week": "20260308"})).unwrap();
+    for day in ["20260309", "2026-03-09", "20260314"] {
+        let res = probe(&journal, "get_week", json!({"week": day})).unwrap();
+        assert_eq!(
+            res["week"],
+            json!({"start": "20260308", "end": "20260314"}),
+            "{day}"
+        );
+        assert_eq!(res["activities_total"], sunday["activities_total"], "{day}");
+    }
 }
 
 #[test]
@@ -15170,5 +15177,632 @@ fn a_week_page_with_something_left_out_leaves_search_and_fetch() {
             json!({"reference": back[0]["reference"]})
         )
         .is_ok()
+    );
+}
+
+// ---- a day's list read in one go, one source at a time, one row per moment ----
+
+fn span_journal(scope: Option<ReadScope>) -> tempfile::TempDir {
+    let journal = tempfile::Builder::new()
+        .prefix("span-")
+        .tempdir_in(crate::test_scratch())
+        .unwrap();
+    setup_facets(journal.path());
+    let permission = match scope {
+        Some(scope) => ReadPermission {
+            categories: vec!["transcripts".to_owned()],
+            scope,
+        },
+        None => ReadPermission::default_whole_journal(),
+    };
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, permission)
+        .unwrap();
+    journal
+}
+
+fn write_span_segment(journal: &Path, stream: &str, name: &str, facet: &str, text: &str) {
+    let seg = journal.join("chronicle/20261010").join(stream).join(name);
+    fs::create_dir_all(seg.join("talents")).unwrap();
+    fs::write(
+        seg.join("talents/facets.json"),
+        format!("[{{\"facet\":\"{facet}\"}}]"),
+    )
+    .unwrap();
+    fs::write(seg.join("meeting_transcript.md"), text).unwrap();
+}
+
+/// Every page of a span read, in order: (time, source, joined entries).
+fn read_whole_span(journal: &tempfile::TempDir, span: &Value) -> (Vec<(String, String)>, usize) {
+    let mut sections = Vec::new();
+    let mut cursor: Option<String> = None;
+    let mut pages = 0;
+    loop {
+        let mut arguments = json!({"reference": span});
+        if let Some(cursor) = &cursor {
+            arguments["cursor"] = json!(cursor);
+        }
+        let page = probe(journal, "get_transcript", arguments).unwrap();
+        pages += 1;
+        for section in page["segments"].as_array().unwrap() {
+            let text = section["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|entry| entry.as_str().unwrap())
+                .collect::<Vec<_>>()
+                .join("\n");
+            sections.push((section["time"].as_str().unwrap().to_owned(), text));
+        }
+        match page["next_cursor"].as_str() {
+            Some(next) => cursor = Some(next.to_owned()),
+            None => break,
+        }
+        assert!(pages < 200, "a span read must end");
+    }
+    (sections, pages)
+}
+
+#[test]
+fn a_days_list_is_read_in_one_go_through_its_span_reference() {
+    let journal = span_journal(None);
+    for (name, text) in [
+        ("110000_300", "eleven words\n"),
+        ("090000_300", "nine words\n"),
+        ("100000_300", "ten words\n"),
+    ] {
+        write_span_segment(journal.path(), "default", name, "alpha", text);
+    }
+    // A segment with nothing said: listed days often hold many.
+    fs::create_dir_all(journal.path().join("chronicle/20261010/default/093000_300")).unwrap();
+
+    let list = probe(&journal, "list_transcripts", json!({"day": "20261010"})).unwrap();
+    let said: Vec<&Value> = list["transcripts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["lines"] == 1)
+        .collect();
+    assert_eq!(said.len(), 3, "{list}");
+    assert!(said.iter().all(|row| row["seconds"] == 300), "{list}");
+    assert!(list["gaps"].is_array(), "{list}");
+
+    let (sections, pages) = read_whole_span(&journal, &list["span_reference"]);
+    assert_eq!(pages, 1);
+    let times: Vec<&str> = sections.iter().map(|(time, _)| time.as_str()).collect();
+    assert_eq!(times, ["09:00-09:05", "10:00-10:05", "11:00-11:05"]);
+    assert!(sections[0].1.contains("nine words"));
+    assert!(sections[2].1.contains("eleven words"));
+
+    // The span is what the list matched: its time range comes with it.
+    let narrowed = probe(
+        &journal,
+        "list_transcripts",
+        json!({"day": "20261010", "time_from": "09:30", "time_to": "10:30"}),
+    )
+    .unwrap();
+    let (sections, _) = read_whole_span(&journal, &narrowed["span_reference"]);
+    let times: Vec<&str> = sections.iter().map(|(time, _)| time.as_str()).collect();
+    assert_eq!(times, ["10:00-10:05"]);
+    assert_eq!(
+        narrowed["gaps"],
+        json!([{"from": "09:35", "to": "10:00"}, {"from": "10:05", "to": "10:30"}]),
+        "{narrowed}"
+    );
+
+    // A list without a day names no span: there is no one day to read.
+    let all = probe(&journal, "list_transcripts", json!({})).unwrap();
+    assert!(all["span_reference"].is_null(), "{all}");
+    assert!(all["gaps"].is_null(), "{all}");
+}
+
+#[test]
+fn a_span_read_pages_through_long_segments_without_losing_or_repeating_a_line() {
+    let journal = span_journal(None);
+    let long = |tag: &str| {
+        (0..260)
+            .map(|line| format!("{tag} line {line:03} {}\n\n", "word ".repeat(60)))
+            .collect::<String>()
+    };
+    write_span_segment(
+        journal.path(),
+        "default",
+        "090000_300",
+        "alpha",
+        &long("first"),
+    );
+    write_span_segment(
+        journal.path(),
+        "default",
+        "100000_300",
+        "alpha",
+        &long("second"),
+    );
+    write_span_segment(
+        journal.path(),
+        "default",
+        "110000_300",
+        "alpha",
+        "the end\n",
+    );
+
+    let list = probe(&journal, "list_transcripts", json!({"day": "20261010"})).unwrap();
+    let (sections, pages) = read_whole_span(&journal, &list["span_reference"]);
+    assert!(pages > 1, "long segments take more than one page");
+    let whole = sections
+        .iter()
+        .map(|(_, text)| text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut at = 0;
+    for tag in ["first", "second"] {
+        for line in 0..260 {
+            let marker = format!("{tag} line {line:03} ");
+            assert_eq!(whole.matches(&marker).count(), 1, "{marker}");
+            let found = whole.find(&marker).unwrap();
+            assert!(found >= at, "{marker} is out of order");
+            at = found;
+        }
+    }
+    assert!(whole.ends_with("the end"), "the last segment is read last");
+
+    // A cursor belongs to its span.
+    let other = probe(
+        &journal,
+        "list_transcripts",
+        json!({"day": "20261010", "time_from": "09:00", "time_to": "10:00"}),
+    )
+    .unwrap();
+    let first = probe(
+        &journal,
+        "get_transcript",
+        json!({"reference": list["span_reference"]}),
+    )
+    .unwrap();
+    assert_eq!(
+        probe(
+            &journal,
+            "get_transcript",
+            json!({"reference": other["span_reference"], "cursor": first["next_cursor"]}),
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+}
+
+#[test]
+fn a_source_label_narrows_a_days_list_and_its_span() {
+    let journal = span_journal(None);
+    write_span_segment(
+        journal.path(),
+        "default",
+        "090000_300",
+        "alpha",
+        "nine words\n",
+    );
+    write_span_segment(
+        journal.path(),
+        "default",
+        "100000_300",
+        "alpha",
+        "ten words\n",
+    );
+
+    let list = probe(&journal, "list_transcripts", json!({"day": "20261010"})).unwrap();
+    let label = list["transcripts"][0]["source"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // The label a row shows is the label the list takes.
+    let same = probe(
+        &journal,
+        "list_transcripts",
+        json!({"day": "20261010", "source": label}),
+    )
+    .unwrap();
+    assert_eq!(same["transcripts"].as_array().unwrap().len(), 2, "{same}");
+    assert!(same["other_sources"].is_null(), "{same}");
+    let (sections, _) = read_whole_span(&journal, &same["span_reference"]);
+    assert_eq!(sections.len(), 2);
+
+    // Paging a narrowed list keeps it narrowed.
+    let first = probe(
+        &journal,
+        "list_transcripts",
+        json!({"day": "20261010", "source": label, "limit": 1}),
+    )
+    .unwrap();
+    let second = probe(
+        &journal,
+        "list_transcripts",
+        json!({"day": "20261010", "source": label, "limit": 1, "cursor": first["next_cursor"]}),
+    )
+    .unwrap();
+    assert_eq!(second["transcripts"][0]["time"], "10:00-10:05", "{second}");
+    assert_eq!(
+        probe(
+            &journal,
+            "list_transcripts",
+            json!({"day": "20261010", "limit": 1, "cursor": first["next_cursor"]}),
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+
+    // A label no row shows lists nothing, and names no span.
+    let none = probe(
+        &journal,
+        "list_transcripts",
+        json!({"day": "20261010", "source": "a label nothing carries"}),
+    )
+    .unwrap();
+    assert!(none["transcripts"].as_array().unwrap().is_empty(), "{none}");
+    assert!(none["span_reference"].is_null(), "{none}");
+
+    // The same answer whatever else is asked of it: a label can't be used
+    // to ask what the journal holds.
+    let none_with_kind = probe(
+        &journal,
+        "list_transcripts",
+        json!({"day": "20261010", "source": "a label nothing carries", "kind": "sleep"}),
+    )
+    .unwrap();
+    assert_eq!(none, none_with_kind);
+    assert!(
+        none["note"]
+            .as_str()
+            .unwrap()
+            .starts_with("No source with that label"),
+        "{none}"
+    );
+
+    // A kind belongs to a body source's entries.
+    assert_eq!(
+        probe(
+            &journal,
+            "list_transcripts",
+            json!({"day": "20261010", "source": label, "kind": "sleep"}),
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+}
+
+#[test]
+fn a_span_read_serves_only_what_the_connection_may_read_when_it_is_read() {
+    let journal = span_journal(Some(ReadScope::Facets {
+        ids: vec![FACET_A.to_owned()],
+    }));
+    write_span_segment(
+        journal.path(),
+        "alpha",
+        "090000_300",
+        "alpha",
+        "alpha nine\n",
+    );
+    write_span_segment(journal.path(), "beta", "100000_300", "beta", "beta ten\n");
+    write_span_segment(
+        journal.path(),
+        "alpha",
+        "110000_300",
+        "alpha",
+        "alpha eleven\n",
+    );
+
+    let list = probe(&journal, "list_transcripts", json!({"day": "20261010"})).unwrap();
+    assert_eq!(list["transcripts"].as_array().unwrap().len(), 2, "{list}");
+    let span = list["span_reference"].clone();
+    let (sections, _) = read_whole_span(&journal, &span);
+    let whole = format!("{sections:?}");
+    assert!(whole.contains("alpha nine") && whole.contains("alpha eleven"));
+    assert!(!whole.contains("beta ten"), "outside the scope: {whole}");
+    // The stretch only the other facet covers is a gap to this connection.
+    assert!(
+        list["gaps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|gap| gap["from"] == "09:05" && gap["to"] == "11:00"),
+        "{list}"
+    );
+
+    // A segment that moves out of scope after the list is not read.
+    fs::write(
+        journal
+            .path()
+            .join("chronicle/20261010/alpha/110000_300/talents/facets.json"),
+        "[{\"facet\":\"beta\"}]",
+    )
+    .unwrap();
+    let (sections, _) = read_whole_span(&journal, &span);
+    let whole = format!("{sections:?}");
+    assert!(whole.contains("alpha nine"), "{whole}");
+    assert!(!whole.contains("alpha eleven"), "{whole}");
+
+    // A span is bound to the connection it was given to.
+    PermissionStore::open(journal.path())
+        .set_permission(
+            "bearer:someone-else",
+            ReadPermission::default_whole_journal(),
+        )
+        .unwrap();
+    assert_eq!(
+        run_mcp_probe(
+            journal.path(),
+            "bearer:someone-else",
+            "get_transcript",
+            &json!({"reference": span}),
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+}
+
+#[test]
+fn a_moment_in_two_facets_is_listed_once_with_both_facets_people() {
+    let journal = base_activity_journal();
+    let segments = ["150000_600"];
+    // The same call, recorded in each facet it belongs to.
+    for (facet, title, level, people) in [
+        (
+            "alpha",
+            "Alpha's reading of the call",
+            0.4,
+            &[("Speaker 1", "attendee")][..],
+        ),
+        (
+            "beta",
+            "Beta's reading of the call",
+            0.9,
+            &[
+                ("Benvolio", "attendee"),
+                ("Speaker 1", "attendee"),
+                ("Speaker 2", "heard"),
+                ("Romeo", "mentioned"),
+            ][..],
+        ),
+    ] {
+        write_activity_line(
+            journal.path(),
+            facet,
+            "20260310",
+            "meeting_150000_600",
+            title,
+            100,
+            Some("meeting"),
+            Some(&segments),
+            // Only the copy that isn't shown names Tybalt as an entity.
+            Some(if facet == "beta" {
+                &["Benvolio"]
+            } else {
+                &["Tybalt"]
+            }),
+            Some(people),
+            Some("device_audio"),
+            None,
+            None,
+        );
+        let path = journal
+            .path()
+            .join(format!("facets/{facet}/activities/20260310.jsonl"));
+        let line = fs::read_to_string(&path).unwrap();
+        let mut record: Value = serde_json::from_str(line.trim()).unwrap();
+        record["level_avg"] = json!(level);
+        fs::write(&path, format!("{record}\n")).unwrap();
+    }
+    // The same segment cut differently is a separate reading, and stays one.
+    write_activity_line(
+        journal.path(),
+        "alpha",
+        "20260310",
+        "writing_150000_300",
+        "Notes while the call ran",
+        200,
+        Some("writing"),
+        Some(&["150000_300"]),
+        None,
+        None,
+        Some("device_screen"),
+        None,
+        None,
+    );
+
+    let list = probe(&journal, "list_activities", json!({"day": "20260310"})).unwrap();
+    assert_no_leaked_keys(&list);
+    let rows = list["activities"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{list}");
+    let call = rows
+        .iter()
+        .find(|row| row["kind"] == "meeting")
+        .unwrap_or_else(|| panic!("{list}"));
+    // The facet it belongs to most, with the other beside it.
+    assert_eq!(call["facet"], "Beta");
+    assert_eq!(call["title"], "Beta's reading of the call");
+    assert_eq!(call["also_in"], json!(["Alpha"]));
+    // A voice with no name is counted, never a person.
+    assert_eq!(call["participants"], json!(["Benvolio"]));
+    assert_eq!(call["mentioned"], json!(["Romeo"]));
+    assert_eq!(call["unnamed_voices"], 2);
+    assert!(call["source"].is_string(), "{call}");
+    let notes = rows.iter().find(|row| row["kind"] == "writing").unwrap();
+    assert!(notes["also_in"].is_null(), "{notes}");
+    assert!(notes["unnamed_voices"].is_null(), "{notes}");
+
+    // The moment passes a person filter when either facet's copy names them,
+    // and a facet's own list still shows its copy.
+    let by_person = probe(
+        &journal,
+        "list_activities",
+        json!({"day": "20260310", "entity": "Benvolio"}),
+    )
+    .unwrap();
+    assert_eq!(by_person["activities"].as_array().unwrap().len(), 1);
+    let by_other_copy = probe(
+        &journal,
+        "list_activities",
+        json!({"day": "20260310", "entity": "Tybalt"}),
+    )
+    .unwrap();
+    let rows = by_other_copy["activities"].as_array().unwrap();
+    assert_eq!(rows.len(), 1, "{by_other_copy}");
+    assert_eq!(rows[0]["facet"], "Beta");
+    let alpha = probe(
+        &journal,
+        "list_activities",
+        json!({"day": "20260310", "facet": FACET_A}),
+    )
+    .unwrap();
+    let alpha_rows = alpha["activities"].as_array().unwrap();
+    assert_eq!(alpha_rows.len(), 2, "{alpha}");
+    assert!(
+        alpha_rows
+            .iter()
+            .any(|row| row["title"] == "Alpha's reading of the call"),
+        "{alpha}"
+    );
+
+    // Paging never shows the moment twice.
+    let mut titles = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let mut arguments = json!({"day": "20260310", "limit": 1});
+        if let Some(cursor) = &cursor {
+            arguments["cursor"] = json!(cursor);
+        }
+        let page = probe(&journal, "list_activities", arguments).unwrap();
+        for row in page["activities"].as_array().unwrap() {
+            titles.push(row["title"].as_str().unwrap().to_owned());
+        }
+        match page["next_cursor"].as_str() {
+            Some(next) => cursor = Some(next.to_owned()),
+            None => break,
+        }
+    }
+    assert_eq!(titles.len(), 2, "{titles:?}");
+
+    // The week counts it once too.
+    let week = probe(&journal, "get_week", json!({"week": "20260310"})).unwrap();
+    assert_eq!(week["activities_total"], 2, "{week}");
+}
+
+#[test]
+fn list_activities_takes_the_range_names_search_takes_and_the_ones_it_took_first() {
+    let journal = base_activity_journal();
+    for (day, id) in [("20260310", "a"), ("20260311", "b"), ("20260312", "c")] {
+        write_activity_line(
+            journal.path(),
+            "alpha",
+            day,
+            id,
+            &format!("Day {day}"),
+            100,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+    }
+    let new = probe(
+        &journal,
+        "list_activities",
+        json!({"day_from": "20260310", "day_to": "2026-03-11"}),
+    )
+    .unwrap();
+    let old = probe(
+        &journal,
+        "list_activities",
+        json!({"from": "20260310", "to": "2026-03-11"}),
+    )
+    .unwrap();
+    let titles = |value: &Value| -> Vec<String> {
+        value["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["title"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(titles(&new), ["Day 20260310", "Day 20260311"]);
+    assert_eq!(titles(&new), titles(&old));
+    assert_eq!(
+        probe(
+            &journal,
+            "list_activities",
+            json!({"day": "20260310", "day_to": "20260311"}),
+        ),
+        Err(McpProbeError::InvalidInput)
+    );
+}
+
+#[test]
+fn a_span_read_pages_only_on_what_the_connection_reads() {
+    let journal = span_journal(Some(ReadScope::Facets {
+        ids: vec![FACET_A.to_owned()],
+    }));
+    // More than one call's worth of text in scope, then a long stretch of
+    // another facet's segments.
+    let long = (0..260)
+        .map(|line| format!("alpha line {line:03} {}\n\n", "word ".repeat(60)))
+        .collect::<String>();
+    write_span_segment(journal.path(), "alpha", "090000_300", "alpha", &long);
+    for minute in 0..30 {
+        write_span_segment(
+            journal.path(),
+            "beta",
+            &format!("10{minute:02}00_60"),
+            "beta",
+            "beta words\n",
+        );
+    }
+    let list = probe(&journal, "list_transcripts", json!({"day": "20261010"})).unwrap();
+    assert_eq!(list["transcripts"].as_array().unwrap().len(), 1, "{list}");
+
+    // Every page carries something this connection reads: what it can't read
+    // earns no cursor and no empty page.
+    let mut cursor: Option<String> = None;
+    let mut lines = 0;
+    loop {
+        let mut arguments = json!({"reference": list["span_reference"]});
+        if let Some(cursor) = &cursor {
+            arguments["cursor"] = json!(cursor);
+        }
+        let page = probe(&journal, "get_transcript", arguments).unwrap();
+        let sections = page["segments"].as_array().unwrap();
+        assert!(!sections.is_empty(), "an empty page: {page}");
+        assert!(!page.to_string().contains("beta words"), "{page}");
+        lines += sections
+            .iter()
+            .map(|section| section["entries"].as_array().unwrap().len())
+            .sum::<usize>();
+        match page["next_cursor"].as_str() {
+            Some(next) => cursor = Some(next.to_owned()),
+            None => break,
+        }
+    }
+    assert!(lines >= 260, "{lines}");
+
+    // A segment the owner deletes after the list is not read.
+    let whole = span_journal(None);
+    write_span_segment(
+        whole.path(),
+        "default",
+        "090000_300",
+        "alpha",
+        "kept words\n",
+    );
+    write_span_segment(
+        whole.path(),
+        "default",
+        "100000_300",
+        "alpha",
+        "deleted words\n",
+    );
+    let list = probe(&whole, "list_transcripts", json!({"day": "20261010"})).unwrap();
+    fs::remove_dir_all(whole.path().join("chronicle/20261010/default/100000_300")).unwrap();
+    let (sections, _) = read_whole_span(&whole, &list["span_reference"]);
+    let text = format!("{sections:?}");
+    assert!(
+        text.contains("kept words") && !text.contains("deleted words"),
+        "{text}"
     );
 }
