@@ -216,7 +216,32 @@
     }
   }
 
+  // The controls a draw makes. A redraw takes out whichever one held focus,
+  // so focus goes to the same control drawn again, or else to the view's
+  // root, which ships with the page and is never redrawn.
+  const CONTROLS = ['sources-retry', 'sources-manage', 'sources-pair'];
+
+  function focusedControl(doc, root) {
+    const active = doc.activeElement;
+    if (!active || active === root || !root.contains(active)) return active === root ? 'root' : null;
+    const name = CONTROLS.find((value) => (active.className || '').split(/\s+/).indexOf(value) !== -1);
+    return name || 'root';
+  }
+
+  function refocus(doc, root, held) {
+    if (!held) return;
+    const again = held === 'root' ? null : root.querySelector('.' + held);
+    const target = again || root;
+    if (doc.activeElement !== target && typeof target.focus === 'function') target.focus();
+  }
+
   function render(doc, root, payload, opts) {
+    const held = focusedControl(doc, root);
+    paint(doc, root, payload, opts);
+    refocus(doc, root, held);
+  }
+
+  function paint(doc, root, payload, opts) {
     root.textContent = '';
     root.appendChild(text(doc, 'h1', null, COPY.title));
     root.appendChild(text(doc, 'p', 'sources-lede', COPY.lede));
