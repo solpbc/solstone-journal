@@ -5190,6 +5190,69 @@
         stays: 'summaries made from it elsewhere in your journal stay where they are and may still mention it.',
         size: 'current raw media size: {size}',
       },
+      // A segment from an import: its last takes the import and the file it
+      // kept; any other leaves them. Keyed on `kept`, the files the import's
+      // own record holds.
+      imports: {
+        importGoes: {
+          label: "it's the last segment from {label}, so that file and its row in your import history go to the trash with it.",
+          one: "it's the last segment from its import, so the file it kept and its row in your import history go to the trash with it.",
+          many: "it's the last segment from its import, so the {n} files it kept and its row in your import history go to the trash with it.",
+          none: "it's the last segment from its import, so its row in your import history goes to the trash with it.",
+          unknown: "it's the last segment from its import, so any file it kept and its row in your import history go to the trash with it.",
+        },
+        importErased: {
+          label: "it's the last segment from {label}, so that file and its row in your import history are erased with it.",
+          one: "it's the last segment from its import, so the file it kept and its row in your import history are erased with it.",
+          many: "it's the last segment from its import, so the {n} files it kept and its row in your import history are erased with it.",
+          none: "it's the last segment from its import, so its row in your import history is erased with it.",
+          unknown: "it's the last segment from its import, so any file it kept and its row in your import history are erased with it.",
+        },
+        waitingErased: {
+          one: "the import's other segment in the trash is erased with it.",
+          many: "the import's {w} other segments in the trash are erased with it.",
+        },
+        importStays: {
+          label: '{label}, the file it came from, stays in your journal, because other segments still come from it. to remove it, delete the import.',
+          one: 'the file it came from stays in your journal, because other segments still come from it. to remove it, delete the import.',
+          many: 'the files its import kept stay in your journal, because other segments still come from them. to remove them, delete the import.',
+          unknown: 'any file its import kept stays in your journal, because other segments still come from it. to remove it, delete the import.',
+        },
+        openImport: 'open the import',
+        importMaybe: {
+          move: "if it's the last segment from its import, the import and any file it kept go to the trash with it.",
+          erase: "if it's the last segment from its import, the import, any file it kept and any of its segments in the trash are erased with it.",
+        },
+        setTakes: {
+          label: 'this includes the last of the segments from {label}, so that file and its row in your import history go to the trash too.',
+          one: 'this includes the last of the segments from 1 import, so the file it kept and its row in your import history go to the trash too.',
+          oneNone: 'this includes the last of the segments from 1 import, so its row in your import history goes to the trash too.',
+          many: 'this includes the last of the segments from {k} imports, so the files they kept and their rows in your import history go to the trash too.',
+          manyNone: 'this includes the last of the segments from {k} imports, so their rows in your import history go to the trash too.',
+        },
+        setErases: {
+          label: 'this includes the last of the segments from {label}, so that file and its row in your import history are erased too.',
+          one: 'this includes the last of the segments from 1 import, so the file it kept and its row in your import history are erased too.',
+          oneNone: 'this includes the last of the segments from 1 import, so its row in your import history is erased too.',
+          many: 'this includes the last of the segments from {k} imports, so the files they kept and their rows in your import history are erased too.',
+          manyNone: 'this includes the last of the segments from {k} imports, so their rows in your import history are erased too.',
+        },
+        setWaiting: {
+          oneOne: '1 other segment from that import in the trash is erased too.',
+          oneMany: '{w} other segments from that import in the trash are erased too.',
+          manyOne: '1 other segment from those imports in the trash is erased too.',
+          manyMany: '{w} other segments from those imports in the trash are erased too.',
+        },
+        setStays: {
+          label: '{label} stays in your journal, because other segments still come from it. to remove it, delete its import on the import page.',
+          one: 'the file 1 import kept stays in your journal, because other segments still come from it. to remove it, delete the import on the import page.',
+          many: 'the files {j} imports kept stay in your journal, because other segments still come from them. to remove one, delete its import on the import page.',
+        },
+        setMaybe: {
+          move: 'if these include the last segments from an import, the import and any file it kept go to the trash with them.',
+          erase: 'if these include the last segments from an import, the import, any file it kept and any of its segments in the trash are erased with them.',
+        },
+      },
       // Erasing a segment erases its original media waiting in the trash too.
       originalsGo: {
         one: 'its original media in the trash is erased with it.',
@@ -5260,6 +5323,100 @@
       ];
     }
 
+    // What the dialog's segments would take of the imports that made them, read
+    // when it opens: null until the journal answers, or if it doesn't.
+    let dialogImports = null;
+    const BODY_IMPORT_STREAMS = new Set(['import.strava', 'import.apple_health', 'import.oura']);
+    const isImportStream = (stream) => typeof stream === 'string' && stream.startsWith('import.') && !BODY_IMPORT_STREAMS.has(stream);
+
+    function readDialogImports(segs) {
+      dialogImports = null;
+      const asked = segs;
+      fetch('/app/transcripts/api/segments/imports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ segments: segs.map((seg) => ({ day, stream: seg.stream, key: seg.key })) }),
+      })
+        .then(response => (response.ok ? response.json() : null))
+        .then((answer) => {
+          if (!Array.isArray(answer?.imports) || deleteDialogSegs !== asked) return;
+          dialogImports = answer.imports;
+          if (deleteSegmentModal.style.display !== 'none') renderDeleteStep(deleteSegmentModalBody.dataset.step || 'move');
+        })
+        .catch(() => {});
+    }
+
+    // The paragraph about the import, with its link when the owner should go there.
+    function importLine(text, href) {
+      if (!href) return deleteDialogElement('p', 'tr-delete-import', text);
+      const line = deleteDialogElement('p', 'tr-delete-import');
+      const link = deleteDialogElement('a', null, TRASH_COPY.imports.openImport);
+      link.href = href;
+      line.append(deleteDialogElement('span', null, `${text} `), link);
+      return line;
+    }
+
+    // Which of a string's forms the kept upload decides: its name, one, several,
+    // none, or unknown when the journal didn't say.
+    function keptForm(imp, withNone = true) {
+      const kept = imp?.kept;
+      if (typeof kept !== 'number') return 'unknown';
+      if (kept >= 1 && imp.label) return 'label';
+      if (kept === 1) return 'one';
+      if (kept > 1) return 'many';
+      return withNone ? 'none' : null;
+    }
+
+    // The lines a delete dialog adds after its reach about the imports it takes
+    // or leaves. One segment says only when one import made it.
+    function importLines(segs, step) {
+      const C = TRASH_COPY.imports;
+      const erasing = step === 'erase';
+      if (dialogImports === null) {
+        if (!segs.some((seg) => isImportStream(seg.stream))) return [];
+        const maybe = segs.length === 1 ? C.importMaybe : C.setMaybe;
+        return [importLine(erasing ? maybe.erase : maybe.move)];
+      }
+      if (segs.length === 1) {
+        const imp = dialogImports[0];
+        if (!imp) return [];
+        if (imp.takes) {
+          const form = keptForm(imp);
+          const table = erasing ? C.importErased : C.importGoes;
+          const lines = [importLine(segPickFill(table[form], { n: imp.kept, label: imp.label || '' }))];
+          if (erasing && imp.waiting > 0) {
+            lines.push(importLine(segPickFill(imp.waiting === 1 ? C.waitingErased.one : C.waitingErased.many, { w: imp.waiting })));
+          }
+          return lines;
+        }
+        const form = keptForm(imp, false);
+        if (!form) return [];
+        return [importLine(segPickFill(C.importStays[form], { label: imp.label || '' }), `/app/import/${encodeURIComponent(imp.id)}`)];
+      }
+      const lines = [];
+      const taken = dialogImports.filter((imp) => imp.takes);
+      const left = dialogImports.filter((imp) => !imp.takes && imp.kept > 0);
+      if (taken.length) {
+        const table = erasing ? C.setErases : C.setTakes;
+        const anyKept = taken.some((imp) => imp.kept > 0);
+        let key;
+        if (taken.length === 1) key = taken[0].kept >= 1 && taken[0].label ? 'label' : (anyKept ? 'one' : 'oneNone');
+        else key = anyKept ? 'many' : 'manyNone';
+        lines.push(importLine(segPickFill(table[key], { k: taken.length, label: taken[0].label || '' })));
+        const waiting = taken.reduce((sum, imp) => sum + (imp.waiting || 0), 0);
+        if (erasing && waiting > 0) {
+          const key = `${taken.length === 1 ? 'one' : 'many'}${waiting === 1 ? 'One' : 'Many'}`;
+          lines.push(importLine(segPickFill(C.setWaiting[key], { w: waiting })));
+        }
+      }
+      if (left.length === 1) {
+        lines.push(importLine(segPickFill(left[0].label ? C.setStays.label : C.setStays.one, { label: left[0].label || '' })));
+      } else if (left.length > 1) {
+        lines.push(importLine(segPickFill(C.setStays.many, { j: left.length })));
+      }
+      return lines;
+    }
+
     // One step of the delete dialog: 'move' (the trash, the default) or 'erase'
     // (its own confirm). The segment's names are journal data, so they go in as text.
     function renderDeleteSegmentStep(seg, step) {
@@ -5292,6 +5449,7 @@
       deleteSegmentModalBody.append(
         meta,
         deleteDialogElement('p', 'tr-delete-reach', copy.reach),
+        ...importLines([seg], step),
         ...(erasing && originalsInTrash.has(`${day}/${seg.stream}/${seg.key}`)
           ? [deleteDialogElement('p', 'tr-delete-originals', TRASH_COPY.originalsGo.one)]
           : []),
@@ -5335,6 +5493,7 @@
       readOriginalsInTrash();
 
       deleteDialogSegs = segs;
+      readDialogImports(segs);
       renderDeleteStep('move');
       deleteModalReturnFocus = document.activeElement;
       deleteModalPrevOverflow = document.body.style.overflow;
@@ -5761,6 +5920,7 @@
         meta,
         shown,
         deleteDialogElement('p', 'tr-delete-reach', erasing ? copy.eraseReach : copy.moveReach),
+        ...importLines(segs, step),
         ...(erasing && segs.some(seg => originalsInTrash.has(`${day}/${seg.stream}/${seg.key}`))
           ? [deleteDialogElement('p', 'tr-delete-originals', TRASH_COPY.originalsGo.many)]
           : []),

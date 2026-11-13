@@ -84,18 +84,6 @@ pub fn import_label(journal: &Path, id: &str) -> Option<String> {
 /// How many original files the import kept: what it was given, kept in its
 /// record, and the originals in its own segments.
 pub fn kept_originals(journal: &Path, things: &ImportThings) -> usize {
-    let in_record = std::iter::once(&things.record)
-        .chain(&things.companions)
-        .filter(|rel| {
-            let dir = journal.join(rel);
-            read_json(&dir.join("import.json"))
-                .and_then(|metadata| {
-                    let path = journal.join(str_of(&metadata, "file_path")?);
-                    Some(path.starts_with(&dir) && path.is_file())
-                })
-                .unwrap_or(false)
-        })
-        .count();
     let in_segments = things
         .segments
         .iter()
@@ -107,7 +95,24 @@ pub fn kept_originals(journal: &Path, things: &ImportThings) -> usize {
             })
         })
         .count();
-    in_record + in_segments
+    kept_uploads(journal, things) + in_segments
+}
+
+/// How many files the import was given that it keeps in its own record: the
+/// upload that goes with the import, and nothing its segments hold.
+pub fn kept_uploads(journal: &Path, things: &ImportThings) -> usize {
+    std::iter::once(&things.record)
+        .chain(&things.companions)
+        .filter(|rel| {
+            let dir = journal.join(rel);
+            read_json(&dir.join("import.json"))
+                .and_then(|metadata| {
+                    let path = journal.join(str_of(&metadata, "file_path")?);
+                    Some(path.starts_with(&dir) && path.is_file())
+                })
+                .unwrap_or(false)
+        })
+        .count()
 }
 
 /// What one import holds, journal-relative: what its trash item moves.

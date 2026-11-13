@@ -90,6 +90,9 @@ pub struct ImportPreview {
     pub label: Option<String>,
     /// How many original files it kept, as the Import page counts them.
     pub originals: usize,
+    /// How many of those are files it was given and keeps in its record: what
+    /// goes when the delete takes it.
+    pub kept: usize,
     /// The delete takes it whole, its upload included.
     pub takes: bool,
     /// Its segments deleted earlier and waiting in the trash, which an erase
@@ -112,8 +115,8 @@ pub fn waiting_by_import(journal: &Path) -> BTreeMap<String, usize> {
 }
 
 /// What deleting `segments` (journal-relative) would do to each import that
-/// made any of them, in the order first met. An import two imports share a
-/// segment with is listed, and never taken.
+/// alone made any of them, in the order first met. A segment two imports list
+/// takes neither, and says nothing of either.
 pub fn preview(journal: &Path, segments: &[String]) -> Vec<ImportPreview> {
     let listing = listing(journal);
     let chosen: BTreeSet<String> = segments.iter().cloned().collect();
@@ -121,21 +124,21 @@ pub fn preview(journal: &Path, segments: &[String]) -> Vec<ImportPreview> {
     let mut seen = BTreeSet::new();
     let mut found = Vec::new();
     for segment in segments {
-        for id in listing.get(segment).into_iter().flatten() {
-            if !seen.insert(id.clone()) {
+        if let Some(id) = sole_lister(&listing, segment) {
+            if !seen.insert(id.to_owned()) {
                 continue;
             }
             let Some(things) = import_trash::import_things(journal, id) else {
                 continue;
             };
             found.push(ImportPreview {
-                takes: sole_lister(&listing, segment) == Some(id.as_str())
-                    && taken_whole(journal, id, &things, &chosen),
+                takes: taken_whole(journal, id, &things, &chosen),
                 originals: import_trash::kept_originals(journal, &things),
+                kept: import_trash::kept_uploads(journal, &things),
                 waiting: waiting.get(id).copied().unwrap_or(0),
                 label: import_trash::import_label(journal, id),
                 source: things.source,
-                id: id.clone(),
+                id: id.to_owned(),
             });
         }
     }

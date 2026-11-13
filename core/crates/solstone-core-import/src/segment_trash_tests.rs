@@ -124,6 +124,7 @@ fn deleting_an_imports_only_segment_takes_the_import_whole() {
     let found = preview(root.path(), &[FIRST.to_owned()]).remove(0);
     assert!(found.takes);
     assert_eq!(found.originals, 1);
+    assert_eq!(found.kept, 1);
     assert_eq!(found.label.as_deref(), Some("talk.m4a"));
     let (item, took) = delete(root.path(), FIRST);
     assert_eq!(took.as_deref(), Some(ID));
@@ -233,9 +234,7 @@ fn choosing_every_remaining_segment_takes_the_import_as_one() {
 fn a_segment_two_imports_list_never_takes_either() {
     let root = journal(&[FIRST]);
     import(root.path(), OTHER, "audio", &[FIRST]);
-    let shown = preview(root.path(), &[FIRST.to_owned()]);
-    assert_eq!(shown.len(), 2);
-    assert!(shown.iter().all(|import| !import.takes));
+    assert!(preview(root.path(), &[FIRST.to_owned()]).is_empty());
     let (item, took) = delete(root.path(), FIRST);
     assert_eq!(took, None);
     assert!(item.needs.is_empty());
