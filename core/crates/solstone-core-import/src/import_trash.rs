@@ -352,7 +352,7 @@ fn read_json(path: &Path) -> Option<Value> {
 }
 
 /// Every segment `id`'s records name, live or not, journal-relative.
-fn listed_segments(journal: &Path, id: &str, source: &str) -> BTreeSet<String> {
+pub(crate) fn listed_segments(journal: &Path, id: &str, source: &str) -> BTreeSet<String> {
     let dir = journal.join(IMPORTS_DIR).join(id);
     let mut found = BTreeSet::new();
     let mut legacy = Vec::new();
@@ -516,7 +516,7 @@ fn valid_part(part: &str) -> bool {
 
 /// A segment that is there, and not only the tombstone a removal left or a
 /// removal of it part-way through. Unreadable counts as there.
-fn live_segment(journal: &Path, path: &str) -> bool {
+pub(crate) fn live_segment(journal: &Path, path: &str) -> bool {
     if parse_segment_rel(path).is_none() {
         return false;
     }
@@ -787,6 +787,11 @@ impl Kind for Imports<'_> {
     fn handles(&self, unit: &Unit) -> bool {
         matches!(unit, Unit::Import { .. })
             || matches!(unit, Unit::Workout { source, .. } if source == crate::body_trash::STRAVA)
+    }
+
+    /// An import's record is what its segments deleted earlier need.
+    fn may_be_needed(&self, unit: &Unit) -> bool {
+        matches!(unit, Unit::Import { .. })
     }
 
     fn companions(&self, journal: &Path, item: &Item) -> Result<Vec<String>, String> {

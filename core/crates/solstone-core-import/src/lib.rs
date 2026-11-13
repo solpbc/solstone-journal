@@ -44,6 +44,7 @@ pub mod sync_state;
 pub mod text;
 pub mod thinking;
 pub mod timestamp;
+pub mod segment_trash;
 pub mod trash_kinds;
 pub mod work_stop;
 

@@ -119,6 +119,7 @@ pub fn detach_linked(
         bytes: 0,
         pending: None,
         refs: Vec::new(),
+        needs: Vec::new(),
         label: None,
         operation,
         linked: true,

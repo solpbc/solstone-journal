@@ -87,7 +87,7 @@ fn view(journal_root: &Path, item: &Item) -> Value {
         ) => return originals_view(journal_root, item, day, stream, segment),
         _ => ("other", String::new(), None, String::new()),
     };
-    json!({
+    let mut shown = json!({
         "id": item.id,
         "kind": kind,
         "day": day,
@@ -98,7 +98,31 @@ fn view(journal_root: &Path, item: &Item) -> Value {
         "bytes": item.bytes,
         "surface": item.surface,
         "replaces": replaces(journal_root, item),
-    })
+    });
+    if let Some(import) = needed_import(journal_root, item) {
+        shown["import"] = import;
+    }
+    shown
+}
+
+/// The import a segment needs to come back, and where it stands: `live` in
+/// the journal, `trashed` waiting in the trash (recover it first), or `gone`.
+fn needed_import(journal_root: &Path, item: &Item) -> Option<Value> {
+    let record = item.needs.iter().find(|need| need.starts_with("imports/"))?;
+    let id = record.strip_prefix("imports/")?;
+    let holder = solstone_core_trash::list(journal_root)
+        .ok()?
+        .into_iter()
+        .find(|other| other.id != item.id && other.paths.iter().any(|path| path == record));
+    let (state, label) = match holder {
+        Some(holder) => ("trashed", holder.label),
+        None if journal_root.join(record).is_dir() => (
+            "live",
+            solstone_core_import::import_trash::import_label(journal_root, id),
+        ),
+        None => ("gone", None),
+    };
+    Some(json!({"id": id, "label": label, "state": state}))
 }
 
 /// An item stopped part way: what it is, and which way it was going.
@@ -347,6 +371,8 @@ fn import_view(journal_root: &Path, item: &Item, source: &str, id: &str) -> Valu
         "bytes": item.bytes,
         "surface": item.surface,
         "replaces": replaces(journal_root, item),
+        // Its segments deleted earlier, still in the trash: erasing it erases them.
+        "takes": solstone_core_trash::needing(journal_root, item).map_or(0, |items| items.len()),
     })
 }
 
@@ -433,8 +459,11 @@ fn recover_order(journal_root: &Path, ids: Vec<String>) -> Vec<String> {
             Unit::Entity => 2,
             Unit::FacetFile => 3,
             Unit::Speakers => 4,
-            // After the recording they were released from.
-            Unit::Originals { .. } => 2,
+            // After the recording they were released from, which can wait
+            // on its import.
+            Unit::Originals { .. } => 3,
+            // After the import whose upload it needs.
+            Unit::Segment { .. } if !item.needs.is_empty() => 2,
             _ => 1,
         },
         _ => 1,
@@ -449,10 +478,24 @@ pub async fn erase(journal_root: PathBuf, body: Bytes) -> Response {
     let Some(selection) = parse(&body) else {
         return unreadable_selection();
     };
-    run(journal_root, selection.ids, |root, id, operation| {
+    let ids = erase_order(&journal_root, selection.ids);
+    run(journal_root, ids, |root, id, operation| {
         solstone_core_trash::erase_in(root, id, Action::Erase, page_surface(None), operation)
     })
     .await
+}
+
+/// Erased together, what needs another item goes first: erasing an import
+/// erases its segments waiting in the trash, so each still answers as itself.
+fn erase_order(journal_root: &Path, ids: Vec<String>) -> Vec<String> {
+    let needs = |id: &String| {
+        solstone_core_trash::item(journal_root, id)
+            .ok()
+            .flatten()
+            .is_some_and(|item| !item.needs.is_empty())
+    };
+    let (first, rest): (Vec<String>, Vec<String>) = ids.into_iter().partition(needs);
+    first.into_iter().chain(rest).collect()
 }
 
 /// Erase everything in the trash.
@@ -463,7 +506,10 @@ pub async fn empty(journal_root: PathBuf) -> Response {
     })
     .await
     {
-        Ok(Ok(items)) => items.into_iter().map(|item| item.id).collect(),
+        Ok(Ok(items)) => erase_order(
+            &journal_root,
+            items.into_iter().map(|item| item.id).collect(),
+        ),
         Ok(Err(error)) => return unreadable(error.to_string()),
         Err(error) => return unreadable(error.to_string()),
     };
@@ -606,6 +652,99 @@ mod tests {
             status,
             serde_json::from_slice(&bytes).unwrap_or(Value::Null),
         )
+    }
+
+    /// An audio import whose two segments were deleted one at a time: the
+    /// first waits as a segment needing the import, the second took it whole.
+    fn import_deleted_by_segments(root: &Path) -> (String, String) {
+        let id = "20260731_090000";
+        let segments = ["090000_300", "090500_300"];
+        let listed: Vec<Value> = segments
+            .iter()
+            .map(|key| json!({"day": "20260731", "stream": "import.audio", "segment": key}))
+            .collect();
+        let write = |rel: &str, bytes: &[u8]| {
+            let path = root.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        };
+        write(
+            &format!("imports/{id}/imported.json"),
+            json!({"source_type": "audio", "segments": listed}).to_string().as_bytes(),
+        );
+        write(
+            &format!("imports/{id}/import.json"),
+            json!({"original_filename": "talk.m4a", "file_path": format!("imports/{id}/talk.m4a")})
+                .to_string()
+                .as_bytes(),
+        );
+        write(&format!("imports/{id}/talk.m4a"), b"upload");
+        let mut ids = Vec::new();
+        for key in segments {
+            write(&format!("chronicle/20260731/import.audio/{key}/audio.flac"), b"raw");
+        }
+        let index = RetentionIndex::new(root);
+        for key in segments {
+            let (item, _) = solstone_core_import::segment_trash::trash_segment(
+                root,
+                &index,
+                Unit::Segment {
+                    day: "20260731".into(),
+                    stream: "import.audio".into(),
+                    segment: key.into(),
+                },
+                format!("chronicle/20260731/import.audio/{key}"),
+                Action::SegmentDelete,
+                Surface::Web {
+                    page: Page::Transcripts,
+                },
+            )
+            .unwrap();
+            ids.push(item.id);
+        }
+        (ids[0].clone(), ids[1].clone())
+    }
+
+    #[tokio::test]
+    async fn an_import_row_says_what_its_erase_takes_and_its_segment_waits_for_it() {
+        let root = journal();
+        let (segment, import) = import_deleted_by_segments(root.path());
+        let (_, listed) = call(root.path(), Method::GET, "/app/settings/api/trash", "").await;
+        let row = |id: &str| {
+            listed["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["id"] == id)
+                .cloned()
+                .unwrap()
+        };
+        assert_eq!(row(&import)["kind"], "import");
+        assert_eq!(row(&import)["takes"], 1);
+        assert_eq!(row(&segment)["import"]["state"], "trashed");
+        assert_eq!(row(&segment)["import"]["label"], "talk.m4a");
+        let body = json!({"ids": [segment.clone()]}).to_string();
+        let (_, refused) =
+            call(root.path(), Method::POST, "/app/settings/api/trash/recover", &body).await;
+        assert_eq!(refused["failed"][0]["reason"], "import_in_trash");
+        // Together, the import comes back before the segment that needs it.
+        let body = json!({"ids": [segment.clone(), import.clone()]}).to_string();
+        let (_, both) =
+            call(root.path(), Method::POST, "/app/settings/api/trash/recover", &body).await;
+        assert_eq!(both["failed"], json!([]), "{both}");
+        assert!(root.path().join("imports/20260731_090000/talk.m4a").is_file());
+    }
+
+    #[tokio::test]
+    async fn emptying_the_trash_answers_for_a_segment_its_import_took() {
+        let root = journal();
+        let (segment, import) = import_deleted_by_segments(root.path());
+        let (_, emptied) =
+            call(root.path(), Method::POST, "/app/settings/api/trash/empty", "").await;
+        assert_eq!(emptied["failed"], json!([]), "{emptied}");
+        let done = emptied["done"].as_array().unwrap();
+        assert!(done.contains(&json!(segment)) && done.contains(&json!(import)));
+        assert!(!root.path().join("imports/20260731_090000").exists());
     }
 
     #[tokio::test]

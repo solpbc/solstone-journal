@@ -92,27 +92,30 @@ pub(crate) async fn delete_segment(
             id,
             erase_at,
             erased,
-        })) => match (erase, erased) {
-            (true, true) => {
-                Json(json!({"success": true, "deleted": key, "erased": true})).into_response()
+            import,
+        })) => {
+            let mut answer = match (erase, erased) {
+                (true, true) => json!({"success": true, "deleted": key, "erased": true}),
+                // In the trash, but the erase the owner asked for was refused:
+                // say where it is.
+                (true, false) => json!({
+                    "success": true,
+                    "deleted": key,
+                    "erased": false,
+                    "erase_failed": true,
+                    "trash": {"id": id, "erase_at": erase_at},
+                }),
+                (false, _) => json!({
+                    "success": true,
+                    "deleted": key,
+                    "trash": {"id": id, "erase_at": erase_at},
+                }),
+            };
+            if let Some(import) = import {
+                answer["import"] = json!(import);
             }
-            // In the trash, but the erase the owner asked for was refused:
-            // say where it is.
-            (true, false) => Json(json!({
-                "success": true,
-                "deleted": key,
-                "erased": false,
-                "erase_failed": true,
-                "trash": {"id": id, "erase_at": erase_at},
-            }))
-            .into_response(),
-            (false, _) => Json(json!({
-                "success": true,
-                "deleted": key,
-                "trash": {"id": id, "erase_at": erase_at},
-            }))
-            .into_response(),
-        },
+            Json(answer).into_response()
+        }
         Ok(Err(error)) => trash_error(&error),
         Err(_) => legacy_error_response(
             "segment_delete_failed",
@@ -228,28 +231,46 @@ pub(crate) async fn delete_segments(
         }
         let mut done = Vec::new();
         if !chosen.is_empty() {
+            // An import whose every remaining segment is in the set goes whole,
+            // as one item; each of its segments answers with it.
+            let choices = solstone_core_import::segment_trash::choose(&root, chosen);
+            let covers: Vec<(Vec<usize>, Option<String>)> = choices
+                .iter()
+                .map(|choice| (choice.covers.clone(), choice.import.clone()))
+                .collect();
             let results = solstone_core_import::trash_kinds::with_kinds(&root, |kinds| {
                 solstone_core_trash::detach_set(
                     &root,
                     kinds,
-                    chosen,
+                    choices.into_iter().map(|choice| choice.chosen).collect(),
                     action,
                     surface,
                     request.erase,
                 )
             })?;
-            for (segment, result) in order.into_iter().zip(results) {
-                match result {
-                    solstone_core_trash::SetResult::Moved { item, erased } => done.push(json!({
-                        "segment": segment,
-                        "trash": {"id": item.id, "erase_at": item.erase_at},
-                        "erased": erased,
-                    })),
-                    solstone_core_trash::SetResult::Refused(error) => failed.push(json!({
-                        "segment": segment,
-                        "key": solstone_core_import::import_trash::failure_key(&error),
-                        "reason": set_reason(&error),
-                    })),
+            for ((covered, import), result) in covers.into_iter().zip(results) {
+                for index in covered {
+                    let Some(segment) = order.get(index) else {
+                        continue;
+                    };
+                    match &result {
+                        solstone_core_trash::SetResult::Moved { item, erased } => {
+                            let mut row = json!({
+                                "segment": segment,
+                                "trash": {"id": item.id, "erase_at": item.erase_at},
+                                "erased": erased,
+                            });
+                            if let Some(import) = &import {
+                                row["import"] = json!(import);
+                            }
+                            done.push(row);
+                        }
+                        solstone_core_trash::SetResult::Refused(error) => failed.push(json!({
+                            "segment": segment,
+                            "key": solstone_core_import::import_trash::failure_key(error),
+                            "reason": set_reason(error),
+                        })),
+                    }
                 }
             }
         }
@@ -263,6 +284,52 @@ pub(crate) async fn delete_segments(
             "segment_delete_failed",
             "your journal couldn't finish that delete. reload to check.",
             "the delete task stopped",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct PreviewBody {
+    segments: Vec<SetSegment>,
+}
+
+/// What deleting these segments would do to the imports that made them, for
+/// the delete dialog: which it takes whole with their uploads, and which it
+/// leaves. Reads only.
+pub(crate) async fn preview_imports(
+    State(state): State<Arc<AppState>>,
+    body: Bytes,
+) -> Response {
+    let Ok(request) = serde_json::from_slice::<PreviewBody>(&body) else {
+        return invalid_segment("Invalid segment in the set", StatusCode::BAD_REQUEST);
+    };
+    if request.segments.is_empty()
+        || request.segments.len() > SET_LIMIT
+        || request.segments.iter().any(|segment| {
+            !valid_day(&segment.day) || !valid_stream(&segment.stream) || !valid_key(&segment.key)
+        })
+    {
+        return invalid_segment("Invalid segment in the set", StatusCode::BAD_REQUEST);
+    }
+    let root = state.journal_root.clone();
+    let outcome = tokio::task::spawn_blocking(move || {
+        let paths: Vec<String> = request
+            .segments
+            .iter()
+            .map(|segment| {
+                solstone_core_retention::layout::segment_rel(&segment.day, &segment.stream, &segment.key)
+            })
+            .collect();
+        solstone_core_import::segment_trash::preview(&root, &paths)
+    })
+    .await;
+    match outcome {
+        Ok(imports) => Json(json!({"imports": imports})).into_response(),
+        Err(_) => legacy_error_response(
+            "segment_preview_failed",
+            "your journal couldn't read what that delete would take.",
+            "the preview task stopped",
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
@@ -284,6 +351,8 @@ struct Trashed {
     id: String,
     erase_at: String,
     erased: bool,
+    /// The import the segment was the last of, which went whole.
+    import: Option<String>,
 }
 
 fn trash_recording(
@@ -314,14 +383,29 @@ fn trash_recording(
         )
     };
     let index = RetentionIndex::new(root);
-    let recordings = Recordings::new(&index);
     let target = Target {
         day,
         stream,
         dir: key.clone(),
     };
-    let item = match recordings.trash(root, &target, unit, action, surface) {
-        Ok(item) => item,
+    // A memory is a recording alone; a segment can be the last of an import,
+    // which then goes whole.
+    let moved = if page == Page::Agents {
+        Recordings::new(&index)
+            .trash(root, &target, unit, action, surface)
+            .map(|item| (item, None))
+    } else {
+        solstone_core_import::segment_trash::trash_segment(
+            root,
+            &index,
+            unit,
+            solstone_core_retention::layout::segment_rel(&target.day, &target.stream, &target.dir),
+            action,
+            surface,
+        )
+    };
+    let (item, import) = match moved {
+        Ok(moved) => moved,
         // It left the journal and is in the trash; a step after the move
         // failed, and the trash's sweep finishes it. Not erased now.
         Err(TrashError::Unfinished(id)) => {
@@ -333,6 +417,7 @@ fn trash_recording(
                 id,
                 erase_at,
                 erased: false,
+                import: None,
             });
         }
         Err(error) => return Err(error),
@@ -350,6 +435,7 @@ fn trash_recording(
         id: item.id,
         erase_at: item.erase_at,
         erased,
+        import,
     })
 }
 

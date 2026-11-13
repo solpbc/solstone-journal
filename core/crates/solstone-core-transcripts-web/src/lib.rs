@@ -141,6 +141,10 @@ fn router_with_dependencies(
             axum::routing::post(delete::delete_segments),
         )
         .route(
+            "/app/transcripts/api/segments/imports",
+            axum::routing::post(delete::preview_imports),
+        )
+        .route(
             "/app/transcripts/api/strava/workout/{activity_id}",
             axum::routing::delete(strava_delete::delete_workout),
         )
