@@ -16,11 +16,16 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- on home, originals your retention settings marked now go to the trash when you delete them, one item for each segment. the segment and everything made from it stay in your journal. you can recover them until the trash erases them, and their space comes back then.
+- `solstone-retention`'s `release-raw`, `remove-marked` and `sweep --force` also move the originals they delete to the trash now, and say the day the trash erases them.
+- erasing a segment from the trash now erases any originals deleted from it that are waiting there too.
+- a segment's transcript now says when its original audio or screen media is in the trash, with a link to the trash.
 - connected agents now need body, a permission of its own, to read what you imported from Apple Health, Oura or Strava: readings, sleep, workouts, mindfulness sessions and what you logged there. the transcripts permission no longer includes it. a new connection has body ticked. a connection you approved before doesn't, and can't read that data until you tick body for it in the agents app.
 - on linux, installing or updating the journal now removes older installed versions, and keeps this version and the two before it so `--version` can still go back to either. a version that is still in use stays.
 
 ### Fixed
 
+- "finish them" on home now says what finishing does: any original a stopped deletion hadn't deleted yet goes back in its segment. before, it said nothing was put back.
 - on a phone, the list of facets on the entities page now opens on screen, so you can choose one. before, it opened below the bottom of the screen.
 - restoring a backup during setup keeps the new journal's running services and troubleshooting logs intact, so new audio can be transcribed without restarting.
 - changing your journal folder on linux or mac now updates its saved location and service together, while keeping your other settings.

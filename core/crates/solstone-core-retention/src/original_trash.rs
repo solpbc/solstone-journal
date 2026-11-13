@@ -419,7 +419,7 @@ pub fn annotate_report(journal: &Path, report: &mut Value) {
                 None => gone.push(entry),
             }
         }
-        count += trashed.len();
+        count = count.saturating_add(trashed.len());
         fields.insert("removed".to_owned(), Value::Array(gone));
         fields.insert("trashed".to_owned(), Value::Array(trashed));
     }
