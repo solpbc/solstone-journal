@@ -917,7 +917,7 @@ module.exports = async function speakersContractCases(manifestDir) {
       if (p === '/app/speakers/api/discovery/cluster/c1/presence') {
         return { evidence_complete: true, cluster_id: 'c1', samples: [{ day: DAY, stream: 'mic', audio_url: '/app/speakers/api/discovery/sample/c1/0.flac' }], candidates: [] };
       }
-      if (p === '/app/speakers/api/people/search') return { people: [{ entity_id: 'grace', name: 'Grace Hopper' }] };
+      if (p === '/app/speakers/api/people/search') return { people: [{ entity_id: 'grace', name: 'Grace Ito' }] };
       return base(url, opts);
     };
   }
@@ -978,7 +978,7 @@ module.exports = async function speakersContractCases(manifestDir) {
     await settle();
     const mark = p.calls.length;
     assert.strictEqual(write.aborted, false, 'leaving never cuts a write');
-    write.answer({ status: 'identified', cluster_id: 'c1', entity_id: 'grace', name: 'Grace Hopper', request_id: 'req-1' });
+    write.answer({ status: 'identified', cluster_id: 'c1', entity_id: 'grace', name: 'Grace Ito', request_id: 'req-1' });
     await settle();
     assert.strictEqual(p.calls.length, mark, 'its answer reads nothing (no segments, no review)');
     assert.ok(p.q('#home'), 'the next view is untouched');
