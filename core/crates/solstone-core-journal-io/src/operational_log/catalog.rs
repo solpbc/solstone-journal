@@ -671,12 +671,96 @@ fn list_health(
         .map_err(|error| map_directory_error(error, health.day()))
 }
 
+/// restic's glob for the runtime-log name shape in every day health directory,
+/// relative to the journal. It matches exactly the leaves [`has_runtime_log_shape`]
+/// admits, in exactly the directories [`visit_runtime_log_exclusions`] reads.
+/// Restic tests every walked path against every exclude pattern in turn, so a
+/// pattern per runtime log made each backup cost walked files times logs.
+pub const RUNTIME_LOG_SHAPE: &str =
+    "chronicle/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/health/oplog--*.log";
+
 /// Stream ordinary canonical runtime log names into a private exclusion file.
 /// Both native implementations retain directories and inspect selected leaves
 /// without following links. Neither directory names nor argv grow in memory.
 pub fn visit_runtime_log_paths(
     root: &JournalRoot,
     mut visit: impl FnMut(&str) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    visit_runtime_log_days(root, |_, _, logs| {
+        logs.iter().try_for_each(|member| visit(member))
+    })
+}
+
+/// Positive exclusion patterns, relative to the journal, that leave out exactly
+/// what [`visit_runtime_log_paths`] selects. An ordinary journal gets the single
+/// [`RUNTIME_LOG_SHAPE`]. When a day's health directory holds owner content of
+/// the same shape (a malformed name, a directory or a link), that day lists its
+/// logs exactly and every other day gets its own shape. No pattern is negated,
+/// so every restic consumer reads them with the same OR semantics.
+pub fn visit_runtime_log_exclusions(
+    root: &JournalRoot,
+    mut visit: impl FnMut(&str) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let mut shaped_days = Vec::new();
+    let mut any_lookalike = false;
+    visit_runtime_log_days(root, |day, owner_lookalike, logs| {
+        if !owner_lookalike {
+            shaped_days.push(day.to_owned());
+            return Ok(());
+        }
+        any_lookalike = true;
+        logs.iter().try_for_each(|member| visit(member))
+    })?;
+    if !any_lookalike {
+        return visit(RUNTIME_LOG_SHAPE);
+    }
+    shaped_days
+        .iter()
+        .try_for_each(|day| visit(&format!("chronicle/{day}/health/oplog--*.log")))
+}
+
+/// The leaf shape restic's `oplog--*.log` matches, on the native name.
+fn has_runtime_log_shape(name: &OsStr) -> bool {
+    const SUFFIX: &[u8] = b".log";
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let bytes = name.as_bytes();
+        bytes.len() >= PREFIX_LEN + SUFFIX.len()
+            && bytes.starts_with(b"oplog--")
+            && bytes.ends_with(SUFFIX)
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        let wide = name.encode_wide().collect::<Vec<_>>();
+        let ascii = |units: &[u16], bytes: &[u8]| {
+            units
+                .iter()
+                .zip(bytes)
+                .all(|(unit, byte)| *unit == u16::from(*byte))
+        };
+        wide.len() >= PREFIX_LEN + SUFFIX.len()
+            && ascii(&wide[..PREFIX_LEN], b"oplog--")
+            && ascii(&wide[wide.len() - SUFFIX.len()..], SUFFIX)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        name.to_str().is_some_and(|text| {
+            text.len() >= PREFIX_LEN + SUFFIX.len()
+                && text.starts_with("oplog--")
+                && text.as_bytes().ends_with(SUFFIX)
+        })
+    }
+}
+const PREFIX_LEN: usize = "oplog--".len();
+
+/// Each day health directory's runtime logs, and whether a leaf of the same
+/// shape there is owner content. Memory is one directory's selected names.
+/// Links are never followed, and restic does not descend them either.
+fn visit_runtime_log_days(
+    root: &JournalRoot,
+    mut visit: impl FnMut(&str, bool, &[String]) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
     #[cfg(unix)]
     use crate::flat_directory::{
@@ -694,6 +778,7 @@ pub fn visit_runtime_log_paths(
     else {
         return Ok(());
     };
+    let mut logs = Vec::new();
     visit_entries(&chronicle, |name| name.to_str().is_some_and(is_day_key), |entry| {
         if entry.kind != JournalEntryKind::Directory { return Ok(()); }
         let day = entry.name.to_str().expect("selected ASCII day");
@@ -703,14 +788,20 @@ pub fn visit_runtime_log_paths(
         let day_root = JournalRoot::open(root.canonical_path()).map_err(|e| failure(std::io::Error::other(e)))?;
         if day_root.identity() != root.identity() { return Err(failure(std::io::Error::other("journal changed while selecting logs"))); }
         let Some(health) = open_existing_day_health_directory(day_root, day).map_err(|e| failure(std::io::Error::other(e)))? else { return Ok(()); };
-        visit_entries(health.health(), |name| matches!(classify_oplog_name(name), OplogNameClassification::Candidate(Ok(parsed)) if parsed.format() == super::name::OplogFormat::Log), |entry| {
-            if entry.kind == JournalEntryKind::RegularFile {
-                let member = format!("chronicle/{day}/health/{}", entry.name.to_str().expect("canonical ASCII log"));
-                visit(&member).map_err(&failure)?;
+        logs.clear();
+        let mut owner_lookalike = false;
+        visit_entries(health.health(), has_runtime_log_shape, |entry| {
+            let runtime = entry.kind == JournalEntryKind::RegularFile
+                && matches!(classify_oplog_name(&entry.name), OplogNameClassification::Candidate(Ok(parsed)) if parsed.format() == super::name::OplogFormat::Log);
+            if runtime {
+                logs.push(format!("chronicle/{day}/health/{}", entry.name.to_str().expect("canonical ASCII log")));
+            } else {
+                owner_lookalike = true;
             }
             Ok(())
         })?;
-        health.revalidate_binding().map_err(|e| failure(std::io::Error::other(e)))
+        health.revalidate_binding().map_err(|e| failure(std::io::Error::other(e)))?;
+        visit(day, owner_lookalike, &logs).map_err(failure)
     }).map_err(std::io::Error::other)?;
     let current = open_directory(root, OsStr::new(CHRONICLE_DIR), root.canonical_path())
         .map_err(std::io::Error::other)?
@@ -1104,5 +1195,89 @@ mod tests {
         .unwrap();
         assert!(selected.is_empty());
         assert_eq!(fs::read_to_string(target).unwrap(), "untouched");
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn copy_log_exclusions_are_one_shape_until_a_day_holds_an_owner_lookalike() {
+        let log = "oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log";
+        let temporary = TempDir::new().unwrap();
+        for day in ["20260807", "20260808"] {
+            let directory = temporary.path().join(format!("chronicle/{day}/health"));
+            fs::create_dir_all(&directory).unwrap();
+            fs::write(directory.join(log), "runtime").unwrap();
+            fs::write(directory.join(log.replace(".log", ".jsonl")), "owner").unwrap();
+        }
+        // Outside a day, or below the health directory, the shape is not matched.
+        for relative in [
+            "chronicle/notes/health",
+            "chronicle/20260807/health/120000_60",
+        ] {
+            let directory = temporary.path().join(relative);
+            fs::create_dir_all(&directory).unwrap();
+            fs::write(directory.join("oplog--not-a-name.log"), "owner").unwrap();
+        }
+        let root = JournalRoot::open(temporary.path()).unwrap();
+        let exclusions = |root: &JournalRoot| {
+            let mut patterns = Vec::new();
+            visit_runtime_log_exclusions(root, |pattern| {
+                patterns.push(pattern.to_owned());
+                Ok(())
+            })
+            .unwrap();
+            patterns.sort();
+            patterns
+        };
+        assert_eq!(exclusions(&root), vec![RUNTIME_LOG_SHAPE.to_owned()]);
+
+        let lookalikes: [&dyn Fn(&std::path::Path); 3] = [
+            &|directory| fs::write(directory.join("oplog--not-a-name.log"), "owner").unwrap(),
+            &|directory| {
+                fs::create_dir(directory.join(log.replace("8f03cabe", "8f03cabf"))).unwrap()
+            },
+            #[cfg(unix)]
+            &|directory| {
+                std::os::unix::fs::symlink(
+                    "outside",
+                    directory.join(log.replace("8f03cabe", "8f03cab0")),
+                )
+                .unwrap()
+            },
+            #[cfg(not(unix))]
+            &|directory| fs::create_dir(directory.join("oplog--.log")).unwrap(),
+        ];
+        for lookalike in lookalikes {
+            let temporary = TempDir::new().unwrap();
+            for day in ["20260807", "20260808"] {
+                let directory = temporary.path().join(format!("chronicle/{day}/health"));
+                fs::create_dir_all(&directory).unwrap();
+                fs::write(directory.join(log), "runtime").unwrap();
+            }
+            lookalike(&temporary.path().join("chronicle/20260808/health"));
+            let root = JournalRoot::open(temporary.path()).unwrap();
+            assert_eq!(
+                exclusions(&root),
+                vec![
+                    "chronicle/20260807/health/oplog--*.log".to_owned(),
+                    format!("chronicle/20260808/health/{log}"),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn runtime_log_shape_admits_what_restics_glob_matches() {
+        for (name, shaped) in [
+            ("oplog--.log", true),
+            ("oplog--not-a-name.log", true),
+            ("oplog--x.jsonl", false),
+            ("oplog-.log", false),
+            ("oplog--log", false),
+            ("Oplog--x.log", false),
+            ("oplog--x.LOG", false),
+            ("notes.log", false),
+        ] {
+            assert_eq!(has_runtime_log_shape(OsStr::new(name)), shaped, "{name}");
+        }
     }
 }

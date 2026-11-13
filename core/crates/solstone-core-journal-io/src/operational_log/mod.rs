@@ -45,8 +45,8 @@ pub use admission::{
 pub use catalog::{
     OPLOG_CATALOG_CENSUS_ATTEMPTS, OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY,
     OPLOG_CATALOG_MAX_COUNTABLE_ENTRIES_PER_PASS, OplogCatalogEntry, OplogCatalogError,
-    OplogCatalogSnapshot, catalog_oplogs, fold_oplogs, probe_retained_oplog_lease,
-    visit_runtime_log_paths,
+    OplogCatalogSnapshot, RUNTIME_LOG_SHAPE, catalog_oplogs, fold_oplogs,
+    probe_retained_oplog_lease, visit_runtime_log_exclusions, visit_runtime_log_paths,
 };
 #[cfg(windows)]
 pub use create::probe_oplog_identity_lease;
