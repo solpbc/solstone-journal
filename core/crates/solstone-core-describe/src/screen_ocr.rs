@@ -302,37 +302,43 @@ struct ReadyRecipe {
 impl HelperResolver for InstalledHelperResolver {
     fn resolve(&self) -> Option<ResolvedHelper> {
         let bundle = solstone_core_installed_payload::resolve_current_screen_ocr_bundle().ok()?;
-        let recipe_bytes = fs::read(bundle.recipe.path()).ok()?;
-        if hex(&Sha256::digest(&recipe_bytes)) != bundle.recipe.sha256() {
-            return None;
-        }
-        let text = std::str::from_utf8(&recipe_bytes).ok()?;
-        let recipe: ReadyRecipe = toml_edit::de::from_str(text).ok()?;
-        if recipe.schema_version != 1 || recipe.protocol_version != PROTOCOL_VERSION {
-            return None;
-        }
-        let asset_dir = bundle.detector.path().parent()?.to_path_buf();
-        let runtime_root = bundle.runtime_library.path().parent()?.to_path_buf();
-        Some(ResolvedHelper {
-            executable: bundle.helper.path().to_path_buf(),
-            asset_dir,
-            runtime_root,
-            runtime_library: bundle.runtime_library.path().to_path_buf(),
-            expected_ready: HelperReadyIdentity {
-                protocol_version: recipe.protocol_version,
-                recipe_sha256: bundle.recipe.sha256().to_owned(),
-                helper_sha256: bundle.helper.sha256().to_owned(),
-                detector_sha256: bundle.detector.sha256().to_owned(),
-                recognizer_sha256: bundle.recognizer.sha256().to_owned(),
-                dictionary_sha256: bundle.dictionary.sha256().to_owned(),
-                runtime_sha256: bundle.runtime_library.sha256().to_owned(),
-                os: std::env::consts::OS.to_owned(),
-                arch: std::env::consts::ARCH.to_owned(),
-                settings: recipe.settings,
-                limits: recipe.limits,
-            },
-        })
+        resolve_helper_bundle(bundle)
     }
+}
+
+fn resolve_helper_bundle(
+    bundle: solstone_core_installed_payload::CurrentScreenOcrBundle,
+) -> Option<ResolvedHelper> {
+    let recipe_bytes = fs::read(bundle.recipe.path()).ok()?;
+    if hex(&Sha256::digest(&recipe_bytes)) != bundle.recipe.sha256() {
+        return None;
+    }
+    let text = std::str::from_utf8(&recipe_bytes).ok()?;
+    let recipe: ReadyRecipe = toml_edit::de::from_str(text).ok()?;
+    if recipe.schema_version != 1 || recipe.protocol_version != PROTOCOL_VERSION {
+        return None;
+    }
+    let asset_dir = bundle.detector.path().parent()?.to_path_buf();
+    let runtime_root = bundle.runtime_library.path().parent()?.to_path_buf();
+    Some(ResolvedHelper {
+        executable: bundle.helper.path().to_path_buf(),
+        asset_dir,
+        runtime_root,
+        runtime_library: bundle.runtime_library.path().to_path_buf(),
+        expected_ready: HelperReadyIdentity {
+            protocol_version: recipe.protocol_version,
+            recipe_sha256: bundle.recipe.sha256().to_owned(),
+            helper_sha256: bundle.helper.sha256().to_owned(),
+            detector_sha256: bundle.detector.sha256().to_owned(),
+            recognizer_sha256: bundle.recognizer.sha256().to_owned(),
+            dictionary_sha256: bundle.dictionary.sha256().to_owned(),
+            runtime_sha256: bundle.runtime_library.sha256().to_owned(),
+            os: std::env::consts::OS.to_owned(),
+            arch: std::env::consts::ARCH.to_owned(),
+            settings: recipe.settings,
+            limits: recipe.limits,
+        },
+    })
 }
 
 pub(crate) struct ResolvedWorkerFactory<'a> {
@@ -346,6 +352,24 @@ impl<'a> ResolvedWorkerFactory<'a> {
             resolver,
             resolved: None,
         }
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    pub(crate) fn from_executable(
+        resolver: &'a dyn HelperResolver,
+        executable: &Path,
+    ) -> Result<Self, String> {
+        let bundle = solstone_core_installed_payload::resolve_screen_ocr_bundle_from_executable(
+            executable,
+            solstone_core_installed_payload::compiled_target(),
+            cfg!(target_env = "gnu"),
+        )
+        .map_err(|error| error.to_string())?;
+        let helper = resolve_helper_bundle(bundle).ok_or("invalid screen OCR bundle")?;
+        Ok(Self {
+            resolver,
+            resolved: Some(Some(helper)),
+        })
     }
 
     fn helper(&mut self) -> Option<ResolvedHelper> {

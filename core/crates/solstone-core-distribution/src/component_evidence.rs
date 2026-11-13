@@ -612,6 +612,33 @@ fn bundled_identity(
                     }],
                 ))
             }
+            "yunet-model" | "sface-model" => {
+                let (version, filename, digest) = if id == "yunet-model" {
+                    (
+                        "2023mar",
+                        "face_detection_yunet_2023mar.onnx",
+                        "YUNET_SHA256",
+                    )
+                } else {
+                    (
+                        "2021dec",
+                        "face_recognition_sface_2021dec.onnx",
+                        "SFACE_SHA256",
+                    )
+                };
+                let sha256 = read_digest_const(
+                    &checkout.join("core/crates/solstone-core-transcribe/src/model_assets.rs"),
+                    digest,
+                )?;
+                Ok((
+                    version.to_owned(),
+                    format!("core/models/assets/{filename}"),
+                    vec![InputRef {
+                        name: filename.to_owned(),
+                        sha256,
+                    }],
+                ))
+            }
             "wespeaker-model" => {
                 let ver = "resnet34-256".to_string();
                 let src = "core/models/assets/wespeaker-resnet34-256.onnx".to_string();
@@ -749,6 +776,33 @@ fn bundled_identity(
                     vec![InputRef {
                         name: spec.archive_name.to_string(),
                         sha256: spec.archive_sha256.to_string(),
+                    }],
+                ))
+            }
+            "yunet-model" | "sface-model" => {
+                let (version, filename, digest) = if id == "yunet-model" {
+                    (
+                        "2023mar",
+                        "face_detection_yunet_2023mar.onnx",
+                        "YUNET_SHA256",
+                    )
+                } else {
+                    (
+                        "2021dec",
+                        "face_recognition_sface_2021dec.onnx",
+                        "SFACE_SHA256",
+                    )
+                };
+                let sha256 = read_digest_const(
+                    &checkout.join("core/crates/solstone-core-transcribe/src/model_assets.rs"),
+                    digest,
+                )?;
+                Ok((
+                    version.to_owned(),
+                    format!("core/models/assets/{filename}"),
+                    vec![InputRef {
+                        name: filename.to_owned(),
+                        sha256,
                     }],
                 ))
             }
@@ -4742,6 +4796,8 @@ mod tests {
             "rfdetr-engine",
             "onnxruntime",
             "wespeaker-model",
+            "yunet-model",
+            "sface-model",
             "pyannote-model",
             "area-tier",
             "firered-vad-model",

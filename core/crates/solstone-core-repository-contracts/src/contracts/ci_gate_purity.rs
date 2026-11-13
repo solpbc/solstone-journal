@@ -39,7 +39,7 @@ fn repo_root() -> PathBuf {
     );
     root
 }
-use super::speaker_native_routes::dependency_keys;
+use super::speaker_native_routes::dependency_keys_for_targets;
 
 fn explicit_binary_names(manifest: &str) -> BTreeSet<String> {
     let mut in_bin = false;
@@ -392,6 +392,73 @@ fn explicit_workspace_binary_artifact_names_are_unique() {
     );
 }
 
+fn only_dynamic_ort(text: &str) -> bool {
+    let manifest = text
+        .parse::<toml_edit::DocumentMut>()
+        .expect("parse Cargo manifest");
+    let mut declarations = Vec::new();
+    if let Some(ort) = manifest
+        .get("dependencies")
+        .and_then(|table| table.get("ort"))
+    {
+        declarations.push(ort);
+    }
+    if let Some(targets) = manifest
+        .get("target")
+        .and_then(toml_edit::Item::as_table_like)
+    {
+        for (_, target) in targets.iter() {
+            if let Some(ort) = target
+                .get("dependencies")
+                .and_then(|table| table.get("ort"))
+            {
+                declarations.push(ort);
+            }
+        }
+    }
+    !declarations.is_empty()
+        && declarations.iter().all(|ort| {
+            ort.get("features")
+                .and_then(toml_edit::Item::as_array)
+                .is_some_and(|features| {
+                    features
+                        .iter()
+                        .any(|feature| feature.as_str() == Some("load-dynamic"))
+                })
+        })
+}
+
+fn host_linker_dependencies(text: &str) -> BTreeSet<String> {
+    // This contract runs on Unix. A literal Windows-only helper dependency
+    // cannot require this host's native linker, even when it uses static ORT.
+    let mut dependencies = dependency_keys_for_targets(text, |target| target != "cfg(windows)");
+    if only_dynamic_ort(text) {
+        dependencies.remove("ort");
+        dependencies.remove("ort.workspace");
+    }
+    dependencies
+}
+
+#[test]
+fn dynamic_ort_consumers_do_not_need_native_linker_exclusions() {
+    assert!(only_dynamic_ort(
+        "[dependencies]\nort={version='1',features=['load-dynamic']}"
+    ));
+    assert!(!only_dynamic_ort(
+        "[dependencies]\nort={version='1',features=['std']}"
+    ));
+    assert!(!only_dynamic_ort("[dependencies]\nimage='1'"));
+    assert!(!only_dynamic_ort(
+        "[dependencies]\nort={version='1',features=['std']}\n[target.'cfg(windows)'.dependencies]\nort={version='1',features=['load-dynamic']}"
+    ));
+    let dependencies = host_linker_dependencies(
+        "[dependencies]\nort={version='1',features=['load-dynamic']}\nnative-helper='1'\n[target.'cfg(windows)'.dependencies]\nwindows-helper='1'",
+    );
+    assert!(dependencies.contains("native-helper"));
+    assert!(!dependencies.contains("ort"));
+    assert!(!dependencies.contains("windows-helper"));
+}
+
 #[test]
 fn rust_host_excludes_match_the_workspace_onnx_closure() {
     let root = repo_root();
@@ -411,7 +478,7 @@ fn rust_host_excludes_match_the_workspace_onnx_closure() {
                 .into_owned();
             let text = fs::read_to_string(core.join(member).join("Cargo.toml"))
                 .expect("read member manifest");
-            (name, dependency_keys(&text))
+            (name, host_linker_dependencies(&text))
         })
         .collect::<Vec<_>>();
 

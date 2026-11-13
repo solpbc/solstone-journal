@@ -84,3 +84,14 @@ solstone-core-depict.workspace = true
 name = "windows_rfdetr_consumers"
 path = "tests/windows_rfdetr_consumers.rs"
 required-features = ["test-fixture-pin"]
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+ort = { workspace = true, features = ["std", "api-24", "load-dynamic"] }
+solstone-core-transcribe.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+solstone-core-speakers-onnx.workspace = true
+
+[[bin]]
+name = "solstone-face-pass"
+path = "src/face_pass_main.rs"

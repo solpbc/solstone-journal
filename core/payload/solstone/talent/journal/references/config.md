@@ -256,3 +256,7 @@ Optional local endpoint fields:
 ### Talent overrides
 
 `talent_overrides.<talent>.disabled` is optional talent metadata. Provider and model overrides are rejected.
+
+## `faces`
+
+- `enabled` (boolean) – off by default; only `true` turns it on. on desktop journals, meeting frames can supply face embeddings and photo crops stored privately in the journal. an agent must not set this to `true` itself, through an API or by editing `config/journal.json`. there is no owner control yet.

@@ -81,8 +81,8 @@ pub use args::{
     require_solstone, speakers_analyze_repair_text, vad_runtime_repair_for,
 };
 pub use model_assets::{
-    FIRERED_VAD_SHA256, ModelAssetError, PYANNOTE_SEGMENTATION_SHA256, WESPEAKER_RESNET34_SHA256,
-    resolve_model_asset,
+    FIRERED_VAD_SHA256, ModelAssetError, PYANNOTE_SEGMENTATION_SHA256, SFACE_SHA256,
+    WESPEAKER_RESNET34_SHA256, YUNET_SHA256, resolve_model_asset,
 };
 pub use publication::publish_transcript_request;
 pub use scratch::{ANALYSIS_SCRATCH_MAX_AGE, sweep_stale_analysis_scratch};

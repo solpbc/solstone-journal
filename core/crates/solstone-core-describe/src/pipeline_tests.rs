@@ -355,6 +355,8 @@ fn synthetic_decode_covers_pipeline_contracts_without_native_media() {
 
     run_decoded(options, &factory, decoded(&[1, 2, 3])).expect("synthetic pipeline succeeds");
 
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    assert!(!crate::faces::sidecar_path(&test.video).exists());
     let rows = test.rows();
     assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
     assert_eq!(rows[0]["_solstone_processing"]["reason_code"], "ok");
@@ -772,6 +774,41 @@ fn failed_retry_keeps_a_partial_reading_and_still_exhausts() {
         rows[0]["_solstone_processing"]["reason_code"],
         "corrupt_input"
     );
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[test]
+fn retained_screen_reading_keeps_its_private_faces() {
+    let test = TestRun::new("keep-faces");
+    fs::create_dir(test.journal.join("config")).unwrap();
+    fs::write(
+        test.journal.join("config/journal.json"),
+        br#"{"faces":{"enabled":true}}"#,
+    )
+    .unwrap();
+    run_decoded(
+        test.options(false, Vec::new()),
+        &ScriptedFactory::new(default_response),
+        decoded(&[1]),
+    )
+    .unwrap();
+    let faces = crate::faces::sidecar_path(&test.video);
+    let previous = b"{\"schema_version\":1,\"fixture\":\"previous face evidence\"}\n";
+    fs::write(&faces, previous).unwrap();
+    rewrite_header(&test.artifact(), |header| {
+        header["_solstone_processing"]["state"] = json!("failed");
+        header["_solstone_processing"]["reason_code"] = json!("analysis_failed");
+        header["_solstone_processing"]["attempts"] = json!(1);
+    });
+    let body = artifact_body(&test.artifact());
+    run_decoded(
+        test.options(false, Vec::new()),
+        &ScriptedFactory::new(default_response),
+        DescribeResult::default(),
+    )
+    .unwrap();
+    assert_eq!(artifact_body(&test.artifact()), body);
+    assert_eq!(fs::read(faces).unwrap(), previous);
 }
 
 #[test]

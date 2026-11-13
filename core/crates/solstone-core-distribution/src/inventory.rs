@@ -747,6 +747,10 @@ pub fn entry_component_id(entry: &Entry) -> Option<&'static str> {
         Entry::ModelAsset { source, .. } => {
             if source.contains("wespeaker") {
                 Some("wespeaker-model")
+            } else if source.ends_with("face_detection_yunet_2023mar.onnx") {
+                Some("yunet-model")
+            } else if source.ends_with("face_recognition_sface_2021dec.onnx") {
+                Some("sface-model")
             } else if source.contains("pyannote") {
                 Some("pyannote-model")
             } else if source.contains("firered_vad") {
@@ -3281,6 +3285,8 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             "onnxruntime",
             "pdfium",
             "wespeaker-model",
+            "yunet-model",
+            "sface-model",
             "pyannote-model",
             "firered-vad-model",
             "area-tier",

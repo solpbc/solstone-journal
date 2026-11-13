@@ -9,6 +9,8 @@ pub mod categories;
 mod decode;
 pub mod detect;
 pub mod extraction;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod faces;
 mod hash;
 mod merge;
 mod notify;

@@ -3513,3 +3513,43 @@ source = "core/distribution/licenses/mlx-helper/swift-crypto/BoringSSL-LICENSE"
 dest = "share/licenses/mlx-helper/swift-crypto/BoringSSL-LICENSE"
 mode = 0o644
 targets = ["macos-arm64"]
+
+[[entry]]
+kind = "model-asset"
+class = "component"
+source = "core/models/assets/face_detection_yunet_2023mar.onnx"
+dest = "lib/solstone_journal_models/assets/face_detection_yunet_2023mar.onnx"
+mode = 0o644
+digest_const = "YUNET_SHA256"
+digest_source = "core/crates/solstone-core-transcribe/src/model_assets.rs"
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
+
+[[entry]]
+kind = "model-asset"
+class = "component"
+source = "core/models/assets/face_recognition_sface_2021dec.onnx"
+dest = "lib/solstone_journal_models/assets/face_recognition_sface_2021dec.onnx"
+mode = 0o644
+digest_const = "SFACE_SHA256"
+digest_source = "core/crates/solstone-core-transcribe/src/model_assets.rs"
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/models/assets/LICENSE-opencv-face-models.txt"
+dest = "share/licenses/opencv-face-models/LICENSE"
+mode = 0o644
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/models/assets/LICENSE-yunet.txt"
+dest = "share/licenses/opencv-face-models/LICENSE-yunet"
+mode = 0o644
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64", "windows-aarch64"]
+
+[[deny]]
+bin = "solstone-face-pass"
+reason = "developer/operator face extraction entry point; never ship"

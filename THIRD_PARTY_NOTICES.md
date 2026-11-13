@@ -7791,3 +7791,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
+
+## OpenCV Zoo face models
+
+The bundled `face_detection_yunet_2023mar.onnx` (YuNet) and
+`face_recognition_sface_2021dec.onnx` (SFace) come from
+[OpenCV Zoo](https://github.com/opencv/opencv_zoo).
+YuNet is MIT-licensed: see [its license](core/models/assets/LICENSE-yunet.txt).
+SFace is Apache-2.0-licensed: see [its license](core/models/assets/LICENSE-opencv-face-models.txt).
+The model SHA-256 values are pinned in the transcription model asset resolver.

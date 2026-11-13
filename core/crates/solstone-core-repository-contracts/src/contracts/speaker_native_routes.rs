@@ -21,6 +21,13 @@ fn read_repo_file(relative: &str) -> String {
 }
 
 pub(super) fn dependency_keys(manifest: &str) -> BTreeSet<String> {
+    dependency_keys_for_targets(manifest, |_| true)
+}
+
+pub(super) fn dependency_keys_for_targets(
+    manifest: &str,
+    include: impl Fn(&str) -> bool,
+) -> BTreeSet<String> {
     let manifest = manifest
         .parse::<toml_edit::DocumentMut>()
         .expect("parse Cargo manifest");
@@ -67,8 +74,10 @@ pub(super) fn dependency_keys(manifest: &str) -> BTreeSet<String> {
         .get("target")
         .and_then(toml_edit::Item::as_table_like)
     {
-        for (_, target) in targets.iter() {
-            add(target.get("dependencies"), &active, &mut keys);
+        for (name, target) in targets.iter() {
+            if include(name) {
+                add(target.get("dependencies"), &active, &mut keys);
+            }
         }
     }
     keys

@@ -5491,6 +5491,7 @@ dependencies = [
  "image",
  "log",
  "nix 0.30.1",
+ "ort",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -5508,7 +5509,9 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-processing-record",
  "solstone-core-segment",
+ "solstone-core-speakers-onnx",
  "solstone-core-system",
+ "solstone-core-transcribe",
  "toml_edit",
  "unicode-normalization",
 ]

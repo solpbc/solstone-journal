@@ -27,6 +27,11 @@ pub const PYANNOTE_SEGMENTATION_SHA256: &str =
 pub const FIRERED_VAD_SHA256: &str =
     "a226e68e695548754a9ab5480a55bbcb8522aa69111cb97e4f093ddce63ad5dc";
 
+/// OpenCV Zoo YuNet face detector (2023 March).
+pub const YUNET_SHA256: &str = "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4";
+/// OpenCV Zoo SFace face encoder (2021 December).
+pub const SFACE_SHA256: &str = "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79";
+
 /// Failure to locate a bundled transcription model asset.
 #[derive(Debug)]
 pub enum ModelAssetError {
@@ -248,6 +253,8 @@ pub(crate) fn verify_digest(name: &str, path: PathBuf) -> Result<PathBuf, ModelA
 
 fn expected_sha256(name: &str) -> &'static str {
     match name {
+        "face_detection_yunet_2023mar.onnx" => YUNET_SHA256,
+        "face_recognition_sface_2021dec.onnx" => SFACE_SHA256,
         "firered_vad.onnx" => FIRERED_VAD_SHA256,
         "wespeaker-resnet34-256.onnx" => WESPEAKER_RESNET34_SHA256,
         "pyannote-segmentation-3.0.onnx" => PYANNOTE_SEGMENTATION_SHA256,

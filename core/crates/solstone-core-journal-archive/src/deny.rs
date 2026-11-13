@@ -69,6 +69,15 @@ pub(crate) fn deny_member(member: &str, regular_file: bool) -> bool {
     if solstone_core_journal::is_trash_root_name(std::ffi::OsStr::new(first)) {
         return true;
     }
+    // Faceprint inputs are private derived evidence, never portable export data.
+    let components = member.split('/').collect::<Vec<_>>();
+    if components.len() == 5
+        && components[0] == "chronicle"
+        && is_eight_digit_day(components[1])
+        && components[4].starts_with(".faces-v1-")
+    {
+        return true;
+    }
     if portable_copy_excluded(member) || (regular_file && copy_file_excluded(member)) {
         return true;
     }
@@ -200,6 +209,28 @@ mod tests {
     const LOG_LEAF: &str = "oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log";
     const JSONL_LEAF: &str = "oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.jsonl";
     const MALFORMED_LEAF: &str = "oplog--not-a-name.log";
+
+    #[test]
+    fn private_face_evidence_is_not_exported() {
+        for leaf in [
+            ".faces-v1-abc.jsonl",
+            ".faces-v1-abc.npy",
+            ".faces-v1-abc-1-0.jpg",
+        ] {
+            assert!(deny_member(
+                &format!("chronicle/20261101/desktop/090000_300/{leaf}"),
+                true
+            ));
+        }
+        assert!(deny_member(
+            "chronicle/20261101/desktop/090000_300/.faces-v1-abc-crops",
+            false
+        ));
+        assert!(!deny_member(
+            "chronicle/20261101/desktop/090000_300/photo.jpg",
+            true
+        ));
+    }
 
     #[test]
     fn the_trash_is_never_exported_and_never_named() {
