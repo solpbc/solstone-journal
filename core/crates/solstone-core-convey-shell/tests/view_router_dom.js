@@ -410,11 +410,14 @@ const ENTRY_TABLE = {
       reads: [],
       contract: true,
     },
+    // Its code is inline in its fragment, as the real one's is. Its list
+    // state is the address's query and an entity is its hash.
     entities: {
       fragment: '/app/entities/workspace',
       scripts: [],
       styles: [],
-      reads: [],
+      reads: [{ route: '/app/entities/', urls: ['/app/entities/api/state'] }],
+      contract: true,
     },
     settings: {
       fragment: '/app/settings/workspace',
@@ -524,6 +527,48 @@ const SEARCH_CODE = `
       }
     });`;
 
+// Entities' script, inline as the real one is: the journal's address for it
+// has a slash, and a link to its own path with another query or hash is its
+// own entry.
+const ENTITIES_CODE = `
+    window.SolViews.register('entities', {
+      mount(ctx) {
+        const views = window.__views.entities;
+        views.mounts += 1;
+        const here = () => /^\\/app\\/entities(\\/|$)/.test(window.location.pathname);
+        if (window.location.pathname === '/app/entities') {
+          ctx.history.replace('/app/entities/' + window.location.search + window.location.hash);
+        }
+        views.addresses.push(window.location.pathname + window.location.search + window.location.hash);
+        const show = () => {
+          const id = window.location.hash.slice(1);
+          views.shown.push(id || 'list');
+          const root = document.getElementById('entities-root');
+          if (root) root.textContent = id ? 'entity ' + id : 'list';
+          ctx.ready('content');
+        };
+        ctx.read('/app/entities/api/state').then(show, () => ctx.ready('error'));
+        ctx.on(document, 'click', (event) => {
+          if (event.defaultPrevented || event.button !== 0 || !here()) return;
+          const link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+          if (!link) return;
+          const url = new URL(link.href, window.location.href);
+          if (!/^\\/app\\/entities(\\/|$)/.test(url.pathname)) return;
+          if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash === window.location.hash) return;
+          event.preventDefault();
+          views.own.push(url.search + url.hash);
+          ctx.history.push('/app/entities/' + url.search + url.hash);
+          show();
+        });
+        ctx.on(window, 'popstate', () => {
+          if (!here()) return;
+          views.pops += 1;
+          show();
+        });
+        return { dispose() { views.disposes += 1; } };
+      }
+    });`;
+
 const FRAGMENTS = {
   '/app/home/workspace': '<div class="home"><h2>your day</h2><div id="home-root"></div></div><script src="/h/home.js"></script>',
   '/app/transcripts/workspace': '<link rel="stylesheet" href="/t/date-nav.css"><div class="tr"><h2 data-day-heading>day</h2><div id="tr-root"></div></div><script src="/t/transcripts.js"></script>',
@@ -536,7 +581,9 @@ const FRAGMENTS = {
     + '<a href="/app/transcripts/20260102?stream=ja1r#090000_300">segment</a><a href="/app/map/20261003">place</a>'
     + '<a href="/app/home/week/20260102">week</a><a href="/app/entities/#ada">entity</a></section>'
     + '<script>' + SEARCH_CODE + '</script>',
-  '/app/entities/workspace': '<div><h2>entities</h2></div>',
+  '/app/entities/workspace': '<section style="display: none"><h2>nothing in this facet yet</h2></section><div id="entities-root"></div>'
+    + '<a href="/app/entities/?folder=hidden">hidden</a><a href="/app/entities/#ada">ada</a><a href="/app/search/">search</a>'
+    + '<script>' + ENTITIES_CODE + '</script>',
   '/app/settings/workspace': '<div><h2>settings</h2></div>',
 };
 
@@ -911,6 +958,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       activities: { mounts: 0, disposes: 0, updates: [], draws: [], pops: 0 },
       map: { mounts: 0, disposes: 0, cleanups: 0, updates: [], draws: [], pages: [] },
       search: { mounts: 0, disposes: 0, draws: [], own: [], pops: 0, held: 0 },
+      entities: { mounts: 0, disposes: 0, shown: [], own: [], pops: 0, addresses: [] },
     },
     __scriptErrors: [],
     __consoleErrors: [],
@@ -949,6 +997,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
     answerAll({ pulse = { n: 1 } } = {}) {
       server.answers.set('/app/home/api/pulse', server.json(pulse));
       server.answers.set('/app/body/api/status', server.json({ coverage: { start: '20260102', end: '20260102' } }));
+      server.answers.set('/app/entities/api/state', server.json({}));
       for (const [url, body] of Object.entries(FRAGMENTS)) server.answers.set(url, server.html(body));
       server.answers.set('/api/shell', server.json({ app_names: [] }));
       server.answers.set('/api/streams/labels', server.json({}));
@@ -1130,16 +1179,16 @@ asyncCase('router: to or from another view is a page load, sources included', as
   const page = makePage();
   page.answerAll();
   await page.boot('home');
-  for (const href of ['/app/entities/', '/app/sources/']) {
+  for (const href of ['/app/settings/', '/app/sources/']) {
     const event = page.click(href);
     assert.ok(!event.defaultPrevented, `${href} is the browser's`);
   }
-  assert.deepStrictEqual(page.record.assigned, ['/app/entities/', '/app/sources/']);
+  assert.deepStrictEqual(page.record.assigned, ['/app/settings/', '/app/sources/']);
   assert.ok(page.view('home'), 'home stays mounted');
 
-  const other = makePage({ pathname: '/app/entities/' });
+  const other = makePage({ pathname: '/app/settings/' });
   other.answerAll();
-  await other.boot('entities');
+  await other.boot('settings');
   assert.strictEqual(other.window.solRouter.isActive(), false, 'a page opened on another view never turns the router on');
   const event = other.click('/app/home/');
   assert.ok(!event.defaultPrevented);
@@ -1265,14 +1314,14 @@ asyncCase('router: leaving the page does not abort a view read', async () => {
 });
 
 asyncCase('router: a day step on another dated view stays a page load', async () => {
-  const page = makePage({ pathname: '/app/entities/' });
+  const page = makePage({ pathname: '/app/settings/' });
   page.answerAll();
-  await page.boot('entities');
-  assert.strictEqual(page.window.solRouter.navigate('/app/entities/20260102'), false);
+  await page.boot('settings');
+  assert.strictEqual(page.window.solRouter.navigate('/app/settings/20260102'), false);
   const pilot = makePage();
   pilot.answerAll();
   await pilot.boot('home');
-  assert.strictEqual(pilot.window.solRouter.navigate('/app/entities/20260102'), false, 'leaving a pilot view for another view loads the page');
+  assert.strictEqual(pilot.window.solRouter.navigate('/app/settings/20260102'), false, 'leaving a pilot view for another view loads the page');
 });
 
 asyncCase('router: body stays in the page with home, transcripts and more, and a day change is an update', async () => {
@@ -1355,7 +1404,7 @@ asyncCase('router: body stays in the page with home, transcripts and more, and a
   page.click('/app/settings/');
   assert.ok(!page.view('settings'));
   assert.deepStrictEqual(page.record.assigned, ['/app/settings/'], 'settings is still a full load');
-  assert.strictEqual(page.window.solRouter.navigate('/app/entities/'), false, 'entities is still a full load');
+  assert.strictEqual(page.window.solRouter.navigate('/app/sources/'), false, 'sources is still a full load');
 });
 
 asyncCase('router: back and forward restore body and where the page was', async () => {
@@ -1485,7 +1534,7 @@ asyncCase('router: activities stays in the page with home, transcripts, more and
   page.click('/app/settings/');
   assert.ok(!page.view('settings'));
   assert.deepStrictEqual(page.record.assigned, ['/app/settings/'], 'settings is still a full load');
-  assert.strictEqual(page.window.solRouter.navigate('/app/entities/'), false, 'entities is still a full load');
+  assert.strictEqual(page.window.solRouter.navigate('/app/sources/'), false, 'sources is still a full load');
 });
 
 asyncCase('router: back and forward restore activities and where the page was', async () => {
@@ -1684,7 +1733,7 @@ asyncCase('router: map stays in the page with home, transcripts, more, body and 
   page.click('/app/settings/');
   assert.ok(!page.view('settings'));
   assert.deepStrictEqual(page.record.assigned, ['/app/settings/'], 'settings is still a full load');
-  assert.strictEqual(page.window.solRouter.navigate('/app/entities/'), false, 'entities is still a full load');
+  assert.strictEqual(page.window.solRouter.navigate('/app/sources/'), false, 'sources is still a full load');
 });
 
 asyncCase('router: back and forward restore the map and where the page was', async () => {
@@ -1854,7 +1903,9 @@ asyncCase('router: search stays in the page with every contract view, and its ow
   await page.clock.advance(400);
   assert.deepStrictEqual(page.record.assigned, []);
   page.click('/app/entities/#ada');
-  assert.deepStrictEqual(page.record.assigned, ['/app/entities/'], 'entities is off the contract: a page load');
+  await page.clock.advance(400);
+  assert.deepStrictEqual(page.record.assigned, [], 'an entity hit opens in the page');
+  assert.deepStrictEqual(page.window.__views.entities.shown, ['ada'], 'its entity');
   assert.deepStrictEqual(page.window.__scriptErrors, []);
 });
 
@@ -2048,6 +2099,90 @@ asyncCase('router: a quick second move ends the first one\'s reads, and the seco
   assert.deepStrictEqual(page.window.__views.home.draws, [{ n: 1 }, { n: 2 }]);
   assert.strictEqual(page.server.of('/app/home/api/pulse').length, 2, 'home adopted the read its move started');
   assert.strictEqual(dayRead().length <= 1, true);
+});
+
+// ---- entities: a view whose list is its query and whose entity is its hash
+
+asyncCase('entities: to and from every other contract view in the page, its arrival focus on the workspace', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  answerBody(page);
+  answerActivities(page);
+  answerMap(page);
+  answerSearch(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+  await page.boot('home');
+  const others = ['/app/home/', '/app/transcripts/', '/app/more/', '/app/body/', '/app/activities/', '/app/map/', '/app/search/'];
+  for (const href of others) {
+    page.click('/app/entities/');
+    await page.clock.advance(400);
+    assert.ok(page.view('entities'), `entities in the page (before ${href})`);
+    assert.strictEqual(page.document.activeElement, page.main(), 'the hidden empty-state heading is passed over');
+    assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'entities');
+    page.click(href);
+    await page.clock.advance(400);
+    const name = href.split('/')[2];
+    assert.ok(page.view(name), `${name} in the page`);
+  }
+  assert.deepStrictEqual(page.record.assigned, [], 'no page load either way');
+  assert.strictEqual(page.window.__views.entities.mounts, others.length);
+  assert.strictEqual(page.window.__views.entities.disposes, others.length);
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
+asyncCase('entities: home\'s links without the slash open the entity or the list at the journal\'s address', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+  page.server.answers.set('/app/home/workspace', page.server.html('<div class="home"><h2>your day</h2><div id="home-root"></div><a href="/app/entities#ada">ada</a><a href="/app/entities">all connections</a></div><script src="/h/home.js"></script>'));
+  await page.boot('transcripts');
+  page.click('/app/home/');
+  await page.clock.advance(400);
+  page.click('/app/entities#ada');
+  await page.clock.advance(400);
+  assert.ok(page.view('entities'), 'in the page');
+  assert.strictEqual(page.location.pathname + page.location.hash, '/app/entities/#ada', 'the address a full load lands on');
+  assert.deepStrictEqual(page.window.__views.entities.shown, ['ada'], 'the entity\'s page');
+  assert.strictEqual(page.window.solRouter.held().mountedPath, '/app/entities/', 'the router follows the address');
+  // The view's own entry on that address stays the view's.
+  page.click('/app/entities/?folder=hidden');
+  await page.clock.advance(100);
+  assert.deepStrictEqual(page.window.__views.entities.own, ['?folder=hidden']);
+  assert.strictEqual(page.window.__views.entities.mounts, 1, 'not a fresh mount');
+  page.history.back();
+  await page.clock.advance(400);
+  assert.strictEqual(page.window.__views.entities.pops, 1, 'back to the entity is the view\'s');
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('home'), 'and back again leaves for home');
+  page.click('/app/entities');
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.href, `${ORIGIN}/app/entities/`, 'the list, at the journal\'s address');
+  assert.deepStrictEqual(page.window.__views.entities.shown.at(-1), 'list');
+  assert.deepStrictEqual(page.record.assigned, []);
+});
+
+asyncCase('entities: the rail\'s entities on a folder or an entity is the view\'s own entry; the same address is a fresh mount', async () => {
+  const page = makePage();
+  page.answerAll();
+  await page.boot('home');
+  page.click('/app/entities/');
+  await page.clock.advance(400);
+  page.click('/app/entities/#ada');
+  await page.clock.advance(100);
+  const length = page.history.entries.length;
+  const event = page.link('/app/entities/').click();
+  await page.clock.advance(100);
+  assert.ok(event.defaultPrevented, 'not a page load');
+  assert.strictEqual(page.history.entries.length, length + 1, 'one entry');
+  assert.deepStrictEqual(page.window.__views.entities.own, ['#ada', ''], 'the view\'s own entry, back to its list');
+  assert.strictEqual(page.window.__views.entities.mounts, 1);
+  page.click('/app/entities/');
+  await page.clock.advance(400);
+  assert.strictEqual(page.window.__views.entities.mounts, 2, 'the same address again is the router\'s fresh mount');
+  assert.deepStrictEqual(page.record.assigned, []);
 });
 
 // ---- the store
@@ -2337,7 +2472,7 @@ asyncCase('prefetch: pressing or hovering on a rail entry fetches its code, neve
   page.document.dispatchEvent({ type: 'pointerdown', target: rail });
   await page.clock.advance(150);
   assert.strictEqual(page.server.calls.length, before + 3, 'once per view');
-  page.document.dispatchEvent({ type: 'pointerdown', target: page.link('/app/entities/') });
+  page.document.dispatchEvent({ type: 'pointerdown', target: page.link('/app/settings/') });
   await page.clock.advance(150);
   assert.strictEqual(page.server.calls.length, before + 3, 'another view\'s code is its own page\'s');
   assert.ok(!page.server.calls.some((call) => call.url.includes('/api/') && call.url !== '/api/shell' && call.url !== '/api/streams/labels' && call.url !== '/app/home/api/pulse'));
