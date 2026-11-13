@@ -23,6 +23,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - an activity that belongs to more than one facet now shows once to a connected agent, under the facet it belongs to most, with the others named beside it. before, it showed once for each facet, so an agent's count of your week ran high.
 - connected agents now see what kind each activity was, such as a meeting or writing, and where it came from. a voice your journal has no name for is counted, and no longer listed as a person called Speaker 1.
 - an agent asking about a week by a day in the middle of it now gets that week. before, it got nothing unless it named the sunday.
+- the sources page and the support page now work like home, transcripts and search: moving between them and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 
 ### Fixed
 
