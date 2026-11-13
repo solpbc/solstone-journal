@@ -404,7 +404,10 @@ fn link_entry(from: &Path, to: &Path) -> Result<Linking, TrashError> {
     match hard_link(from, to) {
         Ok(()) => Ok(Linking::Linked),
         Err(error) if no_hard_links(&error) => {
-            let copied = std::fs::copy(from, to).and_then(|_| std::fs::File::open(to)?.sync_all());
+            let copied = std::fs::copy(from, to).and_then(|_| {
+                // Windows flushes a file only through a handle that can write.
+                std::fs::OpenOptions::new().write(true).open(to)?.sync_all()
+            });
             match copied {
                 Ok(()) => Ok(Linking::Copied),
                 Err(error) => {

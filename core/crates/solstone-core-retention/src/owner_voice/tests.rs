@@ -29,8 +29,13 @@ fn at() -> DateTime<Utc> {
 
 fn journal() -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!(
-        "retention-owner-voice-{}-{}",
+        "retention-owner-voice-{}-{}-{}",
         std::process::id(),
+        // A process id comes round again on a shared box, and an earlier
+        // run's folder may still be there.
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_nanos()),
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&root).unwrap();
