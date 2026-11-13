@@ -20,6 +20,49 @@ pub const STATE: &str = "faces_state.json";
 pub const PHOTO: &str = "photo.jpg";
 pub type Result<T> = std::result::Result<T, String>;
 
+/// Owner-action refusals that HTTP callers can classify without parsing text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionError {
+    FacesOn,
+    UnknownKey,
+    NoEvidence,
+    StaleAction,
+    BusySource(String),
+    Other(String),
+}
+pub type ActionResult<T> = std::result::Result<T, ActionError>;
+impl std::fmt::Display for ActionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FacesOn => f.write_str("turn off face suggestions before clearing face data"),
+            Self::UnknownKey => f.write_str("face is no longer available"),
+            Self::NoEvidence => f.write_str("no face evidence"),
+            Self::StaleAction => f.write_str("that face action is no longer the last action"),
+            Self::BusySource(message) | Self::Other(message) => f.write_str(message),
+        }
+    }
+}
+impl std::error::Error for ActionError {}
+impl From<String> for ActionError {
+    fn from(message: String) -> Self {
+        Self::Other(message)
+    }
+}
+impl From<&str> for ActionError {
+    fn from(message: &str) -> Self {
+        Self::Other(message.to_owned())
+    }
+}
+impl ActionError {
+    pub(super) fn source(error: std::io::Error) -> Self {
+        if error.kind() == std::io::ErrorKind::WouldBlock {
+            Self::BusySource(error.to_string())
+        } else {
+            Self::Other(error.to_string())
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct FaceKey {
     pub day: String,

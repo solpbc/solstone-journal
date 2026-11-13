@@ -191,13 +191,13 @@ pub fn segment_relative(key: &FaceKey) -> Result<String> {
 fn action(
     journal: &Path,
     entity: &str,
-    change: impl FnOnce(&mut FacesState, &Archive) -> Result<()>,
-) -> Result<String> {
+    change: impl FnOnce(&mut FacesState, &Archive) -> ActionResult<()>,
+) -> ActionResult<String> {
     let _trust = crate::hold_entity_trust_lock(journal).map_err(err)?;
     let dir = entity_directory(journal, entity)?;
     let (binding, _lock) = hold_directory(&dir)?;
     let mut state = read_state(&dir)?;
-    let mut archive = read_archive(&dir)?.ok_or("no face evidence")?;
+    let mut archive = read_archive(&dir)?.ok_or(ActionError::NoEvidence)?;
     apply_rejections(&mut archive, &state);
     let token = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
     let mut previous = state.decision.clone();
@@ -229,14 +229,14 @@ fn action(
     Ok(token)
 }
 
-pub fn choose(journal: &Path, entity: &str, key: &FaceKey) -> Result<String> {
+pub fn choose(journal: &Path, entity: &str, key: &FaceKey) -> ActionResult<String> {
     let _trust = crate::hold_entity_trust_lock(journal).map_err(err)?;
     // Busy producer claims are refused rather than waited for under entity trust.
     let (archive, _) = load(journal, entity)?;
     let face = archive
         .as_ref()
         .and_then(|a| a.faces.iter().find(|f| &f.metadata.key == key))
-        .ok_or("face is no longer available")?;
+        .ok_or(ActionError::UnknownKey)?;
     let crop = face.metadata.crop.as_deref().ok_or("face has no crop")?;
     let path = crop_path(journal, key, crop)?;
     let segment = contained_path(journal, &segment_relative(key)?).map_err(err)?;
@@ -244,7 +244,7 @@ pub fn choose(journal: &Path, entity: &str, key: &FaceKey) -> Result<String> {
         &segment,
         accumulation::claim_options(),
     )
-    .map_err(err)?;
+    .map_err(ActionError::source)?;
     let jpeg = optional(&path)?
         .filter(|bytes| !bytes.is_empty())
         .ok_or("face crop is no longer available")?;
@@ -254,7 +254,7 @@ pub fn choose(journal: &Path, entity: &str, key: &FaceKey) -> Result<String> {
             .faces
             .iter()
             .find(|f| &f.metadata.key == key)
-            .ok_or("face is no longer available")?;
+            .ok_or(ActionError::UnknownKey)?;
         if current != face {
             return Err("face evidence changed; refresh before choosing".into());
         }
@@ -268,16 +268,16 @@ pub fn choose(journal: &Path, entity: &str, key: &FaceKey) -> Result<String> {
         Ok(())
     })
 }
-pub fn reject(journal: &Path, entity: &str, key: &FaceKey) -> Result<String> {
+pub fn reject(journal: &Path, entity: &str, key: &FaceKey) -> ActionResult<String> {
     action(journal, entity, |state, archive| {
         if !archive.faces.iter().any(|f| &f.metadata.key == key) {
-            return Err("face is no longer available".into());
+            return Err(ActionError::UnknownKey);
         }
         state.decision.rejections.push((key.clone(), true));
         Ok(())
     })
 }
-pub fn dismiss(journal: &Path, entity: &str) -> Result<String> {
+pub fn dismiss(journal: &Path, entity: &str) -> ActionResult<String> {
     action(journal, entity, |state, archive| {
         state.decision.photo = None;
         state.decision.dismissed_at = Some(chrono::Utc::now().to_rfc3339());
@@ -286,7 +286,7 @@ pub fn dismiss(journal: &Path, entity: &str) -> Result<String> {
         Ok(())
     })
 }
-pub fn undo(journal: &Path, entity: &str, last: &str) -> Result<()> {
+pub fn undo(journal: &Path, entity: &str, last: &str) -> ActionResult<()> {
     let _trust = crate::hold_entity_trust_lock(journal).map_err(err)?;
     let dir = entity_directory(journal, entity)?;
     let (binding, _lock) = hold_directory(&dir)?;
@@ -295,7 +295,7 @@ pub fn undo(journal: &Path, entity: &str, last: &str) -> Result<()> {
         .last
         .take()
         .filter(|u| u.token == last)
-        .ok_or("that face action is no longer the last action")?;
+        .ok_or(ActionError::StaleAction)?;
     state.decision = undo.decision;
     save_state(&dir, &binding, &state)?;
     if let Some(mut a) = read_archive(&dir)? {
