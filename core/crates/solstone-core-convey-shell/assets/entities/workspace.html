@@ -4283,16 +4283,23 @@ ctx.on(window, 'popstate', () => {
 });
 
 let lastDetailId = null;
+// Where the list was when an entity was opened from it. An entity's page
+// opens at its top, as it does on its own address, so its focused name is in
+// view; its back link puts the list back where it was.
+let listScroll = 0;
 
 function navigateToEntity(entityId) {
+  if (!location.hash) listScroll = window.scrollY || 0;
   if (!ownEntry('push', `${ENTITIES_PATH}${location.search}#${entityId}`)) return;
   handleHashChange();
+  window.scrollTo(0, 0);
   holdFocus(true, null, restoredFocusTarget);
 }
 
 function navigateToList() {
   if (!ownEntry('push', `${ENTITIES_PATH}${location.search}`)) return;
   showListView();
+  window.scrollTo(0, listScroll);
   reportEntitiesReady(journalSummary || entitiesData ? 'content' : 'empty');
   holdFocus(true, null, restoredFocusTarget);
 }
@@ -5101,7 +5108,10 @@ async function commitJournalEntityMerge(sourceId, targetId, targetName, button) 
       body: JSON.stringify({source_slug: sourceId, target_slug: targetId, commit: true})
     });
     pendingJournalMergeDone = result.merge_id ? result : null;
-    if (ownEntry('push', `${ENTITIES_PATH}${location.search}#${targetId}`)) handleHashChange();
+    if (ownEntry('push', `${ENTITIES_PATH}${location.search}#${targetId}`)) {
+      handleHashChange();
+      window.scrollTo(0, 0);
+    }
     await loadJournalEntities({refresh: true});
   } catch (err) {
     // A repeat merge settles durable recovery under entity-trust before
