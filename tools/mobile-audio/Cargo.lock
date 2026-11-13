@@ -1963,6 +1963,9 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-npy",
+ "solstone-core-removals",
+ "solstone-core-segment",
+ "solstone-core-trash",
  "unicode-normalization",
  "zip",
 ]
@@ -2262,6 +2265,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-backup",
  "solstone-core-callosum",
+ "solstone-core-entity",
  "solstone-core-format",
  "solstone-core-journal-config",
  "solstone-core-journal-io",

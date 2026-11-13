@@ -64,6 +64,16 @@ impl Hold for SegmentHold {
     }
 }
 
+struct RecordingHold {
+    segment: SegmentHold,
+    _entity: solstone_core_entity::EntityTrustLock,
+}
+impl Hold for RecordingHold {
+    fn check(&self) -> Result<(), String> {
+        self.segment.check()
+    }
+}
+
 impl Kind for Recordings<'_> {
     fn handles(&self, unit: &Unit) -> bool {
         matches!(unit, Unit::Segment { .. } | Unit::Memory { .. })
@@ -72,7 +82,12 @@ impl Kind for Recordings<'_> {
     fn hold<'h>(&'h self, journal: &Path, item: &Item) -> Result<Box<dyn Hold + 'h>, String> {
         let target = target_of(item)
             .ok_or_else(|| "this isn't a recording your journal can place".to_owned())?;
-        Ok(Box::new(SegmentHold::acquire(journal, &target)?))
+        let segment = SegmentHold::acquire(journal, &target)?;
+        let entity = solstone_core_entity::faceprints::hold_source_removal(journal)?;
+        Ok(Box::new(RecordingHold {
+            segment,
+            _entity: entity,
+        }))
     }
 
     fn present(&self, journal: &Path, path: &str) -> bool {
@@ -109,6 +124,10 @@ impl Kind for Recordings<'_> {
         let target = target_of(item)
             .ok_or_else(|| "this isn't a recording your journal can place".to_owned())?;
         if change == Change::Detached {
+            solstone_core_entity::faceprints::remove_segment_rows(
+                journal,
+                &crate::layout::segment_rel(&target.day, &target.stream, &target.dir),
+            )?;
             crate::door::place_tombstone(
                 journal,
                 &target,

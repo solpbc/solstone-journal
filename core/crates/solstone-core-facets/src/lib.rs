@@ -130,6 +130,7 @@ pub use store::{
     delete_created_entity_if_unreferenced_with_hook, delete_journal_entity_with_hook,
     reset_undone_operation_for_test, test_hooks, unblock_journal_entity_with_hook,
 };
+pub use store::{reconcile_faceprints, reconcile_faceprints_for_activity};
 pub use store::{strava_lines_may_be_folded, superseded_record_ids};
 pub use trust_lock::{
     FacetTrustLock, FacetTrustLockError, hold_facet_trust_lock, hold_facet_trust_lock_raw_for_test,
@@ -147,6 +148,8 @@ mod create_if_absent_tests;
 mod detected_entity_exclusion_fixture_tests;
 #[cfg(all(test, feature = "full-tests"))]
 mod detected_entity_tests;
+#[cfg(all(test, feature = "full-tests"))]
+mod faceprints_tests;
 #[cfg(all(test, feature = "full-tests"))]
 mod facet_entity_fixture_tests;
 #[cfg(all(test, feature = "full-tests"))]

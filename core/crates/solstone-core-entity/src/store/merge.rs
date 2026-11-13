@@ -49,8 +49,9 @@ use super::voiceprints::{
     resolve_voiceprint_path, write_voiceprints_npz,
 };
 
-const PHASES: [&str; 8] = [
+const PHASES: [&str; 9] = [
     "voiceprints",
+    "faceprints",
     "facets",
     "segments",
     "activities",
@@ -262,6 +263,8 @@ pub(crate) fn commit_entity_merge_with_injector(
     // changes, rather than rolled back from the facets phase.
     check_facet_links(journal, source_id, target_id)?;
     ensure_voiceprint_merge_compatible(journal, source_id, target_id)?;
+    super::faceprints::preflight_merge(journal, source_id, target_id)
+        .map_err(EntityMergeError::Refused)?;
     let source_dir = resolve_entity_dir(journal, source_id)?;
     let target_dir = resolve_entity_dir(journal, target_id)?;
     let merge_id = format!(
@@ -292,6 +295,8 @@ pub(crate) fn commit_entity_merge_with_injector(
     let mut stats = MergeStats::default();
     for phase in PHASES {
         let result = match phase {
+            "faceprints" => super::faceprints::merge(journal, source_id, target_id)
+                .map_err(EntityMergeError::Refused),
             "voiceprints" => merge_voiceprints(
                 journal,
                 source_id,

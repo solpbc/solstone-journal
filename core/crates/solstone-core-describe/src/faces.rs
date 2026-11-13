@@ -105,14 +105,7 @@ fn crop_reference(prefix: &str, frame: u64, face: usize, bytes: &[u8]) -> String
 /// Readers hold the screen output claim and compare this with the face header
 /// before consuming the sidecar; a mismatch requires rebuilding that evidence.
 pub fn screen_body_digest(screen: &Path) -> io::Result<String> {
-    let bytes = fs::read(screen)?;
-    // Processing/retry metadata lives on the first line and may change while
-    // describe deliberately retains the previous frame reading unchanged.
-    let body = bytes
-        .iter()
-        .position(|byte| *byte == b'\n')
-        .map_or(&[][..], |index| &bytes[index + 1..]);
-    Ok(format!("{:x}", Sha256::digest(body)))
+    solstone_core_segment::screen_body_digest(screen)
 }
 
 pub struct FacePass {

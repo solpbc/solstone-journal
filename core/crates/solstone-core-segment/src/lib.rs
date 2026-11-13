@@ -19,6 +19,17 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 mod body_only;
+/// Digest of exact screen frame rows, excluding the mutable retry header.
+pub fn screen_body_digest(screen: &std::path::Path) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    let bytes =
+        solstone_core_journal_io::read_bytes(screen, vec![]).map_err(std::io::Error::other)?;
+    let body = bytes
+        .iter()
+        .position(|b| *b == b'\n')
+        .map_or(&[][..], |i| &bytes[i + 1..]);
+    Ok(format!("{:x}", Sha256::digest(body)))
+}
 #[cfg(any(test, feature = "test-fixtures"))]
 pub mod body_twins;
 mod calendar;

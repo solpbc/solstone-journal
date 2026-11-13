@@ -726,6 +726,7 @@ pub const SHARED_IN_TRASH: &str =
 /// The import's segments held, its run not going on, and, when it comes back,
 /// nothing it shares held by another item in the trash.
 struct ImportHold {
+    _entity: solstone_core_entity::EntityTrustLock,
     /// A body source's import lock, held for the whole move.
     _source: Option<solstone_core_journal_io::FileLock>,
     segments: SegmentHold,
@@ -824,9 +825,12 @@ impl Kind for Imports<'_> {
         {
             return Err(words.to_owned());
         }
+        let segments = SegmentHold::acquire_lease(journal, &targets_of(item))?;
+        let entity = solstone_core_entity::faceprints::hold_source_removal(journal)?;
         Ok(Box::new(ImportHold {
+            _entity: entity,
             _source: source,
-            segments: SegmentHold::acquire_lease(journal, &targets_of(item))?,
+            segments,
             moving: std::cell::RefCell::new(None),
             journal: journal.to_path_buf(),
             id,
@@ -903,6 +907,7 @@ impl Kind for Imports<'_> {
                 let Some((day, stream, dir)) = parse_segment_rel(path) else {
                     continue;
                 };
+                solstone_core_entity::faceprints::remove_segment_rows(journal, path)?;
                 let prefix = format!("{path}/");
                 let manifest: Vec<String> = files
                     .iter()
@@ -1099,6 +1104,46 @@ mod tests {
         Imports::new(&NoIndex)
             .trash(root, ID, Action::ImportDelete, surface())
             .unwrap()
+    }
+
+    #[test]
+    fn dynamic_import_movement_and_segment_deletion_fence_refuse_instead_of_locking_each_other() {
+        let temp = journal();
+        let root = temp.path();
+        let mut item = trash(root);
+        let kind = Imports::new(&NoIndex);
+        solstone_core_trash::attach(root, &[&kind], &item.id, Action::Recover, surface()).unwrap();
+        item.state = solstone_core_trash::State::Detaching;
+        let other_root = root.to_path_buf();
+        let (ready, acquired) = std::sync::mpsc::channel();
+        let (attempt, proceed) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            // The direct removal door holds this exact segment lock before
+            // attempting its entity-trust fence. Omit its admission layer so
+            // the test reaches this inversion rather than an earlier refusal.
+            let segment = solstone_core_journal_io::hold_lock(
+                other_root.join("chronicle/20260801/import.ics/090000_300"),
+                solstone_core_journal_io::LockOptions::default(),
+            )
+            .unwrap();
+            ready.send(()).unwrap();
+            proceed.recv().unwrap();
+            let refused =
+                solstone_core_entity::faceprints::hold_source_removal(&other_root).is_err();
+            drop(segment);
+            refused
+        });
+        acquired.recv().unwrap();
+        let held = kind.hold(root, &item).unwrap();
+        attempt.send(()).unwrap();
+        held.moving("chronicle/20260801/import.ics/090000_300")
+            .unwrap();
+        drop(held);
+        assert!(worker.join().unwrap());
+        assert!(
+            root.join("chronicle/20260801/import.ics/090000_300/event_transcript.md")
+                .is_file()
+        );
     }
 
     #[test]

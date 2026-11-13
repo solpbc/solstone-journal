@@ -343,6 +343,7 @@ impl Kind for Entities<'_> {
                 queue_moved_links_detections(journal, files)
             }
             Change::Attached => {
+                solstone_core_entity::faceprints::prune_unavailable_segments(journal, &id)?;
                 self.index
                     .paths_returned(files)
                     .map_err(|error| format!("search was not updated: {}", error.reason))?;

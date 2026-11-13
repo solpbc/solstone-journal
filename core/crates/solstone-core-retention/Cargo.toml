@@ -17,6 +17,7 @@ publish = false
 workspace = true
 
 [dependencies]
+solstone-core-entity.workspace = true
 solstone-core-removals.workspace = true
 solstone-core-trash.workspace = true
 log.workspace = true

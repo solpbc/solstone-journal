@@ -14,6 +14,9 @@ full-tests = []
 test-hooks = []
 
 [dependencies]
+solstone-core-trash.workspace = true
+solstone-core-segment.workspace = true
+solstone-core-removals.workspace = true
 solstone-core-indexer-todo.workspace = true
 caseless = "0.2.2"
 chrono.workspace = true

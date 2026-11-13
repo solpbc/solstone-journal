@@ -1330,6 +1330,11 @@ fn remove_one(
         );
     }
 
+    let _entity = match solstone_core_entity::faceprints::hold_source_removal(journal) {
+        Ok(held) => held,
+        Err(reason) => return (refused(target, live, reason), false),
+    };
+
     // Step 2: stage, then make the move durable.
     if let Err(reason) = stage_segment(guard, target, &live, &staged) {
         return (refused(target, live, reason), false);
@@ -1476,6 +1481,11 @@ fn finish_staged(
         return refused_staged(target, staged.to_owned(), reason);
     }
 
+    let _entity = match solstone_core_entity::faceprints::hold_source_removal(journal) {
+        Ok(held) => held,
+        Err(reason) => return refused_staged(target, staged.to_owned(), reason),
+    };
+
     // Step 3: the manifest and the tombstone, written INTO the staged directory.
     //
     // ⚠ The manifest has to be captured here, before anything is removed: the
@@ -1579,6 +1589,9 @@ fn finish_staged(
         return refused_staged(target, staged.to_owned(), owner_reason(&error));
     }
 
+    if let Err(error) = solstone_core_entity::faceprints::remove_segment_rows(journal, &live) {
+        return refused_staged(target, staged.to_owned(), error);
+    }
     // Step 5: restore, refusing a name something else has taken.
     #[cfg(all(test, unix, feature = "full-tests"))]
     cooperation_tests::checkpoint(cooperation_tests::Phase::BeforeRestore, target);

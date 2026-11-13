@@ -718,6 +718,7 @@ mod tests {
                             || path.starts_with("indexer")
                             || path == Path::new("backup-activity.lock")
                             || path == Path::new("health/daily-location-admission.lock")
+                            || path == Path::new("health/locks/entity-trust.lock")
                             || path.starts_with(solstone_core_removals::RECORD_DIR),
                         "unexpected journal mutation: {}",
                         path.display()

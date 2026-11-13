@@ -20,6 +20,15 @@ use std::path::{Path, PathBuf};
 
 /// A file name, and the directory whose files may spell it.
 const NAMES: &[(&str, &str)] = &[
+    (
+        "faceprints.npz",
+        "core/crates/solstone-core-entity/src/store/",
+    ),
+    (
+        "faces_state.json",
+        "core/crates/solstone-core-entity/src/store/",
+    ),
+    ("photo.jpg", "core/crates/solstone-core-entity/src/store/"),
     ("entity.json", "core/crates/solstone-core-entity/src/store/"),
     (
         "observations.jsonl",

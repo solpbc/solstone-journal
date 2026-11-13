@@ -129,6 +129,19 @@ fn run_routine(
             },
         };
     }
+    if id == "faces:reconcile" {
+        if !forwarded.is_empty() {
+            return usage_error(RUN_USAGE, "unexpected face reconciliation arguments");
+        }
+        return match solstone_core_facets::reconcile_faceprints(journal) {
+            Ok(added) => success(format!("{{\"added\":{added}}}\n")),
+            Err(error) => CliRun {
+                stdout: String::new(),
+                stderr: format!("face reconciliation: {error}\n"),
+                exit_code: 1,
+            },
+        };
+    }
     if id == "speakers:discover-voices" {
         #[cfg(windows)]
         let Some(generation) = services.discovery_generation else {

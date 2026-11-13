@@ -15,6 +15,7 @@ publish = false
 unsafe_code = "deny"
 
 [dependencies]
+solstone-core-facets.workspace = true
 solstone-core-indexer-todo.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true

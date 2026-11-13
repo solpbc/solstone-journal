@@ -369,6 +369,83 @@ fn write_rows(
     Ok(())
 }
 
+/// Reconcile one current activity after backfill or a participation change.
+/// It is safe to queue this coordinate: no stale record snapshot is accepted.
+pub fn reconcile_faceprints_for_activity(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    record_id: &str,
+) -> Result<usize, String> {
+    if !solstone_core_entity::faceprints::enabled(root)? {
+        return Ok(0);
+    }
+    let _trust = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    let path = day_path(root, facet, day).map_err(|e| e.to_string())?;
+    let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
+    let records = read_day_lines(&path).map_err(|e| e.to_string())?;
+    if !records.kept.is_empty() {
+        return Err("unreadable activity rows; face reconciliation deferred".into());
+    }
+    let absent = Map::from_iter([("id".to_owned(), Value::String(record_id.to_owned()))]);
+    let record = records
+        .rows
+        .iter()
+        .find(|r| id(r) == record_id)
+        .unwrap_or(&absent);
+    solstone_core_entity::faceprints::accumulation::reconcile_activity(root, facet, day, record)
+}
+
+/// Replay private face evidence from current activity records, without inference.
+/// The maintenance scheduler calls this after an interrupted derived write. The
+/// same trust lock as participation writers prevents an old assignment winning.
+pub fn reconcile_faceprints(root: &Path) -> Result<usize, String> {
+    if !solstone_core_entity::faceprints::enabled(root)? {
+        return Ok(0);
+    }
+    let _trust = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    let entities = solstone_core_entity::live_journal_entities(root).map_err(|e| e.to_string())?;
+    let mut live = std::collections::BTreeSet::new();
+    let mut added = 0;
+    for name in super::map::list_declared_facet_names(root).map_err(|e| e.to_string())? {
+        let name = name.as_str();
+        let activity_dir = root.join("facets").join(name).join("activities");
+        if !activity_dir.is_dir() {
+            continue;
+        }
+        for day in
+            solstone_core_journal_io::list_dir_entries(&activity_dir).map_err(|e| e.to_string())?
+        {
+            if day.kind != solstone_core_journal_io::DirEntryKind::File
+                || day.path.extension().and_then(|s| s.to_str()) != Some("jsonl")
+            {
+                continue;
+            }
+            let day_name = day
+                .path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .ok_or("invalid activity day")?;
+            let _lock = hold_lock(&day.path, LockOptions::default()).map_err(|e| e.to_string())?;
+            let records = read_day_lines(&day.path).map_err(|e| e.to_string())?;
+            if !records.kept.is_empty() {
+                return Err("unreadable activity rows; face reconciliation deferred".into());
+            }
+            for row in records.rows {
+                live.insert(
+                    serde_json::to_string(&[name, day_name, id(&row)])
+                        .map_err(|e| e.to_string())?,
+                );
+                added += solstone_core_entity::faceprints::accumulation::reconcile_activity_with_entities(
+                    root, name, day_name, &row, &entities,
+                )?;
+            }
+        }
+    }
+    solstone_core_entity::faceprints::remove_orphan_activities(root, &live)?;
+    Ok(added)
+}
+
 /// Point rows a facet merge moved here at this facet. A merge copies a
 /// facet's activity rows as they are, so a moved row still names the merged
 /// facet's id, and every write-side identity check refuses it. A row whose
@@ -476,6 +553,7 @@ pub(super) fn locked_modify_day_records<T>(
     if let Some(Written {
         path,
         hidden_changed,
+        face_ids,
     }) = written
     {
         super::publication::publish_saved(root, &path);
@@ -483,6 +561,13 @@ pub(super) fn locked_modify_day_records<T>(
         // search leaves out what a hidden activity made, or takes it back.
         for id in hidden_changed {
             super::publication::publish_activity_outputs(root, facet, day, &id);
+        }
+        // Publication and its notifications have completed before derived work.
+        // Re-read under the source locks: a newer assignment always wins.
+        for id in face_ids {
+            if let Err(error) = reconcile_faceprints_for_activity(root, facet, day, &id) {
+                log::warn!("face activity reconciliation deferred: {error}");
+            }
         }
     }
     Ok(result)
@@ -493,6 +578,7 @@ pub(super) fn locked_modify_day_records<T>(
 struct Written {
     path: PathBuf,
     hidden_changed: Vec<String>,
+    face_ids: std::collections::BTreeSet<String>,
 }
 
 /// The ids whose hidden differs between `before` and `after`. A row that is
@@ -557,12 +643,21 @@ fn write_day_records<T>(
         return Ok((result, None));
     }
     write_rows(&path, &updated, &kept)?;
+    let face_ids = current
+        .iter()
+        .chain(&updated)
+        .filter(|row| {
+            current.iter().find(|r| id(r) == id(row)) != updated.iter().find(|r| id(r) == id(row))
+        })
+        .map(|r| id(r).to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
     let hidden_changed = hidden_changed(&current, &updated);
     Ok((
         result,
         Some(Written {
             path,
             hidden_changed,
+            face_ids,
         }),
     ))
 }

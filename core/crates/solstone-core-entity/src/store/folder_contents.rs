@@ -18,6 +18,13 @@ pub fn unrecognized_entity_files(
     let mut count = 0;
     for file in descendant_files(&directory)? {
         let allowed = file == directory.join("entity.json")
+            || [
+                super::faceprints::ARCHIVE,
+                super::faceprints::STATE,
+                super::faceprints::PHOTO,
+            ]
+            .iter()
+            .any(|name| file == directory.join(name))
             || file
                 .strip_prefix(directory.join("history/events"))
                 .is_ok_and(|relative| relative.extension() == Some("json".as_ref()));

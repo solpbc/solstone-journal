@@ -24,6 +24,7 @@ pub use solstone_core_journal_io::FileLock;
 pub use solstone_core_journal_io::LockError;
 pub use solstone_core_journal_io::LockTimeout;
 pub use solstone_core_journal_io::MalformedPolicy;
+pub use store::faceprints;
 pub use store::facet_links;
 pub use store::hidden_names;
 pub use store::{

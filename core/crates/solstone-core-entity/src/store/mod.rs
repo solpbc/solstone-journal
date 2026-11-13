@@ -9,6 +9,7 @@ mod create;
 mod derived;
 mod entity_paths;
 mod error;
+pub mod faceprints;
 mod folder_contents;
 mod history;
 mod identity;

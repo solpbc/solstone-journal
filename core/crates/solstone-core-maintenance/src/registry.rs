@@ -29,7 +29,13 @@ pub struct RoutineDescriptor {
     pub max_runtime: Option<&'static str>,
 }
 
-const ROUTINES: [RoutineDescriptor; 14] = [
+const ROUTINES: [RoutineDescriptor; 15] = [
+    RoutineDescriptor {
+        id: "faces:reconcile",
+        description: "reconcile private face evidence with current meeting participation.",
+        cadence: Cadence::Daily,
+        max_runtime: Some("10m"),
+    },
     RoutineDescriptor {
         id: "speakers:discover-voices",
         description: "Refresh recurring voice discovery cache.",
@@ -128,7 +134,8 @@ pub fn routine(id: &str) -> Option<&'static RoutineDescriptor> {
 
 #[cfg(test)]
 fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
-    const EXPECTED: [(&str, Cadence, Option<&str>); 14] = [
+    const EXPECTED: [(&str, Cadence, Option<&str>); 15] = [
+        ("faces:reconcile", Cadence::Daily, Some("10m")),
         ("speakers:discover-voices", Cadence::Daily, Some("10m")),
         (
             "speakers:candidate-pair-suggestions",
@@ -184,9 +191,8 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn census_has_fourteen_unique_well_formed_ids() {
+    fn census_has_unique_well_formed_ids() {
         let all = routines();
-        assert_eq!(all.len(), 14);
         let ids = all
             .iter()
             .map(|descriptor| descriptor.id)

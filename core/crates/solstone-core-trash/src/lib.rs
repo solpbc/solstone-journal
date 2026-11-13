@@ -667,6 +667,73 @@ pub fn moving(journal: &Path) -> Result<Vec<Item>, TrashError> {
         .collect())
 }
 
+/// Exclusive, nonblocking access for a domain clearing derived data from all
+/// restorable payloads. Item records remain intact, so recovery keeps working.
+pub struct PayloadScrub<'a> {
+    journal: &'a Path,
+    _lock: FileLock,
+}
+
+pub fn hold_payload_scrub(journal: &Path) -> Result<PayloadScrub<'_>, TrashError> {
+    ensure_trash(journal)?;
+    let lock = hold_lock(
+        trash_root(journal).join(LOCK_STEM),
+        LockOptions {
+            timeout: std::time::Duration::ZERO,
+            ..LockOptions::default()
+        },
+    )
+    .map_err(|e| TrashError::Held(e.to_string()))?;
+    Ok(PayloadScrub {
+        journal,
+        _lock: lock,
+    })
+}
+
+impl PayloadScrub<'_> {
+    /// `accept` sees the original journal-relative file coordinate. Only the
+    /// trash walks and removes its payloads, including displaced recovery copies.
+    pub fn remove_files(&self, accept: impl Fn(&str) -> bool) -> Result<usize, TrashError> {
+        let mut removed = 0;
+        for item in every_item(self.journal, true)? {
+            for part in [FILES_DIR, DISPLACED_DIR] {
+                let base = format!("{}/{part}", item.id);
+                let mut pending = vec![(base, String::new())];
+                while let Some((relative, original)) = pending.pop() {
+                    let path = trash_entry(self.journal, &relative)?;
+                    let metadata = match std::fs::symlink_metadata(&path) {
+                        Ok(m) => m,
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                        Err(e) => return Err(TrashError::Io(e.to_string())),
+                    };
+                    if metadata.is_dir() {
+                        for entry in
+                            std::fs::read_dir(&path).map_err(|e| TrashError::Io(e.to_string()))?
+                        {
+                            let entry = entry.map_err(|e| TrashError::Io(e.to_string()))?;
+                            let name = entry
+                                .file_name()
+                                .into_string()
+                                .map_err(|_| TrashError::Io("invalid trash filename".into()))?;
+                            let original = if original.is_empty() {
+                                name.clone()
+                            } else {
+                                format!("{original}/{name}")
+                            };
+                            pending.push((format!("{relative}/{name}"), original));
+                        }
+                    } else if accept(&original) {
+                        std::fs::remove_file(&path).map_err(|e| TrashError::Io(e.to_string()))?;
+                        sync_trash_parent(self.journal, &relative);
+                        removed += 1;
+                    }
+                }
+            }
+        }
+        Ok(removed)
+    }
+}
+
 /// Where an item keeps its own copy of journal-relative `path`, for a kind that
 /// needs to read or settle it before it moves back. Inside the trash.
 pub fn held_file(journal: &Path, id: &str, path: &str) -> Result<PathBuf, TrashError> {
@@ -1889,6 +1956,51 @@ mod tests {
     }
 
     const SEGMENT: &str = "chronicle/20261108/phone/070000_300";
+
+    #[test]
+    fn domain_scrub_clears_files_and_displaced_payloads_and_preserves_item_records() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let item = detach(
+            &root,
+            &kind,
+            unit(),
+            Action::SegmentDelete,
+            web(),
+            vec![SEGMENT.into()],
+        )
+        .unwrap();
+        for part in [FILES_DIR, DISPLACED_DIR] {
+            let dir = trash_root(&root)
+                .join(&item.id)
+                .join(part)
+                .join("entities/person");
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("derived.bin"), b"private").unwrap();
+            fs::write(dir.join("keep.txt"), b"keep").unwrap();
+        }
+        let scrub = hold_payload_scrub(&root).unwrap();
+        assert_eq!(
+            scrub
+                .remove_files(|p| p == "entities/person/derived.bin")
+                .unwrap(),
+            2
+        );
+        drop(scrub);
+        assert!(
+            trash_entry(&root, &format!("{}/item.json", item.id))
+                .unwrap()
+                .is_file()
+        );
+        for part in [FILES_DIR, DISPLACED_DIR] {
+            let dir = trash_root(&root)
+                .join(&item.id)
+                .join(part)
+                .join("entities/person");
+            assert!(!dir.join("derived.bin").exists());
+            assert!(dir.join("keep.txt").is_file());
+        }
+    }
 
     #[test]
     fn companion_paths_survive_an_interrupted_detach_and_recovery() {

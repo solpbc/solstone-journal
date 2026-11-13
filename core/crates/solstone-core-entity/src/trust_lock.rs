@@ -166,6 +166,15 @@ pub(crate) fn hold_entity_trust_lock_with_options(
             }) if *acquiring_owner == owner => {
                 unreachable!("an entity trust lock cannot reenter while acquiring")
             }
+            Some(_) if options.timeout.is_zero() => {
+                return Err(
+                    LockError::Timeout(solstone_core_journal_io::errors::LockTimeout {
+                        path: lock_path,
+                        timeout: options.timeout,
+                    })
+                    .into(),
+                );
+            }
             Some(_) => {
                 state = wait_for_state(coordinator, state);
             }

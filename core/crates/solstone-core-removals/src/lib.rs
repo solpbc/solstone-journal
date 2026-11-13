@@ -116,6 +116,8 @@ pub enum Action {
     FacetMerge,
     /// Wiped what the journal knows about voices.
     SpeakersWipe,
+    /// Cleared the private faces and chosen photos.
+    FacesWipe,
     /// Deleted a memory an agent kept.
     MemoryDelete,
     /// Approved removing original recordings a policy proposed.
@@ -234,6 +236,8 @@ pub enum Unit {
     FacetFile,
     /// Voiceprints, labels and corrections the journal kept about voices.
     Speakers,
+    /// Face embeddings, crops and owner photo choices.
+    Faces,
     /// A memory an agent kept, by its day and segment key.
     Memory { day: String, segment: String },
     /// The copies held in a backup destination.

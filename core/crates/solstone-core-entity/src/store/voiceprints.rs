@@ -945,7 +945,7 @@ pub(crate) fn write_voiceprints_npz(
         .map(|cursor| cursor.into_inner())
 }
 
-fn prove_open_zip<R: Read + std::io::Seek>(
+pub(super) fn prove_open_zip<R: Read + std::io::Seek>(
     mut archive: ZipArchive<R>,
 ) -> Result<(ZipArchive<R>, Vec<String>), Zip2NameFailure> {
     let mut coords = Vec::with_capacity(archive.len());
@@ -966,7 +966,7 @@ fn prove_open_zip<R: Read + std::io::Seek>(
     Ok((archive, names))
 }
 
-fn read_member(
+pub(super) fn read_member(
     archive: &mut ZipArchive<Cursor<&[u8]>>,
     names: &[String],
     name: &str,
@@ -1022,7 +1022,7 @@ fn write_metadata_npy(values: &[String]) -> Result<Vec<u8>, VoiceprintNpzError> 
     Ok(write_unicode_npy(values))
 }
 
-fn write_unicode_npy(values: &[String]) -> Vec<u8> {
+pub(super) fn write_unicode_npy(values: &[String]) -> Vec<u8> {
     let width = values
         .iter()
         .map(|value| value.chars().count())
@@ -1044,7 +1044,10 @@ fn write_unicode_npy(values: &[String]) -> Vec<u8> {
     )
 }
 
-fn parse_unicode_npy(bytes: &[u8], name: &str) -> Result<Vec<String>, VoiceprintNpzError> {
+pub(super) fn parse_unicode_npy(
+    bytes: &[u8],
+    name: &str,
+) -> Result<Vec<String>, VoiceprintNpzError> {
     let NpyBlob {
         descr,
         fortran_order,
