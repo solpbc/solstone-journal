@@ -985,6 +985,19 @@ module.exports = async function entitiesContractCases(manifestDir) {
     assert.strictEqual(p.loads.length, 0, 'no page load');
   });
 
+  await test('an entity opened from the list opens at its top, and its back link puts the list back where it was', async () => {
+    const p = await boot(env);
+    p.window.scrollTo(0, 820);
+    listRows(p)[20].click();
+    await settle();
+    assert.strictEqual(p.window.scrollY, 0, 'the entity\'s page at its top, its name in view');
+    p.window.scrollTo(0, 300);
+    p.q('#journal-entity-detail-view [data-entities-action="list"]').click();
+    await settle();
+    assert.strictEqual(p.window.scrollY, 820, 'the list where it was');
+    assert.strictEqual(p.doc.activeElement.getAttribute('data-entity-id'), 'p20', 'on the row just left');
+  });
+
   await test('back and forward restore the list, the entity and the scroll, without reading the list again', async () => {
     const p = await boot(env);
     p.byId('journal-list-pager').querySelectorAll('button')[1].click();
