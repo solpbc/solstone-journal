@@ -97,13 +97,27 @@ pub struct ImportPreview {
     pub waiting: usize,
 }
 
+/// How many segments of each import wait in the trash needing it, by import
+/// id: what erasing that import now erases too.
+pub fn waiting_by_import(journal: &Path) -> BTreeMap<String, usize> {
+    let mut waiting = BTreeMap::new();
+    for item in solstone_core_trash::list(journal).unwrap_or_default() {
+        for need in &item.needs {
+            if let Some(id) = need.strip_prefix("imports/") {
+                *waiting.entry(id.to_owned()).or_insert(0) += 1;
+            }
+        }
+    }
+    waiting
+}
+
 /// What deleting `segments` (journal-relative) would do to each import that
 /// made any of them, in the order first met. An import two imports share a
 /// segment with is listed, and never taken.
 pub fn preview(journal: &Path, segments: &[String]) -> Vec<ImportPreview> {
     let listing = listing(journal);
     let chosen: BTreeSet<String> = segments.iter().cloned().collect();
-    let held = solstone_core_trash::list(journal).unwrap_or_default();
+    let waiting = waiting_by_import(journal);
     let mut seen = BTreeSet::new();
     let mut found = Vec::new();
     for segment in segments {
@@ -114,15 +128,11 @@ pub fn preview(journal: &Path, segments: &[String]) -> Vec<ImportPreview> {
             let Some(things) = import_trash::import_things(journal, id) else {
                 continue;
             };
-            let record = format!("imports/{id}");
             found.push(ImportPreview {
                 takes: sole_lister(&listing, segment) == Some(id.as_str())
                     && taken_whole(journal, id, &things, &chosen),
                 originals: import_trash::kept_originals(journal, &things),
-                waiting: held
-                    .iter()
-                    .filter(|item| item.needs.iter().any(|need| *need == record))
-                    .count(),
+                waiting: waiting.get(id).copied().unwrap_or(0),
                 label: import_trash::import_label(journal, id),
                 source: things.source,
                 id: id.clone(),

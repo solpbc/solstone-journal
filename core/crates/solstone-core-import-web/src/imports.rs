@@ -415,6 +415,7 @@ pub(crate) async fn list(
         );
     };
     let mut rows = Vec::new();
+    let waiting = solstone_core_import::segment_trash::waiting_by_import(&state.root);
     let mut source_options = BTreeSet::new();
     let apple = crate::body_state::apple_imports(&state.root);
     for entry in entries.flatten() {
@@ -472,6 +473,11 @@ pub(crate) async fn list(
                     &solstone_core_import::import_trash::source_of(&state.root, &timestamp),
                 );
             info.values.insert("deletable".into(), json!(deletable));
+            // Its segments waiting in the trash, which an erase now takes too.
+            info.values.insert(
+                "waiting".into(),
+                json!(waiting.get(&timestamp).copied().unwrap_or(0)),
+            );
             rows.push(info);
         }
     }

@@ -2365,3 +2365,42 @@ fn remove_segments_trashes_prunes_index_and_keeps_siblings_with_real_scan() {
     assert!(file_paths.iter().any(|p| p.contains("071000_17")));
     assert!(file_paths.iter().any(|p| p.contains("talents/flow.md")));
 }
+
+#[test]
+fn remove_segments_of_an_imports_last_segment_takes_the_import_and_its_upload() {
+    let bed = Bed::new("segment-takes-import");
+    let journal = bed.journal().to_str().unwrap().to_owned();
+    let id = "20260701_090000";
+    let write = |rel: &str, bytes: &[u8]| {
+        let path = bed.journal().join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    };
+    write(
+        &format!("imports/{id}/imported.json"),
+        serde_json::json!({"source_type": "image", "segments": [
+            {"day": "20260701", "stream": "import.image", "segment": "090000_1"}]})
+        .to_string()
+        .as_bytes(),
+    );
+    write(
+        &format!("imports/{id}/import.json"),
+        serde_json::json!({"original_filename": "photo.heic",
+            "file_path": format!("imports/{id}/photo.heic")})
+        .to_string()
+        .as_bytes(),
+    );
+    write(&format!("imports/{id}/photo.heic"), b"photo");
+    write("chronicle/20260701/import.image/090000_1/image.md", b"a photo");
+    let output = bed.run(
+        "remove-segments",
+        &["--journal", &journal, "--segment", "20260701/import.image/090000_1"],
+    );
+    assert_eq!(output.status.code(), Some(0), "{:?}", receipt(&output));
+    assert_eq!(receipt(&output)["trashed"][0]["import"], id);
+    assert!(!bed.journal().join(format!("imports/{id}")).exists());
+    let items = solstone_core_trash::list(bed.journal()).unwrap();
+    assert_eq!(items.len(), 1);
+    assert!(matches!(&items[0].unit, solstone_core_removals::Unit::Import { id: taken, .. } if taken == id));
+    assert_eq!(items[0].action, solstone_core_removals::Action::RetentionTool);
+}
