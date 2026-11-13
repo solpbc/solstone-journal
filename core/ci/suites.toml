@@ -2555,6 +2555,20 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-support-web::support_dom"
+package = "solstone-core-support-web"
+target = "support_dom"
+set = "component"
+areas = ["support"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-convey-shell::sources_dom"
 package = "solstone-core-convey-shell"
 target = "sources_dom"
