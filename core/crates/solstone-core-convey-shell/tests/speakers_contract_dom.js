@@ -1098,6 +1098,26 @@ module.exports = async function speakersContractCases(manifestDir) {
     return p;
   }
 
+  await test('a day leaves a back to another speakers address alone: that entry is the router\'s, and the router restores it', async () => {
+    const p = await boot(env);
+    const dayPath = p.location.pathname;
+    // The router's entries for the overview and for the day again, as moves
+    // there and back write them.
+    p.window.history.pushState({ solRoute: { id: 'overview', owner: 'router' } }, '', '/app/speakers/');
+    p.window.scrollTo(0, 686);
+    p.window.history.pushState({ solRoute: { id: 'again', owner: 'router' } }, '', `${dayPath}#owner-teach`);
+    p.window.scrollY = 40;
+    let scrolled = 0;
+    const scrollTo = p.window.scrollTo;
+    p.window.scrollTo = (...args) => { scrolled += 1; scrollTo(...args); };
+    p.window.history.back();
+    await settle();
+    p.window.scrollTo = scrollTo;
+    assert.ok(p.location.pathname === '/app/speakers/', 'the address is the overview\'s');
+    assert.ok(scrolled === 0 && p.window.scrollY === 40, `the day scrolled nothing: ${scrolled} calls, at ${p.window.scrollY}`);
+    assert.strictEqual(p.loads.length, 0);
+  });
+
   await test('an in-page arrival at #owner-teach starts the handoff and focuses the owner banner after the router has placed its focus', async () => {
     const p = makePage(env, `/app/speakers/${TODAY}#owner-teach`);
     p.loadScripts();

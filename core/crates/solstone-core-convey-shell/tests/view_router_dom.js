@@ -964,13 +964,20 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
     observe() {}
     disconnect() { observers.delete(this); }
   }
+  // The page's size observers: a test grows the page by calling them.
+  const resizers = new Set();
+  class FakeResizeObserver {
+    constructor(fn) { this.fn = fn; }
+    observe() { resizers.add(this); }
+    disconnect() { resizers.delete(this); }
+  }
   const sessionStorage = {
     getItem: (key) => (storage.has(key) ? storage.get(key) : null),
     setItem: (key, value) => { writes.push(key); storage.set(key, String(value)); },
     removeItem: (key) => storage.delete(key),
   };
   Object.assign(window, {
-    window, document, location, history, appEvents, FakeObserver, sessionStorage,
+    window, document, location, history, appEvents, FakeObserver, sessionStorage, ResizeObserver: FakeResizeObserver,
     localStorage: { getItem: () => null, setItem: (key) => writes.push('local:' + key), removeItem() {} },
     fetch: server.fetch,
     setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
@@ -1011,6 +1018,13 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
   const view = (name) => window.SolViews.current()?.name === name;
   const page = {
     clock, server, window, document, history, record, writes, observers, location,
+    resizers,
+    // The page grows as a view's later reads draw, and the browser's scroll
+    // anchoring moves the scroll by as much.
+    grow(by) {
+      window.scrollY += by;
+      [...resizers].forEach((observer) => observer.fn([]));
+    },
     eventCount: () => [...eventListeners.values()].reduce((sum, set) => sum + set.size, 0),
     connectionCount: () => connectionHandlers.size,
     setConnected(next) {
@@ -2201,6 +2215,50 @@ asyncCase('speakers: the overview to a day and back are moves in the page; a day
   page.history.forward();
   await page.clock.advance(400);
   assert.deepStrictEqual(views.updates, ['20260103', '20260102', '20260103']);
+  assert.deepStrictEqual(page.record.assigned, [], 'no page load');
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
+asyncCase('speakers: a back to the overview holds where it was left while the overview draws, until the owner moves it', async () => {
+  const page = makePage();
+  page.answerAll();
+  await page.boot('home');
+  page.click('/app/speakers/');
+  await page.clock.advance(400);
+  // The window's owner-input listeners with no hold, to compare after one.
+  const inputListeners = () => ['wheel', 'touchstart', 'pointerdown', 'keydown'].map((type) => page.window.listenerCount(type)).join(',');
+  const noHold = inputListeners();
+  page.window.scrollY = 686;
+  page.click('/app/speakers/20260102#owner-teach');
+  await page.clock.advance(400);
+  assert.ok(page.window.scrollY === 0, 'owner teach opens at the top');
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.window.scrollY === 686, `the overview is where it was left, not ${page.window.scrollY}`);
+  page.grow(530);
+  assert.ok(page.window.scrollY === 686, `a later draw doesn't carry it on: ${page.window.scrollY}`);
+  page.window.dispatchEvent({ type: 'wheel' });
+  assert.ok(page.resizers.size === 0, 'the owner scrolling ends the hold');
+  assert.ok(inputListeners() === noHold, `and takes back its listeners: ${inputListeners()}, not ${noHold}`);
+  page.grow(100);
+  assert.ok(page.window.scrollY === 786, 'after that the page is the owner\'s');
+
+  page.history.forward();
+  await page.clock.advance(400);
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.resizers.size === 1, 'a back holds again');
+  await page.clock.advance(10000);
+  assert.ok(page.resizers.size === 0, 'the hold ends on its own');
+  assert.ok(inputListeners() === noHold, `and takes back its listeners: ${inputListeners()}, not ${noHold}`);
+  page.history.forward();
+  await page.clock.advance(400);
+  page.history.back();
+  await page.clock.advance(400);
+  page.click('/app/home/');
+  assert.ok(page.resizers.size === 0, 'the next move ends the hold');
+  assert.ok(inputListeners() === noHold, `and takes back its listeners: ${inputListeners()}, not ${noHold}`);
+  await page.clock.advance(400);
   assert.deepStrictEqual(page.record.assigned, [], 'no page load');
   assert.deepStrictEqual(page.window.__scriptErrors, []);
 });

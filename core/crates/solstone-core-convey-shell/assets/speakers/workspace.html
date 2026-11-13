@@ -1937,6 +1937,9 @@ function runDay(ctx, page) {
   const fetch = ctx.fetch;
   const settled = ctx.settled;
   const ownHash = ctx.ownHash;
+  // The day's own entries are at its own path. An entry at another path, the
+  // overview's or another day's, is the router's, and the router restores it.
+  const ownPath = window.location.pathname;
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
   const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
   const PLACEHOLDER_SPEAKER_NAME = /^speaker\s+\d+$/i;
@@ -2140,7 +2143,7 @@ function runDay(ctx, page) {
   // linked on the same page. A pop that also fires hashchange acts once.
   let actedOn = window.location.href;
   function onOwnAddress(event) {
-    if (!ctx.here()) return;
+    if (!ctx.here() || window.location.pathname !== ownPath) return;
     const popped = event && event.type === 'popstate';
     if (window.location.href === actedOn) {
       if (popped) ctx.restoreOwnScroll();
