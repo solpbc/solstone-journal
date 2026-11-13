@@ -20,8 +20,9 @@ use crate::calendar::{
 };
 use crate::chunk_sources::{
     CHUNK_SOURCES_LOOKUP_PATHS, CREATE_CHUNK_SOURCE_READINESS, CREATE_CHUNK_SOURCES,
-    CREATE_CHUNK_SOURCES_PATH_INDEX, chunk_path_lookup_ready, delete_chunk_source_rowids,
-    require_chunk_path_lookup, seed_path_lookup,
+    CREATE_CHUNK_SOURCES_PATH_INDEX, advance_chunk_source_keys, chunk_path_lookup_ready,
+    delete_chunk_source_rowids, ensure_chunk_source_keys, require_chunk_path_lookup,
+    seed_path_lookup,
 };
 use crate::generation::stamp_if_needed;
 use crate::writer_admission::IndexAdmission;
@@ -313,6 +314,8 @@ pub(crate) fn open_index_admitted(
     if !chunk_path_lookup_ready(&conn)? {
         seed_path_lookup(&mut conn, checkpoint)?;
     }
+    // Its rows' keys are filled in a batch at a time, over the next writes.
+    advance_chunk_source_keys(&mut conn, checkpoint)?;
     Ok(conn)
 }
 
@@ -387,6 +390,7 @@ pub(crate) fn rebuild_empty_index(journal: &Path) -> Result<(), StoreError> {
     )?;
     let tx = conn.transaction()?;
 
+    tx.execute("DROP TRIGGER IF EXISTS chunk_sources_keys", [])?;
     if sqlite_table_exists(&tx, "chunks")? {
         tx.execute("DROP TABLE chunks", [])?;
     } else {
@@ -404,6 +408,7 @@ pub(crate) fn rebuild_empty_index(journal: &Path) -> Result<(), StoreError> {
     tx.execute("DROP TABLE IF EXISTS activity_provenance", [])?;
     tx.execute("DROP TABLE IF EXISTS activity_membership", [])?;
     tx.execute("DROP TABLE IF EXISTS chunk_source_readiness", [])?;
+    tx.execute("DROP TABLE IF EXISTS chunk_source_keys", [])?;
     tx.execute("DROP INDEX IF EXISTS edges_path", [])?;
     tx.execute("DROP INDEX IF EXISTS edges_source_anchor", [])?;
     tx.execute("DROP INDEX IF EXISTS idx_edges_src", [])?;
@@ -693,6 +698,7 @@ fn ensure_schema(
             [],
         )?;
     }
+    ensure_chunk_source_keys(&tx, !chunks_existed)?;
     admit_scan_journal(checkpoint)?;
     tx.commit()?;
     Ok(())
@@ -767,6 +773,10 @@ pub(crate) fn migrate_legacy_chunks(conn: &Connection) -> Result<bool, StoreErro
         ),
         [],
     )?;
+    // The path lookup's trigger reads `chunks`, and SQLite refuses a rename
+    // while a trigger names a table that is gone. Opening the index again
+    // recreates it and fills the keys afresh.
+    conn.execute("DROP TRIGGER IF EXISTS chunk_sources_keys", [])?;
     conn.execute("DROP TABLE chunks", [])?;
     conn.execute("ALTER TABLE chunks_native_migration RENAME TO chunks", [])?;
     Ok(true)

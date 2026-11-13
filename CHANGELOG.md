@@ -21,6 +21,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on a large journal, a connected agent's search for a common word could run past the agent's time limit, most often on the first search after the journal started. those searches now come back in about half the time. on a journal you already had, the faster search starts once your journal has been busy for a little while after you update.
 - on a phone, the list of facets on the entities page now opens on screen, so you can choose one. before, it opened below the bottom of the screen.
 - restoring a backup during setup keeps the new journal's running services and troubleshooting logs intact, so new audio can be transcribed without restarting.
 - changing your journal folder on linux or mac now updates its saved location and service together, while keeping your other settings.

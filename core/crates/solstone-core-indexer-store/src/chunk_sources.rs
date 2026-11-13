@@ -2,6 +2,12 @@
 // Copyright (c) 2026 sol pbc
 
 //! Mapping table and admission marker for index chunk path lookups.
+//!
+//! The mapping also carries each row's day and position, the keys a recency
+//! search orders and filters on, so it can rank matches without reading their
+//! text. A trigger copies them from `chunks` whenever a writer leaves them
+//! out, an older binary included, and `chunk_source_keys` records whether every
+//! existing row has them.
 
 use std::path::Path;
 
@@ -15,7 +21,9 @@ pub const CREATE_CHUNK_SOURCES: &str = "\
 CREATE TABLE IF NOT EXISTS chunk_sources(
 rowid INTEGER PRIMARY KEY,
 path TEXT,
-stream TEXT
+stream TEXT,
+day TEXT,
+idx INTEGER
 )";
 
 pub const CREATE_CHUNK_SOURCES_PATH_INDEX: &str =
@@ -26,6 +34,31 @@ CREATE TABLE IF NOT EXISTS chunk_source_readiness(
 id INTEGER PRIMARY KEY CHECK (id = 1),
 ready INTEGER NOT NULL CHECK (ready IN (0, 1))
 )";
+
+/// Copies a row's day and position from `chunks` when its writer left them
+/// out. Every writer records the mapping after inserting the chunk, in the
+/// same transaction, so the chunk is there to read.
+const CHUNK_SOURCE_KEYS_TRIGGER: &str = "chunk_sources_keys";
+const CREATE_CHUNK_SOURCE_KEYS_TRIGGER: &str = "\
+CREATE TRIGGER IF NOT EXISTS chunk_sources_keys AFTER INSERT ON chunk_sources
+WHEN NEW.day IS NULL AND NEW.idx IS NULL
+BEGIN
+UPDATE chunk_sources SET (day, idx) = (SELECT day, idx FROM chunks WHERE rowid = NEW.rowid)
+WHERE rowid = NEW.rowid;
+END";
+
+/// Whether every existing mapping row carries its keys. `cursor` is the
+/// highest chunk row id copied so far while they are being filled in.
+pub const CREATE_CHUNK_SOURCE_KEYS: &str = "\
+CREATE TABLE IF NOT EXISTS chunk_source_keys(
+id INTEGER PRIMARY KEY CHECK (id = 1),
+cursor INTEGER NOT NULL,
+ready INTEGER NOT NULL CHECK (ready IN (0, 1))
+)";
+
+/// How many chunk rows one admitted write fills in, so an upgraded journal
+/// gets its keys over its next writes without holding any one of them long.
+const CHUNK_SOURCE_KEYS_BATCH: i64 = 250_000;
 
 pub const CHUNK_SOURCES_LOOKUP_ROWIDS: &str = "SELECT rowid FROM chunk_sources WHERE path = ?";
 
@@ -116,6 +149,139 @@ pub(crate) fn require_chunk_path_lookup(conn: &Connection) -> Result<(), StoreEr
     }
 }
 
+fn chunk_source_columns(conn: &Connection) -> Result<Vec<String>, StoreError> {
+    let mut statement = conn.prepare("SELECT name FROM pragma_table_info('chunk_sources')")?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(columns)
+}
+
+fn chunk_source_keys_trigger_exists(conn: &Connection) -> Result<bool, StoreError> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = ?",
+            [CHUNK_SOURCE_KEYS_TRIGGER],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
+/// Give the mapping its key columns and trigger. `fresh` says the index was
+/// just created, so there is no row without keys. Anything else that had to
+/// add a column or the trigger (an index an older binary built or rebuilt)
+/// starts filling the keys in again from the first row.
+pub(crate) fn ensure_chunk_source_keys(conn: &Connection, fresh: bool) -> Result<(), StoreError> {
+    conn.execute(CREATE_CHUNK_SOURCE_KEYS, [])?;
+    let columns = chunk_source_columns(conn)?;
+    let mut added = false;
+    for (column, kind) in [("day", "TEXT"), ("idx", "INTEGER")] {
+        if !columns.iter().any(|c| c == column) {
+            conn.execute(
+                &format!("ALTER TABLE chunk_sources ADD COLUMN {column} {kind}"),
+                [],
+            )?;
+            added = true;
+        }
+    }
+    let trigger_missing = !chunk_source_keys_trigger_exists(conn)?;
+    conn.execute(CREATE_CHUNK_SOURCE_KEYS_TRIGGER, [])?;
+    let marked: Option<i64> = conn
+        .query_row(
+            "SELECT ready FROM chunk_source_keys WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if fresh {
+        conn.execute(
+            "REPLACE INTO chunk_source_keys(id, cursor, ready) VALUES (1, 0, 1)",
+            [],
+        )?;
+    } else if added || trigger_missing || marked.is_none() {
+        conn.execute(
+            "REPLACE INTO chunk_source_keys(id, cursor, ready) VALUES (1, 0, 0)",
+            [],
+        )?;
+    }
+    Ok(())
+}
+
+/// Fill in the keys of at most one batch of existing rows, in chunk row id
+/// order. Rows written meanwhile get theirs from the trigger. The caller must
+/// hold the index writer admission.
+pub(crate) fn advance_chunk_source_keys(
+    conn: &mut Connection,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<(), StoreError> {
+    if !sqlite_table_exists(conn, "chunk_source_keys")? {
+        return Ok(());
+    }
+    let marker: Option<(i64, i64)> = conn
+        .query_row(
+            "SELECT cursor, ready FROM chunk_source_keys WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((cursor, 0)) = marker else {
+        return Ok(());
+    };
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let (count, last): (i64, Option<i64>) = tx.query_row(
+        "SELECT count(*), max(rid) FROM \
+         (SELECT rowid AS rid FROM chunks WHERE rowid > ?1 ORDER BY rowid LIMIT ?2)",
+        params![cursor, CHUNK_SOURCE_KEYS_BATCH],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    if let Some(last) = last {
+        tx.execute(
+            "UPDATE chunk_sources SET (day, idx) = (c.day, c.idx) \
+             FROM (SELECT rowid AS rid, day, idx FROM chunks WHERE rowid > ?1 AND rowid <= ?2) AS c \
+             WHERE chunk_sources.rowid = c.rid",
+            params![cursor, last],
+        )?;
+        tx.execute(
+            "UPDATE chunk_source_keys SET cursor = ? WHERE id = 1",
+            [last],
+        )?;
+    }
+    if count < CHUNK_SOURCE_KEYS_BATCH {
+        tx.execute("UPDATE chunk_source_keys SET ready = 1 WHERE id = 1", [])?;
+    }
+    crate::db::admit_scan_journal(checkpoint)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// For a reader: whether every mapping row carries its day and position, and
+/// any row written from here on will. One that cannot be read is not ready.
+pub fn chunk_keys_ready(conn: &Connection) -> bool {
+    let ready = || -> Result<bool, StoreError> {
+        if !chunk_path_lookup_ready(conn)? || !sqlite_table_exists(conn, "chunk_source_keys")? {
+            return Ok(false);
+        }
+        let columns = chunk_source_columns(conn)?;
+        if !["day", "idx"]
+            .iter()
+            .all(|column| columns.iter().any(|c| c == column))
+            || !chunk_source_keys_trigger_exists(conn)?
+        {
+            return Ok(false);
+        }
+        let ready: Option<i64> = conn
+            .query_row(
+                "SELECT ready FROM chunk_source_keys WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(ready == Some(1))
+    };
+    ready().unwrap_or(false)
+}
+
 pub fn inspect_path_lookup(journal: &Path) -> Result<PathLookupStatus, StoreError> {
     let path = db_path(journal);
     if !path.is_file() {
@@ -161,10 +327,12 @@ pub(crate) fn seed_path_lookup(
     tx.execute(CREATE_CHUNK_SOURCES, [])?;
     tx.execute(CREATE_CHUNK_SOURCES_PATH_INDEX, [])?;
     tx.execute(CREATE_CHUNK_SOURCE_READINESS, [])?;
+    ensure_chunk_source_keys(&tx, false)?;
 
     tx.execute("DELETE FROM chunk_sources", [])?;
     tx.execute(
-        "INSERT INTO chunk_sources(rowid, path, stream) SELECT rowid, path, stream FROM chunks",
+        "INSERT INTO chunk_sources(rowid, path, stream, day, idx) \
+         SELECT rowid, path, stream, day, idx FROM chunks",
         [],
     )?;
 
@@ -182,6 +350,11 @@ pub(crate) fn seed_path_lookup(
 
     tx.execute(
         "REPLACE INTO chunk_source_readiness(id, ready) VALUES (1, 1)",
+        [],
+    )?;
+    // The seed copied every row's keys, and the trigger covers what follows.
+    tx.execute(
+        "REPLACE INTO chunk_source_keys(id, cursor, ready) VALUES (1, 0, 1)",
         [],
     )?;
     crate::db::admit_scan_journal(checkpoint)?;
@@ -1235,6 +1408,120 @@ mod tests {
         let status = inspect_path_lookup(&root).expect("inspect");
         assert!(status.ready);
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn mapping_keys(conn: &Connection) -> Vec<(String, Option<String>, Option<i64>)> {
+        let mut statement = conn
+            .prepare("SELECT path, day, idx FROM chunk_sources ORDER BY rowid")
+            .expect("prepare keys");
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .expect("read keys")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect keys")
+    }
+
+    #[test]
+    fn a_row_recorded_without_its_keys_gets_them_from_its_chunk() {
+        let root = temp_root("keys-trigger");
+        let conn = open_index(&root).expect("open fresh index");
+        assert!(chunk_keys_ready(&conn));
+        conn.execute(
+            "INSERT INTO chunks(content, path, day, idx) VALUES ('c', 'p.md', '20260101', 3)",
+            [],
+        )
+        .expect("insert chunk");
+        record_chunk_source(&conn, None, Some("p.md"), None).expect("record");
+        // What a binary from before the keys writes.
+        conn.execute(
+            "INSERT INTO chunks(content, path, day, idx) VALUES ('d', 'q.md', '20260102', 4)",
+            [],
+        )
+        .expect("insert chunk");
+        conn.execute(
+            "INSERT OR REPLACE INTO chunk_sources(rowid, path, stream) VALUES (last_insert_rowid(), 'q.md', NULL)",
+            [],
+        )
+        .expect("older record");
+        assert_eq!(
+            mapping_keys(&conn),
+            [
+                ("p.md".to_owned(), Some("20260101".to_owned()), Some(3)),
+                ("q.md".to_owned(), Some("20260102".to_owned()), Some(4)),
+            ]
+        );
+        assert!(chunk_keys_ready(&conn));
+        drop(conn);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_index_whose_mapping_has_no_keys_gets_them_on_a_later_write() {
+        let root = temp_root("keys-backfill");
+        let conn = open_index(&root).expect("open fresh index");
+        for (path, day, idx) in [
+            ("a.md", "20260101", 0),
+            ("a.md", "20260101", 1),
+            ("b.md", "20260105", 0),
+        ] {
+            conn.execute(
+                "INSERT INTO chunks(content, path, day, idx) VALUES ('c', ?1, ?2, ?3)",
+                params![path, day, idx],
+            )
+            .expect("insert chunk");
+            record_chunk_source(&conn, None, Some(path), None).expect("record");
+        }
+        // An index an older binary rebuilt: its own three-column mapping,
+        // seeded its way, and no trigger.
+        conn.execute_batch(
+            "DROP TABLE chunk_sources;
+             CREATE TABLE chunk_sources(rowid INTEGER PRIMARY KEY, path TEXT, stream TEXT);
+             INSERT INTO chunk_sources(rowid, path, stream) SELECT rowid, path, stream FROM chunks;",
+        )
+        .expect("older mapping");
+        assert!(!chunk_keys_ready(&conn));
+        drop(conn);
+
+        let mut conn = open_index(&root).expect("reopen");
+        assert!(!chunk_keys_ready(&conn), "added columns are not yet filled");
+        advance_chunk_source_keys(&mut conn, &|| Ok(())).expect("advance");
+        assert!(chunk_keys_ready(&conn));
+        assert_eq!(
+            mapping_keys(&conn),
+            [
+                ("a.md".to_owned(), Some("20260101".to_owned()), Some(0)),
+                ("a.md".to_owned(), Some("20260101".to_owned()), Some(1)),
+                ("b.md".to_owned(), Some("20260105".to_owned()), Some(0)),
+            ]
+        );
+        drop(conn);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_legacy_chunk_table_migrates_with_the_keys_trigger_in_place() {
+        let root = temp_root("keys-legacy-rename");
+        let conn = open_index(&root).expect("open fresh index");
+        // A chunk table from before `time_bucket`, under a lookup that already
+        // has its trigger.
+        conn.execute_batch(
+            "DROP TABLE chunks;
+             CREATE VIRTUAL TABLE chunks USING fts5(content, path UNINDEXED, day UNINDEXED,
+                 facet UNINDEXED, agent UNINDEXED, stream UNINDEXED, idx UNINDEXED);
+             INSERT INTO chunks(content, path, day, facet, agent, stream, idx)
+                 VALUES ('kept', 'old.md', '20260101', '', 'flow', '', 2);",
+        )
+        .expect("legacy chunks");
+        drop(conn);
+        let mut conn = open_index(&root).expect("reopen migrates the legacy table");
+        seed_path_lookup(&mut conn, &|| Ok(())).expect("seed");
+        assert!(chunk_keys_ready(&conn));
+        assert_eq!(
+            mapping_keys(&conn),
+            [("old.md".to_owned(), Some("20260101".to_owned()), Some(2))]
+        );
+        drop(conn);
         let _ = fs::remove_dir_all(root);
     }
 }
