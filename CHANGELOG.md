@@ -72,6 +72,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a first restore on a phone or tablet now waits for work in your journal to finish before copying. if restore is interrupted, you can retry the same backup.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+- on the sources page, focus now stays on the page after you press "try again", or when a narrower or wider window changes the layout: on the same button or link if it's drawn again, otherwise at the start of the page. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 
 ## [2.0.76] - 2026-11-12
 
