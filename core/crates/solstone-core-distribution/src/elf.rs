@@ -501,7 +501,7 @@ pub const NON_GLIBC_SYSTEM_NEEDED: &[(&str, &str, &str)] = &[
         "libgcc-s1 (>= 11)",
         "libgcc_s.so.1()(64bit)",
     ),
-    ("libgomp.so.1", "libgomp1 (>= 11)", "libgomp"),
+    ("libgomp.so.1", "libgomp1 (>= 11)", "libgomp.so.1()(64bit)"),
     ("libz.so.1", "zlib1g", "libz.so.1()(64bit)"),
 ];
 

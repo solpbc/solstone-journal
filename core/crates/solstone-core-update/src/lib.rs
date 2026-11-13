@@ -33,7 +33,7 @@ pub use hold::{
 };
 pub use ownership::{
     OwnershipResult, PackageProbe, PositiveOwnership, RealPackageProbe, RecordedComponent,
-    RouteKind, ServicePolicy, classify_ownership, positive_tree_release,
+    RouteKind, ServicePolicy, classify_ownership, normalize_executable_path, positive_tree_release,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -290,10 +290,17 @@ fn check_selected(
             };
         }
     };
-    let (latest_journal, latest_platform) = (listing.journal_version, listing.platform_version);
+    let (latest_journal, latest_platform, latest_desktop) = (
+        listing.journal_version,
+        listing.platform_version,
+        listing.desktop_version,
+    );
 
     if compare_platform_versions(&latest_platform, &latest_platform).is_none()
         || compare_semver_3part(&latest_journal, &latest_journal).is_none()
+        || latest_desktop
+            .as_deref()
+            .is_some_and(|v| compare_semver_3part(v, v).is_none())
         || version.is_some_and(|v| v != latest_platform)
     {
         return UpdateReport::refusal_unknown(
@@ -337,17 +344,30 @@ fn check_selected(
             components: None,
         }
     } else {
-        // Platform routes compare platform versions
+        // Platform routes compare platform versions when recorded, or installed component versions
         let is_newer = if let Some(ref current_pver) = pos.current_platform_version {
             matches!(
                 compare_platform_versions(&latest_platform, current_pver),
                 Some(Ordering::Greater)
             )
         } else {
-            matches!(
+            let journal_newer = matches!(
                 compare_semver_3part(&latest_journal, &pos.current_journal_version),
                 Some(Ordering::Greater)
-            )
+            );
+            let desktop_newer = pos
+                .components
+                .iter()
+                .find(|c| c.name == "desktop")
+                .and_then(|c| c.version.as_deref())
+                .zip(latest_desktop.as_deref())
+                .is_some_and(|(cur_desktop, latest_desktop)| {
+                    matches!(
+                        compare_semver_3part(latest_desktop, cur_desktop),
+                        Some(Ordering::Greater)
+                    )
+                });
+            journal_newer || desktop_newer
         };
 
         let (avail, target) = if is_newer {
@@ -847,6 +867,7 @@ mod tests {
             answer: Ok(CatalogueListing {
                 platform_version: platform.to_owned(),
                 journal_version: journal.to_owned(),
+                desktop_version: None,
             }),
             asked: Mutex::new(Vec::new()),
         }
@@ -1794,6 +1815,86 @@ esac
                 other => panic!("{other:?}"),
             }
         }
+    }
+
+    struct RepoProbe {
+        journal: &'static str,
+        desktop: Option<&'static str>,
+    }
+
+    impl PackageProbe for RepoProbe {
+        fn owns_journal(&self, _executable: &Path) -> bool {
+            true
+        }
+        fn journal_version(&self, _executable: &Path) -> Option<String> {
+            Some(self.journal.to_owned())
+        }
+        fn payload_matches(&self, _executable: &Path, _version: &str) -> bool {
+            true
+        }
+        fn package_route(&self, _executable: &Path) -> Option<String> {
+            Some("rpm".to_owned())
+        }
+        fn installed_package_version(&self, package_name: &str) -> Option<String> {
+            if package_name == "solstone-linux" {
+                self.desktop.map(str::to_owned)
+            } else {
+                None
+            }
+        }
+    }
+
+    #[test]
+    fn check_detects_desktop_only_recut_for_repo_package_and_clears_after_upgrade() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("data");
+        let etc = temp.path().join("etc");
+        fs::create_dir_all(&data).unwrap();
+        fs::create_dir_all(etc.join("yum.repos.d")).unwrap();
+        fs::write(
+            etc.join("yum.repos.d/solstone.repo"),
+            "[solstone]\nbaseurl=https://updates.solstone.app/rpm/release/$basearch\n",
+        )
+        .unwrap();
+
+        let catalogue = Catalogue {
+            answer: Ok(CatalogueListing {
+                platform_version: "2.0.76-r2".to_owned(),
+                journal_version: "2.0.76".to_owned(),
+                desktop_version: Some("2.0.41".to_owned()),
+            }),
+            asked: Mutex::new(Vec::new()),
+        };
+        let exe = Path::new("/usr/bin/solstone");
+
+        let before = check(
+            &catalogue,
+            &RepoProbe {
+                journal: "2.0.76",
+                desktop: Some("2.0.40"),
+            },
+            exe,
+            &data,
+            &etc,
+            true,
+            None,
+        );
+        assert_eq!(before.availability, Availability::Available);
+        assert_eq!(before.latest_platform_version.as_deref(), Some("2.0.76-r2"));
+
+        let after = check(
+            &catalogue,
+            &RepoProbe {
+                journal: "2.0.76",
+                desktop: Some("2.0.41"),
+            },
+            exe,
+            &data,
+            &etc,
+            true,
+            None,
+        );
+        assert_eq!(after.availability, Availability::NotAvailable);
     }
 }
 

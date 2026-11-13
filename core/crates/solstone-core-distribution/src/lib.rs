@@ -498,14 +498,14 @@ fn arch_mapping_modes_and_clean_package_depends() {
                 .split([',', '\n'])
                 .any(|item| item.trim() == "libgomp1 (>= 11)")
         );
-        assert!(requires.iter().any(|item| item == "libgomp"));
+        assert!(requires.iter().any(|item| item == "libgomp.so.1()(64bit)"));
         let triples = rpm::rpm_require_triples(&out.join(&rpm_name)).unwrap();
         for (want_name, want_flags, want_ver) in [
             ("glibc", 12, "2.34"),
             ("libstdc++.so.6(GLIBCXX_3.4.29)(64bit)", 0, ""),
             ("libc.so.6()(64bit)", 0, ""),
             ("libgcc_s.so.1()(64bit)", 0, ""),
-            ("libgomp", 0, ""),
+            ("libgomp.so.1()(64bit)", 0, ""),
             ("libstdc++.so.6()(64bit)", 0, ""),
             ("libz.so.1()(64bit)", 0, ""),
         ] {

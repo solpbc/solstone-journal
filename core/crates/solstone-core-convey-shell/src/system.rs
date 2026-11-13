@@ -192,7 +192,16 @@ fn linux_version_status(
 static PAYLOAD_ANSWERS: PayloadAnswers = PayloadAnswers::new();
 
 #[cfg(target_os = "linux")]
-struct PayloadAnswers(std::sync::Mutex<Option<std::collections::HashMap<PayloadKey, bool>>>);
+type MatchMap = std::collections::HashMap<PayloadKey, bool>;
+
+#[cfg(target_os = "linux")]
+type VersionMap = std::collections::HashMap<PayloadKey, Option<String>>;
+
+#[cfg(target_os = "linux")]
+struct PayloadAnswers {
+    matches: std::sync::Mutex<Option<MatchMap>>,
+    versions: std::sync::Mutex<Option<VersionMap>>,
+}
 
 #[cfg(target_os = "linux")]
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -206,16 +215,15 @@ struct PayloadKey {
 #[cfg(target_os = "linux")]
 impl PayloadAnswers {
     const fn new() -> Self {
-        Self(std::sync::Mutex::new(None))
+        Self {
+            matches: std::sync::Mutex::new(None),
+            versions: std::sync::Mutex::new(None),
+        }
     }
 
-    fn matches(
-        &self,
-        inner: &dyn solstone_core_update::PackageProbe,
-        executable: &std::path::Path,
-        version: &str,
-    ) -> bool {
-        let key = std::fs::canonicalize(executable)
+    fn key_for(executable: &std::path::Path, version: &str) -> Option<PayloadKey> {
+        let normalized = solstone_core_update::normalize_executable_path(executable);
+        std::fs::canonicalize(normalized)
             .and_then(|path| {
                 let meta = std::fs::metadata(&path)?;
                 Ok(PayloadKey {
@@ -225,13 +233,21 @@ impl PayloadAnswers {
                     modified: meta.modified()?,
                 })
             })
-            .ok();
-        let Some(key) = key else {
+            .ok()
+    }
+
+    fn matches(
+        &self,
+        inner: &dyn solstone_core_update::PackageProbe,
+        executable: &std::path::Path,
+        version: &str,
+    ) -> bool {
+        let Some(key) = Self::key_for(executable, version) else {
             return inner.payload_matches(executable, version);
         };
         // Held across the check, so reads that arrive together hash once.
         let mut answers = self
-            .0
+            .matches
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let answers = answers.get_or_insert_with(Default::default);
@@ -243,6 +259,28 @@ impl PayloadAnswers {
             .retain(|known, _| known.executable != key.executable || known.version != key.version);
         answers.insert(key, matches);
         matches
+    }
+
+    fn journal_version(
+        &self,
+        inner: &dyn solstone_core_update::PackageProbe,
+        executable: &std::path::Path,
+    ) -> Option<String> {
+        let Some(key) = Self::key_for(executable, "") else {
+            return inner.journal_version(executable);
+        };
+        let mut versions = self
+            .versions
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let versions = versions.get_or_insert_with(Default::default);
+        if let Some(found) = versions.get(&key) {
+            return found.clone();
+        }
+        let found = inner.journal_version(executable);
+        versions.retain(|known, _| known.executable != key.executable);
+        versions.insert(key, found.clone());
+        found
     }
 }
 
@@ -260,12 +298,26 @@ impl solstone_core_update::PackageProbe for RememberedProbe<'_> {
 
     fn journal_version(&self, executable: &std::path::Path) -> Option<String> {
         let version = env!("CARGO_PKG_VERSION");
-        self.payload_matches(executable, version)
-            .then(|| version.to_owned())
+        if self.payload_matches(executable, version) {
+            return Some(version.to_owned());
+        }
+        self.answers.journal_version(self.inner, executable)
     }
 
     fn payload_matches(&self, executable: &std::path::Path, version: &str) -> bool {
         self.answers.matches(self.inner, executable, version)
+    }
+
+    fn package_route(&self, executable: &std::path::Path) -> Option<String> {
+        self.inner.package_route(executable)
+    }
+
+    fn installed_package_version(&self, package_name: &str) -> Option<String> {
+        self.inner.installed_package_version(package_name)
+    }
+
+    fn has_repo_source(&self, etc_dir: &std::path::Path) -> bool {
+        self.inner.has_repo_source(etc_dir)
     }
 }
 
@@ -329,6 +381,7 @@ mod update_tests {
                 Ok(CatalogueListing {
                     platform_version: "2.0.49-r2".to_owned(),
                     journal_version: "2.0.49".to_owned(),
+                    desktop_version: None,
                 })
             } else {
                 Err(CatalogueRefusal {

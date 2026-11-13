@@ -26,6 +26,7 @@ pub struct CatalogueListing {
     /// The catalogue coordinate, such as `2.0.59-r1`.
     pub platform_version: String,
     pub journal_version: String,
+    pub desktop_version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -229,6 +230,11 @@ fn read_manifest(
     let journal = value["components"]["journal"]["version"]
         .as_str()
         .ok_or_else(|| invalid("no journal version"))?;
+    let desktop_version = match value["components"]["desktop"]["version"].as_str() {
+        Some(v) if is_canonical_version(v) => Some(v.to_owned()),
+        Some(_) => return Err(invalid("bad desktop version")),
+        None => None,
+    };
     let coordinate = match value["schema_version"].as_u64() {
         Some(1) if value.get("catalogue_revision").is_none() => version.to_owned(),
         Some(2) => match value["catalogue_revision"].as_u64() {
@@ -260,6 +266,7 @@ fn read_manifest(
     Ok(CatalogueListing {
         platform_version: coordinate,
         journal_version: journal.to_owned(),
+        desktop_version,
     })
 }
 
@@ -325,6 +332,7 @@ mod tests {
         let listing = CatalogueListing {
             platform_version: "2.0.65-r1".to_owned(),
             journal_version: "2.0.65".to_owned(),
+            desktop_version: None,
         };
         let refusal = CatalogueRefusal::new("signature-invalid", "refused");
         let origin = Answers(Mutex::new(vec![Ok(listing.clone()), Err(refusal.clone())]));
@@ -410,6 +418,7 @@ mod tests {
             Ok(CatalogueListing {
                 platform_version: "2.0.59-r1".to_owned(),
                 journal_version: "2.0.59".to_owned(),
+                desktop_version: Some("2.0.29".to_owned()),
             })
         );
     }

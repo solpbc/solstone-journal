@@ -33,6 +33,7 @@ const TAG_BUILD_HOST: i32 = 1007;
 const TAG_SIZE: i32 = 1009;
 const TAG_LICENSE: i32 = 1014;
 const TAG_GROUP: i32 = 1016;
+const TAG_URL: i32 = 1020;
 const TAG_OS: i32 = 1021;
 const TAG_ARCH: i32 = 1022;
 const TAG_FILE_SIZES: i32 = 1028;
@@ -231,7 +232,7 @@ fn main_header(
         "libc.so.6()(64bit)",
         "libgcc_s.so.1()(64bit)",
         // libgomp ships from the same GCC as libstdc++, which the GLIBCXX capability already pins.
-        "libgomp",
+        "libgomp.so.1()(64bit)",
         "libstdc++.so.6()(64bit)",
         "libstdc++.so.6(GLIBCXX_3.4.29)(64bit)",
         "libz.so.1()(64bit)",
@@ -267,6 +268,7 @@ fn main_header(
     builder.add_u32(TAG_SIZE, installed_size);
     builder.add_string(TAG_LICENSE, "AGPL-3.0-only");
     builder.add_i18n_string(TAG_GROUP, "Applications/Productivity");
+    builder.add_string(TAG_URL, "https://solstone.app");
     builder.add_string(TAG_OS, "linux");
     builder.add_string(TAG_ARCH, meta.arch);
     builder.add_u32_array(TAG_FILE_SIZES, &sizes);

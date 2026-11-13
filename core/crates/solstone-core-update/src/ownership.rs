@@ -15,21 +15,104 @@ pub trait PackageProbe: Send + Sync {
     fn payload_matches(&self, _executable: &Path, _version: &str) -> bool {
         false
     }
+    fn package_route(&self, _executable: &Path) -> Option<String> {
+        None
+    }
+    fn installed_package_version(&self, _package_name: &str) -> Option<String> {
+        None
+    }
+    fn has_repo_source(&self, etc_dir: &Path) -> bool {
+        has_repo_config_file(etc_dir) || self.installed_package_version("solstone").is_some()
+    }
+}
+
+pub fn normalize_executable_path(executable: &Path) -> PathBuf {
+    if !executable.exists()
+        && let Some(raw) = executable.to_str()
+        && let Some(stripped) = raw.strip_suffix(" (deleted)")
+    {
+        let candidate = PathBuf::from(stripped);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    executable.to_path_buf()
+}
+
+pub fn normalize_package_semver(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let without_epoch = trimmed.split_once(':').map_or(trimmed, |(_, rest)| rest);
+    let core = without_epoch
+        .split_once('-')
+        .map_or(without_epoch, |(ver, _)| ver);
+    crate::compare_semver_3part(core, core).map(|_| core.to_owned())
+}
+
+fn is_regular_non_symlink(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .is_ok_and(|meta| !meta.file_type().is_symlink() && meta.file_type().is_file())
+}
+
+fn repo_config_paths(etc_dir: &Path) -> [PathBuf; 4] {
+    [
+        etc_dir.join("apt/sources.list.d/solstone.sources"),
+        etc_dir.join("apt/sources.list.d/solstone.list"),
+        etc_dir.join("yum.repos.d/solstone.repo"),
+        etc_dir.join("zypp/repos.d/solstone.repo"),
+    ]
+}
+
+fn has_repo_config_file(etc_dir: &Path) -> bool {
+    repo_config_paths(etc_dir)
+        .iter()
+        .any(|path| is_regular_non_symlink(path))
+}
+
+fn repo_lane(etc_dir: &Path) -> String {
+    for path in repo_config_paths(etc_dir) {
+        if is_regular_non_symlink(&path)
+            && let Ok(contents) = fs::read_to_string(&path)
+        {
+            if contents.contains("/apt/staging") || contents.contains("/rpm/staging") {
+                return "staging".to_owned();
+            }
+            if contents.contains("/apt/dev") || contents.contains("/rpm/dev") {
+                return "dev".to_owned();
+            }
+            return "release".to_owned();
+        }
+    }
+    "release".to_owned()
 }
 
 pub struct RealPackageProbe;
 
 impl PackageProbe for RealPackageProbe {
     fn journal_version(&self, executable: &Path) -> Option<String> {
-        let version = env!("CARGO_PKG_VERSION");
-        self.payload_matches(executable, version)
-            .then(|| version.to_owned())
+        use solstone_core_installed_payload::{code, posix};
+        let executable = normalize_executable_path(executable);
+        let executable = fs::canonicalize(executable).ok()?;
+        let root = posix::bin_parent_root(&executable)?;
+        let relative = executable.strip_prefix(&root).ok()?.to_str()?;
+        let target = solstone_core_installed_payload::compiled_target();
+        let compiled = env!("CARGO_PKG_VERSION");
+        match posix::InstalledPackage::admit(&root, compiled, target) {
+            Ok(package) => package.member(relative).ok().map(|_| compiled.to_owned()),
+            Err(refusal) if refusal.code == code::RESTART_TO_FINISH_UPDATE => {
+                let (_, on_disk) = refusal.versions.as_deref()?;
+                crate::compare_semver_3part(on_disk, on_disk)?;
+                let package = posix::InstalledPackage::admit(&root, on_disk, target).ok()?;
+                package.member(relative).ok().map(|_| on_disk.clone())
+            }
+            Err(_) => None,
+        }
     }
     fn payload_matches(&self, executable: &Path, version: &str) -> bool {
         use solstone_core_installed_payload::posix;
         if version != env!("CARGO_PKG_VERSION") {
             return false;
         }
+        let executable = normalize_executable_path(executable);
         let Ok(executable) = fs::canonicalize(executable) else {
             return false;
         };
@@ -55,9 +138,14 @@ impl PackageProbe for RealPackageProbe {
     }
 
     fn owns_journal(&self, executable: &Path) -> bool {
+        self.package_route(executable).is_some()
+    }
+
+    fn package_route(&self, executable: &Path) -> Option<String> {
+        let executable = normalize_executable_path(executable);
         if let Ok(output) = std::process::Command::new("/usr/bin/dpkg-query")
             .arg("-S")
-            .arg(executable)
+            .arg(&executable)
             .output()
             && output.status.success()
         {
@@ -71,18 +159,50 @@ impl PackageProbe for RealPackageProbe {
                         && Path::new(path) == executable
                 })
             }) {
-                return true;
+                return Some("deb".to_owned());
             }
         }
         if let Ok(output) = std::process::Command::new("/usr/bin/rpm")
             .args(["-qf", "--queryformat", "%{NAME}\n"])
-            .arg(executable)
+            .arg(&executable)
+            .output()
+            && output.status.success()
+            && String::from_utf8_lossy(&output.stdout).trim() == "solstone-journal"
+        {
+            return Some("rpm".to_owned());
+        }
+        None
+    }
+
+    fn installed_package_version(&self, package_name: &str) -> Option<String> {
+        if let Ok(output) = std::process::Command::new("/usr/bin/dpkg-query")
+            .args(["-W", "-f=${Status}\t${Version}\n", package_name])
             .output()
             && output.status.success()
         {
-            return String::from_utf8_lossy(&output.stdout).trim() == "solstone-journal";
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                if let Some((status, ver)) = line.split_once('\t')
+                    && status.trim() == "install ok installed"
+                    && let Some(clean) = normalize_package_semver(ver)
+                {
+                    return Some(clean);
+                }
+            }
         }
-        false
+        if let Ok(output) = std::process::Command::new("/usr/bin/rpm")
+            .args(["-q", "--queryformat", "%{VERSION}\n", package_name])
+            .output()
+            && output.status.success()
+        {
+            let text = String::from_utf8_lossy(&output.stdout);
+            if let Some(first) = text.lines().next()
+                && let Some(clean) = normalize_package_semver(first)
+            {
+                return Some(clean);
+            }
+        }
+        None
     }
 }
 
@@ -307,6 +427,9 @@ pub fn classify_ownership(
     etc_dir: &Path,
     probe: &dyn PackageProbe,
 ) -> OwnershipResult {
+    let normalized = normalize_executable_path(executable);
+    let executable = normalized.as_path();
+
     // 1. Ancestry checkout detection
     let exe_dir = executable.parent().unwrap_or(executable);
     if resolve_checkout_root_from_executable_dir(exe_dir).is_some() {
@@ -605,6 +728,14 @@ pub fn classify_ownership(
         return native_res;
     }
 
+    if tree_ini.is_none()
+        && pkg_ini.is_none()
+        && probe.has_repo_source(etc_dir)
+        && let Some(repo_res) = classify_repo_package(executable, etc_dir, probe)
+    {
+        return OwnershipResult::Positive(repo_res);
+    }
+
     // A package installed without the solstone installer has no receipt. The
     // installer checks its files against the signed release and records it.
     if probe.owns_journal(executable) {
@@ -620,6 +751,61 @@ pub fn classify_ownership(
 /// What `solstone update` says for a package the solstone installer has not
 /// recorded: the one command that records it.
 pub const UNRECORDED_PACKAGE_MESSAGE: &str = "this journal was installed from a package without the solstone installer, so solstone update can't update it yet. run curl -fsSL https://solstone.app/install.sh | sh -s -- --upgrade once. it checks the installed files against the signed release, and solstone update updates it after that.";
+
+fn is_valid_package_executable(executable: &Path) -> bool {
+    let canon_exe = fs::canonicalize(executable).ok();
+    let valid_path = canon_exe.as_deref() == Some(Path::new("/usr/bin/solstone"))
+        || canon_exe.as_deref() == Some(Path::new("/usr/bin/journal"))
+        || canon_exe.as_deref() == Some(Path::new("/bin/solstone"))
+        || canon_exe.as_deref() == Some(Path::new("/bin/journal"))
+        || executable == Path::new("/usr/bin/solstone")
+        || executable == Path::new("/usr/bin/journal")
+        || executable == Path::new("/bin/solstone")
+        || executable == Path::new("/bin/journal");
+
+    valid_path || executable.parent() == Some(Path::new("/usr/bin"))
+}
+
+fn classify_repo_package(
+    executable: &Path,
+    etc_dir: &Path,
+    probe: &dyn PackageProbe,
+) -> Option<PositiveOwnership> {
+    if !is_valid_package_executable(executable) || !probe.owns_journal(executable) {
+        return None;
+    }
+    let journal_ver = probe.journal_version(executable)?;
+    let route = probe
+        .package_route(executable)
+        .unwrap_or_else(|| "deb".to_owned());
+    let lane = repo_lane(etc_dir);
+
+    let mut components = vec![RecordedComponent {
+        name: "journal".to_owned(),
+        route: route.clone(),
+        policy: ServicePolicy::Start,
+        version: Some(journal_ver.clone()),
+    }];
+
+    if let Some(desktop_ver) = probe.installed_package_version("solstone-linux") {
+        components.push(RecordedComponent {
+            name: "desktop".to_owned(),
+            route,
+            policy: ServicePolicy::NoStart,
+            version: Some(desktop_ver),
+        });
+    }
+
+    Some(PositiveOwnership {
+        route_kind: RouteKind::PlatformPackage,
+        prefix: None,
+        platform_prefix: None,
+        lane,
+        current_journal_version: journal_ver,
+        current_platform_version: None,
+        components,
+    })
+}
 
 fn classify_platform_package(
     executable: &Path,
@@ -646,17 +832,7 @@ fn classify_platform_package(
         return None;
     }
 
-    let canon_exe = fs::canonicalize(executable).ok();
-    let valid_path = canon_exe.as_deref() == Some(Path::new("/usr/bin/solstone"))
-        || canon_exe.as_deref() == Some(Path::new("/usr/bin/journal"))
-        || canon_exe.as_deref() == Some(Path::new("/bin/solstone"))
-        || canon_exe.as_deref() == Some(Path::new("/bin/journal"))
-        || executable == Path::new("/usr/bin/solstone")
-        || executable == Path::new("/usr/bin/journal")
-        || executable == Path::new("/bin/solstone")
-        || executable == Path::new("/bin/journal");
-
-    if !valid_path && executable.parent() != Some(Path::new("/usr/bin")) {
+    if !is_valid_package_executable(executable) {
         return None;
     }
 
@@ -671,13 +847,35 @@ fn classify_platform_package(
         .cloned()
         .unwrap_or_else(|| "release".to_owned());
 
-    let plat_ver = ini
+    let recorded_plat_ver = ini
         .sections
         .get("solstone")
         .and_then(|s| s.get("platform_version"))
         .cloned();
 
     let journal_ver = probe.journal_version(executable)?;
+    let live_desktop = probe.installed_package_version("solstone-linux");
+
+    let recorded_journal_ver = journal_sec
+        .get("package_version")
+        .map(String::as_str)
+        .or_else(|| {
+            recorded_plat_ver
+                .as_deref()
+                .map(|v| v.rsplit_once("-r").map_or(v, |(core, _)| core))
+        });
+    let journal_advanced = recorded_journal_ver.is_some_and(|rec| rec != journal_ver);
+    let desktop_advanced = ini
+        .sections
+        .get("component:desktop")
+        .and_then(|s| s.get("package_version"))
+        .zip(live_desktop.as_ref())
+        .is_some_and(|(rec, live)| rec != live);
+    let plat_ver = if journal_advanced || desktop_advanced {
+        None
+    } else {
+        recorded_plat_ver
+    };
 
     let policy = match journal_sec.get("service_policy").map(|s| s.as_str()) {
         Some("start") => ServicePolicy::Start,
@@ -705,13 +903,31 @@ fn classify_platform_package(
                 Some("start") => ServicePolicy::Start,
                 _ => ServicePolicy::NoStart,
             };
+            let version = if comp == "desktop" {
+                live_desktop
+                    .clone()
+                    .or_else(|| sec.get("package_version").cloned())
+            } else {
+                sec.get("package_version").cloned()
+            };
             components.push(RecordedComponent {
                 name: comp.to_owned(),
                 route: sec.get("route").cloned().unwrap_or_else(|| route.clone()),
                 policy: comp_policy,
-                version: sec.get("package_version").cloned(),
+                version,
             });
         }
+    }
+
+    if !ini.sections.contains_key("component:desktop")
+        && let Some(desktop_ver) = live_desktop
+    {
+        components.push(RecordedComponent {
+            name: "desktop".to_owned(),
+            route: route.clone(),
+            policy: ServicePolicy::NoStart,
+            version: Some(desktop_ver),
+        });
     }
 
     Some(PositiveOwnership {
@@ -1272,6 +1488,110 @@ mod tests {
         match res {
             OwnershipResult::Refusal { code, .. } => assert_eq!(code, "ownership-unknown"),
             other => panic!("expected ownership-unknown refusal, got {other:?}"),
+        }
+    }
+
+    struct RepoPackageProbe {
+        journal_ver: &'static str,
+        desktop_ver: Option<&'static str>,
+        route: &'static str,
+    }
+
+    impl PackageProbe for RepoPackageProbe {
+        fn owns_journal(&self, _executable: &Path) -> bool {
+            true
+        }
+        fn journal_version(&self, _executable: &Path) -> Option<String> {
+            Some(self.journal_ver.to_owned())
+        }
+        fn payload_matches(&self, _executable: &Path, _version: &str) -> bool {
+            true
+        }
+        fn package_route(&self, _executable: &Path) -> Option<String> {
+            Some(self.route.to_owned())
+        }
+        fn installed_package_version(&self, package_name: &str) -> Option<String> {
+            if package_name == "solstone-linux" {
+                self.desktop_ver.map(str::to_owned)
+            } else {
+                None
+            }
+        }
+    }
+
+    #[test]
+    fn ownership_positively_classifies_bare_repo_package_and_discovers_desktop() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("data");
+        let etc = temp.path().join("etc");
+        fs::create_dir_all(&data).unwrap();
+        fs::create_dir_all(etc.join("apt/sources.list.d")).unwrap();
+        fs::write(
+            etc.join("apt/sources.list.d/solstone.sources"),
+            "Types: deb\nURIs: https://updates.solstone.app/apt/release\nSuites: solstone\nComponents: main\n",
+        )
+        .unwrap();
+
+        let exe = PathBuf::from("/usr/bin/solstone");
+        let probe = RepoPackageProbe {
+            journal_ver: "2.0.76",
+            desktop_ver: Some("2.0.40"),
+            route: "deb",
+        };
+
+        let res = classify_ownership(&exe, &data, &etc, &probe);
+        match res {
+            OwnershipResult::Positive(pos) => {
+                assert_eq!(pos.route_kind, RouteKind::PlatformPackage);
+                assert_eq!(pos.lane, "release");
+                assert_eq!(pos.current_journal_version, "2.0.76");
+                assert_eq!(pos.current_platform_version, None);
+                assert_eq!(pos.components.len(), 2);
+                assert_eq!(pos.components[0].name, "journal");
+                assert_eq!(pos.components[0].route, "deb");
+                assert_eq!(pos.components[0].version.as_deref(), Some("2.0.76"));
+                assert_eq!(pos.components[1].name, "desktop");
+                assert_eq!(pos.components[1].route, "deb");
+                assert_eq!(pos.components[1].version.as_deref(), Some("2.0.40"));
+            }
+            other => panic!("expected positive repo package ownership, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ownership_clears_stale_platform_version_after_out_of_band_package_upgrade() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("data");
+        let etc = temp.path().join("etc");
+        fs::create_dir_all(&data).unwrap();
+        fs::create_dir_all(etc.join("solstone")).unwrap();
+
+        let ini = "[solstone]\nschema_version=1\norigin=https://updates.solstone.app\nlane=release\nplatform_version=2.0.76-r1\n\n[component:journal]\nrole=journal\nroute=deb\nphase=complete\nstatus=installed\npackage_name=solstone-journal\npackage_version=2.0.76\nservice_policy=start\n\n[component:desktop]\nrole=desktop\nroute=deb\nphase=complete\nstatus=installed\npackage_name=solstone-linux\npackage_version=2.0.40\nservice_policy=skip-service\n";
+        fs::write(etc.join("solstone/install.conf"), ini).unwrap();
+
+        let usr_bin = temp.path().join("usr/bin");
+        fs::create_dir_all(&usr_bin).unwrap();
+        let real_exe = usr_bin.join("solstone");
+        fs::write(&real_exe, b"#!/bin/sh\n").unwrap();
+        let deleted_exe = PathBuf::from(format!("{} (deleted)", real_exe.display()));
+        assert_eq!(normalize_executable_path(&deleted_exe), real_exe);
+        assert_eq!(
+            normalize_package_semver("1:2.0.41-1"),
+            Some("2.0.41".to_owned())
+        );
+
+        let probe = RepoPackageProbe {
+            journal_ver: "2.0.76",
+            desktop_ver: Some("2.0.41"),
+            route: "deb",
+        };
+        let res = classify_ownership(Path::new("/usr/bin/solstone"), &data, &etc, &probe);
+        match res {
+            OwnershipResult::Positive(pos) => {
+                assert_eq!(pos.current_platform_version, None);
+                assert_eq!(pos.components[1].version.as_deref(), Some("2.0.41"));
+            }
+            other => panic!("expected positive ownership after upgrade, got {other:?}"),
         }
     }
 }

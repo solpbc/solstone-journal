@@ -2190,6 +2190,7 @@ mod tests {
             Ok(solstone_core_update::CatalogueListing {
                 platform_version: "2.0.49-r1".to_owned(),
                 journal_version: "2.0.49".to_owned(),
+                desktop_version: None,
             })
         }
     }

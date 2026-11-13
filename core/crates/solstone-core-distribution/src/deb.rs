@@ -23,7 +23,8 @@ pub fn write_deb(stage: &Path, dest: &Path, meta: DebMeta<'_>) -> io::Result<()>
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
     }
-    let control = gzip_bytes(&control_tar(meta)?)?;
+    let installed_size_kib = installed_size_kib(stage)?;
+    let control = gzip_bytes(&control_tar(meta, installed_size_kib)?)?;
     let data = gzip_bytes(&data_tar(stage)?)?;
     let mut out = fs::File::create(dest)?;
     write_archive(
@@ -36,10 +37,23 @@ pub fn write_deb(stage: &Path, dest: &Path, meta: DebMeta<'_>) -> io::Result<()>
     )
 }
 
-fn control_tar(meta: DebMeta<'_>) -> io::Result<Vec<u8>> {
+fn installed_size_kib(stage: &Path) -> io::Result<u64> {
+    let mut total_kib = 0_u64;
+    for dest in staged_files(stage)? {
+        let path = stage.join(&dest);
+        let bytes = fs::read(&path)?;
+        let Some(bytes) = crate::container_seam::apply(&dest, bytes) else {
+            continue;
+        };
+        total_kib = total_kib.saturating_add((bytes.len() as u64).div_ceil(1024));
+    }
+    Ok(total_kib)
+}
+
+fn control_tar(meta: DebMeta<'_>, installed_size_kib: u64) -> io::Result<Vec<u8>> {
     let control = format!(
-        "Package: solstone-journal\nVersion: {}\nArchitecture: {}\nMaintainer: sol pbc <support@solstone.app>\nDescription: solstone-journal\nDepends: libc6 (>= 2.34), libstdc++6 (>= 11), libgcc-s1 (>= 11), libgomp1 (>= 11), zlib1g\n",
-        meta.version, meta.arch
+        "Package: solstone-journal\nVersion: {}\nSection: utils\nPriority: optional\nArchitecture: {}\nInstalled-Size: {}\nMaintainer: sol pbc <support@solstone.app>\nHomepage: https://solstone.app\nDescription: solstone-journal\nDepends: libc6 (>= 2.34), libstdc++6 (>= 11), libgcc-s1 (>= 11), libgomp1 (>= 11), zlib1g\n",
+        meta.version, meta.arch, installed_size_kib
     );
     let mut builder = Builder::new(Vec::new());
     append_regular(&mut builder, "control", control.as_bytes(), 0o644)?;
@@ -187,10 +201,13 @@ mod tests {
 
     #[test]
     fn control_declares_the_transcription_openmp_runtime() {
-        let bytes = control_tar(DebMeta {
-            version: "2.0.0",
-            arch: "amd64",
-        })
+        let bytes = control_tar(
+            DebMeta {
+                version: "2.0.0",
+                arch: "amd64",
+            },
+            1024,
+        )
         .unwrap();
         let mut archive = tar::Archive::new(bytes.as_slice());
         let mut control = String::new();
@@ -200,6 +217,10 @@ mod tests {
                 std::io::Read::read_to_string(&mut entry, &mut control).unwrap();
             }
         }
+        assert!(control.contains("Section: utils\n"));
+        assert!(control.contains("Priority: optional\n"));
+        assert!(control.contains("Installed-Size: 1024\n"));
+        assert!(control.contains("Homepage: https://solstone.app\n"));
         assert!(control.contains("Depends: "));
         assert!(
             control
