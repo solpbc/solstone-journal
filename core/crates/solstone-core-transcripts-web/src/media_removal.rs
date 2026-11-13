@@ -37,8 +37,10 @@ pub(crate) fn compute_media_removal(
             .get(modality)
             .is_some_and(|missing| missing.iter().any(|name| in_trash(name)))
     };
-    let (audio_in_trash, screen_in_trash) =
-        (audio_purged && trashed("audio"), screen_purged && trashed("screen"));
+    let (audio_in_trash, screen_in_trash) = (
+        audio_purged && trashed("audio"),
+        screen_purged && trashed("screen"),
+    );
     let reason = |modality: &str, in_trash: bool| {
         if in_trash {
             in_trash_reason(modality)
