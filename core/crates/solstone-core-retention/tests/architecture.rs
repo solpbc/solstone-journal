@@ -57,6 +57,7 @@ const SOURCES: &[(&str, &str)] = &[
         "original_deletion",
         include_str!("../src/original_deletion.rs"),
     ),
+    ("original_trash", include_str!("../src/original_trash.rs")),
     ("owner_voice", include_str!("../src/owner_voice.rs")),
     ("policy", include_str!("../src/policy.rs")),
     ("receipt", include_str!("../src/receipt.rs")),

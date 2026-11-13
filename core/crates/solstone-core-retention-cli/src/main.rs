@@ -296,6 +296,7 @@ fn link_originals(
     releases: &[original_trash::Release],
     class: RawReleaseClass,
     stop_at_busy: bool,
+    at: DateTime<Utc>,
 ) -> Result<original_trash::Linking, String> {
     original_trash::link_before(
         journal,
@@ -304,6 +305,7 @@ fn link_originals(
         Action::RetentionTool,
         surface(args),
         stop_at_busy,
+        at,
     )
     .map_err(|error| {
         format!("the trash couldn't take these originals, so nothing was released: {error}")
@@ -351,9 +353,13 @@ fn without_busy(
 
 /// Keep in the trash what the run released; the trash records it. Answers
 /// with each item, the day it is erased on, and what the sweep still owes.
-fn keep_originals(journal: &Path, linked: Vec<original_trash::Linked>) -> serde_json::Value {
+fn keep_originals(
+    journal: &Path,
+    linked: Vec<original_trash::Linked>,
+    now: DateTime<Utc>,
+) -> serde_json::Value {
     let kept = original_trash::keep_after(journal, linked);
-    original_trash::cli_answer(journal, &kept)
+    original_trash::cli_answer(journal, &kept, now)
 }
 
 /// Move named segments to the trash. ⛔ Never erases: a delete from the command
@@ -513,6 +519,7 @@ fn run_release_raw(args: &Args) -> ExitCode {
         &original_trash::of_proven(&proven),
         RawReleaseClass::Owner,
         false,
+        at,
     ) {
         Ok(linking) => linking,
         Err(error) => return fail(&error),
@@ -520,7 +527,7 @@ fn run_release_raw(args: &Args) -> ExitCode {
     let (proven, busy) = without_busy(proven, &linking.busy);
     let (mut outcome, tally) = release_raw(&journal, &proven, RawReleaseClass::Owner, at);
     outcome.targets.extend(busy);
-    let trash = keep_originals(&journal, linking.linked);
+    let trash = keep_originals(&journal, linking.linked, at);
     // Raw-file release has no `.removing_` rename, so door::release_raw cannot
     // currently produce a staged row. Keep this defensive registration path for a
     // future door change, and preserve the completed outcome if its register write fails.
@@ -925,6 +932,7 @@ fn run_sweep(args: &Args) -> ExitCode {
         &original_trash::of_proven(&proven),
         RawReleaseClass::Owner,
         false,
+        now,
     ) {
         Ok(linking) => linking,
         Err(error) => return fail(&error),
@@ -932,7 +940,7 @@ fn run_sweep(args: &Args) -> ExitCode {
     let (proven, busy) = without_busy(proven, &linking.busy);
     let (mut outcome, tally) = release_raw(&journal, &proven, RawReleaseClass::Owner, now);
     outcome.targets.extend(busy);
-    let trash = keep_originals(&journal, linking.linked);
+    let trash = keep_originals(&journal, linking.linked, now);
     finish(
         &journal,
         outcome,
@@ -1250,6 +1258,7 @@ fn run_remove_marked(args: &Args) -> ExitCode {
         RawReleaseClass::Policy,
         // The run stops at the first busy mark, so the rest needn't be waited on.
         true,
+        now,
     ) {
         Ok(linking) => linking,
         Err(error) => return verb_fail("remove-marked", &error),
@@ -1283,7 +1292,7 @@ fn run_remove_marked(args: &Args) -> ExitCode {
             }
         }
     };
-    let trash = keep_originals(&journal, linking.linked);
+    let trash = keep_originals(&journal, linking.linked, now);
     finish(
         &journal,
         outcome,

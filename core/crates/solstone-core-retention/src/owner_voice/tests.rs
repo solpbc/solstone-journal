@@ -577,6 +577,7 @@ fn a_recovered_original_is_not_released_again_by_voice_only() {
         Action::RetentionTool,
         Surface::Cli,
         false,
+        at(),
     )
     .unwrap()
     .linked;

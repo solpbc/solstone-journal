@@ -363,6 +363,7 @@ fn run_pending(slot: &SharedOperationSlot, ticket: &ArchiveTicket) {
         Action::OriginalsRelease,
         Surface::Web { page: Page::Home },
         true,
+        input.now,
     ) {
         // A segment something else holds can't go to the trash now, so the
         // approval doesn't start: the owner tries again.
