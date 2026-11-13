@@ -419,6 +419,14 @@ const ENTRY_TABLE = {
       reads: [{ route: '/app/entities/', urls: ['/app/entities/api/state'] }],
       contract: true,
     },
+    // Two modes in one fragment, as the real one: the overview, and a day.
+    speakers: {
+      fragment: '/app/speakers/workspace',
+      scripts: [],
+      styles: [],
+      reads: [{ route: '/app/speakers/', urls: ['/app/speakers/api/state'] }, { route: '/app/speakers/{day}', urls: ['/app/speakers/api/state'] }],
+      contract: true,
+    },
     settings: {
       fragment: '/app/settings/workspace',
       scripts: [],
@@ -569,7 +577,32 @@ const ENTITIES_CODE = `
       }
     });`;
 
+// Speakers' script, inline as the real one is: a mount draws the overview or
+// a day from its own address, and only a day takes another day in place.
+const SPEAKERS_CODE = `
+    window.SolViews.register('speakers', {
+      mount(ctx) {
+        const views = window.__views.speakers;
+        views.mounts += 1;
+        const day = ctx.route.day;
+        views.modes.push(day ? 'day ' + day + ctx.route.hash : 'overview' + ctx.route.hash);
+        const root = document.getElementById(day ? 'speakersDayView' : 'speakersOverviewView');
+        root.removeAttribute('hidden');
+        ctx.read('/app/speakers/api/state').then(() => ctx.ready('content'), () => ctx.ready('error'));
+        if (!day) return { dispose() { views.disposes += 1; } };
+        return {
+          dispose() { views.disposes += 1; },
+          update(params) { views.updates.push(params.day); ctx.ready('content'); },
+        };
+      }
+    });`;
+
 const FRAGMENTS = {
+  '/app/speakers/workspace': '<div data-date-nav></div><div id="speakersDayView" hidden><nav><h2 class="spk-segments-header">segments</h2></nav>'
+    + '<a href="/app/speakers/#spkNewVoicesSection">look for new voices</a><a href="/app/speakers/20260103">next day</a></div>'
+    + '<div id="speakersOverviewView" hidden><section hidden><h2>grid</h2></section><a href="/app/speakers/20260102">a day</a>'
+    + '<a href="/app/speakers/20260102#owner-teach">teach</a></div>'
+    + '<script>' + SPEAKERS_CODE + '</script>',
   '/app/home/workspace': '<div class="home"><h2>your day</h2><div id="home-root"></div></div><script src="/h/home.js"></script>',
   '/app/transcripts/workspace': '<link rel="stylesheet" href="/t/date-nav.css"><div class="tr"><h2 data-day-heading>day</h2><div id="tr-root"></div></div><script src="/t/transcripts.js"></script>',
   '/app/more/workspace': '<div class="more"><div id="more-root"></div><a href="/app/transcripts/">transcripts</a><a href="/app/home/">home</a><a href="/app/body/">body</a><a href="/app/activities/">activities</a><a href="/app/map/">map</a><a href="/app/settings/">settings</a></div><script src="/m/more.js"></script>',
@@ -892,7 +925,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
   document.querySelectorAll = (selector) => document.root.querySelectorAll(selector);
   document.body.innerHTML =
     '<nav id="app-rail"><a href="/app/home/" data-app-name="home">home</a><a href="/app/transcripts/" data-app-name="transcripts">transcripts</a>' +
-    '<a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/sources/" data-app-name="sources">sources</a><a href="/app/settings/" data-app-name="settings">settings</a><a href="/app/search/" data-app-name="search">search</a>' +
+    '<a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/speakers/" data-app-name="speakers">speakers</a><a href="/app/sources/" data-app-name="sources">sources</a><a href="/app/settings/" data-app-name="settings">settings</a><a href="/app/search/" data-app-name="search">search</a>' +
     '<div id="status-instrument"></div></nav><nav id="app-dock"><a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/home/" data-app-name="home">home</a></nav>' +
     '<div id="view-announcer" role="status" aria-live="polite"></div>' +
     '<main id="main-content" tabindex="-1"><div class="surface-state surface-state--loading" role="status" aria-busy="true"></div></main>';
@@ -959,11 +992,12 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       map: { mounts: 0, disposes: 0, cleanups: 0, updates: [], draws: [], pages: [] },
       search: { mounts: 0, disposes: 0, draws: [], own: [], pops: 0, held: 0 },
       entities: { mounts: 0, disposes: 0, shown: [], own: [], pops: 0, addresses: [] },
+      speakers: { mounts: 0, disposes: 0, modes: [], updates: [] },
     },
     __scriptErrors: [],
     __consoleErrors: [],
     solShellData: {
-      apps: ['home', 'transcripts', 'more', 'body', 'activities', 'map', 'search', 'entities', 'sources', 'settings'].map((name) => ({
+      apps: ['home', 'transcripts', 'more', 'body', 'activities', 'map', 'search', 'entities', 'speakers', 'sources', 'settings'].map((name) => ({
         name, label: name, workspace_url: `/app/${name}/workspace`,
       })),
     },
@@ -998,6 +1032,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       server.answers.set('/app/home/api/pulse', server.json(pulse));
       server.answers.set('/app/body/api/status', server.json({ coverage: { start: '20260102', end: '20260102' } }));
       server.answers.set('/app/entities/api/state', server.json({}));
+      server.answers.set('/app/speakers/api/state', server.json({}));
       for (const [url, body] of Object.entries(FRAGMENTS)) server.answers.set(url, server.html(body));
       server.answers.set('/api/shell', server.json({ app_names: [] }));
       server.answers.set('/api/streams/labels', server.json({}));
@@ -2099,6 +2134,75 @@ asyncCase('router: a quick second move ends the first one\'s reads, and the seco
   assert.deepStrictEqual(page.window.__views.home.draws, [{ n: 1 }, { n: 2 }]);
   assert.strictEqual(page.server.of('/app/home/api/pulse').length, 2, 'home adopted the read its move started');
   assert.strictEqual(dayRead().length <= 1, true);
+});
+
+// ---- speakers: two modes in one view, and a day step in the day
+
+asyncCase('speakers: to and from every other contract view in the page; the overview\'s arrival focus is the workspace, a day\'s its segments heading', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  answerBody(page);
+  answerActivities(page);
+  answerMap(page);
+  answerSearch(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+  await page.boot('home');
+  const others = ['/app/home/', '/app/transcripts/', '/app/more/', '/app/body/', '/app/activities/', '/app/map/', '/app/search/', '/app/entities/'];
+  for (const href of others) {
+    page.click('/app/speakers/');
+    await page.clock.advance(400);
+    assert.ok(page.view('speakers'), `speakers in the page (before ${href})`);
+    assert.strictEqual(page.document.activeElement, page.main(), 'the hidden day\'s heading is passed over');
+    assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'speakers');
+    page.click(href);
+    await page.clock.advance(400);
+    const name = href.split('/')[2];
+    assert.ok(page.view(name), `${name} in the page`);
+  }
+  assert.deepStrictEqual(page.record.assigned, [], 'no page load either way');
+  assert.strictEqual(page.window.__views.speakers.mounts, others.length);
+  assert.strictEqual(page.window.__views.speakers.disposes, others.length);
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
+asyncCase('speakers: the overview to a day and back are moves in the page; a day step is the day\'s update; back and forward land on each', async () => {
+  const page = makePage();
+  page.answerAll();
+  await page.boot('home');
+  page.click('/app/speakers/');
+  await page.clock.advance(400);
+  page.click('/app/speakers/20260102');
+  await page.clock.advance(400);
+  const views = page.window.__views.speakers;
+  assert.deepStrictEqual(views.modes, ['overview', 'day 20260102'], 'the day is mounted in its mode');
+  assert.strictEqual(page.document.activeElement.getAttribute('class'), 'spk-segments-header', 'a day arrival focuses its drawn heading');
+  page.click('/app/speakers/20260103');
+  await page.clock.advance(400);
+  assert.deepStrictEqual(views.updates, ['20260103'], 'a day step is an update');
+  assert.strictEqual(views.mounts, 2, 'not a mount');
+  page.click('/app/speakers/#spkNewVoicesSection');
+  await page.clock.advance(400);
+  assert.strictEqual(views.modes[2], 'overview#spkNewVoicesSection', 'the overview mounts with the hash its link carries');
+  assert.strictEqual(page.location.pathname + page.location.hash, '/app/speakers/#spkNewVoicesSection');
+  page.click('/app/speakers/20260102#owner-teach');
+  await page.clock.advance(400);
+  assert.strictEqual(views.modes[3], 'day 20260102#owner-teach', 'the day mounts with owner teach\'s hash');
+  page.history.back();
+  await page.clock.advance(400);
+  assert.strictEqual(views.modes[4], 'overview#spkNewVoicesSection', 'back to the overview remounts it');
+  page.history.back();
+  await page.clock.advance(400);
+  assert.deepStrictEqual(views.updates, ['20260103'], 'a mode change is never an update');
+  assert.strictEqual(views.modes[5], 'day 20260103', 'back to the stepped day');
+  page.history.back();
+  await page.clock.advance(400);
+  assert.deepStrictEqual(views.updates, ['20260103', '20260102'], 'back across a step is an update');
+  page.history.forward();
+  await page.clock.advance(400);
+  assert.deepStrictEqual(views.updates, ['20260103', '20260102', '20260103']);
+  assert.deepStrictEqual(page.record.assigned, [], 'no page load');
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
 });
 
 // ---- entities: a view whose list is its query and whose entity is its hash

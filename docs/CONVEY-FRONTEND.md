@@ -149,7 +149,12 @@ window.SolViews.register('transcripts', {
 view takes a change of parameters in place. A view's scripts run once in the
 life of the page (they only register); the view starts each time it is
 mounted. Home (with its week and originals pages), transcripts, more, body,
-activities, the map, search and entities are on the contract; every other view is not, and keeps its full page loads.
+activities, the map, search, entities and speakers are on the contract; every other view is not, and keeps its full page loads.
+A view with two modes at two addresses (speakers' overview and its day)
+offers `update` only from the mode that takes a day, so a move between the
+modes mounts the view again, in the page. A view that keeps a lot of state
+for one day may take a day step by ending the day it was on and starting the
+new one in a scope of its own, on its markup as it shipped.
 A view may await in `mount` only on a promise that settles, and a superseded
 mount publishes nothing.
 
