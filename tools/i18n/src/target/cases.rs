@@ -89,7 +89,7 @@ pub fn generate_cases(
         for bundle in bundles {
             let own_reader = match tgt {
                 Target::Rust => "rust-api",
-                Target::Esm => "fluent-js",
+                Target::Esm | Target::Classic => "fluent-js",
                 Target::Apple => "xcstrings",
                 Target::Android => "android-xml",
                 Target::Webextension => "webextension-json",
@@ -119,7 +119,7 @@ pub fn generate_cases(
                         let adapter_call =
                             format_adapter_call(tgt, &bundle.id, &loc.tag, msg, &inputs);
                         let expected_exact =
-                            tgt != Target::Esm
+                            !matches!(tgt, Target::Esm | Target::Classic)
                                 && !msg.meta.arguments.iter().any(|a| {
                                     a.numeric_style == Some(NumericStyle::LocaleFormatted)
                                 });
@@ -514,7 +514,7 @@ pub(crate) fn native_call_contract(
     }
     let entry = match target {
         Target::Rust => "render(locale, MessageId, named_args)",
-        Target::Esm => "render(locale, dotted_id, named_args)",
+        Target::Esm | Target::Classic => "render(locale, dotted_id, named_args)",
         Target::Apple => "Bundle.localizedString then String(format:locale:arguments:)",
         Target::Android if msg.meta.format_intent == FormatIntent::Cardinal => {
             "Resources.getQuantityString"
@@ -563,7 +563,7 @@ pub(crate) fn format_adapter_call(
             }
             format!("render(\"{}\", \"{}\", &[{}])", locale, msg.id, args_str)
         }
-        Target::Esm => {
+        Target::Esm | Target::Classic => {
             let mut args_str = String::new();
             for (k, v) in inputs {
                 if !args_str.is_empty() {

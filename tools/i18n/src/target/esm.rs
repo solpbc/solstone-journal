@@ -12,24 +12,7 @@ pub fn generate_esm_target(
     dest_dir: &Path,
     vendor_src_dir: &Path,
 ) -> Result<(), Vec<Fault>> {
-    let mut faults = Vec::new();
-    for msg in &bundle.messages {
-        let has_locale_formatted = msg
-            .meta
-            .arguments
-            .iter()
-            .any(|a| a.numeric_style == Some(crate::vocab::NumericStyle::LocaleFormatted));
-        if has_locale_formatted {
-            for loc in &bundle.locales {
-                if !crate::locale::is_standard_formatting_locale(&loc.tag) {
-                    faults.push(Fault::new("locale-formatted", &loc.tag, &msg.id));
-                }
-            }
-        }
-    }
-    if !faults.is_empty() {
-        return Err(faults);
-    }
+    validate_bundle(bundle)?;
 
     let esm_root = dest_dir.join("esm");
     let bundle_dir = esm_root.join(&bundle.id);
@@ -72,6 +55,29 @@ pub fn generate_esm_target(
     Ok(())
 }
 
+pub(super) fn validate_bundle(bundle: &TargetBundle) -> Result<(), Vec<Fault>> {
+    let mut faults = Vec::new();
+    for msg in &bundle.messages {
+        let has_locale_formatted = msg
+            .meta
+            .arguments
+            .iter()
+            .any(|a| a.numeric_style == Some(crate::vocab::NumericStyle::LocaleFormatted));
+        if has_locale_formatted {
+            for loc in &bundle.locales {
+                if !crate::locale::is_standard_formatting_locale(&loc.tag) {
+                    faults.push(Fault::new("locale-formatted", &loc.tag, &msg.id));
+                }
+            }
+        }
+    }
+    if !faults.is_empty() {
+        return Err(faults);
+    }
+
+    Ok(())
+}
+
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     if !dst.exists() {
         fs::create_dir_all(dst)?;
@@ -95,7 +101,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn generate_esm_api_code(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
+pub(super) fn generate_esm_api_code(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
     let mut s = String::new();
     s.push_str("// SPDX-License-Identifier: AGPL-3.0-only\n");
     s.push_str("// Copyright (c) 2026 sol pbc\n\n");
@@ -213,25 +219,27 @@ fn generate_esm_api_code(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
     s.push_str("};\n\n");
 
     s.push_str("const BUNDLES = new Map();\n\n");
-    s.push_str("function getBundle(locale) {\n");
-    s.push_str("  let bundle = BUNDLES.get(locale);\n");
+    s.push_str("function getBundle(locale, useIsolating) {\n");
+    s.push_str(
+        "  const cacheKey = `${locale}:${useIsolating}`;\n  let bundle = BUNDLES.get(cacheKey);\n",
+    );
     s.push_str("  if (!bundle) {\n");
     s.push_str("    const locInfo = LOCALES[locale];\n");
     s.push_str("    if (!locInfo) throw new Error(`Unknown locale: ${locale}`);\n");
     s.push_str("    const ftlSource = CATALOGS[locale];\n");
     s.push_str("    if (ftlSource === undefined) throw new Error(`Unknown catalog: ${locale}`);\n");
     s.push_str("    const resource = new FluentResource(ftlSource);\n");
-    s.push_str("    bundle = new FluentBundle(locInfo.bundleLocale);\n");
+    s.push_str("    bundle = new FluentBundle(locInfo.bundleLocale, { useIsolating });\n");
     s.push_str("    const errors = bundle.addResource(resource);\n");
     s.push_str(
         "    if (errors.length > 0) throw new Error(`FTL errors: ${errors.join(\", \")}`);\n",
     );
-    s.push_str("    BUNDLES.set(locale, bundle);\n");
+    s.push_str("    BUNDLES.set(cacheKey, bundle);\n");
     s.push_str("  }\n");
     s.push_str("  return bundle;\n");
     s.push_str("}\n\n");
 
-    s.push_str("export function render(locale, messageId, args = []) {\n");
+    s.push_str("export function render(locale, messageId, args = [], { useIsolating = true } = {}) {\n  if (typeof useIsolating !== \"boolean\") throw new Error(\"Expected boolean useIsolating\");\n");
     s.push_str("  const locInfo = LOCALES[locale];\n");
     s.push_str("  if (!locInfo) throw new Error(`Unknown locale: ${locale}`);\n\n");
 
@@ -312,7 +320,7 @@ fn generate_esm_api_code(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
         crate::plural::CATEGORY_ARGUMENT
     ));
     s.push_str("  }\n\n");
-    s.push_str("  const bundle = getBundle(locale);\n\n");
+    s.push_str("  const bundle = getBundle(locale, useIsolating);\n\n");
     s.push_str("  const targetKey = msgInfo.formatIntent === \"enum\" ? (msgInfo.variantKeys[selectedVariant] || msgInfo.defaultKey) : msgInfo.resourceKey;\n");
     s.push_str("  const message = bundle.getMessage(targetKey);\n");
     s.push_str(

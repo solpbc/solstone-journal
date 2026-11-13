@@ -77,7 +77,7 @@ fn print_usage() {
          coverage <catalog> --channel <development|production>\n\
          import <bundle> --dest <dir>\n\
          export <catalog> --out <dir>\n\
-         targets <catalog> --channel <development|production> [--locale <tag>] --out <dir> --target <rust|esm|apple|android|webextension|gettext> [--target ...]\n"
+         targets <catalog> --channel <development|production> [--locale <tag>] --out <dir> --target <rust|esm|classic|apple|android|webextension|gettext> [--target ...]\n"
     );
 }
 

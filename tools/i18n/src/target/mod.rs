@@ -6,6 +6,7 @@
 pub mod android;
 pub mod apple;
 pub mod cases;
+pub mod classic;
 pub mod esm;
 pub mod ftl;
 pub mod gettext;

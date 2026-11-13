@@ -209,6 +209,15 @@ pub fn publish(
                         generate_esm_target(bundle, &stage_dir, &vendor_src_dir)?;
                     }
                 }
+                Target::Classic => {
+                    for bundle in &bundles {
+                        crate::target::classic::generate_classic_target(
+                            bundle,
+                            &stage_dir,
+                            &vendor_src_dir,
+                        )?;
+                    }
+                }
                 Target::Apple => {
                     for bundle in &bundles {
                         generate_apple_target(bundle, &stage_dir, &catalog.config.source_locale)?;

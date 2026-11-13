@@ -115,7 +115,8 @@
       "production": "released",
       "cardinal": "en",
       "android_qualifier": "en-rUS",
-      "description": "Source English for the shared push catalog."
+      "description": "Source English for the shared push catalog.",
+      "webextension_folder": "en_US"
     },
     {
       "tag": "en-GB",
@@ -144,6 +145,10 @@
     {
       "namespace": "link",
       "owner": "link-host"
+    },
+    {
+      "namespace": "browser",
+      "owner": "browser"
     }
   ],
   "bundles": [
@@ -196,6 +201,12 @@
     },
     {
       "id": "link-host",
+      "locales": [
+        "en-US"
+      ]
+    },
+    {
+      "id": "browser",
       "locales": [
         "en-US"
       ]

@@ -2759,4 +2759,31 @@ for (const tag of {tags:?}) {{
             }
         }
     }
+
+    #[test]
+    #[cfg(feature = "full-tests")]
+    fn classic_script_matches_independent_runtime_goldens() {
+        let catalog = crate::catalog::LoadedCatalog::load_and_validate(
+            std::path::Path::new("fixtures/runtime-contract"),
+            crate::vocab::Channel::Development,
+            None,
+        )
+        .unwrap();
+        let output = TestDirectory::new("classic-runtime");
+        crate::target::publish(
+            &catalog,
+            crate::vocab::Channel::Development,
+            None,
+            &[crate::target::Target::Classic],
+            output.path(),
+        )
+        .unwrap();
+        let status = std::process::Command::new("node")
+            .arg("verify-classic.mjs")
+            .arg(output.path())
+            .arg("fixtures/runtime-contract/expected-esm.json")
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
 }

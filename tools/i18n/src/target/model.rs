@@ -10,6 +10,7 @@ use std::collections::HashMap;
 pub enum Target {
     Rust,
     Esm,
+    Classic,
     Apple,
     Android,
     Webextension,
@@ -21,6 +22,7 @@ impl Target {
         match s {
             "rust" => Some(Self::Rust),
             "esm" => Some(Self::Esm),
+            "classic" => Some(Self::Classic),
             "apple" => Some(Self::Apple),
             "android" => Some(Self::Android),
             "webextension" => Some(Self::Webextension),
@@ -33,6 +35,7 @@ impl Target {
         match self {
             Self::Rust => "rust",
             Self::Esm => "esm",
+            Self::Classic => "classic",
             Self::Apple => "apple",
             Self::Android => "android",
             Self::Webextension => "webextension",
