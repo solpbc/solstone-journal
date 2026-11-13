@@ -23,6 +23,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - security fix: on linux, local thinking now starts with a new key every time, and only your own account can get it from your journal. before, a web page open in your browser, or another account on the same computer, could use local thinking, read its replies, and make it fetch images from addresses they chose. nothing in your journal could be read this way.
 - on a large journal, a connected agent's search for a common word could run past the agent's time limit, most often on the first search after the journal started. those searches now come back in about half the time. on a journal you already had, the faster search starts once your journal has been busy for a little while after you update.
+- on transcripts and the other pages you step through by day, stepping onto the first or last day with an arrow now moves focus to the date between the arrows. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 - on a phone, the list of facets on the entities page now opens on screen, so you can choose one. before, it opened below the bottom of the screen.
 - restoring a backup during setup keeps the new journal's running services and troubleshooting logs intact, so new audio can be transcribed without restarting.
 - changing your journal folder on linux or mac now updates its saved location and service together, while keeping your other settings.
