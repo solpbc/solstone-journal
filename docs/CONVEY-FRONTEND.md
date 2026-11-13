@@ -149,7 +149,7 @@ window.SolViews.register('transcripts', {
 view takes a change of parameters in place. A view's scripts run once in the
 life of the page (they only register); the view starts each time it is
 mounted. Home (with its week and originals pages), transcripts, more, body,
-activities, the map and search are on the contract; every other view is not, and keeps its full page loads.
+activities, the map, search and entities are on the contract; every other view is not, and keeps its full page loads.
 A view may await in `mount` only on a promise that settles, and a superseded
 mount publishes nothing.
 
@@ -186,9 +186,12 @@ or doesn't know the destination's app. Each history entry has one owner: an
 entry that changes the address path is the router's; one that keeps the path
 and changes only the query or the hash is the view's (a transcript segment),
 and the router leaves it to the view. A view whose state is its address's
-query (search) takes a click on a link to its own path with another query
-itself, once the router has left it, and writes the entry through
-`ctx.history.push`; the same address again is still the router's fresh mount.
+query (search), or its query and hash (entities), takes a click on a link to
+its own path with another query or hash itself, once the router has left it,
+and writes the entry through `ctx.history.push`; the same address again is
+still the router's fresh mount. A view builds its own entries on its own path,
+never `location.pathname`, and writes nothing once the address is another
+view's.
 A view may replace its own address
 with another address of the same view through `ctx.history.replace`, and the
 router follows. An address of another view is the router's, and `ctx.history`
@@ -197,7 +200,8 @@ first reads at once, in a table of their own, adopted as the head's are. The
 swap runs in a view transition once those reads answer or 300 ms pass. Focus
 moves to the first heading in the view's own markup, or to `<main>` when the
 view draws its headings itself (a drawn heading can be drawn again, which would
-drop focus to the page). `#view-announcer` says the view's name, and scroll is
+drop focus to the page) or when that heading isn't drawn (an empty state's,
+shipped hidden). `#view-announcer` says the view's name, and scroll is
 restored per history entry. Code is fetched ahead on a press or
 a hover on a rail entry; data never is. A view whose first load ended in its
 error state reads again when the live stream next connects, once per connect.
