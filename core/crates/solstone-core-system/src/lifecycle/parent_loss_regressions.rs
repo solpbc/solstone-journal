@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Regression reproductions for the parent-loss redesign (`req_zgopzsto`).
+//! Regression reproductions for the parent-loss redesign.
 //!
 //! Each case drives an entry point the redesign keeps
 //! (`ParentLossLedger::reserve_generation_closing_abandoned`, the coordinator's
@@ -731,7 +731,7 @@ fn recovery_after_real_launches(completed: usize) -> (usize, Duration, usize) {
 }
 
 /// At `a211a4d5b` every launch stayed in `admissions/`, so a successor's
-/// recovery grew with the run's launch history: on extro (debug build), a
+/// recovery grew with the run's launch history: in a debug build, a
 /// synthetic 1,000-launch history closed in 1.35 s and 100,000 in 42.4 s.
 /// Now a reaped launch leaves the outstanding set, so the dead run owes only
 /// what was alive and the start costs the same however many launches came

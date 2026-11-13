@@ -71,7 +71,7 @@ const DTD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 
 fn rec(start: &str, val: &str) -> String {
     format!(
-        r#"<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Jer’s Apple&#xA0;Watch" sourceVersion="1" device="&lt;&lt;HKDevice: 0x28&gt;, name:Apple Watch&gt;" unit="count/min" creationDate="{start}" startDate="{start}" endDate="{start}" value="{val}"/>"#
+        r#"<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Sam’s Apple&#xA0;Watch" sourceVersion="1" device="&lt;&lt;HKDevice: 0x28&gt;, name:Apple Watch&gt;" unit="count/min" creationDate="{start}" startDate="{start}" endDate="{start}" value="{val}"/>"#
     )
 }
 

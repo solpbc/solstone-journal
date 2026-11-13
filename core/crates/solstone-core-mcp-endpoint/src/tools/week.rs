@@ -452,54 +452,49 @@ fn project_sunday(
     let mut previous = None;
     let mut next = None;
 
-    match judge(journal, stem) {
-        WeekJudgment::Page(trusted) => {
-            let left_out = read_left_out(journal);
-            let left_out_unreadable = matches!(left_out, LeftOut::Unreadable);
-            let left_out_keys = match left_out {
-                LeftOut::Keys(keys) => keys,
-                _ => BTreeSet::new(),
-            };
+    // Day states, quotes and navigation exist only on the week's page. A week
+    // with no page it can read leaves all three empty rather than inventing
+    // states, because on a page `nothing_shared` means the day held nothing.
+    if let WeekJudgment::Page(trusted) = judge(journal, stem) {
+        let left_out = read_left_out(journal);
+        let left_out_unreadable = matches!(left_out, LeftOut::Unreadable);
+        let left_out_keys = match left_out {
+            LeftOut::Keys(keys) => keys,
+            _ => BTreeSet::new(),
+        };
 
-            let navigation = checked_neighbors(journal, stem);
-            if !navigation.failed {
-                previous = navigation.previous;
-                next = navigation.next;
-            }
-
-            let memory_by_id = trusted
-                .memories
-                .iter()
-                .map(|m| (m.id.as_str(), m))
-                .collect::<BTreeMap<_, _>>();
-
-            for day in &trusted.days {
-                let memory = day
-                    .memory_id
-                    .as_deref()
-                    .and_then(|id| memory_by_id.get(id).copied());
-                let memory_key = memory.map(|m| m.key.as_str());
-                let state = resolve_day_cell_state(day.state.as_str(), memory_key, &left_out_keys);
-                days.push(json!({"day": day.day, "state": state}));
-            }
-
-            if !left_out_unreadable && let Said::Entries(said_entries) = &trusted.said {
-                for entry in said_entries {
-                    if left_out_keys.contains(&entry.key) {
-                        continue;
-                    }
-                    said.push(json!({
-                        "day": entry.day,
-                        "quote": entry.quote,
-                        "uri": entry.uri,
-                    }));
-                }
-            }
+        let navigation = checked_neighbors(journal, stem);
+        if !navigation.failed {
+            previous = navigation.previous;
+            next = navigation.next;
         }
-        _ => {
-            for date in &week_dates {
-                let day_str = date.format("%Y%m%d").to_string();
-                days.push(json!({"day": day_str, "state": "nothing_shared"}));
+
+        let memory_by_id = trusted
+            .memories
+            .iter()
+            .map(|m| (m.id.as_str(), m))
+            .collect::<BTreeMap<_, _>>();
+
+        for day in &trusted.days {
+            let memory = day
+                .memory_id
+                .as_deref()
+                .and_then(|id| memory_by_id.get(id).copied());
+            let memory_key = memory.map(|m| m.key.as_str());
+            let state = resolve_day_cell_state(day.state.as_str(), memory_key, &left_out_keys);
+            days.push(json!({"day": day.day, "state": state}));
+        }
+
+        if !left_out_unreadable && let Said::Entries(said_entries) = &trusted.said {
+            for entry in said_entries {
+                if left_out_keys.contains(&entry.key) {
+                    continue;
+                }
+                said.push(json!({
+                    "day": entry.day,
+                    "quote": entry.quote,
+                    "uri": entry.uri,
+                }));
             }
         }
     }
@@ -912,6 +907,83 @@ mod tests {
         assert_eq!(value["memories"].as_array().unwrap().len(), 3);
         // Two of the three rows share a day, so they come from two days, not three.
         assert_eq!(value["intro"], "your week, a memory from each of 2 days.");
+        // This week has no page, so it has no day states and no quotes, even
+        // though three of its days hold activities.
+        assert_eq!(value["days"], json!([]));
+        assert_eq!(value["said"], json!([]));
+        assert!(value["previous"].is_null());
+        assert!(value["next"].is_null());
+    }
+
+    #[test]
+    fn a_page_keeps_its_day_states_and_quotes() {
+        let root = journal("solstone-week-page-states-");
+        whole(root.path());
+        let sunday = "20260308";
+        write_raw(
+            root.path(),
+            "facets/work/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work", "description": "Work"}).to_string(),
+        );
+        write_raw(
+            root.path(),
+            "facets/work/activities/20260309.jsonl",
+            &format!(
+                "{}\n",
+                json!({"id": "standup", "activity": "meeting", "title": "Team standup",
+                    "created_at": 100, "segments": ["090000_300"]})
+            ),
+        );
+        let states = [
+            r#"{"day":"20260308","state":"memory","memory_id":"m0"}"#,
+            r#"{"day":"20260309","state":"not_ready"}"#,
+            r#"{"day":"20260310","state":"nothing_shared"}"#,
+            r#"{"day":"20260311","state":"unreadable"}"#,
+            r#"{"day":"20260312","state":"not_ready"}"#,
+            r#"{"day":"20260313","state":"nothing_shared"}"#,
+            r#"{"day":"20260314","state":"nothing_shared"}"#,
+        ]
+        .join(",");
+        let quote = said_item(
+            "s0",
+            "quote-key",
+            "20260309",
+            "the owner's words",
+            "sol://facets/work/activities/20260309#standup",
+        );
+        let memory_json = r#"{"id":"m0","key":"memory-key","day":"20260308","text":"a memory","source":{"kind":"briefing","uri":"sol://chronicle/20260308/talents/morning_briefing","briefing_day":"20260308","refs":["sol://chronicle/20260308/room/120000_1"]}}"#;
+        write_raw(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            &format!(
+                r#"{{"version":1,"week":{{"start":"{sunday}","end":"20260314"}},"days":[{states}],"memories":[{memory_json}],"said":[{quote}]}}"#
+            ),
+        );
+
+        let value = probe(root.path(), json!({"week": sunday})).unwrap();
+        assert_closed(&value);
+        assert_eq!(
+            value["days"],
+            json!([
+                {"day": "20260308", "state": "memory"},
+                {"day": "20260309", "state": "not_ready"},
+                {"day": "20260310", "state": "nothing_shared"},
+                {"day": "20260311", "state": "unreadable"},
+                {"day": "20260312", "state": "not_ready"},
+                {"day": "20260313", "state": "nothing_shared"},
+                {"day": "20260314", "state": "nothing_shared"},
+            ])
+        );
+        assert_eq!(
+            value["said"],
+            json!([{
+                "day": "20260309",
+                "quote": "the owner's words",
+                "uri": "sol://facets/work/activities/20260309#standup",
+            }])
+        );
+        assert_matches_page(root.path(), sunday, &value);
+        assert_eq!(value["activities_total"], 1);
     }
 
     fn folded_week(root: &Path, held: bool) -> Value {
@@ -1292,7 +1364,7 @@ mod tests {
         assert_eq!(value["said"], json!([]));
         assert!(value["previous"].is_null());
         assert!(value["next"].is_null());
-        assert_eq!(value["days"][0]["state"], "nothing_shared");
+        assert_eq!(value["days"], json!([]));
     }
 
     #[test]
@@ -1679,7 +1751,7 @@ mod tests {
         for arguments in [json!({"week": "20260308"}), json!({})] {
             let res = probe(linked_file.path(), arguments).unwrap();
             assert_closed(&res);
-            assert_eq!(res["days"][0]["state"], "nothing_shared");
+            assert_eq!(res["days"], json!([]));
             assert_eq!(res["said"], json!([]));
             assert!(!res.to_string().contains(sentinel));
         }
@@ -1717,13 +1789,13 @@ mod tests {
         let res = probe(linked_ancestor.path(), json!({"week": "20260315"})).unwrap();
         assert_closed(&res);
         assert_eq!(res["said"], json!([]));
-        assert_eq!(res["days"][0]["state"], "nothing_shared");
+        assert_eq!(res["days"], json!([]));
         assert!(!res.to_string().contains(sentinel));
 
         let res_default = probe(linked_ancestor.path(), json!({})).unwrap();
         assert_closed(&res_default);
         assert_eq!(res_default["said"], json!([]));
-        assert_eq!(res_default["days"][0]["state"], "nothing_shared");
+        assert_eq!(res_default["days"], json!([]));
         assert!(!res_default.to_string().contains(sentinel));
         assert!(
             page(linked_ancestor.path())

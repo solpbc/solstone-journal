@@ -110,7 +110,7 @@ fn golden_sample_is_one_note_dated_at_updated() {
         file.contents
     );
     assert!(file.contents.contains("EvMarkerBeta3"), "{}", file.contents);
-    assert!(file.contents.contains("author: extro"), "{}", file.contents);
+    assert!(file.contents.contains("author: sam"), "{}", file.contents);
     assert!(!file.contents.contains("--en-chs"), "{}", file.contents);
     assert!(!file.contents.contains("eyJpc0VtcHR5"), "{}", file.contents);
     assert!(!file.contents.contains("guid"), "{}", file.contents);
@@ -551,7 +551,7 @@ fn encrypted_text_todos_tasks_tables_and_web_clips() {
     let body = export(&format!(
         "<note><title>Rich</title><created>20200101T120000Z</created><updated>20200101T120000Z</updated>\
          <tag>walk</tag>\
-         <note-attributes><author>extro</author><source-url>https://example.com/walk</source-url></note-attributes>\
+         <note-attributes><author>sam</author><source-url>https://example.com/walk</source-url></note-attributes>\
          <content><![CDATA[<?xml version=\"1.0\"?><en-note>{inner}</en-note>]]></content>\
          <task><title>Send the letter</title><taskStatus>open</taskStatus><dueDate>20261201T000000Z</dueDate></task>\
          </note>"
@@ -578,7 +578,7 @@ fn encrypted_text_todos_tasks_tables_and_web_clips() {
         "{text}"
     );
     assert!(text.contains("tags: walk"), "{text}");
-    assert!(text.contains("author: extro"), "{text}");
+    assert!(text.contains("author: sam"), "{text}");
     assert!(text.contains("url: https://example.com/walk"), "{text}");
 }
 

@@ -12210,11 +12210,14 @@ fn get_week_grounded_activities_and_memories() {
     assert_eq!(res["week"]["start"], "20260308");
     assert_eq!(res["week"]["end"], "20260314");
 
-    let days = res["days"].as_array().unwrap();
-    assert_eq!(days.len(), 7);
+    // No page for this week, so no day states and no quotes; the activities
+    // and memories are still the week's own.
+    assert_eq!(res["days"], json!([]));
+    assert_eq!(res["said"], json!([]));
 
     let acts = res["activities"].as_array().unwrap();
     assert_eq!(acts.len(), 2);
+    assert_eq!(res["activities_total"], 2);
 
     let mems = res["memories"].as_array().unwrap();
     assert_eq!(mems.len(), 2);
