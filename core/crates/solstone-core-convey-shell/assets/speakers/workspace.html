@@ -4346,7 +4346,7 @@ function runDay(ctx, page) {
     }
     if (type === 'error') {
       container.setAttribute('aria-live', 'assertive');
-      container.innerHTML = `<div class="spk-status spk-status-${type}">${escapeHtml(message)}<button class="spk-status-dismiss" aria-label="dismiss" onclick="this.closest('.spk-status-container').innerHTML='';this.closest('.spk-status-container').setAttribute('aria-live','polite')">&times;</button></div>`;
+      container.innerHTML = `<div class="spk-status spk-status-${type}">${escapeHtml(message)}<button class="spk-status-dismiss" aria-label="dismiss" onclick="const box=this.closest('.spk-status-container');box.innerHTML='';box.setAttribute('aria-live','polite')">&times;</button></div>`;
     } else {
       container.setAttribute('aria-live', 'polite');
       container.innerHTML = `<div class="spk-status spk-status-${type}">${escapeHtml(message)}</div>`;

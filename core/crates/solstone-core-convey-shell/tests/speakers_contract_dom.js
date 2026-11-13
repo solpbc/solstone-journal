@@ -1172,9 +1172,8 @@ module.exports = async function speakersContractCases(manifestDir) {
     let thrown = null;
     try { dismiss.click(); } catch (error) { thrown = error; }
     assert.strictEqual(container.querySelector('.spk-status'), null, 'the dismiss clears it');
-    // The handler's second `closest` runs on the button it has just taken
-    // out of the page, as it does at the base. Recorded, not changed here.
-    assert.ok(thrown === null || /null/.test(String(thrown && thrown.message)), String(thrown));
+    assert.strictEqual(thrown, null, 'the dismiss throws nothing');
+    assert.strictEqual(container.getAttribute('aria-live'), 'polite', 'and the line is polite again');
   });
 
   await test('a status line\'s timers end with the view: a confirmed line\'s fade is never run after leaving', async () => {
@@ -1191,6 +1190,5 @@ module.exports = async function speakersContractCases(manifestDir) {
     await settle();
     assert.strictEqual(p.clock.live(), 0, 'no timer is left');
   });
-  //@@CASES5
   return cases;
 };
