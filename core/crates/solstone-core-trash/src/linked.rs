@@ -14,21 +14,21 @@
 //! # Settling
 //!
 //! Under the kind's hold, and only once its check passes (for the door: no
-//! release part way anywhere in the journal), each path is settled by what the
-//! trash's name is the name of, never by whether a name is present:
+//! release part way anywhere in the journal), each path is settled. ⛔ The
+//! trash's name is dropped only on positive evidence that the file's bytes
+//! are still held elsewhere, because dropping the last name loses the owner's
+//! original for good, while keeping an extra one costs space until it is
+//! erased:
 //!
-//! - where the caller has the mechanism's own report of what it removed
-//!   ([`finish_linked`]), a path it didn't report is dropped: a file replaced
-//!   before the mechanism ran was refused by it, and is not this item's;
-//! - the journal's name is the same file: the mechanism didn't remove it, so
-//!   the trash's name is dropped;
+//! - the journal's name is the same file: the mechanism didn't remove it;
 //! - the thing it belongs to has left the journal since (the recording went to
-//!   the trash or was removed) and another name still holds the file: that
-//!   other name keeps it, so the trash's is dropped;
-//! - otherwise the trash's name is now the file's only one, and it is kept.
+//!   the trash) and another name still holds the file: that thing's own item;
+//! - for a copy, made where the filesystem has no hard links: the journal's
+//!   name holds the same bytes.
 //!
-//! Where the filesystem has no hard links, the item holds a copy instead, and
-//! a copy is kept only when the journal's name is gone.
+//! Otherwise it is kept, whatever the mechanism reported: a mechanism can
+//! remove a file and report that it didn't (a flush that failed after the
+//! unlink).
 //!
 //! # Locks
 //!
@@ -171,18 +171,15 @@ pub fn detach_linked(
 }
 
 /// Settle an item [`detach_linked`] published, once the mechanism has run:
-/// keep what left the journal, drop what is still there. `released` is the
-/// mechanism's own report of the journal-relative paths it removed, where the
-/// caller has it; only those are kept. `None` when nothing left, and then no
-/// item remains. An error leaves the item for the sweep, as does a hold that
-/// refuses because the journal is busy.
+/// keep what left the journal, drop what is still there. `None` when nothing
+/// left, and then no item remains. An error leaves the item for the sweep,
+/// as does a hold that refuses because the journal is busy.
 pub fn finish_linked(
     journal: &Path,
     kind: &dyn Kind,
     mut linked: Linked,
-    released: Option<&[String]>,
 ) -> Result<Option<Item>, TrashError> {
-    let result = settle(journal, kind, &linked.id, released);
+    let result = settle(journal, kind, &linked.id);
     drop(linked.running.take());
     if result.is_ok() {
         remove_run_lock(journal, &linked.id);
@@ -203,7 +200,7 @@ pub(crate) fn resume(journal: &Path, kind: &dyn Kind, id: &str) -> Result<(), Tr
     ) else {
         return Ok(());
     };
-    let result = settle(journal, kind, id, None).map(|_| ());
+    let result = settle(journal, kind, id).map(|_| ());
     drop(running);
     if result.is_ok() {
         remove_run_lock(journal, id);
@@ -249,12 +246,7 @@ pub(crate) fn tidy_run_locks(journal: &Path) {
     }
 }
 
-fn settle(
-    journal: &Path,
-    kind: &dyn Kind,
-    id: &str,
-    reported: Option<&[String]>,
-) -> Result<Option<Item>, TrashError> {
+fn settle(journal: &Path, kind: &dyn Kind, id: &str) -> Result<Option<Item>, TrashError> {
     let item = read_item(journal, id)?.ok_or(TrashError::NotInTrash)?;
     // The kind's hold, and its check passing: for the door, nothing is part
     // way through a release anywhere in the journal, so no stage still holds
@@ -283,19 +275,14 @@ fn settle(
             continue;
         }
         let live = journal_entry(journal, path)?;
-        let released = if reported.is_some_and(|reported| !reported.contains(path)) {
-            false
-        } else if copies.contains(path) {
-            !kind.present(journal, path)
+        let held_elsewhere = if copies.contains(path) {
+            kind.present(journal, path) && same_bytes(&live, &held).map_err(io)?
         } else if path_lexists(&live)? && same_file(&live, &held).map_err(io)? {
-            false
-        } else if !kind.returns(journal, &item, path) {
-            // What it belongs to left the journal since: kept only if no other
-            // name (that thing's own item) still holds it.
-            link_count(&held).map_err(io)? == 1
-        } else {
             true
+        } else {
+            !kind.returns(journal, &item, path) && link_count(&held).map_err(io)? > 1
         };
+        let released = !held_elsewhere;
         if released {
             keeping.push(path.clone());
         } else {
@@ -339,6 +326,27 @@ fn settle(
     Ok(Some(item))
 }
 
+/// Whether two files hold the same bytes, for a copy.
+fn same_bytes(left: &Path, right: &Path) -> std::io::Result<bool> {
+    use std::io::Read;
+    if std::fs::symlink_metadata(left)?.len() != std::fs::symlink_metadata(right)?.len() {
+        return Ok(false);
+    }
+    let (mut left, mut right) = (std::fs::File::open(left)?, std::fs::File::open(right)?);
+    let (mut a, mut b) = (vec![0_u8; 64 * 1024], vec![0_u8; 64 * 1024]);
+    loop {
+        let read = left.read(&mut a)?;
+        if read == 0 {
+            return Ok(true);
+        }
+        let slice = a.get(..read).unwrap_or_default();
+        right.read_exact(b.get_mut(..read).unwrap_or_default())?;
+        if slice != b.get(..read).unwrap_or_default() {
+            return Ok(false);
+        }
+    }
+}
+
 fn io(error: std::io::Error) -> TrashError {
     TrashError::Io(error.to_string())
 }
@@ -362,7 +370,7 @@ fn link_entry(from: &Path, to: &Path) -> Result<Linking, TrashError> {
     {
         return Err(TrashError::Io(format!("{} isn't a file", from.display())));
     }
-    match std::fs::hard_link(from, to) {
+    match hard_link(from, to) {
         Ok(()) => Ok(Linking::Linked),
         Err(error) if no_hard_links(&error) => {
             let copied = std::fs::copy(from, to).and_then(|_| std::fs::File::open(to)?.sync_all());
@@ -377,6 +385,21 @@ fn link_entry(from: &Path, to: &Path) -> Result<Linking, TrashError> {
         }
         Err(error) => Err(TrashError::Io(format!("{}: {error}", from.display()))),
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests stand in for a filesystem with no hard links.
+    pub(crate) static NO_HARD_LINKS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// A hard link, or what a filesystem without them answers.
+fn hard_link(from: &Path, to: &Path) -> std::io::Result<()> {
+    #[cfg(test)]
+    if NO_HARD_LINKS.with(std::cell::Cell::get) {
+        return Err(std::io::Error::from(std::io::ErrorKind::Unsupported));
+    }
+    std::fs::hard_link(from, to)
 }
 
 /// Whether `error` says the filesystem has no hard links (FAT, exFAT).

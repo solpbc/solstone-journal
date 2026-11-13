@@ -1870,6 +1870,80 @@ fn release_raw_records_owner_event_in_events_jsonl() {
     );
 }
 
+/// `release-raw` moves the original to the trash and says the day it's
+/// erased; the history says trashed, never removed.
+#[test]
+fn release_raw_puts_the_original_in_the_trash() {
+    let bed = Bed::new("release-raw-trash");
+    let segment = bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let output = bed.run(
+        "release-raw",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--segment",
+            "20260701/field.audio/070000_17",
+            "--at",
+            "2026-08-06T12:00:00Z",
+        ],
+    );
+    let body = receipt(&output);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(!segment.join("audio.flac").exists());
+    let items = body["detail"]["trash"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["files"], json!(["audio.flac"]));
+    assert!(
+        items[0]["erase_day"]
+            .as_str()
+            .is_some_and(|day| day.len() == 8)
+    );
+    assert!(body["detail"]["trash"]["said"].as_str().is_some());
+    let trashed = bed
+        .journal()
+        .join(".trash")
+        .join(items[0]["id"].as_str().unwrap())
+        .join("files/chronicle/20260701/field.audio/070000_17/audio.flac");
+    assert!(trashed.is_file());
+}
+
+/// A segment the trash can't hold is left out of the release, never released
+/// unkept, and the run doesn't report success.
+#[test]
+fn release_raw_leaves_a_busy_segment_alone_and_says_so() {
+    let bed = Bed::new("release-raw-busy");
+    let segment = bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let _held = hold_lock(&segment);
+    let output = bed.run(
+        "release-raw",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--segment",
+            "20260701/field.audio/070000_17",
+            "--at",
+            "2026-08-06T12:00:00Z",
+        ],
+    );
+    let body = receipt(&output);
+    assert_ne!(output.status.code(), Some(0), "{body}");
+    assert!(segment.join("audio.flac").exists());
+    let row = &body["outcome"]["targets"][0];
+    assert_eq!(row["removed"], json!([]));
+    assert_eq!(row["not_removed"].as_array().unwrap().len(), 1);
+    assert_eq!(body["detail"]["trash"]["items"], json!([]));
+}
+
 #[test]
 fn sweep_without_force_plans_only() {
     let bed = Bed::new("sweep-plan-only");

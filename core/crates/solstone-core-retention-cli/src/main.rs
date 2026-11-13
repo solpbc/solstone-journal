@@ -302,6 +302,7 @@ fn link_originals(
         class,
         Action::RetentionTool,
         surface(args),
+        false,
     )
     .map_err(|error| {
         format!("the trash couldn't take these originals, so nothing was released: {error}")
@@ -309,44 +310,48 @@ fn link_originals(
 }
 
 /// Leave out of a release every original of a segment the trash couldn't
-/// hold: nothing would keep it. Says which, for the receipt.
+/// hold: nothing would keep it. Each is a row the receipt reports as not
+/// removed, with the hold's reason, so the run's exit says so too.
 fn without_busy(
     proven: Vec<solstone_core_retention::eligibility::ProvenRaw>,
     busy: &[(Target, String)],
 ) -> (
     Vec<solstone_core_retention::eligibility::ProvenRaw>,
-    serde_json::Value,
+    Vec<solstone_core_retention::receipt::TargetOutcome>,
 ) {
-    let kept = proven
-        .into_iter()
-        .filter(|item| {
-            !busy.iter().any(|(target, _)| {
-                target.day == item.day()
-                    && target.stream == item.stream()
-                    && target.dir == item.dir()
-            })
-        })
-        .collect();
-    let named = busy
-        .iter()
-        .map(|(target, reason)| {
-            serde_json::json!({
-                "day": target.day, "stream": target.stream, "dir": target.dir, "reason": reason,
-            })
-        })
-        .collect::<Vec<_>>();
-    (kept, serde_json::Value::Array(named))
+    use solstone_core_retention::receipt::{NotRemoved, TargetOutcome};
+    let mut rows: Vec<TargetOutcome> = Vec::new();
+    let mut kept = Vec::new();
+    for item in proven {
+        let held = busy.iter().find(|(target, _)| {
+            target.day == item.day() && target.stream == item.stream() && target.dir == item.dir()
+        });
+        let Some((target, reason)) = held else {
+            kept.push(item);
+            continue;
+        };
+        let refused = NotRemoved {
+            entry: item.rel(),
+            reason: reason.clone(),
+            staged: None,
+        };
+        match rows.iter_mut().find(|row| row.target == *target) {
+            Some(row) => row.not_removed.push(refused),
+            None => rows.push(TargetOutcome {
+                target: target.clone(),
+                removed: Vec::new(),
+                not_removed: vec![refused],
+                post_commit_failure: None,
+            }),
+        }
+    }
+    (kept, rows)
 }
 
 /// Keep in the trash what the run released; the trash records it. Answers
 /// with each item, the day it is erased on, and what the sweep still owes.
-fn keep_originals(
-    journal: &Path,
-    linked: Vec<original_trash::Linked>,
-    outcome: &Outcome,
-) -> serde_json::Value {
-    let released = original_trash::released(outcome);
-    let kept = original_trash::keep_after(journal, linked, Some(&released));
+fn keep_originals(journal: &Path, linked: Vec<original_trash::Linked>) -> serde_json::Value {
+    let kept = original_trash::keep_after(journal, linked);
     original_trash::cli_answer(journal, &kept)
 }
 
@@ -511,8 +516,9 @@ fn run_release_raw(args: &Args) -> ExitCode {
         Err(error) => return fail(&error),
     };
     let (proven, busy) = without_busy(proven, &linking.busy);
-    let (outcome, tally) = release_raw(&journal, &proven, RawReleaseClass::Owner, at);
-    let trash = keep_originals(&journal, linking.linked, &outcome);
+    let (mut outcome, tally) = release_raw(&journal, &proven, RawReleaseClass::Owner, at);
+    outcome.targets.extend(busy);
+    let trash = keep_originals(&journal, linking.linked);
     // Raw-file release has no `.removing_` rename, so door::release_raw cannot
     // currently produce a staged row. Keep this defensive registration path for a
     // future door change, and preserve the completed outcome if its register write fails.
@@ -557,7 +563,6 @@ fn run_release_raw(args: &Args) -> ExitCode {
             "evidence": { "on_record": tally.on_record, "on_legacy_rows": tally.on_legacy_rows },
             "register_error": (!register_errors.is_empty()).then(|| register_errors.join("; ")),
             "trash": trash,
-            "busy": busy,
         }),
     )
 }
@@ -922,8 +927,9 @@ fn run_sweep(args: &Args) -> ExitCode {
         Err(error) => return fail(&error),
     };
     let (proven, busy) = without_busy(proven, &linking.busy);
-    let (outcome, tally) = release_raw(&journal, &proven, RawReleaseClass::Owner, now);
-    let trash = keep_originals(&journal, linking.linked, &outcome);
+    let (mut outcome, tally) = release_raw(&journal, &proven, RawReleaseClass::Owner, now);
+    outcome.targets.extend(busy);
+    let trash = keep_originals(&journal, linking.linked);
     finish(
         &journal,
         outcome,
@@ -933,7 +939,6 @@ fn run_sweep(args: &Args) -> ExitCode {
             "plan": plan_json(&plan),
             "evidence": { "on_record": tally.on_record, "on_legacy_rows": tally.on_legacy_rows },
             "trash": trash,
-            "busy": busy,
         }),
     )
 }
@@ -1273,7 +1278,7 @@ fn run_remove_marked(args: &Args) -> ExitCode {
             }
         }
     };
-    let trash = keep_originals(&journal, linking.linked, &outcome);
+    let trash = keep_originals(&journal, linking.linked);
     finish(
         &journal,
         outcome,

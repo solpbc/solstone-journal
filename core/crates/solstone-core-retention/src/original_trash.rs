@@ -242,6 +242,7 @@ pub fn link_before(
     class: RawReleaseClass,
     action: Action,
     surface: Surface,
+    stop_at_busy: bool,
 ) -> Result<Linking, String> {
     // One owner act: the history shows it as one line however many
     // recordings it took originals from.
@@ -280,10 +281,14 @@ pub fn link_before(
             Ok(item) => linking.linked.push(item),
             Err(solstone_core_trash::TrashError::Held(reason)) => {
                 linking.busy.push((release.target.clone(), reason));
+                // A caller that releases all or nothing need not wait out the rest.
+                if stop_at_busy {
+                    return Ok(linking);
+                }
             }
             Err(error) => {
                 // Nothing has been released yet: let go of what was kept.
-                let _ignored = keep_after(journal, linking.linked, Some(&[]));
+                let _ignored = keep_after(journal, linking.linked);
                 return Err(error.to_string());
             }
         }
@@ -300,13 +305,11 @@ pub struct Kept {
 }
 
 /// Once the door has run: keep what it released, drop what it left.
-/// `released` is the door's own report of the journal-relative paths it
-/// removed, where the caller has it.
-pub fn keep_after(journal: &Path, linked: Vec<Linked>, released: Option<&[String]>) -> Kept {
+pub fn keep_after(journal: &Path, linked: Vec<Linked>) -> Kept {
     let mut kept = Kept::default();
     for item in linked {
         let id = item.id().to_owned();
-        match solstone_core_trash::finish_linked(journal, &Originals, item, released) {
+        match solstone_core_trash::finish_linked(journal, &Originals, item) {
             Ok(Some(item)) => kept.items.push(item),
             Ok(None) => {}
             Err(error) => {
@@ -316,15 +319,6 @@ pub fn keep_after(journal: &Path, linked: Vec<Linked>, released: Option<&[String
         }
     }
     kept
-}
-
-/// The journal-relative paths a door run reports it removed, for [`keep_after`].
-#[must_use]
-pub fn released(outcome: &crate::receipt::Outcome) -> Vec<String> {
-    outcome
-        .removed_paths()
-        .map(|path| path.as_str().to_owned())
-        .collect()
 }
 
 /// What the command line answers of what [`keep_after`] settled: each item
@@ -558,8 +552,11 @@ impl Kind for Originals {
             let event = match change {
                 Change::Detached => {
                     // The door wrote it unless a stop came between its release
-                    // and its record.
-                    if recorded_original_deletions(&dir).contains_key(name) {
+                    // and its record. A file at the name now is not this one,
+                    // and its name is not deleted.
+                    if recorded_original_deletions(&dir).contains_key(name)
+                        || std::fs::symlink_metadata(journal.join(path)).is_ok()
+                    {
                         continue;
                     }
                     "original_deleted"
@@ -673,18 +670,12 @@ mod tests {
             RawReleaseClass::Owner,
             Action::RetentionTool,
             Surface::Cli,
+            false,
         )
         .unwrap()
         .linked;
-        let (outcome, _) = release_raw(&bed.0, proven, RawReleaseClass::Owner, at());
-        keep_after(&bed.0, linked, Some(&removed(&outcome))).unsettled
-    }
-
-    fn removed(outcome: &crate::receipt::Outcome) -> Vec<String> {
-        outcome
-            .removed_paths()
-            .map(|path| path.as_str().to_owned())
-            .collect()
+        let _ = release_raw(&bed.0, proven, RawReleaseClass::Owner, at());
+        keep_after(&bed.0, linked).unsettled
     }
 
     fn history(bed: &Bed) -> Vec<(Event, Action, Unit)> {
@@ -826,6 +817,7 @@ mod tests {
             RawReleaseClass::Owner,
             Action::RetentionTool,
             Surface::Cli,
+            false,
         )
         .unwrap()
         .linked;
@@ -838,8 +830,7 @@ mod tests {
         let (outcome, _) = release_raw(&bed.0, &proven, RawReleaseClass::Owner, at());
         assert!(outcome.removed_paths().next().is_none());
         drop(busy);
-        // Settled as the sweep would, with no report: by identity.
-        let unsettled = keep_after(&bed.0, linked, None).unsettled;
+        let unsettled = keep_after(&bed.0, linked).unsettled;
         assert!(unsettled.is_empty(), "{unsettled:?}");
         assert_eq!(fs::read(bed.segment().join("a.flac")).unwrap(), b"audio1");
         assert!(solstone_core_trash::list(&bed.0).unwrap().is_empty());
@@ -859,6 +850,7 @@ mod tests {
             RawReleaseClass::Policy,
             Action::OriginalsRelease,
             Surface::Web { page: Page::Home },
+            false,
         )
         .unwrap()
         .linked;
@@ -871,8 +863,12 @@ mod tests {
         fs::create_dir(&stage).unwrap();
         fs::rename(bed.segment().join("a.flac"), stage.join("removal-original")).unwrap();
         fs::write(stage.join("removal-record"), b"not a record").unwrap();
-        let kept = keep_after(&bed.0, linked, None);
+        let kept = keep_after(&bed.0, linked);
         assert_eq!(kept.unsettled.len(), 1, "{kept:?}");
+        assert!(
+            !kept.unsettled[0].contains("couldn't be changed"),
+            "refused by the door's hold, not an error: {kept:?}"
+        );
         let waiting = solstone_core_trash::item(&bed.0, &id).unwrap().unwrap();
         assert_eq!(waiting.state, solstone_core_trash::State::Detaching);
         assert!(recorded_original_deletions(&bed.segment()).is_empty());
@@ -921,15 +917,39 @@ mod tests {
             RawReleaseClass::Owner,
             Action::RetentionTool,
             Surface::Cli,
+            false,
         );
         // The second segment's path isn't present, so it is left out; the
         // act goes ahead with the first alone.
         let linking = linking.unwrap();
         assert_eq!(linking.linked.len(), 1);
-        let kept = keep_after(&bed.0, linking.linked, Some(&[]));
+        let kept = keep_after(&bed.0, linking.linked);
         assert!(kept.items.is_empty());
         assert!(solstone_core_trash::list(&bed.0).unwrap().is_empty());
         assert_eq!(fs::read(bed.segment().join("a.flac")).unwrap(), b"audio1");
+    }
+
+    /// A recover whose segment is gone for good refuses and stays on its
+    /// timer, rather than putting a lone file back where nothing is.
+    #[test]
+    fn a_recover_whose_segment_is_gone_refuses_and_keeps_the_item() {
+        let bed = Bed::new();
+        fs::write(bed.segment().join("a.flac"), b"audio1").unwrap();
+        release(&bed, &[proof("a.flac", 6)]);
+        let item = solstone_core_trash::list(&bed.0).unwrap().remove(0);
+        fs::remove_dir_all(bed.segment()).unwrap();
+        assert_eq!(segment_state(&bed.0, &item), SegmentState::Gone);
+        let refused =
+            solstone_core_trash::attach(&bed.0, &[&Originals], &item.id, Action::Recover, web())
+                .unwrap_err();
+        assert!(refused.to_string().contains(SEGMENT_GONE), "{refused}");
+        assert_eq!(
+            solstone_core_trash::item(&bed.0, &item.id)
+                .unwrap()
+                .unwrap()
+                .state,
+            solstone_core_trash::State::Trashed
+        );
     }
 
     #[test]
