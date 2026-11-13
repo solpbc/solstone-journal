@@ -657,10 +657,11 @@ mod tests {
             .filter(|d| **d == Disposition::Immediate)
             .count();
         assert_eq!(immediate_count, 1);
-        assert_eq!(regs[0], Disposition::Immediate);
-        for d in &regs[1..] {
-            assert_eq!(*d, Disposition::Queued);
-        }
+        // Registration notices fire after the registry mutex is released, so on this
+        // multi-thread runtime a queued client can record its notice before the
+        // opener does: assert the counts, not the push order.
+        let queued_count = regs.iter().filter(|d| **d == Disposition::Queued).count();
+        assert_eq!(queued_count, 99);
     }
 
     #[tokio::test]
