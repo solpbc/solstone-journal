@@ -387,6 +387,7 @@ async function main() {
   await voiceStreamsReadAsLabels(workspace);
   await statementHandoffResolvesFromThePageContext(workspace);
   sampleFallsBackToTheLabel();
+  cases += await require('./speakers_contract_dom.js')(manifestDir);
 
   console.log(`DOM CASES: ${cases} passed`);
 }
