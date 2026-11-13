@@ -965,6 +965,7 @@ dependencies = [
  "hmac",
  "interprocess",
  "log",
+ "nix 0.30.1",
  "serde",
  "serde_json",
  "sha2",

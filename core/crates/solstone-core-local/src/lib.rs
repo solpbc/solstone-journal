@@ -20,8 +20,8 @@ pub mod vulkan;
 
 pub use bind::LoopbackAddr;
 pub use connect::{
-    ConnectInput, ConnectOutcome, LocalInferenceAuthority, bundled_parallel_slots, connect,
-    connect_with_authority,
+    ConnectInput, ConnectOutcome, LocalInferenceAuthority, bundled_parallel_slots,
+    bundled_parallel_slots_with_authority, connect, connect_with_authority,
 };
 pub use endpoint::{
     ByoEndpoint, LocalEndpointResolution, active_provider_is_local, bundled_local_model_holds_gpu,

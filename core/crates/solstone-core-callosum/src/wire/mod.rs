@@ -18,7 +18,8 @@ pub use connection::{
     CallosumRetrySource, CallosumSocketConnection, CallosumStoppedReason, TokioRetrySource,
 };
 pub use local_inference_client::{
-    request_local_inference_snapshot, request_local_inference_snapshot_sync,
+    LocalInferenceRefresh, local_inference_refresh, request_local_inference_snapshot,
+    request_local_inference_snapshot_sync,
 };
 pub use server::{CallosumSocketServer, CallosumSocketServerError};
 

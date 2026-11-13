@@ -18,6 +18,7 @@ use solstone_core_generate::{
 
 struct Journal {
     path: PathBuf,
+    _credential: Option<solstone_core_callosum::test_support::LocalInferenceCredentialFixture>,
 }
 
 impl Journal {
@@ -36,11 +37,14 @@ impl Journal {
             r#"{"providers":{"active":{"provider":"none"}}}"#,
         )
         .unwrap();
-        Self { path }
+        Self {
+            path,
+            _credential: None,
+        }
     }
 
     fn bundled_local(port: u16) -> Self {
-        let journal = Self::no_engine();
+        let mut journal = Self::no_engine();
         fs::write(
             journal.path.join("config/journal.json"),
             r#"{"providers":{"active":{"provider":"local"}}}"#,
@@ -48,6 +52,13 @@ impl Journal {
         .unwrap();
         fs::create_dir_all(journal.path.join("health")).unwrap();
         fs::write(journal.path.join("health/local.port"), port.to_string()).unwrap();
+        journal._credential = Some(
+            solstone_core_callosum::test_support::serve_local_inference_credential(
+                &journal.path,
+                port,
+                b"test-engine-key",
+            ),
+        );
         journal
     }
 

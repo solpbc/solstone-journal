@@ -5,8 +5,20 @@ use std::path::Path;
 
 use solstone_core_local::LocalEndpointResolution;
 
+/// The bundled engine's serving capacity. Linux reads it with the engine's
+/// per-launch key; Windows keeps its single-slot sizing.
 pub(crate) fn bundled_slots(journal: &Path) -> Option<u32> {
-    Some(solstone_core_local::bundled_parallel_slots(journal))
+    let mut authority = if cfg!(target_os = "linux") {
+        solstone_core_callosum::local_inference_refresh(journal).map(|refresh| {
+            solstone_core_local::LocalInferenceAuthority::new(0, 0, String::new(), Some(refresh))
+        })
+    } else {
+        None
+    };
+    Some(solstone_core_local::bundled_parallel_slots_with_authority(
+        journal,
+        authority.as_mut(),
+    ))
 }
 
 pub(crate) fn default_segment_workers(

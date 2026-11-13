@@ -71,3 +71,60 @@ pub fn diagnostic_fixture_with_startup_capture(
 ) {
     super::connection::diagnostic_fixture_with_startup_capture(capacity, capture)
 }
+
+/// Answer local-inference credential requests for `journal` the way its
+/// supervisor does, until dropped. Integration tests that drive the bundled
+/// local lane against a stub engine need it on platforms whose clients fetch
+/// the engine's key over Callosum.
+#[doc(hidden)]
+pub struct LocalInferenceCredentialFixture {
+    stop: Option<tokio::sync::oneshot::Sender<()>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+#[doc(hidden)]
+#[must_use]
+pub fn serve_local_inference_credential(
+    journal: &Path,
+    port: u16,
+    token: &[u8],
+) -> LocalInferenceCredentialFixture {
+    let socket = journal.join("health").join("callosum.sock");
+    let snapshot =
+        crate::LocalInferenceSnapshot::try_new(1, port, token).expect("fixture credential");
+    let (ready, bound) = std::sync::mpsc::channel();
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let thread = std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("fixture runtime");
+        runtime.block_on(async move {
+            let server = super::CallosumSocketServer::bind(&socket)
+                .await
+                .expect("bind fixture callosum");
+            server.set_local_inference_snapshot_source(move || {
+                crate::LocalInferenceSnapshotOffer::Ready(snapshot.clone())
+            });
+            let _ = ready.send(());
+            let _ = stopped.await;
+            server.stop().await;
+        });
+    });
+    bound.recv().expect("fixture callosum bound");
+    LocalInferenceCredentialFixture {
+        stop: Some(stop),
+        thread: Some(thread),
+    }
+}
+
+impl Drop for LocalInferenceCredentialFixture {
+    fn drop(&mut self) {
+        if let Some(stop) = self.stop.take() {
+            let _ = stop.send(());
+        }
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}

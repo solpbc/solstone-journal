@@ -1337,6 +1337,17 @@ fn start_local_unix(
             managed: None,
         };
     }
+    // Each llama-server launch gets a fresh key, in its environment only: every
+    // account on the computer can read its command line. Clients fetch it from
+    // the supervisor over Callosum. The macOS MLX helper takes no key.
+    #[cfg(target_os = "linux")]
+    let auth_token = match (plan.backend != PlanBackend::Mlx).then(fresh_launch_token) {
+        None => None,
+        Some(Ok(token)) => Some(token),
+        Some(Err(())) => return launch_failed(),
+    };
+    #[cfg(not(target_os = "linux"))]
+    let auth_token: Option<String> = None;
     let port = reservation.release_for_spawn();
     #[cfg(unix)]
     let authority_res = {
@@ -1347,7 +1358,7 @@ fn start_local_unix(
             Disposition::IndependentLongLived,
             journal_path,
             launch_id,
-            || spawn_plan(&plan),
+            || spawn_plan(&plan, auth_token.as_deref()),
             Box::new(|child, timeout| {
                 crate::process::terminate(child, timeout)
                     .map(|_| ())
@@ -1358,7 +1369,7 @@ fn start_local_unix(
     #[cfg(not(unix))]
     let authority_res = crate::process::launch(
         Disposition::IndependentLongLived,
-        || spawn_plan(&plan),
+        || spawn_plan(&plan, auth_token.as_deref()),
         Box::new(|child, timeout| {
             crate::process::terminate(child, timeout)
                 .map(|_| ())
@@ -1382,7 +1393,11 @@ fn start_local_unix(
                 managed: None,
             };
         }
-        if warmup_health_probe(port) == WarmupHealth::Ready {
+        let warmup = match auth_token.as_deref() {
+            Some(token) => warmup_props_probe(port, token),
+            None => warmup_health_probe(port),
+        };
+        if warmup == WarmupHealth::Ready {
             let managed = ManagedProcess {
                 id: process_id.clone(),
                 pid,
@@ -1401,6 +1416,9 @@ fn start_local_unix(
                 },
                 started_at,
             );
+            if let Some(token) = auth_token {
+                shared.stage_launch_credentials(fence, port, token.into_bytes());
+            }
             return ProviderLaunchOutcome {
                 status: LaunchOutcomeStatus::Ready,
                 reason_code: ReasonCode::known("probe-ready"),
@@ -2005,7 +2023,20 @@ fn probe_windows_props_warmup(port: u16, auth_token: &str) -> WarmupHealth {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn spawn_plan(plan: &solstone_core_local::plan::LaunchPlan) -> std::io::Result<Child> {
+fn spawn_plan(
+    plan: &solstone_core_local::plan::LaunchPlan,
+    auth_token: Option<&str>,
+) -> std::io::Result<Child> {
+    let mut command = plan_command(plan, auth_token)?;
+    apply_parent_death_kill(&mut command);
+    command.spawn()
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn plan_command(
+    plan: &solstone_core_local::plan::LaunchPlan,
+    auth_token: Option<&str>,
+) -> std::io::Result<Command> {
     let (program, arguments) = plan.argv.split_first().ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -2015,8 +2046,19 @@ fn spawn_plan(plan: &solstone_core_local::plan::LaunchPlan) -> std::io::Result<C
     let mut command = Command::new(program);
     crate::process::remove_launch_only_environment(&mut command);
     command.args(arguments).envs(&plan.extra_env);
-    apply_parent_death_kill(&mut command);
-    command.spawn()
+    command.env_remove("LLAMA_API_KEY");
+    if let Some(token) = auth_token {
+        command.env("LLAMA_API_KEY", token);
+    }
+    Ok(command)
+}
+
+/// 32 bytes from the OS generator, hex-encoded, for one engine launch.
+#[cfg(target_os = "linux")]
+fn fresh_launch_token() -> Result<String, ()> {
+    let mut bytes = [0_u8; 32];
+    getrandom::fill(&mut bytes).map_err(|_| ())?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 fn launch_failed() -> ProviderLaunchOutcome {
@@ -2310,6 +2352,62 @@ mod tests {
             shared.observe_current_process(&[], Instant::now()),
             ProcessObservation::ConfirmedAbsent,
         );
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn linux_engine_key_travels_in_the_environment_never_on_argv() {
+        let plan = solstone_core_local::plan::LaunchPlan {
+            schema: "test",
+            backend: PlanBackend::Vulkan,
+            desired_fingerprint_json: json!({}),
+            desired_fingerprint_sha256: String::new(),
+            binary_path: Some("/engine/llama-server".into()),
+            model_path: "/models/model.gguf".into(),
+            mmproj_path: None,
+            lib_dir: None,
+            model_id: "local/qwen3.5-4b".into(),
+            gpu_index: None,
+            gpu_name: None,
+            gpu_vram_mib: None,
+            vram_before_mib: None,
+            context_tokens: None,
+            parallel_slots: None,
+            prompt_cache_mib: None,
+            metal_tier: None,
+            visible_devices_env_name: None,
+            visible_devices_env_value: None,
+            extra_env: std::collections::BTreeMap::from([(
+                "LLAMA_API_KEY".into(),
+                "from-plan".into(),
+            )]),
+            backend_reason: String::new(),
+            bind_address: solstone_core_local::LoopbackAddr::IPV4_LOOPBACK,
+            port: 8080,
+            argv: vec![
+                "/engine/llama-server".into(),
+                "--port".into(),
+                "8080".into(),
+            ],
+        };
+        let token = fresh_launch_token().unwrap();
+        assert_eq!(token.len(), 64);
+        assert_ne!(token, fresh_launch_token().unwrap());
+        let command = plan_command(&plan, Some(&token)).unwrap();
+        let key = command
+            .get_envs()
+            .find(|(name, _)| *name == "LLAMA_API_KEY")
+            .and_then(|(_, value)| value);
+        assert_eq!(key, Some(std::ffi::OsStr::new(&token)));
+        assert!(command.get_args().all(|arg| arg != token.as_str()));
+
+        // Without a key the child inherits none, even one the parent carries.
+        let command = plan_command(&plan, None).unwrap();
+        let key = command
+            .get_envs()
+            .find(|(name, _)| *name == "LLAMA_API_KEY")
+            .map(|(_, value)| value);
+        assert_eq!(key, Some(None));
     }
 
     #[test]

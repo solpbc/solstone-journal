@@ -58,6 +58,9 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
         "health/parent-loss-notes/active-generation.json",
         "health/speakers-analyze-notes/owner.json",
         "chronicle/20261112/health/120000_60/oplog--raw.log",
+        "chronicle/20261114/health/oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabfad7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log/owner.txt",
+        "chronicle/notes/health/oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log",
+        "chronicle/2026a003/health/oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log",
         "chronicle/20261112/health/120000_60/health/parent-loss/active-generation.json",
         "health/pruning-runs/run.jsonl",
         "chronicle/20260101/health/supervisor.process_instance",
@@ -79,6 +82,8 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
     ];
     let omitted = [
         "chronicle/20261112/health/oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log",
+        "chronicle/20261113/health/oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log",
+        "chronicle/20261114/health/oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log",
         "indexer/journal.sqlite",
         ".removing_root/owner.json",
         "chronicle/20260101/.removing_flat/owner.json",
@@ -325,6 +330,52 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
         fs::read(restored_root.join(owner_directory)).unwrap(),
         b"owner directory bytes"
     );
+    // Without an owner lookalike in any day, one shape leaves out every log.
+    let removed = [
+        "chronicle/20261112/health/oplog--not-a-name.log",
+        "chronicle/20261112/health/oplog--service~tag--run--id--supervisor~tag.log",
+    ];
+    for name in removed {
+        fs::remove_file(root.join(name)).unwrap();
+    }
+    fs::remove_dir_all(root.join("chronicle/20261114/health").join(
+        "oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabfad7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log",
+    ))
+    .unwrap();
+    let prepared = prepare_backup_args(&root).unwrap();
+    let policy = fs::read_to_string(prepared._exclude_file.path()).unwrap();
+    assert_eq!(
+        policy
+            .lines()
+            .filter(|line| line.contains("oplog--"))
+            .count(),
+        1,
+        "{policy}"
+    );
+    let mut args = prepared.args.clone();
+    args.push("--json".into());
+    let snapshot = snapshot_id(run(&args));
+    let restore = temp.path().join("restored-one-shape");
+    run(&[
+        "restore".into(),
+        snapshot,
+        "--target".into(),
+        crate::restic_filesystem_path(&restore),
+    ]);
+    let restored_root = restore.join(Path::new(tree_root.trim_start_matches('/')));
+    for name in kept
+        .iter()
+        .filter(|name| !removed.contains(name) && !name.contains("8f03cabf"))
+    {
+        assert_eq!(
+            fs::read(restored_root.join(name)).expect(name),
+            name.as_bytes(),
+            "{name}"
+        );
+    }
+    for name in omitted.iter().filter(|name| name.contains("/oplog--")) {
+        assert!(!restored_root.join(name).exists(), "{name}");
+    }
 }
 
 #[cfg(windows)]

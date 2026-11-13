@@ -149,6 +149,11 @@ fn generate_binary_emits_one_success_json_record() {
     let journal = root("success");
     let (port, server) = serve();
     std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write local port");
+    let _credential = solstone_core_callosum::test_support::serve_local_inference_credential(
+        &journal,
+        port,
+        b"test-engine-key",
+    );
     let output = run(&input(&journal));
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(output.stderr, b"");
@@ -195,6 +200,11 @@ fn generate_binary_keeps_refusal_stdout_json_only() {
         }
     });
     std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write local port");
+    let _credential = solstone_core_callosum::test_support::serve_local_inference_credential(
+        &journal,
+        port,
+        b"test-engine-key",
+    );
     let output = run(&input(&journal));
     assert_eq!(output.status.code(), Some(0));
     assert_stderr_only_failure_timing(&output.stderr);

@@ -364,7 +364,11 @@ pub(crate) fn connect_with_transport_and_authority(
             Err(reason) => return ConnectOutcome::Failed { reason },
         }
     } else {
-        discover_capacity(transport, &base_url)
+        discover_capacity(
+            transport,
+            &base_url,
+            authority.as_ref().map(|auth| auth.token.as_str()),
+        )
     };
 
     ConnectOutcome::Ready {
@@ -380,8 +384,12 @@ pub(crate) fn connect_with_transport_and_authority(
     }
 }
 
-fn discover_capacity(transport: &dyn ConnectTransport, base_url: &str) -> (u32, String) {
-    if let Ok((200, text)) = transport.get(base_url, "/props", None)
+fn discover_capacity(
+    transport: &dyn ConnectTransport,
+    base_url: &str,
+    auth_token: Option<&str>,
+) -> (u32, String) {
+    if let Ok((200, text)) = transport.get(base_url, "/props", auth_token)
         && let Some(slots) = total_slots(&text)
     {
         return (slots, "props".into());
@@ -391,17 +399,39 @@ fn discover_capacity(transport: &dyn ConnectTransport, base_url: &str) -> (u32, 
 
 /// Read the running bundled server's capacity, or use the single-slot floor.
 pub fn bundled_parallel_slots(journal: &Path) -> u32 {
-    let Some(port) = std::fs::read_to_string(journal.join("health/local.port"))
-        .ok()
-        .and_then(|text| text.trim().parse::<u16>().ok())
-        .filter(|port| *port > 0)
-    else {
-        return FLOOR_PARALLEL_SLOTS;
+    bundled_parallel_slots_with_authority(journal, None)
+}
+
+/// Read the running bundled server's capacity with the engine's credential when
+/// the caller holds an authority, or use the single-slot floor.
+pub fn bundled_parallel_slots_with_authority(
+    journal: &Path,
+    authority: Option<&mut LocalInferenceAuthority>,
+) -> u32 {
+    let deadline = Instant::now() + TIMEOUT;
+    let (port, token) = match authority {
+        Some(auth) => {
+            if auth.begin_operation(deadline).is_err() {
+                return FLOOR_PARALLEL_SLOTS;
+            }
+            (auth.port, Some(auth.token.clone()))
+        }
+        None => match std::fs::read_to_string(journal.join("health/local.port"))
+            .ok()
+            .and_then(|text| text.trim().parse::<u16>().ok())
+            .filter(|port| *port > 0)
+        {
+            Some(port) => (port, None),
+            None => return FLOOR_PARALLEL_SLOTS,
+        },
     };
-    let transport = UreqConnectTransport {
-        deadline: Instant::now() + TIMEOUT,
-    };
-    discover_capacity(&transport, &format!("http://127.0.0.1:{port}")).0
+    let transport = UreqConnectTransport { deadline };
+    discover_capacity(
+        &transport,
+        &format!("http://127.0.0.1:{port}"),
+        token.as_deref(),
+    )
+    .0
 }
 
 fn total_slots(props: &str) -> Option<u32> {

@@ -1317,6 +1317,11 @@ fn bundled_generation_emits_generated_response_and_hints() {
         write_config(&journal, bundled_config(false));
         let (port, server) = serve(generated_body());
         std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+        let _credential = solstone_core_callosum::test_support::serve_local_inference_credential(
+            &journal,
+            port,
+            b"test-engine-key",
+        );
         let mut request = fixture_vector("generated")["request"].clone();
         request["attempt_index"] = json!(attempt_index);
         let output = one_shot(&journal, &request);
@@ -1372,6 +1377,11 @@ fn bundled_native_loopback_enforces_schema_output_and_sends_multimodal_response_
         write_config(&journal, bundled_config(false));
         let (port, server) = serve_recording(vec![(200, completion)]);
         std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+        let _credential = solstone_core_callosum::test_support::serve_local_inference_credential(
+            &journal,
+            port,
+            b"test-engine-key",
+        );
         let mut request = fixture_vector("generated")["request"].clone();
         request["contents"] = json!([
             {"type": "text", "text": "describe this image"},
@@ -1414,6 +1424,11 @@ fn bundled_native_schema_validation_is_advisory() {
         completion_body("{}", "stop", Some(json!({"prompt_tokens": 2}))),
     )]);
     std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+    let _credential = solstone_core_callosum::test_support::serve_local_inference_credential(
+        &journal,
+        port,
+        b"test-engine-key",
+    );
     let mut request = fixture_vector("generated")["request"].clone();
     request["json_output"] = json!(true);
     request["json_schema"] = json!({
@@ -1452,6 +1467,11 @@ fn refusing_native_endpoint_stays_local_and_never_spawns_mlx() {
     );
     let (port, server) = serve_recording(vec![(200, r#"{"choices":"native refused"}"#.into())]);
     std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+    let _credential = solstone_core_callosum::test_support::serve_local_inference_credential(
+        &journal,
+        port,
+        b"test-engine-key",
+    );
     let (poison_bin, marker) = poison_mlx_commands(&journal);
     let input = fixture_vector("generated")["request"].to_string();
     let output = run_bytes_with_path(
@@ -1669,6 +1689,11 @@ fn bundled_failure_uses_provider_response_invalid_reason() {
     write_config(&journal, bundled_config(false));
     let (port, server) = serve(r#"{"choices":"bad"}"#);
     std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+    let _credential = solstone_core_callosum::test_support::serve_local_inference_credential(
+        &journal,
+        port,
+        b"test-engine-key",
+    );
     let output = one_shot(&journal, &fixture_vector("generated")["request"]);
     assert_eq!(output.status.code(), Some(0));
     assert_stderr_only_failure_timing(&output);
@@ -1694,6 +1719,11 @@ fn bundled_confidential_is_generated_and_logs_usage_while_refusals_do_not_log() 
     write_config(&journal, bundled_config(true));
     let (port, server) = serve(generated_body());
     std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+    let _credential = solstone_core_callosum::test_support::serve_local_inference_credential(
+        &journal,
+        port,
+        b"test-engine-key",
+    );
     let output = one_shot(&journal, &fixture_vector("generated")["request"]);
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(server.join().expect("join server"), 6);
@@ -1775,6 +1805,11 @@ fn n3_boundary_does_not_emit_incomplete_text_or_schema_validation_failed() {
     );
     let (port, server) = serve(&body);
     std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+    let _credential = solstone_core_callosum::test_support::serve_local_inference_credential(
+        &journal,
+        port,
+        b"test-engine-key",
+    );
     let output = one_shot(&journal, &fixture_vector("generated")["request"]);
     let response = stdout_json(&output);
     assert_eq!(response["outcome"], "generated");
@@ -1790,6 +1825,11 @@ fn n3_boundary_does_not_emit_incomplete_text_or_schema_validation_failed() {
     let body = completion_body("{}", "stop", Some(json!({"prompt_tokens": 2})));
     let (port, server) = serve(&body);
     std::fs::write(schema_journal.join("health/local.port"), port.to_string()).expect("write port");
+    let _credential = solstone_core_callosum::test_support::serve_local_inference_credential(
+        &schema_journal,
+        port,
+        b"test-engine-key",
+    );
     let mut request = fixture_vector("generated")["request"].clone();
     request["json_schema"] = json!({"type": "object", "required": ["answer"]});
     request["json_output"] = json!(true);
@@ -1822,6 +1862,11 @@ fn schema_validation_is_advisory_for_bundled_and_byo_lanes() {
         let body = completion_body(text, "stop", Some(json!({"prompt_tokens": 2})));
         let (port, server) = serve(&body);
         std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+        let _credential = solstone_core_callosum::test_support::serve_local_inference_credential(
+            &journal,
+            port,
+            b"test-engine-key",
+        );
         let mut request = fixture_vector("generated")["request"].clone();
         request["json_schema"] = schema.clone();
         request["json_output"] = json!(true);
@@ -1906,6 +1951,11 @@ fn completed_provider_results_log_before_strict_validation() {
         let body = completion_body(text, finish_reason, usage);
         let (port, server) = serve(&body);
         std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+        let _credential = solstone_core_callosum::test_support::serve_local_inference_credential(
+            &journal,
+            port,
+            b"test-engine-key",
+        );
         let mut request = fixture_vector("generated")["request"].clone();
         if reason == "incomplete-json" {
             request["json_output"] = json!(true);

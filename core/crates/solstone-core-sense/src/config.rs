@@ -7,7 +7,8 @@ use std::time::Duration;
 use serde_json::{Map, Value};
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_local::{
-    LocalEndpointResolution, bundled_parallel_slots, resolve_local_endpoint,
+    LocalEndpointResolution, LocalInferenceAuthority, bundled_parallel_slots_with_authority,
+    resolve_local_endpoint,
 };
 
 pub const HANDLERS: [&str; 3] = ["describe", "transcribe", "depict"];
@@ -109,11 +110,23 @@ pub fn describe_per_proc_jobs(
     }
     let slots = match resolve_local_endpoint(config) {
         LocalEndpointResolution::Byo(endpoint) => endpoint.parallel_slots,
-        LocalEndpointResolution::Bundled => Some(bundled_parallel_slots(journal)),
+        LocalEndpointResolution::Bundled => Some(bundled_slots(journal)),
     };
     slots.map_or(10, |slots| {
         std::cmp::max(1, (2 * slots as usize) / effective.max(1))
     })
+}
+
+/// The bundled engine's serving capacity. Linux reads it with the engine's
+/// per-launch key; Windows keeps its single-slot sizing.
+fn bundled_slots(journal: &Path) -> u32 {
+    let mut authority = if cfg!(target_os = "linux") {
+        solstone_core_callosum::local_inference_refresh(journal)
+            .map(|refresh| LocalInferenceAuthority::new(0, 0, String::new(), Some(refresh)))
+    } else {
+        None
+    };
+    bundled_parallel_slots_with_authority(journal, authority.as_mut())
 }
 
 pub fn processing_deferred(config: &Map<String, Value>) -> bool {

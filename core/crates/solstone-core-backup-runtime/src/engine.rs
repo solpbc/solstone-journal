@@ -680,13 +680,18 @@ fn prepare_backup_args(root: &Path) -> std::io::Result<PreparedBackup> {
     }
     let admitted =
         solstone_core_journal_io::JournalRoot::open(root).map_err(std::io::Error::other)?;
-    solstone_core_journal_io::operational_log::visit_runtime_log_paths(&admitted, |member| {
-        let pattern = crate::restic_paths::rooted_exclude(root, member);
-        if pattern.contains(['\r', '\n']) {
-            return Err(std::io::Error::other("journal path contains a line break"));
-        }
-        writeln!(excludes, "{}", pattern.replace('$', "$$"))
-    })?;
+    // A few rooted shapes rather than a line per log: restic scans every line
+    // for every walked path, every run.
+    solstone_core_journal_io::operational_log::visit_runtime_log_exclusions(
+        &admitted,
+        |relative| {
+            let pattern = crate::restic_paths::rooted_exclude(root, relative);
+            if pattern.contains(['\r', '\n']) {
+                return Err(std::io::Error::other("journal path contains a line break"));
+            }
+            writeln!(excludes, "{}", pattern.replace('$', "$$"))
+        },
+    )?;
     excludes.flush()?;
     let mut args = backup_args(root);
     args.extend([
@@ -4601,7 +4606,8 @@ mod tests {
         }
         let prepared = prepare_backup_args(root).unwrap();
         let policy = fs::read_to_string(prepared._exclude_file.path()).unwrap();
-        assert_eq!(policy.lines().count(), 8 + 500 * 8 - 2);
+        // The database slots, and one runtime-log shape.
+        assert_eq!(policy.lines().count(), 8 + 500 * 8 - 2 + 1);
         assert!(
             !policy
                 .lines()
