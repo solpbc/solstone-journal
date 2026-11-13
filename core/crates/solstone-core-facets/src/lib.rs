@@ -11,6 +11,7 @@ mod activity_placement;
 mod body_facet;
 pub mod entity_trash;
 pub mod facet_trash;
+mod moment_copies;
 mod speculative_facets;
 mod store;
 mod trust_lock;
@@ -27,6 +28,7 @@ pub use body_facet::{
     BodyFacetAsk, BodyFacetOfferRead, BodyFacetReadError, apply_body_facet_answer, body_facet_ask,
     body_facet_offer, default_for_unattended,
 };
+pub use moment_copies::{Moment, merge_moment_copies, moment_key};
 pub use solstone_core_entity::facet_links;
 pub use solstone_core_entity::hidden_names;
 pub use solstone_core_entity::{EntityIdentityMap, read_identity_map};

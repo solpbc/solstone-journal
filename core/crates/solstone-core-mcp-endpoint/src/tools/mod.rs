@@ -124,10 +124,10 @@ impl ToolError {
                 "the reference or cursor did not resolve to anything this connection may read; pass one unchanged from a fresh result"
             }
             Self::SourceArguments => {
-                "source needs a day and can't be combined with facet, and kind needs source"
+                "source needs a day and can't be combined with facet, and kind needs a body source"
             }
             Self::ActivityDayArguments => {
-                "day can't be combined with from or to: send one day or a range, and the to day can't be before the from day"
+                "day can't be combined with day_from or day_to: send one day or a range, and day_to can't be before day_from"
             }
             Self::TranscriptTimeArguments => {
                 "time_from and time_to need a day, and time_to can't be before time_from"

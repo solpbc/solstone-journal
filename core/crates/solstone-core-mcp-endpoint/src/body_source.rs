@@ -61,7 +61,10 @@ pub(crate) fn holds_body(snapshot: &ConnectionReadSnapshot) -> bool {
     snapshot.categories.contains(&AdmittedCategory::Body)
 }
 
-const NOTHING_READABLE: &str = "No body source with that label holds anything this connection can read on that day. A source's label comes from `other_sources` on a day's list_transcripts, or from that day's body document.";
+/// The one answer for a source label that reaches nothing, whatever kind of
+/// source it would have named: a label can't be used to ask what the journal
+/// holds.
+pub(crate) const NOTHING_READABLE: &str = "No source with that label holds anything this connection can read on that day. A source's label comes from the `source` of a listed segment, from `other_sources` on a day's list_transcripts, or from that day's body document.";
 const SPAN_EMPTY: &str = "No entries in this span.";
 const SPAN_EMPTY_CONTINUES: &str =
     "No entries in this part of the span. Pass next_cursor as cursor to read on.";
@@ -556,7 +559,7 @@ fn parse_minutes(text: &str) -> Option<u32> {
 
 /// The stretches of a range no window covers. A whole-day window states something
 /// about a date, not a stretch of time, so it isn't coverage.
-fn gaps_in(windows: &[(u32, u32)], from: u32, to: u32) -> Vec<Value> {
+pub(crate) fn gaps_in(windows: &[(u32, u32)], from: u32, to: u32) -> Vec<Value> {
     let mut gaps = Vec::new();
     let mut reached = from;
     for &(start, end) in windows {
@@ -792,6 +795,15 @@ fn window_rows(
 
 /// `list_transcripts` with `source`: that source's windows, what no window covers,
 /// and a reference that reads them all in order.
+/// Whether a source label names a body source, whose list and span read are
+/// its own.
+pub(crate) fn is_body_source(journal_root: &Path, source: &str) -> bool {
+    let labels = source_labels(journal_root);
+    BODY_RECORD_STREAMS
+        .iter()
+        .any(|stream| labels.get(*stream).is_some_and(|label| label == source))
+}
+
 pub(crate) fn list_source(
     journal_root: &Path,
     principal: DispatchPrincipal<'_>,

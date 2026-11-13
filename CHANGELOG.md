@@ -21,6 +21,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - erasing a segment from the trash now erases any originals deleted from it that are waiting there too.
 - a segment's transcript now says when its original audio or screen media is in the trash, with a link to the trash.
 - connected agents now need body, a permission of its own, to read what you imported from Apple Health, Oura or Strava: readings, sleep, workouts, mindfulness sessions and what you logged there. the transcripts permission no longer includes it. a new connection has body ticked. a connection you approved before doesn't, and can't read that data until you tick body for it in the agents app.
+- connected agents can now read what was said on a day in one go, in time order. before, they read one segment at a time. they can also ask for one source's segments, by the label their list shows for it. what each agent may see hasn't changed.
+- an activity that belongs to more than one facet now shows once to a connected agent, under the facet it belongs to most, with the others named beside it. before, it showed once for each facet, so an agent's count of your week ran high.
+- connected agents now see what kind each activity was, such as a meeting or writing, and where it came from. a voice your journal has no name for is counted, and no longer listed as a person called Speaker 1.
+- an agent asking about a week by a day in the middle of it now gets that week. before, it got nothing unless it named the sunday.
 - on linux, installing or updating the journal now removes older installed versions, and keeps this version and the two before it so `--version` can still go back to either. a version that is still in use stays.
 
 ### Fixed

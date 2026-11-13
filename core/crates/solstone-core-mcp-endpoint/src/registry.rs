@@ -167,7 +167,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListTranscripts,
         wire_name: "list_transcripts",
         title: "list transcripts",
-        description: "List transcript segments this connection may read, each with its time and its source, which says where it came from. Give one day (YYYYMMDD or YYYY-MM-DD), and a time range within it when you know one; without a day, the newest days come first. When more remain, pass next_cursor as cursor to continue. Read one with get_transcript. A reference is different on every call, even for the same segment, so don't compare references to tell segments apart. Two segments at the same time with different sources are separate recordings. A list leaves out segments holding only body records, and a day's list names their sources in other_sources. Pass one of those labels as source to list those segments. It leaves out Strava workouts too, which no label lists: it counts them in omitted_workouts, and search finds them, and list_activities lists the activity recorded for each, when it has one. Body segments and workouts are read with the body permission; without it, none of these are listed or counted, and body_note says so. The response adds gaps, the stretches no segment this connection can read covers (a gap means no segment, not that nothing happened), and span_reference: pass it to get_transcript as reference to read those segments in time order.",
+        description: "List transcript segments this connection may read, each with its time, its source, which says where it came from, how many seconds it ran and how many lines it holds, with `more_lines` when it holds more than that count. Give one day (YYYYMMDD or YYYY-MM-DD), and a time range within it when you know one; without a day, the newest days come first. Pass a source label, exactly as a row gives it, as source to list only that source's segments, such as the segments from one device's microphone. When more remain, pass next_cursor as cursor to continue. Read one with get_transcript. A day's list that holds a segment also returns span_reference: pass it to get_transcript as reference to read everything the list matched in time order, instead of one call for each segment. A reference is different on every call, even for the same segment, so don't compare references to tell segments apart. Two segments at the same time with different sources are separate recordings. A list leaves out segments holding only body records, and a day's list names their sources in other_sources. Pass one of those labels as source to list those segments. It leaves out Strava workouts too, which no label lists: it counts them in omitted_workouts, and search finds them, and list_activities lists the activity recorded for each, when it has one. Body segments and workouts are read with the body permission; without it, none of these are listed or counted, and body_note says so. A day's list adds gaps, the stretches no listed segment this connection can read covers. A gap means no segment, not that nothing happened.",
         input_schema: list_transcripts_input_schema,
         requires: TRANSCRIPTS_OR_BODY,
         audit_name: solstone_core_mcp_audit::ToolName::ListTranscripts,
@@ -176,7 +176,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetTranscript,
         wire_name: "get_transcript",
         title: "read a transcript",
-        description: "Read what was said in one transcript segment, from a search result or from list_transcripts. Its source is the one listed with that segment. When it returns next_cursor, pass it as cursor to read the rest. When it says untimed, the times are not real. If a segment can't be read, search again or list that day. Pass a span_reference from list_transcripts as reference to read through that source's segments in time order, each entry attributed; a page can be short, so read on while next_cursor is present.",
+        description: "Read what was said in one transcript segment, from a search result or from list_transcripts. Its source is the one listed with that segment. When it returns next_cursor, pass it as cursor to read the rest. When it says untimed, the times are not real. If a segment can't be read, search again or list that day. Pass a span_reference from list_transcripts as reference to read what that list matched in time order. A day's segments come back in `segments`, each with its time, its source and its entries, and a segment with nothing said is left out. A body source's entries come back in `entries`, each attributed. A page can be short, so read on while next_cursor is present.",
         input_schema: transcript_input_schema,
         requires: TRANSCRIPTS_OR_BODY,
         audit_name: solstone_core_mcp_audit::ToolName::GetTranscript,
@@ -203,7 +203,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetWeek,
         wire_name: "get_week",
         title: "read a week",
-        description: "read one week. memories are derived from activities and are not the owner's words. quotes are the owner's words. the day states in `days` and the quotes in `said` come from the week page, which the journal makes after the week ends. a week whose week page is missing or can't be read, such as the current week or a past week whose page was never made, has empty `days` and `said`. `activities` and `memories` are still filled from the week's activities, so an empty `days` or `said` doesn't mean an empty week. each activity's `participants` attended it, `heard` lists people the owner talked with in a conversation that wasn't a meeting, `mentioned` were named there without attending, and `on_screen` only appeared on screen. `activities` holds up to seven, with activities of the same name as one row; `activities_total` counts all of the week's activities, and list_activities lists them. with the body permission, `body` lists the week's workouts, nights and mindfulness sessions; without it, `body_note` says so. leaving an entry off the week page leaves that source visible to the other tools. pass week as the sunday it starts, YYYYMMDD, or omit it for the week containing today.",
+        description: "read one week. memories are derived from activities and are not the owner's words. quotes are the owner's words. the day states in `days` and the quotes in `said` come from the week page, which the journal makes after the week ends. a week whose week page is missing or can't be read, such as the current week or a past week whose page was never made, has empty `days` and `said`. `activities` and `memories` are still filled from the week's activities, so an empty `days` or `said` doesn't mean an empty week. each activity's `participants` attended it, `heard` lists people the owner talked with in a conversation that wasn't a meeting, `mentioned` were named there without attending, and `on_screen` only appeared on screen. `activities` holds up to seven, with activities of the same name as one row; `activities_total` counts all of the week's activities, and list_activities lists them. an activity that belongs to several facets counts once, with the other facets in `also_in`. a voice the journal has no name for is counted in `unnamed_voices`. with the body permission, `body` lists the week's workouts, nights and mindfulness sessions; without it, `body_note` says so. leaving an entry off the week page leaves that source visible to the other tools. pass week as any day in it, YYYYMMDD or YYYY-MM-DD, or omit it for the week containing today. weeks run sunday to saturday.",
         input_schema: week_input_schema,
         requires: WEEK,
         audit_name: solstone_core_mcp_audit::ToolName::GetWeek,
@@ -212,7 +212,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListActivities,
         wire_name: "list_activities",
         title: "list activities",
-        description: "List journal activities for one day or an inclusive range across granted facets. When more remain, pass next_cursor as cursor to continue. Each activity lists `participants`, the people who attended it; `heard`, people the owner talked with in a conversation that wasn't a meeting; `mentioned`, people named in it who didn't attend; and `on_screen`, names that only appeared on screen, which nobody said. Call get_activity_sources to read the verbatim transcript segments an activity spans. Workouts, nights and other body records are listed with the body permission, and carry `place` when this connection can also see the whole journal; without the body permission, `body_note` says so. An activity appears once it has ended; when a device stops sending, its last activity appears about an hour later. With access to the whole journal's transcripts, an activity also lists what the owner's calendar had scheduled while it ran, in its `scheduled` field, with the known people invited when the connection may also read entities. That is what was planned, not who was there. With the same access, an activity also says where a device that sent its location was while it ran, in its `place` field: the device, and the area or place in words, never coordinates.",
+        description: "List journal activities for one day or an inclusive range of days across granted facets. When more remain, pass next_cursor as cursor to continue. Each activity says its `kind`, such as meeting or writing, and its `source`, where it came from, in the words list_transcripts uses; a body record's is `body`. An activity that belongs to several facets is listed once, under the facet it belongs to most, with the others in `also_in`. Each activity lists `participants`, the people who attended it; `heard`, people the owner talked with in a conversation that wasn't a meeting; `mentioned`, people named in it who didn't attend; and `on_screen`, names that only appeared on screen, which nobody said. A voice the journal has no name for is counted in `unnamed_voices` and never listed as a person. Call get_activity_sources to read the verbatim transcript segments an activity spans. Workouts, nights and other body records are listed with the body permission, and carry `place` when this connection can also see the whole journal; without the body permission, `body_note` says so. An activity appears once it has ended; when a device stops sending, its last activity appears about an hour later. With access to the whole journal's transcripts, an activity also lists what the owner's calendar had scheduled while it ran, in its `scheduled` field, with the known people invited when the connection may also read entities. That is what was planned, not who was there. With the same access, an activity also says where a device that sent its location was while it ran, in its `place` field: the device, and the area or place in words, never coordinates.",
         input_schema: list_activities_input_schema,
         requires: FACETS,
         audit_name: solstone_core_mcp_audit::ToolName::ListActivities,
@@ -432,7 +432,7 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
         Some(_) => return format!("{name} takes its arguments as a JSON object."),
     };
     for key in arguments.keys() {
-        if !properties.contains_key(key) {
+        if !properties.contains_key(key) && !is_earlier_name(name, key) {
             return if properties.is_empty() {
                 format!("{name} takes no arguments, so `{key}` is not one.")
             } else {
@@ -455,6 +455,9 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
         }
     }
     for (key, value) in arguments {
+        if is_earlier_name(name, key) {
+            continue;
+        }
         if let Some(problem) = explain_value(key, &properties[key], value) {
             return format!("{name}: {problem}");
         }
@@ -484,12 +487,18 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
     }
 }
 
+/// An argument name a tool took before its arguments were given one
+/// vocabulary. It is still accepted, and no longer advertised.
+fn is_earlier_name(tool: &str, key: &str) -> bool {
+    tool == "list_activities" && matches!(key, "from" | "to")
+}
+
 /// The shape a formatted argument must take, for arguments whose format the
 /// type, length and range checks cannot see.
 fn format_rule(key: &str) -> Option<&'static str> {
     match key {
         "day" | "day_from" | "day_to" | "from" | "to" => Some("is YYYYMMDD or YYYY-MM-DD"),
-        "week" => Some("is YYYYMMDD"),
+        "week" => Some("is YYYYMMDD or YYYY-MM-DD"),
         "time_from" | "time_to" => Some("is HH:MM"),
         "operation_id" => Some("uses only letters, digits, '.', '_', ':' or '-'"),
         _ => None,
@@ -632,7 +641,7 @@ fn search_input_schema(context: &SchemaContext<'_>) -> Value {
         "additionalProperties": false,
         "properties": {
             "query": { "type": "string", "maxLength": MAX_QUERY_BYTES, "description": SEARCH_QUERY_DESCRIPTION },
-            "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
             "cursor": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
             "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
             "day_from": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
@@ -663,13 +672,13 @@ fn list_transcripts_input_schema(context: &SchemaContext<'_>) -> Value {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-            "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
             "cursor": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
             "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
             "time_from": { "type": "string", "description": "Start of a time range within day, as HH:MM." },
             "time_to": { "type": "string", "description": "End of a time range within day, as HH:MM." },
-            "source": { "type": "string", "minLength": 1, "maxLength": 256, "description": "A body source's label, exactly as other_sources or that day's body document gives it. Needs day, and can't be combined with facet." },
-            "kind": { "type": "string", "minLength": 1, "maxLength": 256, "description": "One kind of entry from that body source, such as resting heart rate, workout or sleep, as its entries name it. Needs source. The list then holds only windows with that kind, and a span read from it returns only those entries." },
+            "source": { "type": "string", "minLength": 1, "maxLength": 256, "description": "A source label, exactly as a listed segment, other_sources or that day's body document gives it. Needs day, and can't be combined with facet." },
+            "kind": { "type": "string", "minLength": 1, "maxLength": 256, "description": "One kind of entry from that body source, such as resting heart rate, workout or sleep, as its entries name it. Needs a body source. The list then holds only windows with that kind, and a span read from it returns only those entries." },
         }
     });
     with_scoped_facet(schema, context)
@@ -706,8 +715,9 @@ fn week_input_schema(_context: &SchemaContext<'_>) -> Value {
         "properties": {
             "week": {
                 "type": "string",
-                "pattern": "^[0-9]{8}$",
-                "description": "the sunday a week starts, as YYYYMMDD. omit it to read the week containing today.",
+                "maxLength": MAX_DAY_BYTES,
+                "pattern": DAY_PATTERN,
+                "description": "any day in the week, as YYYYMMDD or YYYY-MM-DD. omit it to read the week containing today.",
             }
         }
     })
@@ -718,11 +728,11 @@ fn list_activities_input_schema(context: &SchemaContext<'_>) -> Value {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-            "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "A single day, YYYYMMDD or YYYY-MM-DD. Mutually exclusive with from and to." },
-            "from": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "Start of date range, YYYYMMDD or YYYY-MM-DD (inclusive)." },
-            "to": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "End of date range, YYYYMMDD or YYYY-MM-DD (inclusive)." },
+            "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "A single day, YYYYMMDD or YYYY-MM-DD. Mutually exclusive with day_from and day_to. Without any of them, today." },
+            "day_from": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "First day of a range, YYYYMMDD or YYYY-MM-DD (inclusive)." },
+            "day_to": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "Last day of a range, YYYYMMDD or YYYY-MM-DD (inclusive)." },
             "entity": { "type": "string", "description": "Filter by entity display name or opaque entity reference." },
-            "limit": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Maximum number of activities to return (default 10, max 100)." },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10, "description": "Maximum number of activities to return (default 10, max 100)." },
             "cursor": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES, "description": "Opaque cursor from a previous list_activities call." },
         }
     });
