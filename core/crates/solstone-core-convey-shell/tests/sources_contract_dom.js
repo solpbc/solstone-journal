@@ -487,5 +487,52 @@ module.exports = async function sourcesContractCases(manifestDir) {
     assert.ok(p.reads()[2] !== p.reads()[1], 'a new request, not the answered one');
   });
 
+  // ---- focus, after a retry and a redraw
+
+  await test('"try again" that fails again keeps focus on "try again"; one that draws devices puts it on the view', async () => {
+    const p = await boot(env);
+    p.reads()[0].answer(503, {});
+    await settle();
+    let retry = p.root().querySelector('.sources-retry');
+    retry.focus();
+    retry.click();
+    p.last().answer(503, {});
+    await settle();
+    focusIsSomewhere(p, 'after a retry that fails');
+    retry = p.root().querySelector('.sources-retry');
+    assert.ok(p.doc.activeElement === retry, `focus on the new "try again" (it is on ${tagOf(p.doc.activeElement)})`);
+    retry.click();
+    p.last().answer(200, { clients: [device('studio', 5)] });
+    await settle();
+    focusIsSomewhere(p, 'after a retry that draws');
+    assert.ok(p.doc.activeElement === p.root(), `focus on the view's root (it is on ${tagOf(p.doc.activeElement)})`);
+    assert.deepStrictEqual(p.ready, ['error'], 'readiness is the first load\'s');
+  });
+
+  await test('a layout redraw with a link focused keeps focus on that link', async () => {
+    const p = await boot(env);
+    p.reads()[0].answer(200, { clients: [device('studio', 5)] });
+    await settle();
+    p.root().querySelector('.sources-manage').focus();
+    p.media.matches = true;
+    p.media.fire({ type: 'change' });
+    focusIsSomewhere(p, 'after the redraw');
+    const link = p.root().querySelector('.sources-manage');
+    assert.ok(p.doc.activeElement === link, `focus on the new "manage devices" (it is on ${tagOf(p.doc.activeElement)})`);
+    assert.strictEqual(p.root().querySelectorAll('article').length, 1, 'drawn as cards');
+  });
+
+  await test('a layout redraw leaves focus outside the view where it is', async () => {
+    const p = await boot(env);
+    p.reads()[0].answer(200, { clients: [] });
+    await settle();
+    const outside = p.doc.createElement('button');
+    p.doc.body.appendChild(outside);
+    outside.focus();
+    p.media.matches = true;
+    p.media.fire({ type: 'change' });
+    assert.ok(p.doc.activeElement === outside, `focus stays outside (it is on ${tagOf(p.doc.activeElement)})`);
+  });
+
   return cases;
 };
