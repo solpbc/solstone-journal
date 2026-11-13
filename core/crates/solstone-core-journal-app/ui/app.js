@@ -1080,7 +1080,14 @@ function renderFlow(view) {
     );
 
     if (!firstRun.location) {
-      firstRun.location = state.init?.default_location || '';
+      // A journal this install set up before (removing the app keeps it) comes first.
+      firstRun.location = state.status?.service?.journal || state.init?.default_location || '';
+      call('holdsJournal', { path: firstRun.location }).then(holds => {
+        if (holds !== firstRun.holdsJournal) {
+          firstRun.holdsJournal = holds;
+          renderFlow(state.flow);
+        }
+      }).catch(() => {});
     }
     const locationInput = el('input', {
       type: 'text',

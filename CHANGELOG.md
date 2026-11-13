@@ -25,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on windows, after you removed the journal app and installed it again, it could open to nothing but "installation identity record is tombstoned", and "try again" didn't help. it now starts setup instead, with your journal folder already filled in, and setup picks up your journal where it is, with everything in it.
 - "finish them" on home now says what finishing does: any original a stopped deletion hadn't deleted yet goes back in its segment. before, it said nothing was put back.
 - security fix: on linux, local thinking now starts with a new key every time, and only your own account can get it from your journal. before, a web page open in your browser, or another account on the same computer, could use local thinking, read its replies, and make it fetch images from addresses they chose. nothing in your journal could be read this way.
 - on a large journal, a connected agent's search for a common word could run past the agent's time limit, most often on the first search after the journal started. those searches now come back in about half the time. on a journal you already had, the faster search starts once your journal has been busy for a little while after you update.

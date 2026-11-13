@@ -15,7 +15,8 @@ use solstone_core_installation_identity::{
     ArtifactBindingEvidence, CleanUninstallPlan, CleanUninstallRequest, CleanupSkip,
     CleanupTargetDecision, CleanupTargetKind, GuardFields, IdentityError, OwnerBase, PlatformTag,
     ProtectedJournals, admit_clean_uninstall, journal_token_from_path, load_installation_binding,
-    may_remove_cleanup_target, owner_base, parse_service_guard_environment, root_token_from_path,
+    may_remove_cleanup_target, owner_base, parse_service_guard_environment,
+    read_installation_journal_census, root_token_from_path,
 };
 use solstone_core_journal::resolve_identity_root_from_executable_dir;
 use solstone_core_service_unit::{
@@ -1798,13 +1799,13 @@ const APP_STATUS_SCHEMA: &str = "solstone-journal-app-status-v1";
 /// app can tell that apart from a failure, which exits nonzero with the
 /// reason on stderr. One inspect, so one Task Scheduler worker.
 fn run_app_status() -> ExitCode {
-    match installation_binding_absent() {
-        Ok(true) => {
+    match app_binding() {
+        Ok(AppBinding::NotSetUp { journal }) => {
             println!(
                 "{}",
                 serde_json::json!({
                     "schema": APP_STATUS_SCHEMA,
-                    "journal": null,
+                    "journal": journal.as_deref().and_then(Path::to_str),
                     "installed": false,
                     "wants_running": false,
                     "running": false,
@@ -1816,7 +1817,7 @@ fn run_app_status() -> ExitCode {
             );
             return ExitCode::SUCCESS;
         }
-        Ok(false) => {}
+        Ok(AppBinding::Adopted) => {}
         Err(code) => return code,
     }
     let ctx = match resolve_context() {
@@ -2218,19 +2219,51 @@ fn run_before_uninstall() -> ExitCode {
 
 /// Whether this install root has no saved binding: `journal setup` has not
 /// run for it yet, or it has already been uninstalled.
-fn installation_binding_absent() -> Result<bool, ExitCode> {
+/// Whether this install has an adopted journal, as the Windows journal app asks
+/// at every launch before it offers setup or opens the journal.
+#[derive(Debug, PartialEq, Eq)]
+enum AppBinding {
+    Adopted,
+    /// No record, a record an uninstall retired (tombstoned), or one an
+    /// unfinished setup left (prepared). `journal` is the folder that record
+    /// last named, which an uninstall keeps, so the app can offer it again.
+    NotSetUp {
+        journal: Option<PathBuf>,
+    },
+}
+
+/// A retired or unfinished record is "not set up" to the app, as no record is:
+/// setup re-adopts a retired record under a new identity and finishes an
+/// unfinished one, and the app offers setup only to an install that is not set
+/// up. Reporting either as an error left a reinstalled app on that error at
+/// every launch, since its try-again only read the same record again.
+fn app_binding() -> Result<AppBinding, ExitCode> {
     let owner = owner_base().map_err(task_error)?;
     let exe = std::env::current_exe().map_err(task_error)?;
     let root =
         resolve_identity_root_from_executable_dir(exe.parent().unwrap_or_else(|| Path::new(".")))
             .ok_or_else(|| task_error("could not resolve uninstall root"))?;
     let token = root_token_from_path(&root).map_err(task_error)?;
-    match load_installation_binding(&owner, &token) {
-        Ok(_) => Ok(false),
+    app_binding_at(&owner, &token).map_err(task_error)
+}
+
+fn app_binding_at(
+    owner: &OwnerBase,
+    token: &solstone_core_installation_identity::RootToken,
+) -> Result<AppBinding, IdentityError> {
+    match load_installation_binding(owner, token) {
+        Ok(_) => Ok(AppBinding::Adopted),
         Err(IdentityError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
-            Ok(true)
+            Ok(AppBinding::NotSetUp { journal: None })
         }
-        Err(error) => Err(task_error(error)),
+        Err(IdentityError::NotAdopted(_)) => Ok(AppBinding::NotSetUp {
+            // Only an offer for the folder step: an unreadable census offers none.
+            journal: read_installation_journal_census(owner, token, true)
+                .ok()
+                .and_then(|census| census.root_record)
+                .map(|record| record.journal_token.to_path_buf()),
+        }),
+        Err(error) => Err(error),
     }
 }
 
@@ -2473,6 +2506,71 @@ mod uninstall_identity_hold_tests {
         assert_eq!(
             readmitted,
             Err(("identity", "PlanChangedAfterTaskRemoval".to_string()))
+        );
+    }
+
+    /// The app reads this before it offers setup. A record an uninstall retired
+    /// is not set up and names the journal it kept, and setup takes it back.
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn retired_installation_reads_as_not_set_up_with_its_journal() {
+        use super::{AppBinding, app_binding_at};
+        use solstone_core_installation_identity::{
+            ArtifactBindingEvidence, CleanUninstallRequest, LegacyManifestEvidence, OwnerBase,
+            PlatformTag, SetupAdmissionRequest, TestLocalAppData, admit_clean_uninstall,
+            admit_setup, journal_token_from_path, root_token_from_path,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let local_app_data = directory.path().join("local-app-data");
+        let root = directory.path().join("program");
+        let journal = directory.path().join("journal");
+        for path in [&local_app_data, &root, &journal] {
+            std::fs::create_dir_all(path).unwrap();
+        }
+        let _local_app_data = TestLocalAppData::new(local_app_data);
+        let owner =
+            OwnerBase::at_home(directory.path().to_path_buf(), PlatformTag::current()).unwrap();
+        let root_token = root_token_from_path(&root).unwrap();
+        let journal_token = journal_token_from_path(&journal).unwrap();
+        assert_eq!(
+            app_binding_at(&owner, &root_token).unwrap(),
+            AppBinding::NotSetUp { journal: None }
+        );
+        let setup = || {
+            admit_setup(SetupAdmissionRequest {
+                owner: owner.clone(),
+                root_token: root_token.clone(),
+                journal_token: journal_token.clone(),
+                journal_is_explicit: true,
+                accept_prepared_retarget: false,
+                legacy_manifest: LegacyManifestEvidence::Absent,
+                artifacts: ArtifactBindingEvidence::Fresh,
+            })
+            .unwrap()
+        };
+        drop(setup());
+        assert_eq!(
+            app_binding_at(&owner, &root_token).unwrap(),
+            AppBinding::Adopted
+        );
+        admit_clean_uninstall(CleanUninstallRequest {
+            owner: owner.clone(),
+            root_token: root_token.clone(),
+            artifacts: ArtifactBindingEvidence::Fresh,
+        })
+        .unwrap()
+        .commit_tombstone()
+        .unwrap();
+        assert_eq!(
+            app_binding_at(&owner, &root_token).unwrap(),
+            AppBinding::NotSetUp {
+                journal: Some(journal_token.to_path_buf())
+            }
+        );
+        drop(setup());
+        assert_eq!(
+            app_binding_at(&owner, &root_token).unwrap(),
+            AppBinding::Adopted
         );
     }
 }
