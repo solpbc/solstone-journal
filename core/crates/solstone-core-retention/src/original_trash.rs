@@ -277,7 +277,7 @@ pub fn link_before(
             Some(operation.as_str().to_owned()),
         ) {
             Ok(item) => linking.linked.push(item),
-            // Nothing of this segment is there to release.
+            // Nothing of this segment is there, under the door's hold, to release.
             Err(solstone_core_trash::TrashError::Missing(_)) => {}
             Err(solstone_core_trash::TrashError::Held(reason)) => {
                 linking.busy.push((release.target.clone(), reason));
@@ -493,8 +493,12 @@ impl Kind for Originals {
                 }
             }
         }
+        // Taken first: the door's admission puts back anything a stop left
+        // part way, so what is at each name is read after that.
+        let hold = SegmentHold::acquire(journal, &target)?;
         // A different file at a name would be put aside and erased by the
-        // recover: the owner's newer file is never the cost of a recover.
+        // recover: the owner's newer file is never the cost of a recover. It
+        // stays refused, and the item on its timer.
         if item.state == solstone_core_trash::State::Trashed {
             for path in &item.paths {
                 let live = journal.join(path);
@@ -510,7 +514,7 @@ impl Kind for Originals {
                 }
             }
         }
-        Ok(Box::new(SegmentHold::acquire(journal, &target)?))
+        Ok(Box::new(hold))
     }
 
     fn present(&self, journal: &Path, path: &str) -> bool {

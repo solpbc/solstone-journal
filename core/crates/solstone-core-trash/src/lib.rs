@@ -3223,25 +3223,24 @@ mod tests {
         );
     }
 
-    /// Two acts can't both keep the same file: the second finds it already
-    /// held by a linked item, and has nothing to link.
+    /// Two acts that link the same file both keep it until one settles: the
+    /// first finds the journal's name is still the file and drops its own; the
+    /// second, whose release took the name, keeps its own. Nothing is lost.
     #[test]
-    fn a_file_another_linked_item_holds_is_not_linked_twice() {
+    fn two_acts_on_one_file_never_lose_it() {
         let (_dir, root) = journal();
         let kind = Fake::default();
         let first = link(&root, &kind, &[AUDIO]);
-        let second = detach_linked(
-            &root,
-            &kind,
-            unit(),
-            Action::OriginalsRelease,
-            web(),
-            vec![AUDIO.into()],
-            &[],
-            None,
-        );
-        assert!(matches!(second, Err(TrashError::Missing(_))));
-        drop(first);
+        let second = link(&root, &kind, &[AUDIO]);
+        assert!(finish_linked(&root, &kind, first).unwrap().is_none());
+        fs::remove_file(root.join(AUDIO)).unwrap();
+        let kept = finish_linked(&root, &kind, second).unwrap().unwrap();
+        let held = root
+            .join(TRASH_DIR)
+            .join(&kept.id)
+            .join(FILES_DIR)
+            .join(AUDIO);
+        assert_eq!(fs::read(held).unwrap(), b"sound");
     }
 
     /// The owner's days count from when it settled, not when it was linked.

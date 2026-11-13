@@ -81,8 +81,8 @@ impl Linked {
 /// journal changes. Which paths are there is decided under the kind's hold,
 /// after whatever it puts right first (the door's recovery puts back an
 /// original a stop left part way), so a path the mechanism could still remove
-/// is never left out: one that isn't there is left out, as is one another
-/// linked item already holds. None left is [`TrashError::Missing`]. A path
+/// is never left out: only one that isn't there is left out. None left is
+/// [`TrashError::Missing`]. A path
 /// that can't be kept durably refuses the whole item and leaves nothing
 /// behind: the caller then removes nothing.
 #[expect(
@@ -128,18 +128,10 @@ pub fn detach_linked(
     ensure_trash(journal)?;
     let running = run_lock(journal, &item.id, LockOptions::default())?;
     let _lock = lock(journal)?;
-    let linked_elsewhere = |path: &String| {
-        holders(journal, path, &item.id).is_ok_and(|holders| {
-            holders.iter().any(|id| {
-                read_item(journal, id)
-                    .ok()
-                    .flatten()
-                    .is_some_and(|other| other.linked && other.paths.contains(path))
-            })
-        })
-    };
-    item.paths
-        .retain(|path| kind.present(journal, path) && !linked_elsewhere(path));
+    // Another linked item holding the same file is no reason to leave one
+    // out: the door is handed it either way, and two names to one file both
+    // keep it, so nothing is lost.
+    item.paths.retain(|path| kind.present(journal, path));
     if item.paths.is_empty() {
         return Err(TrashError::Missing(describe(&item.unit).to_owned()));
     }
