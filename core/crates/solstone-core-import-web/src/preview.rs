@@ -1109,7 +1109,7 @@ mod tests {
             fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
             program
         };
-        let actual = plan_using(
+        let actual = plan_written(
             &program,
             root.path(),
             &json!({"zone": "UTC", "timestamp": "20261111_120000"}),
@@ -1119,6 +1119,29 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(actual, size);
+    }
+
+    /// `plan_using` on a script the test just wrote. Under parallel tests a
+    /// sibling's fork can still hold the script's write handle when it is run
+    /// (`Text file busy`), so only that is tried again, briefly.
+    async fn plan_written(
+        program: &Path,
+        path: &Path,
+        options: &Value,
+        metadata: &ImportMetadata,
+        bound: Duration,
+    ) -> Result<Value, PreviewError> {
+        let mut tries = 0;
+        loop {
+            let result = plan_using(program, path, options, metadata, bound).await;
+            match &result {
+                Err(error) if tries < 50 && format!("{error:?}").contains("Text file busy") => {
+                    tries += 1;
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                _ => return result,
+            }
+        }
     }
 
     /// The route a desktop page takes: the importer as its own process.
@@ -1138,7 +1161,7 @@ mod tests {
         .unwrap();
         fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
         let options = json!({"zone": "UTC", "timestamp": "20261012_120000"});
-        let error = plan_using(
+        let error = plan_written(
             &program,
             root.path(),
             &options,
