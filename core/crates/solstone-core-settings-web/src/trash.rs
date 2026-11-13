@@ -76,6 +76,15 @@ fn view(journal_root: &Path, item: &Item) -> Value {
         (Unit::Facet, _) => return facet_view(journal_root, item),
         (Unit::FacetFile, _) => return facet_file_view(journal_root, item),
         (Unit::Speakers, _) => return speakers_view(item),
+        (
+            Unit::Originals {
+                day,
+                stream,
+                segment,
+                ..
+            },
+            _,
+        ) => return originals_view(journal_root, item, day, stream, segment),
         _ => ("other", String::new(), None, String::new()),
     };
     json!({
@@ -118,6 +127,32 @@ fn common(item: &Item, kind: &str) -> serde_json::Map<String, Value> {
     fields.insert("bytes".to_owned(), json!(item.bytes));
     fields.insert("surface".to_owned(), json!(item.surface));
     fields
+}
+
+/// Originals released from a segment that stays, as the page shows them: the
+/// segment, what was released (`audio`, `screen`), and where the segment
+/// stands, since a recover needs it back as itself.
+fn originals_view(
+    journal_root: &Path,
+    item: &Item,
+    day: &str,
+    stream: &str,
+    segment: &str,
+) -> Value {
+    use solstone_core_retention::original_trash;
+    let mut fields = common(item, "originals");
+    fields.insert("day".to_owned(), json!(day));
+    fields.insert("stream".to_owned(), json!(stream));
+    fields.insert("segment".to_owned(), json!(segment));
+    fields.insert(
+        "modalities".to_owned(),
+        json!(original_trash::modalities(item)),
+    );
+    fields.insert(
+        "segment_state".to_owned(),
+        json!(original_trash::segment_state(journal_root, item).tag()),
+    );
+    Value::Object(fields)
 }
 
 /// A person or topic as the page shows it: its name, its type, how many
@@ -398,6 +433,8 @@ fn recover_order(journal_root: &Path, ids: Vec<String>) -> Vec<String> {
             Unit::Entity => 2,
             Unit::FacetFile => 3,
             Unit::Speakers => 4,
+            // After the recording they were released from.
+            Unit::Originals { .. } => 2,
             _ => 1,
         },
         _ => 1,

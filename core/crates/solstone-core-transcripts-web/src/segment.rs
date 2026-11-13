@@ -465,7 +465,11 @@ fn prepare_segment(
             "audio": media.purged("audio"),
             "screen": media.purged("screen"),
         },
-        "media_removal": media.media_removal(&dir),
+        "media_removal": media.media_removal(
+            root,
+            &solstone_core_retention::layout::segment_rel(day, stream, key),
+            &dir,
+        ),
         "data_state": data_state,
         "signals": signals(&dir, zone),
         "transcripts_copy": copy_payload(),

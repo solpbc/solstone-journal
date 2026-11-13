@@ -95,8 +95,22 @@ pub async fn list(
     State(journal_root): State<PathBuf>,
     Query(query): Query<ReviewPageQuery>,
 ) -> Response {
-    match tokio::task::spawn_blocking(move || rendered_review(&journal_root, query.offset)).await {
-        Ok(Ok(page)) => uncached(Json(page).into_response()),
+    match tokio::task::spawn_blocking(move || {
+        rendered_review(&journal_root, query.offset).map(|page| {
+            // The days a policy original waits in the trash, for the dialog.
+            let days = solstone_core_retention::original_trash::erase_after_days(&journal_root);
+            (page, days)
+        })
+    })
+    .await
+    {
+        Ok(Ok((page, days))) => {
+            let mut page = serde_json::to_value(page).unwrap_or_else(|_| json!({}));
+            if let Value::Object(fields) = &mut page {
+                fields.insert("trash_days".to_owned(), json!(days));
+            }
+            uncached(Json(page).into_response())
+        }
         Ok(Err(state)) => list_response(state, Vec::new(), None),
         Err(_) => list_response(OUTCOME_UNKNOWN, Vec::new(), None),
     }
@@ -282,10 +296,32 @@ async fn approval_receiving(
 }
 
 pub async fn approval_status(
+    State(journal_root): State<PathBuf>,
     deps: Option<Extension<solstone_core_backup_web::BackupWebDeps>>,
     id: Result<RoutePath<String>, PathRejection>,
 ) -> Response {
-    approval_receiving(deps, id, false).await
+    let response = approval_receiving(deps, id, false).await;
+    if !response.status().is_success() {
+        return response;
+    }
+    // What the release took that waits in the trash, for the owner's result.
+    let Ok(bytes) = axum::body::to_bytes(response.into_body(), 4 * 1024 * 1024).await else {
+        return approval_unavailable("approve.unavailable", StatusCode::SERVICE_UNAVAILABLE);
+    };
+    let Ok(mut status) = serde_json::from_slice::<Value>(&bytes) else {
+        return approval_unavailable("approve.unavailable", StatusCode::SERVICE_UNAVAILABLE);
+    };
+    let annotated = tokio::task::spawn_blocking(move || {
+        if let Some(report) = status.get_mut("report").filter(|report| !report.is_null()) {
+            solstone_core_retention::original_trash::annotate_report(&journal_root, report);
+        }
+        status
+    })
+    .await;
+    match annotated {
+        Ok(status) => uncached(Json(status).into_response()),
+        Err(_) => approval_unavailable("approve.unavailable", StatusCode::SERVICE_UNAVAILABLE),
+    }
 }
 
 pub async fn cancel_approval(

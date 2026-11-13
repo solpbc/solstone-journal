@@ -249,7 +249,10 @@ mod tests {
 
         fs::write(
             &events_path,
-            format!("{deleted}\n{recovered}\n{}\n", deleted.replace("1000", "3000")),
+            format!(
+                "{deleted}\n{recovered}\n{}\n",
+                deleted.replace("1000", "3000")
+            ),
         )
         .unwrap();
         assert_eq!(

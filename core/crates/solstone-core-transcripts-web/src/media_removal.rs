@@ -11,12 +11,18 @@ use solstone_core_retention::{RawReleaseClass, recorded_original_deletions};
 pub(crate) struct MediaRemoval {
     pub(crate) audio: Option<String>,
     pub(crate) screen: Option<String>,
+    /// A trash item holds this modality's missing original: recoverable.
+    pub(crate) audio_in_trash: bool,
+    pub(crate) screen_in_trash: bool,
 }
 
+/// Why a segment's original media is missing. `in_trash` says whether a
+/// trash item holds a missing original, by its bare name.
 pub(crate) fn compute_media_removal(
     dir: &Path,
     purged: &BTreeMap<String, bool>,
     missing_referenced_files: &BTreeMap<String, BTreeSet<String>>,
+    in_trash: &dyn Fn(&str) -> bool,
 ) -> MediaRemoval {
     let audio_purged = purged.get("audio").copied().unwrap_or(false);
     let screen_purged = purged.get("screen").copied().unwrap_or(false);
@@ -26,28 +32,35 @@ pub(crate) fn compute_media_removal(
     }
 
     let recorded = recorded_original_deletions(dir);
-
-    let audio = if audio_purged {
-        Some(reason_for_modality(
-            "audio",
-            missing_referenced_files.get("audio"),
-            &recorded,
-        ))
-    } else {
-        None
+    let trashed = |modality: &str| {
+        missing_referenced_files
+            .get(modality)
+            .is_some_and(|missing| missing.iter().any(|name| in_trash(name)))
+    };
+    let (audio_in_trash, screen_in_trash) =
+        (audio_purged && trashed("audio"), screen_purged && trashed("screen"));
+    let reason = |modality: &str, in_trash: bool| {
+        if in_trash {
+            in_trash_reason(modality)
+        } else {
+            reason_for_modality(modality, missing_referenced_files.get(modality), &recorded)
+        }
     };
 
-    let screen = if screen_purged {
-        Some(reason_for_modality(
-            "screen",
-            missing_referenced_files.get("screen"),
-            &recorded,
-        ))
-    } else {
-        None
-    };
+    MediaRemoval {
+        audio: audio_purged.then(|| reason("audio", audio_in_trash)),
+        screen: screen_purged.then(|| reason("screen", screen_in_trash)),
+        audio_in_trash,
+        screen_in_trash,
+    }
+}
 
-    MediaRemoval { audio, screen }
+/// A missing original a trash item holds, which the owner can still recover.
+fn in_trash_reason(modality: &str) -> String {
+    match modality {
+        "audio" => "this segment's original audio is in the trash".to_owned(),
+        _ => "this segment's original screen media is in the trash".to_owned(),
+    }
 }
 
 fn reason_for_modality(

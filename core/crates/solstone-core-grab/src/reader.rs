@@ -289,8 +289,20 @@ pub(crate) fn load_bundle(
         .and_then(Value::as_str);
     let cause = (jsonl_path.is_some() && video_path.is_none())
         .then(|| missing_video_cause(&segment_path, header_raw));
+    // Released to the trash: the owner can still recover it.
+    let in_trash = cause.is_some()
+        && header_raw
+            .filter(|raw| !raw.contains('/') && !raw.contains('\\'))
+            .is_some_and(|raw| {
+                solstone_core_retention::original_trash::in_trash(
+                    journal,
+                    &solstone_core_retention::layout::segment_rel(day, stream, segment),
+                    raw,
+                )
+            });
     let status = match (jsonl_path.is_some(), video_path.is_some()) {
         (false, true) => "captured but not analyzed",
+        (true, false) if in_trash => "analyzed; the original video is in the trash",
         (true, false) => missing_video_status(cause.flatten()),
         (true, true) => "analyzed",
         (false, false) => {
@@ -317,7 +329,11 @@ pub(crate) fn load_bundle(
         legacy_schema,
         header_only,
         status,
-        missing_video_reason: cause.map(missing_video_reason),
+        missing_video_reason: if in_trash {
+            Some("the original video is in the trash, where you can recover it in settings")
+        } else {
+            cause.map(missing_video_reason)
+        },
         window,
     })
 }

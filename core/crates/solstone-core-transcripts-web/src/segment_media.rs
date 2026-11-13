@@ -114,12 +114,25 @@ impl SegmentMedia {
     pub(crate) fn purged(&self, modality: &str) -> bool {
         self.has_raw_reference[modality] && !self.has_raw_file[modality]
     }
-    pub(crate) fn media_removal(&self, dir: &Path) -> crate::media_removal::MediaRemoval {
+    pub(crate) fn media_removal(
+        &self,
+        journal_root: &Path,
+        segment_rel: &str,
+        dir: &Path,
+    ) -> crate::media_removal::MediaRemoval {
         let purged = BTreeMap::from([
             ("audio".to_owned(), self.purged("audio")),
             ("screen".to_owned(), self.purged("screen")),
         ]);
-        crate::media_removal::compute_media_removal(dir, &purged, &self.missing_referenced_files)
+        let in_trash = |name: &str| {
+            solstone_core_retention::original_trash::in_trash(journal_root, segment_rel, name)
+        };
+        crate::media_removal::compute_media_removal(
+            dir,
+            &purged,
+            &self.missing_referenced_files,
+            &in_trash,
+        )
     }
     fn count(&mut self, modality: &str, path: &Path) {
         let resolved = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());

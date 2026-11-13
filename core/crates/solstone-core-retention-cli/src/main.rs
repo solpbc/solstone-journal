@@ -40,7 +40,7 @@
 //! that silently supplied `now` would hand that property back.
 
 use solstone_core_removals::{Action, Page, Removal, Surface, Unit};
-use solstone_core_retention::record::{record_released_originals, record_removed_segments};
+use solstone_core_retention::record::record_removed_segments;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -62,6 +62,7 @@ use solstone_core_retention::marks::{
 };
 use solstone_core_retention::oplog_retention::{OplogRetentionPlan, plan_oplog_retention};
 use solstone_core_retention::original_deletion::RawReleaseClass;
+use solstone_core_retention::original_trash;
 use solstone_core_retention::policy::Policy;
 use solstone_core_retention::receipt::{Outcome, Target};
 use solstone_core_retention::remove_marked::remove_marked;
@@ -285,12 +286,33 @@ fn record_segments(args: &Args, journal: &Path, action: Action, outcome: &Outcom
     record_removed_segments(&Removal::begin(journal, action, surface(args)), outcome);
 }
 
-/// Add the original files a run released to the journal's deletion record.
-fn record_originals(args: &Args, journal: &Path, outcome: &Outcome) {
-    record_released_originals(
-        &Removal::begin(journal, Action::RetentionTool, surface(args)),
-        outcome,
-    );
+/// Keep a second name in the trash for the originals a run is about to
+/// release: a delete from the command line always goes to the trash, where the
+/// owner can recover it until its erase date. The door then releases them as
+/// it always has, and [`keep_originals`] keeps what left.
+fn link_originals(
+    args: &Args,
+    journal: &Path,
+    releases: &[original_trash::Release],
+    class: RawReleaseClass,
+) -> Result<Vec<original_trash::Linked>, String> {
+    original_trash::link_before(
+        journal,
+        releases,
+        class,
+        Action::RetentionTool,
+        surface(args),
+    )
+    .map_err(|error| {
+        format!("the trash couldn't take these originals, so nothing was released: {error}")
+    })
+}
+
+/// Keep in the trash what the run released; the trash records it. Returns
+/// what the trash's sweep still has to settle.
+fn keep_originals(journal: &Path, linked: Vec<original_trash::Linked>) -> Option<String> {
+    let unsettled = original_trash::keep_after(journal, linked);
+    (!unsettled.is_empty()).then(|| unsettled.join("; "))
 }
 
 /// Move named segments to the trash. ⛔ Never erases: a delete from the command
@@ -444,7 +466,17 @@ fn run_release_raw(args: &Args) -> ExitCode {
         }
     }
 
+    let linked = match link_originals(
+        args,
+        &journal,
+        &original_trash::of_proven(&proven),
+        RawReleaseClass::Owner,
+    ) {
+        Ok(linked) => linked,
+        Err(error) => return fail(&error),
+    };
     let (outcome, tally) = release_raw(&journal, &proven, RawReleaseClass::Owner, at);
+    let trash_unsettled = keep_originals(&journal, linked);
     // Raw-file release has no `.removing_` rename, so door::release_raw cannot
     // currently produce a staged row. Keep this defensive registration path for a
     // future door change, and preserve the completed outcome if its register write fails.
@@ -480,7 +512,6 @@ fn run_release_raw(args: &Args) -> ExitCode {
             register_errors.push(error.to_string());
         }
     }
-    record_originals(args, &journal, &outcome);
     finish(
         &journal,
         outcome,
@@ -489,6 +520,7 @@ fn run_release_raw(args: &Args) -> ExitCode {
             "held": held,
             "evidence": { "on_record": tally.on_record, "on_legacy_rows": tally.on_legacy_rows },
             "register_error": (!register_errors.is_empty()).then(|| register_errors.join("; ")),
+            "trash_unsettled": trash_unsettled,
         }),
     )
 }
@@ -838,8 +870,22 @@ fn run_sweep(args: &Args) -> ExitCode {
             EXIT_OK,
         );
     }
+    let proven: Vec<_> = plan
+        .candidates
+        .iter()
+        .flat_map(|candidate| candidate.proven.iter().cloned())
+        .collect();
+    let linked = match link_originals(
+        args,
+        &journal,
+        &original_trash::of_proven(&proven),
+        RawReleaseClass::Owner,
+    ) {
+        Ok(linked) => linked,
+        Err(error) => return fail(&error),
+    };
     let (outcome, tally) = execute_sweep(&journal, &plan, now);
-    record_originals(args, &journal, &outcome);
+    let trash_unsettled = keep_originals(&journal, linked);
     finish(
         &journal,
         outcome,
@@ -848,6 +894,7 @@ fn run_sweep(args: &Args) -> ExitCode {
             "executed": true,
             "plan": plan_json(&plan),
             "evidence": { "on_record": tally.on_record, "on_legacy_rows": tally.on_legacy_rows },
+            "trash_unsettled": trash_unsettled,
         }),
     )
 }
@@ -1149,15 +1196,25 @@ fn run_remove_marked(args: &Args) -> ExitCode {
             );
         }
     };
+    let linked = match link_originals(
+        args,
+        &journal,
+        &original_trash::of_preflight(&marks),
+        RawReleaseClass::Policy,
+    ) {
+        Ok(linked) => linked,
+        Err(error) => return verb_fail("remove-marked", &error),
+    };
     let mut register_errors = Vec::new();
     let outcome = remove_marked(&journal, &marks, &policy, today, now, &mut register_errors);
-    record_originals(args, &journal, &outcome);
+    let trash_unsettled = keep_originals(&journal, linked);
     finish(
         &journal,
         outcome,
         serde_json::json!({
             "verb": "remove-marked",
             "register_error": (!register_errors.is_empty()).then(|| register_errors.join("; ")),
+            "trash_unsettled": trash_unsettled,
         }),
     )
 }

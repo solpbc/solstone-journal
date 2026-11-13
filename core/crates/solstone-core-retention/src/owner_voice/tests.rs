@@ -542,3 +542,63 @@ fn an_original_removed_after_verification_is_not_our_deletion() {
         OwedState::NotOwed
     );
 }
+
+/// The trap: an original voice-only still owed, released to the trash by the
+/// command line and recovered, is never owed again, so the daily catch-up
+/// leaves it in place.
+#[test]
+fn a_recovered_original_is_not_released_again_by_voice_only() {
+    use crate::content::{ContentName, MediaClassifier};
+    use crate::original_trash::{Originals, keep_after, link_before, of_proven};
+    fn audio(name: &ContentName) -> bool {
+        matches!(name.extension().as_deref(), Some("m4a"))
+    }
+    let fixture = fixture("analyzed");
+    let journal = &fixture.journal;
+    assert_eq!(
+        owner_voice_deletion_state(&fixture.segment, &fixture.jsonl),
+        OwedState::Owed,
+        "the fixture starts owed"
+    );
+    let classifier: &dyn MediaClassifier = &audio;
+    let proven = [crate::eligibility::ProvenRaw::for_test(
+        classifier,
+        "20261020",
+        "watch",
+        "120000_300",
+        "120000_300.m4a",
+        AUDIO.len() as u64,
+    )
+    .unwrap()];
+    let linked = link_before(
+        journal,
+        &of_proven(&proven),
+        RawReleaseClass::Owner,
+        Action::RetentionTool,
+        Surface::Cli,
+    )
+    .unwrap();
+    let _ = crate::door::release_raw(journal, &proven, RawReleaseClass::Owner, at());
+    assert!(keep_after(journal, linked).is_empty());
+    assert!(!fixture.original.exists());
+    let item = solstone_core_trash::list(journal).unwrap().remove(0);
+    solstone_core_trash::attach(
+        journal,
+        &[&Originals],
+        &item.id,
+        Action::Recover,
+        Surface::Web {
+            page: solstone_core_removals::Page::Settings,
+        },
+    )
+    .unwrap();
+    assert_eq!(fs::read(&fixture.original).unwrap(), AUDIO);
+    assert_eq!(
+        owner_voice_deletion_state(&fixture.segment, &fixture.jsonl),
+        OwedState::NotOwed
+    );
+    let today = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+    let counts = finish_owed_owner_voice_deletions(journal, today, 0, Duration::ZERO, &at);
+    assert_eq!(counts.deleted, 0);
+    assert_eq!(fs::read(&fixture.original).unwrap(), AUDIO, "still there");
+}

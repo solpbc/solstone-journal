@@ -149,6 +149,53 @@ pub fn sync_dir(root: &Path, dir_rel: &str) -> Result<(), PathError> {
     sync_contained_directory(&path).map_err(|source| PathError::Io { path, source })
 }
 
+/// How many names the file at `path` has, the leaf's own if it is a link.
+///
+/// For a caller that keeps a second name for a file and must know whether its
+/// name is now the last one: one means nothing else in the filesystem holds
+/// those bytes.
+#[cfg(unix)]
+pub fn link_count(path: &Path) -> io::Result<u64> {
+    use std::os::unix::fs::MetadataExt;
+    Ok(fs::symlink_metadata(path)?.nlink())
+}
+
+/// How many names the file at `path` has, the leaf's own if it is a link.
+#[cfg(windows)]
+pub fn link_count(path: &Path) -> io::Result<u64> {
+    use std::os::windows::io::AsRawHandle;
+    crate::windows_identity::file_link_count(open_attributes(path)?.as_raw_handle())
+}
+
+/// Whether `left` and `right` name the same file, neither leaf followed.
+#[cfg(unix)]
+pub fn same_file(left: &Path, right: &Path) -> io::Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+    let (left, right) = (fs::symlink_metadata(left)?, fs::symlink_metadata(right)?);
+    Ok(left.dev() == right.dev() && left.ino() == right.ino())
+}
+
+/// Whether `left` and `right` name the same file, neither leaf followed.
+#[cfg(windows)]
+pub fn same_file(left: &Path, right: &Path) -> io::Result<bool> {
+    let identity =
+        |path: &Path| crate::windows_identity::windows_file_identity(&open_attributes(path)?);
+    Ok(identity(left)? == identity(right)?)
+}
+
+#[cfg(windows)]
+fn open_attributes(path: &Path) -> io::Result<fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_READ_ATTRIBUTES: u32 = 0x80;
+    const FILE_SHARE_ALL: u32 = 0x1 | 0x2 | 0x4;
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    fs::OpenOptions::new()
+        .access_mode(FILE_READ_ATTRIBUTES)
+        .share_mode(FILE_SHARE_ALL)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+}
+
 #[cfg(not(windows))]
 fn sync_contained_directory(path: &Path) -> io::Result<()> {
     fs::File::open(path)?.sync_all()

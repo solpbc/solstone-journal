@@ -3,7 +3,7 @@
 
 //! Run an already admitted reviewed removal and retain its whole owning return.
 
-use solstone_core_removals::{Action, Page, Removal, Surface};
+use solstone_core_removals::{Action, Page, Surface};
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     path::PathBuf,
@@ -22,8 +22,8 @@ use solstone_core_backup::archive_admission::AdmissionError;
 use solstone_core_backup::archive_readback::{OwnedSettledDirectRead, RefusedDirectRead};
 use solstone_core_backup_runtime::ClosedToolError;
 use solstone_core_journal_io::JournalRoot;
-use solstone_core_retention::Outcome;
 use solstone_core_retention::marks::RemovalClass;
+use solstone_core_retention::original_trash;
 use solstone_core_retention::remove_marked::{
     OwnedReviewedArchiveFinish, ReviewedArchiveReport, ReviewedRemovalFinish, remove_reviewed,
     remove_reviewed_with_owned_archive,
@@ -31,6 +31,7 @@ use solstone_core_retention::remove_marked::{
 use solstone_core_retention::review_context::{
     CheckedReviewContext, ReviewContext, ReviewRefusal, check_review_context,
 };
+use solstone_core_retention::{Outcome, RawReleaseClass};
 
 use super::{
     ArchivePayload, ArchiveTicket, OwnedArchiveBegin, PreparedArchiveWorker, begin_owned_locked,
@@ -57,6 +58,9 @@ enum UnusedRefusal {
     Budget(AdmissionError),
     Tools(ClosedToolError),
     ResolverUnknown,
+    /// The trash couldn't keep the selection's policy originals, so nothing
+    /// was released.
+    Trash,
 }
 
 struct UnusedApproval {
@@ -347,6 +351,21 @@ fn run_pending(slot: &SharedOperationSlot, ticket: &ArchiveTicket) {
         Ok(Err(refusal)) => return retain_unused(slot, input, refusal),
         Err(_) => return retain_unused(slot, input, UnusedRefusal::ResolverUnknown),
     };
+    // The owner's approval of a policy release puts those originals in the
+    // trash: it keeps a second name for each before the door releases them,
+    // then keeps what left. Offload originals are media offload, kept in the
+    // backup, and aren't trashed.
+    let journal = input.checked.root().canonical_path().to_path_buf();
+    let linked = match original_trash::link_before(
+        &journal,
+        &original_trash::of_policy_marks(input.checked.marks()),
+        RawReleaseClass::Policy,
+        Action::OriginalsRelease,
+        Surface::Web { page: Page::Home },
+    ) {
+        Ok(linked) => linked,
+        Err(_) => return retain_unused(slot, input, UnusedRefusal::Trash),
+    };
     let ApprovalInput {
         begin,
         checked,
@@ -356,12 +375,17 @@ fn run_pending(slot: &SharedOperationSlot, ticket: &ArchiveTicket) {
         ..
     } = input;
     let (Some(repository), Some(restic)) = (repository, restic) else {
-        return remove_local(slot, begin, checked, today, now);
+        return remove_local(slot, begin, checked, today, now, linked);
     };
     let generation = begin.generation();
-    match prepare_read(slot, begin, repository, restic.invocation()) {
-        Some(worker) => remove(slot, worker, checked, today, now),
+    let prepared = prepare_read(slot, begin, repository, restic.invocation());
+    match prepared {
+        Some(worker) => {
+            remove(slot, worker, checked, today, now);
+            original_trash::keep_after(&journal, linked);
+        }
         None => {
+            original_trash::keep_after(&journal, linked);
             // A parked whole failure keeps the selected context beside it rather
             // than manufacturing a retry; a released one leaves nothing to keep.
             let mut state = slot.lock().unwrap_or_else(|error| error.into_inner());
@@ -427,6 +451,7 @@ fn unused_reason(refusal: &UnusedRefusal) -> String {
         .into(),
         UnusedRefusal::Tools(error) => error.to_string(),
         UnusedRefusal::ResolverUnknown => "resolver_unknown".into(),
+        UnusedRefusal::Trash => "trash_unavailable".into(),
     }
 }
 
@@ -791,8 +816,10 @@ fn remove_local(
     checked: CheckedReviewContext,
     today: NaiveDate,
     now: DateTime<Utc>,
+    linked: Vec<original_trash::Linked>,
 ) {
     let ticket = ArchiveTicket(Arc::clone(&begin.ticket.0));
+    let journal = checked.root().canonical_path().to_path_buf();
     let admitted =
         if !start_owned_worker(slot, &ticket) || !std::ptr::eq(checked.root(), &*ticket.0.root) {
             Err("failed")
@@ -800,30 +827,21 @@ fn remove_local(
             entry_current(slot, &ticket)
         };
     if let Err(reason) = admitted {
-        return return_owned(
+        return_owned(
             slot,
             ticket,
             None,
             ArchivePayload::BeginHeld(Box::new(begin)),
             Terminal::error(reason),
         );
+        original_trash::keep_after(&journal, linked);
+        return;
     }
     drop(begin);
     let mut terminal = Terminal::error("failed");
-    let journal = checked.root().canonical_path().to_path_buf();
     let actor = catch_unwind(AssertUnwindSafe(|| {
+        // What it releases waits in the trash, which records it there.
         let removal = remove_reviewed(checked, today, now);
-        // Only Home's approve starts a policy release, so its surface is Home.
-        // An offload release is media offload, which removes nothing the owner
-        // keeps, and is not recorded.
-        solstone_core_retention::record::record_released_originals(
-            &Removal::begin(
-                &journal,
-                Action::OriginalsRelease,
-                Surface::Web { page: Page::Home },
-            ),
-            removal.outcome(),
-        );
         project(
             &mut terminal,
             removal.outcome(),
@@ -872,7 +890,11 @@ fn remove_local(
         }
         ArchivePayload::OrdinaryUnknown
     });
+    // Handing the result back releases the journal; only then can the trash
+    // settle what the door released. A held result keeps the journal, and its
+    // items wait for the sweep.
     return_owned(slot, ticket, None, payload, terminal);
+    original_trash::keep_after(&journal, linked);
 }
 
 fn project(terminal: &mut Terminal, outcome: &Outcome, report: Value) {

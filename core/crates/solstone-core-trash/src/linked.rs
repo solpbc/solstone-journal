@@ -6,29 +6,54 @@
 //! Some things leave the journal through a mechanism of their own that already
 //! proves what it removes and recovers from a stop part way: retention's door
 //! releasing an original recording file from a segment that stays. Rather than
-//! move those files itself, the trash keeps a second link to each one first
+//! move those files itself, the trash keeps a second name for each one first
 //! ([`detach_linked`]), the mechanism removes the journal's name as it always
 //! has, and [`finish_linked`] keeps what left and drops the rest. Erasing the
 //! item unlinks the last name, so the space comes back then.
 //!
+//! # Settling
+//!
+//! Under the kind's hold, and only once its check passes (for the door: no
+//! release part way anywhere in the journal), each path is settled by what the
+//! trash's name is the name of, never by whether a name is present:
+//!
+//! - the journal's name is the same file: the mechanism didn't remove it, so
+//!   the trash's name is dropped;
+//! - the thing it belongs to has left the journal since (the recording went to
+//!   the trash or was removed) and another name still holds the file: that
+//!   other name keeps it, so the trash's is dropped;
+//! - otherwise the trash's name is now the file's only one, and it is kept.
+//!
+//! Where the filesystem has no hard links, the item holds a copy instead, and
+//! a copy is kept only when the journal's name is gone.
+//!
+//! # Locks
+//!
 //! While the request that linked an item is running it holds the item's run
-//! lock, and nothing else settles it. A stop leaves the item
-//! [`State::Detaching`] with `linked` set; the sweep settles it the same way,
-//! under the kind's hold, so a file the mechanism put back is never kept.
+//! lock, and nothing else settles it; a stop leaves the item
+//! [`State::Detaching`] with `linked` set, for the sweep. ⛔ Every acquisition
+//! here other than the run lock taken in [`detach_linked`] on a fresh item is
+//! a try: the kind's hold (the door's admission is a zero-timeout try), the
+//! run lock in the sweep, so the order (hold, run lock, trash lock in
+//! [`detach_linked`]; run lock, hold, trash lock in settling) can never wait
+//! in a cycle. Keep it that way.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use chrono::{Duration, SecondsFormat, Utc};
+use solstone_core_journal_io::entry::{link_count, same_file, sync_dir};
 use solstone_core_journal_io::locking::{FileLock, LockOptions, hold_lock};
 use solstone_core_journal_io::paths::path_lexists;
 use solstone_core_removals::{Action, Event, Surface, Unit};
 
 use super::{
-    Item, Kind, SCHEMA, State, TrashError, abandon, describe, ensure_trash,
-    ensure_trash_parent, erase_after_days, files_rel, item_id, journal_entry, keep, lock,
-    publish, publish_new, read_item, removal, sync_trash_parent, trash_entry, trash_root,
-    tree_bytes,
+    FILES_DIR, Item, Kind, SCHEMA, State, TrashError, abandon, describe, ensure_trash,
+    ensure_trash_parent, erase_after_days, files_rel, item_id, journal_entry, keep, kept, lock,
+    publish, publish_new, read_item, removal, trash_entry, trash_root, tree_bytes,
 };
+
+/// What the item keeps: the paths it holds as copies, one per line.
+const COPIES: &str = "linked-copies";
 
 /// An item [`detach_linked`] published, held until [`finish_linked`].
 #[must_use = "an item left unfinished waits for the sweep"]
@@ -44,11 +69,16 @@ impl Linked {
     }
 }
 
-/// Keep a second link to each of `paths` in a new item, before a mechanism of
+/// Keep a second name for each of `paths` in a new item, before a mechanism of
 /// the kind's own removes them from the journal. `kept` are bytes the kind
-/// keeps with the item ([`keep`]) for its references. A path that can't be
-/// linked leaves nothing behind and refuses the whole item: the caller then
-/// removes nothing.
+/// keeps with the item ([`keep`]) for its references; `operation` is the
+/// owner act's, when it trashes several things together. Nothing in the
+/// journal changes. A path that isn't there, or can't be kept durably, refuses
+/// the whole item and leaves nothing behind: the caller then removes nothing.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the detach's own arguments, and the kind's kept bytes and the act's operation"
+)]
 pub fn detach_linked(
     journal: &Path,
     kind: &dyn Kind,
@@ -57,12 +87,12 @@ pub fn detach_linked(
     surface: Surface,
     paths: Vec<String>,
     kept: &[(&str, &[u8])],
+    operation: Option<String>,
 ) -> Result<Linked, TrashError> {
     if paths.is_empty() {
         return Err(TrashError::Missing(describe(&unit).to_owned()));
     }
     let now = Utc::now();
-    let erase_at = now + Duration::days(i64::from(erase_after_days(journal)));
     let mut item = Item {
         schema: SCHEMA,
         id: item_id(now),
@@ -71,13 +101,13 @@ pub fn detach_linked(
         action,
         surface,
         trashed_at: now.to_rfc3339_opts(SecondsFormat::Millis, true),
-        erase_at: erase_at.to_rfc3339_opts(SecondsFormat::Millis, true),
+        erase_at: now.to_rfc3339_opts(SecondsFormat::Millis, true),
         paths,
         bytes: 0,
         pending: None,
         refs: Vec::new(),
         label: None,
-        operation: None,
+        operation,
         linked: true,
     };
     let hold = kind.hold(journal, &item).map_err(TrashError::Held)?;
@@ -101,17 +131,21 @@ pub fn detach_linked(
         for (name, bytes) in kept {
             keep(journal, &item.id, name, bytes)?;
         }
+        let mut copies = Vec::new();
         for path in &item.paths {
             hold.moving(path).map_err(TrashError::Held)?;
             let trashed = files_rel(&item.id, path);
             ensure_trash_parent(journal, &trashed)?;
-            link_entry(
-                &journal_entry(journal, path)?,
-                &trash_entry(journal, &trashed)?,
-            )?;
-            sync_trash_parent(journal, &trashed);
+            let held = trash_entry(journal, &trashed)?;
+            if link_entry(&journal_entry(journal, path)?, &held)? == Linking::Copied {
+                copies.push(path.clone());
+            }
+            flush_chain(journal, &item.id, path)?;
         }
-        Ok(())
+        if !copies.is_empty() {
+            keep(journal, &item.id, COPIES, copies.join("\n").as_bytes())?;
+        }
+        flush_trash_root(journal)
     });
     if let Err(error) = linked {
         // Nothing in the journal changed: a second name, or a copy, is all
@@ -129,7 +163,8 @@ pub fn detach_linked(
 
 /// Settle an item [`detach_linked`] published, once the mechanism has run:
 /// keep what left the journal, drop what is still there. `None` when nothing
-/// left, and then no item remains. An error leaves the item for the sweep.
+/// left, and then no item remains. An error leaves the item for the sweep,
+/// as does a hold that refuses because the journal is busy.
 pub fn finish_linked(
     journal: &Path,
     kind: &dyn Kind,
@@ -137,7 +172,9 @@ pub fn finish_linked(
 ) -> Result<Option<Item>, TrashError> {
     let result = settle(journal, kind, &linked.id);
     drop(linked.running.take());
-    remove_run_lock(journal, &linked.id);
+    if result.is_ok() {
+        remove_run_lock(journal, &linked.id);
+    }
     result
 }
 
@@ -156,7 +193,9 @@ pub(crate) fn resume(journal: &Path, kind: &dyn Kind, id: &str) -> Result<(), Tr
     };
     let result = settle(journal, kind, id).map(|_| ());
     drop(running);
-    remove_run_lock(journal, id);
+    if result.is_ok() {
+        remove_run_lock(journal, id);
+    }
     result
 }
 
@@ -173,10 +212,36 @@ pub(crate) fn running(journal: &Path, id: &str) -> bool {
     .is_err()
 }
 
+/// Run-lock sidecars whose item is settled or gone: a probe of a busy item
+/// can leave one behind.
+pub(crate) fn tidy_run_locks(journal: &Path) {
+    let Ok(listing) = std::fs::read_dir(trash_root(journal)) else {
+        return;
+    };
+    for entry in listing.flatten() {
+        let Some(id) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.strip_suffix(".run.lock"))
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        let waiting = read_item(journal, &id)
+            .ok()
+            .flatten()
+            .is_some_and(|item| item.state == State::Detaching);
+        if !waiting && !running(journal, &id) {
+            remove_run_lock(journal, &id);
+        }
+    }
+}
+
 fn settle(journal: &Path, kind: &dyn Kind, id: &str) -> Result<Option<Item>, TrashError> {
     let item = read_item(journal, id)?.ok_or(TrashError::NotInTrash)?;
-    // The kind's hold first: the door's admission finishes or puts back any
-    // release a stop left part way, so what is absent now is gone for good.
+    // The kind's hold, and its check passing: for the door, nothing is part
+    // way through a release anywhere in the journal, so no stage still holds
+    // a file this item names.
     let hold = kind.hold(journal, &item).map_err(TrashError::Held)?;
     hold.check().map_err(TrashError::Held)?;
     let _lock = lock(journal)?;
@@ -186,48 +251,88 @@ fn settle(journal: &Path, kind: &dyn Kind, id: &str) -> Result<Option<Item>, Tra
     if item.state != State::Detaching {
         return Ok(Some(item));
     }
-    let mut kept = Vec::new();
+    let copies: Vec<String> = kept(journal, &item.id, COPIES)?
+        .map(|bytes| {
+            String::from_utf8_lossy(&bytes)
+                .lines()
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut keeping = Vec::new();
     for path in &item.paths {
         let held = trash_entry(journal, &files_rel(&item.id, path))?;
         if !path_lexists(&held)? {
             continue;
         }
-        if kind.present(journal, path) {
-            // Still in the journal: the mechanism didn't remove it.
+        let live = journal_entry(journal, path)?;
+        let released = if copies.contains(path) {
+            !kind.present(journal, path)
+        } else if path_lexists(&live)? && same_file(&live, &held).map_err(io)? {
+            false
+        } else if !kind.returns(journal, &item, path) {
+            // What it belongs to left the journal since: kept only if no other
+            // name (that thing's own item) still holds it.
+            link_count(&held).map_err(io)? == 1
+        } else {
+            true
+        };
+        if released {
+            keeping.push(path.clone());
+        } else {
             hold.moving(path).map_err(TrashError::Held)?;
             drop_link(&held)?;
-            continue;
         }
-        kept.push(path.clone());
     }
-    if kept.is_empty() {
+    if keeping.is_empty() {
         abandon(journal, &item);
         return Ok(None);
     }
-    if kept != item.paths {
-        item.unit = kind.narrowed(&item.unit, &kept);
-        item.paths = kept;
-        item.bytes = item
-            .paths
-            .iter()
-            .filter_map(|path| trash_entry(journal, &files_rel(&item.id, path)).ok())
-            .map(|held| tree_bytes(&held))
-            .sum();
-        publish(journal, &item)?;
+    if keeping != item.paths {
+        item.unit = kind.narrowed(&item.unit, &keeping);
+        item.paths = keeping;
     }
+    item.bytes = item
+        .paths
+        .iter()
+        .filter_map(|path| trash_entry(journal, &files_rel(&item.id, path)).ok())
+        .map(|held| tree_bytes(&held))
+        .sum();
+    // It is in the trash from now: the owner's days count from here.
+    let now = Utc::now();
+    item.trashed_at = now.to_rfc3339_opts(SecondsFormat::Millis, true);
+    item.erase_at = (now + Duration::days(i64::from(erase_after_days(journal))))
+        .to_rfc3339_opts(SecondsFormat::Millis, true);
+    publish(journal, &item)?;
     kind.references(journal, &item, super::Change::Detached, &item.paths)
         .map_err(TrashError::Io)?;
-    let at = item.trashed_at().unwrap_or_else(Utc::now);
-    removal(journal, &item, None, at, item.action, item.surface)
-        .record_event(Event::Trashed, item.unit.clone());
+    removal(
+        journal,
+        &item,
+        item.operation.as_deref(),
+        now,
+        item.action,
+        item.surface,
+    )
+    .record_event(Event::Trashed, item.unit.clone());
     item.state = State::Trashed;
     publish(journal, &item)?;
     Ok(Some(item))
 }
 
+fn io(error: std::io::Error) -> TrashError {
+    TrashError::Io(error.to_string())
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum Linking {
+    Linked,
+    Copied,
+}
+
 /// A second name for `from` at `to`; where the filesystem has no hard links,
-/// a durable copy.
-fn link_entry(from: &Path, to: &Path) -> Result<(), TrashError> {
+/// a durable copy. Any other failure refuses.
+fn link_entry(from: &Path, to: &Path) -> Result<Linking, TrashError> {
     if path_lexists(to)? {
         return Err(TrashError::Io(format!("{} is already taken", to.display())));
     }
@@ -239,20 +344,61 @@ fn link_entry(from: &Path, to: &Path) -> Result<(), TrashError> {
         return Err(TrashError::Io(format!("{} isn't a file", from.display())));
     }
     match std::fs::hard_link(from, to) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            Err(TrashError::Io(format!("{}: {error}", from.display())))
-        }
-        Err(_) => {
-            std::fs::copy(from, to)
-                .and_then(|_| std::fs::File::open(to)?.sync_all())
-                .map_err(|error| {
+        Ok(()) => Ok(Linking::Linked),
+        Err(error) if no_hard_links(&error) => {
+            let copied = std::fs::copy(from, to).and_then(|_| std::fs::File::open(to)?.sync_all());
+            match copied {
+                Ok(()) => Ok(Linking::Copied),
+                Err(error) => {
                     // Leave no partial copy for a later step to take as kept.
                     let _ = drop_link(to);
-                    TrashError::Io(format!("{}: {error}", to.display()))
-                })
+                    Err(TrashError::Io(format!("{}: {error}", to.display())))
+                }
+            }
         }
+        Err(error) => Err(TrashError::Io(format!("{}: {error}", from.display()))),
     }
+}
+
+/// Whether `error` says the filesystem has no hard links (FAT, exFAT).
+fn no_hard_links(error: &std::io::Error) -> bool {
+    if error.kind() == std::io::ErrorKind::Unsupported {
+        return true;
+    }
+    // EPERM (Linux exFAT and FAT), ENOTSUP (macOS), EOPNOTSUPP (Linux, macOS);
+    // Windows: ERROR_INVALID_FUNCTION and ERROR_NOT_SUPPORTED.
+    let codes: &[i32] = if cfg!(windows) {
+        &[1, 50]
+    } else {
+        &[1, 45, 95, 102]
+    };
+    error
+        .raw_os_error()
+        .is_some_and(|code| codes.contains(&code))
+}
+
+/// Flush every directory a link for `path` created or changed, from its own
+/// up to the trash folder, so the trash's name is durable before the
+/// mechanism durably removes the journal's. A failure refuses.
+fn flush_chain(journal: &Path, id: &str, path: &str) -> Result<(), TrashError> {
+    let root = trash_root(journal);
+    let mut rel: PathBuf = PathBuf::from(format!("{id}/{FILES_DIR}/{path}"));
+    while rel.pop() && !rel.as_os_str().is_empty() {
+        let dir = rel.to_string_lossy().replace('\\', "/");
+        sync_dir(&root, &dir).map_err(|error| TrashError::Io(error.to_string()))?;
+    }
+    flush_trash_root(journal)
+}
+
+/// The trash folder's own entries. Windows has no directory flush for it.
+fn flush_trash_root(journal: &Path) -> Result<(), TrashError> {
+    #[cfg(not(windows))]
+    std::fs::File::open(trash_root(journal))
+        .and_then(|dir| dir.sync_all())
+        .map_err(io)?;
+    #[cfg(windows)]
+    let _ = journal;
+    Ok(())
 }
 
 /// Remove the trash's own second name for a file the journal still holds.
@@ -269,7 +415,7 @@ fn run_lock(journal: &Path, id: &str, options: LockOptions) -> Result<FileLock, 
         .map_err(|_| TrashError::Held("that is being moved now".to_owned()))
 }
 
-/// The run lock leaves a sidecar file; once its holder lets go, it goes too.
+/// The run lock leaves a sidecar file; once its item is settled it goes too.
 fn remove_run_lock(journal: &Path, id: &str) {
     let _ = std::fs::remove_file(trash_root(journal).join(format!("{id}.run.lock")));
 }
