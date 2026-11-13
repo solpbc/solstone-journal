@@ -278,6 +278,10 @@ class Element extends Target {
   scrollIntoView() {}
   focus() {
     if (!this.isConnected || !this.checkVisibility()) return;
+    // The shell's modal layer: outside an open dialog the page is inert,
+    // its ancestors excepted, until the layer reconciles.
+    const dialog = this.ownerDocument.inertDialog;
+    if (dialog && !dialog.contains(this) && !this.contains(dialog)) return;
     this.ownerDocument.activeElement = this;
   }
   blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = this.ownerDocument.body; }
@@ -559,6 +563,16 @@ function makePage(env, address = '/app/entities/', { answers, storage } = {}) {
   window.JournalFormat = { day: (key) => `day ${key}`, timestamp: (ts) => String(ts) };
   window.AppServices = { notifications: { show: (notice) => { notices.push(notice); return notices.length; }, dismiss() {} }, escapeHtml: (s) => String(s) };
   window.logError = (error, context) => { errors.push({ error, context }); };
+  // The modal layer reconciles a frame after a dialog opens or closes; the
+  // cases call `reconcile` where that frame would come.
+  doc.inertDialog = null;
+  window.ConveyModalLayer = {
+    reconcile() {
+      const open = ['entityDeleteModal', 'detachConfirmModal'].map((id) => doc.getElementById(id))
+        .find((node) => node && node.style.display === 'flex');
+      doc.inertDialog = open || null;
+    },
+  };
   window.appEvents = { buildChanged: () => page.buildChanged, onConnectionState: () => () => {} };
   window.__SOL_ENTRY_TABLE__ = { views: { entities: { contract: true, fragment: '/app/entities/workspace', scripts: [], styles: [] } } };
   window.solShellData = { apps: [{ name: 'entities', label: 'entities', workspace_url: '/app/entities/workspace' }] };
@@ -1168,6 +1182,22 @@ module.exports = async function entitiesContractCases(manifestDir) {
     await settle();
     assert.strictEqual(q.byId('detachConfirmModal').style.display, 'none', 'the detach dialog went too');
     focusIsSomewhere(q, 'after back from detach');
+  });
+
+  await test('back with the delete dialog open, focus on its button, puts focus on the row, not the page', async () => {
+    const p = await boot(env);
+    listRows(p)[3].click();
+    await settle();
+    p.byId('journal-detail-delete-btn').click();
+    await settle();
+    p.window.ConveyModalLayer.reconcile();
+    assert.strictEqual(p.doc.activeElement, p.byId('entityDeleteModalConfirm'), 'focus is on the dialog\'s button');
+    p.window.history.back();
+    await settle();
+    // An engine that finds focus on a hidden element drops it to the page.
+    if (!p.doc.activeElement.checkVisibility()) p.doc.activeElement = p.doc.body;
+    p.window.ConveyModalLayer.reconcile();
+    assert.strictEqual(p.doc.activeElement.getAttribute('data-entity-id'), 'p3', 'focus is on the row of the entity left');
   });
 
   await test('a delete from the entity\'s page goes back to the list with focus in the view', async () => {
