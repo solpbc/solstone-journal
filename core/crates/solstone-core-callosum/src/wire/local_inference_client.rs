@@ -12,20 +12,26 @@ use crate::local_inference::{
     gate_sync,
 };
 
+/// Whether this platform hands local-inference credentials over Callosum.
+const HANDOFF_SUPPORTED: bool = cfg!(any(windows, target_os = "linux"));
+
 /// Asynchronously request an active local-inference snapshot from the Callosum supervisor.
 ///
-/// On non-Windows platforms, returns [`LocalInferenceReadError::Unsupported`] with no I/O.
-/// One deadline covers connection, handshake, request transmission, and response verification;
-/// no retry is performed.
+/// On platforms other than Windows and Linux, returns [`LocalInferenceReadError::Unsupported`]
+/// with no I/O. One deadline covers connection, handshake, request transmission, and response
+/// verification; no retry is performed.
 ///
-/// The named-pipe endpoint DACL and remote-client rejection protect cross-user/cross-identity
-/// and remote-network access—not same-SID malware, which is trusted once admitted.
+/// On Windows the named-pipe endpoint DACL and remote-client rejection protect
+/// cross-user/cross-identity and remote-network access. On Linux each end checks the
+/// other's kernel peer credentials, so only this account is answered and only this
+/// account's server is believed. Neither protects against same-account malware, which
+/// is trusted once admitted.
 pub async fn request_local_inference_snapshot(
     socket_path: impl AsRef<Path>,
     deadline: Instant,
 ) -> Result<LocalInferenceSnapshot, LocalInferenceReadError> {
     let _ = socket_path;
-    let _nonce = gate_async(cfg!(windows), fill_nonce)?;
+    let _nonce = gate_async(HANDOFF_SUPPORTED, fill_nonce)?;
 
     #[cfg(windows)]
     {
@@ -99,7 +105,24 @@ pub async fn request_local_inference_snapshot(
         })
         .await;
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        return before_deadline(deadline, async {
+            let path = crate::endpoint_path(socket_path.as_ref())
+                .map_err(|_| LocalInferenceReadError::Transport)?;
+            let mut stream = tokio::net::UnixStream::connect(path.as_ref())
+                .await
+                .map_err(|_| LocalInferenceReadError::Transport)?;
+            if !peer_is_this_account(&stream) {
+                return Err(LocalInferenceReadError::Authentication);
+            }
+            let mut session =
+                ExchangeSession::new(crate::local_inference::UNIX_REPLY_KEY, 1, _nonce, deadline);
+            drive_exchange_async(&mut stream, &mut session).await
+        })
+        .await;
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = deadline;
         Err(LocalInferenceReadError::Unsupported)
@@ -113,17 +136,16 @@ pub async fn request_local_inference_snapshot(
 /// immediately with no I/O. That refusal takes precedence over the platform result. Async hosts
 /// call `request_local_inference_snapshot` and pass the owned snapshot into blocking inference work.
 /// This function does not `block_on`, build a nested runtime, or join a worker. On a thread with
-/// no entered runtime, non-Windows returns `Unsupported` with no I/O.
+/// no entered runtime, platforms other than Windows and Linux return `Unsupported` with no I/O.
 ///
-/// The named-pipe endpoint DACL and remote-client rejection protect cross-user/cross-identity
-/// and remote-network access—not same-SID malware, which is trusted once admitted.
+/// Admission is as for [`request_local_inference_snapshot`].
 pub fn request_local_inference_snapshot_sync(
     socket_path: impl AsRef<Path>,
     deadline: Instant,
 ) -> Result<LocalInferenceSnapshot, LocalInferenceReadError> {
     let _ = socket_path;
     let runtime_entered = tokio::runtime::Handle::try_current().is_ok();
-    let _nonce = gate_sync(runtime_entered, cfg!(windows), fill_nonce)?;
+    let _nonce = gate_sync(runtime_entered, HANDOFF_SUPPORTED, fill_nonce)?;
 
     #[cfg(windows)]
     {
@@ -178,11 +200,65 @@ pub fn request_local_inference_snapshot_sync(
             Instant::now,
         )
     }
-    #[cfg(not(windows))]
+    // No runtime is entered on this thread, so a private one here is not nested.
+    #[cfg(target_os = "linux")]
+    {
+        let _ = _nonce;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .map_err(|_| LocalInferenceReadError::Transport)?;
+        runtime.block_on(request_local_inference_snapshot(socket_path, deadline))
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = deadline;
         Err(LocalInferenceReadError::Unsupported)
     }
+}
+
+/// Whether the peer of a connected Unix socket runs as this account.
+///
+/// The kernel records the peer's effective uid when it connects or listens;
+/// nothing the peer sends can change it. Any error reads as another account.
+#[cfg(target_os = "linux")]
+pub(crate) fn peer_is_this_account(socket: &tokio::net::UnixStream) -> bool {
+    socket
+        .peer_cred()
+        .is_ok_and(|credentials| credentials.uid() == nix::unistd::geteuid().as_raw())
+}
+
+/// One local-inference credential read: `(generation, port, token)`.
+pub type LocalInferenceRefresh =
+    Box<dyn FnMut(Instant) -> Result<(u64, u16, String), String> + Send>;
+
+/// A credential refresh for the bundled local engine of the journal at `journal`.
+///
+/// Each call asks the supervisor over Callosum for the engine's current port and
+/// per-launch token, within the caller's deadline and at most half a second. It is
+/// `None` where the platform hands no credential over Callosum. A caller inside an
+/// async runtime is served from a plain thread, because the synchronous request
+/// refuses an entered runtime.
+#[must_use]
+pub fn local_inference_refresh(journal: &Path) -> Option<LocalInferenceRefresh> {
+    if !HANDOFF_SUPPORTED {
+        return None;
+    }
+    let socket = journal.join("health").join("callosum.sock");
+    Some(Box::new(move |deadline: Instant| {
+        let deadline = deadline.min(Instant::now() + std::time::Duration::from_millis(500));
+        let request = || request_local_inference_snapshot_sync(&socket, deadline);
+        let snapshot = if tokio::runtime::Handle::try_current().is_ok() {
+            std::thread::scope(|scope| scope.spawn(request).join())
+                .map_err(|_| "local inference request panicked".to_owned())?
+        } else {
+            request()
+        }
+        .map_err(|error| error.to_string())?;
+        let token = String::from_utf8(snapshot.token().to_vec()).map_err(|e| e.to_string())?;
+        Ok((snapshot.generation(), snapshot.port(), token))
+    }))
 }
 
 #[allow(dead_code)]
@@ -292,13 +368,13 @@ impl std::io::Write for DeadlinePipe<'_> {
 }
 
 fn fill_nonce() -> Result<[u8; NONCE_LEN], ()> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
         let mut nonce = [0_u8; NONCE_LEN];
         getrandom::fill(&mut nonce).map_err(|_| ())?;
         Ok(nonce)
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         Ok([0_u8; NONCE_LEN])
     }

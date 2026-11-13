@@ -42,6 +42,8 @@ impl Drop for TempFile {
 
 struct Journal {
     path: PathBuf,
+    credential:
+        std::sync::OnceLock<solstone_core_callosum::test_support::LocalInferenceCredentialFixture>,
 }
 
 impl Journal {
@@ -54,12 +56,22 @@ impl Journal {
             json!({"providers":{"active":{"provider":"local"}}})
         };
         fs::write(path.join("config/journal.json"), config.to_string()).expect("write config");
-        Self { path }
+        Self {
+            path,
+            credential: std::sync::OnceLock::new(),
+        }
     }
 
     fn set_port(&self, port: u16) {
         fs::create_dir_all(self.path.join("health")).expect("create health directory");
         fs::write(self.path.join("health/local.port"), port.to_string()).expect("write local port");
+        let _ = self.credential.set(
+            solstone_core_callosum::test_support::serve_local_inference_credential(
+                &self.path,
+                port,
+                b"test-engine-key",
+            ),
+        );
     }
 
     fn set_no_engine(&self) {

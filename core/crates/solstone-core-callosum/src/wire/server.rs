@@ -102,6 +102,10 @@ pub(crate) struct ServerInner {
     >,
     #[cfg(all(test, not(windows)))]
     pub(crate) test_snapshot_secret: Mutex<Option<[u8; crate::local_inference::MAC_LEN]>>,
+    /// Clients whose kernel peer credentials name this account. Only they get a
+    /// local-inference credential; any other peer keeps ordinary envelopes only.
+    #[cfg(target_os = "linux")]
+    pub(crate) private_peers: Mutex<std::collections::HashSet<u64>>,
     #[cfg(windows)]
     pub(crate) pipe_secret: [u8; crate::windows::PIPE_CHALLENGE_LEN],
     #[cfg(any(test, feature = "test-hooks"))]
@@ -154,6 +158,8 @@ fn new_server_inner(
         snapshot_source: Mutex::new(None),
         #[cfg(all(test, not(windows)))]
         test_snapshot_secret: Mutex::new(None),
+        #[cfg(target_os = "linux")]
+        private_peers: Mutex::new(std::collections::HashSet::new()),
         #[cfg(windows)]
         pipe_secret,
         #[cfg(any(test, feature = "test-hooks"))]
@@ -437,7 +443,8 @@ impl CallosumSocketServer {
         self.inner.stalled_client_evictions.load(Ordering::Acquire)
     }
 
-    /// Count named-pipe peers rejected before they join the Callosum broadcast set.
+    /// Count named-pipe peers rejected before they join the Callosum broadcast set, and on
+    /// Linux the local-inference requests refused because the peer is another account.
     #[must_use]
     pub fn unauthenticated_connection_drops(&self) -> u64 {
         self.inner
@@ -701,6 +708,10 @@ fn start_client(inner: Arc<ServerInner>, id: u64, stream: ServerStream) {
     if inner.stopped.load(Ordering::Acquire) || !bound_root_valid(&inner) {
         return;
     }
+    #[cfg(target_os = "linux")]
+    if super::local_inference_client::peer_is_this_account(&stream) {
+        lock(&inner.private_peers).insert(id);
+    }
     let (outbound, outbound_rx) = mpsc::channel(SERVER_CLIENT_OUTBOUND_CAPACITY);
     let (shutdown, shutdown_rx) = watch::channel(false);
     let (registered, registered_rx) = oneshot::channel();
@@ -822,17 +833,31 @@ pub(crate) fn route_client_frame(inner: &Arc<ServerInner>, id: u64, frame: ReadF
     }
 }
 
-fn mac_secret(_inner: &ServerInner) -> Option<[u8; crate::local_inference::MAC_LEN]> {
+/// The key for a private reply to client `id`, or `None` when this client gets none.
+///
+/// Windows admits a peer by the pipe DACL and its handshake with the pipe secret,
+/// and that secret keys the reply. Linux admits a peer by its kernel credentials:
+/// only a client running as this account is answered, and the client checks the
+/// server's credentials the same way. Its reply key is a fixed label, so on Linux
+/// the reply MAC is an integrity check, not the authentication.
+fn private_reply_key(
+    _inner: &ServerInner,
+    _id: u64,
+) -> Option<[u8; crate::local_inference::MAC_LEN]> {
     #[cfg(windows)]
     {
         Some(_inner.pipe_secret)
     }
-    #[cfg(all(test, not(windows)))]
+    #[cfg(not(windows))]
     {
-        *_inner.test_snapshot_secret.lock().unwrap()
-    }
-    #[cfg(not(any(windows, all(test, not(windows)))))]
-    {
+        #[cfg(test)]
+        if let Some(secret) = *_inner.test_snapshot_secret.lock().unwrap() {
+            return Some(secret);
+        }
+        #[cfg(target_os = "linux")]
+        if lock(&_inner.private_peers).contains(&_id) {
+            return Some(crate::local_inference::UNIX_REPLY_KEY);
+        }
         None
     }
 }
@@ -842,7 +867,8 @@ fn accept_private_request(
     id: u64,
     request: crate::local_inference::LocalInferencePrivateRequest,
 ) {
-    let Some(secret) = mac_secret(inner) else {
+    let Some(secret) = private_reply_key(inner, id) else {
+        record_refused_private_request(inner);
         return;
     };
     let source_opt = {
@@ -1065,11 +1091,26 @@ pub(crate) fn stamp_timestamp(envelope: &mut CallosumEnvelope) {
     }
 }
 
+fn record_refused_private_request(inner: &ServerInner) {
+    #[cfg(target_os = "linux")]
+    if inner
+        .unauthenticated_connection_drops
+        .fetch_add(1, Ordering::AcqRel)
+        == 0
+    {
+        log::warn!("callosum wire: refused a local-inference request from another account");
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = inner;
+}
+
 fn record_malformed(inner: &ServerInner) {
     let _ = inner.malformed_frame_drops.fetch_add(1, Ordering::AcqRel);
 }
 
 fn evict_client(inner: &ServerInner, id: u64) {
+    #[cfg(target_os = "linux")]
+    lock(&inner.private_peers).remove(&id);
     let mut clients = lock(&inner.clients);
     let Some(entry) = clients.remove(&id) else {
         return;
@@ -1088,6 +1129,8 @@ fn evict_client(inner: &ServerInner, id: u64) {
 }
 
 fn remove_client(inner: &ServerInner, id: u64) {
+    #[cfg(target_os = "linux")]
+    lock(&inner.private_peers).remove(&id);
     let mut clients = lock(&inner.clients);
     if let Some(entry) = clients.remove(&id) {
         let mut retired = lock(&inner.retired_clients);

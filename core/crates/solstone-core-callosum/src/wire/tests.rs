@@ -733,6 +733,8 @@ async fn sync_entry_from_entered_runtime_and_spawn_blocking_returns_runtime_ente
     );
 }
 
+// Linux connects for real; its round trip is a full-tests socket case.
+#[cfg(not(target_os = "linux"))]
 #[test]
 fn sync_entry_from_plain_thread_on_host_returns_unsupported() {
     use super::local_inference_client::request_local_inference_snapshot_sync;

@@ -23,6 +23,7 @@ const LARGE_TEXT_BYTES: usize = 1024 * 1024;
 
 struct Journal {
     path: PathBuf,
+    _credential: Option<solstone_core_callosum::test_support::LocalInferenceCredentialFixture>,
 }
 
 impl Journal {
@@ -36,14 +37,24 @@ impl Journal {
                 .as_nanos(),
         ));
         fs::create_dir_all(path.join("config")).unwrap();
-        Self { path }
+        Self {
+            path,
+            _credential: None,
+        }
     }
 
     fn bundled_local(port: u16) -> Self {
-        let journal = Self::at_temp_path();
+        let mut journal = Self::at_temp_path();
         journal.write_config(r#"{"providers":{"active":{"provider":"local"}}}"#);
         fs::create_dir_all(journal.path.join("health")).unwrap();
         fs::write(journal.path.join("health/local.port"), port.to_string()).unwrap();
+        journal._credential = Some(
+            solstone_core_callosum::test_support::serve_local_inference_credential(
+                &journal.path,
+                port,
+                b"test-engine-key",
+            ),
+        );
         journal
     }
 

@@ -164,7 +164,16 @@ impl OwnerProbe for RespondWithConfigProbe {
             &self.runtime,
             journal,
             config,
-            |_| None,
+            |journal| {
+                solstone_core_callosum::local_inference_refresh(journal).map(|refresh| {
+                    solstone_core_local::LocalInferenceAuthority::new(
+                        0,
+                        0,
+                        String::new(),
+                        Some(refresh),
+                    )
+                })
+            },
             cancellation,
         )
         .map_err(ClientError::Decode)

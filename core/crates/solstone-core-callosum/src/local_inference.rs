@@ -26,6 +26,12 @@ pub(crate) const MAC_LEN: usize = 32;
 
 const MAC_DOMAIN: &[u8] = b"solstone-callosum-windows-local-inference-reply-v1\0";
 
+/// The reply key on Linux. Both ends admit the other by its kernel peer
+/// credentials, so the key carries no secret: it keeps the reply format shared
+/// with Windows and its MAC an integrity check.
+#[cfg(target_os = "linux")]
+pub(crate) const UNIX_REPLY_KEY: [u8; MAC_LEN] = *b"solstone-callosum-unix-reply-v1\0";
+
 /// In-memory opaque credential token for Windows local-inference endpoints.
 #[derive(Clone, Eq, PartialEq)]
 pub struct LocalInferenceToken(Vec<u8>);

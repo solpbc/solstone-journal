@@ -3431,27 +3431,10 @@ fn write_install_envelope(
 fn acquire_local_inference_authority(
     journal: &Path,
 ) -> Option<solstone_core_local::LocalInferenceAuthority> {
-    #[cfg(windows)]
-    {
-        let socket = journal.join("health").join("callosum.sock");
-        let refresh: solstone_core_local::connect::RefreshAuthorityFn = Box::new(move |deadline| {
-            let deadline = deadline.min(Instant::now() + Duration::from_millis(500));
-            let snapshot =
-                solstone_core_callosum::request_local_inference_snapshot_sync(&socket, deadline)
-                    .map_err(|e| e.to_string())?;
-            let token = String::from_utf8(snapshot.token().to_vec()).map_err(|e| e.to_string())?;
-            Ok((snapshot.generation(), snapshot.port(), token))
-        });
-        // The operation establishes its deadline before fetching its snapshot.
-        return Some(solstone_core_local::LocalInferenceAuthority::new(
-            0,
-            0,
-            String::new(),
-            Some(refresh),
-        ));
-    }
-    let _ = journal;
-    None
+    // The operation establishes its deadline before fetching its snapshot.
+    solstone_core_callosum::local_inference_refresh(journal).map(|refresh| {
+        solstone_core_local::LocalInferenceAuthority::new(0, 0, String::new(), Some(refresh))
+    })
 }
 
 fn run_local_connect() -> ExitCode {

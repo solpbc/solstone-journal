@@ -442,8 +442,13 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
         }) {
             Ok(prepared) => prepared,
             Err(error) if error.reason_code == "context_budget_exceeded" => {
-                match prepare_linux_text_overflow_fallback(&input, &server, window, &mut preflight)
-                {
+                match prepare_linux_text_overflow_fallback(
+                    &input,
+                    &server,
+                    window,
+                    &mut preflight,
+                    auth_token.as_deref(),
+                ) {
                     Ok(prepared) => prepared,
                     Err(error) => return GenerateResult::Failure(error.into_failure()),
                 }
@@ -1044,6 +1049,7 @@ fn prepare_linux_text_overflow_fallback<T: GenerateTransport>(
     server: &ConnectedServer,
     context: ContextWindow,
     transport: &mut T,
+    auth_token: Option<&str>,
 ) -> Result<PreparedRequest, GenerateError> {
     // Exact admission already selected the alternative. A rough text counter
     // must not reverse that decision and begin clipping the original instead.
@@ -1059,7 +1065,7 @@ fn prepare_linux_text_overflow_fallback<T: GenerateTransport>(
     let mut effective = context;
     for attempt in 0..=LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS {
         let mut prepared = prepare_bundled_request(input, server, effective, |text| {
-            count_tokens(transport, &server.base_url, text, None)
+            count_tokens(transport, &server.base_url, text, auth_token)
         })?;
         if used_overflow_text {
             prepared.input_budget = Some(overflow_budget(
@@ -1069,7 +1075,7 @@ fn prepare_linux_text_overflow_fallback<T: GenerateTransport>(
             ));
         }
         let loud_input_tokens =
-            count_input_tokens(transport, &server.base_url, &prepared.body, None).map_err(
+            count_input_tokens(transport, &server.base_url, &prepared.body, auth_token).map_err(
                 |detail| {
                     failure_error(
                         "local_endpoint_contract_failed",
@@ -1104,7 +1110,7 @@ fn prepare_linux_text_overflow_fallback<T: GenerateTransport>(
                     overflow_reason_code: "context_fitted_overflow",
                     overflow_detail: "Local request prompt and image content exceed the local model context window.",
                 },
-                |body| count_input_tokens(transport, &server.base_url, body, None),
+                |body| count_input_tokens(transport, &server.base_url, body, auth_token),
             );
         }
         if attempt == LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS {

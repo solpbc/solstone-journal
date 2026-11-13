@@ -37,6 +37,11 @@ impl Platform {
         matches!(self, Self::Android | Self::Ios)
     }
 
+    /// A client must hold a runtime authority, and any preflight or completion
+    /// irregularity fails the request. Linux also gives its engine a per-launch
+    /// key, and its clients send it whenever they hold an authority, but it keeps
+    /// its port-file discovery and its estimate and retry behaviour; the engine
+    /// itself refuses a request without the key.
     pub const fn requires_runtime_authority(self) -> bool {
         matches!(self, Self::Windows | Self::Android | Self::Ios)
     }

@@ -287,3 +287,51 @@ async fn selected_local_address_stays_local_after_drop_while_desktop_named_still
     .await;
     desktop.stop().await;
 }
+
+// Linux hands the local-inference credential to a client running as this account,
+// over the ordinary journal socket, while that socket keeps serving envelopes.
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "current_thread")]
+async fn linux_private_snapshot_reaches_this_account_async_and_sync() {
+    use crate::{
+        LocalInferenceReadError, LocalInferenceSnapshot, LocalInferenceSnapshotOffer,
+        request_local_inference_snapshot, request_local_inference_snapshot_sync,
+    };
+
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("health/callosum.sock");
+    let server = CallosumSocketServer::bind(&socket).await.unwrap();
+    let deadline = || std::time::Instant::now() + Duration::from_secs(2);
+    assert_eq!(
+        request_local_inference_snapshot(&socket, deadline())
+            .await
+            .unwrap_err(),
+        LocalInferenceReadError::Unavailable
+    );
+
+    server.set_local_inference_snapshot_source(|| {
+        LocalInferenceSnapshotOffer::Ready(
+            LocalInferenceSnapshot::try_new(3, 8181, b"linux-private-token").unwrap(),
+        )
+    });
+    let snapshot = request_local_inference_snapshot(&socket, deadline())
+        .await
+        .unwrap();
+    assert_eq!(
+        (snapshot.generation(), snapshot.port(), snapshot.token()),
+        (3, 8181, &b"linux-private-token"[..])
+    );
+
+    let sync_socket = socket.clone();
+    let synced = tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || request_local_inference_snapshot_sync(&sync_socket, deadline()))
+            .join()
+            .unwrap()
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(synced.token(), b"linux-private-token");
+    assert_eq!(server.unauthenticated_connection_drops(), 0);
+    server.stop().await;
+}
