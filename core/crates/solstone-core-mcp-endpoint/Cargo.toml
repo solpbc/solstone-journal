@@ -18,6 +18,8 @@ test-hooks = [
 ]
 
 [dependencies]
+solstone-core-entities.workspace = true
+image.workspace = true
 solstone-core-journal-config.workspace = true
 arc-swap = "1.9.1"
 axum.workspace = true
@@ -78,6 +80,7 @@ nix = { workspace = true, features = ["dir", "fs", "user", "resource"] }
 ipconfig = { version = "0.3.2", default-features = false }
 
 [dev-dependencies]
+solstone-core-entity.workspace = true
 solstone-core-removals.workspace = true
 solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 pulldown-cmark.workspace = true

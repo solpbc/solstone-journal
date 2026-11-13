@@ -5587,6 +5587,7 @@ name = "solstone-core-entities"
 version = "2.0.78"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "chrono",
  "chrono-tz",
  "log",
@@ -5601,6 +5602,7 @@ dependencies = [
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
+ "solstone-core-journal-io",
  "solstone-core-removals",
  "solstone-core-serving",
  "solstone-core-trash",
@@ -6359,6 +6361,7 @@ dependencies = [
  "hmac 0.12.1",
  "hyper",
  "hyper-util",
+ "image",
  "instant-acme",
  "ipconfig",
  "log",
@@ -6375,6 +6378,7 @@ dependencies = [
  "socket2",
  "solstone-core-callosum",
  "solstone-core-convey-http",
+ "solstone-core-entities",
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-home",

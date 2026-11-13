@@ -97,6 +97,7 @@ finds it, when this connection may read screen text.";
 /// the owner's log carries exactly those. One prepared value, two audiences.
 pub(crate) struct Prepared {
     value: Value,
+    image: Option<Vec<u8>>,
     count: usize,
     targets: Vec<String>,
     empty_note: Option<String>,
@@ -107,6 +108,7 @@ impl Prepared {
     pub(crate) fn new(value: Value, count: usize, targets: Vec<String>) -> Self {
         Self {
             value,
+            image: None,
             count,
             targets,
             empty_note: None,
@@ -140,6 +142,7 @@ impl Prepared {
 /// a skill-file rule did not stop it). The response itself is the lever, so a
 /// valid zero says so in words beside the typed empty array.
 pub(crate) struct ToolOutput {
+    pub(crate) image: Option<Vec<u8>>,
     pub(crate) value: Value,
     pub(crate) empty_note: Option<String>,
 }
@@ -306,7 +309,13 @@ pub(crate) fn dispatch_authenticated_tool_call(
     let shape = result_shape(
         prepared.count,
         prepared.targets,
-        content_digest(&prepared.value),
+        if let Some(image) = &prepared.image {
+            content_digest(
+                &json!({"value": prepared.value, "image_sha256": format!("{:x}", Sha256::digest(image))}),
+            )
+        } else {
+            content_digest(&prepared.value)
+        },
     );
     let outcome = if prepared.count == 0 {
         Outcome::Empty
@@ -320,6 +329,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
         .map_err(|_| DispatchError::Tool(ToolError::AuditUnavailable))?;
 
     Ok(ToolOutput {
+        image: prepared.image,
         value: prepared.value,
         empty_note: prepared.empty_note,
     })
@@ -2606,17 +2616,17 @@ fn list_entities(
         let identities = identities.as_ref().expect("read above");
         let scoped = read_scoped_entities_resolved(journal_root, &facet_dir, identities)?;
         for item in scoped {
-            all_entities.push((facet_id.clone(), item));
+            all_entities.push((facet_id.clone(), facet_dir.clone(), item));
         }
     }
 
-    all_entities.sort_by(|(f_a, item_a), (f_b, item_b)| {
+    all_entities.sort_by(|(f_a, _, item_a), (f_b, _, item_b)| {
         f_a.cmp(f_b)
             .then_with(|| item_a.entity_id.cmp(&item_b.entity_id))
     });
 
     if let Some(cursor) = cursor.as_ref() {
-        all_entities.retain(|(facet_id, item)| {
+        all_entities.retain(|(facet_id, _, item)| {
             (facet_id.as_str(), item.entity_id.as_str())
                 > (
                     cursor.last_facet_id.as_str(),
@@ -2633,11 +2643,11 @@ fn list_entities(
 
     let last_anchor = page
         .last()
-        .map(|(facet_id, item)| (facet_id.clone(), item.entity_id.clone()));
+        .map(|(facet_id, _, item)| (facet_id.clone(), item.entity_id.clone()));
 
     let mut targets = Vec::new();
     let mut entities = Vec::new();
-    for (facet_id, item) in page {
+    for (facet_id, facet_dir, item) in page {
         let reference = codec()
             .mint(
                 principal.connection,
@@ -2654,6 +2664,8 @@ fn list_entities(
             "name": entity_name(&item.identity),
             "facet": facet_id,
             "reference": reference,
+            "has_photo": solstone_core_entities::photos::has_photo_in_facet(journal_root, &item.entity_dir, &facet_dir)
+                .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?,
         }));
     }
 
@@ -2775,7 +2787,27 @@ fn get_entity(
     if notes.truncated {
         value["notes_truncated"] = json!(true);
     }
-    Ok(Prepared::new(value, 1, targets))
+    let mut image = None;
+    if solstone_core_journal_config::read_journal_config(journal_root)
+        .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?
+        .config
+        .as_ref()
+        .and_then(|c| c.get("faces").and_then(|v| v.get("enabled")))
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        let photo = solstone_core_entities::photos::photo(
+            journal_root,
+            &reference.entity_id,
+            Some(&facet_dir),
+        )
+        .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+        value["photo"] = json!({"state": photo.state});
+        image = photo.jpeg.map(|bytes| bounded_photo(&bytes)).transpose()?;
+    }
+    let mut prepared = Prepared::new(value, 1, targets);
+    prepared.image = image;
+    Ok(prepared)
 }
 
 fn is_after_cursor(
@@ -3651,6 +3683,17 @@ fn index_error(error: solstone_core_indexer_query::IndexAccessError) -> Dispatch
         _ => ToolError::NotIndexed,
     };
     DispatchError::Tool(tool_error)
+}
+
+fn bounded_photo(bytes: &[u8]) -> Result<Vec<u8>, DispatchError> {
+    let image = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)
+        .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+    let image = image.thumbnail(256, 256).to_rgb8();
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 85)
+        .encode_image(&image)
+        .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+    Ok(jpeg)
 }
 
 #[cfg(test)]

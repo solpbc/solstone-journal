@@ -172,6 +172,38 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
             post(crate::trash_delete::delete_set),
         )
         .route(
+            "/app/entities/api/journal/entity/{entity_id}/faces",
+            get(crate::photo_routes::panel),
+        )
+        .route(
+            "/app/entities/api/journal/entity/{entity_id}/faces/crop/{key}",
+            get(crate::photo_routes::crop),
+        )
+        .route(
+            "/app/entities/api/journal/entity/{entity_id}/photo",
+            get(crate::photo_routes::photo),
+        )
+        .route(
+            "/app/entities/api/journal/entity/{entity_id}/faces/choose",
+            post(crate::photo_routes::choose),
+        )
+        .route(
+            "/app/entities/api/journal/entity/{entity_id}/faces/reject",
+            post(crate::photo_routes::reject),
+        )
+        .route(
+            "/app/entities/api/journal/entity/{entity_id}/faces/dismiss",
+            post(crate::photo_routes::dismiss),
+        )
+        .route(
+            "/app/entities/api/journal/entity/{entity_id}/faces/undo",
+            post(crate::photo_routes::undo),
+        )
+        .route(
+            "/app/entities/api/journal/faces/clear",
+            post(crate::photo_routes::clear),
+        )
+        .route(
             "/app/entities/api/journal/entity/{entity_id}/history",
             get(history_route),
         )
@@ -1033,6 +1065,7 @@ async fn facet_route(
     let k = q.include_blocked.as_deref() == Some("true");
     match solstone_core_serving::seam::run_blocking(move || {
         let entities = solstone_core_facets::list_scoped_facet_entities(&root, &f, d, k)?;
+        let faces_enabled = crate::photos::enabled_for_lists(&root);
         let zone = solstone_core_journal_config::owner_zone(&root);
         let today = chrono::Utc::now()
             .with_timezone(&zone)
@@ -1082,6 +1115,14 @@ async fn facet_route(
                 json!(summary.map(|summary| summary.count)),
             );
             object.insert("has_voiceprint".to_owned(), json!(voiceprint));
+            object.insert(
+                "has_photo".to_owned(),
+                json!(crate::photos::has_photo_in_dir(
+                    &root,
+                    &entity.entity_dir,
+                    faces_enabled
+                )),
+            );
             insert_link_fields(object, &entity.relationship);
             insert_activity(object, activity_ts, zone);
             attached.push(value);
@@ -2025,6 +2066,7 @@ pub(crate) fn assemble_journal_entity_records(
     root: &Path,
     only: Option<&str>,
 ) -> Result<Vec<Value>, solstone_core_facets::FacetEntityWriteError> {
+    let faces_enabled = crate::photos::enabled_for_lists(root);
     let groups = solstone_core_entity::read_identity_group_map(root)?;
     let winner_by_folder: HashMap<String, String> = groups
         .groups
@@ -2068,6 +2110,7 @@ pub(crate) fn assemble_journal_entity_records(
             "aka": value.get("aka").cloned().unwrap_or_else(|| json!([])),
             "is_principal": value.get("is_principal").cloned().unwrap_or_else(|| json!(false)),
             "blocked": blocked,
+            "has_photo": crate::photos::has_photo_in_dir(root, &entity_dir, faces_enabled),
             "facets": [],
             "total_observation_count": 0,
             "last_active_ts": identity_last_seen_ts,
@@ -2433,6 +2476,7 @@ fn summarize_journal_entities(
                 "name": name,
                 "type": stored_type,
                 "type_bucket": bucket,
+                "has_photo": record.get("has_photo").cloned().unwrap_or(Value::Bool(false)),
                 "is_principal": record.get("is_principal").cloned().unwrap_or_else(|| json!(false)),
                 "blocked": blocked,
                 "total_observation_count": record.get("total_observation_count").cloned().unwrap_or_else(|| json!(0)),
@@ -2591,10 +2635,17 @@ async fn journal_entity_route(
     }
     match solstone_core_serving::seam::run_blocking(move || {
         match solstone_core_entity::read_entity_identity(&root, &id) {
-            Err(error) => Err(error.into()),
+            Err(error) => Err(error.to_string()),
             Ok(None) => Ok(None),
             Ok(Some(_)) => {
-                assemble_journal_entity_records(&root, Some(&id)).map(|mut records| records.pop())
+                let mut entity = assemble_journal_entity_records(&root, Some(&id))
+                    .map_err(|e| e.to_string())?
+                    .pop();
+                if let Some(entity) = entity.as_mut() {
+                    let panel = crate::photos::panel(&root, &id).map_err(|e| format!("{e:?}"))?;
+                    entity["photo_state"] = json!(panel.state);
+                }
+                Ok(entity)
             }
         }
     })
@@ -4798,7 +4849,10 @@ async fn entity_detail_route(
             );
             let mut entity = row.identity;
             let voiceprint = has_voiceprint_in_entity_dir(&root, &row.entity_dir);
+            let photo_state = crate::photos::panel(&root, &id).map_err(|e| format!("{e:?}"))?.state;
             let object = entity.as_object_mut().expect("identity reader returns objects");
+            object.insert("has_photo".to_owned(), json!(crate::photos::has_photo_in_dir(&root, &row.entity_dir, crate::photos::enabled_for_lists(&root))));
+            object.insert("photo_state".to_owned(), json!(photo_state));
             insert_link_fields(object, &row.relationship);
             insert_activity(object, activity_ts, zone);
             match obs_result {
@@ -4815,10 +4869,13 @@ async fn entity_detail_route(
             }
         }
         let identity = solstone_core_entity::read_entity_identity(&root, &id).map_err(|error| error.to_string())?;
+        let photo_state = if identity.is_some() {
+            crate::photos::panel(&root, &id).map_err(|e| format!("{e:?}"))?.state
+        } else { crate::photos::State::None };
         Ok(identity.map(|identity| {
             let value = identity.value();
             (
-                json!({"id":id,"name":value.get("name").cloned().unwrap_or_default(),"type":value.get("type").cloned().unwrap_or_default(),"aka":value.get("aka").cloned().unwrap_or_else(||json!([])),"is_principal":value.get("is_principal").cloned().unwrap_or_else(||json!(false)),"needs_attachment":true,"observation_count":0,"has_voiceprint":false}),
+                json!({"id":id,"name":value.get("name").cloned().unwrap_or_default(),"type":value.get("type").cloned().unwrap_or_default(),"aka":value.get("aka").cloned().unwrap_or_else(||json!([])),"is_principal":value.get("is_principal").cloned().unwrap_or_else(||json!(false)),"needs_attachment":true,"observation_count":0,"has_voiceprint":false,"has_photo":crate::photos::has_photo_in_dir(&root,&id,crate::photos::enabled_for_lists(&root)),"photo_state":photo_state}),
                 Some(Vec::new()),
                 Some(0),
                 Some(false),
@@ -5785,6 +5842,7 @@ fn entity_search_item(record: &Value) -> Value {
         "name": record.get("name").and_then(Value::as_str).unwrap_or_default(),
         "type": record.get("type").and_then(Value::as_str).unwrap_or_default(),
         "description": description,
+        "has_photo": record.get("has_photo").cloned().unwrap_or(Value::Bool(false)),
         "facets": facet_names,
     })
 }

@@ -7,6 +7,8 @@
 
 mod id_shape;
 mod model;
+mod photo_routes;
+pub mod photos;
 mod router;
 mod tidy;
 mod trash_delete;
@@ -18,3 +20,6 @@ pub(crate) use router::router;
 
 #[cfg(test)]
 mod router_tests;
+
+#[cfg(all(test, feature = "full-tests"))]
+mod photo_tests;
