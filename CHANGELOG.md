@@ -21,6 +21,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on a phone, the list of facets on the entities page now opens on screen, so you can choose one. before, it opened below the bottom of the screen.
 - restoring a backup during setup keeps the new journal's running services and troubleshooting logs intact, so new audio can be transcribed without restarting.
 - changing your journal folder on linux or mac now updates its saved location and service together, while keeping your other settings.
 - repeated service starts keep an already-running journal's ready state intact.
