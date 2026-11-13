@@ -270,6 +270,71 @@ mod disk {
         )
         .unwrap();
     }
+    fn choose_fixture(root: &Path) -> String {
+        entity(root, "a");
+        let mut f = face(0);
+        let crop = format!(
+            "{}-crops/synthetic.jpg",
+            accumulation::source_prefix(&f.metadata.key.source_name)
+        );
+        let path = crop_path(root, &f.metadata.key, &crop).unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"synthetic jpeg").unwrap();
+        f.metadata.crop = Some(crop);
+        let key = f.metadata.key.clone();
+        save(root, "a", vec![f]);
+        choose(root, "a", &key).unwrap()
+    }
+    #[test]
+    fn dismiss_after_choose_removes_photo_and_undo_restores_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        choose_fixture(root);
+        let photo = root.join("entities/a").join(PHOTO);
+        assert_eq!(fs::read(&photo).unwrap(), b"synthetic jpeg");
+        let token = dismiss(root, "a").unwrap();
+        assert!(load(root, "a").unwrap().1.decision.photo.is_none());
+        assert!(!photo.exists());
+        assert_eq!(confirmed_photo(root, "a").unwrap(), None);
+        undo(root, "a", &token).unwrap();
+        assert_eq!(fs::read(&photo).unwrap(), b"synthetic jpeg");
+        assert_eq!(
+            confirmed_photo(root, "a").unwrap(),
+            Some(b"synthetic jpeg".to_vec())
+        );
+    }
+    #[test]
+    fn undo_choose_to_none_removes_photo() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let token = choose_fixture(root);
+        let photo = root.join("entities/a").join(PHOTO);
+        assert!(photo.is_file());
+        undo(root, "a", &token).unwrap();
+        assert!(load(root, "a").unwrap().1.decision.photo.is_none());
+        assert!(!photo.exists());
+        assert_eq!(confirmed_photo(root, "a").unwrap(), None);
+    }
+    #[test]
+    fn confirmed_photo_repairs_stale_copy_with_no_choice_or_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        entity(root, "a");
+        let dir = root.join("entities/a");
+        for write_state in [false, true] {
+            if write_state {
+                publish(
+                    &dir,
+                    STATE,
+                    &serde_json::to_vec(&FacesState::default()).unwrap(),
+                )
+                .unwrap();
+            }
+            fs::write(dir.join(PHOTO), b"stale jpeg").unwrap();
+            assert_eq!(confirmed_photo(root, "a").unwrap(), None);
+            assert!(!dir.join(PHOTO).exists());
+        }
+    }
     #[test]
     fn reconciliation_refreshes_evidence_preserves_rejection_and_shared_activity_references() {
         let temp = tempfile::tempdir().unwrap();
