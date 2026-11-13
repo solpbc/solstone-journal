@@ -8058,6 +8058,9 @@ const TRASH_COPY = {
   originalsSegmentGone: "its segment is no longer in your journal, so this can't be recovered.",
   originalsStaysOne: "its segment and everything made from it aren't erased with it.",
   originalsStaysMany: "their segments and everything made from them aren't erased with them.",
+  // Erasing a segment erases its original media waiting in the trash too.
+  originalsGoOne: 'its original media in the trash is erased with it.',
+  originalsGoMany: 'their original media in the trash is erased with them.',
   stopped: {
     detaching: 'this stopped part way into the trash. your journal keeps trying to finish moving it.',
     attaching: 'this stopped part way through being recovered. your journal keeps trying to finish putting it back.',
@@ -8085,6 +8088,7 @@ const TRASH_COPY = {
     busy: 'something else is changing this right now. try again in a minute.',
     // Only for a row whose own line doesn't already say its segment is in the trash.
     recordingInTrash: 'recover its segment from the trash first, then this.',
+    nameTaken: "this can't be recovered while a different file is in its place in the segment.",
   },
 };
 const TRASH_KIND_LABEL = {
@@ -8099,7 +8103,7 @@ const TRASH_WORDS = {
   entity: ['entity', 'entities'], facet: ['facet', 'facets'],
 };
 // Refusals that trying again won't change: the result line drops its "try again".
-const TRASH_STUCK = new Set(['merge_dest_missing', 'taken', 'name_redirected', 'recording_in_trash', 'segment_gone']);
+const TRASH_STUCK = new Set(['merge_dest_missing', 'taken', 'name_redirected', 'recording_in_trash', 'segment_gone', 'name_taken']);
 
 let trashItems = [];
 let trashConfirmed = null;
@@ -8322,6 +8326,7 @@ function trashRowNote(entry) {
     case 'taken': return N.taken;
     case 'name_redirected': return N.redirected;
     case 'recording_in_trash': return N.recordingInTrash;
+    case 'name_taken': return N.nameTaken;
     case 'waits_facets':
       return others(detail.title, count(detail.others), N.waitsFacetNone, N.waitsFacetOne, N.waitsFacetMany, 'title');
     case 'waits_wipe': {
@@ -8442,6 +8447,15 @@ function trashConfirmCopy(act, items) {
       ? trashFill(TRASH_COPY.confirmOne, { thing: trashWord(items, 1) })
       : trashFill(TRASH_COPY.confirmMany, { n, things: trashWord(items, n) });
     paragraphs.push(one ? TRASH_COPY.bodyOne : TRASH_COPY.bodyMany);
+    // A segment erased now takes its original media waiting in the trash; a
+    // selection holding that item already lists it.
+    const chosen = new Set(items.map(item => item.id));
+    const segmentKey = item => `${item.day}/${item.stream}/${item.segment}`;
+    const waiting = new Set(trashItems
+      .filter(item => item.kind === 'originals' && !chosen.has(item.id))
+      .map(segmentKey));
+    const taking = items.filter(item => item.kind === 'segment' && waiting.has(segmentKey(item))).length;
+    if (taking > 0) paragraphs.push(taking === 1 ? TRASH_COPY.originalsGoOne : TRASH_COPY.originalsGoMany);
   }
   // What stays: anything that mentions an entity or a facet, and a facet's
   // segments; what an import or a workout made elsewhere includes entities;

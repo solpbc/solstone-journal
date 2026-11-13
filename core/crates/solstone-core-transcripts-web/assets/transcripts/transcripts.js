@@ -5190,6 +5190,11 @@
         stays: 'summaries made from it elsewhere in your journal stay where they are and may still mention it.',
         size: 'current raw media size: {size}',
       },
+      // Erasing a segment erases its original media waiting in the trash too.
+      originalsGo: {
+        one: 'its original media in the trash is erased with it.',
+        many: 'their original media in the trash is erased with them.',
+      },
       erase: {
         title: 'erase this segment now?',
         reach: "it leaves your journal now and can't be recovered.",
@@ -5287,6 +5292,9 @@
       deleteSegmentModalBody.append(
         meta,
         deleteDialogElement('p', 'tr-delete-reach', copy.reach),
+        ...(erasing && originalsInTrash.has(`${day}/${seg.stream}/${seg.key}`)
+          ? [deleteDialogElement('p', 'tr-delete-originals', TRASH_COPY.originalsGo.one)]
+          : []),
         deleteDialogElement('p', 'tr-delete-lead', copy.lead),
         list,
         deleteDialogElement('p', 'tr-delete-stays', copy.stays),
@@ -5306,8 +5314,25 @@
       else renderDeleteSetStep(deleteDialogSegs, step);
     }
 
+    // Segments whose original media waits in the trash, read when the dialog
+    // opens, so an erase can say it goes too.
+    let originalsInTrash = new Set();
+
+    function readOriginalsInTrash() {
+      originalsInTrash = new Set();
+      fetch('/app/settings/api/trash', { headers: { accept: 'application/json' } })
+        .then(response => (response.ok ? response.json() : null))
+        .then((answer) => {
+          originalsInTrash = new Set((answer?.items || [])
+            .filter(item => item.kind === 'originals')
+            .map(item => `${item.day}/${item.stream}/${item.segment}`));
+        })
+        .catch(() => {});
+    }
+
     function showDeleteSegmentModal(segs = selectedSegment ? [selectedSegment] : null) {
       if (!segs || !segs.length) return;
+      readOriginalsInTrash();
 
       deleteDialogSegs = segs;
       renderDeleteStep('move');
@@ -5736,6 +5761,9 @@
         meta,
         shown,
         deleteDialogElement('p', 'tr-delete-reach', erasing ? copy.eraseReach : copy.moveReach),
+        ...(erasing && segs.some(seg => originalsInTrash.has(`${day}/${seg.stream}/${seg.key}`))
+          ? [deleteDialogElement('p', 'tr-delete-originals', TRASH_COPY.originalsGo.many)]
+          : []),
         deleteDialogElement('p', 'tr-delete-lead', erasing ? copy.eraseLead : copy.moveLead),
         list,
         deleteDialogElement('p', 'tr-delete-stays', erasing ? copy.eraseStays : copy.moveStays),
