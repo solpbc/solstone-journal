@@ -2092,8 +2092,22 @@ fn fetch(
                         &a.record,
                     );
                 }
-                // A hidden activity is not found, as a missing one isn't.
-                ActivityAdmit::Admitted(a) if a.hidden => {
+                // A hidden activity is not found, as a missing one isn't. Nor
+                // is a Strava line this connection no longer reads: its day
+                // hidden, or the body permission gone, since search found it.
+                ActivityAdmit::Admitted(a)
+                    if a.hidden
+                        || crate::body_source::activity_file_place(&entry.path).is_some_and(
+                            |(_, day)| {
+                                crate::body_source::strava_line_hidden(
+                                    journal_root,
+                                    snapshot,
+                                    &day,
+                                    &a.record,
+                                )
+                            },
+                        ) =>
+                {
                     return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
                 }
                 ActivityAdmit::Admitted(a) => {

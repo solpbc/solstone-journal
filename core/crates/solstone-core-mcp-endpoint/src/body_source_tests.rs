@@ -2885,8 +2885,25 @@ fn a_strava_line_on_a_hidden_day_is_listed_by_no_connection() {
         titles
     };
     assert_eq!(titles(), ["Morning Run", "Standup"]);
+    // Found by search and read while the day shows.
+    index(root);
+    let found = call(root, "search", json!({"query": "Morning Run", "day": DAY}));
+    let reference = found["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|result| result.to_string().contains("Morning Run"))
+        .unwrap_or_else(|| panic!("{found}"))["reference"]
+        .clone();
+    let read = call(root, "fetch", json!({"reference": reference}));
+    assert!(read.to_string().contains("Morning Run"), "{read}");
     hide_days(root, &[DAY]);
     assert_eq!(titles(), ["Standup"], "the hidden day's workout line goes");
+    // A reference search gave out before the day was hidden reads nothing now.
+    assert!(
+        run_mcp_probe(root, CONNECTION, "fetch", &json!({"reference": reference})).is_err(),
+        "a hidden day's workout line was fetched"
+    );
     damage_hidden_days(root);
     assert_eq!(
         titles(),
