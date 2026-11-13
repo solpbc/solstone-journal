@@ -23,6 +23,9 @@
   // working, as the visual line says it.
   const STILL_WORKING_MS = 10000;
   const SCROLL_ENTRIES = 50;
+  // How long a back holds its entry's scroll while the view draws (below).
+  const SCROLL_HOLD_MS = 10000;
+  const OWNER_INPUT = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
   const HOVER_INTENT_MS = 100;
   const PRESS_HOLD_MS = 1000;
   const MOVE_MARKS = ['view:ready', 'view:update', 'router:start', 'router:reread', 'workspace:inserted', 'view:scripts-loaded'];
@@ -333,9 +336,39 @@
     window.setTimeout(settle, 0);
   }
 
+  // A back can reach an entry before its view has drawn as far down as the
+  // owner left it, so the scroll is cut short there, and as the view's later
+  // reads draw, the browser's scroll anchoring carries it further on. So the
+  // entry's scroll is held while the view grows, until the owner scrolls,
+  // presses or types, the next move starts, or the hold's time is up.
+  let releaseHold = null;
+  function releaseScroll() {
+    if (releaseHold) releaseHold();
+  }
+
+  function holdScroll(y) {
+    releaseScroll();
+    const main = document.getElementById('main-content');
+    if (!main || typeof window.ResizeObserver !== 'function') return;
+    const observer = new window.ResizeObserver(() => {
+      if (Math.round(window.scrollY || 0) !== y) window.scrollTo(0, y);
+    });
+    const timer = window.setTimeout(releaseScroll, SCROLL_HOLD_MS);
+    releaseHold = () => {
+      releaseHold = null;
+      observer.disconnect();
+      window.clearTimeout(timer);
+      OWNER_INPUT.forEach((type) => window.removeEventListener(type, releaseScroll, true));
+    };
+    OWNER_INPUT.forEach((type) => window.addEventListener(type, releaseScroll, { capture: true, passive: true }));
+    observer.observe(main);
+  }
+
   function restoreScroll(mode) {
     if (mode === 'pop' && entryId && scrolls.has(entryId)) {
-      window.scrollTo(0, scrolls.get(entryId));
+      const y = scrolls.get(entryId);
+      window.scrollTo(0, y);
+      holdScroll(y);
     } else if (mode !== 'pop') {
       window.scrollTo(0, 0);
     }
@@ -370,6 +403,7 @@
     if (!app || !app.workspace_url) return fullLoad(url, SHELL_BUILD_RELOAD_STAMP_KEY, mode);
 
     if (navigation) navigation.abort();
+    releaseScroll();
     const controller = window.SolStore.createAbort();
     navigation = controller;
     // A page that stays would keep every move's marks for its whole life:

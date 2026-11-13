@@ -1,3 +1,6 @@
+<!-- first-read: /app/speakers/ -> /app/speakers/api/state -->
+<!-- first-read: /app/speakers/{day} -> /app/speakers/api/state -->
+<!-- view-contract -->
 <link rel="stylesheet" href="/static/date-nav.css">
 <script src="/static/date-nav.js"></script>
 <link rel="stylesheet" href="/static/day-grid.css">
@@ -1361,15 +1364,384 @@
 </div>
 </div>
 
+<style>
+.spk-overview {
+  width: min(1120px, 100%);
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 32px 16px 56px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.spk-overview-section {
+  padding: 28px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.spk-overview-section:last-child {
+  border-bottom: 0;
+}
+
+.spk-overview-section[hidden] {
+  display: none;
+}
+
+.spk-day-grid-copy {
+  margin: 6px 0 0;
+  color: var(--ink-soft-paper);
+  font-size: var(--text-min);
+}
+
+.spk-day-grid-host {
+  min-width: 0;
+}
+
+.spk-day-grid-legend {
+  margin-top: var(--space-2);
+}
+
+.spk-overview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.spk-overview-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.spk-overview-panel {
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 18px;
+}
+
+.spk-overview-muted {
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+
+.spk-overview-discovery-notice {
+  margin: 0 0 16px;
+}
+
+.spk-overview-discovery-notice[hidden] {
+  display: none;
+}
+
+.spk-overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.spk-overview-btn,
+.spk-overview-link,
+.spk-overview-select {
+  min-height: 38px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+
+.spk-overview-btn,
+.spk-overview-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.spk-overview-btn-primary {
+  background: var(--surface-dark);
+  border-color: var(--surface-dark);
+  color: var(--ink-on-dark);
+}
+
+/* A destructive confirm, as tokens.css names it. */
+.spk-overview-btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--ink-on-danger);
+}
+
+.spk-overview-select {
+  padding: 7px 10px;
+}
+
+.spk-progress {
+  height: 8px;
+  background: var(--hairline);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 12px 0 8px;
+}
+
+.spk-progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--surface-dark);
+}
+
+.spk-owner-samples,
+.spk-known-grid,
+.spk-discovery-clusters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+/* Unlabeled voices stay discoverable without crowding named suggestions. */
+.spk-discovery-clusters > details { grid-column: 1 / -1; }
+.spk-discovery-clusters > details > summary { cursor: pointer; padding: 12px 0; }
+.spk-discovery-clusters > details > .spk-discovery-card { margin-top: 12px; }
+
+/* Same treatment for placeholder-named ("Speaker 1") known-voice cards. */
+.spk-known-grid > details { grid-column: 1 / -1; }
+.spk-known-grid > details > summary { cursor: pointer; padding: 12px 0; }
+.spk-known-grid > details > .spk-known-card { margin-top: 12px; }
+
+.spk-owner-sample,
+.spk-known-card,
+.spk-discovery-card {
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 14px;
+}
+
+.spk-known-card {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.spk-card-title {
+  margin: 0 0 8px;
+  font-weight: 700;
+}
+
+.spk-card-line {
+  margin: 4px 0;
+  color: var(--ink-soft-paper);
+  font-size: 14px;
+}
+
+.spk-cohesion {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.spk-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hairline-2);
+}
+
+.spk-dot-filled {
+  background: var(--surface-dark);
+}
+
+.spk-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.spk-discovery-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.spk-overview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.spk-overview-filter {
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+
+/* G1-208: the phone page ran 26,832px because all 51 known voices stack one
+   per row. Show the first twelve and let the owner ask for the rest; the
+   desktop grid is two or three across and stays whole. */
+.spk-known-more {
+  display: none;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .spk-overview {
+    width: min(100vw - 24px, 1120px);
+    padding-top: 20px;
+  }
+
+  .spk-overview-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .spk-sentence-actions {
+    grid-column: 2;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .spk-select-small { max-width: 100%; }
+  .spk-discovery-clusters {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Every control on this page is thumb-driven from the tablet down, the same
+   reasoning that gave the day grid one cell ladder (G1-213). */
+@media (max-width: 768px) {
+  .spk-overview-btn,
+  .spk-overview-link,
+  .spk-overview-select,
+  .spk-overview-filter {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 480px) {
+  .spk-overview-filter,
+  .spk-overview-select {
+    width: 100%;
+  }
+
+  .spk-known-grid[data-capped] > a.spk-known-card:nth-of-type(n + 13) {
+    display: none;
+  }
+
+  .spk-known-grid[data-capped] + .spk-known-more {
+    display: inline-flex;
+  }
+}
+</style>
+
+<div id="speakersOverviewView" hidden>
+<div class="spk-overview" data-spk-overview>
+  <section class="spk-overview-section spk-day-grid-card" id="spkDayGridCard" hidden>
+    <div class="spk-overview-header">
+      <div>
+        <h2 class="spk-overview-title" data-copy="SPK_GRID_TITLE"></h2>
+        <p class="spk-day-grid-copy" id="spkDayGridCopy"></p>
+      </div>
+    </div>
+    <div class="spk-day-grid-host" id="spkDayGridHost"></div>
+    <div class="spk-day-grid-legend" id="spkDayGridLegend"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="your-voice" id="spkOverviewYourVoiceSection" tabindex="-1" aria-labelledby="spkOverviewYourVoiceHeader">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_YOUR_VOICE_HEADER" id="spkOverviewYourVoiceHeader"></h2>
+    </div>
+    <div id="spkOverviewOwner" class="spk-overview-panel"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="quality">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_QUALITY_HEADER"></h2>
+    </div>
+    <div id="spkOverviewQuality" class="spk-overview-panel"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="known-voices">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_KNOWN_VOICES_HEADER"></h2>
+      <div class="spk-overview-controls">
+        <input id="spkKnownFilter" class="spk-overview-filter" type="search" autocomplete="off" placeholder="find a voice by name" aria-label="find a voice by name">
+        <select id="spkKnownSort" class="spk-overview-select" aria-label="sort voices"></select>
+      </div>
+    </div>
+    <p class="spk-overview-muted" data-copy="SPK_OVERVIEW_KNOWN_VOICES_QUALITY_HINT"></p>
+    <div id="spkKnownVoices"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="new-voices" id="spkNewVoicesSection">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_NEW_VOICES_HEADER"></h2>
+      <button id="spkDiscoveryScan" class="spk-overview-btn" type="button">look for new voices</button>
+    </div>
+    <div id="spkStatementHandoffNotice" class="spk-overview-muted" hidden></div>
+    <div id="spkOverviewDiscoveryNotice" class="spk-overview-discovery-notice" hidden></div>
+    <div id="spkDiscoveryClusters" class="spk-discovery-clusters"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="today">
+    <a id="spkTodayReview" class="spk-overview-link" href=""></a>
+  </section>
+</div>
+</div>
+
+<script src="/app/speakers/static/who_is_this.js"></script>
+
 <script>
+// Speakers on the view contract. The script only registers the view. A mount
+// reads what it is asked from its own address, reads the state once, and
+// starts one of two modes: the overview at /app/speakers/, or a day at
+// /app/speakers/<day>. Each mode runs in a scope of its own inside the
+// mount, and a day step ends that scope and starts the day again on a fresh
+// copy of the day's markup, so nothing of the day before can draw.
 (() => {
-  const DAY_RE = /^\d{8}$/;
-  const { segment } = window.solPathContext();
-  const searchParams = new URLSearchParams(window.location.search);
+const SPEAKERS_PATH = /^\/app\/speakers(\/|$)/;
+const OWN_SCROLLS = 50;
+
+// Every run reads a segment's stream layout through this one decoder: a
+// missing layout is named only where the caller allows it.
+function decodeSegmentLayout(value, allowMissing = false) {
+  if (value === 'direct' || value === 'named') {
+    return value;
+  }
+  if (allowMissing && (value === undefined || value === null)) {
+    return 'named';
+  }
+  throw new Error('invalid segment layout');
+}
+
+// What the address asks of the view: the day, the speaker to filter by, a
+// voice to open and a line's handoff from transcripts.
+function speakersContext(route) {
+  const searchParams = new URLSearchParams(route.search || '');
   const speakerFilter = searchParams.get('speaker') || '';
-  window.SPEAKERS_CONTEXT = {
-    isDay: DAY_RE.test(segment || ''),
-    day: segment || null,
+  return {
+    isDay: Boolean(route.day),
+    day: route.day || null,
     speakerFilter,
     voiceClusterId: searchParams.get('voice_cluster_id') || '',
     statementHandoff: {
@@ -1383,31 +1755,191 @@
       sentenceId: searchParams.get('voice_sentence_id') || '',
     },
   };
-  // Every page script reads a segment's stream layout through this one
-  // decoder: a missing layout is named only where the caller allows it.
-  window.decodeSegmentLayout = function decodeSegmentLayout(value, allowMissing = false) {
-    if (value === 'direct' || value === 'named') {
-      return value;
-    }
-    if (allowMissing && (value === undefined || value === null)) {
-      return 'named';
-    }
-    throw new Error('invalid segment layout');
-  };
-  window.loadSpeakersState = function loadSpeakersState() {
-    const params = new URLSearchParams();
-    if (speakerFilter) params.set('speaker', speakerFilter);
-    const suffix = params.toString() ? `?${params}` : '';
-    return window.apiJson(`/app/speakers/api/state${suffix}`);
-  };
-  window.SPEAKERS_STATE_PROMISE = window.loadSpeakersState();
-})();
-</script>
+}
 
-<script src="/app/speakers/static/who_is_this.js"></script>
+function stateUrl(context) {
+  const params = new URLSearchParams();
+  if (context.speakerFilter) params.set('speaker', context.speakerFilter);
+  const suffix = params.toString() ? `?${params}` : '';
+  return `/app/speakers/api/state${suffix}`;
+}
 
-<script>
-(() => {
+function isRead(opts) {
+  const method = String((opts && opts.method) || 'GET').toUpperCase();
+  return method === 'GET' || method === 'HEAD';
+}
+
+function focusQuietly(node) {
+  if (!node || typeof node.focus !== 'function') return;
+  try {
+    node.focus({ preventScroll: true });
+  } catch (_) {
+    node.focus();
+  }
+}
+
+// A playing element stays alive and audible after it leaves the page, so
+// every one the view drew stops with it.
+function stopAudio() {
+  ['#speakersDayView audio', '#speakersOverviewView audio', '.spk-who-backdrop audio'].forEach((selector) => {
+    document.querySelectorAll(selector).forEach((audio) => {
+      try { audio.pause(); } catch (_) {}
+    });
+  });
+}
+
+// The scroll of each of the view's own history entries, by entry: the last
+// fifty, numbers only. An entry never scrolled has a record too, at the top.
+const ownScrolls = new Map();
+function entryIdNow() {
+  return (window.history.state && window.history.state.solRoute && window.history.state.solRoute.id) || null;
+}
+function rememberOwnScroll(y) {
+  const id = entryIdNow();
+  if (!id) return;
+  ownScrolls.delete(id);
+  ownScrolls.set(id, y);
+  while (ownScrolls.size > OWN_SCROLLS) ownScrolls.delete(ownScrolls.keys().next().value);
+}
+
+// One run of a mode: its listeners, timers, reads and writes go through the
+// mount's ctx and end with the run. A read is the store's. A write is never
+// cut short, and its answer, like a read's, draws nothing once the run has
+// ended. `arrival` is a run the router moved to, which places its focus
+// after the router's.
+function openRun(ctx, arrival) {
+  const abort = window.SolStore.createAbort();
+  const offs = new Set();
+  const timers = new Set();
+  const undo = [];
+  const afterReady = [];
+  let ended = false;
+  let readied = false;
+  const over = () => ended || ctx.disposed;
+  const never = () => window.SolStore.never();
+  const guard = (promise) => Promise.resolve(promise).then(
+    (value) => (over() ? never() : value),
+    (error) => (over() ? never() : Promise.reject(error)),
+  );
+  // A response's body comes after its headers, so reading it is guarded too.
+  const guardResponse = (promise) => guard(promise).then((response) => {
+    if (response && typeof response.json === 'function') {
+      const json = response.json.bind(response);
+      response.json = () => guard(json());
+    }
+    if (response && typeof response.text === 'function') {
+      const text = response.text.bind(response);
+      response.text = () => guard(text());
+    }
+    return response;
+  });
+  const joined = (signal) => window.SolStore.eitherSignal(signal || null, abort.signal);
+  const run = {
+    get disposed() { return over(); },
+    get route() { return ctx.route; },
+    history: ctx.history,
+    // The address is still this view's. A run still mounted after a move
+    // away writes nothing to another view's address.
+    here() { return !over() && SPEAKERS_PATH.test(window.location.pathname); },
+    ownHash() { return run.here() ? String(window.location.hash || '').slice(1) : ''; },
+    on(target, type, fn, options) {
+      if (over()) return () => {};
+      const off = ctx.on(target, type, fn, options);
+      offs.add(off);
+      return () => { offs.delete(off); off(); };
+    },
+    setTimeout(fn, ms, ...args) {
+      if (over()) return 0;
+      const id = ctx.setTimeout(() => {
+        timers.delete(id);
+        fn(...args);
+      }, ms);
+      timers.add(id);
+      return id;
+    },
+    clearTimeout(id) {
+      timers.delete(id);
+      ctx.clearTimeout(id);
+    },
+    apiJson(url, opts) {
+      if (over()) return never();
+      if (!isRead(opts)) return guard(window.apiJson(url, opts));
+      return guard(ctx.read(url, Object.assign({}, opts, { fresh: true, signal: joined(opts && opts.signal) })));
+    },
+    fetch(input, init) {
+      if (over()) return never();
+      if (!isRead(init)) return guardResponse(window.fetch(input, init));
+      return guardResponse(ctx.fetch(input, Object.assign({}, init, { signal: joined(init && init.signal) })));
+    },
+    settled: guard,
+    reportReady(state) {
+      ctx.ready(state);
+      if (readied) return;
+      readied = true;
+      afterReady.splice(0).forEach((fn) => run.setTimeout(fn, 0));
+    },
+    // Focus the run places itself on arrival (a hash it answers) waits for
+    // the router's, which comes as the view reports ready, or sooner.
+    afterArrival(fn) {
+      if (over()) return;
+      if (arrival && !readied) afterReady.push(fn);
+      else fn();
+    },
+    // One of the view's own entries. A page that has learned the journal is
+    // another build loads the address as a new page instead.
+    pushOwn(url) {
+      if (window.appEvents?.buildChanged?.()) {
+        window.location.assign(url);
+        return false;
+      }
+      rememberOwnScroll(window.scrollY || 0);
+      ctx.history.push(url);
+      return true;
+    },
+    restoreOwnScroll() {
+      const id = entryIdNow();
+      window.scrollTo(0, id && ownScrolls.has(id) ? ownScrolls.get(id) : 0);
+    },
+    focus: focusQuietly,
+    onDispose(fn) {
+      if (ended) {
+        fn();
+        return;
+      }
+      undo.push(fn);
+    },
+    end() {
+      if (ended) return;
+      ended = true;
+      abort.abort();
+      stopAudio();
+      while (undo.length) {
+        const fn = undo.pop();
+        try { fn(); } catch (error) { window.logError?.(error, { context: 'view-dispose', view: 'speakers' }); }
+      }
+      offs.forEach((off) => off());
+      offs.clear();
+      timers.forEach((id) => ctx.clearTimeout(id));
+      timers.clear();
+      afterReady.length = 0;
+    },
+  };
+  return run;
+}
+
+// The day: its segments, the review, owner teach and the sentence player.
+function runDay(ctx, page) {
+  // This run's timers, reads and writes: each ends with it, and an answer
+  // that arrives after it has ended draws nothing.
+  const setTimeout = ctx.setTimeout;
+  const clearTimeout = ctx.clearTimeout;
+  const apiJson = ctx.apiJson;
+  const fetch = ctx.fetch;
+  const settled = ctx.settled;
+  const ownHash = ctx.ownHash;
+  // The day's own entries are at its own path. An entry at another path, the
+  // overview's or another day's, is the router's, and the router restores it.
+  const ownPath = window.location.pathname;
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
   const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
   const PLACEHOLDER_SPEAKER_NAME = /^speaker\s+\d+$/i;
@@ -1524,7 +2056,6 @@
   const OWNER_TEACH_RECENT_DAYS = 14;
   const OWNER_TEACH_TARGET_STATEMENTS = 40;
 
-  const { decodeSegmentLayout } = window;
 
   function segmentLayout(seg) {
     return decodeSegmentLayout(seg?.stream_layout);
@@ -1583,8 +2114,10 @@
   }
 
   function focusOwnerBanner() {
-    ownerBanner.focus();
-    ownerBanner.scrollIntoView({ block: 'nearest' });
+    ctx.afterArrival(() => {
+      ownerBanner.focus();
+      ownerBanner.scrollIntoView({ block: 'nearest' });
+    });
   }
 
   function beginOwnerTeachHandoff() {
@@ -1595,28 +2128,69 @@
   }
 
   function initSpeakers() {
-    ownerTeachStartRequested = window.location.hash.slice(1) === OWNER_TEACH_HASH;
+    ownerTeachStartRequested = ownHash() === OWNER_TEACH_HASH;
     if (ownerTeachStartRequested) {
       beginOwnerTeachHandoff();
     }
     checkOwnerStatus();
     loadSegments();
 
-    window.addEventListener('hashchange', () => {
-      const hash = window.location.hash.slice(1);
-      if (hash === OWNER_TEACH_HASH) {
-        navigateToOwnerHelp();
-        return;
-      }
+    ctx.on(window, 'popstate', onOwnAddress);
+    ctx.on(window, 'hashchange', onOwnAddress);
+  }
+
+  // Back and forward between the day's own entries, and a hash typed or
+  // linked on the same page. A pop that also fires hashchange acts once.
+  let actedOn = window.location.href;
+  function onOwnAddress(event) {
+    if (!ctx.here() || window.location.pathname !== ownPath) return;
+    const popped = event && event.type === 'popstate';
+    if (window.location.href === actedOn) {
+      if (popped) ctx.restoreOwnScroll();
+      return;
+    }
+    actedOn = window.location.href;
+    closeWhoIsThisForMove();
+    const hash = ownHash();
+    if (hash === OWNER_TEACH_HASH) {
+      navigateToOwnerHelp();
+    } else {
       ownerTeachHandoffGeneration = 0;
       if (hash && !selectSegmentByHash(hash) && segments.length < segmentTotal) {
         loadUntilFound(hash);
       }
-    });
+    }
+    if (popped) ctx.restoreOwnScroll();
+    placeFocusAfterMove();
+  }
+
+  // An own entry: one push, through the view's history, at this day's path.
+  function pushOwnHash(hash) {
+    if (!ctx.here()) return;
+    const url = `${window.location.pathname}${window.location.search}#${hash}`;
+    if (ctx.pushOwn(url)) actedOn = window.location.href;
+  }
+
+  // Focus a move or a redraw left nowhere goes to the open segment, else to
+  // the page's workspace.
+  function placeFocusAfterMove() {
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected !== false) return;
+    const selected = segmentList.querySelector('.spk-segment[aria-selected="true"]');
+    ctx.focus(selected || document.getElementById('main-content'));
+  }
+
+  // A move with the who-is-this sheet open closes it first, and the page
+  // stops being inert at once, so the move's focus can land.
+  function closeWhoIsThisForMove() {
+    if (!whoIsThisSheet || !whoIsThisSheet.opened) return;
+    if (whoIsThisSheet.dialog.contains(document.activeElement)) ctx.focus(document.getElementById('main-content'));
+    whoIsThisSheet.close({ restoreFocus: false });
+    window.ConveyModalLayer?.reconcile?.();
   }
 
   function applySpeakersDayState(payload) {
-    const context = window.SPEAKERS_CONTEXT || {};
+    const context = page.context;
     day = context.day || '';
     SPK_COPY = payload.speaker_copy || {};
     ownerBanner.setAttribute('aria-label', SPK_COPY.SPK_OVERVIEW_YOUR_VOICE_HEADER || '');
@@ -1639,30 +2213,35 @@
     segmentList.innerHTML = `<li>${errorHtml}</li>`;
     detailPanel.innerHTML = errorHtml;
     detailPanel.querySelector('.surface-state-retry')?.addEventListener('click', () => {
-      window.SPEAKERS_STATE_PROMISE = window.loadSpeakersState();
+      page.loadState();
       startSpeakersDay();
     });
   }
 
   async function startSpeakersDay() {
-    const context = window.SPEAKERS_CONTEXT || {};
+    const context = page.context;
     if (!context.isDay) return;
     document.getElementById('speakersDayView').hidden = false;
     segmentList.innerHTML = '<li class="spk-empty">loading…</li>';
     try {
-      const payload = await window.SPEAKERS_STATE_PROMISE;
+      const payload = await settled(page.state);
       applySpeakersDayState(payload);
+      // A step that took focus with the day it left puts it on the new
+      // day's heading, once that has its words.
+      if (page.refocus) {
+        page.refocus = false;
+        const active = document.activeElement;
+        if (!active || active === document.body || !active.isConnected) {
+          const heading = document.querySelector('.spk-segments-header');
+          if (heading && !heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
+          ctx.focus(heading || document.getElementById('main-content'));
+        }
+      }
       initSpeakers();
     } catch (err) {
       renderSpeakersStateError(err);
       reportSpeakersReady('error');
     }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startSpeakersDay);
-  } else {
-    startSpeakersDay();
   }
 
   segmentList.addEventListener('keydown', e => {
@@ -1695,7 +2274,7 @@
       e.preventDefault();
       const seg = segments.find(s => segmentIdentity(s) === item.dataset.segmentIdentity);
       if (seg) {
-        window.location.hash = segmentIdentity(seg);
+        pushOwnHash(segmentIdentity(seg));
         selectSegment(seg);
       }
     }
@@ -1741,8 +2320,8 @@
     whoIsThisSheet = window.SpeakersWhoIsThis.init({
       mount: document.body,
       copy: SPK_COPY,
-      context: window.SPEAKERS_CONTEXT || {},
-      apiJson: window.apiJson,
+      context: page.context,
+      apiJson,
       logError: window.logError,
       formatDateShort: window.formatDateShort,
       onThisIsMe: () => {
@@ -1779,7 +2358,7 @@
     const requestGeneration = ownerTeachHandoffGeneration;
     const stale = () => requestSeq !== ownerStatusRequestSeq || requestGeneration !== ownerTeachHandoffGeneration;
     try {
-      const data = await window.apiJson('/app/speakers/api/owner/status');
+      const data = await apiJson('/app/speakers/api/owner/status');
       if (stale()) return;
       ownerStatusData = data;
       if (data.status === 'confirmed') {
@@ -1825,7 +2404,7 @@
         }
         if (data.status === 'needs_detection' && !ownerDetectionInFlight) {
           ownerDetectionInFlight = true;
-          window.apiJson('/app/speakers/api/owner/detect', { method: 'POST' })
+          apiJson('/app/speakers/api/owner/detect', { method: 'POST' })
             .then(() => {
               ownerDetectionInFlight = false;
               checkOwnerStatus();
@@ -2270,13 +2849,15 @@
   function navigateToOwnerHelp() {
     const today = todayDayKey();
     if (day !== today) {
-      window.location.href = `/app/speakers/${today}#${OWNER_TEACH_HASH}`;
+      // Today's day, in the page where the router can take it.
+      const href = `/app/speakers/${today}#${OWNER_TEACH_HASH}`;
+      if (!window.solRouter?.navigate?.(href)) window.location.href = href;
       return;
     }
     ownerTeachStartRequested = true;
     beginOwnerTeachHandoff();
-    if (window.location.hash.slice(1) !== OWNER_TEACH_HASH) {
-      window.location.hash = OWNER_TEACH_HASH;
+    if (ownHash() !== OWNER_TEACH_HASH) {
+      pushOwnHash(OWNER_TEACH_HASH);
     }
     if (ownerStatusData) {
       startOwnerTeachSession(ownerStatusData);
@@ -2338,7 +2919,7 @@
     document.getElementById('spkOwnerBuildFromTags')?.addEventListener('click', event => {
       const btn = event.currentTarget;
       btn.disabled = true;
-      window.apiJson('/app/speakers/api/owner/build-from-tags', { method: 'POST' })
+      apiJson('/app/speakers/api/owner/build-from-tags', { method: 'POST' })
         .then(() => {
           checkOwnerStatus();
         })
@@ -2514,7 +3095,7 @@
   async function ensureOwnerTeachSegments(dayKey) {
     let state = { segments: [], nextOffset: 0, done: false };
     while (!state.done) {
-      const data = await window.apiJson(ownerTeachSegmentsApiUrl(dayKey, 100, state.nextOffset));
+      const data = await apiJson(ownerTeachSegmentsApiUrl(dayKey, 100, state.nextOffset));
       state = ownerTeachSegmentPageState(state.segments, data);
     }
     return state.segments;
@@ -2555,7 +3136,7 @@
         const request = requests[nextIndex];
         nextIndex += 1;
         try {
-          const data = await window.apiJson(segmentRequestUrl('/app/speakers/api/review', request.seg, request.source, dayKey));
+          const data = await apiJson(segmentRequestUrl('/app/speakers/api/review', request.seg, request.source, dayKey));
           const principal = (data.all_entities || []).find(entity => entity.is_principal);
           if (principal) ownerTeachPrincipalId = principal.entity_id;
           const payload = {
@@ -2636,7 +3217,7 @@
     if (!ownerTeachState || !current || !principalId) return;
     ownerBanner.querySelectorAll('button').forEach(btn => { btn.disabled = true; });
     try {
-      const result = await window.apiJson('/app/speakers/api/assign-attribution', {
+      const result = await apiJson('/app/speakers/api/assign-attribution', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2688,7 +3269,7 @@
     if (!ownerTeachState) return;
     ownerBanner.querySelectorAll('button').forEach(btn => { btn.disabled = true; });
     try {
-      const result = await window.apiJson('/app/speakers/api/owner/rebuild', { method: 'POST' });
+      const result = await apiJson('/app/speakers/api/owner/rebuild', { method: 'POST' });
       if (result.status === 'rebuilt') {
         ownerRevealShown = false;
         ownerRevealPendingSource = 'redo';
@@ -2743,7 +3324,7 @@
 
   function submitOwnerChoice(path, revealSource = null) {
     ownerBanner.querySelectorAll('button').forEach(btn => { btn.disabled = true; });
-    window.apiJson(path, { method: 'POST' })
+    apiJson(path, { method: 'POST' })
       .then(() => {
         if (revealSource) ownerRevealPendingSource = revealSource;
         checkOwnerStatus();
@@ -2757,7 +3338,7 @@
 
   function submitOwnerCandidateAction(path, payload, revealSource = null) {
     ownerBanner.querySelectorAll('button').forEach(btn => { btn.disabled = true; });
-    window.apiJson(path, {
+    apiJson(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -2783,7 +3364,7 @@
     dayDiscoveryRequestSeq = requestSeq;
     discoveryBanner.style.display = 'block';
     discoveryBanner.innerHTML = '<div class="spk-discovery-panel"><div class="spk-discovery-title"><span class="spk-spinner"></span> loading new voices…</div></div>';
-    return window.apiJson('/app/speakers/api/discovery/cache', { cache: 'no-store' })
+    return apiJson('/app/speakers/api/discovery/cache', { cache: 'no-store' })
       .then(data => {
         if (requestSeq !== dayDiscoveryRequestSeq) return false;
         renderDiscoveryPayload(data);
@@ -2957,14 +3538,14 @@
     return SPK_COPY.SPK_OVERVIEW_CARD_SEGMENTS_LABEL || '';
   }
 
-  const reportSpeakersReady = window.createViewReady('speakers');
+  const reportSpeakersReady = ctx.reportReady;
   function loadSegments(options) {
     const throwOnError = Boolean(options?.throwOnError);
     const requestSeq = segmentsRequestSeq + 1;
     segmentsRequestSeq = requestSeq;
     updateSpeakerFilterIndicator();
     const fetchLimit = Math.max(segments.length, 20);
-    return window.apiJson(segmentsApiUrl(fetchLimit, 0))
+    return apiJson(segmentsApiUrl(fetchLimit, 0))
       .then(data => {
         if (requestSeq !== segmentsRequestSeq) return false;
         setSegmentsStatus();
@@ -2979,8 +3560,8 @@
         renderSegmentList();
         updateLoadMore();
         reportSpeakersReady(segments.length ? 'content' : 'empty');
-	        if (window.location.hash && window.location.hash.slice(1) !== OWNER_TEACH_HASH) {
-	          const hashKey = window.location.hash.slice(1);
+	        if (ownHash() && ownHash() !== OWNER_TEACH_HASH) {
+	          const hashKey = ownHash();
 	          const found = selectSegmentByHash(hashKey);
 	          if (!found && segments.length < segmentTotal) {
 	            loadUntilFound(hashKey, requestSeq);
@@ -3014,7 +3595,7 @@
     segmentsRequestSeq = requestSeq;
     const btn = document.getElementById('spkLoadMoreBtn');
     if (btn) btn.disabled = true;
-    return window.apiJson(segmentsApiUrl(20, segments.length))
+    return apiJson(segmentsApiUrl(20, segments.length))
       .then(data => {
         if (requestSeq !== segmentsRequestSeq) return false;
         setSegmentsStatus();
@@ -3039,7 +3620,7 @@
   function loadUntilFound(key, requestSeq) {
     const activeSeq = requestSeq || segmentsRequestSeq + 1;
     segmentsRequestSeq = activeSeq;
-    return window.apiJson(segmentsApiUrl(20, segments.length))
+    return apiJson(segmentsApiUrl(20, segments.length))
       .then(data => {
         if (activeSeq !== segmentsRequestSeq) return false;
         setSegmentsStatus();
@@ -3142,7 +3723,7 @@
       el.addEventListener('click', () => {
         const seg = segments.find(s => segmentIdentity(s) === el.dataset.segmentIdentity);
         if (seg) {
-          window.location.hash = segmentIdentity(seg);
+          pushOwnHash(segmentIdentity(seg));
           selectSegment(seg);
         }
       });
@@ -3267,7 +3848,7 @@
     const container = document.getElementById('spkSpeakers');
     if (!container) return Promise.resolve(false);
 
-    return window.apiJson(segmentRequestUrl('/app/speakers/api/speakers', seg))
+    return apiJson(segmentRequestUrl('/app/speakers/api/speakers', seg))
       .then(data => {
         if (requestSeq !== segmentSpeakersRequestSeq) return false;
         if (
@@ -3352,7 +3933,7 @@
     }
 
     setReviewStatus();
-    return window.apiJson(segmentRequestUrl('/app/speakers/api/review', seg, source))
+    return apiJson(segmentRequestUrl('/app/speakers/api/review', seg, source))
       .then(data => {
         if (requestSeq !== reviewRequestSeq) return false;
         if (
@@ -3643,7 +4224,7 @@
     try {
       const sentence = currentSentences.find(s => s.id === sentenceId);
       const isPrincipalAttestation = Boolean(sentence?.is_owner);
-      await window.apiJson('/app/speakers/api/confirm-attribution', {
+      await apiJson('/app/speakers/api/confirm-attribution', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3678,7 +4259,7 @@
 
   async function correctAttribution(sentenceId, newSpeaker) {
     try {
-      const result = await window.apiJson('/app/speakers/api/correct-attribution', {
+      const result = await apiJson('/app/speakers/api/correct-attribution', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3707,7 +4288,7 @@
   async function propagateCorrection(request, sentenceId) {
     try {
       const body = {...request, commit: true};
-      const result = await window.apiJson('/app/speakers/api/propagate-correction', {
+      const result = await apiJson('/app/speakers/api/propagate-correction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -3727,7 +4308,7 @@
 
   async function assignAttribution(sentenceId, speaker) {
     try {
-      await window.apiJson('/app/speakers/api/assign-attribution', {
+      await apiJson('/app/speakers/api/assign-attribution', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3768,7 +4349,7 @@
     }
     if (type === 'error') {
       container.setAttribute('aria-live', 'assertive');
-      container.innerHTML = `<div class="spk-status spk-status-${type}">${escapeHtml(message)}<button class="spk-status-dismiss" aria-label="dismiss" onclick="this.closest('.spk-status-container').innerHTML='';this.closest('.spk-status-container').setAttribute('aria-live','polite')">&times;</button></div>`;
+      container.innerHTML = `<div class="spk-status spk-status-${type}">${escapeHtml(message)}<button class="spk-status-dismiss" aria-label="dismiss" onclick="const box=this.closest('.spk-status-container');box.innerHTML='';box.setAttribute('aria-live','polite')">&times;</button></div>`;
     } else {
       container.setAttribute('aria-live', 'polite');
       container.innerHTML = `<div class="spk-status spk-status-${type}">${escapeHtml(message)}</div>`;
@@ -3933,357 +4514,26 @@
       .replace(/_/g, ' ');
   }
 
-})();
-</script>
-
-<style>
-.spk-overview {
-  width: min(1120px, 100%);
-  min-width: 0;
-  box-sizing: border-box;
-  margin: 0 auto;
-  padding: 32px 16px 56px;
-  background: var(--panel);
-  color: var(--ink);
+  ctx.onDispose(() => {
+    if (whoIsThisSheet) {
+      closeWhoIsThisForMove();
+      whoIsThisSheet.destroy();
+      whoIsThisSheet = null;
+    }
+  });
+  startSpeakersDay();
 }
 
-.spk-overview-section {
-  padding: 28px 0;
-  border-bottom: 1px solid var(--hairline);
-}
-
-.spk-overview-section:last-child {
-  border-bottom: 0;
-}
-
-.spk-overview-section[hidden] {
-  display: none;
-}
-
-.spk-day-grid-copy {
-  margin: 6px 0 0;
-  color: var(--ink-soft-paper);
-  font-size: var(--text-min);
-}
-
-.spk-day-grid-host {
-  min-width: 0;
-}
-
-.spk-day-grid-legend {
-  margin-top: var(--space-2);
-}
-
-.spk-overview-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.spk-overview-title {
-  margin: 0;
-  font-size: 24px;
-  line-height: 1.2;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
-.spk-overview-panel {
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--paper);
-  padding: 18px;
-}
-
-.spk-overview-muted {
-  color: var(--ink-faint);
-  font-size: 14px;
-}
-
-.spk-overview-discovery-notice {
-  margin: 0 0 16px;
-}
-
-.spk-overview-discovery-notice[hidden] {
-  display: none;
-}
-
-.spk-overview-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.spk-overview-btn,
-.spk-overview-link,
-.spk-overview-select {
-  min-height: 38px;
-  border: 1px solid var(--hairline-2);
-  border-radius: 6px;
-  background: var(--paper);
-  color: var(--ink);
-  font: inherit;
-}
-
-.spk-overview-btn,
-.spk-overview-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 12px;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.spk-overview-btn-primary {
-  background: var(--surface-dark);
-  border-color: var(--surface-dark);
-  color: var(--ink-on-dark);
-}
-
-/* A destructive confirm, as tokens.css names it. */
-.spk-overview-btn-danger {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: var(--ink-on-danger);
-}
-
-.spk-overview-select {
-  padding: 7px 10px;
-}
-
-.spk-progress {
-  height: 8px;
-  background: var(--hairline);
-  border-radius: 999px;
-  overflow: hidden;
-  margin: 12px 0 8px;
-}
-
-.spk-progress-fill {
-  height: 100%;
-  width: 0;
-  background: var(--surface-dark);
-}
-
-.spk-owner-samples,
-.spk-known-grid,
-.spk-discovery-clusters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-}
-
-/* Unlabeled voices stay discoverable without crowding named suggestions. */
-.spk-discovery-clusters > details { grid-column: 1 / -1; }
-.spk-discovery-clusters > details > summary { cursor: pointer; padding: 12px 0; }
-.spk-discovery-clusters > details > .spk-discovery-card { margin-top: 12px; }
-
-/* Same treatment for placeholder-named ("Speaker 1") known-voice cards. */
-.spk-known-grid > details { grid-column: 1 / -1; }
-.spk-known-grid > details > summary { cursor: pointer; padding: 12px 0; }
-.spk-known-grid > details > .spk-known-card { margin-top: 12px; }
-
-.spk-owner-sample,
-.spk-known-card,
-.spk-discovery-card {
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--paper);
-  padding: 14px;
-}
-
-.spk-known-card {
-  display: block;
-  color: inherit;
-  text-decoration: none;
-}
-
-.spk-card-title {
-  margin: 0 0 8px;
-  font-weight: 700;
-}
-
-.spk-card-line {
-  margin: 4px 0;
-  color: var(--ink-soft-paper);
-  font-size: 14px;
-}
-
-.spk-cohesion {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.spk-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--hairline-2);
-}
-
-.spk-dot-filled {
-  background: var(--surface-dark);
-}
-
-.spk-dots {
-  display: inline-flex;
-  gap: 4px;
-}
-
-.spk-discovery-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.spk-overview-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.spk-overview-filter {
-  min-height: 38px;
-  padding: 7px 10px;
-  border: 1px solid var(--hairline-2);
-  border-radius: 6px;
-  background: var(--paper);
-  color: var(--ink);
-  font: inherit;
-}
-
-/* G1-208: the phone page ran 26,832px because all 51 known voices stack one
-   per row. Show the first twelve and let the owner ask for the rest; the
-   desktop grid is two or three across and stays whole. */
-.spk-known-more {
-  display: none;
-  width: 100%;
-  min-height: 44px;
-  margin-top: 12px;
-  align-items: center;
-  justify-content: center;
-  padding: 10px 14px;
-  border: 1px solid var(--hairline-2);
-  border-radius: 6px;
-  background: var(--paper);
-  color: var(--ink);
-  font: inherit;
-  cursor: pointer;
-}
-
-@media (max-width: 720px) {
-  .spk-overview {
-    width: min(100vw - 24px, 1120px);
-    padding-top: 20px;
-  }
-
-  .spk-overview-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .spk-sentence-actions {
-    grid-column: 2;
-    flex-wrap: wrap;
-    min-width: 0;
-  }
-  .spk-select-small { max-width: 100%; }
-  .spk-discovery-clusters {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Every control on this page is thumb-driven from the tablet down, the same
-   reasoning that gave the day grid one cell ladder (G1-213). */
-@media (max-width: 768px) {
-  .spk-overview-btn,
-  .spk-overview-link,
-  .spk-overview-select,
-  .spk-overview-filter {
-    min-height: 44px;
-  }
-}
-
-@media (max-width: 480px) {
-  .spk-overview-filter,
-  .spk-overview-select {
-    width: 100%;
-  }
-
-  .spk-known-grid[data-capped] > a.spk-known-card:nth-of-type(n + 13) {
-    display: none;
-  }
-
-  .spk-known-grid[data-capped] + .spk-known-more {
-    display: inline-flex;
-  }
-}
-</style>
-
-<div id="speakersOverviewView" hidden>
-<div class="spk-overview" data-spk-overview>
-  <section class="spk-overview-section spk-day-grid-card" id="spkDayGridCard" hidden>
-    <div class="spk-overview-header">
-      <div>
-        <h2 class="spk-overview-title" data-copy="SPK_GRID_TITLE"></h2>
-        <p class="spk-day-grid-copy" id="spkDayGridCopy"></p>
-      </div>
-    </div>
-    <div class="spk-day-grid-host" id="spkDayGridHost"></div>
-    <div class="spk-day-grid-legend" id="spkDayGridLegend"></div>
-  </section>
-
-  <section class="spk-overview-section" data-section="your-voice" id="spkOverviewYourVoiceSection" tabindex="-1" aria-labelledby="spkOverviewYourVoiceHeader">
-    <div class="spk-overview-header">
-      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_YOUR_VOICE_HEADER" id="spkOverviewYourVoiceHeader"></h2>
-    </div>
-    <div id="spkOverviewOwner" class="spk-overview-panel"></div>
-  </section>
-
-  <section class="spk-overview-section" data-section="quality">
-    <div class="spk-overview-header">
-      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_QUALITY_HEADER"></h2>
-    </div>
-    <div id="spkOverviewQuality" class="spk-overview-panel"></div>
-  </section>
-
-  <section class="spk-overview-section" data-section="known-voices">
-    <div class="spk-overview-header">
-      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_KNOWN_VOICES_HEADER"></h2>
-      <div class="spk-overview-controls">
-        <input id="spkKnownFilter" class="spk-overview-filter" type="search" autocomplete="off" placeholder="find a voice by name" aria-label="find a voice by name">
-        <select id="spkKnownSort" class="spk-overview-select" aria-label="sort voices"></select>
-      </div>
-    </div>
-    <p class="spk-overview-muted" data-copy="SPK_OVERVIEW_KNOWN_VOICES_QUALITY_HINT"></p>
-    <div id="spkKnownVoices"></div>
-  </section>
-
-  <section class="spk-overview-section" data-section="new-voices" id="spkNewVoicesSection">
-    <div class="spk-overview-header">
-      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_NEW_VOICES_HEADER"></h2>
-      <button id="spkDiscoveryScan" class="spk-overview-btn" type="button">look for new voices</button>
-    </div>
-    <div id="spkStatementHandoffNotice" class="spk-overview-muted" hidden></div>
-    <div id="spkOverviewDiscoveryNotice" class="spk-overview-discovery-notice" hidden></div>
-    <div id="spkDiscoveryClusters" class="spk-discovery-clusters"></div>
-  </section>
-
-  <section class="spk-overview-section" data-section="today">
-    <a id="spkTodayReview" class="spk-overview-link" href=""></a>
-  </section>
-</div>
-</div>
-
-<script>
-(() => {
-  const { decodeSegmentLayout } = window;
+// The overview: your voice, quality, known and new voices, and the day grid.
+function runOverview(ctx, page) {
+  // This run's timers, reads and writes: each ends with it, and an answer
+  // that arrives after it has ended draws nothing.
+  const setTimeout = ctx.setTimeout;
+  const clearTimeout = ctx.clearTimeout;
+  const apiJson = ctx.apiJson;
+  const fetch = ctx.fetch;
+  const settled = ctx.settled;
+  const ownHash = ctx.ownHash;
   let COPY = {};
   let OWNER_STATUS_ROUTING = {};
   let NOT_IN_NEW_VOICES_COPY = '';
@@ -4861,7 +5111,7 @@
     const throwOnError = Boolean(options?.throwOnError);
     const requestSeq = qualityRequestSeq + 1;
     qualityRequestSeq = requestSeq;
-    return window.apiJson('/app/speakers/api/quality')
+    return apiJson('/app/speakers/api/quality')
       .then((data) => {
         if (requestSeq !== qualityRequestSeq) return false;
         renderQuality(data);
@@ -4882,7 +5132,7 @@
   }
 
   function loadOwner() {
-    return window.apiJson('/app/speakers/api/owner/status')
+    return apiJson('/app/speakers/api/owner/status')
       .then((data) => {
         if (data.status === OWNER_STATUS_ROUTING.candidate) ownerCandidate(data);
         else if (data.status === OWNER_STATUS_ROUTING.confirmed) ownerConfirmed(data);
@@ -4955,13 +5205,13 @@
     });
   }
 
-  const reportSpeakersReady = window.createViewReady('speakers');
+  const reportSpeakersReady = ctx.reportReady;
   function loadKnown(options) {
     const throwOnError = Boolean(options?.throwOnError);
     const requestSeq = knownRequestSeq + 1;
     knownRequestSeq = requestSeq;
     const sort = sortSelect.value || COPY.SPK_OVERVIEW_KNOWN_VOICES_SORTS[0];
-    return window.apiJson(`/app/speakers/api/speakers/known?sort=${encodeURIComponent(sort)}`)
+    return apiJson(`/app/speakers/api/speakers/known?sort=${encodeURIComponent(sort)}`)
       .then((data) => {
         if (requestSeq !== knownRequestSeq) return false;
         renderKnown(data);
@@ -5031,8 +5281,8 @@
     whoIsThisSheet = window.SpeakersWhoIsThis.init({
       mount: document.body,
       copy: COPY,
-      context: window.SPEAKERS_CONTEXT || {},
-      apiJson: window.apiJson,
+      context: page.context,
+      apiJson,
       logError: window.logError,
       formatDateShort: window.formatDateShort,
       onThisIsMe: () => {
@@ -5223,7 +5473,7 @@
     const throwOnError = Boolean(options?.throwOnError);
     const requestSeq = overviewDiscoveryRequestSeq + 1;
     overviewDiscoveryRequestSeq = requestSeq;
-    return window.apiJson('/app/speakers/api/discovery/cache', { cache: 'no-store' })
+    return apiJson('/app/speakers/api/discovery/cache', { cache: 'no-store' })
       .then((data) => {
         if (requestSeq !== overviewDiscoveryRequestSeq) return false;
         renderDiscovery(data);
@@ -5275,7 +5525,7 @@
     const throwOnError = Boolean(options?.throwOnError);
     const requestSeq = options?.requestSeq || overviewDiscoveryRequestSeq + 1;
     overviewDiscoveryRequestSeq = requestSeq;
-    return window.apiJson('/app/speakers/api/discovery/scan', { method: 'POST' })
+    return apiJson('/app/speakers/api/discovery/scan', { method: 'POST' })
       .then((data) => {
         if (requestSeq !== overviewDiscoveryRequestSeq) return false;
         if (overviewHandoffSheetOpen) return false;
@@ -5320,7 +5570,7 @@
       voice_source: handoff.source,
       voice_sentence_id: handoff.sentenceId,
     });
-    return window.apiJson(`/app/speakers/api/discovery/resolve-statement?${params}`);
+    return apiJson(`/app/speakers/api/discovery/resolve-statement?${params}`);
   }
 
   // The handoff arrives in the URL and used to be read once, at load: the
@@ -5341,18 +5591,19 @@
 
   function clearOverviewHandoff() {
     overviewHandoffSheetOpen = false;
-    const context = window.SPEAKERS_CONTEXT || {};
+    const context = page.context;
     context.voiceClusterId = '';
     context.statementHandoff = {};
     const url = new URL(window.location.href);
     let cleared = false;
+    if (!ctx.here()) return;
     for (const key of OVERVIEW_HANDOFF_PARAMS) {
       if (!url.searchParams.has(key)) continue;
       url.searchParams.delete(key);
       cleared = true;
     }
     if (cleared) {
-      window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+      ctx.history.replace(url.pathname + url.search + url.hash);
     }
     // The busy sentence was true when it was written and is not any more.
     if (overviewDiscoveryNotice?.messages?.[0] === DISCOVERY_HANDOFF_BUSY) {
@@ -5362,7 +5613,7 @@
   }
 
   function hasOverviewHandoff() {
-    const context = window.SPEAKERS_CONTEXT || {};
+    const context = page.context;
     return Boolean(
       context.voiceClusterId
       || statementHandoffComplete(context.statementHandoff || {})
@@ -5387,7 +5638,7 @@
   }
 
   async function openOverviewHandoff() {
-    const context = window.SPEAKERS_CONTEXT || {};
+    const context = page.context;
     hideStatementHandoffNotice();
     if (context.voiceClusterId) {
       return openOverviewHandoffCluster(context.voiceClusterId);
@@ -5476,7 +5727,7 @@
     loadDayGrid();
     // Home's "your voice" prompt lands here.
     loadOwner().then(() => {
-      if (window.location.hash.slice(1) === 'your-voice') focusOverviewYourVoiceSection();
+      if (ownHash() === 'your-voice') ctx.afterArrival(focusOverviewYourVoiceSection);
     });
     loadQuality();
     loadKnown();
@@ -5500,13 +5751,13 @@
     qualityPanel.innerHTML = '';
     knownContainer.innerHTML = '';
     ownerPanel.querySelector('.surface-state-retry')?.addEventListener('click', () => {
-      window.SPEAKERS_STATE_PROMISE = window.loadSpeakersState();
+      page.loadState();
       startOverview();
     });
   }
 
   async function startOverview() {
-    const context = window.SPEAKERS_CONTEXT || {};
+    const context = page.context;
     if (context.isDay) return;
     document.getElementById('speakersOverviewView').hidden = false;
     ownerPanel.innerHTML = window.SurfaceState.loading({ text: 'loading your voice…' });
@@ -5516,7 +5767,7 @@
     knownContainer.innerHTML = window.SurfaceState.loading({ text: 'loading known voices…' });
     sortSelect.hidden = true;
     try {
-      const payload = await window.SPEAKERS_STATE_PROMISE;
+      const payload = await settled(page.state);
       applyOverviewState(payload);
       init();
     } catch (err) {
@@ -5525,10 +5776,75 @@
     }
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startOverview);
-  } else {
-    startOverview();
+
+  ctx.onDispose(() => {
+    if (whoIsThisSheet) {
+      if (whoIsThisSheet.dialog.contains(document.activeElement)) ctx.focus(document.getElementById('main-content'));
+      whoIsThisSheet.destroy();
+      whoIsThisSheet = null;
+      window.ConveyModalLayer?.reconcile?.();
+    }
+    // The day grid's document and window listeners end with its host.
+    hideDayGrid();
+  });
+  startOverview();
+}
+
+function mountSpeakers(ctx) {
+  const page = {
+    context: speakersContext(ctx.route),
+    state: null,
+    stateFor: '',
+    // The state read, once per arrival. A day step keeps it, unless the
+    // address it moves to filters by another speaker.
+    loadState() {
+      page.stateFor = stateUrl(page.context);
+      page.state = ctx.read(page.stateFor, { fresh: true });
+      page.state.catch(() => {});
+      return page.state;
+    },
+  };
+  const isDay = page.context.isDay;
+  const root = document.getElementById(isDay ? 'speakersDayView' : 'speakersOverviewView');
+  if (!root) throw new Error('speakers has no markup');
+  const shipped = isDay ? root.innerHTML : '';
+  const arrival = !!window.solRouter?.isActive?.();
+  let run = null;
+  function end() {
+    const current = run;
+    run = null;
+    if (current) current.end();
   }
+  function start(first) {
+    run = openRun(ctx, first && arrival);
+    if (isDay) runDay(run, page);
+    else runOverview(run, page);
+  }
+  ctx.onDispose(end);
+  // Each entry keeps the scroll it was left at, whichever way it was left.
+  ctx.on(window, 'scroll', () => {
+    if (SPEAKERS_PATH.test(window.location.pathname)) rememberOwnScroll(window.scrollY || 0);
+  }, { passive: true });
+  page.loadState();
+  start(true);
+  if (!isDay) return {};
+  return {
+    // Another day, in place: the day before ends, and this one starts on the
+    // day's markup as it shipped. The date control stays where it is.
+    update(params) {
+      if (!params || !params.day) return;
+      page.refocus = root.contains(document.activeElement);
+      end();
+      page.context = speakersContext(ctx.route);
+      if (stateUrl(page.context) !== page.stateFor) page.loadState();
+      root.innerHTML = shipped;
+      root.hidden = true;
+      window.DateNav?.setDay?.(params.day);
+      start(false);
+    },
+  };
+}
+
+window.SolViews.register('speakers', { mount: mountSpeakers });
 })();
 </script>

@@ -213,7 +213,7 @@ async function teachingReachesPastDays(workspace) {
     day: '20261011',
     OWNER_TEACH_RECENT_DAYS: 14,
     OWNER_TEACH_TARGET_STATEMENTS: 40,
-    window: { createViewReady: () => () => {}, logError() {} },
+    window: { logError() {} },
     todayDayKey: () => '20261011',
     asked: [],
   };
@@ -243,7 +243,8 @@ async function overviewFailuresStayUnavailable(workspace) {
   const calls = [];
   const failed = new Error('read failed');
   const context = {
-    window: { createViewReady: () => () => {}, apiJson: async () => { throw failed; }, SurfaceState: {
+    apiJson: async () => { throw failed; },
+    window: { SurfaceState: {
       error: () => 'unavailable', serverMessageFrom: () => '',
     }, CONVEY_COPY: { RELOAD_HINT: 'reload' } },
     qualityRequestSeq: 0,
@@ -269,33 +270,29 @@ async function overviewFailuresStayUnavailable(workspace) {
     'a failed quality read never becomes zero progress');
 }
 
-// The overview script resolves a statement handoff from the page's own
-// context script alone: the layout decoder it calls is one the page gives
-// every script, not one private to another script.
+// The overview resolves a statement handoff from what the mount reads off its
+// own address alone: the layout decoder it calls is the script's own, shared
+// by both modes, not a name on the page.
 async function statementHandoffResolvesFromThePageContext(workspace) {
-  const contextStart = workspace.indexOf('<script>') + '<script>'.length;
-  const contextScript = workspace.slice(contextStart, workspace.indexOf('</script>', contextStart));
-  const overviewStart = workspace.lastIndexOf('<script>') + '<script>'.length;
-  const overviewScript = workspace.slice(overviewStart, workspace.lastIndexOf('</script>'));
   const requested = [];
   const page = {
-    location: { search: '?voice_day=20261022&voice_stream=mic&voice_segment_key=100000_300&voice_source=audio&voice_sentence_id=2' },
-    solPathContext: () => ({ segment: '' }),
     apiJson: async (url) => { requested.push(url); return { status: 'miss' }; },
     URLSearchParams,
   };
-  page.window = page;
   vm.createContext(page);
-  vm.runInContext(contextScript, page);
-  vm.runInContext(functionSource(overviewScript, 'resolveStatementHandoff'), page);
-  await vm.runInContext('resolveStatementHandoff(window.SPEAKERS_CONTEXT.statementHandoff)', page);
+  for (const name of ['decodeSegmentLayout', 'speakersContext', 'resolveStatementHandoff']) {
+    vm.runInContext(functionSource(workspace, name), page);
+  }
+  page.route = { pathname: '/app/speakers/', search: '?voice_day=20261022&voice_stream=mic&voice_segment_key=100000_300&voice_source=audio&voice_sentence_id=2', day: null };
+  vm.runInContext('var context = speakersContext(route);', page);
+  await vm.runInContext('resolveStatementHandoff(context.statementHandoff)', page);
   const resolves = requested.filter((url) => url.startsWith('/app/speakers/api/discovery/resolve-statement?'));
   const params = new URLSearchParams(resolves[0]?.split('?')[1] || '');
   check(resolves.length === 1, 'a complete handoff asks which voice holds its statement');
   check(params.get('voice_stream_layout') === 'named' && params.get('voice_sentence_id') === '2',
     'the handoff carries its line and a named layout when the link names none');
-  page.window.SPEAKERS_CONTEXT.statementHandoff.streamLayout = 'sideways';
-  assert.throws(() => vm.runInContext('resolveStatementHandoff(window.SPEAKERS_CONTEXT.statementHandoff)', page),
+  vm.runInContext("context.statementHandoff.streamLayout = 'sideways';", page);
+  assert.throws(() => vm.runInContext('resolveStatementHandoff(context.statementHandoff)', page),
     /invalid segment layout/);
   check(true, 'a handoff with an unknown layout is refused before it is asked');
 }
@@ -381,8 +378,7 @@ async function main() {
   check(workspace.includes('/app/speakers/api/owner/undo'), 'workspace references undo endpoint');
   check(workspace.includes('/app/speakers/api/owner/rebuild'), 'workspace references rebuild endpoint for redo');
 
-  const dayScriptStart = workspace.lastIndexOf('<script>', workspace.indexOf('function checkOwnerStatus')) + '<script>'.length;
-  const dayScript = workspace.slice(dayScriptStart, workspace.indexOf('</script>', dayScriptStart));
+  const dayScript = functionSource(workspace, 'runDay');
   check(dayScript.includes('function recentDayKeys'), 'the day script holds the owner-voice flow');
   new vm.Script(dayScript, { filename: 'speakers-day.js' });
   check(true, 'the Speakers day script parses without syntax error');
@@ -391,6 +387,7 @@ async function main() {
   await voiceStreamsReadAsLabels(workspace);
   await statementHandoffResolvesFromThePageContext(workspace);
   sampleFallsBackToTheLabel();
+  cases += await require('./speakers_contract_dom.js')(manifestDir);
 
   console.log(`DOM CASES: ${cases} passed`);
 }
