@@ -4962,6 +4962,9 @@
             return;
           }
           resetSegmentSelection();
+          // A segment the day doesn't list may wait in the trash: say so, and
+          // where, rather than show the day as if the link led nowhere.
+          if (stream) showSegmentInTrash(stream, segKey);
           return;
         }
         const wantedTab = tabIdFromHash || 'transcript';
@@ -6001,18 +6004,31 @@
       ]);
     }
 
+    function showSegmentInTrash(stream, key) {
+      const asked = day;
+      dayRead(`/app/transcripts/api/segment/${day}/${encodeURIComponent(stream)}/${encodeURIComponent(key)}`)
+        .then((data) => {
+          if (!data || !data.trash || asked !== day || selectedSegment) return;
+          panel.innerHTML = segmentInTrashHtml(data.trash);
+          panel.querySelector('[data-open-trash]')?.addEventListener('click', goToSettingsTrash);
+        })
+        .catch(() => {});
+    }
+
     // A segment the page was opened at that waits in the trash.
     function segmentInTrashHtml(trash) {
       const date = trashEraseDate(trash.erase_at);
       const desc = trash.stretch
         ? stretchFill(STRETCH_COPY.inTrash.stretch, { bounds: stretchBounds(trash.stretch.from, trash.stretch.to), date })
         : stretchFill(STRETCH_COPY.inTrash.alone, { date });
-      const html = window.SurfaceState.empty({
+      const label = document.createElement('span');
+      label.textContent = TRASH_COPY.buttons.openTrash;
+      return window.SurfaceState.empty({
         icon: window.ConveyIcons.svg('trash-2'),
         heading: STRETCH_COPY.inTrash.heading,
         desc,
+        action: `<button type="button" class="btn-secondary" data-open-trash>${label.innerHTML}</button>`,
       });
-      return `${html}<p class="tr-stretch-trash-action"><button type="button" class="btn-secondary" data-open-trash>${TRASH_COPY.buttons.openTrash}</button></p>`;
     }
 
     if (stretchButton) {
