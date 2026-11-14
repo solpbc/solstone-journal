@@ -25,25 +25,13 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-use ring::rand::{SecureRandom, SystemRandom};
-use ring::{hkdf, hmac};
+use ring::hmac;
+use solstone_core_journal_io::is_day_key;
 use solstone_core_journal_io::paths::{PathOrDay, iter_segments_skipping_unreadable_streams};
-use solstone_core_journal_io::{AtomicWriteOptions, is_day_key, write_bytes_exclusive};
+use solstone_core_journal_link::root::{WhenAbsent, sub_key};
 
 use crate::references::{ActivityAddress, SegmentAddress};
 
-/// The journal's one root secret for what it mints and must still recognise
-/// after a restore or a move: 32 random bytes as hex, readable only by the
-/// owner, made the first time it is needed.
-///
-/// 🔑 It is under `link/`, which a backup, a restore and an export all carry.
-/// The endpoint's own keys under `mcp-endpoint/` are left out of a backup, so
-/// a secret there would change every name on a restore. It never rotates.
-///
-/// ⛔ The root is never used as a key itself. Each use takes its own sub-key
-/// by HKDF-SHA256 under its own label, so no two uses share key bytes: source
-/// codes here, and journal links when they are built.
-const ROOT_KEY_PATH: &str = "link/root.key";
 /// The label source codes derive their sub-key under.
 const CODE_KEY_LABEL: &[u8] = b"solstone agent-names source-code v1";
 const CODE_KEY_BYTES: usize = 32;
@@ -185,66 +173,19 @@ fn code_key(journal_root: &Path) -> Option<[u8; CODE_KEY_BYTES]> {
     if let Some(key) = keys.get(journal_root) {
         return Some(*key);
     }
-    let root = root_key(journal_root)?;
     let mut key = [0_u8; CODE_KEY_BYTES];
-    hkdf::Salt::new(hkdf::HKDF_SHA256, &[])
-        .extract(&root)
-        .expand(&[CODE_KEY_LABEL], SubKey)
-        .ok()?
-        .fill(&mut key)
-        .ok()?;
+    // The journal's one root secret, under its own label: no other use of
+    // the root shares these bytes. Naming something makes the root when the
+    // journal has none.
+    sub_key(journal_root, CODE_KEY_LABEL, WhenAbsent::Create, &mut key).ok()?;
     keys.insert(journal_root.to_owned(), key);
-    Some(key)
-}
-
-/// A 32-byte HKDF output.
-struct SubKey;
-
-impl hkdf::KeyType for SubKey {
-    fn len(&self) -> usize {
-        CODE_KEY_BYTES
-    }
-}
-
-/// The journal's root secret: read, or made when the file isn't there.
-///
-/// ⛔ Only an absent file is ever written. One that is there and can't be
-/// read, or doesn't hold a key, refuses: writing a new root would change
-/// every name and close every link the journal ever gave.
-fn root_key(journal_root: &Path) -> Option<[u8; CODE_KEY_BYTES]> {
-    let path = journal_root.join(ROOT_KEY_PATH);
-    match std::fs::read_to_string(&path) {
-        Ok(text) => parse_root_key(&text),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            let mut key = [0_u8; CODE_KEY_BYTES];
-            SystemRandom::new().fill(&mut key).ok()?;
-            // Another process may make it first: whichever is published is
-            // the journal's, so read back what is there.
-            let _ = write_bytes_exclusive(
-                &path,
-                format!("{}\n", crate::activity_admit::hex_encode(&key)).as_bytes(),
-                AtomicWriteOptions { mode: Some(0o600) },
-            );
-            parse_root_key(&std::fs::read_to_string(&path).ok()?)
-        }
-        Err(_) => None,
-    }
-}
-
-fn parse_root_key(text: &str) -> Option<[u8; CODE_KEY_BYTES]> {
-    let text = text.trim();
-    if text.len() != CODE_KEY_BYTES * 2 || !text.is_ascii() {
-        return None;
-    }
-    let mut key = [0_u8; CODE_KEY_BYTES];
-    for (index, byte) in key.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&text[index * 2..index * 2 + 2], 16).ok()?;
-    }
     Some(key)
 }
 
 #[cfg(test)]
 mod tests {
+    use solstone_core_journal_link::root::ROOT_KEY_PATH;
+
     use super::*;
 
     fn journal() -> tempfile::TempDir {

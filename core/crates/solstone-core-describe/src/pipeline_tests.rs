@@ -35,6 +35,8 @@ use crate::{
     selection::{CategoryOverride, Importance},
 };
 
+thread_local! { pub(super) static FIXED_TIMING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+
 type ResponsePlan = dyn Fn(&GenerateRequest) -> SessionCompletion + Send + Sync;
 
 #[derive(Clone)]
@@ -1894,4 +1896,154 @@ fn releasing_processed_frames_drops_png_capacity_beyond_the_window() {
             .iter()
             .all(|frame| frame.png.capacity() == 0)
     );
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[test]
+fn optional_faces_fail_open_without_changing_screen_rows() {
+    use crate::faces::tests::{warnings, with_models};
+    struct ResetTiming;
+    impl Drop for ResetTiming {
+        fn drop(&mut self) {
+            FIXED_TIMING.with(|fixed| fixed.set(false));
+        }
+    }
+    FIXED_TIMING.with(|fixed| fixed.set(true));
+    let _timing = ResetTiming;
+    use crate::screen_ocr::{OcrFailure, OcrWorker, OcrWorkerFactory};
+    struct FailingOcr;
+    impl OcrWorker for FailingOcr {
+        fn recognize(&mut self, _: &[u8]) -> Result<Vec<crate::RawOccurrence>, OcrFailure> {
+            Err(OcrFailure::Protocol)
+        }
+    }
+    impl OcrWorkerFactory for FailingOcr {
+        fn recipe_id(&mut self) -> String {
+            "failing-face-ocr".into()
+        }
+        fn create(&mut self) -> Result<Option<Box<dyn OcrWorker>>, OcrFailure> {
+            Ok(Some(Box::new(Self)))
+        }
+    }
+    fn meeting(request: &GenerateRequest) -> SessionCompletion {
+        match request.context.as_str() {
+            "observe.describe.frame" => generated(request, category("meeting", "none", false)),
+            "observe.describe.meeting" => generated(request, json!({"participants":[{"name":"Synthetic Person","video":true,"box_2d":[0,0,1000,1000]}]}).to_string()),
+            _ => default_response(request),
+        }
+    }
+    for mode in [
+        "success",
+        "model_open",
+        "ocr_fallback",
+        "disabled",
+        "publication",
+        "prepare",
+    ] {
+        let test = TestRun::new("faces-optional");
+        fs::create_dir(test.journal.join("config")).unwrap();
+        let config = test.journal.join("config/journal.json");
+        fs::write(&config, br#"{"faces":{"enabled":false}}"#).unwrap();
+        let mut ocr: Box<dyn OcrWorkerFactory> = if mode == "ocr_fallback" {
+            Box::new(FailingOcr)
+        } else {
+            Box::new(LiteralOcr)
+        };
+        let mut run = |checkpoint: &dyn Fn() -> bool| {
+            super::run_prepared(
+                test.options(true, Vec::new()),
+                &ScriptedFactory::new(meeting),
+                &super::SpawnScreenDetector,
+                ocr.as_mut(),
+                checkpoint,
+                None,
+                super::DecodeStart::Ready(decoded(&[1, 2])),
+            )
+        };
+        run(&|| false).unwrap();
+        let body = artifact_body(&test.artifact());
+        assert!(
+            body.contains("Synthetic Person"),
+            "fixture must exercise meeting faces"
+        );
+        let digest = crate::faces::screen_body_digest(&test.artifact()).unwrap();
+        let manifest = crate::faces::sidecar_path(&test.video);
+        // This old set must be retired when a replacement screen is published.
+        fs::write(&manifest, b"old face manifest\n").unwrap();
+        fs::write(&config, br#"{"faces":{"enabled":true}}"#).unwrap();
+        let changed = std::cell::Cell::new(false);
+        let checkpoint = || {
+            if !changed.get() {
+                let stage_prefix = crate::publication::StagedFile::stage_prefix(&test.artifact());
+                let screen_staging = fs::read_dir(&test.root).unwrap().any(|entry| {
+                    entry
+                        .unwrap()
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(&stage_prefix)
+                });
+                if screen_staging {
+                    if mode == "disabled" {
+                        fs::write(&config, br#"{"faces":{"enabled":false}}"#).unwrap();
+                    } else if mode == "publication" {
+                        // Make manifest installation fail after payloads land.
+                        fs::remove_file(&manifest).unwrap();
+                        fs::create_dir(&manifest).unwrap();
+                    }
+                    changed.set(true);
+                }
+                if mode == "prepare" {
+                    // A plain file cannot be the crop directory inspected by prepare.
+                    let crops = manifest.with_file_name(format!(
+                        "{}-crops",
+                        manifest.file_stem().unwrap().to_string_lossy()
+                    ));
+                    if !crops.exists() {
+                        fs::write(crops, b"obstruction").unwrap();
+                    }
+                }
+            }
+            false
+        };
+        let (result, logged) = warnings(|| with_models(mode == "model_open", || run(&checkpoint)));
+        result.unwrap();
+        assert_eq!(artifact_body(&test.artifact()), body, "mode {mode}");
+        assert_eq!(
+            crate::faces::screen_body_digest(&test.artifact()).unwrap(),
+            digest,
+            "mode {mode}"
+        );
+        if mode == "success" {
+            assert!(manifest.is_file());
+            let header: Value = serde_json::from_str(
+                fs::read_to_string(&manifest)
+                    .unwrap()
+                    .lines()
+                    .next()
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(header["screen_body_sha256"], digest);
+        } else {
+            assert!(!manifest.exists(), "mode {mode}");
+            let prefix = manifest.file_stem().unwrap().to_string_lossy();
+            assert!(
+                fs::read_dir(&test.root).unwrap().all(|entry| {
+                    !entry
+                        .unwrap()
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(prefix.as_ref())
+                }),
+                "no partial face payloads may survive mode {mode}"
+            );
+            assert!(
+                logged.iter().any(|line| line.ends_with(mode)),
+                "mode {mode}: {logged:?}"
+            );
+            assert!(logged.iter().all(|line| !line.contains("Synthetic Person")
+                && !line.contains("private/model/path")
+                && !line.contains(test.root.to_str().unwrap())));
+        }
+    }
 }
