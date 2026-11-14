@@ -10,6 +10,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- when you answer whether a name in your journal is one of your people, activities in the facet you answered in that already named them now follow your answer. they list that person. recent activities also show them as attending when the recording shows it, and older ones keep the role they had. change your answer and they follow that too. an activity whose people you edited yourself stays as you left it.
 - your journal keeps the screenshots the solstone app takes in, each at the minute you took it. a journal from before 2.0.75 doesn't keep them, so the app says your screenshots are waiting for a journal update.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.

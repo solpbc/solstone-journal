@@ -2118,6 +2118,11 @@ fn reconcile_pass_with_roots(
                 }
             }
         };
+    // Meetings already written follow what the owner has since said about a
+    // name. No model is asked, and a failure here holds nothing else back.
+    if let Err(error) = crate::name_answers::pass(journal, checkpoint) {
+        log::warn!("name answers not applied: {error}");
+    }
     // The owner's asks seed their activities before activity work is read,
     // so this pass's snapshot already holds them.
     let mut asks = crate::owner_asks::AskPass::seed(
