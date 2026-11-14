@@ -410,7 +410,10 @@ pub fn reconcile_activity_with_entities(
 
 /// Clear all face material explicitly, independent of the collection switch.
 /// Callers turn the switch off first, so a subsequent describe cannot refill it.
-pub fn clear(journal: &Path, surface: solstone_core_removals::Surface) -> Result<usize> {
+pub fn clear(
+    journal: &Path,
+    surface: solstone_core_removals::Surface,
+) -> super::ActionResult<usize> {
     let root = solstone_core_journal_io::realpath_non_strict(journal).map_err(|e| e.to_string())?;
     let journal = root.as_path();
     for name in ["entities", "chronicle"] {
@@ -422,76 +425,87 @@ pub fn clear(journal: &Path, surface: solstone_core_removals::Surface) -> Result
     }
     let _trust = crate::hold_entity_trust_lock(journal).map_err(|e| e.to_string())?;
     if enabled(journal)? {
-        return Err("turn off face suggestions before clearing face data".into());
+        return Err(super::ActionError::FacesOn);
     }
     crate::recover_interrupted_entity_merge(journal)?;
     // Acquired before the first deletion; it never waits behind a trash move
     // that could be waiting for entity trust.
-    let trash = solstone_core_trash::hold_payload_scrub(journal).map_err(|e| e.to_string())?;
+    let trash = solstone_core_trash::hold_payload_scrub(journal).map_err(|e| {
+        if matches!(e, solstone_core_trash::TrashError::Held(_)) {
+            super::ActionError::BusySource(e.to_string())
+        } else {
+            super::ActionError::Other(e.to_string())
+        }
+    })?;
     let removal = solstone_core_removals::Removal::begin(
         journal,
         solstone_core_removals::Action::FacesWipe,
         surface,
     );
-    removal.commit(solstone_core_removals::Unit::Faces, |io| -> Result<usize> {
-        let mut count = 0;
-        // Keep the literal leaf: resolving it could turn a link into its target.
-        let derived = journal.join("entities").join(super::cross::FILE);
-        if solstone_core_journal_io::path_lexists(&derived).map_err(|e| e.to_string())? {
-            remove_path(journal, io, &derived)?;
-            count += 1;
-        }
-        super::cross::clear_candidates(journal)?;
-        for (_, day) in solstone_core_journal_io::day_dirs(journal).map_err(|e| e.to_string())? {
-            for segment in
-                iter_segments(journal, PathOrDay::Directory(&day)).map_err(|e| e.to_string())?
-            {
-                // Fence every source, including a first publication with no
-                // installed sidecar yet. Retain only one source's handles.
-                let claims = OutputClaims::discover(segment.path(), claim_options())
-                    .map_err(|e| e.to_string())?;
-                claims
-                    .segment_identity(segment.path())
-                    .map_err(|e| e.to_string())?;
-                let paths: Vec<_> = solstone_core_journal_io::list_dir_entries(segment.path())
-                    .map_err(|e| e.to_string())?
-                    .into_iter()
-                    .filter(|e| face_sidecar_name(&e.name.to_string_lossy()))
-                    .map(|e| e.path)
-                    .collect();
-                for p in paths {
-                    remove_path(journal, io, &p)?;
-                    count += 1;
-                }
+    removal.commit(
+        solstone_core_removals::Unit::Faces,
+        |io| -> super::ActionResult<usize> {
+            let mut count = 0;
+            // Keep the literal leaf: resolving it could turn a link into its target.
+            let derived = journal.join("entities").join(super::cross::FILE);
+            if solstone_core_journal_io::path_lexists(&derived).map_err(|e| e.to_string())? {
+                remove_path(journal, io, &derived)?;
+                count += 1;
             }
-        }
-        for entry in solstone_core_journal_io::list_dir_entries(&journal.join("entities"))
-            .map_err(|e| e.to_string())?
-        {
-            if entry.kind == solstone_core_journal_io::DirEntryKind::Directory {
-                for child in solstone_core_journal_io::list_dir_entries(&entry.path)
-                    .map_err(|e| e.to_string())?
+            super::cross::clear_candidates(journal)?;
+            for (_, day) in
+                solstone_core_journal_io::day_dirs(journal).map_err(|e| e.to_string())?
+            {
+                for segment in
+                    iter_segments(journal, PathOrDay::Directory(&day)).map_err(|e| e.to_string())?
                 {
-                    if entity_face_or_stage(&child.name.to_string_lossy()) {
-                        remove_path(journal, io, &child.path)?;
+                    // Fence every source, including a first publication with no
+                    // installed sidecar yet. Retain only one source's handles.
+                    let claims = OutputClaims::discover(segment.path(), claim_options())
+                        .map_err(super::ActionError::source)?;
+                    claims
+                        .segment_identity(segment.path())
+                        .map_err(|e| e.to_string())?;
+                    let paths: Vec<_> = solstone_core_journal_io::list_dir_entries(segment.path())
+                        .map_err(|e| e.to_string())?
+                        .into_iter()
+                        .filter(|e| face_sidecar_name(&e.name.to_string_lossy()))
+                        .map(|e| e.path)
+                        .collect();
+                    for p in paths {
+                        remove_path(journal, io, &p)?;
                         count += 1;
                     }
                 }
             }
-        }
-        count += trash
-            .remove_files(|relative| {
-                let components: Vec<_> = relative.split('/').collect();
-                match components.as_slice() {
-                    ["entities", name] => *name == super::cross::FILE,
-                    ["entities", _, name] => entity_face_or_stage(name),
-                    ["chronicle", ..] => components.iter().any(|s| face_sidecar_name(s)),
-                    _ => false,
+            for entry in solstone_core_journal_io::list_dir_entries(&journal.join("entities"))
+                .map_err(|e| e.to_string())?
+            {
+                if entry.kind == solstone_core_journal_io::DirEntryKind::Directory {
+                    for child in solstone_core_journal_io::list_dir_entries(&entry.path)
+                        .map_err(|e| e.to_string())?
+                    {
+                        if entity_face_or_stage(&child.name.to_string_lossy()) {
+                            remove_path(journal, io, &child.path)?;
+                            count += 1;
+                        }
+                    }
                 }
-            })
-            .map_err(|e| e.to_string())?;
-        Ok(count)
-    })
+            }
+            count += trash
+                .remove_files(|relative| {
+                    let components: Vec<_> = relative.split('/').collect();
+                    match components.as_slice() {
+                        ["entities", name] => *name == super::cross::FILE,
+                        ["entities", _, name] => entity_face_or_stage(name),
+                        ["chronicle", ..] => components.iter().any(|s| face_sidecar_name(s)),
+                        _ => false,
+                    }
+                })
+                .map_err(|e| e.to_string())?;
+            Ok(count)
+        },
+    )
 }
 
 fn face_sidecar_name(name: &str) -> bool {

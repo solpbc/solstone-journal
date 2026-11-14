@@ -6,6 +6,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- connected agents can show a person's suggested or confirmed photo from meetings, when photo suggestions are on.
+
 ### Added
 
 - past meetings now contribute to photo suggestions for people when enabled.
