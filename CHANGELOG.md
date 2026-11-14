@@ -14,6 +14,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
+### Changed
+
+- deleting one or several segments, an import or a stretch of time now changes what your journal made from it. activities made from it drop it at once, and the write-ups of its days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose, however long ago the day was. recovering it from the trash writes them again with it. entities found in it stay and may still mention it. deleting body data works as before.
+
 ### Fixed
 
 - fixed catch-up on older days slowing to a crawl when one past day had a review step that could not finish on its own. that day is now set aside, and the rest keep going.
