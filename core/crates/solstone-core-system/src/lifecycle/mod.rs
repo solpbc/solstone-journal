@@ -880,12 +880,12 @@ pub fn platform_hostname() -> Option<String> {
     raw.filter(|name| !name.is_empty())
 }
 
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn self_heartbeat_filename(writer_id: &WriterId, run_id: &RunId) -> String {
     sync::v2_heartbeat_filename(writer_id, run_id)
 }
 
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn epoch_seconds() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

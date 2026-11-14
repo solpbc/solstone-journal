@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
+#[cfg(not(target_os = "ios"))]
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
 #[cfg(not(target_os = "ios"))]
@@ -15,7 +16,9 @@ use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use chrono::{NaiveDate, SecondsFormat, Utc};
-use serde_json::{Value, json};
+#[cfg(not(target_os = "ios"))]
+use serde_json::Value;
+use serde_json::json;
 #[cfg(not(target_os = "ios"))]
 use solstone_core_facets::append_action_log;
 use solstone_core_facets::hold_facet_trust_lock;
@@ -44,9 +47,9 @@ use solstone_core_journal_archive::{
     ArchiveSource, DayWindow, EncodeArchiveRequest, ExplicitArchiveOutputRequest,
     acquire_explicit_output_target, publish_archive,
 };
-use solstone_core_journal_io::{
-    AtomicWriteOptions, DirEntryKind, append_jsonl, atomic_replace, write_bytes_exclusive,
-};
+#[cfg(not(target_os = "ios"))]
+use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, write_bytes_exclusive};
+use solstone_core_journal_io::{DirEntryKind, append_jsonl};
 
 use crate::Outcome;
 use crate::layout::resolve_current_journal;
@@ -2475,12 +2478,14 @@ fn trash_dropped_files(
     }
 }
 
+#[cfg(not(target_os = "ios"))]
 enum ExistingPathKind {
     RegularFile,
     Directory,
     Unsafe,
 }
 
+#[cfg(not(target_os = "ios"))]
 fn existing_path_kind(path: &Path) -> Result<Option<ExistingPathKind>, String> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_file() => Ok(Some(ExistingPathKind::RegularFile)),
@@ -2491,6 +2496,7 @@ fn existing_path_kind(path: &Path) -> Result<Option<ExistingPathKind>, String> {
     }
 }
 
+#[cfg(not(target_os = "ios"))]
 fn rollback_facet_trees(
     destination: &Path,
     destination_backup: &Path,
@@ -2505,6 +2511,7 @@ fn rollback_facet_trees(
     Ok(())
 }
 
+#[cfg(not(target_os = "ios"))]
 /// Remove a committed merge's two scratch trees: the destination as it was,
 /// which the merged facet holds a copy of, and the source, once what it alone
 /// held is in the trash.
@@ -2520,6 +2527,7 @@ fn remove_tree_pair(journal: &Path, first: &Path, second: &Path) -> Result<(), S
     Ok(())
 }
 
+#[cfg(not(target_os = "ios"))]
 fn transaction_failure(token: &str, primary: &str, rollback: Result<(), String>) -> Outcome {
     match rollback {
         Ok(()) => failure(
@@ -3625,6 +3633,7 @@ fn contains_content(path: &Path) -> Result<bool, String> {
     Ok(false)
 }
 
+#[cfg(not(target_os = "ios"))]
 fn copy_tree(source: &Path, destination: &Path) -> Result<Vec<PathBuf>, String> {
     let mut copied_regular_files = Vec::new();
     copy_tree_into(
@@ -3637,6 +3646,7 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<Vec<PathBuf>, String> 
     Ok(copied_regular_files)
 }
 
+#[cfg(not(target_os = "ios"))]
 fn copy_tree_into(
     source: &Path,
     destination: &Path,
@@ -3673,6 +3683,7 @@ fn copy_tree_into(
     Ok(())
 }
 
+#[cfg(not(target_os = "ios"))]
 #[derive(Default)]
 struct FacetTreeMergeReport {
     copied_regular_files: Vec<PathBuf>,
@@ -3690,6 +3701,7 @@ struct FacetTreeMergeReport {
     link_notes_renumbered: usize,
 }
 
+#[cfg(not(target_os = "ios"))]
 fn merge_tree(source: &Path, destination: &Path) -> Result<FacetTreeMergeReport, String> {
     let mut report = FacetTreeMergeReport::default();
     merge_tree_into(source, destination, Path::new(""), &mut report)?;
@@ -3700,6 +3712,7 @@ fn merge_tree(source: &Path, destination: &Path) -> Result<FacetTreeMergeReport,
     Ok(report)
 }
 
+#[cfg(not(target_os = "ios"))]
 fn merge_tree_into(
     source: &Path,
     destination: &Path,
@@ -3744,6 +3757,7 @@ fn merge_tree_into(
     Ok(())
 }
 
+#[cfg(not(target_os = "ios"))]
 fn merge_tree_entry(
     entry: &fs::DirEntry,
     target: &Path,
@@ -3802,6 +3816,7 @@ fn merge_tree_entry(
     Ok(())
 }
 
+#[cfg(not(target_os = "ios"))]
 /// Merge a facet's `entities/` into the staged destination's. Each entity
 /// link joins the destination's link to the same entity, in the folder named
 /// by its id, keeping every note. Notes under a name no link claims join a
@@ -3907,6 +3922,7 @@ fn merge_entity_links(
     Ok(())
 }
 
+#[cfg(not(target_os = "ios"))]
 /// Returns how many records were dropped for a different record with the
 /// same id. Identical duplicates lose nothing and are not counted.
 fn merge_jsonl(destination: &Path, source: &Path) -> Result<usize, String> {
@@ -3955,6 +3971,7 @@ fn merge_jsonl(destination: &Path, source: &Path) -> Result<usize, String> {
     Ok(dropped)
 }
 
+#[cfg(not(target_os = "ios"))]
 /// Returns how many source fields lost to a different destination value.
 fn merge_json_object(destination: &Path, source: &Path) -> Result<usize, String> {
     let source_value: Value =
@@ -4090,6 +4107,7 @@ fn require_real_directory(path: &Path) -> Result<(), String> {
     }
 }
 
+#[cfg(not(target_os = "ios"))]
 fn require_missing(path: &Path) -> Result<(), String> {
     match fs::symlink_metadata(path) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -4101,6 +4119,7 @@ fn require_missing(path: &Path) -> Result<(), String> {
     }
 }
 
+#[cfg(not(target_os = "ios"))]
 fn create_private_dir_exclusive(path: &Path) -> io::Result<()> {
     #[cfg(unix)]
     let mut builder = DirBuilder::new();

@@ -293,7 +293,7 @@ impl ArchivePredecessorCustody {
         }
         Ok(())
     }
-    #[cfg(unix)]
+    #[cfg(all(unix, not(any(target_os = "android", target_os = "ios"))))]
     pub(super) fn validate_member(
         &self,
         member: &CurrentInstalledMember,
@@ -484,7 +484,7 @@ fn validate_operated_writer(
 }
 
 /// The exact operated writer shape; returns the rclone program it names.
-#[cfg(any(unix, windows))]
+#[cfg(any(all(unix, not(target_os = "ios")), windows, test))]
 fn operated_writer_program<'a>(
     write: &'a ArchiveEndpointCapture,
     read: &ArchiveEndpointCapture,
@@ -563,7 +563,7 @@ fn operated_writer_program<'a>(
 /// The writer's program arguments and environment. BYO writes through the
 /// read's own direct environment; operated writes through its captured
 /// append-only transport, whose program option restic parses as one CSV field.
-#[cfg(any(unix, windows))]
+#[cfg(any(all(unix, not(target_os = "ios")), windows, test))]
 fn writer_invocation(
     write: &ArchiveEndpointCapture,
     read_env: &BTreeMap<OsString, OsString>,
@@ -961,7 +961,6 @@ impl OwnedArchiveCreator {
             custody.state,
             CreatorState::Direct(WriterProgress::Accepted)
         );
-        drop(custody);
         if !accepted {
             return Err(ReadbackError::ToolFailed);
         }
@@ -1166,7 +1165,7 @@ impl OwnedArchiveCreator {
             snapshot_id,
         })
     }
-    #[cfg(any(unix, windows))]
+    #[cfg(any(all(unix, not(target_os = "ios")), windows))]
     fn revalidate_sources(&self, sources: &[ArchiveSource<'_>]) -> Result<(), ReadbackError> {
         self.revalidate_local()?;
         let result = sources.iter().try_for_each(|source| {
@@ -1367,7 +1366,7 @@ impl OwnedArchiveCreator {
 
 /// Linux reads each source through its stage's descriptor; macOS reads
 /// `<stage>/<name>` from inside the stage parent the child starts in.
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "ios")))]
 fn anchored_path(source: &ArchiveSource<'_>) -> bool {
     #[cfg(not(target_os = "macos"))]
     {
@@ -1396,7 +1395,7 @@ fn revalidate_core(
     core.revalidate().map_err(|_| ReadbackError::ToolChanged)
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(any(all(unix, not(target_os = "ios")), windows))]
 fn parse_summary(output: &[u8]) -> Result<String, ReadbackError> {
     let mut summary = None;
     for line in output

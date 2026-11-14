@@ -3,6 +3,7 @@
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::collections::HashMap;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::io;
 use std::process::Child;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -11,11 +12,14 @@ use std::time::{Duration, Instant};
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::super::signal_aware_exit_code;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::super::{
-    Descendant, DescendantObservationFailure, DescendantTerminationOutcome, InspectResult,
-    InstanceCensus, InstanceVerdict, KILL_REAP_GRACE, ProcessBirth, ProcessInstance,
-    ProcessInstanceSource, ProcessTreeSnapshot, SignalKind, SystemProcessInstanceSource,
-    TerminationError, TerminationEvidence, TerminationOutcome,
+    Descendant, InspectResult, InstanceCensus, InstanceVerdict, KILL_REAP_GRACE, ProcessBirth,
+    ProcessTreeSnapshot, SystemProcessInstanceSource,
+};
+use super::super::{
+    DescendantObservationFailure, DescendantTerminationOutcome, ProcessInstance,
+    ProcessInstanceSource, SignalKind, TerminationError, TerminationEvidence, TerminationOutcome,
 };
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::descendants::{own_pgid, snapshot};
