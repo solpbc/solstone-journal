@@ -2737,6 +2737,22 @@ asyncCase('prefetch: pressing or hovering on a rail entry fetches its code, neve
   assert.ok(page.window.solRouter.held().fragments <= 2, 'one fragment per pilot view at most');
 });
 
+asyncCase('prefetch: a page that has learned of a new build fetches nothing ahead, and its press loads the page', async () => {
+  const page = makePage();
+  page.answerAll();
+  await page.boot('home');
+  page.setBuildChanged(true);
+  const before = page.server.calls.length;
+  const rail = page.link('/app/transcripts/');
+  page.document.dispatchEvent({ type: 'pointerover', target: rail });
+  page.document.dispatchEvent({ type: 'pointerdown', target: rail });
+  await page.clock.advance(300);
+  assert.ok(page.server.calls.length === before, `nothing is asked ahead by the old build's names (${page.server.calls.slice(before).map((c) => c.url)})`);
+  page.click('/app/transcripts/');
+  await page.clock.advance(50);
+  assert.deepStrictEqual(page.record.assigned, ['/app/transcripts/'], 'the press loads the page from the new build');
+});
+
 // ---- a first arrival, a superseded move and what the store keeps
 
 // Every mount, with the address the page had when it ran.

@@ -543,6 +543,10 @@
   // scripts and styles go to the browser's cache under their hashed names.
   function prefetchView(name) {
     if (!active || !isPilot(name) || fragments.has(name)) return;
+    // A page that has learned the journal is another build loads the next
+    // page whole: this page's names for its code are the old build's, and
+    // asking for them would only be refused.
+    if (window.appEvents?.buildChanged?.()) return;
     const entry = entryTable()[name];
     const app = knownApp(name);
     if (!entry || !app) return;

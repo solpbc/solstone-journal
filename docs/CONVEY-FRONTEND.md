@@ -212,7 +212,8 @@ shipped hidden). A view whose first heading isn't its title marks its root
 restored per history entry. `solRouter.arrival()` says how the view on the
 page arrived: `'push'`, `'pop'` (a back or forward) or `'replace'`, and `null`
 for the page's first view; a view reads it once, at mount. Code is fetched ahead on a press or
-a hover on a rail entry; data never is. A view whose first load ended in its
+a hover on a rail entry, unless the page has learned the journal is another
+build (that press loads the page whole); data never is. A view whose first load ended in its
 error state reads again when the live stream next connects, once per connect.
 
 **Loading states in a contract view** don't set `aria-busy`
