@@ -383,30 +383,70 @@ fn run_remove_segments(args: &Args) -> ExitCode {
     }
     let index = RetentionIndex::new(&journal);
     let recordings = solstone_core_retention::recording_trash::Recordings::new(&index);
+    let segments = solstone_core_import::segment_trash::ImportSegments::new(&index);
+    let imports = solstone_core_import::import_trash::Imports::new(&index);
+    let chosen: Vec<solstone_core_trash::Chosen> = targets
+        .iter()
+        .map(|target| solstone_core_trash::Chosen {
+            unit: if target.stream.starts_with("agent-memory-") {
+                Unit::Memory {
+                    day: target.day.clone(),
+                    segment: target.dir.clone(),
+                }
+            } else {
+                Unit::Segment {
+                    day: target.day.clone(),
+                    stream: target.stream.clone(),
+                    segment: target.dir.clone(),
+                }
+            },
+            paths: vec![solstone_core_retention::layout::segment_rel(
+                &target.day,
+                &target.stream,
+                &target.dir,
+            )],
+            label: None,
+        })
+        .collect();
     let mut trashed = Vec::new();
     let mut refused = Vec::new();
-    for target in &targets {
-        let unit = if target.stream.starts_with("agent-memory-") {
-            Unit::Memory {
-                day: target.day.clone(),
-                segment: target.dir.clone(),
-            }
-        } else {
-            Unit::Segment {
-                day: target.day.clone(),
-                stream: target.stream.clone(),
-                segment: target.dir.clone(),
+    // An import whose every remaining segment is named here goes whole, as one
+    // item; each of its segments answers with it.
+    for choice in solstone_core_import::segment_trash::choose(&journal, chosen) {
+        let moved = match (&choice.import, choice.chosen.unit.clone()) {
+            (Some(id), _) => imports.trash(&journal, id, Action::RetentionTool, surface(args)),
+            (None, unit @ Unit::Segment { .. }) => solstone_core_trash::detach(
+                &journal,
+                &segments,
+                unit,
+                Action::RetentionTool,
+                surface(args),
+                choice.chosen.paths.clone(),
+            ),
+            (None, unit) => {
+                let Some(target) = choice.covers.first().and_then(|at| targets.get(*at)) else {
+                    continue;
+                };
+                recordings.trash(&journal, target, unit, Action::RetentionTool, surface(args))
             }
         };
-        match recordings.trash(&journal, target, unit, Action::RetentionTool, surface(args)) {
-            Ok(item) => trashed.push(serde_json::json!({
-                "day": target.day, "stream": target.stream, "dir": target.dir,
-                "trash": {"id": item.id, "erase_at": item.erase_at},
-            })),
-            Err(error) => refused.push(serde_json::json!({
-                "day": target.day, "stream": target.stream, "dir": target.dir,
-                "reason": error.to_string(),
-            })),
+        for target in choice.covers.iter().filter_map(|at| targets.get(*at)) {
+            match &moved {
+                Ok(item) => {
+                    let mut row = serde_json::json!({
+                        "day": target.day, "stream": target.stream, "dir": target.dir,
+                        "trash": {"id": item.id, "erase_at": item.erase_at},
+                    });
+                    if let Some(import) = &choice.import {
+                        row["import"] = serde_json::json!(import);
+                    }
+                    trashed.push(row);
+                }
+                Err(error) => refused.push(serde_json::json!({
+                    "day": target.day, "stream": target.stream, "dir": target.dir,
+                    "reason": error.to_string(),
+                })),
+            }
         }
     }
     let code = if refused.is_empty() {

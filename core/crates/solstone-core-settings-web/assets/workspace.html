@@ -7730,7 +7730,7 @@ const REMOVAL_NAMELESS = new Set(['entity', 'facet', 'detected_entities']);
 const REMOVAL_SOURCE = {
   ics: 'calendar', chatgpt: 'ChatGPT', claude: 'Claude', gemini: 'Gemini', kindle: 'Kindle Highlights', journal_archive: 'journal',
   audio_archive: 'audio archive', recording: 'meeting audio', document: 'document', image: 'image',
-  strava: 'Strava', quick: 'quick import', plaud: 'Plaud', audio: 'audio folder', text: 'text',
+  strava: 'Strava', quick: 'quick import', plaud: 'Plaud', audio: 'audio', text: 'text',
   obsidian: 'Obsidian', apple_health: 'Apple Health', oura: 'Oura',
 };
 const REMOVAL_IMPORTED = 'imported {day}';
@@ -8058,6 +8058,16 @@ const TRASH_COPY = {
   originalsSegmentGone: "its segment is no longer in your journal, so this can't be recovered.",
   originalsStaysOne: "its segment and everything made from it aren't erased with it.",
   originalsStaysMany: "their segments and everything made from them aren't erased with them.",
+  // A segment row whose import, which holds the file it came from, isn't in
+  // your journal now.
+  importTrashedLabel: 'its import, {label}, is in the trash. recover that first, then this.',
+  importTrashed: 'its import is in the trash. recover the import first, then this.',
+  importGone: "its import is no longer in your journal, so this can't be recovered.",
+  // Erasing an import erases its segments waiting in the trash on their own.
+  waitingOwnOneOne: 'the segment from it that waits in the trash on its own is erased with it.',
+  waitingOwnOneMany: 'the {w} segments from it that wait in the trash on their own are erased with it.',
+  waitingOwnManyOne: 'the segment from them that waits in the trash on its own is erased with them.',
+  waitingOwnManyMany: 'the {w} segments from them that wait in the trash on their own are erased with them.',
   // Erasing a segment erases its original media waiting in the trash too.
   originalsGoOne: 'its original media in the trash is erased with it.',
   originalsGoMany: 'their original media in the trash is erased with them.',
@@ -8089,6 +8099,9 @@ const TRASH_COPY = {
     // Only for a row whose own line doesn't already say its segment is in the trash.
     recordingInTrash: 'recover its segment from the trash first, then this.',
     nameTaken: "this can't be recovered while a different file is in its place in the segment.",
+    // Only for a row whose own line doesn't already say where its import is.
+    importInTrash: 'recover its import from the trash first, then this.',
+    importGone: "its import is no longer in your journal, so this can't be recovered.",
   },
 };
 const TRASH_KIND_LABEL = {
@@ -8103,7 +8116,7 @@ const TRASH_WORDS = {
   entity: ['entity', 'entities'], facet: ['facet', 'facets'],
 };
 // Refusals that trying again won't change: the result line drops its "try again".
-const TRASH_STUCK = new Set(['merge_dest_missing', 'taken', 'name_redirected', 'recording_in_trash', 'segment_gone', 'name_taken']);
+const TRASH_STUCK = new Set(['merge_dest_missing', 'taken', 'name_redirected', 'recording_in_trash', 'segment_gone', 'name_taken', 'import_in_trash', 'import_gone']);
 
 let trashItems = [];
 let trashConfirmed = null;
@@ -8233,7 +8246,9 @@ function trashRowBody(item, stoppedState) {
   trashRowLines(item).forEach(text => body.append(removalEl('span', 'trash-returned', text)));
   const note = trashNotes.get(item.id);
   // A row whose segment is in the trash already says so.
-  const said = note === TRASH_COPY.notes.recordingInTrash && item.segment_state === 'trashed';
+  const said = (note === TRASH_COPY.notes.recordingInTrash && item.segment_state === 'trashed')
+    || (note === TRASH_COPY.notes.importInTrash && item.import?.state === 'trashed')
+    || (note === TRASH_COPY.notes.importGone && item.import?.state === 'gone');
   if (note && !said) body.append(removalEl('span', 'trash-row-note', note));
   return body;
 }
@@ -8274,6 +8289,17 @@ function trashRowLines(item) {
         case 'gone': return [TRASH_COPY.originalsSegmentGone];
         default: return [];
       }
+    case 'segment': {
+      // A segment its import's file still holds: where that import is now.
+      const lines = [];
+      if (item.import?.state === 'trashed') {
+        lines.push(item.import.label ? trashFill(TRASH_COPY.importTrashedLabel, { label: item.import.label }) : TRASH_COPY.importTrashed);
+      } else if (item.import?.state === 'gone') {
+        lines.push(TRASH_COPY.importGone);
+      }
+      if (item.replaces) lines.push(TRASH_COPY.returned);
+      return lines;
+    }
     default:
       if (!item.replaces) return [];
       return [item.kind === 'import' ? TRASH_COPY.returnedImport : item.kind === 'workout' ? TRASH_COPY.returnedWorkout : TRASH_COPY.returned];
@@ -8327,6 +8353,8 @@ function trashRowNote(entry) {
     case 'name_redirected': return N.redirected;
     case 'recording_in_trash': return N.recordingInTrash;
     case 'name_taken': return N.nameTaken;
+    case 'import_in_trash': return N.importInTrash;
+    case 'import_gone': return N.importGone;
     case 'waits_facets':
       return others(detail.title, count(detail.others), N.waitsFacetNone, N.waitsFacetOne, N.waitsFacetMany, 'title');
     case 'waits_wipe': {
@@ -8456,6 +8484,15 @@ function trashConfirmCopy(act, items) {
       .map(segmentKey));
     const taking = items.filter(item => item.kind === 'segment' && waiting.has(segmentKey(item))).length;
     if (taking > 0) paragraphs.push(taking === 1 ? TRASH_COPY.originalsGoOne : TRASH_COPY.originalsGoMany);
+    // An import erased now takes its segments waiting in the trash on their
+    // own; a selection holding those already lists them.
+    const imports = new Set(items.filter(item => item.kind === 'import').map(item => item.import_id));
+    const own = trashItems.filter(item => item.kind === 'segment' && !chosen.has(item.id) && imports.has(item.import?.id));
+    const from = new Set(own.map(item => item.import.id)).size;
+    if (own.length > 0) {
+      const key = `waitingOwn${from === 1 ? 'One' : 'Many'}${own.length === 1 ? 'One' : 'Many'}`;
+      paragraphs.push(trashFill(TRASH_COPY[key], { w: own.length }));
+    }
   }
   // What stays: anything that mentions an entity or a facet, and a facet's
   // segments; what an import or a workout made elsewhere includes entities;

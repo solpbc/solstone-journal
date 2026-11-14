@@ -6149,6 +6149,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "solstone-core-import",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
  "solstone-core-removals",
