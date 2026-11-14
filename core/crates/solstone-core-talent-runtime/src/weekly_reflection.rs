@@ -3132,9 +3132,9 @@ Weekly prompt
     #[cfg(all(test, feature = "full-tests"))]
     mod full_tests {
         use super::*;
-        use crate::test_support::{
-            generated_response_value, refused_response_value, sequenced_one_shot_stub,
-        };
+        #[cfg(unix)]
+        use crate::test_support::refused_response_value;
+        use crate::test_support::{generated_response_value, sequenced_one_shot_stub};
         use crate::{OneShotClient, execute_request};
         use serde_json::json;
         use std::fs;

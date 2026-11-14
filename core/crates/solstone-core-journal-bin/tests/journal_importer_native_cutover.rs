@@ -92,15 +92,15 @@ impl Harness {
         let bin = root.join("bin");
         fs::create_dir_all(&bin).expect("bin");
         let binary = bin.join("solstone-core-journal");
-        fs::copy(env!("CARGO_BIN_EXE_solstone-core-journal"), &binary).expect("journal binary");
-        executable(&binary);
-        let core = bin.join("solstone-core");
-        fs::copy(locate_solstone_core_binary(), &core).expect("core binary");
-        executable(&core);
+        install_executable(
+            Path::new(env!("CARGO_BIN_EXE_solstone-core-journal")),
+            &binary,
+        );
+        install_executable(locate_solstone_core_binary(), &bin.join("solstone-core"));
+        let poison_source = root.join("poison-interpreter");
+        fs::write(&poison_source, POISON_INTERPRETER).expect("poison");
         for name in ["python", "python3"] {
-            let path = bin.join(name);
-            fs::write(&path, POISON_INTERPRETER).expect("poison");
-            executable(&path);
+            install_executable(&poison_source, &bin.join(name));
         }
         let journal = root.join("journal");
         fs::create_dir_all(&journal).expect("journal");
@@ -194,8 +194,22 @@ fn find_named_file(root: &Path, name: &str) -> Option<PathBuf> {
     })
 }
 
-fn executable(path: &Path) {
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("executable");
+/// Place an executable without this process ever opening it for writing. A
+/// child started on another test thread holds a copy of every descriptor this
+/// process has open until it execs, so a binary this process just wrote can
+/// refuse to run ("Text file busy"). A short-lived `cp` writes it under a
+/// staging name and has exited before the file is renamed into place.
+fn install_executable(source: &Path, path: &Path) {
+    let mut staging = path.as_os_str().to_owned();
+    staging.push(".staging");
+    let status = Command::new("cp")
+        .arg(source)
+        .arg(&staging)
+        .status()
+        .expect("start the executable copy");
+    assert!(status.success(), "copy {} failed", source.display());
+    fs::set_permissions(&staging, fs::Permissions::from_mode(0o755)).expect("executable");
+    fs::rename(&staging, path).expect("place the executable");
 }
 
 struct Inputs {

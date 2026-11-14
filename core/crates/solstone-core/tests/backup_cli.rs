@@ -349,8 +349,9 @@ fn set_hosted_trims_all_fields_and_redacts_token() {
         json!({"account_id":"a","bound":true,"broker_endpoint":"https://b","bucket":"bk","instance_id":"i","prefix":"p"})
     );
     assert!(!String::from_utf8(success.stdout).unwrap().contains("token"));
-    let binding = journal.path().join("backup/hosted/binding.json");
     assert!(!journal.path().join("config/journal.json").exists());
+    #[cfg(unix)]
+    let binding = journal.path().join("backup/hosted/binding.json");
     #[cfg(unix)]
     assert_eq!(
         std::os::unix::fs::MetadataExt::mode(&fs::metadata(&binding).unwrap()) & 0o777,

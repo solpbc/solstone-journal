@@ -8,7 +8,9 @@ use std::{cell::RefCell, fs, path::PathBuf, time::Instant};
 
 use serde::Deserialize;
 use solstone_core_backup::archive_admission::Clock;
-use solstone_core_journal_io::activity::{ActivityAdmissionError, ActivityLease, TeardownLease};
+use solstone_core_journal_io::activity::ActivityLease;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use solstone_core_journal_io::activity::{ActivityAdmissionError, TeardownLease};
 use solstone_core_journal_io::journal_root::JournalRoot;
 use solstone_core_journal_io::media::{MediaPrimitive, run_with_media_hook};
 use solstone_core_journal_io::paths::SegmentLayout;
@@ -17,7 +19,9 @@ use solstone_core_retention::archive_proof::{
     AcceptedProcessingObservation, ArchiveFileProof, OffloadProof,
 };
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use crate::archive_operation::ArchiveBeginRefusal;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use crate::archive_worker::begin_owned;
 #[cfg(not(windows))]
 use crate::archive_worker::prepare_read;
@@ -148,8 +152,10 @@ pub(super) fn before_handoff(slot: &SharedOperationSlot) {
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 #[derive(Deserialize)]
 struct Input {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     mode: Cut,
     journal: PathBuf,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     restic_path: PathBuf,
     repository_id: String,
     snapshot_id: String,
@@ -221,6 +227,7 @@ fn seed(input: &Input, root: &Arc<JournalRoot>) -> PathBuf {
     segment
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn blocked(slot: &SharedOperationSlot, root: &Arc<JournalRoot>, clock: &super::super::OwnedClock) {
     assert!(operation::is_busy(slot));
     assert!(operation::begin(slot, "restore", None, None, None).is_err());
@@ -460,8 +467,10 @@ fn local_restore() -> (
     let journal = crate::test_support::root("healthy");
     let root = Arc::new(JournalRoot::open(journal.path()).unwrap());
     let input = Input {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         mode: Cut::Complete,
         journal: journal.path().to_path_buf(),
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         restic_path: PathBuf::new(),
         repository_id: "a".repeat(64),
         snapshot_id: "b".repeat(64),

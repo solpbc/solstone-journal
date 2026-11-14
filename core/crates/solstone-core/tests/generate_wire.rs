@@ -15,7 +15,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use solstone_core_generate::contract;
-use solstone_core_generate_wire::{LaneOutcome, refusal_for, resolve_lane};
+#[cfg(unix)]
+use solstone_core_generate_wire::resolve_lane;
+use solstone_core_generate_wire::{LaneOutcome, refusal_for};
 
 static NEXT_ROOT: AtomicUsize = AtomicUsize::new(0);
 
@@ -2001,6 +2003,8 @@ fn attestation_stale_refusal_matches_fixture_vector_fields() {
     assert_eq!(refusal.provider.as_deref(), expected["provider"].as_str());
 }
 
+// `confidential_generate_in_package` is not built on Windows.
+#[cfg(not(windows))]
 fn create_test_package(root: &Path) -> solstone_core_installed_payload::InstalledPackage {
     use solstone_core_installed_payload::{
         COMPILED_VERSION, INSTALLED_PAYLOAD_MANIFEST, InstalledPackage, PRODUCT, compiled_target,
@@ -2027,6 +2031,7 @@ fn create_test_package(root: &Path) -> solstone_core_installed_payload::Installe
     InstalledPackage::admit(root, COMPILED_VERSION, compiled_target()).unwrap()
 }
 
+#[cfg(not(windows))]
 fn plant_marker_dir(dir: &Path) {
     let bin = dir.join("bin/nvattest");
     let lib = dir.join("lib");
@@ -2046,6 +2051,7 @@ fn plant_marker_dir(dir: &Path) {
     std::fs::write(&ca, b"ca placeholder").unwrap();
 }
 
+#[cfg(not(windows))]
 fn dir_snapshot(path: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     let mut files = Vec::new();
     fn walk(base: &Path, dir: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
@@ -2069,6 +2075,7 @@ fn dir_snapshot(path: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     files
 }
 
+#[cfg(not(windows))]
 #[test]
 fn confidential_channel_failure_uses_attestation_failed_vector() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind attestation stub");
@@ -2125,6 +2132,7 @@ fn confidential_channel_failure_uses_attestation_failed_vector() {
     let _ = std::fs::remove_dir_all(journal);
 }
 
+#[cfg(not(windows))]
 #[allow(unsafe_code)]
 #[test]
 fn planted_nvattest_locations_are_never_executed_or_mutated() {

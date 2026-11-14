@@ -3,6 +3,7 @@
 
 //! Read-only Parakeet readiness observations for doctor.
 
+#[cfg(unix)]
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

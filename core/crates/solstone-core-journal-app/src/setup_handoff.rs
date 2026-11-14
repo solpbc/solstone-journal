@@ -49,9 +49,6 @@ pub struct CapabilityDocumentContract {
 #[derive(Debug, Clone, Deserialize)]
 pub struct DesktopContract {
     pub canonical_prefix: String,
-    pub host: String,
-    pub paths: Vec<String>,
-    pub scheme: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -94,6 +91,8 @@ pub struct LimitsContract {
     pub receipt_max_bytes: usize,
     pub capability_resource_max_bytes: usize,
     pub lock_acquire_ms: u64,
+    // Part of the pinned contract; in this crate only the contract test reads it.
+    #[cfg(test)]
     pub unpaired_draft_max_age_secs: u64,
 }
 
@@ -325,12 +324,6 @@ pub fn delete_pending(state_dir: &Path) -> Result<(), String> {
         fs::remove_file(&path).map_err(|e| e.to_string())?;
     }
     Ok(())
-}
-
-pub fn advance_pending(state_dir: &Path) -> Result<String, String> {
-    let id = generate_uuid();
-    write_pending(state_dir, &id)?;
-    Ok(id)
 }
 
 #[derive(Debug, Clone)]

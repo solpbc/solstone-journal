@@ -427,8 +427,38 @@ const ENTRY_TABLE = {
       reads: [{ route: '/app/speakers/', urls: ['/app/speakers/api/state'] }, { route: '/app/speakers/{day}', urls: ['/app/speakers/api/state'] }],
       contract: true,
     },
+    // Sources' one read is named by a first-read line; support reads nothing.
+    sources: {
+      fragment: '/app/sources/workspace',
+      scripts: [],
+      styles: [],
+      reads: [{ route: '/app/sources/', urls: ['/app/network/api/clients'] }],
+      contract: true,
+    },
+    support: {
+      fragment: '/app/support/workspace',
+      scripts: [],
+      styles: [],
+      reads: [],
+      contract: true,
+    },
     settings: {
       fragment: '/app/settings/workspace',
+      scripts: [],
+      styles: [],
+      reads: [],
+    },
+    // Network's code is inline in its fragment, as the real one's is; its
+    // first heading isn't its title, so its root asks for arrivals on <main>.
+    network: {
+      fragment: '/app/network/workspace',
+      scripts: [],
+      styles: [],
+      reads: [{ route: '/app/network/', urls: ['/app/network/api/state', '/app/network/api/clients'] }],
+      contract: true,
+    },
+    health: {
+      fragment: '/app/health/workspace',
       scripts: [],
       styles: [],
       reads: [],
@@ -597,7 +627,68 @@ const SPEAKERS_CODE = `
       }
     });`;
 
+// Sources draws its heading itself, into the root it ships; support ships its
+// heading. Both inline, with a script that only registers.
+const SOURCES_CODE = `
+    window.SolViews.register('sources', {
+      mount(ctx) {
+        const views = window.__views.sources;
+        views.mounts += 1;
+        const root = document.getElementById('sources-root');
+        ctx.fetch('/app/network/api/clients', { method: 'GET' }).then(() => {
+          const heading = document.createElement('h1');
+          heading.textContent = 'sources';
+          root.appendChild(heading);
+          ctx.ready('content');
+        }, () => ctx.ready('error'));
+        return () => { views.disposes += 1; };
+      }
+    });`;
+
+const SUPPORT_CODE = `
+    window.SolViews.register('support', {
+      mount(ctx) {
+        const views = window.__views.support;
+        views.mounts += 1;
+        ctx.ready('content');
+        return () => { views.disposes += 1; };
+      }
+    });`;
+
+// Network reads its state and its devices, shows the page once the state is
+// in, and on a #devices arrival that isn't a back lands on the devices
+// heading after the router has placed it. ?pair= opens on the first view only.
+const NETWORK_CODE = `
+    window.SolViews.register('network', {
+      mount(ctx) {
+        const views = window.__views.network;
+        views.mounts += 1;
+        const arrival = window.solRouter.arrival();
+        views.arrivals.push(arrival);
+        if (!arrival && new URLSearchParams(location.search).get('pair')) views.pairStarts += 1;
+        const content = document.getElementById('link-dashboard-content');
+        let shown = false;
+        let listed = false;
+        const land = () => {
+          if (!shown || !listed || location.hash !== '#devices' || arrival === 'pop') return;
+          ctx.setTimeout(() => document.getElementById('devices').focus(), 0);
+        };
+        ctx.read('/app/network/api/state').then(() => { content.removeAttribute('hidden'); shown = true; ctx.ready('content'); land(); }, () => ctx.ready('error'));
+        ctx.read('/app/network/api/clients').then(() => { listed = true; land(); });
+        return () => { views.disposes += 1; };
+      }
+    });`;
+
 const FRAGMENTS = {
+  '/app/sources/workspace': '<main id="sources-root" class="sources-page" tabindex="-1"></main><a href="/app/support/">support</a><a href="/app/network/">manage devices</a>'
+    + '<script>' + SOURCES_CODE + '</script>',
+  '/app/support/workspace': '<div class="support-workspace"><section class="support-page"><h1>support</h1>'
+    + '<button type="button" id="make-report">make a report</button><a href="/app/sources/">sources</a></section>'
+    + '<script>' + SUPPORT_CODE + '</script></div>',
+  '/app/network/workspace': '<main id="link-workspace-root" tabindex="-1" data-arrival-focus="main"><div id="link-dashboard-content" hidden>'
+    + '<section><h2 id="devices" tabindex="-1">devices</h2></section><a href="/app/sources/">sources</a><a href="/app/settings/">settings</a></div></main>'
+    + '<script>' + NETWORK_CODE + '</script>',
+  '/app/health/workspace': '<div><h2>health</h2><a href="/app/network/#devices">devices</a></div>',
   '/app/speakers/workspace': '<div data-date-nav></div><div id="speakersDayView" hidden><nav><h2 class="spk-segments-header">segments</h2></nav>'
     + '<a href="/app/speakers/#spkNewVoicesSection">look for new voices</a><a href="/app/speakers/20260103">next day</a></div>'
     + '<div id="speakersOverviewView" hidden><section hidden><h2>grid</h2></section><a href="/app/speakers/20260102">a day</a>'
@@ -925,7 +1016,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
   document.querySelectorAll = (selector) => document.root.querySelectorAll(selector);
   document.body.innerHTML =
     '<nav id="app-rail"><a href="/app/home/" data-app-name="home">home</a><a href="/app/transcripts/" data-app-name="transcripts">transcripts</a>' +
-    '<a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/speakers/" data-app-name="speakers">speakers</a><a href="/app/sources/" data-app-name="sources">sources</a><a href="/app/settings/" data-app-name="settings">settings</a><a href="/app/search/" data-app-name="search">search</a>' +
+    '<a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/speakers/" data-app-name="speakers">speakers</a><a href="/app/sources/" data-app-name="sources">sources</a><a href="/app/network/" data-app-name="network">network</a><a href="/app/support/" data-app-name="support">support</a><a href="/app/settings/" data-app-name="settings">settings</a><a href="/app/health/" data-app-name="health">health</a><a href="/app/search/" data-app-name="search">search</a>' +
     '<div id="status-instrument"></div></nav><nav id="app-dock"><a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/home/" data-app-name="home">home</a></nav>' +
     '<div id="view-announcer" role="status" aria-live="polite"></div>' +
     '<main id="main-content" tabindex="-1"><div class="surface-state surface-state--loading" role="status" aria-busy="true"></div></main>';
@@ -1000,11 +1091,14 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       search: { mounts: 0, disposes: 0, draws: [], own: [], pops: 0, held: 0 },
       entities: { mounts: 0, disposes: 0, shown: [], own: [], pops: 0, addresses: [] },
       speakers: { mounts: 0, disposes: 0, modes: [], updates: [] },
+      sources: { mounts: 0, disposes: 0 },
+      support: { mounts: 0, disposes: 0 },
+      network: { mounts: 0, disposes: 0, arrivals: [], pairStarts: 0 },
     },
     __scriptErrors: [],
     __consoleErrors: [],
     solShellData: {
-      apps: ['home', 'transcripts', 'more', 'body', 'activities', 'map', 'search', 'entities', 'speakers', 'sources', 'settings'].map((name) => ({
+      apps: ['home', 'transcripts', 'more', 'body', 'activities', 'map', 'search', 'entities', 'speakers', 'sources', 'support', 'network', 'settings', 'health'].map((name) => ({
         name, label: name, workspace_url: `/app/${name}/workspace`,
       })),
     },
@@ -1047,6 +1141,8 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       server.answers.set('/app/body/api/status', server.json({ coverage: { start: '20260102', end: '20260102' } }));
       server.answers.set('/app/entities/api/state', server.json({}));
       server.answers.set('/app/speakers/api/state', server.json({}));
+      server.answers.set('/app/network/api/clients', server.json({ clients: [] }));
+      server.answers.set('/app/network/api/state', server.json({ posture: 'direct' }));
       for (const [url, body] of Object.entries(FRAGMENTS)) server.answers.set(url, server.html(body));
       server.answers.set('/api/shell', server.json({ app_names: [] }));
       server.answers.set('/api/streams/labels', server.json({}));
@@ -1224,15 +1320,15 @@ asyncCase('router: a link between pilot views swaps <main> and keeps the rail, s
   assert.deepStrictEqual(page.record.reloads, []);
 });
 
-asyncCase('router: to or from another view is a page load, sources included', async () => {
+asyncCase('router: to or from another view is a page load, health included', async () => {
   const page = makePage();
   page.answerAll();
   await page.boot('home');
-  for (const href of ['/app/settings/', '/app/sources/']) {
+  for (const href of ['/app/settings/', '/app/health/']) {
     const event = page.click(href);
     assert.ok(!event.defaultPrevented, `${href} is the browser's`);
   }
-  assert.deepStrictEqual(page.record.assigned, ['/app/settings/', '/app/sources/']);
+  assert.deepStrictEqual(page.record.assigned, ['/app/settings/', '/app/health/']);
   assert.ok(page.view('home'), 'home stays mounted');
 
   const other = makePage({ pathname: '/app/settings/' });
@@ -1453,7 +1549,7 @@ asyncCase('router: body stays in the page with home, transcripts and more, and a
   page.click('/app/settings/');
   assert.ok(!page.view('settings'));
   assert.deepStrictEqual(page.record.assigned, ['/app/settings/'], 'settings is still a full load');
-  assert.strictEqual(page.window.solRouter.navigate('/app/sources/'), false, 'sources is still a full load');
+  assert.strictEqual(page.window.solRouter.navigate('/app/health/'), false, 'health is still a full load');
 });
 
 asyncCase('router: back and forward restore body and where the page was', async () => {
@@ -1583,7 +1679,7 @@ asyncCase('router: activities stays in the page with home, transcripts, more and
   page.click('/app/settings/');
   assert.ok(!page.view('settings'));
   assert.deepStrictEqual(page.record.assigned, ['/app/settings/'], 'settings is still a full load');
-  assert.strictEqual(page.window.solRouter.navigate('/app/sources/'), false, 'sources is still a full load');
+  assert.strictEqual(page.window.solRouter.navigate('/app/health/'), false, 'health is still a full load');
 });
 
 asyncCase('router: back and forward restore activities and where the page was', async () => {
@@ -1782,7 +1878,7 @@ asyncCase('router: map stays in the page with home, transcripts, more, body and 
   page.click('/app/settings/');
   assert.ok(!page.view('settings'));
   assert.deepStrictEqual(page.record.assigned, ['/app/settings/'], 'settings is still a full load');
-  assert.strictEqual(page.window.solRouter.navigate('/app/sources/'), false, 'sources is still a full load');
+  assert.strictEqual(page.window.solRouter.navigate('/app/health/'), false, 'health is still a full load');
 });
 
 asyncCase('router: back and forward restore the map and where the page was', async () => {
@@ -2641,6 +2737,22 @@ asyncCase('prefetch: pressing or hovering on a rail entry fetches its code, neve
   assert.ok(page.window.solRouter.held().fragments <= 2, 'one fragment per pilot view at most');
 });
 
+asyncCase('prefetch: a page that has learned of a new build fetches nothing ahead, and its press loads the page', async () => {
+  const page = makePage();
+  page.answerAll();
+  await page.boot('home');
+  page.setBuildChanged(true);
+  const before = page.server.calls.length;
+  const rail = page.link('/app/transcripts/');
+  page.document.dispatchEvent({ type: 'pointerover', target: rail });
+  page.document.dispatchEvent({ type: 'pointerdown', target: rail });
+  await page.clock.advance(300);
+  assert.ok(page.server.calls.length === before, `nothing is asked ahead by the old build's names (${page.server.calls.slice(before).map((c) => c.url)})`);
+  page.click('/app/transcripts/');
+  await page.clock.advance(50);
+  assert.deepStrictEqual(page.record.assigned, ['/app/transcripts/'], 'the press loads the page from the new build');
+});
+
 // ---- a first arrival, a superseded move and what the store keeps
 
 // Every mount, with the address the page had when it ran.
@@ -3303,6 +3415,221 @@ asyncCase('press: a mousedown on the root during a transition, or for a press th
   } finally {
     page.window.Date = RealDate;
   }
+});
+
+// ---- sources and support: the management group's first contract views
+
+function bootAllViews(page) {
+  page.answerAll();
+  answerDays(page);
+  answerBody(page);
+  answerActivities(page);
+  answerMap(page);
+  answerSearch(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+}
+
+const CONTRACT_HREFS = ['/app/home/', '/app/transcripts/', '/app/more/', '/app/body/', '/app/activities/', '/app/map/', '/app/search/', '/app/entities/', '/app/speakers/'];
+
+asyncCase('sources: to and from every other contract view in the page, its one read started at the move and taken once, its arrival focus on the workspace', async () => {
+  const page = makePage();
+  bootAllViews(page);
+  await page.boot('home');
+  const others = [...CONTRACT_HREFS, '/app/support/'];
+  for (const href of others) {
+    const before = page.server.of('/app/network/api/clients').length;
+    page.click('/app/sources/');
+    await page.clock.advance(400);
+    assert.ok(page.view('sources'), `sources in the page (before ${href})`);
+    assert.strictEqual(page.server.of('/app/network/api/clients').length, before + 1, 'one read of the clients a move');
+    const active = page.document.activeElement;
+    assert.ok(active === page.main(), `focus on the workspace: the heading sources draws is passed over (it is on ${active && active.tagName})`);
+    assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'sources');
+    page.click(href);
+    await page.clock.advance(400);
+    const name = href.split('/')[2];
+    assert.ok(page.view(name), `${name} in the page`);
+  }
+  assert.deepStrictEqual(page.record.assigned, [], 'no page load either way');
+  assert.strictEqual(page.window.__views.sources.mounts, others.length);
+  assert.strictEqual(page.window.__views.sources.disposes, others.length);
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
+asyncCase('support: to and from every other contract view in the page, its arrival focus on the heading it ships', async () => {
+  const page = makePage();
+  bootAllViews(page);
+  await page.boot('home');
+  const others = [...CONTRACT_HREFS, '/app/sources/'];
+  for (const href of others) {
+    page.click('/app/support/');
+    await page.clock.advance(400);
+    assert.ok(page.view('support'), `support in the page (before ${href})`);
+    const active = page.document.activeElement;
+    assert.ok(active && active.tagName === 'H1' && page.main().contains(active), `focus on support's heading (it is on ${active && active.tagName})`);
+    assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'support');
+    page.click(href);
+    await page.clock.advance(400);
+    const name = href.split('/')[2];
+    assert.ok(page.view(name), `${name} in the page`);
+  }
+  assert.deepStrictEqual(page.record.assigned, [], 'no page load either way');
+  assert.strictEqual(page.window.__views.support.mounts, others.length);
+  assert.strictEqual(page.window.__views.support.disposes, others.length);
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
+asyncCase('sources and support: between each other, back and forward stay in the page; health from sources and support from settings are page loads', async () => {
+  const page = makePage();
+  bootAllViews(page);
+  await page.boot('home');
+  page.click('/app/sources/');
+  await page.clock.advance(400);
+  page.click('/app/support/');
+  await page.clock.advance(400);
+  assert.ok(page.view('support'), 'sources → support');
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('sources'), 'back to sources');
+  page.history.forward();
+  await page.clock.advance(400);
+  assert.ok(page.view('support'), 'forward to support');
+  page.history.back();
+  await page.clock.advance(400);
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('home'), 'back to home');
+  assert.deepStrictEqual(page.record.assigned, [], 'all in the page');
+  page.history.forward();
+  await page.clock.advance(400);
+  assert.ok(page.view('sources'));
+  const event = page.click('/app/health/');
+  assert.ok(!event.defaultPrevented, 'health is the browser\'s');
+  assert.deepStrictEqual(page.record.assigned, ['/app/health/'], 'sources → health is a page load');
+
+  const settings = makePage({ pathname: '/app/settings/' });
+  settings.answerAll();
+  await settings.boot('settings');
+  assert.strictEqual(settings.window.solRouter.navigate('/app/support/'), false, 'settings → support is a page load');
+  assert.deepStrictEqual(settings.window.__scriptErrors, []);
+});
+
+// ---- network: the management group's third contract view
+
+asyncCase('network: to and from every other contract view in the page, its two first reads started at the move and taken once, its arrival focus on the workspace', async () => {
+  const page = makePage();
+  bootAllViews(page);
+  await page.boot('home');
+  const others = [...CONTRACT_HREFS, '/app/sources/', '/app/support/'];
+  for (const href of others) {
+    const before = [page.server.of('/app/network/api/state').length, page.server.of('/app/network/api/clients').length];
+    page.click('/app/network/');
+    await page.clock.advance(400);
+    assert.ok(page.view('network'), `network in the page (before ${href})`);
+    assert.ok(page.server.of('/app/network/api/state').length === before[0] + 1, 'one read of the state a move');
+    assert.ok(page.server.of('/app/network/api/clients').length === before[1] + 1, 'one read of the devices a move');
+    const active = page.document.activeElement;
+    assert.ok(active === page.main(), `focus on the workspace, never on "devices" (it is on ${active && active.tagName})`);
+    assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'network');
+    page.click(href);
+    await page.clock.advance(400);
+    const name = href.split('/')[2];
+    assert.ok(page.view(name), `${name} in the page`);
+  }
+  assert.deepStrictEqual(page.record.assigned, [], 'no page load either way');
+  assert.ok(page.window.__views.network.mounts === others.length && page.window.__views.network.disposes === others.length);
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
+asyncCase('network: a #devices arrival lands on the devices heading after the router has placed the view; a back to it keeps the router\'s focus', async () => {
+  const page = makePage();
+  bootAllViews(page);
+  await page.boot('home');
+  page.window.solRouter.navigate('/app/network/#devices');
+  await page.clock.advance(400);
+  assert.ok(page.view('network'), 'network in the page');
+  let active = page.document.activeElement;
+  assert.ok(active && active.id === 'devices', `focus on the devices heading (it is on ${active && (active.id || active.tagName)})`);
+  page.click('/app/sources/');
+  await page.clock.advance(400);
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('network'), 'back to network');
+  active = page.document.activeElement;
+  assert.ok(active === page.main(), `a back focuses the workspace and keeps its scroll (it is on ${active && (active.id || active.tagName)})`);
+  assert.deepStrictEqual(page.window.__views.network.arrivals, ['push', 'pop']);
+  assert.deepStrictEqual(page.record.assigned, [], 'all in the page');
+});
+
+asyncCase('network: a back or forward onto a ?pair= entry stays in the page and opens nothing; settings and health stay page loads', async () => {
+  const page = makePage({ pathname: '/app/network/' });
+  bootAllViews(page);
+  page.history.replaceState(page.history.state, '', '/app/network/?pair=phone');
+  await page.boot('network');
+  assert.ok(page.window.__views.network.pairStarts === 1, 'the first view opens it');
+  page.click('/app/sources/');
+  await page.clock.advance(400);
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('network'), 'back onto ?pair= is in the page');
+  page.history.forward();
+  await page.clock.advance(400);
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.window.__views.network.pairStarts === 1, 'no in-page arrival opens it');
+  assert.deepStrictEqual(page.record.assigned, [], 'all in the page');
+  const event = page.click('/app/settings/');
+  assert.ok(!event.defaultPrevented, 'network → settings is the browser\'s');
+  const health = makePage({ pathname: '/app/health/' });
+  health.answerAll();
+  await health.boot('health');
+  assert.strictEqual(health.window.solRouter.navigate('/app/network/#devices'), false, 'health → network is a page load');
+  for (const href of ['/app/link/', '/app/devices']) {
+    assert.strictEqual(page.window.solRouter.navigate(href), false, `${href} is the browser's`);
+  }
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
+// ---- how a view arrived, and a view that asks to be arrived at on <main>
+
+asyncCase('arrival: null on the first view, push for a link, pop for a back or forward, replace for the same address again', async () => {
+  const page = makePage();
+  bootAllViews(page);
+  await page.boot('home');
+  assert.ok(page.window.solRouter.arrival() === null, 'the page\'s first view');
+  page.click('/app/support/');
+  await page.clock.advance(400);
+  assert.ok(page.view('support') && page.window.solRouter.arrival() === 'push', 'a link is a push');
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('home') && page.window.solRouter.arrival() === 'pop', 'a back is a pop');
+  page.history.forward();
+  await page.clock.advance(400);
+  assert.ok(page.view('support') && page.window.solRouter.arrival() === 'pop', 'a forward is a pop');
+  page.click('/app/support/');
+  await page.clock.advance(400);
+  assert.ok(page.view('support') && page.window.solRouter.arrival() === 'replace', 'the same address again is a replace');
+  assert.deepStrictEqual(page.record.assigned, [], 'all in the page');
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
+asyncCase('arrival focus: a view whose root says data-arrival-focus="main" lands on the workspace though it ships a heading', async () => {
+  const page = makePage();
+  bootAllViews(page);
+  page.server.answers.set('/app/support/workspace', page.server.html(
+    FRAGMENTS['/app/support/workspace'].replace('<div class="support-workspace">', '<div class="support-workspace" data-arrival-focus="main">')));
+  await page.boot('home');
+  page.click('/app/support/');
+  await page.clock.advance(400);
+  assert.ok(page.view('support'), 'support in the page');
+  const active = page.document.activeElement;
+  assert.ok(active === page.main(), `focus on the workspace, not the shipped heading (it is on ${active && active.tagName})`);
+  assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'support');
+  page.click('/app/home/');
+  await page.clock.advance(400);
+  const home = page.document.activeElement;
+  assert.ok(home && home !== page.document.body, 'the next view is focused as it always is');
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
 });
 
 (async () => {

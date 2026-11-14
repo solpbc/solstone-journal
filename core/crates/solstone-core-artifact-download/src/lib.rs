@@ -3,7 +3,9 @@
 
 //! Verified artifact download primitives shared by native installers.
 
-use std::fs::{self, File};
+#[cfg(any(unix, test, feature = "runtime-fetch-test"))]
+use std::fs;
+use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 

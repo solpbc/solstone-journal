@@ -3,9 +3,12 @@
 
 use std::process::{Command, Output};
 
+#[cfg(unix)]
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::ffi::OsStringExt;
 
+#[cfg(unix)]
 use tempfile::TempDir;
 
 const BINARY: &str = env!("CARGO_BIN_EXE_solstone-core");
@@ -46,6 +49,7 @@ fn owner_brain_help_and_errors_never_fall_through_to_aggregate_usage() {
     assert!(invalid.stderr.starts_with(b"usage: solstone journal brain"));
 }
 
+#[cfg(unix)]
 #[test]
 fn owner_non_utf8_expected_fingerprint_resolves_stale_instead_of_usage() {
     let journal = TempDir::new_in("/var/tmp").expect("journal");

@@ -86,6 +86,7 @@ impl CompletedChild {
 
 pub(crate) struct ChildFailure {
     error: io::Error,
+    #[cfg(any(not(target_os = "ios"), test))]
     settled: bool,
 }
 
@@ -96,6 +97,7 @@ impl ChildFailure {
 
     /// No child of this run is alive: none was spawned, or the failure came
     /// after the group was killed and the root reaped.
+    #[cfg(any(not(target_os = "ios"), test))]
     pub(crate) fn settled(&self) -> bool {
         self.settled
     }
@@ -127,7 +129,7 @@ pub(crate) fn run_owned(
 }
 
 /// Fixed creator requests retain the same private completion and owned joins.
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 pub(crate) fn run_owned_archive_creator(
     request: &Request<'_>,
     capture_limit: Option<usize>,
@@ -160,7 +162,7 @@ pub(crate) fn run_owned_archive_creator_at(
 
 #[cfg(target_os = "macos")]
 type CreatorAnchor = std::os::fd::RawFd;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 type CreatorAnchor = ();
 
 #[derive(Clone, Copy)]
@@ -168,6 +170,8 @@ enum ChildSetup {
     Ordinary,
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     Dns(Instant),
+    // iOS links its archive writer instead of spawning one.
+    #[cfg(not(target_os = "ios"))]
     Creator(CreatorAnchor),
 }
 
@@ -587,8 +591,13 @@ fn execute_request(
     setup: ChildSetup,
 ) -> Result<CompletedChild, ChildFailure> {
     let mut settled = true;
-    execute_tracked(request, capture_limit, cancellation, setup, &mut settled)
-        .map_err(|error| ChildFailure { error, settled })
+    execute_tracked(request, capture_limit, cancellation, setup, &mut settled).map_err(|error| {
+        ChildFailure {
+            error,
+            #[cfg(any(not(target_os = "ios"), test))]
+            settled,
+        }
+    })
 }
 
 fn execute_tracked(
@@ -603,7 +612,12 @@ fn execute_tracked(
         ChildSetup::Dns(deadline) => Some(deadline),
         _ => None,
     };
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "android")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "android",
+        target_os = "ios"
+    )))]
     if matches!(setup, ChildSetup::Creator(_)) {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,

@@ -239,8 +239,10 @@ pub(super) fn require_direct_parent(parent: ProcessInstance) -> io::Result<()> {
     // SAFETY: snapshot creation returned unique ownership.
     #[allow(unsafe_code)]
     let snapshot = unsafe { OwnedHandle::from_raw_handle(raw) };
-    let mut entry = PROCESSENTRY32W::default();
-    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+    let mut entry = PROCESSENTRY32W {
+        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
     // SAFETY: snapshot is live and entry has documented size and writable storage.
     #[allow(unsafe_code)]
     let mut next = unsafe { Process32FirstW(snapshot.as_raw_handle(), &mut entry) };

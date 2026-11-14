@@ -17,17 +17,21 @@ use solstone_core_speaker_resolve::speakers_trash::Speakers;
 use solstone_core_trash::{Kind, Swept};
 
 use crate::import_trash::Imports;
+use crate::segment_trash::ImportSegments;
 
 /// Run `act` with every kind of thing the trash holds.
 pub fn with_kinds<T>(journal: &Path, act: impl FnOnce(&[&dyn Kind]) -> T) -> T {
     let index = RetentionIndex::new(journal);
+    let segments = ImportSegments::new(&index);
     let recordings = Recordings::new(&index);
     let imports = Imports::new(&index);
     let speakers = Speakers::new(&index);
     let facets = Facets::new(&index);
     let drops = FacetDrops::new(&index);
     let entities = Entities::new(&index);
+    // A segment an import made is the import's kind first: what it needs.
     act(&[
+        &segments,
         &recordings,
         &Originals,
         &imports,

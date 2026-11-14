@@ -270,9 +270,10 @@ fn create_with_timing(
         lease
     };
     #[cfg(windows)]
-    let lease: StagedLease = {
-        barrier(OplogCreatePrimitive::AfterAdmissionBeforePublish);
-    };
+    barrier(OplogCreatePrimitive::AfterAdmissionBeforePublish);
+    // Windows publication holds no self-lease; `StagedLease` is `()` there.
+    #[cfg(windows)]
+    let lease: StagedLease = ();
 
     for (index, name) in names.iter().enumerate() {
         let ordinal = (index + 1) as u8;

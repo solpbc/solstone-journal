@@ -80,7 +80,7 @@ thread_local! {
     static TEST_STATE_DIR: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub fn with_test_state_dir<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
     TEST_STATE_DIR.with(|cell| {
         let previous = cell.borrow_mut().replace(dir.to_path_buf());

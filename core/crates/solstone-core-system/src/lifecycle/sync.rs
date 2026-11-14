@@ -1032,6 +1032,7 @@ fn classify_admission_wait_marker(name: &OsStr, bytes: &[u8]) -> HeartbeatClassi
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) fn latest_live_freshness_horizon(result: &SyncCheckResult) -> Option<f64> {
     result
         .live_peer_observations

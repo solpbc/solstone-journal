@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use chrono::TimeZone;
+#[cfg(unix)]
 use solstone_core_journal::{LAYOUT_BUNDLE_ANCHOR, LAYOUT_LAYOUT_ANCHOR, LAYOUT_TEMPLATE_ANCHOR};
 use std::{
     fs,
@@ -79,6 +80,7 @@ pub(crate) fn check(name: &'static str, severity: Severity) -> Check {
     }
 }
 
+#[cfg(unix)]
 pub(crate) fn layout_install_root(context: &CheckContext) -> PathBuf {
     let prefix = context
         .install_bin_dir

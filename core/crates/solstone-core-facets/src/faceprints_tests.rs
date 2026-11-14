@@ -208,7 +208,11 @@ fn real_removal_door_drops_inferred_rows_but_keeps_choice_and_clear_removes_all_
     crate::reconcile_faceprints(root).unwrap();
     assert_eq!(rows(root, "a"), 0);
     // Include retained sidecars in a second live segment for the clear operation.
-    let other = root.join("chronicle/20261101/screen/100000_300");
+    let other = root
+        .join("chronicle")
+        .join("20261101")
+        .join("screen")
+        .join("100000_300");
     fs::create_dir_all(&other).unwrap();
     fs::write(other.join("screen.jsonl"), b"{}\n").unwrap();
     fs::write(other.join(".faces-v1-synthetic.jsonl"), b"{}").unwrap();
@@ -440,7 +444,11 @@ fn clear_fences_first_publication_and_refuses_busy_trash_before_deleting() {
     let root = temp.path();
     fixture(root);
     publish_meeting(root);
-    let other = root.join("chronicle/20261101/screen/100000_300");
+    let other = root
+        .join("chronicle")
+        .join("20261101")
+        .join("screen")
+        .join("100000_300");
     fs::create_dir_all(&other).unwrap();
     fs::write(other.join("screen.jsonl"), b"{}\n").unwrap();
     let busy = solstone_core_segment::output_attempt::OutputClaims::discover(

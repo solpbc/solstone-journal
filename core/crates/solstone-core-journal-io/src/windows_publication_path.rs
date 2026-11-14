@@ -501,7 +501,7 @@ mod windows_impl {
         }
         impl<T: ?Sized> AmbiguousIfClone<()> for T {}
         struct ImplementsClone;
-        impl<T: ?Sized + Clone> AmbiguousIfClone<ImplementsClone> for T {}
+        impl<T: Clone> AmbiguousIfClone<ImplementsClone> for T {}
         let _ = <WindowsPublicationPath as AmbiguousIfClone<_>>::confirm_not_clone;
     };
 

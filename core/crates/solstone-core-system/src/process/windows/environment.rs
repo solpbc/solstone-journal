@@ -23,11 +23,10 @@ pub(super) enum WindowsEnvironmentError {
     OverrideCollision,
     #[error("Windows ordinal comparison failed")]
     OrdinalComparison,
+    // Only the test fakes fail a snapshot; the system source is infallible.
+    #[cfg(test)]
     #[error("Windows inherited environment lookup failed: {0}")]
     InheritedEnvironment(String),
-    #[cfg(windows)]
-    #[error("Windows wide-string encoding failed: {0}")]
-    WideEncoding(String),
 }
 
 pub(super) type WindowsOrdinalResult<T> = Result<T, WindowsEnvironmentError>;
@@ -299,6 +298,7 @@ fn make_environment_block(entries: &[EnvironmentEntry]) -> Vec<u16> {
     block
 }
 
+#[cfg(test)]
 fn ascii_upper(unit: u16) -> u16 {
     if (b'a' as u16..=b'z' as u16).contains(&unit) {
         unit - (b'a' as u16 - b'A' as u16)

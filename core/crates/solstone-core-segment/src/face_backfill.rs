@@ -22,11 +22,11 @@ fn options(timeout: Duration) -> LockOptions {
     }
 }
 fn intent(journal: &Path, timeout: Duration) -> Result<FileLock, LockError> {
-    hold_lock(journal.join("health/face-live"), options(timeout))
+    hold_lock(journal.join("health").join("face-live"), options(timeout))
 }
 /// Probes a coordination lock only; it contains no journal content.
 pub fn live_requested(journal: &Path) -> Result<bool, LockError> {
-    solstone_core_journal_io::lock_is_held(journal.join("health/face-live"))
+    solstone_core_journal_io::lock_is_held(journal.join("health").join("face-live"))
 }
 /// Speaker maintenance announces priority without taking the live model lease.
 /// Scheduled partitions already serialize each routine; distinct routines keep
@@ -40,7 +40,9 @@ const SPEAKER_ROUTINES: [&str; 6] = [
     "backfill-labels",
 ];
 fn speaker_path(journal: &Path, name: &str) -> std::path::PathBuf {
-    journal.join(format!("health/face-priority-speakers-{name}"))
+    journal
+        .join("health")
+        .join(format!("face-priority-speakers-{name}"))
 }
 pub fn speaker_priority_lease(journal: &Path, id: &str) -> Result<Option<FileLock>, LockError> {
     let Some(name) = id
@@ -72,12 +74,12 @@ pub fn priority_requested(journal: &Path) -> Result<bool, LockError> {
 pub fn backfill_lease(journal: &Path) -> Result<ModelLease, LockError> {
     if priority_requested(journal)? {
         return Err(LockError::Timeout(solstone_core_journal_io::LockTimeout {
-            path: journal.join("health/face-live"),
+            path: journal.join("health").join("face-live"),
             timeout: Duration::ZERO,
         }));
     }
     let model = hold_lock(
-        journal.join("health/face-inference"),
+        journal.join("health").join("face-inference"),
         options(Duration::ZERO),
     )?;
     Ok(ModelLease {
@@ -90,7 +92,7 @@ pub fn backfill_lease(journal: &Path) -> Result<ModelLease, LockError> {
 pub fn live_lease(journal: &Path) -> Result<ModelLease, LockError> {
     let live = intent(journal, Duration::from_secs(15))?;
     let model = hold_lock(
-        journal.join("health/face-inference"),
+        journal.join("health").join("face-inference"),
         options(Duration::from_secs(15)),
     )?;
     Ok(ModelLease {

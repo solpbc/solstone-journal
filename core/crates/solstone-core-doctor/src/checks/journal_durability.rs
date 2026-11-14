@@ -394,6 +394,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
 

@@ -4431,6 +4431,19 @@ function runImportSetDialogListsFiveThenMore() {
   const five = h.api.importSetBody('erase', items.slice(0, 5))[0];
   assert.strictEqual(five.children.length, 5, 'five or fewer: no more line');
   assert.strictEqual(h.api.importSetBody('erase', items)[2].textContent, C.erase.ownMany);
+  // Erase now says the segments waiting in the trash on their own go too.
+  const W = C.waiting;
+  const waits = (nodes) => Array.from(nodes).filter((node) => node.matches && node.matches('.import-delete-waiting')).map((node) => String(node.textContent));
+  const withWaiting = [{ id: '20261101_120000', source: 'audio', waiting: 2 }, { id: '20261102_120000', source: 'audio', waiting: 1 }];
+  assert.deepStrictEqual(waits(h.api.importSetBody('erase', withWaiting)), [W.manyMany.replace('{w}', 3)]);
+  assert.deepStrictEqual(waits(h.api.importSetBody('move', withWaiting)), [], 'the move step leaves them in the trash');
+  assert.deepStrictEqual(waits(h.api.importSetBody('erase', items)), [], 'none waiting: no line');
+  const one = { id: '20261101_120000', source: 'audio' };
+  assert.deepStrictEqual(waits(h.api.importOneBody('erase', one, { source: 'audio', segments: 1, waiting: 1 })), [W.oneOne]);
+  assert.deepStrictEqual(waits(h.api.importOneBody('erase', one, { source: 'audio', segments: 1, waiting: 2 })), [W.oneMany.replace('{w}', 2)]);
+  assert.deepStrictEqual(waits(h.api.importOneBody('erase', one, null)), [W.oneUnknown], 'no preview: the conditional line');
+  assert.deepStrictEqual(waits(h.api.importOneBody('erase', one, { source: 'audio', segments: 1, waiting: 0 })), []);
+  assert.deepStrictEqual(waits(h.api.importOneBody('move', one, null)), []);
   cases += 1;
 }
 

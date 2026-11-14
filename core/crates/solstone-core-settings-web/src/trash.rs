@@ -23,11 +23,74 @@ pub async fn list(journal_root: PathBuf) -> Response {
             solstone_core_trash::unfinished(&journal_root).map_err(|error| error.to_string())?;
         let stopped =
             solstone_core_trash::stopped(&journal_root).map_err(|error| error.to_string())?;
+        let mut rows = Vec::new();
+        let mut stretches: Vec<(String, Vec<&Item>)> = Vec::new();
+        for item in &items {
+            match &item.stretch {
+                Some(stretch) => match stretches.iter_mut().find(|(id, _)| *id == stretch.id) {
+                    Some((_, members)) => members.push(item),
+                    None => {
+                        // The stretch's row sits where its first item would.
+                        rows.push(Row::Stretch(stretch.id.clone()));
+                        stretches.push((stretch.id.clone(), vec![item]));
+                    }
+                },
+                None => rows.push(Row::Item(item)),
+            }
+        }
+        // A stretch part way through a step (moving in, back or out) is still
+        // being finished, whatever of it already waits.
+        let mut finishing: Vec<String> = solstone_core_trash::stretches_unfinished(&journal_root)
+            .into_iter()
+            .filter(|(_, owed)| *owed > 0)
+            .map(|(stretch, _)| stretch.id)
+            .collect();
+        finishing.extend(
+            stopped
+                .iter()
+                .filter_map(|item| item.stretch.as_ref().map(|stretch| stretch.id.clone())),
+        );
+        let shown: Vec<Value> = rows
+            .into_iter()
+            .filter_map(|row| match row {
+                Row::Item(item) => Some(view(&journal_root, item, &items)),
+                Row::Stretch(id) => stretches
+                    .iter()
+                    .find(|(stretch, _)| *stretch == id)
+                    .map(|(_, members)| stretch_view(&journal_root, members, &items, &finishing)),
+            })
+            .collect();
+        // A stretch stopped part way through a step that no row above shows
+        // (all of it recovering, or erasing) is one stopped row of its own.
+        let shown_stretches: Vec<String> = stretches.iter().map(|(id, _)| id.clone()).collect();
+        let mut stopped_stretches: Vec<(String, Vec<&Item>)> = Vec::new();
+        let mut stopped_rows = Vec::new();
+        for item in &stopped {
+            match &item.stretch {
+                None => stopped_rows.push(stopped_view(&journal_root, item, &items)),
+                Some(stretch) if shown_stretches.contains(&stretch.id) => {}
+                Some(stretch) => match stopped_stretches
+                    .iter_mut()
+                    .find(|(id, _)| *id == stretch.id)
+                {
+                    Some((_, members)) => members.push(item),
+                    None => stopped_stretches.push((stretch.id.clone(), vec![item])),
+                },
+            }
+        }
+        for (_, members) in &stopped_stretches {
+            let mut row = stretch_view(&journal_root, members, &items, &finishing);
+            if let (Value::Object(fields), Some(first)) = (&mut row, members.first()) {
+                fields.insert("state".to_owned(), json!(stopped_state(first.state)));
+                fields.remove("replaces");
+            }
+            stopped_rows.push(row);
+        }
         Ok::<_, String>(json!({
             "erase_after_days": solstone_core_trash::erase_after_days(&journal_root),
             "unfinished": unfinished,
-            "items": items.iter().map(|item| view(&journal_root, item)).collect::<Vec<_>>(),
-            "stopped": stopped.iter().map(|item| stopped_view(&journal_root, item)).collect::<Vec<_>>(),
+            "items": shown,
+            "stopped": stopped_rows,
         }))
     })
     .await
@@ -38,12 +101,123 @@ pub async fn list(journal_root: PathBuf) -> Response {
     }
 }
 
+/// A row of the trash page: one item, or a stretch of time, which is one thing
+/// to the owner however many items it moved.
+enum Row<'a> {
+    Item(&'a Item),
+    Stretch(String),
+}
+
+/// A stretch of time as the page shows it: its bounds and the kinds of
+/// recording it holds, from what of it waits now, never what they held; the
+/// items it is, which the page sends back to recover or erase it whole; the
+/// imports it took whole; whether recovering it would replace something that
+/// arrived since; `blocked`, an import outside it, waiting in the trash, that
+/// it needs back first; and `finishing`, a stop left it part way and the
+/// journal is still finishing it.
+fn stretch_view(
+    journal_root: &Path,
+    members: &[&Item],
+    listed: &[Item],
+    finishing: &[String],
+) -> Value {
+    let Some(first) = members.first() else {
+        return Value::Null;
+    };
+    let parts: Vec<&solstone_core_trash::Stretch> = members
+        .iter()
+        .filter_map(|item| item.stretch.as_ref())
+        .collect();
+    let id = parts.first().map(|stretch| stretch.id.clone());
+    let from = parts
+        .iter()
+        .map(|part| part.from.as_str())
+        .filter(|at| !at.is_empty())
+        .min();
+    let to = parts.iter().map(|part| part.to.as_str()).max();
+    let kinds: std::collections::BTreeSet<&str> = parts
+        .iter()
+        .flat_map(|part| part.kinds.iter().map(String::as_str))
+        .collect();
+    let erase_at = members
+        .iter()
+        .map(|item| item.erase_at.as_str())
+        .max()
+        .unwrap_or(first.erase_at.as_str());
+    let imports: Vec<Value> = members
+        .iter()
+        .filter_map(|item| match &item.unit {
+            Unit::Import { source, id } => Some(json!({
+                "id": id,
+                "source": source,
+                "label": item.label,
+                "kept": kept_files(journal_root, item, id),
+            })),
+            _ => None,
+        })
+        .collect();
+    json!({
+        "id": id,
+        "kind": "stretch",
+        "from": from,
+        "to": to,
+        "kinds": kinds,
+        "ids": members.iter().map(|item| item.id.clone()).collect::<Vec<_>>(),
+        "trashed_at": first.trashed_at,
+        "erase_at": erase_at,
+        "bytes": members.iter().map(|item| item.bytes).sum::<u64>(),
+        "surface": first.surface,
+        "imports": imports,
+        "replaces": members.iter().any(|item| replaces(journal_root, item)),
+        "blocked": stretch_blocked(members, listed),
+        "finishing": id.as_ref().is_some_and(|id| finishing.contains(id)),
+    })
+}
+
+/// How many files an import in the trash kept from what the owner gave it:
+/// its record's files, not the record itself.
+fn kept_files(journal_root: &Path, item: &Item, id: &str) -> usize {
+    let Ok(dir) = solstone_core_trash::held_file(journal_root, &item.id, &format!("imports/{id}"))
+    else {
+        return 0;
+    };
+    std::fs::read_dir(dir).map_or(0, |entries| {
+        entries
+            .flatten()
+            .filter(|entry| entry.path().is_file())
+            .filter(|entry| {
+                entry.file_name().to_str().is_some_and(|name| {
+                    !name.starts_with('.') && !name.ends_with(".json") && !name.ends_with(".jsonl")
+                })
+            })
+            .count()
+    })
+}
+
+/// An import outside the stretch, waiting in the trash, that one of its
+/// segments needs back first: recovering the stretch waits for it, so no part
+/// of it comes back alone.
+fn stretch_blocked(members: &[&Item], listed: &[Item]) -> Option<Value> {
+    let inside: std::collections::BTreeSet<&str> =
+        members.iter().map(|item| item.id.as_str()).collect();
+    members.iter().find_map(|item| {
+        item.needs.iter().find_map(|need| {
+            let holder = listed.iter().find(|other| {
+                !inside.contains(other.id.as_str()) && other.paths.iter().any(|path| path == need)
+            })?;
+            let id = need.strip_prefix("imports/")?;
+            Some(json!({"id": id, "label": holder.label, "item": holder.id}))
+        })
+    })
+}
+
 fn unreadable(detail: String) -> Response {
     crate::storage::read_failed("trash_unreadable", "your trash couldn't be read.", detail)
 }
 
-/// One item as the page shows it: what it is, never what it holds.
-fn view(journal_root: &Path, item: &Item) -> Value {
+/// One item as the page shows it: what it is, never what it holds. `listed` is
+/// everything in the trash, read once for the page.
+fn view(journal_root: &Path, item: &Item, listed: &[Item]) -> Value {
     let place = item
         .paths
         .first()
@@ -68,7 +242,9 @@ fn view(journal_root: &Path, item: &Item) -> Value {
             Some(stream.clone()),
             segment.clone(),
         ),
-        (Unit::Import { source, id }, _) => return import_view(journal_root, item, source, id),
+        (Unit::Import { source, id }, _) => {
+            return import_view(journal_root, item, source, id, listed);
+        }
         (Unit::Workout { source, day, .. }, _) => {
             return workout_view(journal_root, item, source, day.as_deref());
         }
@@ -87,7 +263,7 @@ fn view(journal_root: &Path, item: &Item) -> Value {
         ) => return originals_view(journal_root, item, day, stream, segment),
         _ => ("other", String::new(), None, String::new()),
     };
-    json!({
+    let mut shown = json!({
         "id": item.id,
         "kind": kind,
         "day": day,
@@ -98,23 +274,53 @@ fn view(journal_root: &Path, item: &Item) -> Value {
         "bytes": item.bytes,
         "surface": item.surface,
         "replaces": replaces(journal_root, item),
-    })
+    });
+    if let Some(import) = needed_import(journal_root, item, listed) {
+        shown["import"] = import;
+    }
+    shown
+}
+
+/// The import a segment needs to come back, and where it stands: `live` in
+/// the journal, `trashed` waiting in the trash (recover it first), or `gone`.
+fn needed_import(journal_root: &Path, item: &Item, listed: &[Item]) -> Option<Value> {
+    let record = item
+        .needs
+        .iter()
+        .find(|need| need.starts_with("imports/"))?;
+    let id = record.strip_prefix("imports/")?;
+    let holder = listed
+        .iter()
+        .find(|other| other.id != item.id && other.paths.iter().any(|path| path == record))
+        .cloned();
+    let (state, label) = match holder {
+        Some(holder) => ("trashed", holder.label),
+        None if journal_root.join(record).is_dir() => (
+            "live",
+            solstone_core_import::import_trash::import_label(journal_root, id),
+        ),
+        None => ("gone", None),
+    };
+    Some(json!({"id": id, "label": label, "state": state}))
 }
 
 /// An item stopped part way: what it is, and which way it was going.
-fn stopped_view(journal_root: &Path, item: &Item) -> Value {
-    let mut shown = view(journal_root, item);
+fn stopped_view(journal_root: &Path, item: &Item, listed: &[Item]) -> Value {
+    let mut shown = view(journal_root, item, listed);
     if let Value::Object(fields) = &mut shown {
-        let state = match item.state {
-            solstone_core_trash::State::Detaching => "detaching",
-            solstone_core_trash::State::Attaching => "attaching",
-            solstone_core_trash::State::Erasing => "erasing",
-            solstone_core_trash::State::Trashed => "trashed",
-        };
-        fields.insert("state".to_owned(), json!(state));
+        fields.insert("state".to_owned(), json!(stopped_state(item.state)));
         fields.remove("replaces");
     }
     shown
+}
+
+fn stopped_state(state: solstone_core_trash::State) -> &'static str {
+    match state {
+        solstone_core_trash::State::Detaching => "detaching",
+        solstone_core_trash::State::Attaching => "attaching",
+        solstone_core_trash::State::Erasing => "erasing",
+        solstone_core_trash::State::Trashed => "trashed",
+    }
 }
 
 /// The fields every row carries.
@@ -315,7 +521,8 @@ fn workout_view(journal_root: &Path, item: &Item, source: &str, day: Option<&str
 
 /// An import as the page shows it: its source, its import, and how much of
 /// the journal it took with it.
-fn import_view(journal_root: &Path, item: &Item, source: &str, id: &str) -> Value {
+fn import_view(journal_root: &Path, item: &Item, source: &str, id: &str, listed: &[Item]) -> Value {
+    let record = format!("imports/{id}");
     let segments: Vec<(String, String, String)> = item
         .paths
         .iter()
@@ -347,6 +554,11 @@ fn import_view(journal_root: &Path, item: &Item, source: &str, id: &str) -> Valu
         "bytes": item.bytes,
         "surface": item.surface,
         "replaces": replaces(journal_root, item),
+        // Its segments deleted earlier, still in the trash: erasing it erases them.
+        "takes": listed
+            .iter()
+            .filter(|other| other.id != item.id && other.needs.contains(&record))
+            .count(),
     })
 }
 
@@ -414,12 +626,37 @@ pub async fn recover(journal_root: PathBuf, body: Bytes) -> Response {
     let surface = page_surface(selection.page.as_deref());
     let ids = recover_order(&journal_root, selection.ids);
     run(journal_root, ids, move |root, id, operation| {
-        solstone_core_import::trash_kinds::with_kinds(root, |kinds| {
-            solstone_core_trash::attach_in(root, kinds, id, Action::Recover, surface, operation)
-                .map(|_| ())
+        solstone_core_import::trash_kinds::with_kinds(root, |kinds| match stretch_of(root, id) {
+            // A stretch comes back whole, as one act, or not at all.
+            Some(stretch) => solstone_core_trash::recover_stretch(
+                root,
+                kinds,
+                &stretch,
+                Action::Recover,
+                surface,
+                operation,
+            )
+            .map(|items| items.into_iter().map(|item| item.id).collect()),
+            None => {
+                solstone_core_trash::attach_in(root, kinds, id, Action::Recover, surface, operation)
+                    .map(|_| vec![id.to_owned()])
+            }
         })
     })
     .await
+}
+
+/// The stretch an id stands for: the stretch of the item it names, or the
+/// stretch's own id, as its row gives it.
+fn stretch_of(journal_root: &Path, id: &str) -> Option<String> {
+    match solstone_core_trash::item(journal_root, id) {
+        Ok(Some(item)) => item.stretch.map(|stretch| stretch.id),
+        Ok(None) => solstone_core_trash::stretch_members(journal_root, id)
+            .ok()
+            .filter(|members| !members.is_empty())
+            .map(|_| id.to_owned()),
+        Err(_) => None,
+    }
 }
 
 /// A set recovered together puts homes back before what waits on them: a
@@ -433,8 +670,11 @@ fn recover_order(journal_root: &Path, ids: Vec<String>) -> Vec<String> {
             Unit::Entity => 2,
             Unit::FacetFile => 3,
             Unit::Speakers => 4,
-            // After the recording they were released from.
-            Unit::Originals { .. } => 2,
+            // After the recording they were released from, which can wait
+            // on its import.
+            Unit::Originals { .. } => 3,
+            // After the import whose upload it needs.
+            Unit::Segment { .. } if !item.needs.is_empty() => 2,
             _ => 1,
         },
         _ => 1,
@@ -449,10 +689,66 @@ pub async fn erase(journal_root: PathBuf, body: Bytes) -> Response {
     let Some(selection) = parse(&body) else {
         return unreadable_selection();
     };
-    run(journal_root, selection.ids, |root, id, operation| {
-        solstone_core_trash::erase_in(root, id, Action::Erase, page_surface(None), operation)
+    let ids = erase_order(&journal_root, selection.ids);
+    run(journal_root, ids, |root, id, operation| {
+        erase_one(root, id, Action::Erase, operation)
     })
     .await
+}
+
+/// Erase one row: a stretch whole, as one act, or one item.
+fn erase_one(
+    root: &Path,
+    id: &str,
+    action: Action,
+    operation: &OperationId,
+) -> Result<Vec<String>, TrashError> {
+    match stretch_of(root, id) {
+        Some(stretch) => {
+            match solstone_core_trash::erase_stretch(
+                root,
+                &stretch,
+                action,
+                page_surface(None),
+                operation,
+            ) {
+                Ok(items) => Ok(items.into_iter().map(|item| item.id).collect()),
+                // Erased already with the rest of it, under this act.
+                Err(TrashError::NotInTrash) => Ok(vec![id.to_owned()]),
+                Err(error) => Err(error),
+            }
+        }
+        None => erased(solstone_core_trash::erase_in(
+            root,
+            id,
+            action,
+            page_surface(None),
+            operation,
+        ))
+        .map(|()| vec![id.to_owned()]),
+    }
+}
+
+/// An item that is no longer in the trash when its erase comes was erased
+/// with one it needed or that held it: what erase asked for.
+fn erased(result: Result<(), TrashError>) -> Result<(), TrashError> {
+    match result {
+        Err(TrashError::NotInTrash) => Ok(()),
+        result => result,
+    }
+}
+
+/// Erased together, what needs another item goes first: erasing an import
+/// erases its segments waiting in the trash, so each still answers as itself.
+fn erase_order(journal_root: &Path, ids: Vec<String>) -> Vec<String> {
+    let needs = |id: &String| {
+        solstone_core_trash::item(journal_root, id)
+            .ok()
+            .flatten()
+            .is_some_and(|item| !item.needs.is_empty())
+    };
+    let (first, rest): (Vec<String>, Vec<String>) = ids.into_iter().partition(needs);
+    first.into_iter().chain(rest).collect()
 }
 
 /// Erase everything in the trash.
@@ -463,12 +759,15 @@ pub async fn empty(journal_root: PathBuf) -> Response {
     })
     .await
     {
-        Ok(Ok(items)) => items.into_iter().map(|item| item.id).collect(),
+        Ok(Ok(items)) => erase_order(
+            &journal_root,
+            items.into_iter().map(|item| item.id).collect(),
+        ),
         Ok(Err(error)) => return unreadable(error.to_string()),
         Err(error) => return unreadable(error.to_string()),
     };
     run(journal_root, ids, |root, id, operation| {
-        solstone_core_trash::erase_in(root, id, Action::EmptyTrash, page_surface(None), operation)
+        erase_one(root, id, Action::EmptyTrash, operation)
     })
     .await
 }
@@ -478,7 +777,7 @@ pub async fn empty(journal_root: PathBuf) -> Response {
 async fn run(
     journal_root: PathBuf,
     ids: Vec<String>,
-    act: impl Fn(&Path, &str, &OperationId) -> Result<(), TrashError> + Send + 'static,
+    act: impl Fn(&Path, &str, &OperationId) -> Result<Vec<String>, TrashError> + Send + 'static,
 ) -> Response {
     let outcome = tokio::task::spawn_blocking(move || {
         let operation = OperationId::fresh(chrono::Utc::now());
@@ -490,7 +789,18 @@ async fn run(
                 continue;
             }
             match act(&journal_root, &id, &operation) {
-                Ok(()) => done.push(id),
+                Ok(ids) => {
+                    // A stretch answers for every item it is, once.
+                    for done_id in ids {
+                        if !done.contains(&done_id) {
+                            seen.insert(done_id.clone());
+                            done.push(done_id);
+                        }
+                    }
+                    if !done.contains(&id) {
+                        done.push(id);
+                    }
+                }
                 Err(error) => {
                     log::warn!("trash item {id}: {error}");
                     let mut row = json!({"id": id, "reason": owner_reason(&error)});
@@ -606,6 +916,198 @@ mod tests {
             status,
             serde_json::from_slice(&bytes).unwrap_or(Value::Null),
         )
+    }
+
+    /// The afternoon of 2026-07-31 as one stretch: the field recorder's
+    /// 9:00 and 9:05 segments.
+    fn trash_stretch(root: &Path) -> String {
+        fs::create_dir_all(root.join("chronicle/20260731/field/090500_300")).unwrap();
+        fs::write(
+            root.join("chronicle/20260731/field/090500_300/audio.flac"),
+            b"raw",
+        )
+        .unwrap();
+        let at = |value| solstone_core_import::stretch_trash::parse_wall(value).unwrap();
+        solstone_core_import::stretch_trash::trash(
+            root,
+            at("2026-07-31T09:00"),
+            at("2026-07-31T09:10"),
+            Surface::Web {
+                page: Page::Transcripts,
+            },
+            false,
+        )
+        .unwrap()
+        .unwrap()
+        .stretch
+        .id
+    }
+
+    /// A stretch is one row, and recovering it by any one of its items, or by
+    /// its own id, brings all of it back in one act; erasing it erases all of it.
+    #[tokio::test]
+    async fn a_stretch_is_one_row_recovered_and_erased_whole() {
+        let dir = journal();
+        let root = dir.path();
+        let earlier = trash_segment(root, "090000_300");
+        // The earlier one is in the trash already: the stretch takes only the
+        // 9:05, and the earlier stays its own row.
+        let stretch = trash_stretch(root);
+        let (_, listed) = call(root, Method::GET, "/app/settings/api/trash", "").await;
+        let rows = listed["items"].as_array().unwrap();
+        assert_eq!(rows.len(), 2, "{listed}");
+        let row = rows.iter().find(|row| row["kind"] == "stretch").unwrap();
+        assert_eq!(row["id"], json!(stretch));
+        assert_eq!(row["from"], "2026-07-31T09:05:00");
+        assert_eq!(row["to"], "2026-07-31T09:10:00");
+        assert_eq!(row["kinds"], json!(["audio"]));
+        assert_eq!(row["finishing"], false);
+        let member = row["ids"][0].as_str().unwrap().to_owned();
+        let (_, answer) = call(
+            root,
+            Method::POST,
+            "/app/settings/api/trash/recover",
+            &json!({"ids": [member]}).to_string(),
+        )
+        .await;
+        assert_eq!(answer["failed"], json!([]), "{answer}");
+        assert!(
+            root.join("chronicle/20260731/field/090500_300/audio.flac")
+                .is_file()
+        );
+        assert!(solstone_core_trash::item(root, &earlier).unwrap().is_some());
+        let again = trash_stretch(root);
+        let (_, answer) = call(
+            root,
+            Method::POST,
+            "/app/settings/api/trash/erase",
+            &json!({"ids": [again]}).to_string(),
+        )
+        .await;
+        assert_eq!(answer["failed"], json!([]), "{answer}");
+        assert!(
+            solstone_core_trash::stretch_members(root, &again)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(solstone_core_trash::item(root, &earlier).unwrap().is_some());
+    }
+
+    /// An audio import whose two segments were deleted one at a time: the
+    /// first waits as a segment needing the import, the second took it whole.
+    fn import_deleted_by_segments(root: &Path) -> (String, String) {
+        let id = "20260731_090000";
+        let segments = ["090000_300", "090500_300"];
+        let listed: Vec<Value> = segments
+            .iter()
+            .map(|key| json!({"day": "20260731", "stream": "import.audio", "segment": key}))
+            .collect();
+        let write = |rel: &str, bytes: &[u8]| {
+            let path = root.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        };
+        write(
+            &format!("imports/{id}/imported.json"),
+            json!({"source_type": "audio", "segments": listed})
+                .to_string()
+                .as_bytes(),
+        );
+        write(
+            &format!("imports/{id}/import.json"),
+            json!({"original_filename": "talk.m4a", "file_path": format!("imports/{id}/talk.m4a")})
+                .to_string()
+                .as_bytes(),
+        );
+        write(&format!("imports/{id}/talk.m4a"), b"upload");
+        let mut ids = Vec::new();
+        for key in segments {
+            write(
+                &format!("chronicle/20260731/import.audio/{key}/audio.flac"),
+                b"raw",
+            );
+        }
+        let index = RetentionIndex::new(root);
+        for key in segments {
+            let (item, _) = solstone_core_import::segment_trash::trash_segment(
+                root,
+                &index,
+                Unit::Segment {
+                    day: "20260731".into(),
+                    stream: "import.audio".into(),
+                    segment: key.into(),
+                },
+                format!("chronicle/20260731/import.audio/{key}"),
+                Action::SegmentDelete,
+                Surface::Web {
+                    page: Page::Transcripts,
+                },
+            )
+            .unwrap();
+            ids.push(item.id);
+        }
+        (ids[0].clone(), ids[1].clone())
+    }
+
+    #[tokio::test]
+    async fn an_import_row_says_what_its_erase_takes_and_its_segment_waits_for_it() {
+        let root = journal();
+        let (segment, import) = import_deleted_by_segments(root.path());
+        let (_, listed) = call(root.path(), Method::GET, "/app/settings/api/trash", "").await;
+        let row = |id: &str| {
+            listed["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["id"] == id)
+                .cloned()
+                .unwrap()
+        };
+        assert_eq!(row(&import)["kind"], "import");
+        assert_eq!(row(&import)["takes"], 1);
+        assert_eq!(row(&segment)["import"]["state"], "trashed");
+        assert_eq!(row(&segment)["import"]["label"], "talk.m4a");
+        let body = json!({"ids": [segment.clone()]}).to_string();
+        let (_, refused) = call(
+            root.path(),
+            Method::POST,
+            "/app/settings/api/trash/recover",
+            &body,
+        )
+        .await;
+        assert_eq!(refused["failed"][0]["reason"], "import_in_trash");
+        // Together, the import comes back before the segment that needs it.
+        let body = json!({"ids": [segment.clone(), import.clone()]}).to_string();
+        let (_, both) = call(
+            root.path(),
+            Method::POST,
+            "/app/settings/api/trash/recover",
+            &body,
+        )
+        .await;
+        assert_eq!(both["failed"], json!([]), "{both}");
+        assert!(
+            root.path()
+                .join("imports/20260731_090000/talk.m4a")
+                .is_file()
+        );
+    }
+
+    #[tokio::test]
+    async fn emptying_the_trash_answers_for_a_segment_its_import_took() {
+        let root = journal();
+        let (segment, import) = import_deleted_by_segments(root.path());
+        let (_, emptied) = call(
+            root.path(),
+            Method::POST,
+            "/app/settings/api/trash/empty",
+            "",
+        )
+        .await;
+        assert_eq!(emptied["failed"], json!([]), "{emptied}");
+        let done = emptied["done"].as_array().unwrap();
+        assert!(done.contains(&json!(segment)) && done.contains(&json!(import)));
+        assert!(!root.path().join("imports/20260731_090000").exists());
     }
 
     #[tokio::test]

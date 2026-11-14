@@ -354,9 +354,8 @@ pub fn is_busy(slot: &SharedOperationSlot) -> bool {
             return true;
         };
         crate::archive_worker::observe_retained(&mut guard);
-        return guard.archive.is_busy()
-            || observe(&mut guard.current)
-                .is_some_and(|current| !is_terminal(&current.view.phase));
+        guard.archive.is_busy()
+            || observe(&mut guard.current).is_some_and(|current| !is_terminal(&current.view.phase))
     }
     #[cfg(not(windows))]
     {

@@ -37,6 +37,7 @@ pub const OFFLOAD_ARCHIVE_TAG: &str = "spb-offload-archive";
 
 /// How long a repository command waits for another run's exclusive lock,
 /// such as a scheduled backup cleanup, before it gives up.
+#[cfg(any(all(unix, not(target_os = "ios")), windows, test))]
 pub(crate) const REPOSITORY_RETRY_LOCK: &str = "30m";
 
 /// restic refuses a repository command outright while another run holds the
@@ -45,7 +46,7 @@ pub(crate) const REPOSITORY_RETRY_LOCK: &str = "30m";
 /// bounded, the way the archive writer always has. While it waits restic
 /// prints a notice on stdout, ahead of the JSON or file bytes these commands
 /// parse, unless it runs quietly.
-#[cfg(any(unix, windows, test))]
+#[cfg(any(all(unix, not(target_os = "ios")), windows, test))]
 fn waiting_for_repository(mut argv: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
     argv.extend([
         "--retry-lock".into(),
@@ -56,7 +57,7 @@ fn waiting_for_repository(mut argv: Vec<std::ffi::OsString>) -> Vec<std::ffi::Os
 }
 
 /// `version` reads no repository, so it neither waits nor needs quieting.
-#[cfg(any(unix, windows))]
+#[cfg(any(all(unix, not(target_os = "ios")), windows))]
 fn query_argv(argv: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
     if argv.first().is_some_and(|command| command == "version") {
         argv
@@ -66,7 +67,9 @@ fn query_argv(argv: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
 }
 
 use std::fmt;
-use std::path::{Path, PathBuf};
+#[cfg(all(unix, not(target_os = "ios")))]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(any(all(unix, not(target_os = "ios")), windows))]
 use std::time::Duration;
@@ -124,13 +127,15 @@ use crate::archive_admission::ARCHIVE_LS_TIMEOUT_SECONDS;
 use crate::archive_admission::Clock;
 use crate::archive_admission::{AdmissionError, ArchiveBudget, ArchiveConfiguration};
 #[cfg(unix)]
-use crate::bounded_child::{self, CompletedChild, Request};
-#[cfg(unix)]
+use crate::bounded_child::CompletedChild;
+#[cfg(all(unix, not(target_os = "ios")))]
+use crate::bounded_child::{self, Request};
+#[cfg(all(unix, not(any(target_os = "android", target_os = "ios"))))]
 use solstone_core_installed_payload::CurrentInstalledMember;
 use solstone_core_journal_io::activity::ActivityLease;
 use solstone_core_journal_io::media::RootActivityCarrier;
 
-#[cfg(unix)]
+#[cfg(all(unix, not(any(target_os = "android", target_os = "ios"))))]
 pub(crate) const RESTIC_MEMBER: &str = "lib/solstone-restic/restic";
 #[cfg(all(unix, not(any(target_os = "android", target_os = "ios"))))]
 pub(crate) const RCLONE_MEMBER: &str = "lib/solstone-rclone/rclone";
@@ -161,6 +166,7 @@ enum AdmittedTool {
 
 #[cfg(unix)]
 impl AdmittedTool {
+    #[cfg(not(target_os = "ios"))]
     fn program(&self) -> Result<&Path, ReadbackError> {
         match self {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -2019,7 +2025,7 @@ impl<'a> ReadOperation<'a> {
     }
 
     /// A failure reports whether nothing of the run is still alive.
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "ios")))]
     fn run_child(
         &self,
         request: &Request<'_>,

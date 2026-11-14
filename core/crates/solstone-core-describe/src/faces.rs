@@ -24,6 +24,164 @@ pub type PassResult<T> = Result<T, String>;
 pub const SCHEMA_VERSION: u32 = 1;
 pub const WIDTH: usize = 128;
 
+/// Preserve useful errors for the standalone caller, but log only the kind in
+/// describe: dependency errors can contain private paths or OCR text.
+#[derive(Debug)]
+pub(crate) struct FaceError {
+    cancelled: bool,
+    kind: &'static str,
+    detail: String,
+}
+impl FaceError {
+    pub(crate) fn at(kind: &'static str, error: impl std::fmt::Display) -> Self {
+        Self {
+            cancelled: false,
+            kind,
+            detail: error.to_string(),
+        }
+    }
+}
+impl From<crate::pipeline::RunError> for FaceError {
+    fn from(error: crate::pipeline::RunError) -> Self {
+        let cancelled = matches!(error, crate::pipeline::RunError::Cancelled);
+        Self {
+            cancelled,
+            kind: "frame_decode",
+            detail: format!("{error:?}"),
+        }
+    }
+}
+impl std::fmt::Display for FaceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.kind, self.detail)
+    }
+}
+
+/// A face attempt is all-or-nothing enrichment, independent of screen output.
+pub(crate) struct Enrichment(Option<FacePass>);
+impl Enrichment {
+    pub(crate) fn new(journal: &Path, video: &Path) -> Result<Self, crate::pipeline::RunError> {
+        let pass = if best_effort(enabled(journal).map_err(|e| FaceError::at("config", e)))?
+            .unwrap_or(false)
+        {
+            best_effort(
+                FacePass::try_new(journal, video).map_err(|e| FaceError::at("model_lease", e)),
+            )?
+        } else {
+            None
+        };
+        Ok(Self(pass))
+    }
+
+    pub(crate) fn apply(
+        &mut self,
+        work: impl FnOnce(&mut FacePass) -> Result<(), FaceError>,
+    ) -> Result<(), crate::pipeline::RunError> {
+        if let Some(pass) = self.0.as_mut()
+            && best_effort(work(pass))?.is_none()
+        {
+            self.0 = None;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn prepare(
+        &self,
+        video: &Path,
+        stop: &dyn Fn() -> bool,
+    ) -> Result<Option<PreparedFaces>, crate::pipeline::RunError> {
+        let Some(pass) = self.0.as_ref() else {
+            return Ok(None);
+        };
+        let cancelled = std::cell::Cell::new(false);
+        let checkpoint = || {
+            cancelled.set(cancelled.get() || stop());
+            cancelled.get()
+        };
+        let result = pass.prepare(video, &checkpoint);
+        if checkpoint() {
+            return Err(crate::pipeline::RunError::Cancelled);
+        }
+        best_effort(result.map_err(|e| FaceError::at("prepare", e)))
+    }
+}
+
+fn best_effort<T>(result: Result<T, FaceError>) -> Result<Option<T>, crate::pipeline::RunError> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(error) if error.cancelled => Err(crate::pipeline::RunError::Cancelled),
+        Err(error) => {
+            log::warn!("face enrichment skipped: {}", error.kind);
+            Ok(None)
+        }
+    }
+}
+
+/// Called only after a new screen reading commits. Retained readings never
+/// enter here, so their previously bound face set stays intact.
+pub(crate) fn publish_enrichment(
+    journal: &Path,
+    video: &Path,
+    prepared: Option<&PreparedFaces>,
+    commit: &SegmentCommit<'_>,
+) -> Result<(), crate::pipeline::RunError> {
+    let installed = if let Some(prepared) = prepared {
+        best_effort((|| {
+            if !enabled(journal).map_err(|e| FaceError::at("config", e))? {
+                return Err(FaceError::at(
+                    "disabled",
+                    "faces turned off during describe",
+                ));
+            }
+            prepared
+                .install(commit)
+                .map_err(|e| FaceError::at("publication", e))
+        })())?
+    } else {
+        None
+    };
+    if installed.is_none() {
+        // Also retires an older set whose screen binding was just replaced,
+        // and any payloads installed before a failed manifest publication.
+        best_effort(discard(video).map_err(|e| FaceError::at("cleanup", e)))?;
+    }
+    Ok(())
+}
+
+fn discard(video: &Path) -> io::Result<()> {
+    let segment = video
+        .parent()
+        .ok_or_else(|| io::Error::other("segment missing"))?;
+    let prefix = prefix(video);
+    let mut failure = None;
+    for entry in fs::read_dir(segment)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let result = if name == format!("{prefix}.jsonl")
+            || (name.starts_with(&format!("{prefix}-")) && name.ends_with(".npy"))
+        {
+            if entry.file_type()?.is_dir() {
+                fs::remove_dir(entry.path())
+            } else {
+                fs::remove_file(entry.path())
+            }
+        } else if name == format!("{prefix}-crops") {
+            if entry.file_type()?.is_dir() {
+                fs::remove_dir_all(entry.path())
+            } else {
+                fs::remove_file(entry.path())
+            }
+        } else {
+            continue;
+        };
+        if let Err(error) = result {
+            failure.get_or_insert(error);
+        }
+    }
+    failure.map_or(Ok(()), Err)
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FaceDetection {
     #[serde(rename = "box")]
@@ -108,8 +266,28 @@ pub fn screen_body_digest(screen: &Path) -> io::Result<String> {
     solstone_core_segment::screen_body_digest(screen)
 }
 
+trait Inference {
+    fn detect(&mut self, image: &RgbImage) -> PassResult<Vec<FaceDetection>>;
+    fn embed(&mut self, image: &RgbImage, face: &FaceDetection) -> PassResult<([f32; 128], f32)>;
+}
+impl Inference for FaceModels {
+    fn detect(&mut self, image: &RgbImage) -> PassResult<Vec<FaceDetection>> {
+        self.detect(image)
+    }
+    fn embed(&mut self, image: &RgbImage, face: &FaceDetection) -> PassResult<([f32; 128], f32)> {
+        self.embed(image, face)
+    }
+}
+fn open_models() -> PassResult<Box<dyn Inference>> {
+    #[cfg(all(test, feature = "full-tests"))]
+    if let Some(open) = tests::MODEL_FACTORY.with(|factory| *factory.borrow()) {
+        return open();
+    }
+    Ok(Box::new(FaceModels::open()?))
+}
+
 pub struct FacePass {
-    models: Option<FaceModels>,
+    models: Option<Box<dyn Inference>>,
     rows: Vec<FaceRow>,
     embeddings: Vec<[f32; 128]>,
     crops: Vec<(String, Vec<u8>)>,
@@ -144,7 +322,7 @@ impl FacePass {
         png: &[u8],
         cached: Option<&screen_ocr::PrivateSidecar>,
         ocr: &mut dyn OcrWorkerFactory,
-    ) -> PassResult<()> {
+    ) -> Result<(), FaceError> {
         let Some(parts) = row
             .pointer("/content/meeting/participants")
             .and_then(Value::as_array)
@@ -157,20 +335,22 @@ impl FacePass {
         let frame_id = row
             .get("frame_id")
             .and_then(Value::as_u64)
-            .ok_or("meeting row omitted frame_id")?;
+            .ok_or_else(|| FaceError::at("frame_metadata", "meeting row omitted frame_id"))?;
         let timestamp = row
             .get("timestamp")
             .and_then(Value::as_f64)
             .filter(|v| v.is_finite())
-            .ok_or("meeting row omitted timestamp")?;
+            .ok_or_else(|| FaceError::at("frame_metadata", "meeting row omitted timestamp"))?;
         let image = image::load_from_memory(png)
-            .map_err(|e| e.to_string())?
+            .map_err(|e| FaceError::at("image_decode", e))?
             .to_rgb8();
         if self.models.is_none() {
-            self.models = Some(FaceModels::open()?);
+            self.models = Some(open_models().map_err(|e| FaceError::at("model_open", e))?);
         }
         let models = self.models.as_mut().expect("initialized");
-        let faces = models.detect(&image)?;
+        let faces = models
+            .detect(&image)
+            .map_err(|e| FaceError::at("detect", e))?;
         self.stats.frames += 1;
         let texts = if let Some(frame) = cached.and_then(|s| {
             s.frames.iter().find(|f| {
@@ -181,7 +361,7 @@ impl FacePass {
         }) {
             frame.occurrences.clone()
         } else {
-            meeting_ocr(&image, parts, ocr)?
+            meeting_ocr(&image, parts, ocr).map_err(|e| FaceError::at("ocr_fallback", e))?
         };
         let labels = labels::assign(&faces, parts, &texts);
         let boxes: Vec<Option<usize>> = faces
@@ -189,12 +369,14 @@ impl FacePass {
             .map(|f| labels::in_box(f, parts, image.width(), image.height()))
             .collect();
         for (face_idx, face) in faces.iter().enumerate() {
-            let (emb, sharpness) = models.embed(&image, face)?;
+            let (emb, sharpness) = models
+                .embed(&image, face)
+                .map_err(|e| FaceError::at("embed", e))?;
             let label = labels.get(&face_idx).cloned();
             let in_box = boxes[face_idx];
             let sole = in_box.is_some_and(|p| boxes.iter().filter(|v| **v == Some(p)).count() == 1);
             let crop = if label.is_some() || sole {
-                let bytes = crop_jpeg(&image, face.bbox)?;
+                let bytes = crop_jpeg(&image, face.bbox).map_err(|e| FaceError::at("crop", e))?;
                 let name = crop_reference(&self.prefix, frame_id, face_idx, &bytes);
                 self.crops.push((name.clone(), bytes));
                 Some(name)
@@ -503,7 +685,8 @@ fn run_segment_with_ocr(
                     if (ts - frame.timestamp).abs() > 0.002 {
                         return Err("meeting frame timestamp differs from raw recording".into());
                     }
-                    pass.add_frame(&row, &frame.png, cached.as_ref(), ocr)?;
+                    pass.add_frame(&row, &frame.png, cached.as_ref(), ocr)
+                        .map_err(|e| e.to_string())?;
                 }
                 crate::decode::PullNext::Done => break,
                 crate::decode::PullNext::Cancelled => return Err("face pass cancelled".into()),
@@ -606,8 +789,73 @@ fn write_npy(w: &mut dyn Write, rows: &[[f32; 128]]) -> io::Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    #[cfg(feature = "full-tests")]
+    type ModelFactory = fn() -> PassResult<Box<dyn Inference>>;
+    #[cfg(feature = "full-tests")]
+    thread_local! {
+        pub(super) static MODEL_FACTORY: std::cell::RefCell<Option<ModelFactory>> = const { std::cell::RefCell::new(None) };
+        static WARNINGS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    #[cfg(feature = "full-tests")]
+    pub(crate) fn with_models<T>(fail_open: bool, work: impl FnOnce() -> T) -> T {
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                MODEL_FACTORY.with(|f| f.replace(None));
+            }
+        }
+        fn failing() -> PassResult<Box<dyn Inference>> {
+            Err("private/model/path".into())
+        }
+        fn working() -> PassResult<Box<dyn Inference>> {
+            Ok(Box::new(SyntheticModels))
+        }
+        MODEL_FACTORY.with(|f| f.replace(Some(if fail_open { failing } else { working })));
+        let _reset = Reset;
+        work()
+    }
+    #[cfg(feature = "full-tests")]
+    struct SyntheticModels;
+    #[cfg(feature = "full-tests")]
+    impl Inference for SyntheticModels {
+        fn detect(&mut self, _: &RgbImage) -> PassResult<Vec<FaceDetection>> {
+            Ok(vec![FaceDetection {
+                bbox: [0., 0., 2., 2.],
+                landmarks: [0.; 10],
+                score: 0.9,
+            }])
+        }
+        fn embed(&mut self, _: &RgbImage, _: &FaceDetection) -> PassResult<([f32; 128], f32)> {
+            Ok(([0.25; 128], 100.))
+        }
+    }
+    #[cfg(feature = "full-tests")]
+    pub(crate) fn warnings<T>(work: impl FnOnce() -> T) -> (T, Vec<String>) {
+        struct Logger;
+        impl log::Log for Logger {
+            fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+                true
+            }
+            fn log(&self, record: &log::Record<'_>) {
+                if record.level() == log::Level::Warn && record.target().ends_with("::faces") {
+                    WARNINGS.with(|lines| lines.borrow_mut().push(record.args().to_string()));
+                }
+            }
+            fn flush(&self) {}
+        }
+        static LOGGER: Logger = Logger;
+        static INIT: std::sync::Once = std::sync::Once::new();
+        INIT.call_once(|| {
+            log::set_logger(&LOGGER).unwrap();
+            log::set_max_level(log::LevelFilter::Warn);
+        });
+        WARNINGS.with(|lines| lines.borrow_mut().clear());
+        let result = work();
+        (result, WARNINGS.with(|lines| lines.take()))
+    }
 
     #[test]
     fn embeddings_are_row_aligned_little_endian_numpy() {
@@ -623,6 +871,28 @@ mod tests {
             .map(|v| f32::from_le_bytes(v.try_into().unwrap()))
             .collect::<Vec<_>>();
         assert_eq!(values, rows.into_iter().flatten().collect::<Vec<_>>());
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn optional_face_cancellation_still_cancels_and_staging_is_removed() {
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("segment");
+        fs::create_dir(&segment).unwrap();
+        let raw = segment.join("screen.webm");
+        let mut pass = Enrichment(Some(FacePass::try_new(root.path(), &raw).unwrap()));
+        assert!(matches!(
+            pass.apply(|_| Err(crate::pipeline::RunError::Cancelled.into())),
+            Err(crate::pipeline::RunError::Cancelled)
+        ));
+        let checks = std::cell::Cell::new(0);
+        let result = pass.prepare(&raw, &|| {
+            checks.set(checks.get() + 1);
+            // A one-shot cancellation during staging must not be swallowed.
+            checks.get() == 3
+        });
+        assert!(matches!(result, Err(crate::pipeline::RunError::Cancelled)));
+        assert_eq!(fs::read_dir(&segment).unwrap().count(), 0);
     }
 
     #[cfg(feature = "full-tests")]

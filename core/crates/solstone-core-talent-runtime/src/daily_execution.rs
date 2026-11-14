@@ -6,7 +6,7 @@
 use std::io::Write;
 
 use serde_json::{Map, Value, json};
-#[cfg(test)]
+#[cfg(all(test, unix))]
 use solstone_core_generate::OneShotClient;
 use solstone_core_journal_io::{
     AcceptedDailyResult, DailyUnitAuthority, DailyUnitIdentity, DailyUnitRecord, DailyUnitStatus,
@@ -109,7 +109,7 @@ fn finished(record: &DailyUnitRecord) -> Result<RuntimeOutcome, String> {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn execute(
     request: Map<String, Value>,
     context: &ExecutionContext,

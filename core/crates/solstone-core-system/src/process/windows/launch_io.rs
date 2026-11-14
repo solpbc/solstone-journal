@@ -73,8 +73,10 @@ impl PendingIo {
         // SAFETY: successful CreateEventW transfers this unique handle to us.
         #[allow(unsafe_code)]
         let event = unsafe { OwnedHandle::from_raw_handle(raw) };
-        let mut overlapped = OVERLAPPED::default();
-        overlapped.hEvent = event.as_raw_handle();
+        let overlapped = OVERLAPPED {
+            hEvent: event.as_raw_handle(),
+            ..Default::default()
+        };
         Ok(Self {
             state: Some(Box::new(OperationState {
                 pipe,

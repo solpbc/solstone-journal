@@ -4798,6 +4798,9 @@ fn run_mcp_service(
 fn run_mcp_service(
     #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> ExitCode {
+    // This build has no MCP endpoint, so the admitted launch has nothing to drive.
+    #[cfg(windows)]
+    let _ = admitted;
     eprintln!("solstone journal mcp service is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
@@ -4836,6 +4839,9 @@ fn run_mcp_local_door(
 fn run_mcp_local_door(
     #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> ExitCode {
+    // This build has no MCP endpoint, so the admitted launch has nothing to drive.
+    #[cfg(windows)]
+    let _ = admitted;
     eprintln!("solstone journal mcp local-door is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }

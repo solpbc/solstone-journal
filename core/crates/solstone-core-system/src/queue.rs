@@ -28,12 +28,14 @@ use crate::catchup::{
 use crate::catchup::{admit_daily_catchup_with_capability, catchup_marker_capability};
 use crate::partition::Partition;
 use crate::process::{
-    CAP_TERMINATION_TIMEOUT, Disposition, ExecutionState, InspectResult, InstanceCensus,
-    InstanceVerdict, LaunchAuthority, LaunchError, LaunchedProcessIdentity, ProcessBirth,
-    ProcessEventSink, ProcessInstance, ProcessInstanceSource, ProcessOwner, ProcessTreeSnapshot,
-    SignalKind, SpawnError, SpawnOptions, SystemProcessInstanceSource, TASK_QUEUE_SHUTDOWN_TIMEOUT,
-    TerminationError, TerminationOutcome, exit_status_for_code,
+    CAP_TERMINATION_TIMEOUT, Disposition, ExecutionState, InspectResult, InstanceVerdict,
+    LaunchAuthority, LaunchError, LaunchedProcessIdentity, ProcessBirth, ProcessEventSink,
+    ProcessInstance, ProcessInstanceSource, ProcessTreeSnapshot, SignalKind, SpawnError,
+    SpawnOptions, SystemProcessInstanceSource, TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError,
+    TerminationOutcome, exit_status_for_code,
 };
+#[cfg(unix)]
+use crate::process::{InstanceCensus, ProcessOwner};
 #[cfg(not(unix))]
 use crate::process::{ManagedProcess, launch_managed};
 pub use crate::queue_hold::{
@@ -448,8 +450,10 @@ type QueueProcessHandle = Arc<Mutex<Box<dyn QueueProcess>>>;
 pub(crate) struct UnfakedObserver;
 
 pub(crate) trait TreeObserver: Send + Sync {
+    #[cfg(unix)]
     fn census_group(&self, pgid: i32, deadline: Option<Instant>) -> InstanceCensus;
     fn observe(&self, instance: &ProcessInstance) -> InstanceVerdict;
+    #[cfg(unix)]
     fn process_owner(&self, pid: u32) -> ProcessOwner;
     fn signal_exact(
         &self,
@@ -470,6 +474,7 @@ pub(crate) trait TreeObserver: Send + Sync {
 pub(crate) struct SystemTreeObserver;
 
 impl TreeObserver for SystemTreeObserver {
+    #[cfg(unix)]
     fn census_group(&self, pgid: i32, deadline: Option<Instant>) -> InstanceCensus {
         SystemProcessInstanceSource.census_group(pgid, deadline)
     }
@@ -478,16 +483,9 @@ impl TreeObserver for SystemTreeObserver {
         SystemProcessInstanceSource.observe(instance)
     }
 
+    #[cfg(unix)]
     fn process_owner(&self, pid: u32) -> ProcessOwner {
-        #[cfg(unix)]
-        {
-            crate::process::process_owner(pid)
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = pid;
-            ProcessOwner::Absent
-        }
+        crate::process::process_owner(pid)
     }
 
     fn signal_exact(
@@ -567,12 +565,14 @@ impl TreeObserver for SystemTreeObserver {
 pub(crate) struct TestDefaultTreeObserver;
 #[cfg(test)]
 impl TreeObserver for TestDefaultTreeObserver {
+    #[cfg(unix)]
     fn census_group(&self, _pgid: i32, _deadline: Option<Instant>) -> InstanceCensus {
         std::panic::panic_any(UnfakedObserver);
     }
     fn observe(&self, _instance: &ProcessInstance) -> InstanceVerdict {
         std::panic::panic_any(UnfakedObserver);
     }
+    #[cfg(unix)]
     fn process_owner(&self, _pid: u32) -> ProcessOwner {
         std::panic::panic_any(UnfakedObserver);
     }
@@ -1118,7 +1118,7 @@ impl QueueInner {
         ))
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn set_held_persist_hook(&self, hook: Option<Arc<dyn Fn() + Send + Sync>>) {
         *self
             .held_persist_hook
@@ -2448,13 +2448,16 @@ impl TaskQueue {
                                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         }
 
-                        let mut proc = match proc_handle.try_lock() {
+                        let proc = match proc_handle.try_lock() {
                             Ok(guard) => guard,
                             Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
                             Err(std::sync::TryLockError::WouldBlock) => {
                                 continue;
                             }
                         };
+                        // Only `poll` needs the guard mutable.
+                        #[cfg(any(unix, test))]
+                        let mut proc = proc;
 
                         #[cfg(any(unix, test))]
                         {
@@ -3490,7 +3493,7 @@ impl TaskQueue {
             .unwrap_or_else(|p| p.into_inner()) = observer;
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn set_held_persist_hook(&self, hook: Option<Arc<dyn Fn() + Send + Sync>>) {
         self.inner.set_held_persist_hook(hook);
     }
@@ -5353,8 +5356,10 @@ mod tests {
 
     use super::*;
     use crate::cap::{DEFAULT_TASK_MAX_RUNTIME, DefaultCapResolver};
+    #[cfg(unix)]
+    use crate::process::Disposition;
     use crate::process::{
-        CensusRow, Descendant, Disposition, ExecutionState, InstanceCensus, InstanceVerdict,
+        CensusRow, Descendant, ExecutionState, InstanceCensus, InstanceVerdict,
         LaunchedProcessIdentity, ProcessBirth, ProcessInstance, ProcessTreeSnapshot,
     };
     use crate::queue_hold::ReasonCode;
@@ -5758,6 +5763,7 @@ mod tests {
     struct FakeTreeObserver {
         census: Mutex<Option<InstanceCensus>>,
         verdicts: Mutex<BTreeMap<u32, InstanceVerdict>>,
+        #[cfg(unix)]
         owners: Mutex<BTreeMap<u32, ProcessOwner>>,
         job_quiescent: Mutex<Option<Result<bool, io::Error>>>,
         signals: Mutex<Vec<(ProcessInstance, SignalKind)>>,
@@ -5771,6 +5777,7 @@ mod tests {
             Self {
                 census: Mutex::new(None),
                 verdicts: Mutex::new(BTreeMap::new()),
+                #[cfg(unix)]
                 owners: Mutex::new(BTreeMap::new()),
                 job_quiescent: Mutex::new(None),
                 signals: Mutex::new(Vec::new()),
@@ -5785,6 +5792,7 @@ mod tests {
     }
 
     impl TreeObserver for FakeTreeObserver {
+        #[cfg(unix)]
         fn census_group(&self, _pgid: i32, _deadline: Option<Instant>) -> InstanceCensus {
             self.census
                 .lock()
@@ -5802,6 +5810,7 @@ mod tests {
                 .unwrap_or(InstanceVerdict::NotSameOrExited)
         }
 
+        #[cfg(unix)]
         fn process_owner(&self, pid: u32) -> ProcessOwner {
             self.owners
                 .lock()
@@ -9149,12 +9158,14 @@ mod tests {
         let queue = queue(true, 10, VecDeque::new());
         struct PanickingObserver;
         impl TreeObserver for PanickingObserver {
+            #[cfg(unix)]
             fn census_group(&self, _pgid: i32, _deadline: Option<Instant>) -> InstanceCensus {
                 panic!("injected observer panic")
             }
             fn observe(&self, _instance: &ProcessInstance) -> InstanceVerdict {
                 panic!("injected observer panic")
             }
+            #[cfg(unix)]
             fn process_owner(&self, _pid: u32) -> ProcessOwner {
                 panic!("injected observer panic")
             }

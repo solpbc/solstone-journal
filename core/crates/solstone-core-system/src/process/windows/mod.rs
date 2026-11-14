@@ -117,9 +117,8 @@ pub use bounded_cleanup::{
 #[cfg(windows)]
 pub use managed::{
     LaunchAuthority, ManagedProcess, apply_parent_death_kill, launch, launch_command,
-    launch_command_hosted, launch_generation_child, launch_managed,
-    launch_managed_generation_child, launch_managed_hosted, launch_managed_request,
-    launch_managed_with, launch_with, signal_exact_instance, terminate,
+    launch_command_hosted, launch_generation_child, launch_managed, launch_managed_hosted,
+    launch_managed_request, launch_managed_with, launch_with, signal_exact_instance, terminate,
     terminate_descendants_exact, terminate_exact_instance,
 };
 #[cfg(windows)]
@@ -322,13 +321,13 @@ impl ProcessInstanceSource for SystemProcessInstanceSource {
     fn observe(&self, expected: &ProcessInstance) -> InstanceVerdict {
         #[cfg(windows)]
         {
-            return identity::verdict_from_windows_probe(
+            identity::verdict_from_windows_probe(
                 expected,
                 identity::sample_windows_process_with(
                     &identity::SystemWindowsProcessApi,
                     expected.pid,
                 ),
-            );
+            )
         }
         #[cfg(not(windows))]
         {

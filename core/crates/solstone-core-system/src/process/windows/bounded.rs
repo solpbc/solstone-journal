@@ -361,14 +361,15 @@ fn spawn_io_worker(
         .spawn(work)
 }
 
+/// An output worker thread and the channel its capture result arrives on.
 #[cfg(windows)]
-fn capture_stream<R>(
-    mut reader: R,
-    limit: usize,
-) -> io::Result<(
+type CaptureWorker = (
     std::thread::JoinHandle<()>,
     std::sync::mpsc::Receiver<Result<Vec<u8>, CaptureError>>,
-)>
+);
+
+#[cfg(windows)]
+fn capture_stream<R>(mut reader: R, limit: usize) -> io::Result<CaptureWorker>
 where
     R: io::Read + Send + 'static,
 {
@@ -393,14 +394,7 @@ where
 }
 
 #[cfg(windows)]
-fn stream_to_file<R>(
-    reader: R,
-    file: std::fs::File,
-    limit: u64,
-) -> io::Result<(
-    std::thread::JoinHandle<()>,
-    std::sync::mpsc::Receiver<Result<Vec<u8>, CaptureError>>,
-)>
+fn stream_to_file<R>(reader: R, file: std::fs::File, limit: u64) -> io::Result<CaptureWorker>
 where
     R: io::Read + Send + 'static,
 {
@@ -588,19 +582,19 @@ pub fn run_bounded_helper(
     let mut exit_code = None;
 
     loop {
-        if let Some(cancellation) = &request.cancellation {
-            if cancellation() {
-                let quiescent = stop_and_drain(&mut owner, &mut io);
-                return Err(reservation.failure(
-                    BoundedHelperError::Cancelled {
-                        identity,
-                        quiescent,
-                    },
-                    owner,
-                    io,
-                    request.resources,
-                ));
-            }
+        if let Some(cancellation) = &request.cancellation
+            && cancellation()
+        {
+            let quiescent = stop_and_drain(&mut owner, &mut io);
+            return Err(reservation.failure(
+                BoundedHelperError::Cancelled {
+                    identity,
+                    quiescent,
+                },
+                owner,
+                io,
+                request.resources,
+            ));
         }
         if !stdin_complete {
             match io.stdin.try_recv() {

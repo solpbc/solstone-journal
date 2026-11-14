@@ -216,6 +216,23 @@ async fn ac1_disk_revocation_wins_over_stale_present_channel_and_ac2_disk_presen
 }
 
 #[tokio::test]
+async fn local_network_status_refuses_a_revoked_device() {
+    let fixture = Fixture::established(1);
+    let listed = linked_device(&fixture, 0);
+    let (_, receiver) = watch::channel(posture(&fixture));
+    let app = authorized_router(fixture.root.clone(), receiver).into_inner();
+    assert!(fixture.remove_authorization(0).authorized_removed);
+    for path in [
+        "/app/network/api/local-network",
+        "/app/link/api/local-network",
+    ] {
+        let (status, body) = request(app.clone(), path, Some(listed.clone())).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body, revoked_body());
+    }
+}
+
+#[tokio::test]
 async fn ac3_authorization_postures_refuse_except_for_a_listed_device() {
     let fixture = Fixture::established(1);
     let listed = linked_device(&fixture, 0);

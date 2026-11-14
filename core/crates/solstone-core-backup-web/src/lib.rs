@@ -2218,7 +2218,8 @@ pub(crate) fn consume_hosted(
 
 #[cfg(test)]
 mod corpus;
-#[cfg(test)]
+// Every case admits a Unix bin/lib payload; Windows requires verified native workers.
+#[cfg(all(test, unix))]
 mod resolution_tests;
 #[cfg(test)]
 mod test_support;

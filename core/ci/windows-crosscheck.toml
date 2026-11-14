@@ -26,8 +26,12 @@ target = "x86_64-pc-windows-msvc"
 # Re-derived on 2026-11-09 with the same metadata join: removing the old body
 # bundle writers drops solstone-core-body-source, -body-store, -body-rebuild
 # and -body-ingest, four members and four libraries (145/138 -> 141/134).
-workspace_packages = 141
-library_packages = 134
+# Re-derived on 2026-11-13 with the same metadata join: solstone-core-journal-link
+# adds one member and one library (141/134 -> 142/135). It is plain
+# cross-platform Rust with no cfg(target_os) gate; it depends on ring, so the
+# Linux cross-check leaves it to native Windows CI with ring's other dependents.
+workspace_packages = 142
+library_packages = 135
 
 [[exclusions]]
 package = "ring"

@@ -209,6 +209,8 @@ impl IntoReadinessOutcome for NvattestEnsureStatus {
     }
 }
 
+// Callers: the non-Windows package entry point, `test_support`, and unit tests.
+#[cfg(any(not(windows), test, feature = "test-hooks"))]
 fn confidential_generate_with<R, O, E>(
     call: ConfidentialCall<'_>,
     readiness: R,

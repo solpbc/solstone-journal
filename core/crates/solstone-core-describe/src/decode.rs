@@ -824,7 +824,7 @@ mod image_tests {
     }
 }
 
-#[cfg(all(test, not(feature = "full-tests")))]
+#[cfg(test)]
 mod text_gate_tests {
     use std::collections::BTreeSet;
     use std::path::{Path, PathBuf};
@@ -899,6 +899,42 @@ mod text_gate_tests {
     fn open(video: &Path, encode: bool) -> FramePull {
         FramePull::open(video, WinnowConfig::default(), encode)
             .unwrap_or_else(|_| panic!("fixture opens"))
+    }
+
+    #[test]
+    #[cfg(feature = "full-tests")]
+    fn selected_replay_preserves_native_png_bytes_and_text_changed_frames() {
+        let video = fixture("stride_floor_vp8_screen.webm");
+        let mut ocr = FreshText::default();
+        let mut gate = TextGate::new(&mut ocr);
+        let mut first = open(&video, false);
+        let frames = drain(&mut first, Some(&mut gate));
+        let text_changed = first.metadata().text_changed;
+        let wanted = [frames[0], frames[2], frames[3]];
+        let mut replay = open(&video, true);
+        replay.replay_text_changes(text_changed.clone());
+        replay.retain_pngs(wanted.iter().map(|(id, _)| *id).collect());
+        for (id, timestamp) in wanted {
+            let PullNext::Frame(frame) = replay.next(&|| false) else {
+                panic!("requested native frame missing");
+            };
+            assert_eq!(frame.frame_id, id);
+            assert_eq!(frame.timestamp.to_bits(), timestamp.to_bits());
+            let single = redecode_frame(
+                &video,
+                WinnowConfig::default(),
+                &text_changed,
+                id,
+                timestamp,
+                &|| false,
+            )
+            .unwrap_or_else(|_| panic!("individual frame missing"));
+            assert_eq!(frame.png, single);
+        }
+        assert!(matches!(replay.next(&|| false), PullNext::Done));
+        let mut cancelled = open(&video, true);
+        cancelled.retain_pngs(BTreeSet::from([wanted[2].0]));
+        assert!(matches!(cancelled.next(&|| true), PullNext::Cancelled));
     }
 
     #[test]

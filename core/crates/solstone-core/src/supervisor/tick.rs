@@ -1435,6 +1435,7 @@ mod tests {
     use std::time::Duration;
 
     use chrono::NaiveDate;
+    #[cfg(unix)]
     use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
     use solstone_core_system::cap::{CapResolver, DefaultCapResolver};
     use solstone_core_system::lifecycle::{
@@ -1448,6 +1449,7 @@ mod tests {
     use solstone_core_system::queue::{
         ProcessState, ProcessStateProbe, SystemProcessStateProbe, TaskQueue, TaskQueueOptions,
     };
+    #[cfg(unix)]
     use tempfile::TempDir;
 
     use super::config::no_thinking_engine_chosen;

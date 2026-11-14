@@ -1057,6 +1057,17 @@ runtime = "none"
 features = ["full-tests"]
 
 [[package_suites]]
+id = "package::solstone-core-journal-link"
+package = "solstone-core-journal-link"
+set = "component"
+areas = ["journal", "trust"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-journal-stats-cli"
 package = "solstone-core-journal-stats-cli"
 set = "component"
@@ -2555,6 +2566,20 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-support-web::support_dom"
+package = "solstone-core-support-web"
+target = "support_dom"
+set = "component"
+areas = ["support"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-convey-shell::sources_dom"
 package = "solstone-core-convey-shell"
 target = "sources_dom"
@@ -2717,6 +2742,20 @@ target = "markdown_form_policy_dom"
 set = "component"
 areas = ["services"]
 platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-convey-shell::open_link"
+package = "solstone-core-convey-shell"
+target = "open_link"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos", "windows"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
 serial_group = "local-services"

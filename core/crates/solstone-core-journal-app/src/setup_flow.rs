@@ -16,7 +16,6 @@ use serde_json::{Value, json};
 pub const SETUP_SEQUENCE_ENABLED: bool = true;
 
 pub const APP_HOME_PATH: &str = "/app/home";
-pub const APP_ORIGIN: &str = "https://journal.localhost";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -65,7 +64,6 @@ pub enum Effect {
         task_installed: bool,
         start_at_sign_in: bool,
     },
-    SetSignInLaunch(bool),
     FetchState,
     PostAction(SetupAction),
     CheckModels {
@@ -278,6 +276,7 @@ pub fn app_asset_path(raw: &str) -> Option<String> {
     }
 }
 
+#[cfg(test)]
 pub fn home_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}{APP_HOME_PATH}")
 }

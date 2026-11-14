@@ -1356,7 +1356,7 @@ fn archive_failure(source: RegistrySource, error: ImportSourcesError) -> CliRun 
     failure(format!("{} import failed: {error}\n", source.name()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 fn pdf_worker_sibling() -> Result<PathBuf, String> {
     let current = std::env::current_exe().map_err(|error| error.to_string())?;
     let parent = current

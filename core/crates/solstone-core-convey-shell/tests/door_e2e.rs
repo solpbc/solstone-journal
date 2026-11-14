@@ -5825,6 +5825,110 @@ async fn the_loopback_guard_stops_at_the_loopback_listener_and_the_door_serves_t
 
 #[cfg(unix)]
 #[tokio::test]
+async fn linked_device_reads_local_network_status_but_cannot_change_it() {
+    // A closed door remains reachable over loopback, as it is from the relay.
+    for confined in [false, true] {
+        let fixture = Fixture::established(1);
+        let config_path = fixture.root.join("config/journal.json");
+        let config = br#"{"setup":{"completed_at":1},"pairing":{"local_network":false}}"#;
+        fs::write(&config_path, config).expect("closed journal");
+        let app = router(fixture.root.clone());
+        let handle = if confined {
+            let (sender, receiver) = watch::channel(DeviceDoorAuthorization::from(
+                AuthorizedClientsRead::Missing,
+            ));
+            bind_with_authorization(
+                options(&fixture, app.clone(), 0),
+                solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
+                    app,
+                    fixture.root.clone(),
+                    receiver,
+                ),
+                sender,
+            )
+            .await
+            .expect("authorized serve")
+        } else {
+            serve(options(&fixture, app, 0)).await.expect("serve")
+        };
+        let port = door_port(handle.door_outcome());
+        let mut carrier = live_carrier(&fixture, port).await;
+        let mut decoder = FrameDecoder::new();
+        let mut ids = FrameDialer::default();
+        let page = exchange_over_carrier(
+            &mut carrier,
+            &mut decoder,
+            ids.allocate(),
+            "GET",
+            "/app/network/",
+            &[],
+            &[],
+        )
+        .await
+        .expect("network page");
+        assert_eq!(page.status, 200);
+
+        for prefix in ["/app/network", "/app/link"] {
+            let path = format!("{prefix}/api/local-network");
+            let response = exchange_over_carrier(
+                &mut carrier,
+                &mut decoder,
+                ids.allocate(),
+                "GET",
+                &path,
+                &[],
+                &[],
+            )
+            .await
+            .expect("local network status");
+            assert_eq!(response.status, 200);
+            let mut body: serde_json::Value =
+                serde_json::from_slice(&response.body).expect("status JSON");
+            assert_eq!(body["open"], false);
+            assert_eq!(body["can_change"], false);
+            assert_eq!(body["listening_on"], "this_pc");
+            assert_eq!(body["port"], port);
+            let (status, local) = loopback_exchange(
+                handle.loopback_ipv4_addr(),
+                "GET",
+                &path,
+                &[("host", "localhost")],
+                &[],
+            )
+            .await;
+            assert_eq!(status, 200);
+            let mut local: serde_json::Value = serde_json::from_str(&local).expect("owner status");
+            assert_eq!(local["can_change"], true);
+            body.as_object_mut()
+                .expect("status object")
+                .remove("can_change");
+            local
+                .as_object_mut()
+                .expect("status object")
+                .remove("can_change");
+            assert_eq!(body, local);
+            for action in ["open", "close"] {
+                let response = exchange_over_carrier(
+                    &mut carrier,
+                    &mut decoder,
+                    ids.allocate(),
+                    "POST",
+                    &format!("{prefix}/local-network/{action}"),
+                    &[],
+                    &[],
+                )
+                .await
+                .expect("local network write");
+                assert_eq!(response.status, 404);
+            }
+        }
+        assert_eq!(fs::read(&config_path).expect("config after reads"), config);
+        assert_eq!(door_port(handle.door_outcome()), port);
+        handle.shutdown();
+    }
+}
+
+#[tokio::test]
 async fn linked_device_can_manage_agents_and_unpair_over_confined_door() {
     let fixture = Fixture::established(2);
     let ledger_path = fixture.root.join("link/authorized_clients.json");
@@ -5941,7 +6045,9 @@ async fn pairing_peer_is_confined_from_agents_pair_start_and_label_patch() {
 
     let label_path_network = format!("/app/network/api/clients/{cid}/label");
     let label_path_link = format!("/app/link/api/clients/{cid}/label");
-    let cases: [(&str, &str, &[u8]); 5] = [
+    let cases: [(&str, &str, &[u8]); 7] = [
+        ("GET", "/app/network/api/local-network", b""),
+        ("GET", "/app/link/api/local-network", b""),
         ("GET", "/app/agents/api/state", b""),
         (
             "POST",

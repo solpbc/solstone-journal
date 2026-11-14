@@ -84,18 +84,6 @@ pub fn import_label(journal: &Path, id: &str) -> Option<String> {
 /// How many original files the import kept: what it was given, kept in its
 /// record, and the originals in its own segments.
 pub fn kept_originals(journal: &Path, things: &ImportThings) -> usize {
-    let in_record = std::iter::once(&things.record)
-        .chain(&things.companions)
-        .filter(|rel| {
-            let dir = journal.join(rel);
-            read_json(&dir.join("import.json"))
-                .and_then(|metadata| {
-                    let path = journal.join(str_of(&metadata, "file_path")?);
-                    Some(path.starts_with(&dir) && path.is_file())
-                })
-                .unwrap_or(false)
-        })
-        .count();
     let in_segments = things
         .segments
         .iter()
@@ -107,7 +95,24 @@ pub fn kept_originals(journal: &Path, things: &ImportThings) -> usize {
             })
         })
         .count();
-    in_record + in_segments
+    kept_uploads(journal, things) + in_segments
+}
+
+/// How many files the import was given that it keeps in its own record: the
+/// upload that goes with the import, and nothing its segments hold.
+pub fn kept_uploads(journal: &Path, things: &ImportThings) -> usize {
+    std::iter::once(&things.record)
+        .chain(&things.companions)
+        .filter(|rel| {
+            let dir = journal.join(rel);
+            read_json(&dir.join("import.json"))
+                .and_then(|metadata| {
+                    let path = journal.join(str_of(&metadata, "file_path")?);
+                    Some(path.starts_with(&dir) && path.is_file())
+                })
+                .unwrap_or(false)
+        })
+        .count()
 }
 
 /// What one import holds, journal-relative: what its trash item moves.
@@ -352,7 +357,7 @@ fn read_json(path: &Path) -> Option<Value> {
 }
 
 /// Every segment `id`'s records name, live or not, journal-relative.
-fn listed_segments(journal: &Path, id: &str, source: &str) -> BTreeSet<String> {
+pub(crate) fn listed_segments(journal: &Path, id: &str, source: &str) -> BTreeSet<String> {
     let dir = journal.join(IMPORTS_DIR).join(id);
     let mut found = BTreeSet::new();
     let mut legacy = Vec::new();
@@ -516,7 +521,7 @@ fn valid_part(part: &str) -> bool {
 
 /// A segment that is there, and not only the tombstone a removal left or a
 /// removal of it part-way through. Unreadable counts as there.
-fn live_segment(journal: &Path, path: &str) -> bool {
+pub(crate) fn live_segment(journal: &Path, path: &str) -> bool {
     if parse_segment_rel(path).is_none() {
         return false;
     }
@@ -788,6 +793,11 @@ impl Kind for Imports<'_> {
     fn handles(&self, unit: &Unit) -> bool {
         matches!(unit, Unit::Import { .. })
             || matches!(unit, Unit::Workout { source, .. } if source == crate::body_trash::STRAVA)
+    }
+
+    /// An import's record is what its segments deleted earlier need.
+    fn may_be_needed(&self, unit: &Unit) -> bool {
+        matches!(unit, Unit::Import { .. })
     }
 
     fn companions(&self, journal: &Path, item: &Item) -> Result<Vec<String>, String> {

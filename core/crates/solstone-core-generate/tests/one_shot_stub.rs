@@ -59,6 +59,7 @@ impl Fixture {
             .expect("argv record parses")
     }
 
+    #[cfg(unix)]
     fn read_pid(&self) -> i32 {
         fs::read_to_string(self.pid_path())
             .expect("pid record reads")

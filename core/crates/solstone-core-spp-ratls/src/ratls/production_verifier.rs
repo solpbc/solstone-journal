@@ -636,9 +636,10 @@ fn composite_error(reason_code: &'static str) -> CompositeVerificationError {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::fs;
     use std::{
         collections::BTreeMap,
-        fs,
         path::Path,
         sync::atomic::{AtomicBool, Ordering},
         time::SystemTime,
@@ -654,8 +655,10 @@ mod tests {
         GpuProfile, GpuProfiles, GpuStatusInput, ManifestSet, StatusMode,
     };
 
+    #[cfg(unix)]
+    use super::check_nvattest_readiness;
     use super::{
-        AndroidChannelSelection, android_channel_selection_for_state, check_nvattest_readiness,
+        AndroidChannelSelection, android_channel_selection_for_state,
         verify_composite_with_gpu_appraiser,
     };
 
@@ -738,10 +741,9 @@ mod tests {
         }
     }
 
-    use crate::{
-        CompositeVerificationInput, NvattestEnsureStatus, classify_nvattest_prerequisite,
-        test_support::TempDir,
-    };
+    use crate::CompositeVerificationInput;
+    #[cfg(unix)]
+    use crate::{NvattestEnsureStatus, classify_nvattest_prerequisite, test_support::TempDir};
 
     type SeenStatus = (StatusMode, Option<Vec<u8>>, SystemTime);
 

@@ -60,6 +60,7 @@ impl WindowsStartupInfo {
         )
     }
 
+    #[cfg(any(test, all(windows, feature = "test-hooks")))]
     pub(super) fn new_job_only(
         api: &impl WindowsStartupInfoApi,
         job: &JobHandle,

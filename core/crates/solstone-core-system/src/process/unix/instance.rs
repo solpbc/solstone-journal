@@ -5,13 +5,16 @@
 use std::thread;
 #[cfg(target_os = "linux")]
 use std::time::Duration;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::time::Instant;
 
-use super::super::{
-    CensusRow, InspectResult, InstanceCensus, ProcessInstanceSource, SystemProcessInstanceSource,
-};
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
+use super::super::CensusRow;
 #[cfg(any(target_os = "linux", test))]
 use super::super::{ExecutionState, InstanceVerdict, ProcessBirth, ProcessInstance};
+use super::super::{
+    InspectResult, InstanceCensus, ProcessInstanceSource, SystemProcessInstanceSource,
+};
 #[cfg(any(
     target_os = "linux",
     target_os = "macos",
@@ -115,6 +118,7 @@ fn census_native() -> InstanceCensus {
     InstanceCensus::Incomplete(Vec::new())
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn finalize_census(rows: Vec<CensusRow>, complete: bool) -> InstanceCensus {
     if complete {
         InstanceCensus::Complete(rows)

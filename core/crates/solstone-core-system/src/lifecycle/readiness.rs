@@ -22,6 +22,7 @@ pub struct ReadinessMarker {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", windows, test))]
 pub fn parse_marker(bytes: &[u8]) -> Option<ReadinessMarker> {
     serde_json::from_slice(bytes)
         .ok()

@@ -179,6 +179,7 @@ pub mod session;
 pub mod session_gate;
 mod setup_host;
 pub use setup_host::PackagedSpeechSetup;
+pub mod open_link;
 #[cfg(test)]
 mod shell_bundle_tests;
 pub mod source_link;
@@ -724,7 +725,7 @@ async fn bind_embedded_router(
         receiver,
     );
     let service_root = journal_root.clone();
-    let door = Arc::new(door::DoorLifecycle::with_target_use(
+    let door = door::DoorLifecycle::with_target_use(
         door::DoorStartOptions {
             journal_root,
             port: address.port(),
@@ -743,7 +744,7 @@ async fn bind_embedded_router(
             relay_admissions,
         },
         backup_deps.target_use_owner(),
-    ));
+    );
     let pause_door = Arc::clone(&door);
     let resume_door = Arc::clone(&door);
     let pause_runtime = tokio::runtime::Handle::current();
@@ -995,7 +996,7 @@ pub async fn bind_with_authorization(
         options.journal_root.clone(),
         push_portal,
     ));
-    let door = Arc::new(door::DoorLifecycle::new(door::DoorStartOptions {
+    let door = door::DoorLifecycle::new(door::DoorStartOptions {
         journal_root: options.journal_root.clone(),
         port: options.door_port,
         network_ipv4: None,
@@ -1008,7 +1009,7 @@ pub async fn bind_with_authorization(
         handshake_authorization_read_ticks: options.handshake_authorization_read_ticks,
         authorization_sender,
         relay_admissions,
-    }));
+    });
     let loopback_router = options
         .router
         .clone()
@@ -1914,6 +1915,7 @@ fn router_with_roots(
             journal_root.clone(),
             Arc::new(source_link::FilesystemReads),
         ))
+        .merge(open_link::open_link_router(journal_root.clone()))
         .layer(Extension(shell))
         .layer(Extension(route_journal_root))
         .layer(Extension(agents_consent_cancel))

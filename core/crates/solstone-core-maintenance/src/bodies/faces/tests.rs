@@ -8,7 +8,7 @@ fn backfill_is_dark_and_bound_sidecars_invalidate_on_screen_change() {
     let root = temp.path();
     assert_eq!(reconcile(root).unwrap().processed, 0);
     assert!(!root.join("entities").exists());
-    let dir = root.join("chronicle/20260101/120000_300");
+    let dir = root.join("chronicle").join("20260101").join("120000_300");
     std::fs::create_dir_all(&dir).unwrap();
     let raw = dir.join("screen.webm");
     let screen = raw.with_extension("jsonl");
@@ -34,7 +34,10 @@ fn discovery_resumes_after_cursor_and_unsupported_inputs_are_not_retried() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     for i in 0..4 {
-        let dir = root.join(format!("chronicle/20260101/{i:06}_300"));
+        let dir = root
+            .join("chronicle")
+            .join("20260101")
+            .join(format!("{i:06}_300"));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("screen.webm"), b"synthetic").unwrap();
         let body =

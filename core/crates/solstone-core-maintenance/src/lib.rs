@@ -686,25 +686,32 @@ mod composed_tests {
 mod resolution_tests {
     use super::*;
     use serde_json::{Value, json};
+    #[cfg(unix)]
+    use solstone_core_backup::get_backup_config;
     use solstone_core_backup::{
-        Destination, HostedBinding, generate_and_store_keys, get_backup_config,
-        record_backup_result, record_verification_result, save_hosted_binding, set_destination,
-        set_enabled, set_mode, set_offload,
+        Destination, HostedBinding, generate_and_store_keys, record_backup_result,
+        record_verification_result, save_hosted_binding, set_destination, set_enabled, set_mode,
+        set_offload,
     };
     use solstone_core_backup_runtime::hosted_runtime::{HttpError, HttpRequest, HttpResponse};
     #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(unix)]
     use solstone_core_backup_runtime::install_backup_tool_resolution_started_hook;
+    use solstone_core_backup_runtime::{HttpTransport, ToolOutput, ToolRequest, ToolRunner};
+    #[cfg(unix)]
     use solstone_core_backup_runtime::{
-        HttpTransport, ToolOutput, ToolRequest, ToolRunner, backup_journal_resolved_hook_armed,
-        backup_path_resolution_attempts, install_backup_journal_resolved_hook,
-        reset_backup_journal_resolved_hook, reset_backup_path_resolution_attempts,
+        backup_journal_resolved_hook_armed, backup_path_resolution_attempts,
+        install_backup_journal_resolved_hook, reset_backup_journal_resolved_hook,
+        reset_backup_path_resolution_attempts,
     };
     #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(unix)]
     use solstone_core_backup_runtime::{
         backup_record_failure_hook_armed, backup_record_failure_hook_consumed_target,
         backup_tool_resolution_started_hook_armed, install_backup_record_failure_hook,
         reset_backup_record_failure_hook, reset_backup_tool_resolution_started_hook,
     };
+    #[cfg(unix)]
     use solstone_core_installed_payload::code;
     use std::cell::{Cell, RefCell};
     use std::ffi::OsString;
@@ -719,13 +726,17 @@ mod resolution_tests {
     #[cfg(unix)]
     #[cfg(all(test, feature = "full-tests"))]
     use std::rc::Rc;
+    #[cfg(unix)]
     use std::sync::{LazyLock, Mutex};
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    #[cfg(unix)]
     static CURRENT_DIRECTORY: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
+    #[cfg(unix)]
     struct CurrentDirectoryGuard(PathBuf);
 
+    #[cfg(unix)]
     impl CurrentDirectoryGuard {
         fn change_to(path: &Path) -> Self {
             let original = std::env::current_dir().expect("working directory reads");
@@ -734,6 +745,7 @@ mod resolution_tests {
         }
     }
 
+    #[cfg(unix)]
     impl Drop for CurrentDirectoryGuard {
         fn drop(&mut self) {
             let _ = std::env::set_current_dir(&self.0);
@@ -755,6 +767,7 @@ mod resolution_tests {
             }
         }
 
+        #[cfg(unix)]
         fn with_on_first_call(callback: impl FnOnce() + 'static) -> Self {
             Self {
                 programs: RefCell::new(vec![]),
@@ -866,6 +879,7 @@ mod resolution_tests {
         values.iter().map(|value| (*value).to_owned()).collect()
     }
 
+    #[cfg(unix)]
     fn rclone_program(argvs: &[Vec<String>]) -> Option<String> {
         argvs.iter().find_map(|argv| {
             argv.windows(2).find_map(|pair| {
@@ -877,6 +891,7 @@ mod resolution_tests {
         })
     }
 
+    #[cfg(unix)]
     fn last_backup_reason(journal: &Path) -> Option<String> {
         get_backup_config(journal)
             .unwrap()
@@ -887,6 +902,7 @@ mod resolution_tests {
             .map(str::to_owned)
     }
 
+    #[cfg(unix)]
     fn last_backup_status(journal: &Path) -> Option<String> {
         get_backup_config(journal)
             .unwrap()
@@ -969,10 +985,12 @@ mod resolution_tests {
         byo_journal_configured("s3:bucket/prefix", "s3", "access", "secret")
     }
 
+    #[cfg(unix)]
     fn journal_config_bytes(journal: &Path) -> Vec<u8> {
         fs::read(journal.join("config/journal.json")).expect("journal config reads")
     }
 
+    #[cfg(unix)]
     fn assert_alias_resolved_once() {
         assert_eq!(backup_path_resolution_attempts(), 1);
         assert!(!backup_journal_resolved_hook_armed());
@@ -1068,6 +1086,7 @@ mod resolution_tests {
         }
     }
 
+    #[cfg(unix)]
     #[cfg(all(test, feature = "full-tests"))]
     fn assert_restic_unavailable_output(output: &CliRun) {
         assert_eq!(
@@ -1081,6 +1100,7 @@ mod resolution_tests {
         assert_eq!(output.exit_code, 1);
     }
 
+    #[cfg(unix)]
     #[cfg(all(test, feature = "full-tests"))]
     fn assert_rclone_unavailable_output(output: &CliRun) {
         assert_eq!(
@@ -1094,6 +1114,7 @@ mod resolution_tests {
         assert_eq!(output.exit_code, 1);
     }
 
+    #[cfg(unix)]
     #[cfg(all(test, feature = "full-tests"))]
     fn assert_no_backup_execution(runner: &RecordingRunner) {
         assert!(
@@ -1149,6 +1170,7 @@ mod resolution_tests {
         .unwrap();
     }
 
+    #[cfg(unix)]
     fn assert_resolved_restic(programs: &[OsString], expected: &Path, decoy: &Path) {
         assert!(
             programs
@@ -2290,6 +2312,7 @@ mod resolution_tests {
         }
     }
 
+    #[cfg(unix)]
     struct PlantedFallbacks {
         _home: tempfile::TempDir,
         _path_dir: tempfile::TempDir,
@@ -2302,6 +2325,7 @@ mod resolution_tests {
         prev_rclone_bundle: Option<std::ffi::OsString>,
     }
 
+    #[cfg(unix)]
     #[allow(unsafe_code)]
     impl Drop for PlantedFallbacks {
         fn drop(&mut self) {
@@ -2330,6 +2354,7 @@ mod resolution_tests {
         }
     }
 
+    #[cfg(unix)]
     impl PlantedFallbacks {
         fn verify(&self) {
             for dir in &self.script_dirs {
@@ -2346,6 +2371,7 @@ mod resolution_tests {
         }
     }
 
+    #[cfg(unix)]
     #[allow(unsafe_code)]
     fn plant_fallbacks(pkg_root: &Path) -> PlantedFallbacks {
         let home = tempfile::tempdir().unwrap();

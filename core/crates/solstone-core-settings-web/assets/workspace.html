@@ -7730,7 +7730,7 @@ const REMOVAL_NAMELESS = new Set(['entity', 'facet', 'detected_entities']);
 const REMOVAL_SOURCE = {
   ics: 'calendar', chatgpt: 'ChatGPT', claude: 'Claude', gemini: 'Gemini', kindle: 'Kindle Highlights', journal_archive: 'journal',
   audio_archive: 'audio archive', recording: 'meeting audio', document: 'document', image: 'image',
-  strava: 'Strava', quick: 'quick import', plaud: 'Plaud', audio: 'audio folder', text: 'text',
+  strava: 'Strava', quick: 'quick import', plaud: 'Plaud', audio: 'audio', text: 'text',
   obsidian: 'Obsidian', apple_health: 'Apple Health', oura: 'Oura',
 };
 const REMOVAL_IMPORTED = 'imported {day}';
@@ -7756,6 +7756,7 @@ const REMOVAL_ACTION = {
   voice_only_release: 'removed because "leave out other voices" was on',
   backup_off: 'deleted when you turned off backup',
   finish_stopped: 'finished deleting',
+  stretch_delete: 'deleted',
 };
 const REMOVAL_ACTION_FALLBACK = 'removed';
 const REMOVAL_ACTION_NAMES_PLACE = { backup_off: 'backup' };
@@ -7785,7 +7786,48 @@ function removalSegmentTime(key) {
   const start = new Date(2000, 0, 1, Number(match[1]), Number(match[2]), Number(match[3]));
   const end = new Date(start.getTime() + Number(match[4]) * 1000);
   const format = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
-  return format.formatRange ? format.formatRange(start, end) : format.format(start);
+  return (format.formatRange ? format.formatRange(start, end) : format.format(start)).toLowerCase();
+}
+
+// A stretch of time's bounds: `sat nov 7, 2:05 – 3:35 pm`, or across days
+// `sat nov 7, 11:00 pm – sun nov 8, 1:10 am`. Wall times on the journal's clock.
+function stretchWall(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value || '');
+  if (!match) return null;
+  const [, y, mo, d, h, mi] = match.map(Number);
+  return { date: new Date(y, mo - 1, d, h, mi), day: `${match[1]}${match[2]}${match[3]}` };
+}
+
+function stretchBounds(from, to) {
+  const a = stretchWall(from);
+  const b = stretchWall(to);
+  if (!a || !b) return '';
+  const format = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+  const time = at => format.format(at.date).toLowerCase();
+  if (a.day === b.day) {
+    const range = format.formatRange ? format.formatRange(a.date, b.date).toLowerCase() : `${time(a)} – ${time(b)}`;
+    return `${removalDay(a.day)}, ${range}`;
+  }
+  return `${removalDay(a.day)}, ${time(a)} – ${removalDay(b.day)}, ${time(b)}`;
+}
+
+// The span of the stretch a history group's entries went or came back with,
+// when they all carry one.
+function removalStretchSpan(units) {
+  if (!units.length || !units.every(entry => entry.stretch && entry.stretch.from && entry.stretch.to)) return null;
+  const from = units.map(entry => entry.stretch.from).sort()[0];
+  const to = units.map(entry => entry.stretch.to).sort().slice(-1)[0];
+  return { from, to };
+}
+
+function removalStretchLine(units) {
+  const span = removalStretchSpan(units);
+  if (!span) return null;
+  const line = removalEl('span', 'removal-line');
+  line.append(removalEl('span', 'removal-what', TRASH_KIND_LABEL.stretch));
+  const bounds = stretchBounds(span.from, span.to);
+  if (bounds) line.append(removalEl('span', 'removal-qual', bounds));
+  return line;
 }
 
 function removalSurfaceKey(entry) {
@@ -7883,6 +7925,11 @@ function removalGroupHow(group) {
 }
 
 function removalGroupWhat(group) {
+  const stretch = removalStretchLine(group.units);
+  if (stretch) {
+    stretch.style.display = 'inline-flex';
+    return stretch;
+  }
   const kinds = new Set(group.units.map(entry => entry.unit.kind));
   const count = group.units.length;
   const line = removalEl('span', 'removal-line');
@@ -7944,7 +7991,7 @@ function renderRemovalHistory(history) {
       how.append(removalEl('span', 'removal-time', window.JournalFormat.time(newest.at)));
       if (group.units.length === 1) {
         const what = removalEl('div');
-        what.append(removalWhat(newest.unit));
+        what.append(removalStretchLine(group.units) || removalWhat(newest.unit));
         body.append(what, how);
       } else {
         const details = removalEl('details', 'removal-group');
@@ -8058,9 +8105,35 @@ const TRASH_COPY = {
   originalsSegmentGone: "its segment is no longer in your journal, so this can't be recovered.",
   originalsStaysOne: "its segment and everything made from it aren't erased with it.",
   originalsStaysMany: "their segments and everything made from them aren't erased with them.",
+  // A segment row whose import, which holds the file it came from, isn't in
+  // your journal now.
+  importTrashedLabel: 'its import, {label}, is in the trash. recover that first, then this.',
+  importTrashed: 'its import is in the trash. recover the import first, then this.',
+  importGone: "its import is no longer in your journal, so this can't be recovered.",
+  // Erasing an import erases its segments waiting in the trash on their own.
+  waitingOwnOneOne: 'the segment from it that waits in the trash on its own is erased with it.',
+  waitingOwnOneMany: 'the {w} segments from it that wait in the trash on their own are erased with it.',
+  waitingOwnManyOne: 'the segment from them that waits in the trash on its own is erased with them.',
+  waitingOwnManyMany: 'the {w} segments from them that wait in the trash on their own are erased with them.',
   // Erasing a segment erases its original media waiting in the trash too.
   originalsGoOne: 'its original media in the trash is erased with it.',
   originalsGoMany: 'their original media in the trash is erased with them.',
+  // A stretch of time: what it holds, and why it waits.
+  stretchKinds: {
+    audio: 'audio', screen: 'screen', location: 'location', body: 'body data',
+    imported: 'things you imported', other: 'other things in your journal',
+  },
+  stretchHoldsLabel: 'it holds {label} too, and the file it kept.',
+  stretchHoldsOne: 'it holds an import too.',
+  stretchHoldsMany: 'it holds {k} imports too, and the files they kept.',
+  stretchHoldsManyNone: 'it holds {k} imports too.',
+  stretchBlockedLabel: "part of it comes from {label}, an import that's in the trash. recover that first, then this.",
+  stretchBlocked: "part of it comes from an import that's in the trash. recover the import first, then this.",
+  stretchFinishing: 'this stopped part way into the trash. your journal keeps trying to finish moving it, and you can recover or erase it once it has.',
+  stretchErasesOne: 'the import it holds, and the file it kept, are erased with it.',
+  stretchErasesOneNone: 'the import it holds is erased with it.',
+  stretchErasesMany: 'the {k} imports it holds, and the files they kept, are erased with it.',
+  stretchErasesManyNone: 'the {k} imports it holds are erased with it.',
   stopped: {
     detaching: 'this stopped part way into the trash. your journal keeps trying to finish moving it.',
     attaching: 'this stopped part way through being recovered. your journal keeps trying to finish putting it back.',
@@ -8089,6 +8162,12 @@ const TRASH_COPY = {
     // Only for a row whose own line doesn't already say its segment is in the trash.
     recordingInTrash: 'recover its segment from the trash first, then this.',
     nameTaken: "this can't be recovered while a different file is in its place in the segment.",
+    // Only for a row whose own line doesn't already say where its import is.
+    importInTrash: 'recover its import from the trash first, then this.',
+    importGone: "its import is no longer in your journal, so this can't be recovered.",
+    // A stretch's own: its row without the import line, or still moving in.
+    stretchImportInTrash: "recover the import part of it comes from first. it's in the trash.",
+    stretchFinishing: "this is still moving into the trash. try again once it's done.",
   },
 };
 const TRASH_KIND_LABEL = {
@@ -8097,13 +8176,15 @@ const TRASH_KIND_LABEL = {
   facet_file: 'files a facet merge left out', facet_file_unfinished: "files from a facet merge that didn't finish",
   // Originals released from a segment, by what was released.
   originals: 'original media', originals_audio: 'original audio', originals_screen: 'original screen media',
+  stretch: 'stretch of time',
 };
 const TRASH_WORDS = {
   segment: ['segment', 'segments'], memory: ['memory', 'memories'], import: ['import', 'imports'], workout: ['workout', 'workouts'],
   entity: ['entity', 'entities'], facet: ['facet', 'facets'],
+  stretch: ['stretch of time', 'stretches of time'],
 };
 // Refusals that trying again won't change: the result line drops its "try again".
-const TRASH_STUCK = new Set(['merge_dest_missing', 'taken', 'name_redirected', 'recording_in_trash', 'segment_gone', 'name_taken']);
+const TRASH_STUCK = new Set(['merge_dest_missing', 'taken', 'name_redirected', 'recording_in_trash', 'segment_gone', 'name_taken', 'import_in_trash', 'import_gone']);
 
 let trashItems = [];
 let trashConfirmed = null;
@@ -8203,6 +8284,9 @@ function trashRowBody(item, stoppedState) {
     case 'facet_file':
       qualifiers = [!unfinished && item.dest_state !== 'gone' && item.dest_title ? trashFill(TRASH_COPY.mergedInto, { title: item.dest_title }) : null];
       break;
+    case 'stretch':
+      qualifiers = [stretchBounds(item.from, item.to)];
+      break;
     default:
       qualifiers = [item.day && removalDay(item.day), removalSegmentTime(item.segment)];
   }
@@ -8226,6 +8310,11 @@ function trashRowBody(item, stoppedState) {
     const facets = trashFacetCount(item.facets);
     if (facets) extra.push(facets === 1 ? TRASH_COPY.facetOne : trashFill(TRASH_COPY.facetMany, { n: facets }));
   }
+  if (item.kind === 'stretch') {
+    const order = ['audio', 'screen', 'location', 'body', 'imported', 'other'];
+    const kinds = order.filter(kind => (item.kinds || []).includes(kind)).map(kind => TRASH_COPY.stretchKinds[kind]);
+    if (kinds.length) extra.push(kinds.join(', '));
+  }
   const size = item.kind === 'segment' || item.kind === 'originals' || isImport || item.kind === 'speakers' ? trashSize(item.bytes) : '';
   if (size) extra.push(size);
   if (extra.length) when.append(document.createTextNode(` · ${extra.join(' · ')}`));
@@ -8233,7 +8322,11 @@ function trashRowBody(item, stoppedState) {
   trashRowLines(item).forEach(text => body.append(removalEl('span', 'trash-returned', text)));
   const note = trashNotes.get(item.id);
   // A row whose segment is in the trash already says so.
-  const said = note === TRASH_COPY.notes.recordingInTrash && item.segment_state === 'trashed';
+  const said = (note === TRASH_COPY.notes.recordingInTrash && item.segment_state === 'trashed')
+    || (note === TRASH_COPY.notes.importInTrash && item.import?.state === 'trashed')
+    || (note === TRASH_COPY.notes.importGone && item.import?.state === 'gone')
+    || (note === TRASH_COPY.notes.stretchImportInTrash && item.kind === 'stretch' && item.blocked)
+    || (note === TRASH_COPY.notes.stretchFinishing && item.kind === 'stretch' && item.finishing);
   if (note && !said) body.append(removalEl('span', 'trash-row-note', note));
   return body;
 }
@@ -8274,6 +8367,34 @@ function trashRowLines(item) {
         case 'gone': return [TRASH_COPY.originalsSegmentGone];
         default: return [];
       }
+    case 'stretch': {
+      const lines = [];
+      if (item.finishing) lines.push(TRASH_COPY.stretchFinishing);
+      const imports = Array.isArray(item.imports) ? item.imports : [];
+      const kept = imports.filter(imp => imp.kept > 0);
+      if (imports.length === 1) {
+        const imp = imports[0];
+        lines.push(imp.kept > 0 && imp.label ? trashFill(TRASH_COPY.stretchHoldsLabel, { label: imp.label }) : TRASH_COPY.stretchHoldsOne);
+      } else if (imports.length > 1) {
+        lines.push(trashFill(kept.length ? TRASH_COPY.stretchHoldsMany : TRASH_COPY.stretchHoldsManyNone, { k: imports.length }));
+      }
+      if (item.blocked) {
+        lines.push(item.blocked.label ? trashFill(TRASH_COPY.stretchBlockedLabel, { label: item.blocked.label }) : TRASH_COPY.stretchBlocked);
+      }
+      if (item.replaces) lines.push(TRASH_COPY.returned);
+      return lines;
+    }
+    case 'segment': {
+      // A segment its import's file still holds: where that import is now.
+      const lines = [];
+      if (item.import?.state === 'trashed') {
+        lines.push(item.import.label ? trashFill(TRASH_COPY.importTrashedLabel, { label: item.import.label }) : TRASH_COPY.importTrashed);
+      } else if (item.import?.state === 'gone') {
+        lines.push(TRASH_COPY.importGone);
+      }
+      if (item.replaces) lines.push(TRASH_COPY.returned);
+      return lines;
+    }
     default:
       if (!item.replaces) return [];
       return [item.kind === 'import' ? TRASH_COPY.returnedImport : item.kind === 'workout' ? TRASH_COPY.returnedWorkout : TRASH_COPY.returned];
@@ -8327,6 +8448,9 @@ function trashRowNote(entry) {
     case 'name_redirected': return N.redirected;
     case 'recording_in_trash': return N.recordingInTrash;
     case 'name_taken': return N.nameTaken;
+    case 'import_in_trash': return trashItems.some(item => item.id === entry.id && item.kind === 'stretch') ? N.stretchImportInTrash : N.importInTrash;
+    case 'stretch_finishing': return N.stretchFinishing;
+    case 'import_gone': return N.importGone;
     case 'waits_facets':
       return others(detail.title, count(detail.others), N.waitsFacetNone, N.waitsFacetOne, N.waitsFacetMany, 'title');
     case 'waits_wipe': {
@@ -8456,6 +8580,27 @@ function trashConfirmCopy(act, items) {
       .map(segmentKey));
     const taking = items.filter(item => item.kind === 'segment' && waiting.has(segmentKey(item))).length;
     if (taking > 0) paragraphs.push(taking === 1 ? TRASH_COPY.originalsGoOne : TRASH_COPY.originalsGoMany);
+    // An import erased now takes its segments waiting in the trash on their
+    // own; a selection holding those already lists them.
+    // A stretch's imports taken whole are picked with it.
+    const imports = new Set([
+      ...items.filter(item => item.kind === 'import').map(item => item.import_id),
+      ...items.filter(item => item.kind === 'stretch').flatMap(item => (item.imports || []).map(imp => imp.id)),
+    ]);
+    const held = items.filter(item => item.kind === 'stretch').flatMap(item => item.imports || []);
+    if (held.length) {
+      const anyKept = held.some(imp => imp.kept > 0);
+      const words = held.length === 1
+        ? (anyKept ? TRASH_COPY.stretchErasesOne : TRASH_COPY.stretchErasesOneNone)
+        : (anyKept ? TRASH_COPY.stretchErasesMany : TRASH_COPY.stretchErasesManyNone);
+      paragraphs.push(trashFill(words, { k: held.length }));
+    }
+    const own = trashItems.filter(item => item.kind === 'segment' && !chosen.has(item.id) && imports.has(item.import?.id));
+    const from = new Set(own.map(item => item.import.id)).size;
+    if (own.length > 0) {
+      const key = `waitingOwn${from === 1 ? 'One' : 'Many'}${own.length === 1 ? 'One' : 'Many'}`;
+      paragraphs.push(trashFill(TRASH_COPY[key], { w: own.length }));
+    }
   }
   // What stays: anything that mentions an entity or a facet, and a facet's
   // segments; what an import or a workout made elsewhere includes entities;
@@ -8463,7 +8608,7 @@ function trashConfirmCopy(act, items) {
   // voices wipe or a merge's files. Originals take their own line: their
   // segment isn't erased with them.
   const named = items.some(item => item.kind === 'entity' || item.kind === 'facet');
-  const made = items.some(item => item.kind === 'import' || item.kind === 'workout');
+  const made = items.some(item => item.kind === 'import' || item.kind === 'workout' || item.kind === 'stretch');
   const quiet = items.every(item => item.kind === 'speakers' || item.kind === 'facet_file' || item.kind === 'originals');
   if (named) {
     paragraphs.push(one ? TRASH_COPY.mentionsOne : TRASH_COPY.mentionsMany);

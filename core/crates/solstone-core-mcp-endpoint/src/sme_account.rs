@@ -52,8 +52,8 @@ pub(crate) fn account_uri_has_expected_shape(uri: &str, production: bool) -> boo
 #[cfg(any(test, feature = "test-hooks"))]
 static CUSTOM_DIRECTORY_HOST: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
-#[cfg(any(test, feature = "test-hooks"))]
-#[cfg_attr(not(test), allow(dead_code))]
+// Only the unix-gated tests here and in `tls` set a custom host.
+#[cfg(all(test, unix))]
 pub(crate) fn set_custom_directory_host(host: Option<&str>) {
     if let Ok(mut guard) = CUSTOM_DIRECTORY_HOST.lock() {
         *guard = host.map(str::to_string);

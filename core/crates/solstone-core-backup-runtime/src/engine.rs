@@ -4294,7 +4294,9 @@ mod tests {
     use crate::hosted_runtime::{HttpError, HttpRequest, HttpResponse};
     use crate::runner::{ToolOutput, ToolRequest};
     use std::cell::{Cell, RefCell};
-    use std::collections::{BTreeMap, VecDeque};
+    #[cfg(any(unix, feature = "full-tests"))]
+    use std::collections::BTreeMap;
+    use std::collections::VecDeque;
     use std::io;
     use std::rc::Rc;
     use std::sync::{LazyLock, Mutex};
@@ -4381,6 +4383,7 @@ mod tests {
     }
     struct ObservedRequest {
         argv: Vec<String>,
+        #[cfg(any(unix, feature = "full-tests"))]
         env: BTreeMap<String, String>,
         timeout: Option<Duration>,
     }
@@ -4393,6 +4396,7 @@ mod tests {
                     .iter()
                     .map(|value| value.to_string_lossy().into_owned())
                     .collect(),
+                #[cfg(any(unix, feature = "full-tests"))]
                 env: request
                     .env
                     .iter()

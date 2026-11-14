@@ -1,7 +1,9 @@
+<!-- first-read: /app/network/ -> /app/network/api/state /app/network/api/clients -->
+<!-- view-contract -->
 <script src="/static/pairing-qr.js"></script>
 <script src="/app/network/static/network.js"></script>
 
-<main id="link-workspace-root" class="link-dashboard" tabindex="-1">
+<main id="link-workspace-root" class="link-dashboard" tabindex="-1" data-arrival-focus="main">
   <div id="link-state-gate" class="link-state-gate" aria-live="polite"></div>
   <div id="link-dashboard-content" hidden>
   <p class="link-brandlock"><span class="link-lockdot" aria-hidden="true"></span><span data-copy="BRANDLOCK_LINE"></span></p>
@@ -185,18 +187,9 @@
 
 
 
-  <script>window.LinkCopy = window.LinkCopy || {};</script>
 
 
   <div class="workspace-content">
-    <div id="wsErrorContainer" class="ws-error-container" role="alert" style="display: none">
-      <div class="ws-error-message" id="wsErrorMessage"></div>
-      <div class="ws-error-actions">
-        <button type="button" class="ws-error-retry" id="wsErrorRetry" style="display: none" onclick="loadClients()">retry now</button>
-        <span class="ws-error-countdown" id="wsErrorCountdown"></span>
-        <button type="button" class="ws-error-dismiss" onclick="clearError()">dismiss</button>
-      </div>
-    </div>
     <section aria-label="devices">
       <h2 class="section-title" id="devices" tabindex="-1">devices</h2>
       <button type="button" class="modal-primary-btn" data-pairing-action="open" data-copy="DEVICE_PAIR_CTA"></button>
@@ -927,85 +920,11 @@ systemctl --user start solstone-linux</code></div>
   }
 }
 
-/* ── Error container ── */
-.ws-error-container {
-  display: none;
-  background: var(--warn-wash);
-  border-left: 4px solid var(--warn);
-  color: var(--warn-ink);
-  padding: 12px 16px;
-  margin-bottom: 1em;
-  border-radius: 4px;
-  position: relative;
-  font-size: 0.95em;
-  line-height: 1.4;
-}
-.ws-error-container[style*="display: flex"] {
-  display: flex !important;
-  flex-direction: column;
-  gap: 8px;
-}
-.ws-error-message {
-  flex: 1;
-}
-.ws-error-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.ws-error-retry {
-  background: var(--warn);
-  color: var(--ink-on-brand);
-  border: none;
-  border-radius: 4px;
-  padding: 8px 16px;
-  cursor: pointer;
-  font-size: 0.9em;
-  min-height: 44px;
-}
-.ws-error-retry:hover {
-  background: color-mix(in srgb, var(--warn) 82%, var(--surface-dark));
-}
-.ws-error-retry:focus-visible {
-  outline: 2px solid var(--warn);
-  outline-offset: 2px;
-}
-.ws-error-retry:active {
-  background: color-mix(in srgb, var(--warn) 70%, var(--surface-dark));
-}
-.ws-error-dismiss {
-  background: transparent;
-  border: 1px solid var(--warn);
-  color: var(--warn-ink);
-  border-radius: 4px;
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 0.9em;
-  min-height: 44px;
-}
-.ws-error-dismiss:hover {
-  background: color-mix(in srgb, var(--warn) 10%, transparent);
-}
-.ws-error-dismiss:focus-visible {
-  outline: 2px solid var(--warn);
-  outline-offset: 2px;
-}
-.ws-error-dismiss:active {
-  background: color-mix(in srgb, var(--warn) 15%, transparent);
-}
-.ws-error-countdown {
-  color: var(--warn-ink);
-  font-size: 0.85em;
-}
-
 /* ── Transitions: interactive elements ── */
 .client-actions button,
 .copy-btn,
 .modal-close,
-.modal-actions button,
-.ws-error-retry,
-.ws-error-dismiss {
+.modal-actions button {
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 .client-stat-note{display:block;margin-top:4px;color: var(--ink-faint);font-size:.82rem;line-height:1.35}
@@ -1021,1412 +940,1407 @@ systemctl --user start solstone-linux</code></div>
 
 <script>
 (function () {
-  const reportNetworkReady = window.createViewReady('network');
-  const workspaceRoot = document.getElementById('link-workspace-root');
-  const stateGate = document.getElementById('link-state-gate');
-  const dashboardContent = document.getElementById('link-dashboard-content');
-  const statusText = document.getElementById('link-status-text');
-  const statusDot = document.getElementById('link-status-dot');
-  const statusSkeleton = document.getElementById('link-status-skeleton');
-  const reachSelector = document.getElementById('link-reach-selector');
-  const appOnOff = document.querySelector('.link-app-onoff');
-  const appOnOffSub = document.querySelector('.link-app-onoff-sub');
-  let localNetworkOpen = null;
-  // While the door is on this computer alone, "your own" lines that promise
-  // devices connect straight to it would be false.
-  let localNetworkClosed = false;
-  let localNetworkWindowsAsks = false;
-  let sameComputerPairing = false;
-  const segByo = document.getElementById('link-seg-byo');
-  const segHosted = document.getElementById('link-seg-hosted');
-  const modeByoBody = document.getElementById('link-mode-byo-body');
-  const modeHostedSetup = document.getElementById('link-mode-hosted-setup');
-  const modeHostedNotEnrolled = document.getElementById('link-mode-hosted-not-enrolled');
-  const modeHostedActive = document.getElementById('link-mode-hosted-active');
-  const splConnectingNote = document.getElementById('link-spl-connecting-note');
-  const splCheckAgain = document.getElementById('link-spl-check-again');
-  const homeAddressRow = document.getElementById('link-home-address-row');
-  const homeAddressEl = document.getElementById('link-home-address');
-  const homeAddressUnusable = document.getElementById('link-home-address-unusable');
-  const hostAddressInput = document.getElementById('link-host-address-input');
-  const hostAddressApply = document.getElementById('link-host-address-apply');
-  const hostAddressClear = document.getElementById('link-host-address-clear');
-  const hostAddressError = document.getElementById('link-host-address-error');
-  const hostAddressOverride = document.getElementById('link-host-address-override');
-  const homeCandidatesPicker = document.getElementById('link-home-candidates-picker');
-  const homeCandidatesList = document.getElementById('link-home-candidates-list');
-  const homeCandidatesProblem = document.getElementById('link-home-candidates-problem');
-  const vpnCandidatesRow = document.getElementById('link-vpn-candidates-row');
-  const vpnCandidatesEl = document.getElementById('link-vpn-candidates');
-  const deviceAddressesRow = document.getElementById('link-device-addresses-row');
-  const deviceAddressesEl = document.getElementById('link-device-addresses');
-  const privateLinkSetup = document.getElementById('link-private-link-setup');
-  const privateLinkEnroll = document.getElementById('link-private-link-enroll');
-  const privateLinkOperation = document.getElementById('link-private-link-operation');
-  const privateLinkOperationHeadline = document.getElementById('link-private-link-operation-headline');
-  const privateLinkOperationDetail = document.getElementById('link-private-link-operation-detail');
-  const privateLinkOperationLink = document.getElementById('link-private-link-operation-link');
-  const privateLinkOperationRetry = document.getElementById('link-private-link-operation-retry');
-  let latestStatus = null;
-  let latestPrivateLink = null;
-  let isFirstRun = false;
-  let viewedMode = null;
-  let lastPosture = null;
-  let reachRevealed = false;
-  let linkInitialized = false;
-  // Private-link product phases that finish the setup poll.
-  const PRIVATE_LINK_TERMINAL_PHASES = new Set(['enabled', 'revoked', 'error']);
-  // Covers the consent wait and the hour the journal waits on a subscription.
-  const PRIVATE_LINK_POLL_TIMEOUT_MS = 4500000;
-  let privateLinkRetryAction = null;
-
-
-  const toast = document.getElementById('link-toast');
-
-  function showToast(msg) {
-    toast.textContent = msg;
-    toast.hidden = false;
-    setTimeout(() => { toast.hidden = true; }, 2500);
-  }
-
-  async function clipboardWriteText(text) {
-    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
-      return false;
+  function mountNetwork(ctx) {
+    const workspaceRoot = document.getElementById('link-workspace-root');
+    if (!workspaceRoot) throw new Error('network has no root');
+    // The page's copy, from the state read. Only this mount reads it.
+    let linkCopy = {};
+    // view:ready is reported once per mount: the gate's "try again" loads again.
+    let readyReported = false;
+    function reportNetworkReady(state) {
+      if (readyReported) return;
+      readyReported = true;
+      ctx.ready(state);
     }
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch (err) {
-      window.logError?.(err, { context: 'link: clipboard write failed' });
-      return false;
+    const stateGate = document.getElementById('link-state-gate');
+    const dashboardContent = document.getElementById('link-dashboard-content');
+    const statusText = document.getElementById('link-status-text');
+    const statusDot = document.getElementById('link-status-dot');
+    const statusSkeleton = document.getElementById('link-status-skeleton');
+    const reachSelector = document.getElementById('link-reach-selector');
+    const appOnOff = document.querySelector('.link-app-onoff');
+    const appOnOffSub = document.querySelector('.link-app-onoff-sub');
+    let localNetworkOpen = null;
+    // While the door is on this computer alone, "your own" lines that promise
+    // devices connect straight to it would be false.
+    let localNetworkClosed = false;
+    let localNetworkCanChange = false;
+    let localNetworkWindowsAsks = false;
+    let sameComputerPairing = false;
+    const segByo = document.getElementById('link-seg-byo');
+    const segHosted = document.getElementById('link-seg-hosted');
+    const modeByoBody = document.getElementById('link-mode-byo-body');
+    const modeHostedSetup = document.getElementById('link-mode-hosted-setup');
+    const modeHostedNotEnrolled = document.getElementById('link-mode-hosted-not-enrolled');
+    const modeHostedActive = document.getElementById('link-mode-hosted-active');
+    const splConnectingNote = document.getElementById('link-spl-connecting-note');
+    const splCheckAgain = document.getElementById('link-spl-check-again');
+    const homeAddressRow = document.getElementById('link-home-address-row');
+    const homeAddressEl = document.getElementById('link-home-address');
+    const homeAddressUnusable = document.getElementById('link-home-address-unusable');
+    const hostAddressInput = document.getElementById('link-host-address-input');
+    const hostAddressApply = document.getElementById('link-host-address-apply');
+    const hostAddressClear = document.getElementById('link-host-address-clear');
+    const hostAddressError = document.getElementById('link-host-address-error');
+    const hostAddressOverride = document.getElementById('link-host-address-override');
+    const homeCandidatesPicker = document.getElementById('link-home-candidates-picker');
+    const homeCandidatesList = document.getElementById('link-home-candidates-list');
+    const homeCandidatesProblem = document.getElementById('link-home-candidates-problem');
+    const vpnCandidatesRow = document.getElementById('link-vpn-candidates-row');
+    const vpnCandidatesEl = document.getElementById('link-vpn-candidates');
+    const deviceAddressesRow = document.getElementById('link-device-addresses-row');
+    const deviceAddressesEl = document.getElementById('link-device-addresses');
+    const privateLinkSetup = document.getElementById('link-private-link-setup');
+    const privateLinkEnroll = document.getElementById('link-private-link-enroll');
+    const privateLinkOperation = document.getElementById('link-private-link-operation');
+    const privateLinkOperationHeadline = document.getElementById('link-private-link-operation-headline');
+    const privateLinkOperationDetail = document.getElementById('link-private-link-operation-detail');
+    const privateLinkOperationLink = document.getElementById('link-private-link-operation-link');
+    const privateLinkOperationRetry = document.getElementById('link-private-link-operation-retry');
+    let latestStatus = null;
+    let latestPrivateLink = null;
+    let isFirstRun = false;
+    let viewedMode = null;
+    let lastPosture = null;
+    let reachRevealed = false;
+    let linkInitialized = false;
+    // Private-link product phases that finish the setup poll.
+    const PRIVATE_LINK_TERMINAL_PHASES = new Set(['enabled', 'revoked', 'error']);
+    // Covers the consent wait and the hour the journal waits on a subscription.
+    const PRIVATE_LINK_POLL_TIMEOUT_MS = 4500000;
+    let privateLinkRetryAction = null;
+
+
+    const toast = document.getElementById('link-toast');
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.hidden = false;
+      ctx.setTimeout(() => { toast.hidden = true; }, 2500);
     }
-  }
 
-  function validMarkSpec(spec) {
-    const icons = spec ? [spec.icon1, spec.icon2] : [];
-    const words = Array.isArray(spec && spec.words) ? spec.words : [];
-    return icons.length === 2 && icons.every(icon => icon && icon.svg && icon.color && icon.color.hex) && words.length === 2;
-  }
-
-  function renderIdentityMark(container, spec) {
-    if (!container) return false;
-    if (!validMarkSpec(spec)) return false;
-    const icons = [spec.icon1, spec.icon2];
-    const words = spec.words;
-    container.innerHTML = '<div class="link-mark-chips"><div class="link-mark-chip"></div><div class="link-mark-chip"></div></div><div class="link-mark-words"><span></span><span class="link-mark-sep">·</span><span></span></div>';
-    container.setAttribute('role', 'img');
-    container.setAttribute('aria-label', `${icons[0].color.name}, ${icons[1].color.name} · ${words[0]} ${words[1]}`);
-    const chips = container.querySelectorAll('.link-mark-chip');
-    chips.forEach((chip, index) => {
-      const icon = icons[index];
-      chip.style.borderColor = icon.color.hex;
-      chip.style.background = icon.color.hex + '1f';
-      if (icon.rot === 45) chip.style.transform = 'rotate(45deg)';
-      chip.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="${icon.color.hex}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon.svg}</svg>`;
-    });
-    const wordSpans = container.querySelectorAll('.link-mark-words span:not(.link-mark-sep)');
-    wordSpans[0].textContent = words[0];
-    wordSpans[1].textContent = words[1];
-    return true;
-  }
-
-  // The org-wide no-identity-yet treatment (journal-mark.md § 4.3): dashed,
-  // glyph-less chips on paper plus the words "your" / "journal", spoken as one
-  // accessible unit. Renders in place of hiding the
-  // section, whether the identity fetch failed, the identity isn't committed
-  // yet, or the served spec is malformed.
-  function renderGenericIdentityMark(container) {
-    if (!container) return;
-    container.innerHTML = '<div class="link-mark-chips">' +
-      '<div class="link-mark-chip-generic"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="var(--mark-generic-paper)" stroke="var(--mark-generic-paper)" stroke-width="6"/><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="none" stroke="var(--mark-generic-dash-1)" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
-      '<div class="link-mark-chip-generic" style="transform: rotate(45deg)"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="var(--mark-generic-paper)" stroke="var(--mark-generic-paper)" stroke-width="6"/><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="none" stroke="var(--mark-generic-dash-2)" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
-      '</div><div class="link-mark-words"><span>your</span><span class="link-mark-sep">·</span><span>journal</span></div>';
-    container.setAttribute('role', 'img');
-    container.setAttribute('aria-label', 'your journal, not set up yet');
-  }
-
-  function renderUnavailableIdentityMark(container) {
-    if (!container) return;
-    container.innerHTML = '<div class="link-mark-chips">' +
-      '<div class="link-mark-chip unavailable" style="border-color: var(--hairline); background: var(--cream-bright);"><span style="font-size: 24px; font-weight: 700; color: var(--ink-faint);">?</span></div>' +
-      '<div class="link-mark-chip unavailable" style="border-color: var(--hairline); background: var(--cream-bright);"><span style="font-size: 24px; font-weight: 700; color: var(--ink-faint);">?</span></div>' +
-      '</div><div class="link-mark-words"><span>mark</span><span class="link-mark-sep">·</span><span>unavailable</span></div>';
-    container.setAttribute('role', 'img');
-    container.setAttribute('aria-label', "your journal's mark, unavailable right now");
-  }
-
-  function applyIdentityToAll(type, spec) {
-    const containers = [
-      document.getElementById('link-identity-mark'),
-      document.getElementById('link-pairing-identity-mark'),
-      document.getElementById('link-pairing-success-mark'),
-    ].filter(Boolean);
-    for (const container of containers) {
-      if (type === 'ready') renderIdentityMark(container, spec);
-      else if (type === 'unavailable') renderUnavailableIdentityMark(container);
-      else renderGenericIdentityMark(container);
-    }
-  }
-
-  async function loadIdentity() {
-    const section = document.getElementById('link-identity-header');
-    if (!section) return;
-    const idDisclosure = section.querySelector('.link-identity-id-disclosure');
-    let data;
-    try {
-      data = await window.apiJson('/app/network/api/identity');
-    } catch (err) {
-      window.logError?.(err, { context: 'link: identity load failed' });
-      applyIdentityToAll('unavailable');
-      if (idDisclosure) idDisclosure.hidden = true;
-      section.hidden = false;
-      return;
-    }
-    if (!data || data.availability === 'none') {
-      applyIdentityToAll('none');
-      if (idDisclosure) idDisclosure.hidden = true;
-      section.hidden = false;
-      return;
-    }
-    if (data.availability === 'ready' && validMarkSpec(data.mark)) {
-      applyIdentityToAll('ready', data.mark);
-      if (idDisclosure) idDisclosure.hidden = false;
-      const idValue = document.getElementById('link-identity-id-value');
-      if (idValue && typeof data.instance_id === 'string') idValue.textContent = data.instance_id;
-      section.hidden = false;
-      return;
-    }
-    // unavailable or committed without valid spec
-    applyIdentityToAll('unavailable');
-    const hasInstanceId = typeof data.instance_id === 'string' && data.instance_id !== '';
-    if (idDisclosure) idDisclosure.hidden = !hasInstanceId;
-    const idValue = document.getElementById('link-identity-id-value');
-    if (idValue && hasInstanceId) idValue.textContent = data.instance_id;
-    section.hidden = false;
-  }
-
-
-  function clearRefreshError(containerId) {
-    const container = document.getElementById(containerId);
-    const siblingError = container?.nextElementSibling;
-    if (siblingError && siblingError.classList.contains('surface-state-refresh-error')) {
-      siblingError.remove();
-    }
-  }
-
-  function revealStatusPanel() {
-    if (statusSkeleton) statusSkeleton.hidden = true;
-    statusText.hidden = false;
-  }
-
-
-  function setHostAddressError(message) {
-    if (!hostAddressError) return;
-    hostAddressError.textContent = message || '';
-    hostAddressError.hidden = !message;
-  }
-
-  function selectStatusSentenceKey(data) {
-    const reachability = data?.reachability;
-    const posture = data?.posture;
-    if (reachability === 'reconnecting') return 'reconnecting';
-    if (reachability === 'lan-unreachable') return 'lan_unreachable';
-    if (posture === 'spl') {
-      if (reachability === 'online') return 'spl_online';
-      if (reachability === 'not-enrolled') return 'spl_not_enrolled';
-      if (reachability === 'finishing-setup') return 'spl_finishing_setup';
-      if (reachability === 'offline') return 'spl_offline';
-    }
-    if (reachability === 'offline') return 'offline';
-    if (posture === 'direct' && reachability === 'online') {
-      if (localNetworkClosed) return 'direct_closed';
-      return data?.vpn?.active != null ? 'direct_online_vpn' : 'direct_online';
-    }
-    return 'checking';
-  }
-
-  function setStatusSentence(key) {
-    const sentences = window.LinkCopy.STATUS_SENTENCES || {};
-    statusText.textContent = sentences[key] || sentences.checking || 'checking your journal…';
-    statusDot.classList.remove('is-green', 'is-amber', 'is-red');
-    if (['direct_online', 'direct_online_vpn', 'direct_closed', 'spl_online'].includes(key)) {
-      statusDot.classList.add('is-green');
-    } else if (['offline', 'lan_unreachable'].includes(key)) {
-      statusDot.classList.add('is-red');
-    } else {
-      statusDot.classList.add('is-amber');
-    }
-  }
-
-  function renderVpnCandidates(candidates) {
-    vpnCandidatesEl.textContent = '';
-    let rendered = 0;
-    for (const candidate of candidates) {
-      const address = typeof candidate?.address === 'string' ? candidate.address : '';
-      if (!address) continue;
-      const item = document.createElement('div');
-      item.className = 'link-vpn-candidate';
-      const label = document.createElement('span');
-      label.className = 'link-vpn-candidate-label';
-      label.textContent = typeof candidate.label === 'string' && candidate.label
-        ? candidate.label
-        : vpnCandidatesEl.dataset.rowLabel || '';
-      const code = document.createElement('code');
-      code.textContent = address;
-      const use = document.createElement('span');
-      use.className = 'link-vpn-candidate-use';
-      use.textContent = vpnCandidatesEl.dataset.useLabel || 'use this';
-      item.appendChild(label);
-      item.appendChild(code);
-      item.appendChild(use);
-      vpnCandidatesEl.appendChild(item);
-      rendered += 1;
-    }
-    vpnCandidatesRow.hidden = rendered === 0;
-  }
-
-  function renderDeviceAddresses(addresses) {
-    deviceAddressesEl.textContent = '';
-    let rendered = 0;
-    for (const entry of addresses) {
-      const address = typeof entry?.address === 'string' ? entry.address : '';
-      if (!address) continue;
-      const label = entry.scope === 'vpn'
-        ? deviceAddressesEl.dataset.vpnLabel || ''
-        : deviceAddressesEl.dataset.localLabel || '';
-      const item = document.createElement('div');
-      item.className = 'link-device-address';
-      const code = document.createElement('code');
-      code.textContent = address;
-      item.appendChild(code);
-      item.appendChild(document.createTextNode(` · ${label}`));
-      deviceAddressesEl.appendChild(item);
-      rendered += 1;
-    }
-    deviceAddressesRow.hidden = rendered === 0;
-  }
-
-  function setHomeCandidateRadiosDisabled(disabled) {
-    if (!homeCandidatesList) return;
-    homeCandidatesList.querySelectorAll('input[type="radio"]').forEach((radio) => {
-      radio.disabled = disabled;
-    });
-  }
-
-  function showHomeCandidateWriteError(message) {
-    setHostAddressError(message || '');
-    if (hostAddressOverride) hostAddressOverride.open = true;
-  }
-
-  function restoreHomeCandidatesFromStatus() {
-    renderHomeCandidates(latestStatus || {});
-  }
-
-  async function selectHomeCandidate(address) {
-    setHomeCandidateRadiosDisabled(true);
-    try {
-      const refreshed = await submitHostAddress(address);
-      if (!refreshed) {
-        showHomeCandidateWriteError(homeCandidatesPicker?.dataset.refreshFail || '');
-        restoreHomeCandidatesFromStatus();
+    async function clipboardWriteText(text) {
+      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+        return false;
       }
-    } catch (err) {
-      showHomeCandidateWriteError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
-      restoreHomeCandidatesFromStatus();
-      window.logError?.(err, { context: 'link: home candidate select failed' });
-    } finally {
-      setHomeCandidateRadiosDisabled(false);
-    }
-  }
-
-  function renderHomeCandidates(data) {
-    if (!homeCandidatesPicker || !homeCandidatesList || !homeCandidatesProblem) return;
-    homeCandidatesList.textContent = '';
-    homeCandidatesProblem.textContent = '';
-    homeCandidatesProblem.hidden = true;
-    homeCandidatesList.hidden = true;
-
-    if (data?.home_candidates_state === 'unavailable') {
-      homeCandidatesPicker.hidden = false;
-      homeCandidatesProblem.textContent =
-        data?.home_candidates_error || homeCandidatesPicker.dataset.unavailable || '';
-      homeCandidatesProblem.hidden = false;
-      return;
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (err) {
+        window.logError?.(err, { context: 'link: clipboard write failed' });
+        return false;
+      }
     }
 
-    const candidates = Array.isArray(data?.home_candidates) ? data.home_candidates : [];
-    if (candidates.length < 2) {
-      homeCandidatesPicker.hidden = true;
-      return;
+    function validMarkSpec(spec) {
+      const icons = spec ? [spec.icon1, spec.icon2] : [];
+      const words = Array.isArray(spec && spec.words) ? spec.words : [];
+      return icons.length === 2 && icons.every(icon => icon && icon.svg && icon.color && icon.color.hex) && words.length === 2;
     }
 
-    homeCandidatesPicker.hidden = false;
-    homeCandidatesList.hidden = false;
-    candidates.forEach((candidate) => {
-      const address = typeof candidate?.address === 'string' ? candidate.address : '';
-      if (!address) return;
-      const row = document.createElement('label');
-      row.className = 'link-home-candidate-row';
-      const radio = document.createElement('input');
-      radio.type = 'radio';
-      radio.name = 'link-home-candidate';
-      radio.value = address;
-      radio.checked = Boolean(candidate.selected);
-      radio.addEventListener('change', () => {
-        if (radio.checked) selectHomeCandidate(address);
+    function renderIdentityMark(container, spec) {
+      if (!container) return false;
+      if (!validMarkSpec(spec)) return false;
+      const icons = [spec.icon1, spec.icon2];
+      const words = spec.words;
+      container.innerHTML = '<div class="link-mark-chips"><div class="link-mark-chip"></div><div class="link-mark-chip"></div></div><div class="link-mark-words"><span></span><span class="link-mark-sep">·</span><span></span></div>';
+      container.setAttribute('role', 'img');
+      container.setAttribute('aria-label', `${icons[0].color.name}, ${icons[1].color.name} · ${words[0]} ${words[1]}`);
+      const chips = container.querySelectorAll('.link-mark-chip');
+      chips.forEach((chip, index) => {
+        const icon = icons[index];
+        chip.style.borderColor = icon.color.hex;
+        chip.style.background = icon.color.hex + '1f';
+        if (icon.rot === 45) chip.style.transform = 'rotate(45deg)';
+        chip.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="${icon.color.hex}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon.svg}</svg>`;
       });
-      const code = document.createElement('code');
-      code.textContent = address;
-      row.appendChild(radio);
-      row.appendChild(code);
-      homeCandidatesList.appendChild(row);
-    });
-
-    if (!homeCandidatesList.children.length) {
-      homeCandidatesPicker.hidden = true;
-    }
-  }
-
-  function renderSplState(data) {
-    const isSpl = data?.posture === 'spl';
-    const reachability = data?.reachability;
-    const viewingHosted = viewedMode === 'hosted';
-    if (splConnectingNote) splConnectingNote.hidden = !(isSpl && viewingHosted && reachability === 'finishing-setup');
-    if (splCheckAgain) splCheckAgain.hidden = !(isSpl && viewingHosted && reachability === 'offline');
-  }
-
-  function updateReachSelectorVisibility() {
-    if (!reachSelector) return;
-    reachSelector.hidden = isFirstRun && !reachRevealed;
-  }
-
-  function setSegmentSelected(segment, selected) {
-    if (!segment) return;
-    segment.classList.toggle('is-selected', selected);
-    segment.setAttribute('aria-checked', String(selected));
-  }
-
-  function renderSelector(data) {
-    const posture = data?.posture;
-    const reachability = data?.reachability;
-    const mode = viewedMode || (posture === 'spl' ? 'hosted' : 'byo');
-    const notEnrolled = posture === 'spl' && reachability === 'not-enrolled';
-    setSegmentSelected(segByo, mode === 'byo');
-    setSegmentSelected(segHosted, mode === 'hosted');
-    if (modeByoBody) modeByoBody.hidden = mode !== 'byo';
-    if (modeHostedSetup) modeHostedSetup.hidden = !(mode === 'hosted' && posture !== 'spl');
-    if (modeHostedNotEnrolled) modeHostedNotEnrolled.hidden = !(mode === 'hosted' && notEnrolled);
-    if (modeHostedActive) modeHostedActive.hidden = !(mode === 'hosted' && posture === 'spl' && !notEnrolled);
-    if (appOnOff) {
-      appOnOff.hidden = reachability !== 'online';
-    }
-    if (appOnOffSub && appOnOff) {
-      appOnOffSub.textContent = posture === 'spl'
-        ? appOnOff.dataset.hostedSub || ''
-        : (localNetworkClosed ? window.LinkCopy?.APP_ONOFF_SUB_BYO_CLOSED : appOnOff.dataset.byoSub) || '';
-    }
-    renderSplState(data);
-  }
-
-  function renderHomeAddress(data) {
-    const homeAddress = typeof data?.home_address === 'string' ? data.home_address : '';
-    if (homeAddressEl) homeAddressEl.textContent = homeAddress;
-    if (homeAddressRow) homeAddressRow.hidden = !homeAddress;
-    if (hostAddressInput && document.activeElement !== hostAddressInput) {
-      hostAddressInput.value = homeAddress;
-    }
-    if (homeAddressUnusable) {
-      const unusableKey =
-        typeof data?.home_address_unusable === 'string' ? data.home_address_unusable : '';
-      if (unusableKey) {
-        const text =
-          window.LinkCopy?.[unusableKey] ||
-          (homeAddressUnusable.dataset?.copy ? window.LinkCopy?.[homeAddressUnusable.dataset.copy] : '') ||
-          '';
-        homeAddressUnusable.textContent = text;
-        homeAddressUnusable.hidden = false;
-      } else {
-        homeAddressUnusable.textContent = '';
-        homeAddressUnusable.hidden = true;
-      }
-    }
-  }
-
-  function renderReach(data) {
-    const posture = data?.posture;
-    if (posture !== lastPosture || viewedMode === null) {
-      viewedMode = posture === 'spl' ? 'hosted' : 'byo';
-    }
-    lastPosture = posture;
-    updateReachSelectorVisibility();
-    renderSelector(data || {});
-
-    renderHomeAddress(data);
-
-    renderDeviceAddresses(Array.isArray(data?.device_addresses) ? data.device_addresses : []);
-    const candidates = Array.isArray(data?.vpn?.candidates) ? data.vpn.candidates : [];
-    renderVpnCandidates(candidates);
-    renderHomeCandidates(data || {});
-  }
-
-  async function submitHostAddress(address) {
-    await window.apiJson('/app/network/host-address', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ home_address: address }),
-    });
-    setHostAddressError('');
-    return await refreshStatus();
-  }
-
-  async function applyHostAddressOverride() {
-    if (!hostAddressInput || !hostAddressApply) return;
-    hostAddressApply.disabled = true;
-    try {
-      await submitHostAddress(hostAddressInput.value);
-    } catch (err) {
-      setHostAddressError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
-      window.logError?.(err, { context: 'link: host address override failed' });
-    } finally {
-      hostAddressApply.disabled = false;
-    }
-  }
-
-  async function clearHostAddressOverride() {
-    if (!hostAddressClear) return;
-    hostAddressClear.disabled = true;
-    try {
-      await submitHostAddress(null);
-    } catch (err) {
-      setHostAddressError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
-      window.logError?.(err, { context: 'link: host address clear failed' });
-    } finally {
-      hostAddressClear.disabled = false;
-    }
-  }
-
-
-  function applyStatus(data) {
-    revealStatusPanel();
-    latestStatus = data || {};
-    clearRefreshError('link-status-panel');
-    setStatusSentence(selectStatusSentenceKey(latestStatus));
-    renderReach(latestStatus);
-  }
-
-  async function refreshStatus() {
-    try {
-      const data = await window.apiJson('/app/network/api/status', { headers: { accept: 'application/json' } });
-      applyStatus(data || {});
+      const wordSpans = container.querySelectorAll('.link-mark-words span:not(.link-mark-sep)');
+      wordSpans[0].textContent = words[0];
+      wordSpans[1].textContent = words[1];
       return true;
-    } catch (err) {
-      window.logError(err, { context: 'link: refreshStatus failed' });
-      revealStatusPanel();
-      window.SurfaceState.replaceLoading('link-status-panel', window.SurfaceState.error({
-        heading: "Can't reach pairing service",
-        desc: window.CONVEY_COPY.RELOAD_HINT,
-        serverMessage: err.serverMessage,
-        detail: err,
-      }));
-      return false;
     }
-  }
 
-  function privateLinkSleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  function setPrivateLinkButtonsBusy(busy) {
-    [privateLinkSetup, privateLinkEnroll, ...document.querySelectorAll('.link-private-link-disable'), privateLinkOperationRetry]
-      .filter(Boolean)
-      .forEach((button) => {
-        button.disabled = busy;
-        button.setAttribute('aria-busy', String(busy));
-      });
-  }
-
-  function setPrivateLinkOperation(headline, detail = '', options = {}) {
-    if (!privateLinkOperation || !privateLinkOperationHeadline || !privateLinkOperationDetail) return;
-    privateLinkRetryAction = typeof options.retryAction === 'function' ? options.retryAction : null;
-    privateLinkOperation.hidden = !headline;
-    privateLinkOperationHeadline.textContent = headline || '';
-    privateLinkOperationDetail.textContent = detail || '';
-    privateLinkOperationDetail.hidden = !detail;
-    if (privateLinkOperationLink) {
-      const subscribeUrl = typeof options.subscribeUrl === 'string' ? options.subscribeUrl : '';
-      const portalUrl = !subscribeUrl && typeof options.portalUrl === 'string' ? options.portalUrl : '';
-      const linkUrl = subscribeUrl || portalUrl;
-      privateLinkOperationLink.hidden = !linkUrl;
-      privateLinkOperationLink.href = linkUrl;
-      privateLinkOperationLink.textContent = subscribeUrl
-        ? window.LinkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA || 'open the services portal'
-        : window.LinkCopy.PRIVATE_LINK_PORTAL_CTA || 'continue to approve →';
+    // The org-wide no-identity-yet treatment (journal-mark.md § 4.3): dashed,
+    // glyph-less chips on paper plus the words "your" / "journal", spoken as one
+    // accessible unit. Renders in place of hiding the
+    // section, whether the identity fetch failed, the identity isn't committed
+    // yet, or the served spec is malformed.
+    function renderGenericIdentityMark(container) {
+      if (!container) return;
+      container.innerHTML = '<div class="link-mark-chips">' +
+        '<div class="link-mark-chip-generic"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="var(--mark-generic-paper)" stroke="var(--mark-generic-paper)" stroke-width="6"/><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="none" stroke="var(--mark-generic-dash-1)" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
+        '<div class="link-mark-chip-generic" style="transform: rotate(45deg)"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="var(--mark-generic-paper)" stroke="var(--mark-generic-paper)" stroke-width="6"/><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="none" stroke="var(--mark-generic-dash-2)" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
+        '</div><div class="link-mark-words"><span>your</span><span class="link-mark-sep">·</span><span>journal</span></div>';
+      container.setAttribute('role', 'img');
+      container.setAttribute('aria-label', 'your journal, not set up yet');
     }
-    if (privateLinkOperationRetry) {
-      privateLinkOperationRetry.hidden = !privateLinkRetryAction;
-      privateLinkOperationRetry.textContent = window.LinkCopy.PRIVATE_LINK_RETRY_CTA || 'try again';
-    }
-  }
 
-  function renderPrivateLinkStatus(data) {
-    latestPrivateLink = data || {};
-    const operation = latestPrivateLink.operation;
-    if (privateLinkSetup) {
-      privateLinkSetup.hidden = !!operation && !PRIVATE_LINK_TERMINAL_PHASES.has(operation.phase);
+    function renderUnavailableIdentityMark(container) {
+      if (!container) return;
+      container.innerHTML = '<div class="link-mark-chips">' +
+        '<div class="link-mark-chip unavailable" style="border-color: var(--hairline); background: var(--cream-bright);"><span style="font-size: 24px; font-weight: 700; color: var(--ink-faint);">?</span></div>' +
+        '<div class="link-mark-chip unavailable" style="border-color: var(--hairline); background: var(--cream-bright);"><span style="font-size: 24px; font-weight: 700; color: var(--ink-faint);">?</span></div>' +
+        '</div><div class="link-mark-words"><span>mark</span><span class="link-mark-sep">·</span><span>unavailable</span></div>';
+      container.setAttribute('role', 'img');
+      container.setAttribute('aria-label', "your journal's mark, unavailable right now");
     }
-    if (!operation) {
-      if (latestPrivateLink.state === 'inconsistent') {
-        setPrivateLinkOperation(
-          window.LinkCopy.PRIVATE_LINK_NEEDS_REPAIR || 'your private network needs setting up again.',
-          '',
-          { retryAction: startPrivateLinkSetup },
-        );
-      } else {
-        setPrivateLinkOperation('');
+
+    function applyIdentityToAll(type, spec) {
+      const containers = [
+        document.getElementById('link-identity-mark'),
+        document.getElementById('link-pairing-identity-mark'),
+        document.getElementById('link-pairing-success-mark'),
+      ].filter(Boolean);
+      for (const container of containers) {
+        if (type === 'ready') renderIdentityMark(container, spec);
+        else if (type === 'unavailable') renderUnavailableIdentityMark(container);
+        else renderGenericIdentityMark(container);
       }
-      return;
     }
 
-    const phase = operation.phase;
-    let headline = window.LinkCopy.PRIVATE_LINK_SETTING_UP || 'setting up your private network…';
-    let detail = typeof operation.guidance === 'string' ? operation.guidance : '';
-    let retryAction = null;
-    let subscribeUrl = '';
-
-    if (phase === 'enabled') {
-      headline = window.LinkCopy.PRIVATE_LINK_SETUP_SUCCESS || 'your private network is on.';
-    } else if (phase === 'subscribing') {
-      headline = window.LinkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_HEADLINE || "private network isn't on yet";
-      detail = window.LinkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_DETAIL || detail;
-      subscribeUrl = typeof operation.subscribe_url === 'string' ? operation.subscribe_url : '';
-    } else if (phase === 'revoked' || phase === 'error') {
-      headline = window.LinkCopy.PRIVATE_LINK_SETUP_FAILED || "couldn't finish setting up your private network.";
-      retryAction = startPrivateLinkSetup;
-    }
-
-    const portalUrl = !subscribeUrl && typeof operation.portal_url === 'string'
-      ? operation.portal_url
-      : '';
-
-    setPrivateLinkOperation(headline, detail, { portalUrl, subscribeUrl, retryAction });
-  }
-
-  async function fetchPrivateLinkStatus() {
-    const data = await window.apiJson('/app/network/api/private-link', { headers: { accept: 'application/json' } });
-    renderPrivateLinkStatus(data || {});
-    return data || {};
-  }
-
-  async function refreshPrivateLinkStatus() {
-    try {
-      await fetchPrivateLinkStatus();
-    } catch (err) {
-      window.logError?.(err, { context: 'link: private link status failed' });
-    }
-  }
-
-  async function pollPrivateLinkUntilTerminal() {
-    const deadline = Date.now() + PRIVATE_LINK_POLL_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      const status = await fetchPrivateLinkStatus();
-      const phase = status?.operation?.phase;
-      if (PRIVATE_LINK_TERMINAL_PHASES.has(phase)) {
-        return status;
+    async function loadIdentity() {
+      const section = document.getElementById('link-identity-header');
+      if (!section) return;
+      const idDisclosure = section.querySelector('.link-identity-id-disclosure');
+      let data;
+      try {
+        data = await ctx.read('/app/network/api/identity');
+      } catch (err) {
+        window.logError?.(err, { context: 'link: identity load failed' });
+        applyIdentityToAll('unavailable');
+        if (idDisclosure) idDisclosure.hidden = true;
+        section.hidden = false;
+        return;
       }
-      await privateLinkSleep(1000);
-    }
-    setPrivateLinkOperation(
-      window.LinkCopy.PRIVATE_LINK_SETUP_FAILED || "couldn't finish setting up your private network.",
-      'timed out waiting for your private network.',
-      { retryAction: startPrivateLinkSetup },
-    );
-    return null;
-  }
-
-  async function startPrivateLinkSetup() {
-    setPrivateLinkButtonsBusy(true);
-    setPrivateLinkOperation(window.LinkCopy.PRIVATE_LINK_SETTING_UP || 'setting up your private network…');
-    try {
-      const start = await window.apiJson('/app/network/private-link/enable', { method: 'POST' });
-      const consentUrl = start?.operation?.portal_url;
-      if (consentUrl) {
-        window.solstoneOutside.openDelayed(consentUrl);
+      if (!data || data.availability === 'none') {
+        applyIdentityToAll('none');
+        if (idDisclosure) idDisclosure.hidden = true;
+        section.hidden = false;
+        return;
       }
-      renderPrivateLinkStatus({ operation: start?.operation || null });
-      await pollPrivateLinkUntilTerminal();
-      await refreshStatus();
-    } catch (err) {
-      setPrivateLinkOperation(
-        window.LinkCopy.PRIVATE_LINK_SETUP_FAILED || "couldn't finish setting up your private network.",
-        err?.rawDetail || window.SurfaceState.serverMessageFrom(err),
-        { retryAction: startPrivateLinkSetup },
-      );
-      window.logError?.(err, { context: 'link: private link setup failed' });
-    } finally {
-      setPrivateLinkButtonsBusy(false);
-    }
-  }
-
-  async function disablePrivateLink() {
-    setPrivateLinkButtonsBusy(true);
-    try {
-      const result = await window.apiJson('/app/network/private-link/disable', { method: 'POST' });
-      const status = result?.status || {};
-      latestPrivateLink = status;
-      if (status.state === 'not_enabled') {
-        setPrivateLinkOperation((localNetworkClosed ? window.LinkCopy.PRIVATE_LINK_DISABLE_SUCCESS_CLOSED : window.LinkCopy.PRIVATE_LINK_DISABLE_SUCCESS) || 'your private network is off.');
-      } else {
-        setPrivateLinkOperation(
-          window.LinkCopy.PRIVATE_LINK_NEEDS_REPAIR || 'your private network needs setting up again.',
-          '',
-          { retryAction: startPrivateLinkSetup },
-        );
-      }
-      await refreshStatus();
-    } catch (err) {
-      setPrivateLinkOperation(
-        window.LinkCopy.PRIVATE_LINK_DISABLE_FAILED || "couldn't turn off your private network.",
-        err?.rawDetail || window.SurfaceState.serverMessageFrom(err),
-        { retryAction: disablePrivateLink },
-      );
-      window.logError?.(err, { context: 'link: private link disable failed' });
-    } finally {
-      setPrivateLinkButtonsBusy(false);
-    }
-  }
-
-
-
-
-  function selectReachMode(mode) {
-    viewedMode = mode;
-    renderSelector(latestStatus || {});
-  }
-
-  hostAddressApply?.addEventListener('click', applyHostAddressOverride);
-  hostAddressClear?.addEventListener('click', clearHostAddressOverride);
-  hostAddressInput?.addEventListener('input', () => setHostAddressError(''));
-  splCheckAgain?.addEventListener('click', () => {
-    refreshStatus();
-    refreshPrivateLinkStatus();
-  });
-  document.getElementById('link-local-network-toggle')?.addEventListener('click', () => {
-    if (localNetworkOpen === null) return;
-    if (localNetworkOpen && !confirm(window.LinkCopy.LOCAL_NETWORK_CLOSE_CONFIRM)) return;
-    setLocalNetwork(!localNetworkOpen);
-  });
-  segByo?.addEventListener('click', () => selectReachMode('byo'));
-  segHosted?.addEventListener('click', () => selectReachMode('hosted'));
-  privateLinkSetup?.addEventListener('click', startPrivateLinkSetup);
-  privateLinkEnroll?.addEventListener('click', startPrivateLinkSetup);
-  document.querySelectorAll('.link-private-link-disable').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (!confirm(localNetworkClosed ? window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM_CLOSED : window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
-      disablePrivateLink();
-    });
-  });
-  privateLinkOperationRetry?.addEventListener('click', () => {
-    if (privateLinkRetryAction) privateLinkRetryAction();
-  });
-
-
-  function showWorkspaceLoading() {
-    if (dashboardContent) dashboardContent.hidden = true;
-    if (!stateGate || !window.SurfaceState) return;
-    stateGate.hidden = false;
-    stateGate.innerHTML = window.SurfaceState.loading({ text: 'loading network…' });
-  }
-
-  function revealWorkspace() {
-    if (stateGate) {
-      stateGate.hidden = true;
-      stateGate.innerHTML = '';
-    }
-    if (dashboardContent) dashboardContent.hidden = false;
-  }
-
-  function showWorkspaceStateError(err) {
-    if (dashboardContent) dashboardContent.hidden = true;
-    if (!stateGate || !window.SurfaceState) return;
-    stateGate.hidden = false;
-    stateGate.innerHTML = window.SurfaceState.error({
-      heading: "Couldn't load network",
-      retry: true,
-      serverMessage: err?.serverMessage,
-      detail: err,
-    });
-    stateGate.querySelector('.surface-state-retry')?.addEventListener('click', initLinkWorkspace, { once: true });
-  }
-
-  // Where the paired-device door listens. Shown where it is a choice: on
-  // windows, or wherever an owner has closed it to the network.
-  function applyLocalNetworkToReach() {
-    const byoNote = document.getElementById('link-mode-byo-note');
-    if (byoNote) byoNote.hidden = localNetworkClosed;
-    const byoDesc = document.querySelector('#link-seg-byo .link-segdesc');
-    if (byoDesc) byoDesc.textContent = (localNetworkClosed ? window.LinkCopy?.MODE_BYO_DESC_CLOSED : window.LinkCopy?.MODE_BYO_DESC) || '';
-    const onOff = document.querySelector('.link-app-onoff');
-    const sub = document.querySelector('.link-app-onoff-sub');
-    if (onOff && sub && lastPosture !== 'spl') {
-      sub.textContent = (localNetworkClosed ? window.LinkCopy?.APP_ONOFF_SUB_BYO_CLOSED : onOff.dataset.byoSub) || '';
-    }
-  }
-  function renderLocalNetwork(data) {
-    const block = document.getElementById('link-local-network');
-    if (!block) return;
-    const applies = !!data && (data.windows_asks === true || data.open === false);
-    block.hidden = !applies;
-    const wasClosed = localNetworkClosed;
-    localNetworkClosed = applies && data.listening_on === 'this_pc';
-    localNetworkWindowsAsks = !!data && data.windows_asks === true;
-    sameComputerPairing = data?.host_capabilities?.same_computer_pairing === true;
-    applyLocalNetworkToReach();
-    if (wasClosed !== localNetworkClosed) refreshStatus();
-    if (!applies) return;
-    localNetworkOpen = data.open === true;
-    const copy = window.LinkCopy || {};
-    const windows = data.windows_asks === true;
-    // The state line follows where the door is actually bound; the button
-    // follows the saved choice.
-    let state = copy.LOCAL_NETWORK_NOT_REACHABLE;
-    let note = '';
-    if (data.listening_on === 'local_network' && data.windows_firewall_blocked === true) {
-      state = copy.LOCAL_NETWORK_FIREWALL_BLOCKED;
-      note = copy.LOCAL_NETWORK_FIREWALL_BLOCKED_NOTE;
-    } else if (data.listening_on === 'local_network') {
-      state = copy.LOCAL_NETWORK_OPEN;
-      note = [
-        ...(data.agents_on_network === true
-          // Agents holds it open only when the owner's own choice is closed.
-          ? [copy.LOCAL_NETWORK_AGENTS_NOTE, data.source === 'agents_on_network' ? copy.LOCAL_NETWORK_AGENTS_CLOSES_NOTE : '']
-          : [copy.LOCAL_NETWORK_OPEN_NOTE]),
-        windows ? copy.LOCAL_NETWORK_FIREWALL_NOTE : '',
-      ].filter(Boolean).join(' ');
-    } else if (data.listening_on === 'this_pc') {
-      state = copy.LOCAL_NETWORK_THIS_PC;
-      note = [sameComputerPairing ? copy.LOCAL_NETWORK_THIS_PC_NOTE : copy.LOCAL_NETWORK_OTHER_DEVICES_NOTE, windows ? copy.LOCAL_NETWORK_WINDOWS_ASKS_NOTE : ''].filter(Boolean).join(' ');
-    }
-    document.getElementById('link-local-network-state').textContent = state;
-    const noteEl = document.getElementById('link-local-network-note');
-    noteEl.textContent = note;
-    noteEl.hidden = !note;
-    document.getElementById('link-local-network-toggle').textContent =
-      localNetworkOpen ? copy.LOCAL_NETWORK_CLOSE_CTA : copy.LOCAL_NETWORK_OPEN_CTA;
-    // Agents on your network keeps the journal open; closing is turned off
-    // there, in agents, not here.
-    document.getElementById('link-local-network-toggle').hidden = data.agents_on_network === true;
-  }
-
-  async function refreshLocalNetwork() {
-    try {
-      renderLocalNetwork(await window.apiJson('/app/network/api/local-network', { headers: { accept: 'application/json' } }));
-    } catch (err) {
-      window.logError?.(err, { context: 'link: local network load failed' });
-    }
-  }
-
-  async function setLocalNetwork(open) {
-    const toggle = document.getElementById('link-local-network-toggle');
-    const error = document.getElementById('link-local-network-error');
-    if (toggle) toggle.disabled = true;
-    if (error) error.hidden = true;
-    try {
-      const response = await fetch(`/app/network/local-network/${open ? 'open' : 'close'}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', accept: 'application/json' },
-        body: '{}',
-      });
-      const data = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(`local network ${response.status}`);
-      renderLocalNetwork(data);
-      refreshStatus();
-      return true;
-    } catch (err) {
-      window.logError?.(err, { context: 'link: local network change failed' });
-      if (error) error.hidden = false;
-      return false;
-    } finally {
-      if (toggle) toggle.disabled = false;
-    }
-  }
-
-  async function loadNetworkState() {
-    const data = await window.apiJson('/app/network/api/state', { headers: { accept: 'application/json' } });
-    if (!data || typeof data.posture !== 'string') {
-      throw new Error('network state missing posture');
-    }
-    if (!data.link_copy || typeof data.link_copy !== 'object') {
-      throw new Error('network state missing link_copy');
-    }
-    if (!window.NetworkRender || typeof window.NetworkRender.applyCopy !== 'function') {
-      throw new Error('network renderer unavailable');
-    }
-    window.LinkCopy = data.link_copy;
-    window.NetworkRender.applyCopy(document, window.LinkCopy);
-    latestStatus = { posture: data.posture };
-    renderReach(latestStatus);
-    return data;
-  }
-
-  async function initLinkWorkspace() {
-    showWorkspaceLoading();
-    try {
-      await loadNetworkState();
-      revealWorkspace();
-      initLink();
-      reportNetworkReady('content');
-    } catch (err) {
-      window.logError?.(err, { context: 'link: state load failed' });
-      showWorkspaceStateError(err);
-      reportNetworkReady('error');
-    }
-  }
-
-  function initLink() {
-    if (linkInitialized) return;
-    linkInitialized = true;
-    window.linkPairingCeremony = window.NetworkRender?.initPairingCeremony?.({
-      clipboardWriteText,
-      showToast,
-      onPrivateLinkRepair: startPrivateLinkSetup,
-      onLocalNetworkOpen: () => setLocalNetwork(true),
-      windowsAsks: () => localNetworkWindowsAsks,
-      canPairThisComputer: () => sameComputerPairing,
-      onDeviceRemoved: () => { if (typeof loadClients === 'function') loadClients(); },
-      onPrivateLinkDisable: () => {
-        if (!confirm(localNetworkClosed ? window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM_CLOSED : window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
-        disablePrivateLink();
-      },
-    });
-    refreshStatus();
-    refreshPrivateLinkStatus();
-    refreshLocalNetwork();
-    loadIdentity();
-    // `?pair=phone|computer` opens the pair dialog with that device
-    // type chosen, so a setup step can link straight to it.
-    const pairType = new URLSearchParams(location.search).get('pair');
-    if (['phone', 'computer'].includes(pairType)) window.linkPairingCeremony?.open(pairType);
-    const identityCopyBtn = document.getElementById('link-identity-id-copy');
-    if (identityCopyBtn) {
-      identityCopyBtn.addEventListener('click', async () => {
+      if (data.availability === 'ready' && validMarkSpec(data.mark)) {
+        applyIdentityToAll('ready', data.mark);
+        if (idDisclosure) idDisclosure.hidden = false;
         const idValue = document.getElementById('link-identity-id-value');
-        const text = idValue ? idValue.textContent : '';
-        if (!text) return;
-        const ok = await clipboardWriteText(text);
-        showToast(ok ? (window.LinkCopy.IDENTITY_ID_COPY_SUCCESS_TOAST || 'journal id copied')
-                     : (window.LinkCopy.IDENTITY_ID_COPY_FAIL_TOAST || "couldn't copy journal id"));
-      });
+        if (idValue && typeof data.instance_id === 'string') idValue.textContent = data.instance_id;
+        section.hidden = false;
+        return;
+      }
+      // unavailable or committed without valid spec
+      applyIdentityToAll('unavailable');
+      const hasInstanceId = typeof data.instance_id === 'string' && data.instance_id !== '';
+      if (idDisclosure) idDisclosure.hidden = !hasInstanceId;
+      const idValue = document.getElementById('link-identity-id-value');
+      if (idValue && hasInstanceId) idValue.textContent = data.instance_id;
+      section.hidden = false;
     }
-    // Paused while the page is hidden, read again on return.
-    const every = (window.AppServices?.visibleInterval ? (fn, ms) => window.AppServices.visibleInterval(fn, ms) : (fn, ms) => window.setInterval(fn, ms));
-    every(refreshStatus, 15000);
-    every(refreshPrivateLinkStatus, 15000);
-  }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initLinkWorkspace);
-  } else {
-    initLinkWorkspace();
-  }
-})();
-</script>
 
-<script>
-const clientsList = document.getElementById('clientsList');
-
-function escapeHtml(value) {
-  return window.AppServices.escapeHtml(value);
-}
-
-// Error display state
-const wsErrorContainer = document.getElementById('wsErrorContainer');
-const wsErrorMessage = document.getElementById('wsErrorMessage');
-const wsErrorRetry = document.getElementById('wsErrorRetry');
-const wsErrorCountdown = document.getElementById('wsErrorCountdown');
-let errorAutoHideTimer = null;
-let countdownInterval = null;
-let lastPollTime = Date.now();
-
-function emptyStateHTML() {
-  const copy = (key) => window.NetworkRender?.resolve(window.LinkCopy, key) || '';
-  const empty = window.SurfaceState.empty({
-    heading: copy('DEVICE_EMPTY_TITLE'),
-    headingLevel: 'h3',
-    desc: copy('DEVICE_EMPTY_BODY'),
-    action: `<button type="button" class="modal-primary-btn" data-pairing-action="open" data-copy="DEVICE_PAIR_CTA">${escapeHtml(copy('DEVICE_PAIR_CTA'))}</button>`,
-  });
-  return empty;
-}
-
-// 'last check-in' is a per-device fact read from that device's own last_seen_at,
-// not a page-load age (G3-217): three devices on one machine heartbeat within a
-// minute of each other, so they honestly round to the same phrase. G3-306: the
-// sentence that separates it from delivery used to be a title= tooltip, which a
-// phone and a keyboard never reach, and 'last added' sat on the card face where
-// the two could not be read against each other. Both values are labelled here,
-// next to each other, and the distinction is visible text.
-const CHECK_IN_NOTE = 'a device can add material without checking in again, so these two can differ.';
-
-function clientStatsHTML(client, deliveryGroup) {
-  const segment = window.NetworkRender.segmentDisplay(client.last_accepted_segment);
-  // G3-216: the readable time answers the question; the storage key stays with
-  // it as the exact id rather than standing in for one.
-  const segmentCell = segment
-    ? `${escapeHtml(segment.readable || 'time unavailable')}<code class="client-segment-key">${escapeHtml(segment.key)}</code>`
-    : 'none';
-  const failure = client.ingest_rejection?.reason_code || client.unassessed_reason;
-  // The connection fact (open-socket heartbeat) is a distinct signal from delivery,
-  // but for an 'adding' device it says nothing the chip doesn't already say — see
-  // clientCardHTML, which omits it there entirely rather than passing it through.
-  const connectionLabel = deliveryGroup === 'adding' ? '' : window.NetworkRender.connectionLineLabel(client);
-  const lastAdded = client.last_accepted_ingest_at
-    ? window.JournalFormat.timestamp(client.last_accepted_ingest_at)
-    : 'nothing yet';
-  return `<dl>
-    <div><dt>last added</dt><dd>${escapeHtml(lastAdded)}</dd></div>
-    <div><dt>last check-in</dt><dd>${escapeHtml(window.NetworkRender.checkInLabel(client))}<span class="client-stat-note">${escapeHtml(CHECK_IN_NOTE)}</span></dd></div>
-    ${connectionLabel ? `<div><dt>connection</dt><dd>${escapeHtml(connectionLabel)}</dd></div>` : ''}
-    <div><dt>last journal segment</dt><dd>${segmentCell}</dd></div>
-    ${failure ? `<div><dt>delivery detail</dt><dd>${escapeHtml(failure)}</dd></div>` : ''}
-  </dl>`;
-}
-
-function showLocalError(message, opts = {}) {
-  wsErrorMessage.textContent = message;
-  wsErrorContainer.style.display = 'flex';
-  wsErrorRetry.style.display = opts.retry ? 'inline-block' : 'none';
-
-  // Clear any existing auto-hide timer
-  if (errorAutoHideTimer) clearTimeout(errorAutoHideTimer);
-
-  if (opts.retry) {
-    // For load errors: start countdown, no auto-hide (countdown stays until next load)
-    startCountdown();
-  } else {
-    // For action errors: auto-hide after 10 seconds, no countdown
-    if (countdownInterval) {
-      clearInterval(countdownInterval);
-      countdownInterval = null;
-    }
-    wsErrorCountdown.textContent = '';
-    errorAutoHideTimer = setTimeout(clearError, 10000);
-  }
-}
-
-function clearError() {
-  wsErrorContainer.style.display = 'none';
-  wsErrorMessage.textContent = '';
-  wsErrorCountdown.textContent = '';
-  wsErrorRetry.style.display = 'none';
-  if (errorAutoHideTimer) {
-    clearTimeout(errorAutoHideTimer);
-    errorAutoHideTimer = null;
-  }
-  if (countdownInterval) {
-    clearInterval(countdownInterval);
-    countdownInterval = null;
-  }
-}
-
-function startCountdown() {
-  if (countdownInterval) clearInterval(countdownInterval);
-  updateCountdownDisplay();
-  countdownInterval = setInterval(updateCountdownDisplay, 1000);
-}
-
-function updateCountdownDisplay() {
-  const elapsed = Math.floor((Date.now() - lastPollTime) / 1000);
-  const remaining = Math.max(0, 30 - elapsed);
-  wsErrorCountdown.textContent = remaining > 0 ? `retrying in ${remaining}s\u2026` : 'retrying\u2026';
-}
-
-function groupHeaderHTML(group, label) {
-  return `<h3 class="client-group-header" data-group="${group}">${escapeHtml(label)}</h3>`;
-}
-
-// The never-delivered group can be most of the page (pairing debris that
-// happens to share a delivery state), so it renders collapsed behind a
-// count instead of at full card weight; every device stays reachable one
-// click away. data-client-details keys into the same open-state tracking
-// loadClients() already does for per-card disclosures, so this survives a
-// live refresh too.
-function collapsedGroupHTML(section) {
-  const label = `${section.label} (${section.clients.length})`;
-  return `
-    <details class="client-group-collapsed" data-client-details="group-${escapeHtml(section.group)}">
-      <summary class="client-group-header" data-group="${escapeHtml(section.group)}">${escapeHtml(label)}</summary>
-      ${section.clients.map(clientCardHTML).join('')}
-    </details>
-  `;
-}
-
-// The never-delivered group is pairing
-// debris, and until now the only way to clear a row was the unpair button inside
-// its own disclosure. 'forget this device' sits on the row face, asks in place
-// rather than through a browser dialog, and posts to a route that refuses any
-// device that has ever delivered material and refuses this journal's own host.
-// G3-305 (round 3): a row offers exactly one way to remove a device. A device
-// that never delivered is offered 'forget' and nothing else; a device that has
-// delivered keeps 'unpair' in its disclosure and is never offered 'forget'. Both
-// refusals on the forget route stay as they are.
-function forgetActionHTML(client) {
-  const name = client.role === 'peer' ? 'another journal' : (client.display_label || client.device_label || client.client_label || client.cid_short);
-  return `
-    <div class="client-forget" data-forget-cid="${escapeHtml(client.cid)}">
-      <button type="button" class="client-forget-open" data-forget-action="ask">forget this device</button>
-      <div class="client-forget-confirm" hidden>
-        <p class="client-forget-question">forget ${escapeHtml(name)}? it will need to pair again to add anything.</p>
-        <div class="client-forget-buttons">
-          <button type="button" class="danger" data-forget-action="confirm">forget</button>
-          <button type="button" data-forget-action="cancel">keep it</button>
-        </div>
-      </div>
-      <p class="client-forget-status" role="status" hidden></p>
-    </div>
-  `;
-}
-
-let clientsEpoch = 0;
-const clientLabels = window.NetworkRender.createClientLabels({
-  request: async (cid, label) => {
-    ++clientsEpoch;
-    try {
-      return await window.apiJson(`/app/network/api/clients/${encodeURIComponent(cid)}/label`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }),
-        signal: AbortSignal.timeout(15000), noAuthRedirect: true,
-      });
-    } finally { ++clientsEpoch; }
-  },
-  changed: (cid) => {
-    const card = clientsList.querySelector(`.client-card[data-cid="${CSS.escape(cid)}"]`);
-    const state = clientLabels.editor(cid);
-    if (!state) { card?.remove(); ++clientsEpoch; loadClients(); return; }
-    const section = card?.querySelector('.client-label-section');
-    const activeElement = document.activeElement;
-    const active = section?.contains(activeElement) ? activeElement.dataset.labelAction : null;
-    const selection = active === 'input' ? [activeElement.selectionStart, activeElement.selectionEnd, activeElement.selectionDirection] : null;
-    if (section) section.outerHTML = clientLabelHTML(state.row);
-    if (card) {
-      const displayName = state.row.role === 'peer' ? 'another journal' : state.row.display_label;
-      card.querySelector('.client-name').textContent = displayName;
-      const render = window.NetworkRender;
-      const connection = render.deliveryGroupFor(state.row) === 'adding' ? '' : render.connectionLineLabel(state.row);
-      card.setAttribute('aria-label', [displayName, render.deliveryChipLabel(state.row), connection].filter(Boolean).join(', '));
-      const question = card.querySelector('.client-forget-question');
-      if (question) question.textContent = `forget ${displayName}? it will need to pair again to add anything.`;
-      if (active) {
-        const target = card.querySelector(`[data-label-action="${active}"]`);
-        target?.focus();
-        if (selection && target?.setSelectionRange) target.setSelectionRange(...selection);
+    function clearRefreshError(containerId) {
+      const container = document.getElementById(containerId);
+      const siblingError = container?.nextElementSibling;
+      if (siblingError && siblingError.classList.contains('surface-state-refresh-error')) {
+        siblingError.remove();
       }
     }
-    if (!state.pending) loadClients();
-  },
-});
 
-function clientLabelHTML(client) {
-  const state = clientLabels.editor(client.cid);
-  if (!state) return '';
-  const cid = escapeHtml(client.cid);
-  const facts = [['reported name', client.reported?.name], ['platform', client.reported?.platform],
-    ['device type', client.reported?.device_type], ['app', client.reported?.app_id],
-    ['app version', client.reported?.app_version]].filter(([, value]) => typeof value === 'string' && value);
-  const reported = facts.length ? `<dl>${facts.map(([label, value]) =>
-    `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>`
-    : "<p>device details haven't been shared yet.</p>";
-  const editor = `
-    <form data-label-cid="${cid}" aria-busy="${state.pending}">
-      <label for="client-label-${cid}">your name for this device</label>
-      <input id="client-label-${cid}" data-label-action="input" type="text" value="${escapeHtml(state.draft)}"
-        aria-describedby="client-label-help-${cid}" ${state.pending ? 'readonly' : ''}>
-      <p id="client-label-help-${cid}">leave blank to use the device's reported name when available.</p>
-      <div class="client-label-actions">
-        <button type="submit" data-label-action="save" aria-disabled="${state.pending}">save name</button>
-        <button type="button" data-label-action="clear" aria-disabled="${state.pending}">clear your name</button>
-        <button type="button" data-label-action="cancel" aria-disabled="${state.pending}">cancel edit</button>
-      </div>
-    </form>`;
-  return `<div class="client-label-section">${editor}
-    <p role="status" class="client-label-status">${escapeHtml(state.message)}</p>${reported}</div>`;
-}
+    function revealStatusPanel() {
+      if (statusSkeleton) statusSkeleton.hidden = true;
+      statusText.hidden = false;
+    }
 
-clientsList.addEventListener('input', (event) => {
-  const form = event.target.closest('form[data-label-cid]');
-  if (form && event.target.matches('[data-label-action="input"]')) {
-    clientLabels.input(form.dataset.labelCid, event.target.value);
-    const status = form.closest('.client-label-section')?.querySelector('.client-label-status');
-    if (status) status.textContent = clientLabels.editor(form.dataset.labelCid)?.message || '';
-  }
-});
-clientsList.addEventListener('submit', (event) => {
-  const form = event.target.closest('form[data-label-cid]');
-  if (!form) return;
-  event.preventDefault(); clientLabels.save(form.dataset.labelCid);
-});
-clientsList.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-label-action]');
-  const form = button?.closest('form[data-label-cid]');
-  if (!form) return;
-  if (button.dataset.labelAction === 'clear') clientLabels.save(form.dataset.labelCid, true);
-  if (button.dataset.labelAction === 'cancel') clientLabels.cancel(form.dataset.labelCid);
-});
 
-function clientCardHTML(client) {
-  const render = window.NetworkRender;
-  const displayName = client.role === 'peer' ? 'another journal' : (client.display_label || client.device_label || client.client_label || client.cid_short);
-  const deliveryLabel = render.deliveryChipLabel(client);
-  const deliveryGroup = render.deliveryGroupFor(client);
-  // A device that is actively adding says so in the chip already; a stale
-  // heartbeat under the same card said the opposite one line down (G3-110).
-  // Only devices outside 'adding' get a connection fact at all, and it lives
-  // in the disclosure (clientStatsHTML), not the card face.
-  const connectionLabel = deliveryGroup === 'adding' ? '' : render.connectionLineLabel(client);
-  const ariaLabel = [displayName, deliveryLabel, connectionLabel].filter(Boolean).join(', ');
-  const lastAdded = client.last_accepted_ingest_at
-    ? `<p class="client-last-material">last added ${escapeHtml(window.JournalFormat.timestamp(client.last_accepted_ingest_at))}</p>`
-    : '';
-  const pairedDay = render.dayKeyFor(client.paired_at);
-  const pairedLabel = pairedDay ? `paired ${window.JournalFormat.day(pairedDay)}` : '';
-  return `
-    <div class="client-card ${client.failing ? 'stale' : 'neutral'}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}">
-      <div class="client-header">
-        <span class="client-name">${escapeHtml(displayName)}</span>
-        <span class="client-status ${render.deliveryChipClass(client)}">${escapeHtml(deliveryLabel)}</span>
-      </div>
-      ${lastAdded}
-      ${pairedLabel ? `<p class="client-paired">${escapeHtml(pairedLabel)}</p>` : ''}
-      ${deliveryGroup === 'never' ? forgetActionHTML(client) : ''}
-      <details class="client-details" data-client-details="${escapeHtml(client.cid)}">
-        <summary>device details</summary>
-        ${clientLabelHTML(client)}
-        <div class="client-stats">${clientStatsHTML(client, deliveryGroup)}<dl><div><dt>device id</dt><dd>${escapeHtml(client.cid)}</dd></div></dl></div>
-      ${deliveryGroup === 'never' ? '' : `<div class="client-actions">
-        <button class="danger" data-cid="${escapeHtml(client.cid)}" onclick="unpairClient(this.dataset.cid, this)">unpair</button>
-      </div>`}
-      </details>
-    </div>
-  `;
-}
+    function setHostAddressError(message) {
+      if (!hostAddressError) return;
+      hostAddressError.textContent = message || '';
+      hostAddressError.hidden = !message;
+    }
 
-function renderClients(clients) {
-  if (!clients || clients.length === 0) {
-    return emptyStateHTML();
-  }
+    function selectStatusSentenceKey(data) {
+      const reachability = data?.reachability;
+      const posture = data?.posture;
+      if (reachability === 'reconnecting') return 'reconnecting';
+      if (reachability === 'lan-unreachable') return 'lan_unreachable';
+      if (posture === 'spl') {
+        if (reachability === 'online') return 'spl_online';
+        if (reachability === 'not-enrolled') return 'spl_not_enrolled';
+        if (reachability === 'finishing-setup') return 'spl_finishing_setup';
+        if (reachability === 'offline') return 'spl_offline';
+      }
+      if (reachability === 'offline') return 'offline';
+      if (posture === 'direct' && reachability === 'online') {
+        if (localNetworkClosed) return 'direct_closed';
+        return data?.vpn?.active != null ? 'direct_online_vpn' : 'direct_online';
+      }
+      return 'checking';
+    }
 
-  const html = window.NetworkRender.groupClientsByDelivery(clients)
-    .map((section) => (
-      section.group === 'never'
-        ? collapsedGroupHTML(section)
-        : groupHeaderHTML(section.group, section.label) + section.clients.map(clientCardHTML).join('')
-    ))
-    .join('');
+    function setStatusSentence(key) {
+      const sentences = linkCopy.STATUS_SENTENCES || {};
+      statusText.textContent = sentences[key] || sentences.checking || 'checking your journal…';
+      statusDot.classList.remove('is-green', 'is-amber', 'is-red');
+      if (['direct_online', 'direct_online_vpn', 'direct_closed', 'spl_online'].includes(key)) {
+        statusDot.classList.add('is-green');
+      } else if (['offline', 'lan_unreachable'].includes(key)) {
+        statusDot.classList.add('is-red');
+      } else {
+        statusDot.classList.add('is-amber');
+      }
+    }
 
-  return html || emptyStateHTML();
-}
+    function renderVpnCandidates(candidates) {
+      vpnCandidatesEl.textContent = '';
+      let rendered = 0;
+      for (const candidate of candidates) {
+        const address = typeof candidate?.address === 'string' ? candidate.address : '';
+        if (!address) continue;
+        const item = document.createElement('div');
+        item.className = 'link-vpn-candidate';
+        const label = document.createElement('span');
+        label.className = 'link-vpn-candidate-label';
+        label.textContent = typeof candidate.label === 'string' && candidate.label
+          ? candidate.label
+          : vpnCandidatesEl.dataset.rowLabel || '';
+        const code = document.createElement('code');
+        code.textContent = address;
+        const use = document.createElement('span');
+        use.className = 'link-vpn-candidate-use';
+        use.textContent = vpnCandidatesEl.dataset.useLabel || 'use this';
+        item.appendChild(label);
+        item.appendChild(code);
+        item.appendChild(use);
+        vpnCandidatesEl.appendChild(item);
+        rendered += 1;
+      }
+      vpnCandidatesRow.hidden = rendered === 0;
+    }
 
-async function loadClients() {
-  const epoch = ++clientsEpoch;
-  lastPollTime = Date.now();
-  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
-  try {
-    const payload = await window.apiJson('/app/network/api/clients');
-    if (!payload || typeof payload !== 'object' || !Array.isArray(payload.clients)) {
-      throw new window.ApiError({
-        status: 200,
-        statusText: 'OK',
-        serverMessage: '',
-        url: '/app/network/api/clients',
-        cause: 'parse',
+    function renderDeviceAddresses(addresses) {
+      deviceAddressesEl.textContent = '';
+      let rendered = 0;
+      for (const entry of addresses) {
+        const address = typeof entry?.address === 'string' ? entry.address : '';
+        if (!address) continue;
+        const label = entry.scope === 'vpn'
+          ? deviceAddressesEl.dataset.vpnLabel || ''
+          : deviceAddressesEl.dataset.localLabel || '';
+        const item = document.createElement('div');
+        item.className = 'link-device-address';
+        const code = document.createElement('code');
+        code.textContent = address;
+        item.appendChild(code);
+        item.appendChild(document.createTextNode(` · ${label}`));
+        deviceAddressesEl.appendChild(item);
+        rendered += 1;
+      }
+      deviceAddressesRow.hidden = rendered === 0;
+    }
+
+    function setHomeCandidateRadiosDisabled(disabled) {
+      if (!homeCandidatesList) return;
+      homeCandidatesList.querySelectorAll('input[type="radio"]').forEach((radio) => {
+        radio.disabled = disabled;
       });
     }
-    if (epoch !== clientsEpoch) return;
-    const clients = clientLabels.receive(payload.clients);
 
-    // Rebuild on every poll so grouped headers stay aligned with server ordering.
-    const activeEl = document.activeElement;
-    let focusSelector = null;
-    const labelSelection = activeEl?.matches('[data-label-action="input"]')
-      ? [activeEl.selectionStart, activeEl.selectionEnd, activeEl.selectionDirection] : null;
-    if (activeEl && clientsList.contains(activeEl)) {
-      const card = activeEl.closest('.client-card');
-      if (card) {
-        const cid = card.getAttribute('data-cid');
-        if (activeEl.dataset.labelAction) focusSelector = `.client-card[data-cid="${CSS.escape(cid)}"] [data-label-action="${activeEl.dataset.labelAction}"]`;
-        const buttons = [...card.querySelectorAll('button')];
-        const btnIndex = buttons.indexOf(activeEl);
-        if (btnIndex >= 0 && !focusSelector) {
-          focusSelector = `[data-cid="${CSS.escape(cid)}"] button:nth-child(${btnIndex + 1})`;
+    function showHomeCandidateWriteError(message) {
+      setHostAddressError(message || '');
+      if (hostAddressOverride) hostAddressOverride.open = true;
+    }
+
+    function restoreHomeCandidatesFromStatus() {
+      renderHomeCandidates(latestStatus || {});
+    }
+
+    async function selectHomeCandidate(address) {
+      setHomeCandidateRadiosDisabled(true);
+      try {
+        const refreshed = await submitHostAddress(address);
+        if (!refreshed) {
+          showHomeCandidateWriteError(homeCandidatesPicker?.dataset.refreshFail || '');
+          restoreHomeCandidatesFromStatus();
+        }
+      } catch (err) {
+        showHomeCandidateWriteError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
+        restoreHomeCandidatesFromStatus();
+        window.logError?.(err, { context: 'link: home candidate select failed' });
+      } finally {
+        setHomeCandidateRadiosDisabled(false);
+      }
+    }
+
+    function renderHomeCandidates(data) {
+      if (!homeCandidatesPicker || !homeCandidatesList || !homeCandidatesProblem) return;
+      homeCandidatesList.textContent = '';
+      homeCandidatesProblem.textContent = '';
+      homeCandidatesProblem.hidden = true;
+      homeCandidatesList.hidden = true;
+
+      if (data?.home_candidates_state === 'unavailable') {
+        homeCandidatesPicker.hidden = false;
+        homeCandidatesProblem.textContent =
+          data?.home_candidates_error || homeCandidatesPicker.dataset.unavailable || '';
+        homeCandidatesProblem.hidden = false;
+        return;
+      }
+
+      const candidates = Array.isArray(data?.home_candidates) ? data.home_candidates : [];
+      if (candidates.length < 2) {
+        homeCandidatesPicker.hidden = true;
+        return;
+      }
+
+      homeCandidatesPicker.hidden = false;
+      homeCandidatesList.hidden = false;
+      candidates.forEach((candidate) => {
+        const address = typeof candidate?.address === 'string' ? candidate.address : '';
+        if (!address) return;
+        const row = document.createElement('label');
+        row.className = 'link-home-candidate-row';
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'link-home-candidate';
+        radio.value = address;
+        radio.checked = Boolean(candidate.selected);
+        radio.addEventListener('change', () => {
+          if (radio.checked) selectHomeCandidate(address);
+        });
+        const code = document.createElement('code');
+        code.textContent = address;
+        row.appendChild(radio);
+        row.appendChild(code);
+        homeCandidatesList.appendChild(row);
+      });
+
+      if (!homeCandidatesList.children.length) {
+        homeCandidatesPicker.hidden = true;
+      }
+    }
+
+    function renderSplState(data) {
+      const isSpl = data?.posture === 'spl';
+      const reachability = data?.reachability;
+      const viewingHosted = viewedMode === 'hosted';
+      if (splConnectingNote) splConnectingNote.hidden = !(isSpl && viewingHosted && reachability === 'finishing-setup');
+      if (splCheckAgain) splCheckAgain.hidden = !(isSpl && viewingHosted && reachability === 'offline');
+    }
+
+    function updateReachSelectorVisibility() {
+      if (!reachSelector) return;
+      reachSelector.hidden = isFirstRun && !reachRevealed;
+    }
+
+    function setSegmentSelected(segment, selected) {
+      if (!segment) return;
+      segment.classList.toggle('is-selected', selected);
+      segment.setAttribute('aria-checked', String(selected));
+    }
+
+    function renderSelector(data) {
+      const posture = data?.posture;
+      const reachability = data?.reachability;
+      const mode = viewedMode || (posture === 'spl' ? 'hosted' : 'byo');
+      const notEnrolled = posture === 'spl' && reachability === 'not-enrolled';
+      setSegmentSelected(segByo, mode === 'byo');
+      setSegmentSelected(segHosted, mode === 'hosted');
+      if (modeByoBody) modeByoBody.hidden = mode !== 'byo';
+      if (modeHostedSetup) modeHostedSetup.hidden = !(mode === 'hosted' && posture !== 'spl');
+      if (modeHostedNotEnrolled) modeHostedNotEnrolled.hidden = !(mode === 'hosted' && notEnrolled);
+      if (modeHostedActive) modeHostedActive.hidden = !(mode === 'hosted' && posture === 'spl' && !notEnrolled);
+      if (appOnOff) {
+        appOnOff.hidden = reachability !== 'online';
+      }
+      if (appOnOffSub && appOnOff) {
+        appOnOffSub.textContent = posture === 'spl'
+          ? appOnOff.dataset.hostedSub || ''
+          : (localNetworkClosed ? linkCopy?.APP_ONOFF_SUB_BYO_CLOSED : appOnOff.dataset.byoSub) || '';
+      }
+      renderSplState(data);
+    }
+
+    function renderHomeAddress(data) {
+      const homeAddress = typeof data?.home_address === 'string' ? data.home_address : '';
+      if (homeAddressEl) homeAddressEl.textContent = homeAddress;
+      if (homeAddressRow) homeAddressRow.hidden = !homeAddress;
+      if (hostAddressInput && document.activeElement !== hostAddressInput) {
+        hostAddressInput.value = homeAddress;
+      }
+      if (homeAddressUnusable) {
+        const unusableKey =
+          typeof data?.home_address_unusable === 'string' ? data.home_address_unusable : '';
+        if (unusableKey) {
+          const text =
+            linkCopy?.[unusableKey] ||
+            (homeAddressUnusable.dataset?.copy ? linkCopy?.[homeAddressUnusable.dataset.copy] : '') ||
+            '';
+          homeAddressUnusable.textContent = text;
+          homeAddressUnusable.hidden = false;
+        } else {
+          homeAddressUnusable.textContent = '';
+          homeAddressUnusable.hidden = true;
         }
       }
     }
-    const openForgets = new Set(
-      [...clientsList.querySelectorAll('.client-forget')]
-        .filter(el => !el.querySelector('.client-forget-confirm')?.hidden)
-        .map(el => el.dataset.forgetCid),
-    );
-    const openDetails = new Set([...clientsList.querySelectorAll('details[open]')].map(el => el.dataset.clientDetails));
-    if (activeEl?.matches('summary')) {
-      focusSelector = `[data-client-details="${CSS.escape(activeEl.parentElement.dataset.clientDetails)}"] > summary`;
-    }
-    const scrollTop = clientsList.scrollTop;
 
-    clientsList.innerHTML = renderClients(clients);
-    clientsList.querySelectorAll('details').forEach(el => { el.open = openDetails.has(el.dataset.clientDetails); });
-    clientsList.querySelectorAll('.client-forget').forEach(el => {
-      setForgetAsking(el, openForgets.has(el.dataset.forgetCid));
-    });
-    clearError();
-    clientsList.scrollTop = scrollTop;
-
-    if (focusSelector) {
-      const target = clientsList.querySelector(focusSelector);
-      if (target) {
-        target.focus();
-        if (labelSelection && target.setSelectionRange) target.setSelectionRange(...labelSelection);
+    function renderReach(data) {
+      const posture = data?.posture;
+      if (posture !== lastPosture || viewedMode === null) {
+        viewedMode = posture === 'spl' ? 'hosted' : 'byo';
       }
+      lastPosture = posture;
+      updateReachSelectorVisibility();
+      renderSelector(data || {});
+
+      renderHomeAddress(data);
+
+      renderDeviceAddresses(Array.isArray(data?.device_addresses) ? data.device_addresses : []);
+      const candidates = Array.isArray(data?.vpn?.candidates) ? data.vpn.candidates : [];
+      renderVpnCandidates(candidates);
+      renderHomeCandidates(data || {});
     }
-  } catch (err) {
-    if (epoch !== clientsEpoch) return;
-    window.SurfaceState.replaceLoading('clientsList', window.SurfaceState.error({
-      heading: 'your devices couldn\'t be loaded.',
-      desc: window.CONVEY_COPY.RELOAD_HINT,
-      serverMessage: window.SurfaceState.serverMessageFrom(err),
-      detail: err,
-    }));
-  }
-}
 
-function setForgetAsking(row, asking) {
-  const confirmEl = row.querySelector('.client-forget-confirm');
-  const openEl = row.querySelector('.client-forget-open');
-  if (!confirmEl || !openEl) return;
-  confirmEl.hidden = !asking;
-  openEl.hidden = asking;
-}
+    async function submitHostAddress(address) {
+      await window.apiJson('/app/network/host-address', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ home_address: address }),
+      });
+      if (ctx.disposed) return true;
+      setHostAddressError('');
+      return await refreshStatus();
+    }
 
-function showForgetStatus(row, message) {
-  const status = row.querySelector('.client-forget-status');
-  if (!status) return;
-  status.textContent = message || '';
-  status.hidden = !message;
-}
-
-async function forgetDevice(row) {
-  const cid = row.dataset.forgetCid;
-  const confirmBtn = row.querySelector('[data-forget-action="confirm"]');
-  if (!cid || !confirmBtn || confirmBtn.disabled) return;
-  confirmBtn.disabled = true;
-  showForgetStatus(row, 'forgetting…');
-  try {
-    const response = await fetch(`/app/network/api/devices/${encodeURIComponent(cid)}/forget`, {
-      method: 'POST',
-      headers: { accept: 'application/json' },
-    });
-    if (!response.ok) {
-      let detail = '';
+    async function applyHostAddressOverride() {
+      if (!hostAddressInput || !hostAddressApply) return;
+      hostAddressApply.disabled = true;
       try {
-        detail = (await response.json())?.detail || '';
-      } catch (_err) {
-        detail = '';
+        await submitHostAddress(hostAddressInput.value);
+      } catch (err) {
+        setHostAddressError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
+        window.logError?.(err, { context: 'link: host address override failed' });
+      } finally {
+        hostAddressApply.disabled = false;
       }
-      showForgetStatus(row, detail || 'that device couldn\'t be forgotten. ' + window.CONVEY_COPY.RELOAD_HINT);
-      confirmBtn.disabled = false;
-      return;
     }
-    setForgetAsking(row, false);
-    loadClients();
-  } catch (err) {
-    showForgetStatus(row, 'that device couldn\'t be forgotten. your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT);
-    confirmBtn.disabled = false;
-  }
-}
 
-clientsList.addEventListener('click', (event) => {
-  const control = event.target?.closest?.('[data-forget-action]');
-  if (!control || !clientsList.contains(control)) return;
-  const row = control.closest('.client-forget');
-  if (!row) return;
-  const action = control.dataset.forgetAction;
-  if (action === 'ask') {
-    showForgetStatus(row, '');
-    setForgetAsking(row, true);
-    // Focus the safe choice, not the destructive one: a held Enter on "forget
-    // this device" would otherwise repeat straight through the confirm. "keep
-    // it" sits in the same button row, so the confirm is one Tab away.
-    row.querySelector('[data-forget-action="cancel"]')?.focus();
-  } else if (action === 'cancel') {
-    setForgetAsking(row, false);
-    row.querySelector('.client-forget-open')?.focus();
-  } else if (action === 'confirm') {
-    forgetDevice(row);
-  }
-});
+    async function clearHostAddressOverride() {
+      if (!hostAddressClear) return;
+      hostAddressClear.disabled = true;
+      try {
+        await submitHostAddress(null);
+      } catch (err) {
+        setHostAddressError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
+        window.logError?.(err, { context: 'link: host address clear failed' });
+      } finally {
+        hostAddressClear.disabled = false;
+      }
+    }
 
-function clientNameFor(button) {
-  return button.closest('.client-card')?.querySelector('.client-name')?.textContent || 'this device';
-}
 
-async function unpairClient(cid, button) {
-  const name = clientNameFor(button);
-  const copy = window.LinkCopy || {};
-  const title = (copy.UNPAIR_TITLE_FORMAT || "unpair '{label}'?").replace('{label}', name);
-  if (!confirm(copy.UNPAIR_BODY ? `${title}\n\n${copy.UNPAIR_BODY}` : title)) {
-    return;
-  }
+    function applyStatus(data) {
+      revealStatusPanel();
+      latestStatus = data || {};
+      clearRefreshError('link-status-panel');
+      setStatusSentence(selectStatusSentenceKey(latestStatus));
+      renderReach(latestStatus);
+    }
 
-  try {
-    const response = await fetch(`/app/network/api/clients/${encodeURIComponent(cid)}`, {
-      method: 'DELETE'
+    async function refreshStatus() {
+      try {
+        const data = await ctx.read('/app/network/api/status', { headers: { accept: 'application/json' } });
+        applyStatus(data || {});
+        return true;
+      } catch (err) {
+        window.logError(err, { context: 'link: refreshStatus failed' });
+        revealStatusPanel();
+        window.SurfaceState.replaceLoading('link-status-panel', window.SurfaceState.error({
+          heading: "Can't reach pairing service",
+          desc: window.CONVEY_COPY.RELOAD_HINT,
+          serverMessage: err.serverMessage,
+          detail: err,
+        }));
+        return false;
+      }
+    }
+
+    function privateLinkSleep(ms) {
+      return new Promise((resolve) => ctx.setTimeout(resolve, ms));
+    }
+
+    function setPrivateLinkButtonsBusy(busy) {
+      [privateLinkSetup, privateLinkEnroll, ...document.querySelectorAll('.link-private-link-disable'), privateLinkOperationRetry]
+        .filter(Boolean)
+        .forEach((button) => {
+          button.disabled = busy;
+          button.setAttribute('aria-busy', String(busy));
+        });
+    }
+
+    function setPrivateLinkOperation(headline, detail = '', options = {}) {
+      if (!privateLinkOperation || !privateLinkOperationHeadline || !privateLinkOperationDetail) return;
+      privateLinkRetryAction = typeof options.retryAction === 'function' ? options.retryAction : null;
+      privateLinkOperation.hidden = !headline;
+      privateLinkOperationHeadline.textContent = headline || '';
+      privateLinkOperationDetail.textContent = detail || '';
+      privateLinkOperationDetail.hidden = !detail;
+      if (privateLinkOperationLink) {
+        const subscribeUrl = typeof options.subscribeUrl === 'string' ? options.subscribeUrl : '';
+        const portalUrl = !subscribeUrl && typeof options.portalUrl === 'string' ? options.portalUrl : '';
+        const linkUrl = subscribeUrl || portalUrl;
+        privateLinkOperationLink.hidden = !linkUrl;
+        privateLinkOperationLink.href = linkUrl;
+        privateLinkOperationLink.textContent = subscribeUrl
+          ? linkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA || 'open the services portal'
+          : linkCopy.PRIVATE_LINK_PORTAL_CTA || 'continue to approve →';
+      }
+      if (privateLinkOperationRetry) {
+        privateLinkOperationRetry.hidden = !privateLinkRetryAction;
+        privateLinkOperationRetry.textContent = linkCopy.PRIVATE_LINK_RETRY_CTA || 'try again';
+      }
+    }
+
+    function renderPrivateLinkStatus(data) {
+      latestPrivateLink = data || {};
+      const operation = latestPrivateLink.operation;
+      if (privateLinkSetup) {
+        privateLinkSetup.hidden = !!operation && !PRIVATE_LINK_TERMINAL_PHASES.has(operation.phase);
+      }
+      if (!operation) {
+        if (latestPrivateLink.state === 'inconsistent') {
+          setPrivateLinkOperation(
+            linkCopy.PRIVATE_LINK_NEEDS_REPAIR || 'your private network needs setting up again.',
+            '',
+            { retryAction: startPrivateLinkSetup },
+          );
+        } else {
+          setPrivateLinkOperation('');
+        }
+        return;
+      }
+
+      const phase = operation.phase;
+      let headline = linkCopy.PRIVATE_LINK_SETTING_UP || 'setting up your private network…';
+      let detail = typeof operation.guidance === 'string' ? operation.guidance : '';
+      let retryAction = null;
+      let subscribeUrl = '';
+
+      if (phase === 'enabled') {
+        headline = linkCopy.PRIVATE_LINK_SETUP_SUCCESS || 'your private network is on.';
+      } else if (phase === 'subscribing') {
+        headline = linkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_HEADLINE || "private network isn't on yet";
+        detail = linkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_DETAIL || detail;
+        subscribeUrl = typeof operation.subscribe_url === 'string' ? operation.subscribe_url : '';
+      } else if (phase === 'revoked' || phase === 'error') {
+        headline = linkCopy.PRIVATE_LINK_SETUP_FAILED || "couldn't finish setting up your private network.";
+        retryAction = startPrivateLinkSetup;
+      }
+
+      const portalUrl = !subscribeUrl && typeof operation.portal_url === 'string'
+        ? operation.portal_url
+        : '';
+
+      setPrivateLinkOperation(headline, detail, { portalUrl, subscribeUrl, retryAction });
+    }
+
+    async function fetchPrivateLinkStatus() {
+      const data = await ctx.read('/app/network/api/private-link', { headers: { accept: 'application/json' } });
+      renderPrivateLinkStatus(data || {});
+      return data || {};
+    }
+
+    async function refreshPrivateLinkStatus() {
+      try {
+        await fetchPrivateLinkStatus();
+      } catch (err) {
+        window.logError?.(err, { context: 'link: private link status failed' });
+      }
+    }
+
+    async function pollPrivateLinkUntilTerminal() {
+      const deadline = Date.now() + PRIVATE_LINK_POLL_TIMEOUT_MS;
+      while (Date.now() < deadline && !ctx.disposed) {
+        const status = await fetchPrivateLinkStatus();
+        const phase = status?.operation?.phase;
+        if (PRIVATE_LINK_TERMINAL_PHASES.has(phase)) {
+          return status;
+        }
+        await privateLinkSleep(1000);
+      }
+      setPrivateLinkOperation(
+        linkCopy.PRIVATE_LINK_SETUP_FAILED || "couldn't finish setting up your private network.",
+        'timed out waiting for your private network.',
+        { retryAction: startPrivateLinkSetup },
+      );
+      return null;
+    }
+
+    async function startPrivateLinkSetup() {
+      setPrivateLinkButtonsBusy(true);
+      setPrivateLinkOperation(linkCopy.PRIVATE_LINK_SETTING_UP || 'setting up your private network…');
+      try {
+        const start = await window.apiJson('/app/network/private-link/enable', { method: 'POST' });
+        // The owner has left: going back shows the operation and its link.
+        if (ctx.disposed) return;
+        const consentUrl = start?.operation?.portal_url;
+        if (consentUrl) {
+          window.solstoneOutside.openDelayed(consentUrl);
+        }
+        renderPrivateLinkStatus({ operation: start?.operation || null });
+        await pollPrivateLinkUntilTerminal();
+        await refreshStatus();
+      } catch (err) {
+        setPrivateLinkOperation(
+          linkCopy.PRIVATE_LINK_SETUP_FAILED || "couldn't finish setting up your private network.",
+          err?.rawDetail || window.SurfaceState.serverMessageFrom(err),
+          { retryAction: startPrivateLinkSetup },
+        );
+        window.logError?.(err, { context: 'link: private link setup failed' });
+      } finally {
+        setPrivateLinkButtonsBusy(false);
+      }
+    }
+
+    async function disablePrivateLink() {
+      setPrivateLinkButtonsBusy(true);
+      try {
+        const result = await window.apiJson('/app/network/private-link/disable', { method: 'POST' });
+        if (ctx.disposed) return;
+        const status = result?.status || {};
+        latestPrivateLink = status;
+        if (status.state === 'not_enabled') {
+          setPrivateLinkOperation((localNetworkClosed ? linkCopy.PRIVATE_LINK_DISABLE_SUCCESS_CLOSED : linkCopy.PRIVATE_LINK_DISABLE_SUCCESS) || 'your private network is off.');
+        } else {
+          setPrivateLinkOperation(
+            linkCopy.PRIVATE_LINK_NEEDS_REPAIR || 'your private network needs setting up again.',
+            '',
+            { retryAction: startPrivateLinkSetup },
+          );
+        }
+        await refreshStatus();
+      } catch (err) {
+        setPrivateLinkOperation(
+          linkCopy.PRIVATE_LINK_DISABLE_FAILED || "couldn't turn off your private network.",
+          err?.rawDetail || window.SurfaceState.serverMessageFrom(err),
+          { retryAction: disablePrivateLink },
+        );
+        window.logError?.(err, { context: 'link: private link disable failed' });
+      } finally {
+        setPrivateLinkButtonsBusy(false);
+      }
+    }
+
+
+
+
+    function selectReachMode(mode) {
+      viewedMode = mode;
+      renderSelector(latestStatus || {});
+    }
+
+    hostAddressApply?.addEventListener('click', applyHostAddressOverride);
+    hostAddressClear?.addEventListener('click', clearHostAddressOverride);
+    hostAddressInput?.addEventListener('input', () => setHostAddressError(''));
+    splCheckAgain?.addEventListener('click', () => {
+      refreshStatus();
+      refreshPrivateLinkStatus();
+    });
+    document.getElementById('link-local-network-toggle')?.addEventListener('click', () => {
+      if (!localNetworkCanChange || localNetworkOpen === null) return;
+      if (localNetworkOpen && !confirm(linkCopy.LOCAL_NETWORK_CLOSE_CONFIRM)) return;
+      setLocalNetwork(!localNetworkOpen);
+    });
+    segByo?.addEventListener('click', () => selectReachMode('byo'));
+    segHosted?.addEventListener('click', () => selectReachMode('hosted'));
+    privateLinkSetup?.addEventListener('click', startPrivateLinkSetup);
+    privateLinkEnroll?.addEventListener('click', startPrivateLinkSetup);
+    document.querySelectorAll('.link-private-link-disable').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (!confirm(localNetworkClosed ? linkCopy.PRIVATE_LINK_DISABLE_CONFIRM_CLOSED : linkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
+        disablePrivateLink();
+      });
+    });
+    privateLinkOperationRetry?.addEventListener('click', () => {
+      if (privateLinkRetryAction) privateLinkRetryAction();
     });
 
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error || 'Failed to unpair');
+
+    function showWorkspaceLoading() {
+      if (dashboardContent) dashboardContent.hidden = true;
+      if (!stateGate || !window.SurfaceState) return;
+      stateGate.hidden = false;
+      stateGate.innerHTML = window.SurfaceState.loading({ text: 'loading network…' });
     }
 
-    loadClients();
-  } catch (err) {
-    const msg = 'that device couldn\'t be removed. your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT;
-    if (window.showError) { showError(msg); } else { showLocalError(msg); }
+    function revealWorkspace() {
+      if (stateGate) {
+        stateGate.hidden = true;
+        stateGate.innerHTML = '';
+      }
+      if (dashboardContent) dashboardContent.hidden = false;
+    }
+
+    function showWorkspaceStateError(err) {
+      if (dashboardContent) dashboardContent.hidden = true;
+      if (!stateGate || !window.SurfaceState) return;
+      stateGate.hidden = false;
+      stateGate.innerHTML = window.SurfaceState.error({
+        heading: "Couldn't load network",
+        retry: true,
+        serverMessage: err?.serverMessage,
+        detail: err,
+      });
+      stateGate.querySelector('.surface-state-retry')?.addEventListener('click', initLinkWorkspace, { once: true });
+    }
+
+    // Where the paired-device door listens. Shown where it is a choice: on
+    // windows, or wherever an owner has closed it to the network.
+    function applyLocalNetworkToReach() {
+      const byoNote = document.getElementById('link-mode-byo-note');
+      if (byoNote) byoNote.hidden = localNetworkClosed;
+      const byoDesc = document.querySelector('#link-seg-byo .link-segdesc');
+      if (byoDesc) byoDesc.textContent = (localNetworkClosed ? linkCopy?.MODE_BYO_DESC_CLOSED : linkCopy?.MODE_BYO_DESC) || '';
+      const onOff = document.querySelector('.link-app-onoff');
+      const sub = document.querySelector('.link-app-onoff-sub');
+      if (onOff && sub && lastPosture !== 'spl') {
+        sub.textContent = (localNetworkClosed ? linkCopy?.APP_ONOFF_SUB_BYO_CLOSED : onOff.dataset.byoSub) || '';
+      }
+    }
+    function renderLocalNetwork(data) {
+      const block = document.getElementById('link-local-network');
+      if (!block) return;
+      const applies = !!data && (data.windows_asks === true || data.open === false);
+      localNetworkCanChange = data?.can_change === true;
+      block.hidden = !applies || !localNetworkCanChange;
+      const wasClosed = localNetworkClosed;
+      localNetworkClosed = applies && data.listening_on === 'this_pc';
+      localNetworkWindowsAsks = !!data && data.windows_asks === true;
+      sameComputerPairing = localNetworkCanChange && data?.host_capabilities?.same_computer_pairing === true;
+      applyLocalNetworkToReach();
+      if (wasClosed !== localNetworkClosed) refreshStatus();
+      if (!applies) return;
+      localNetworkOpen = data.open === true;
+      const copy = linkCopy || {};
+      const windows = data.windows_asks === true;
+      // The state line follows where the door is actually bound; the button
+      // follows the saved choice.
+      let state = copy.LOCAL_NETWORK_NOT_REACHABLE;
+      let note = '';
+      if (data.listening_on === 'local_network' && data.windows_firewall_blocked === true) {
+        state = copy.LOCAL_NETWORK_FIREWALL_BLOCKED;
+        note = copy.LOCAL_NETWORK_FIREWALL_BLOCKED_NOTE;
+      } else if (data.listening_on === 'local_network') {
+        state = copy.LOCAL_NETWORK_OPEN;
+        note = [
+          ...(data.agents_on_network === true
+            // Agents holds it open only when the owner's own choice is closed.
+            ? [copy.LOCAL_NETWORK_AGENTS_NOTE, data.source === 'agents_on_network' ? copy.LOCAL_NETWORK_AGENTS_CLOSES_NOTE : '']
+            : [copy.LOCAL_NETWORK_OPEN_NOTE]),
+          windows ? copy.LOCAL_NETWORK_FIREWALL_NOTE : '',
+        ].filter(Boolean).join(' ');
+      } else if (data.listening_on === 'this_pc') {
+        state = copy.LOCAL_NETWORK_THIS_PC;
+        note = [sameComputerPairing ? copy.LOCAL_NETWORK_THIS_PC_NOTE : copy.LOCAL_NETWORK_OTHER_DEVICES_NOTE, windows ? copy.LOCAL_NETWORK_WINDOWS_ASKS_NOTE : ''].filter(Boolean).join(' ');
+      }
+      document.getElementById('link-local-network-state').textContent = state;
+      const noteEl = document.getElementById('link-local-network-note');
+      noteEl.textContent = note;
+      noteEl.hidden = !note;
+      document.getElementById('link-local-network-toggle').textContent =
+        localNetworkOpen ? copy.LOCAL_NETWORK_CLOSE_CTA : copy.LOCAL_NETWORK_OPEN_CTA;
+      // Agents on your network keeps the journal open; closing is turned off
+      // there, in agents, not here.
+      document.getElementById('link-local-network-toggle').hidden = data.agents_on_network === true;
+    }
+
+    async function refreshLocalNetwork() {
+      try {
+        renderLocalNetwork(await ctx.read('/app/network/api/local-network', { headers: { accept: 'application/json' } }));
+      } catch (err) {
+        window.logError?.(err, { context: 'link: local network load failed' });
+      }
+    }
+
+    async function setLocalNetwork(open) {
+      if (!localNetworkCanChange) return;
+      const toggle = document.getElementById('link-local-network-toggle');
+      const error = document.getElementById('link-local-network-error');
+      if (toggle) toggle.disabled = true;
+      if (error) error.hidden = true;
+      try {
+        const response = await fetch(`/app/network/local-network/${open ? 'open' : 'close'}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json' },
+          body: '{}',
+        });
+        const data = await response.json().catch(() => null);
+        if (ctx.disposed) return false;
+        if (!response.ok) throw new Error(`local network ${response.status}`);
+        renderLocalNetwork(data);
+        refreshStatus();
+        return true;
+      } catch (err) {
+        window.logError?.(err, { context: 'link: local network change failed' });
+        if (error) error.hidden = false;
+        return false;
+      } finally {
+        if (toggle) toggle.disabled = false;
+      }
+    }
+
+    async function loadNetworkState() {
+      const data = await ctx.read('/app/network/api/state', { headers: { accept: 'application/json' } });
+      if (!data || typeof data.posture !== 'string') {
+        throw new Error('network state missing posture');
+      }
+      if (!data.link_copy || typeof data.link_copy !== 'object') {
+        throw new Error('network state missing link_copy');
+      }
+      if (!window.NetworkRender || typeof window.NetworkRender.applyCopy !== 'function') {
+        throw new Error('network renderer unavailable');
+      }
+      linkCopy = data.link_copy;
+      window.NetworkRender.applyCopy(workspaceRoot, linkCopy);
+      latestStatus = { posture: data.posture };
+      renderReach(latestStatus);
+      return data;
+    }
+
+    async function initLinkWorkspace() {
+      showWorkspaceLoading();
+      try {
+        await loadNetworkState();
+        revealWorkspace();
+        initLink();
+        reportNetworkReady('content');
+        revealed = true;
+        maybeLandOnDevices();
+      } catch (err) {
+        window.logError?.(err, { context: 'link: state load failed' });
+        showWorkspaceStateError(err);
+        reportNetworkReady('error');
+      }
+    }
+
+    function initLink() {
+      if (linkInitialized) return;
+      linkInitialized = true;
+      pairing = window.NetworkRender?.initPairingCeremony?.({
+        copy: () => linkCopy,
+        on: ctx.on,
+        setTimeout: ctx.setTimeout,
+        clearTimeout: ctx.clearTimeout,
+        setInterval: ctx.setInterval,
+        clearInterval: ctx.clearInterval,
+        listen: (tract, fn) => ctx.listen(tract, fn),
+        fetch: ctx.fetch,
+        clipboardWriteText,
+        showToast,
+        onPrivateLinkRepair: startPrivateLinkSetup,
+        onLocalNetworkOpen: () => setLocalNetwork(true),
+        windowsAsks: () => localNetworkWindowsAsks,
+        canChangeLocalNetwork: () => localNetworkCanChange,
+        canPairThisComputer: () => sameComputerPairing,
+        onDeviceRemoved: () => loadClients(),
+        onPrivateLinkDisable: () => {
+          if (!confirm(localNetworkClosed ? linkCopy.PRIVATE_LINK_DISABLE_CONFIRM_CLOSED : linkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
+          disablePrivateLink();
+        },
+      });
+      refreshStatus();
+      refreshPrivateLinkStatus();
+      refreshLocalNetwork();
+      loadIdentity();
+      // `?pair=phone|computer` opens the pair dialog with that device
+      // type chosen, so a setup step can link straight to it. Only on the
+      // page's first view: an in-page arrival there is a back or a forward,
+      // and opening it again would ask for a new pairing link.
+      const pairType = new URLSearchParams(location.search).get('pair');
+      const firstView = !window.solRouter?.arrival?.();
+      if (firstView && ['phone', 'computer'].includes(pairType)) pairing?.open(pairType);
+      const identityCopyBtn = document.getElementById('link-identity-id-copy');
+      if (identityCopyBtn) {
+        identityCopyBtn.addEventListener('click', async () => {
+          const idValue = document.getElementById('link-identity-id-value');
+          const text = idValue ? idValue.textContent : '';
+          if (!text) return;
+          const ok = await clipboardWriteText(text);
+          showToast(ok ? (linkCopy.IDENTITY_ID_COPY_SUCCESS_TOAST || 'journal id copied')
+                       : (linkCopy.IDENTITY_ID_COPY_FAIL_TOAST || "couldn't copy journal id"));
+        });
+      }
+      // Paused while the page is hidden, read again on return.
+      every(refreshStatus, 15000);
+      every(refreshPrivateLinkStatus, 15000);
+    }
+
+    const clientsList = document.getElementById('clientsList');
+
+    function escapeHtml(value) {
+      return window.AppServices.escapeHtml(value);
+    }
+
+    function emptyStateHTML() {
+      const copy = (key) => window.NetworkRender?.resolve(linkCopy, key) || '';
+      const empty = window.SurfaceState.empty({
+        heading: copy('DEVICE_EMPTY_TITLE'),
+        headingLevel: 'h3',
+        desc: copy('DEVICE_EMPTY_BODY'),
+        action: `<button type="button" class="modal-primary-btn" data-pairing-action="open" data-copy="DEVICE_PAIR_CTA">${escapeHtml(copy('DEVICE_PAIR_CTA'))}</button>`,
+      });
+      return empty;
+    }
+
+    // 'last check-in' is a per-device fact read from that device's own last_seen_at,
+    // not a page-load age (G3-217): three devices on one machine heartbeat within a
+    // minute of each other, so they honestly round to the same phrase. G3-306: the
+    // sentence that separates it from delivery used to be a title= tooltip, which a
+    // phone and a keyboard never reach, and 'last added' sat on the card face where
+    // the two could not be read against each other. Both values are labelled here,
+    // next to each other, and the distinction is visible text.
+    const CHECK_IN_NOTE = 'a device can add material without checking in again, so these two can differ.';
+
+    function clientStatsHTML(client, deliveryGroup) {
+      const segment = window.NetworkRender.segmentDisplay(client.last_accepted_segment);
+      // G3-216: the readable time answers the question; the storage key stays with
+      // it as the exact id rather than standing in for one.
+      const segmentCell = segment
+        ? `${escapeHtml(segment.readable || 'time unavailable')}<code class="client-segment-key">${escapeHtml(segment.key)}</code>`
+        : 'none';
+      const failure = client.ingest_rejection?.reason_code || client.unassessed_reason;
+      // The connection fact (open-socket heartbeat) is a distinct signal from delivery,
+      // but for an 'adding' device it says nothing the chip doesn't already say — see
+      // clientCardHTML, which omits it there entirely rather than passing it through.
+      const connectionLabel = deliveryGroup === 'adding' ? '' : window.NetworkRender.connectionLineLabel(client);
+      const lastAdded = client.last_accepted_ingest_at
+        ? window.JournalFormat.timestamp(client.last_accepted_ingest_at)
+        : 'nothing yet';
+      return `<dl>
+        <div><dt>last added</dt><dd>${escapeHtml(lastAdded)}</dd></div>
+        <div><dt>last check-in</dt><dd>${escapeHtml(window.NetworkRender.checkInLabel(client))}<span class="client-stat-note">${escapeHtml(CHECK_IN_NOTE)}</span></dd></div>
+        ${connectionLabel ? `<div><dt>connection</dt><dd>${escapeHtml(connectionLabel)}</dd></div>` : ''}
+        <div><dt>last journal segment</dt><dd>${segmentCell}</dd></div>
+        ${failure ? `<div><dt>delivery detail</dt><dd>${escapeHtml(failure)}</dd></div>` : ''}
+      </dl>`;
+    }
+
+    function groupHeaderHTML(group, label) {
+      return `<h3 class="client-group-header" data-group="${group}">${escapeHtml(label)}</h3>`;
+    }
+
+    // The never-delivered group can be most of the page (pairing debris that
+    // happens to share a delivery state), so it renders collapsed behind a
+    // count instead of at full card weight; every device stays reachable one
+    // click away. data-client-details keys into the same open-state tracking
+    // loadClients() already does for per-card disclosures, so this survives a
+    // live refresh too.
+    function collapsedGroupHTML(section) {
+      const label = `${section.label} (${section.clients.length})`;
+      return `
+        <details class="client-group-collapsed" data-client-details="group-${escapeHtml(section.group)}">
+          <summary class="client-group-header" data-group="${escapeHtml(section.group)}">${escapeHtml(label)}</summary>
+          ${section.clients.map(clientCardHTML).join('')}
+        </details>
+      `;
+    }
+
+    // The never-delivered group is pairing
+    // debris, and until now the only way to clear a row was the unpair button inside
+    // its own disclosure. 'forget this device' sits on the row face, asks in place
+    // rather than through a browser dialog, and posts to a route that refuses any
+    // device that has ever delivered material and refuses this journal's own host.
+    // G3-305 (round 3): a row offers exactly one way to remove a device. A device
+    // that never delivered is offered 'forget' and nothing else; a device that has
+    // delivered keeps 'unpair' in its disclosure and is never offered 'forget'. Both
+    // refusals on the forget route stay as they are.
+    function forgetActionHTML(client) {
+      const name = client.role === 'peer' ? 'another journal' : (client.display_label || client.device_label || client.client_label || client.cid_short);
+      return `
+        <div class="client-forget" data-forget-cid="${escapeHtml(client.cid)}">
+          <button type="button" class="client-forget-open" data-forget-action="ask">forget this device</button>
+          <div class="client-forget-confirm" hidden>
+            <p class="client-forget-question">forget ${escapeHtml(name)}? it will need to pair again to add anything.</p>
+            <div class="client-forget-buttons">
+              <button type="button" class="danger" data-forget-action="confirm">forget</button>
+              <button type="button" data-forget-action="cancel">keep it</button>
+            </div>
+          </div>
+          <p class="client-forget-status" role="status" hidden></p>
+        </div>
+      `;
+    }
+
+    let clientsEpoch = 0;
+    const clientLabels = window.NetworkRender.createClientLabels({
+      request: async (cid, label) => {
+        ++clientsEpoch;
+        try {
+          return await window.apiJson(`/app/network/api/clients/${encodeURIComponent(cid)}/label`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }),
+            signal: AbortSignal.timeout(15000), noAuthRedirect: true,
+          });
+        } finally { ++clientsEpoch; }
+      },
+      changed: (cid) => {
+        if (ctx.disposed) return;
+        const card = clientsList.querySelector(`.client-card[data-cid="${CSS.escape(cid)}"]`);
+        const state = clientLabels.editor(cid);
+        if (!state) { card?.remove(); ++clientsEpoch; loadClients(); return; }
+        const section = card?.querySelector('.client-label-section');
+        const activeElement = document.activeElement;
+        const active = section?.contains(activeElement) ? activeElement.dataset.labelAction : null;
+        const selection = active === 'input' ? [activeElement.selectionStart, activeElement.selectionEnd, activeElement.selectionDirection] : null;
+        if (section) section.outerHTML = clientLabelHTML(state.row);
+        if (card) {
+          const displayName = state.row.role === 'peer' ? 'another journal' : state.row.display_label;
+          card.querySelector('.client-name').textContent = displayName;
+          const render = window.NetworkRender;
+          const connection = render.deliveryGroupFor(state.row) === 'adding' ? '' : render.connectionLineLabel(state.row);
+          card.setAttribute('aria-label', [displayName, render.deliveryChipLabel(state.row), connection].filter(Boolean).join(', '));
+          const question = card.querySelector('.client-forget-question');
+          if (question) question.textContent = `forget ${displayName}? it will need to pair again to add anything.`;
+          if (active) {
+            const target = card.querySelector(`[data-label-action="${active}"]`);
+            target?.focus();
+            if (selection && target?.setSelectionRange) target.setSelectionRange(...selection);
+          }
+        }
+        if (!state.pending) loadClients();
+      },
+    });
+
+    function clientLabelHTML(client) {
+      const state = clientLabels.editor(client.cid);
+      if (!state) return '';
+      const cid = escapeHtml(client.cid);
+      const facts = [['reported name', client.reported?.name], ['platform', client.reported?.platform],
+        ['device type', client.reported?.device_type], ['app', client.reported?.app_id],
+        ['app version', client.reported?.app_version]].filter(([, value]) => typeof value === 'string' && value);
+      const reported = facts.length ? `<dl>${facts.map(([label, value]) =>
+        `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>`
+        : "<p>device details haven't been shared yet.</p>";
+      const editor = `
+        <form data-label-cid="${cid}" aria-busy="${state.pending}">
+          <label for="client-label-${cid}">your name for this device</label>
+          <input id="client-label-${cid}" data-label-action="input" type="text" value="${escapeHtml(state.draft)}"
+            aria-describedby="client-label-help-${cid}" ${state.pending ? 'readonly' : ''}>
+          <p id="client-label-help-${cid}">leave blank to use the device's reported name when available.</p>
+          <div class="client-label-actions">
+            <button type="submit" data-label-action="save" aria-disabled="${state.pending}">save name</button>
+            <button type="button" data-label-action="clear" aria-disabled="${state.pending}">clear your name</button>
+            <button type="button" data-label-action="cancel" aria-disabled="${state.pending}">cancel edit</button>
+          </div>
+        </form>`;
+      return `<div class="client-label-section">${editor}
+        <p role="status" class="client-label-status">${escapeHtml(state.message)}</p>${reported}</div>`;
+    }
+
+    clientsList.addEventListener('input', (event) => {
+      const form = event.target.closest('form[data-label-cid]');
+      if (form && event.target.matches('[data-label-action="input"]')) {
+        clientLabels.input(form.dataset.labelCid, event.target.value);
+        const status = form.closest('.client-label-section')?.querySelector('.client-label-status');
+        if (status) status.textContent = clientLabels.editor(form.dataset.labelCid)?.message || '';
+      }
+    });
+    clientsList.addEventListener('submit', (event) => {
+      const form = event.target.closest('form[data-label-cid]');
+      if (!form) return;
+      event.preventDefault(); clientLabels.save(form.dataset.labelCid);
+    });
+    clientsList.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-label-action]');
+      const form = button?.closest('form[data-label-cid]');
+      if (!form) return;
+      if (button.dataset.labelAction === 'clear') clientLabels.save(form.dataset.labelCid, true);
+      if (button.dataset.labelAction === 'cancel') clientLabels.cancel(form.dataset.labelCid);
+    });
+
+    function clientCardHTML(client) {
+      const render = window.NetworkRender;
+      const displayName = client.role === 'peer' ? 'another journal' : (client.display_label || client.device_label || client.client_label || client.cid_short);
+      const deliveryLabel = render.deliveryChipLabel(client);
+      const deliveryGroup = render.deliveryGroupFor(client);
+      // A device that is actively adding says so in the chip already; a stale
+      // heartbeat under the same card said the opposite one line down (G3-110).
+      // Only devices outside 'adding' get a connection fact at all, and it lives
+      // in the disclosure (clientStatsHTML), not the card face.
+      const connectionLabel = deliveryGroup === 'adding' ? '' : render.connectionLineLabel(client);
+      const ariaLabel = [displayName, deliveryLabel, connectionLabel].filter(Boolean).join(', ');
+      const lastAdded = client.last_accepted_ingest_at
+        ? `<p class="client-last-material">last added ${escapeHtml(window.JournalFormat.timestamp(client.last_accepted_ingest_at))}</p>`
+        : '';
+      const pairedDay = render.dayKeyFor(client.paired_at);
+      const pairedLabel = pairedDay ? `paired ${window.JournalFormat.day(pairedDay)}` : '';
+      return `
+        <div class="client-card ${client.failing ? 'stale' : 'neutral'}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}">
+          <div class="client-header">
+            <span class="client-name">${escapeHtml(displayName)}</span>
+            <span class="client-status ${render.deliveryChipClass(client)}">${escapeHtml(deliveryLabel)}</span>
+          </div>
+          ${lastAdded}
+          ${pairedLabel ? `<p class="client-paired">${escapeHtml(pairedLabel)}</p>` : ''}
+          ${deliveryGroup === 'never' ? forgetActionHTML(client) : ''}
+          <details class="client-details" data-client-details="${escapeHtml(client.cid)}">
+            <summary>device details</summary>
+            ${clientLabelHTML(client)}
+            <div class="client-stats">${clientStatsHTML(client, deliveryGroup)}<dl><div><dt>device id</dt><dd>${escapeHtml(client.cid)}</dd></div></dl></div>
+          ${deliveryGroup === 'never' ? '' : `<div class="client-actions">
+            <button class="danger" data-cid="${escapeHtml(client.cid)}" data-network-action="unpair">unpair</button>
+          </div>`}
+          </details>
+        </div>
+      `;
+    }
+
+    function renderClients(clients) {
+      if (!clients || clients.length === 0) {
+        return emptyStateHTML();
+      }
+
+      const html = window.NetworkRender.groupClientsByDelivery(clients)
+        .map((section) => (
+          section.group === 'never'
+            ? collapsedGroupHTML(section)
+            : groupHeaderHTML(section.group, section.label) + section.clients.map(clientCardHTML).join('')
+        ))
+        .join('');
+
+      return html || emptyStateHTML();
+    }
+
+    async function loadClients() {
+      const epoch = ++clientsEpoch;
+      try {
+        // Each call asks again, as a poll and a redraw after a write want.
+        const payload = await ctx.read('/app/network/api/clients', { fresh: true });
+        if (!payload || typeof payload !== 'object' || !Array.isArray(payload.clients)) {
+          throw new window.ApiError({
+            status: 200,
+            statusText: 'OK',
+            serverMessage: '',
+            url: '/app/network/api/clients',
+            cause: 'parse',
+          });
+        }
+        if (epoch !== clientsEpoch) return;
+        const clients = clientLabels.receive(payload.clients);
+
+        // Rebuild on every poll so grouped headers stay aligned with server ordering.
+        const activeEl = document.activeElement;
+        let focusSelector = null;
+        const labelSelection = activeEl?.matches('[data-label-action="input"]')
+          ? [activeEl.selectionStart, activeEl.selectionEnd, activeEl.selectionDirection] : null;
+        if (activeEl && clientsList.contains(activeEl)) {
+          const card = activeEl.closest('.client-card');
+          if (card) {
+            const cid = card.getAttribute('data-cid');
+            if (activeEl.dataset.labelAction) focusSelector = `.client-card[data-cid="${CSS.escape(cid)}"] [data-label-action="${activeEl.dataset.labelAction}"]`;
+            const buttons = [...card.querySelectorAll('button')];
+            const btnIndex = buttons.indexOf(activeEl);
+            if (btnIndex >= 0 && !focusSelector) {
+              focusSelector = `[data-cid="${CSS.escape(cid)}"] button:nth-child(${btnIndex + 1})`;
+            }
+          }
+        }
+        const openForgets = new Set(
+          [...clientsList.querySelectorAll('.client-forget')]
+            .filter(el => !el.querySelector('.client-forget-confirm')?.hidden)
+            .map(el => el.dataset.forgetCid),
+        );
+        const openDetails = new Set([...clientsList.querySelectorAll('details[open]')].map(el => el.dataset.clientDetails));
+        if (activeEl?.matches('summary')) {
+          focusSelector = `[data-client-details="${CSS.escape(activeEl.parentElement.dataset.clientDetails)}"] > summary`;
+        }
+        const scrollTop = clientsList.scrollTop;
+
+        clientsList.innerHTML = renderClients(clients);
+        clientsList.querySelectorAll('details').forEach(el => { el.open = openDetails.has(el.dataset.clientDetails); });
+        clientsList.querySelectorAll('.client-forget').forEach(el => {
+          setForgetAsking(el, openForgets.has(el.dataset.forgetCid));
+        });
+        clientsList.scrollTop = scrollTop;
+
+        if (focusSelector) {
+          const target = clientsList.querySelector(focusSelector);
+          if (target) {
+            target.focus();
+            if (labelSelection && target.setSelectionRange) target.setSelectionRange(...labelSelection);
+          }
+        }
+      } catch (err) {
+        if (epoch !== clientsEpoch) return;
+        window.SurfaceState.replaceLoading('clientsList', window.SurfaceState.error({
+          heading: 'your devices couldn\'t be loaded.',
+          desc: window.CONVEY_COPY.RELOAD_HINT,
+          serverMessage: window.SurfaceState.serverMessageFrom(err),
+          detail: err,
+        }));
+      }
+    }
+
+    function setForgetAsking(row, asking) {
+      const confirmEl = row.querySelector('.client-forget-confirm');
+      const openEl = row.querySelector('.client-forget-open');
+      if (!confirmEl || !openEl) return;
+      confirmEl.hidden = !asking;
+      openEl.hidden = asking;
+    }
+
+    function showForgetStatus(row, message) {
+      const status = row.querySelector('.client-forget-status');
+      if (!status) return;
+      status.textContent = message || '';
+      status.hidden = !message;
+    }
+
+    async function forgetDevice(row) {
+      const cid = row.dataset.forgetCid;
+      const confirmBtn = row.querySelector('[data-forget-action="confirm"]');
+      if (!cid || !confirmBtn || confirmBtn.disabled) return;
+      confirmBtn.disabled = true;
+      showForgetStatus(row, 'forgetting…');
+      try {
+        const response = await fetch(`/app/network/api/devices/${encodeURIComponent(cid)}/forget`, {
+          method: 'POST',
+          headers: { accept: 'application/json' },
+        });
+        if (ctx.disposed) return;
+        if (!response.ok) {
+          let detail = '';
+          try {
+            detail = (await response.json())?.detail || '';
+          } catch (_err) {
+            detail = '';
+          }
+          showForgetStatus(row, detail || 'that device couldn\'t be forgotten. ' + window.CONVEY_COPY.RELOAD_HINT);
+          confirmBtn.disabled = false;
+          return;
+        }
+        setForgetAsking(row, false);
+        loadClients();
+      } catch (err) {
+        if (ctx.disposed) return;
+        showForgetStatus(row, 'that device couldn\'t be forgotten. your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT);
+        confirmBtn.disabled = false;
+      }
+    }
+
+    clientsList.addEventListener('click', (event) => {
+      const control = event.target?.closest?.('[data-forget-action]');
+      if (!control || !clientsList.contains(control)) return;
+      const row = control.closest('.client-forget');
+      if (!row) return;
+      const action = control.dataset.forgetAction;
+      if (action === 'ask') {
+        showForgetStatus(row, '');
+        setForgetAsking(row, true);
+        // Focus the safe choice, not the destructive one: a held Enter on "forget
+        // this device" would otherwise repeat straight through the confirm. "keep
+        // it" sits in the same button row, so the confirm is one Tab away.
+        row.querySelector('[data-forget-action="cancel"]')?.focus();
+      } else if (action === 'cancel') {
+        setForgetAsking(row, false);
+        row.querySelector('.client-forget-open')?.focus();
+      } else if (action === 'confirm') {
+        forgetDevice(row);
+      }
+    });
+
+    function clientNameFor(button) {
+      return button.closest('.client-card')?.querySelector('.client-name')?.textContent || 'this device';
+    }
+
+    async function unpairClient(cid, button) {
+      const name = clientNameFor(button);
+      const copy = linkCopy || {};
+      const title = (copy.UNPAIR_TITLE_FORMAT || "unpair '{label}'?").replace('{label}', name);
+      if (!confirm(copy.UNPAIR_BODY ? `${title}\n\n${copy.UNPAIR_BODY}` : title)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/app/network/api/clients/${encodeURIComponent(cid)}`, {
+          method: 'DELETE'
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || 'Failed to unpair');
+        }
+
+        loadClients();
+      } catch (err) {
+        if (ctx.disposed) return;
+        const msg = 'that device couldn\'t be removed. your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT;
+        window.showError?.(msg);
+      }
+    }
+
+    // #devices is where every add-a-device link lands. The section is inside
+    // content revealed only once the network state loads, and the cards above it
+    // fill in after that, so keep it in view while the page settles. Stop as soon
+    // as the owner scrolls or acts, and after a few seconds regardless.
+    function landOnDevices() {
+      const devices = document.getElementById('devices');
+      if (location.hash !== '#devices' || !devices?.isConnected) return;
+      const interrupts = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+      let settled = false;
+      const place = () => {
+        if (settled || !devices.getClientRects().length) return;
+        devices.scrollIntoView({block: 'start'});
+      };
+      const observer = typeof ResizeObserver === 'function' ? ctx.observe(new ResizeObserver(place)) : null;
+      const offs = [];
+      const stop = () => {
+        settled = true;
+        observer?.disconnect();
+        offs.splice(0).forEach(off => off());
+      };
+      observer?.observe(document.body);
+      interrupts.forEach(type => offs.push(ctx.on(window, type, stop, {capture: true, passive: true})));
+      devices.focus({preventScroll: true});
+      place();
+      ctx.setTimeout(stop, 3000);
+    }
+
+    // The page's own interval timer where the shell's isn't loaded.
+    const every = window.AppServices?.visibleInterval
+      ? (fn, ms) => ctx.visibleInterval(fn, ms)
+      : (fn, ms) => ctx.setInterval(fn, ms);
+    let pairing = null;
+    ctx.onDispose(() => {
+      pairing?.dispose?.();
+      // The dialog may have held the rest of the page inert.
+      window.ConveyModalLayer?.reconcile?.();
+    });
+
+    // A card's unpair, drawn by the list, acts through the mount.
+    workspaceRoot.addEventListener('click', (event) => {
+      const control = event.target?.closest?.('[data-network-action="unpair"]');
+      if (!control || !workspaceRoot.contains(control)) return;
+      unpairClient(control.dataset.cid, control);
+    });
+
+    // `#devices` is where every add-a-device link lands: once the page is
+    // shown and the list drawn, after the router has placed the view, and not
+    // on a back or forward, which keeps the scroll the owner left.
+    let revealed = false;
+    let clientsDrawn = false;
+    let landingDue = window.solRouter?.arrival?.() !== 'pop';
+    function maybeLandOnDevices() {
+      if (!landingDue || !revealed || !clientsDrawn) return;
+      landingDue = false;
+      ctx.setTimeout(landOnDevices, 0);
+    }
+
+    loadClients().then(() => {
+      clientsDrawn = true;
+      maybeLandOnDevices();
+    });
+    every(loadClients, 30000);
+    initLinkWorkspace();
   }
-}
 
-// #devices is where every add-a-device link lands. The section is inside
-// content revealed only once the network state loads, and the cards above it
-// fill in after that, so keep it in view while the page settles. Stop as soon
-// as the owner scrolls or acts, and after a few seconds regardless.
-function landOnDevices() {
-  const devices = document.getElementById('devices');
-  if (location.hash !== '#devices' || !devices?.isConnected) return;
-  const interrupts = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
-  let settled = false;
-  const place = () => {
-    if (settled || !devices.getClientRects().length) return;
-    devices.scrollIntoView({block: 'start'});
-  };
-  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(place) : null;
-  const stop = () => {
-    settled = true;
-    observer?.disconnect();
-    interrupts.forEach(type => window.removeEventListener(type, stop, true));
-  };
-  observer?.observe(document.body);
-  interrupts.forEach(type => window.addEventListener(type, stop, {capture: true, passive: true}));
-  devices.focus({preventScroll: true});
-  place();
-  setTimeout(stop, 3000);
-}
-
-function initClients() {
-  loadClients().then(landOnDevices);
-
-  const every = (window.AppServices?.visibleInterval ? (fn, ms) => window.AppServices.visibleInterval(fn, ms) : (fn, ms) => window.setInterval(fn, ms));
-  every(loadClients, 30000);
-}
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initClients);
-} else {
-  initClients();
-}
+  window.SolViews.register('network', { mount: mountNetwork });
+})();
 </script>

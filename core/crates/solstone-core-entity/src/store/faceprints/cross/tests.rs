@@ -15,6 +15,8 @@ fn compatible_names_cover_each_rule_and_word_boundaries() {
         ("Casey Lane", "casey lane"),
         ("Casey", "Casey Lane"),
         ("Marianne", "Marianne K"),
+        ("Casey Lane", "Kasey Lane"),
+        ("abcdefghijklmnopqrst", "abcdefghijklmnopqxyz"),
         ("Jon North", "Jonathan North"),
         ("Casey Lane (Guest)|Company", "casey lane"),
     ] {
@@ -24,6 +26,7 @@ fn compatible_names_cover_each_rule_and_word_boundaries() {
     for (a, b) in [
         ("Case", "Casey Lane"),
         ("Jon North", "Jane South"),
+        ("abcdefghijklmnopqrst", "abcdefghijklmnopyzvw"),
         ("", ""),
         ("...", "?"),
     ] {
@@ -85,7 +88,7 @@ mod disk {
         let root = t.path();
         std::fs::create_dir_all(root.join("config")).unwrap();
         std::fs::write(
-            root.join("config/journal.json"),
+            root.join("config").join("journal.json"),
             json!({"faces":{"enabled":true}}).to_string(),
         )
         .unwrap();
@@ -147,7 +150,7 @@ mod disk {
         )
         .unwrap();
         std::fs::write(
-            root.join("config/journal.json"),
+            root.join("config").join("journal.json"),
             json!({"faces":{"enabled":false}}).to_string(),
         )
         .unwrap();
@@ -172,7 +175,7 @@ mod disk {
         let record = json!({"id":"meeting","activity":"meeting","segments":[]});
         for enabled in [true, false] {
             std::fs::write(
-                root.join("config/journal.json"),
+                root.join("config").join("journal.json"),
                 json!({"faces":{"enabled":enabled}}).to_string(),
             )
             .unwrap();
@@ -200,7 +203,7 @@ mod disk {
         assert!(!root.join("entities").exists());
         std::fs::create_dir_all(root.join("config")).unwrap();
         std::fs::write(
-            root.join("config/journal.json"),
+            root.join("config").join("journal.json"),
             json!({"faces":{"enabled":true}}).to_string(),
         )
         .unwrap();
@@ -211,7 +214,7 @@ mod disk {
         update_backfill(root, backfill.clone()).unwrap();
         assert_eq!(load(root).unwrap().backfill, backfill);
         std::fs::write(
-            root.join("config/journal.json"),
+            root.join("config").join("journal.json"),
             json!({"faces":{"enabled":false}}).to_string(),
         )
         .unwrap();

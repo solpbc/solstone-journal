@@ -376,6 +376,39 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     assert.deepStrictEqual(K('erase', [orig('a'), ent('b')]).paragraphs, [C.bodyMany, C.mentionsMany, C.originalsStaysMany]);
   }
 
+  // A segment its import's file still holds: the row says where that import is,
+  // a refused recover's note is only for a row that doesn't, and erasing the
+  // import says its waiting segments go too.
+  {
+    const own = (id, state, extra = {}) => seg(id, { import: { id: '20261110_090000', label: 'standup.m4a', state }, ...extra });
+    assert.deepStrictEqual(lines(await rowOf(own('i1', 'trashed')), 'trash-returned'), [C.importTrashedLabel.replace('{label}', 'standup.m4a')]);
+    assert.deepStrictEqual(lines(await rowOf(own('i2', 'trashed', { import: { id: 'x', label: null, state: 'trashed' } })), 'trash-returned'), [C.importTrashed]);
+    assert.deepStrictEqual(lines(await rowOf(own('i3', 'gone')), 'trash-returned'), [C.importGone]);
+    assert.deepStrictEqual(lines(await rowOf(own('i4', 'live')), 'trash-returned'), [], 'its import is in the journal: nothing new');
+    const items = [own('r1', 'trashed'), seg('r2'), own('r3', 'gone')];
+    answers['api/trash'] = { erase_after_days: 7, items };
+    await api.loadTrash();
+    byId.trashSelectAll.fire('change');
+    answers['api/trash/recover'] = { done: [], failed: [
+      { id: 'r1', reason: 'import_in_trash', detail: { code: 'import_in_trash' } },
+      { id: 'r2', reason: 'import_in_trash', detail: { code: 'import_in_trash' } },
+      { id: 'r3', reason: 'import_gone', detail: { code: 'import_gone' } },
+    ] };
+    byId.trashRecoverBtn.fire('click');
+    await flush();
+    const note = (id) => lines(byId.trashList.children[items.findIndex((item) => item.id === id)], 'trash-row-note');
+    assert.deepStrictEqual(note('r1'), [], 'its line already says its import is in the trash');
+    assert.deepStrictEqual(note('r2'), [C.notes.importInTrash]);
+    assert.deepStrictEqual(note('r3'), [], 'a gone import is said by the row');
+    assert.strictEqual(byId.trashResult.textContent, C.recoverStuckMany, 'no try again');
+    const upload = { id: 'u1', kind: 'import', source: 'audio', import_id: '20261110_090000', label: 'standup.m4a', imported_day: '20261110', segments: 1, days: ['20261110', '20261110'], trashed_at: '2026-11-10T10:00:00Z', erase_at: LATER, bytes: 1024, surface: 'transcripts', takes: 2 };
+    answers['api/trash'] = { erase_after_days: 7, items: [upload, own('w1', 'trashed'), own('w2', 'trashed')] };
+    await api.loadTrash();
+    assert.ok(K('erase', [upload]).paragraphs.includes(C.waitingOwnOneMany.replace('{w}', 2)));
+    assert.ok(!K('erase', [upload, own('w1', 'trashed')]).paragraphs.includes(C.waitingOwnOneMany.replace('{w}', 2)), 'a picked segment is listed already');
+    assert.ok(K('erase', [upload, own('w1', 'trashed')]).paragraphs.includes(C.waitingOwnOneOne));
+  }
+
   // A facet recovered over another of its name confirms first; nothing else does.
   {
     answers['api/trash'] = { erase_after_days: 7, items: [fac('f1', { replaces: true }), ent('e1'), fac('f2')] };

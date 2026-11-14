@@ -20,10 +20,11 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 solstone-core-indexer-store = { workspace = true }
 solstone-core-retention = { workspace = true }
+solstone-core-import.workspace = true
+solstone-core-trash.workspace = true
 
 [dev-dependencies]
 rusqlite.workspace = true
-solstone-core-trash.workspace = true
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 solstone-core-journal-io.workspace = true
 

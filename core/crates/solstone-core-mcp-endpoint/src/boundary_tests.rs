@@ -2423,10 +2423,8 @@ fn unreadable_or_deleted_segments_get_no_link_and_search_still_succeeds() {
     PermissionStore::open(journal.path())
         .set_permission(CONNECTION, ReadPermission::default_whole_journal())
         .unwrap();
-    assert_eq!(
-        probe(&journal, "get_transcript", json!({"reference": old_link})),
-        Err(McpProbeError::Unavailable)
-    );
+    // A link's name outlives a permission set again to the same thing.
+    assert!(probe(&journal, "get_transcript", json!({"reference": old_link})).is_ok());
 
     let search2 = probe(
         &journal,
@@ -4693,6 +4691,17 @@ fn apostrophe_name_returns_its_granted_facet_context() {
 }
 
 fn resolve_entity_reference(journal: &Path, reference: &str) -> (String, String) {
+    // A name is written with the facet's folder; the tests compare its id.
+    if let Some((entity_id, folder)) = crate::names::parse_entity(reference) {
+        let declaration =
+            fs::read_to_string(journal.join("facets").join(&folder).join("facet.json"))
+                .expect("the named facet's declaration");
+        let facet_id = serde_json::from_str::<Value>(&declaration).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        return (facet_id, entity_id);
+    }
     let snapshot = match evaluate_connection_read(journal, CONNECTION) {
         PermissionDecision::Snapshot(s) => s,
         _ => panic!("must have snapshot"),
@@ -5491,6 +5500,20 @@ fn cursor_validation_and_invalidation() {
         ),
         Err(McpProbeError::Unavailable)
     );
+    // A cursor dies with the permission it was given under. An entity's name
+    // doesn't: it reads while the permission still covers it, and not after.
+    assert!(probe(&journal, "get_entity", json!({"reference": ent_ref})).is_ok());
+    PermissionStore::open(journal.path())
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["entities".to_owned(), "facets".to_owned()],
+                scope: ReadScope::Facets {
+                    ids: vec![FACET_B.to_owned()],
+                },
+            },
+        )
+        .unwrap();
     assert_eq!(
         probe(&journal, "get_entity", json!({"reference": ent_ref})),
         Err(McpProbeError::Unavailable)
@@ -6722,6 +6745,29 @@ fn capture_zone_isolates_multi_stream_segments_and_respects_access_grants() {
         .set_permission(
             "bearer:other-bearer",
             ReadPermission::default_whole_journal(),
+        )
+        .unwrap();
+    // A segment's name is the same for every connection, and each one's own
+    // permission decides the read: one that may read it does, one that may
+    // not finds nothing.
+    assert!(
+        run_mcp_probe(
+            journal.path(),
+            "bearer:other-bearer",
+            "get_transcript",
+            &json!({"reference": alpha_ref}),
+        )
+        .is_ok()
+    );
+    PermissionStore::open(journal.path())
+        .set_permission(
+            "bearer:other-bearer",
+            ReadPermission {
+                categories: vec!["transcripts".to_owned()],
+                scope: ReadScope::Facets {
+                    ids: vec![FACET_B.to_owned()],
+                },
+            },
         )
         .unwrap();
     assert_eq!(
@@ -8357,12 +8403,12 @@ fn activity_changes_stay_out_until_the_file_is_indexed_again() {
     );
     plant_activity_proof(journal.path(), sym, 0, false);
     assert_eq!(activity_hits_for(&journal, "symactivityneedle").len(), 1);
-    let sym_path = journal.path().join(sym);
     let sym_target = journal.path().join("symlink-target.jsonl");
     fs::write(&sym_target, sym_body).unwrap();
-    let sym_bytes = fs::read(&sym_path).unwrap();
     #[cfg(unix)]
     {
+        let sym_path = journal.path().join(sym);
+        let sym_bytes = fs::read(&sym_path).unwrap();
         fs::remove_file(&sym_path).unwrap();
         std::os::unix::fs::symlink(&sym_target, &sym_path).unwrap();
         assert!(activity_hits_for(&journal, "symactivityneedle").is_empty());
@@ -10557,6 +10603,11 @@ fn write_direct_segment_file(
 }
 
 fn segment_stream(journal: &Path, reference: &str) -> String {
+    if crate::names::is_name(reference) {
+        return crate::names::resolve_segment(journal, reference)
+            .expect("a segment's name")
+            .stream;
+    }
     let PermissionDecision::Snapshot(snapshot) = evaluate_connection_read(journal, CONNECTION)
     else {
         panic!("connection snapshot");
@@ -10573,6 +10624,11 @@ fn segment_stream(journal: &Path, reference: &str) -> String {
 }
 
 fn activity_identity(journal: &Path, reference: &str) -> String {
+    if crate::names::is_name(reference) {
+        return crate::names::parse_activity(reference)
+            .expect("an activity's name")
+            .record_identity;
+    }
     let PermissionDecision::Snapshot(snapshot) = evaluate_connection_read(journal, CONNECTION)
     else {
         panic!("connection snapshot");
