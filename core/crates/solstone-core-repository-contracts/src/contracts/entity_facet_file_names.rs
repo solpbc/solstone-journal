@@ -227,6 +227,13 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
         "derived: the durability registry declares each artifact's class and glob, below the owners",
     ),
     (
+        "core/crates/solstone-core-entity/src/store/merge.rs",
+        "OWNER_VOICE",
+        "owner_centroid.npz",
+        1,
+        "derived: an entity merge whose principal is merged away moves the owner's voice file into the survivor's folder as it is, under the merge's trust lock and rollback; reads none",
+    ),
+    (
         "core/crates/solstone-core-speaker-resolve/src/artifact_wipe.rs",
         "wipe_paths",
         "owner_centroid.npz",
