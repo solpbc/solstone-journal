@@ -229,7 +229,7 @@ fn plan_once(journal: &Path, from: NaiveDateTime, to: NaiveDateTime) -> Plan {
             } else if end - start >= Duration::days(1) && !(from <= start && end <= to) {
                 Some(Why::WholeDay)
             } else {
-                in_flight(journal, &key, &stream, &segment, &place)
+                in_flight(&place)
             };
             if let Some(why) = why {
                 left_out.push(LeftOut {
@@ -435,7 +435,7 @@ const INGEST_STAGE: &str = ".tmp_ingest-stage.tmp";
 /// part way, or something holding it or one of its outputs now, or a modality
 /// the journal is analyzing. A segment merely waiting for processing isn't in
 /// flight: nothing is working on it, and processing may be off.
-fn in_flight(journal: &Path, day: &str, stream: &str, name: &str, place: &Path) -> Option<Why> {
+fn in_flight(place: &Path) -> Option<Why> {
     if place.join(INGEST_STAGE).exists() {
         return Some(Why::Arriving);
     }
@@ -453,18 +453,30 @@ fn in_flight(journal: &Path, day: &str, stream: &str, name: &str, place: &Path) 
             }
         }
     }
-    let states = solstone_core_system_health::read_segment_data_state(
-        journal,
-        day,
-        name,
-        Some(stream),
-        chrono::Utc::now(),
-    );
-    states
-        .0
-        .values()
-        .any(|state| state == "analyzing")
-        .then_some(Why::Processing)
+    analyzing(place).then_some(Why::Processing)
+}
+
+/// How long a reprocess's `.analyzing_<modality>` marker counts as work going
+/// on: the journal's own health reading treats an older one as stale.
+const ANALYZING_FRESH: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+
+/// Whether a modality of the segment is being analyzed now: a fresh marker.
+fn analyzing(place: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(place) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with(".analyzing_"))
+            && entry
+                .metadata()
+                .and_then(|meta| meta.modified())
+                .ok()
+                .and_then(|at| at.elapsed().ok())
+                .is_some_and(|age| age < ANALYZING_FRESH)
+    })
 }
 
 /// What one delete of a stretch did.
