@@ -47,7 +47,26 @@
     const documentRef = options.document || global.document;
     const root = findById(documentRef, 'link-workspace-root');
     const dialog = findById(documentRef, 'link-pairing-dialog');
-    if (!root || !dialog || typeof global.fetch !== 'function') return null;
+    // A view on the view contract passes its own hooks, so everything the
+    // ceremony adds outside its markup goes when the view goes. Bare calls use
+    // the page's own.
+    const fetchFn = typeof options.fetch === 'function' ? options.fetch : global.fetch;
+    const listenFor = typeof options.on === 'function'
+      ? options.on
+      : (target, type, fn) => target.addEventListener(type, fn);
+    const timers = {
+      setTimeout: options.setTimeout || ((fn, ms) => global.setTimeout(fn, ms)),
+      clearTimeout: options.clearTimeout || ((id) => global.clearTimeout(id)),
+      setInterval: options.setInterval || (typeof global.setInterval === 'function' ? (fn, ms) => global.setInterval(fn, ms) : null),
+      clearInterval: options.clearInterval || ((id) => global.clearInterval?.(id)),
+    };
+    const listenLive = () => (typeof options.listen === 'function'
+      ? options.listen
+      : (global.appEvents && typeof global.appEvents.listen === 'function'
+        ? (tract, fn) => global.appEvents.listen(tract, fn)
+        : null));
+    let disposed = false;
+    if (!root || !dialog || typeof fetchFn !== 'function') return null;
 
     const elements = {
       starting: findById(documentRef, 'link-pairing-starting'),
@@ -96,7 +115,7 @@
     };
 
     function copy(key) {
-      return resolve(global.LinkCopy, key);
+      return resolve(typeof options.copy === 'function' ? options.copy() : global.LinkCopy, key);
     }
 
     function prefix() {
@@ -109,11 +128,11 @@
 
     function clearTimer() {
       if (ceremony.timer !== null) {
-        global.clearTimeout(ceremony.timer);
+        timers.clearTimeout(ceremony.timer);
         ceremony.timer = null;
       }
       if (ceremony.tick !== null) {
-        global.clearInterval?.(ceremony.tick);
+        timers.clearInterval(ceremony.tick);
         ceremony.tick = null;
       }
     }
@@ -274,7 +293,7 @@
       elements.remove.disabled = true;
       let removed = false;
       try {
-        const response = await global.fetch(`${prefix()}/api/clients/${encodeURIComponent(cid)}`, { method: 'DELETE' });
+        const response = await fetchFn(`${prefix()}/api/clients/${encodeURIComponent(cid)}`, { method: 'DELETE' });
         removed = response.ok;
       } catch (_error) {
         removed = false;
@@ -401,13 +420,13 @@
       ceremony.deadline = now() + seconds * 1000;
       // The line counts down while the dialog is open; the timeout below is
       // what actually ends the code.
-      if (typeof global.setInterval === 'function') {
-        ceremony.tick = global.setInterval(() => {
+      if (timers.setInterval) {
+        ceremony.tick = timers.setInterval(() => {
           if (generation !== ceremony.generation || ceremony.state !== 'material') return;
           renderNetworkLine(Math.max(0, (ceremony.deadline - now()) / 1000));
         }, 1000);
       }
-      ceremony.timer = global.setTimeout(() => {
+      ceremony.timer = timers.setTimeout(() => {
         if (generation !== ceremony.generation || ceremony.state !== 'material') return;
         clearSubscription();
         ceremony.material = null;
@@ -416,8 +435,9 @@
     }
 
     function listenForCompletion(generation) {
-      if (!global.appEvents || typeof global.appEvents.listen !== 'function') return;
-      ceremony.unsubscribe = global.appEvents.listen('link', () => {
+      const listen = listenLive();
+      if (!listen) return;
+      ceremony.unsubscribe = listen('link', () => {
         if (generation !== ceremony.generation || ceremony.state !== 'material') return;
         checkCurrentNonce(generation);
       });
@@ -430,7 +450,7 @@
       let response;
       let body;
       try {
-        response = await global.fetch(`${prefix()}/api/pair/nonce-status?nonce=${encodeURIComponent(nonce)}`, {
+        response = await fetchFn(`${prefix()}/api/pair/nonce-status?nonce=${encodeURIComponent(nonce)}`, {
           headers: { accept: 'application/json' },
         });
         body = await responseBody(response);
@@ -467,7 +487,7 @@
       let response;
       let body;
       try {
-        response = await global.fetch(`${prefix()}/pair-start`, {
+        response = await fetchFn(`${prefix()}/pair-start`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', accept: 'application/json' },
           body: JSON.stringify(ceremony.sameMachine ? { same_machine: true } : {}),
@@ -531,6 +551,7 @@
 
     function restoreOpenerFocus() {
       global.requestAnimationFrame(() => {
+        if (disposed) return;
         const opener = root.querySelector(ceremony.openerSelector);
         if (opener && opener.isConnected && typeof opener.focus === 'function') {
           opener.focus();
@@ -615,15 +636,24 @@
       }
     });
 
-    documentRef.addEventListener('keydown', (event) => {
+    listenFor(documentRef, 'keydown', (event) => {
       if (event.key === 'Escape' && !dialog.hidden) {
         event.preventDefault();
         close();
       }
     });
 
+    // The view is going: nothing still out draws, and the code, its clock and
+    // its stream subscription end with it. Focus is the next view's.
+    function dispose() {
+      disposed = true;
+      startGeneration();
+      ceremony.state = 'idle';
+      dialog.hidden = true;
+    }
+
     selectType(ceremony.deviceType);
-    return { close, open };
+    return { close, open, dispose };
   }
 
   // ── delivery vs connection ────────────────────────────────────────────────
