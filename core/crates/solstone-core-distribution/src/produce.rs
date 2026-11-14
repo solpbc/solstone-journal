@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions, TryLockError};
@@ -41,6 +41,7 @@ use crate::record;
 use crate::select::{self, ArtifactId, Selection};
 use crate::stage;
 
+pub mod build_features;
 pub mod ffmpeg_bindings;
 pub mod target_cache;
 pub mod windows_archives;
@@ -335,19 +336,12 @@ pub fn inspect_bin(bin: &str, lane: &str, bytes: &[u8], machine: u16) -> Result<
     let info = elf::parse_elf(bytes).map_err(|error| ProduceError::new(error.to_string()))?;
     match lane {
         "musl-static" => elf::inspect_core_family(&info, machine),
-        "zig-gnu-2.27"
-            if matches!(
-                bin,
-                "solstone-core-speakers-analyze" | "solstone-core-vad-analyze"
-            ) =>
-        {
-            elf::inspect_gnu_helper(
-                &info,
-                machine,
-                Some(elf::HELPER_RUNPATH),
-                &[elf::HELPER_SONAME],
-            )
-        }
+        "zig-gnu-2.27" if build_features::requires_linked_ort(bin) => elf::inspect_gnu_helper(
+            &info,
+            machine,
+            Some(elf::HELPER_RUNPATH),
+            &[elf::HELPER_SONAME],
+        ),
         "zig-gnu-2.27" => elf::inspect_gnu_helper(&info, machine, None, &[]),
         other => {
             return Err(ProduceError::new(format!("unexpected:\n  lane {other}")));
@@ -371,10 +365,7 @@ pub fn inspect_macho_bin(
     }
     let info =
         macho::parse_macho(bytes).map_err(|error| ProduceError::new(format!("{bin}: {error}")))?;
-    if matches!(
-        bin,
-        "solstone-core-speakers-analyze" | "solstone-core-vad-analyze"
-    ) {
+    if build_features::requires_linked_ort(bin) {
         macho::inspect_helper(
             &info,
             cputype,
@@ -1484,50 +1475,57 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
     if lane.bins.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let mut command = Command::new("cargo");
-    command
-        .current_dir(lane.checkout)
-        .env("CARGO_TARGET_DIR", lane.target_dir)
-        .env("CARGO_INCREMENTAL", "0")
-        .env("SOURCE_DATE_EPOCH", lane.epoch)
-        .env("ZERO_AR_DATE", "1")
-        .env("TZ", "UTC")
-        .env("LC_ALL", "C.UTF-8")
-        .env("LANG", "C.UTF-8")
-        .env("CARGO_ENCODED_RUSTFLAGS", lane.rustflags)
-        .env("SOLSTONE_FFMPEG_SOURCE_ARCHIVE", lane.ffmpeg_archive)
-        .env(OFFLINE, "1")
-        .env(BUILD_RUN_ID_ENV, lane.ffmpeg_run_id)
-        .args(cargo_argv(lane.triple, lane.bins));
-    apply_lane_toolchain(
-        &mut command,
-        lane.host,
-        lane.triple,
-        lane.vars,
-        lane.zig_dir,
-        lane.wrapper_dir,
-    );
-    let output = command
-        .output()
-        .map_err(|error| ProduceError::new(format!("cargo: {error}")))?;
-    if !output.status.success() {
-        return Err(ProduceError::new(format!(
-            "cargo {} failed:\n{}\n{}",
+    let mut stdout = String::new();
+    for bins in build_features::batches(lane.bins) {
+        build_features::check_batch(lane.checkout, lane.triple, &bins)?;
+        let mut command = Command::new("cargo");
+        command
+            .current_dir(lane.checkout)
+            .env("CARGO_TARGET_DIR", lane.target_dir)
+            .env("CARGO_INCREMENTAL", "0")
+            .env("SOURCE_DATE_EPOCH", lane.epoch)
+            .env("ZERO_AR_DATE", "1")
+            .env("TZ", "UTC")
+            .env("LC_ALL", "C.UTF-8")
+            .env("LANG", "C.UTF-8")
+            .env("CARGO_ENCODED_RUSTFLAGS", lane.rustflags)
+            .env("SOLSTONE_FFMPEG_SOURCE_ARCHIVE", lane.ffmpeg_archive)
+            .env(OFFLINE, "1")
+            .env(BUILD_RUN_ID_ENV, lane.ffmpeg_run_id)
+            .args(cargo_argv(lane.triple, &bins));
+        apply_lane_toolchain(
+            &mut command,
+            lane.host,
             lane.triple,
-            String::from_utf8_lossy(&output.stderr),
-            cargo_rendered_errors(&String::from_utf8_lossy(&output.stdout))
-        )));
+            lane.vars,
+            lane.zig_dir,
+            lane.wrapper_dir,
+        );
+        let output = command
+            .output()
+            .map_err(|error| ProduceError::new(format!("cargo: {error}")))?;
+        if !output.status.success() {
+            return Err(ProduceError::new(format!(
+                "cargo {} failed:\n{}\n{}",
+                lane.triple,
+                String::from_utf8_lossy(&output.stderr),
+                cargo_rendered_errors(&String::from_utf8_lossy(&output.stdout))
+            )));
+        }
+        stdout.push_str(&String::from_utf8_lossy(&output.stdout));
+        stdout.push('\n');
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
     lane.generations.record(&stdout);
-    let ffmpeg_out_dir =
-        require_single_ffmpeg_out_dir(bind_ffmpeg_build_script_out_dirs(&stdout), lane.triple)?;
-    validate_ffmpeg_evidence(
-        &ffmpeg_out_dir.join(EVIDENCE_DIR),
-        lane.ffmpeg_run_id,
-        lane.triple,
-        "release",
-    )?;
+    for ffmpeg_out_dir in
+        require_ffmpeg_out_dirs(bind_ffmpeg_build_script_out_dirs(&stdout), lane.triple)?
+    {
+        validate_ffmpeg_evidence(
+            &ffmpeg_out_dir.join(EVIDENCE_DIR),
+            lane.ffmpeg_run_id,
+            lane.triple,
+            "release",
+        )?;
+    }
     bind_cargo_json(&stdout, lane.triple).map_err(|error| ProduceError::new(error.to_string()))
 }
 
@@ -1602,6 +1600,20 @@ fn require_single_ffmpeg_out_dir(
     Err(ProduceError::new(format!(
         "incomplete FFmpeg configure evidence:\n  expected one ffmpeg build-script out directory for {target}, found {}",
         out_dirs.len()
+    )))
+}
+
+fn require_ffmpeg_out_dirs(
+    out_dirs: Vec<PathBuf>,
+    target: &str,
+) -> Result<BTreeSet<PathBuf>, ProduceError> {
+    // Separate Cargo invocations can reuse one closure or compile distinct
+    // ones. Admit every emitted closure, and never accept missing evidence.
+    if !out_dirs.is_empty() {
+        return Ok(out_dirs.into_iter().collect());
+    }
+    Err(ProduceError::new(format!(
+        "incomplete FFmpeg configure evidence:\n  no ffmpeg build-script out directory for {target}"
     )))
 }
 
@@ -3368,6 +3380,26 @@ mod tests {
         assert_eq!(
             require_single_ffmpeg_out_dir(vec![PathBuf::from("only")], target).unwrap(),
             PathBuf::from("only")
+        );
+    }
+
+    #[test]
+    fn ffmpeg_evidence_requires_all_distinct_build_script_results() {
+        let target = "x86_64-unknown-linux-gnu";
+        assert!(require_ffmpeg_out_dirs(Vec::new(), target).is_err());
+        assert_eq!(
+            require_ffmpeg_out_dirs(
+                vec![
+                    PathBuf::from("first"),
+                    PathBuf::from("second"),
+                    PathBuf::from("first")
+                ],
+                target,
+            )
+            .unwrap(),
+            [PathBuf::from("first"), PathBuf::from("second")]
+                .into_iter()
+                .collect()
         );
     }
 
