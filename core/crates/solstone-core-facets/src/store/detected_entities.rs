@@ -359,6 +359,44 @@ pub fn narrow_detections(
     Ok(before)
 }
 
+/// Take the recordings the owner removed out of every day of `facet_dir`'s
+/// detections, as [`narrow_detections`] does: for a facet coming back from
+/// the trash, which a recording's delete couldn't reach while it waited.
+pub fn prune_removed_detections(
+    journal_root: &Path,
+    facet_dir: &str,
+) -> Result<usize, FacetEntityWriteError> {
+    let dir = solstone_core_journal_io::contained_path(
+        journal_root,
+        &format!("facets/{facet_dir}/entities"),
+    )
+    .map_err(|error| FacetEntityWriteError::FacetStore(error.into()))?;
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(0);
+    };
+    let mut pruned = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(day) = name
+            .to_str()
+            .and_then(|name| name.strip_suffix(".jsonl"))
+            .filter(|day| day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit()))
+        else {
+            continue;
+        };
+        let gone: std::collections::BTreeSet<String> =
+            read_detected_entities(journal_root, facet_dir, day)?
+                .iter()
+                .flat_map(row_origins)
+                .filter(|origin| segment_removed(journal_root, origin))
+                .collect();
+        if !gone.is_empty() {
+            pruned += narrow_detections(journal_root, facet_dir, day, &gone)?.len();
+        }
+    }
+    Ok(pruned)
+}
+
 /// One facet and day's detection rows naming any of `gone`, as they are.
 pub fn detections_naming(
     journal_root: &Path,
@@ -385,8 +423,15 @@ pub fn restore_detections(
     if kept.is_empty() {
         return Ok(());
     }
+    // Only the recordings in the journal now: a recover never brings back
+    // what another delete took.
+    let here = |origin: &String| !segment_removed(journal_root, origin);
     modify_detected_entities(journal_root, facet_dir, day, |rows| {
         for back in kept {
+            let back_origins: Vec<String> = row_origins(back).into_iter().filter(here).collect();
+            if back_origins.is_empty() {
+                continue;
+            }
             let key = normalize_resolution_query(
                 back.get("name").and_then(Value::as_str).unwrap_or_default(),
             );
@@ -395,13 +440,29 @@ pub fn restore_detections(
                     row.get("name").and_then(Value::as_str).unwrap_or_default(),
                 ) == key
             });
+            // A description comes back with the recording that wrote it; one
+            // with no writer recorded, only when all its recordings do.
+            let described_here = match back.get(DESCRIBED_BY).and_then(Value::as_str) {
+                Some(by) => back_origins.iter().any(|origin| origin == by),
+                None => back_origins.len() == row_origins(back).len(),
+            };
             let Some(row) = found else {
-                rows.push(back.clone());
+                let mut row = back.clone();
+                let object = row.as_object_mut().expect("kept rows are objects");
+                object.insert(
+                    "segments".to_owned(),
+                    Value::Array(back_origins.iter().cloned().map(Value::String).collect()),
+                );
+                if !described_here {
+                    object.insert("description".to_owned(), Value::String(String::new()));
+                    object.remove(DESCRIBED_BY);
+                }
+                rows.push(row);
                 continue;
             };
             let mut origins: std::collections::BTreeSet<String> =
                 row_origins(row).into_iter().collect();
-            origins.extend(row_origins(back));
+            origins.extend(back_origins.iter().cloned());
             let object = row
                 .as_object_mut()
                 .expect("detected reader returns objects");
@@ -413,7 +474,10 @@ pub fn restore_detections(
                 .get("description")
                 .and_then(Value::as_str)
                 .is_none_or(str::is_empty);
-            if blank && let Some(description) = back.get("description") {
+            if blank
+                && described_here
+                && let Some(description) = back.get("description")
+            {
                 object.insert("description".to_owned(), description.clone());
                 match back.get(DESCRIBED_BY) {
                     Some(by) => object.insert(DESCRIBED_BY.to_owned(), by.clone()),
@@ -467,10 +531,13 @@ pub fn update_detected_entity(
             .ok_or_else(|| FacetEntityWriteError::EntityNotFound {
                 entity_id: name.to_owned(),
             })?;
-        row.as_object_mut().expect("object rows").insert(
+        let object = row.as_object_mut().expect("object rows");
+        object.insert(
             "description".to_owned(),
             Value::String(description.to_owned()),
         );
+        // The owner's words now: no recording's delete takes them.
+        object.remove(DESCRIBED_BY);
         updated = Some(row.clone());
         Ok(())
     })?;

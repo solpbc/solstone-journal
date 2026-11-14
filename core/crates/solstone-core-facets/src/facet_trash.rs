@@ -221,7 +221,7 @@ impl Kind for Facets<'_> {
     fn references(
         &self,
         journal: &Path,
-        _item: &Item,
+        item: &Item,
         change: Change,
         files: &[String],
     ) -> Result<(), String> {
@@ -235,6 +235,17 @@ impl Kind for Facets<'_> {
         }
         .map_err(|error| format!("search was not updated: {}", error.reason))?;
         if change == Change::Attached {
+            // What it found in recordings removed while it waited goes.
+            for facet in item
+                .paths
+                .iter()
+                .filter_map(|path| path.strip_prefix("facets/"))
+            {
+                if !facet.contains('/') {
+                    crate::prune_removed_detections(journal, facet)
+                        .map_err(|error| format!("its names weren't checked: {error}"))?;
+                }
+            }
             // What names the facet comes back with it: search reads every
             // file again and puts stored classifications right, as a merge
             // does.

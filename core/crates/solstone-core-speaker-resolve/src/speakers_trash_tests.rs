@@ -471,7 +471,15 @@ fn a_recording_trashed_then_erased_takes_its_voice_files_with_the_wipe() {
     let root = journal();
     let wiped = wipe_now(root.path());
     let recording = trash_recording(root.path());
-    solstone_core_trash::erase(root.path(), &recording.id, Action::Erase, surface()).unwrap();
+    let recordings = Recordings::new(&NoIndex, &solstone_core_retention::made_from::NothingMade);
+    solstone_core_trash::erase(
+        root.path(),
+        &[&recordings],
+        &recording.id,
+        Action::Erase,
+        surface(),
+    )
+    .unwrap();
     let before: Vec<_> = fs::read_dir(root.path().join(DIRECT))
         .map(|listing| listing.flatten().map(|entry| entry.file_name()).collect())
         .unwrap_or_default();
@@ -530,8 +538,14 @@ fn a_person_erased_merged_or_gone_takes_their_voiceprint_with_the_wipe() {
         match how {
             "erased" => {
                 let person = trash_person(root.path());
-                solstone_core_trash::erase(root.path(), &person.id, Action::Erase, surface())
-                    .unwrap();
+                solstone_core_trash::erase(
+                    root.path(),
+                    &[&StandIn(Unit::Entity)],
+                    &person.id,
+                    Action::Erase,
+                    surface(),
+                )
+                .unwrap();
             }
             // A merge leaves no folder for the one merged in.
             _ => fs::remove_dir_all(root.path().join(PERSON)).unwrap(),

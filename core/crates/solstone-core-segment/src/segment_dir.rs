@@ -1056,6 +1056,37 @@ pub fn stream_segment_dir(
 /// A record names segments by key, and a folder's name can carry more than
 /// its key (`093000_300_summary`), so a key with no folder of its own name is
 /// looked for among the stream's folders by the key read out of each name.
+/// Whether the owner removed the recording `key` on `day` in `stream`: its
+/// place is there and holds a removal's tombstone, or one under way. A place
+/// that isn't there was never a recording, so it isn't a removal; one a
+/// recording arrived at again is live.
+pub fn segment_removed(journal: &std::path::Path, day: &str, stream: &str, key: &str) -> bool {
+    let removed = |dir: &std::path::Path| {
+        dir.is_dir()
+            && matches!(
+                owner_deletion_state(dir),
+                Ok(state) if state != OwnerDeletionState::Live
+            )
+    };
+    let dir = stream_segment_dir(journal, day, stream, key);
+    if dir.exists() {
+        return removed(&dir);
+    }
+    let Some(parent) = dir.parent() else {
+        return false;
+    };
+    std::fs::read_dir(parent).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .and_then(solstone_core_format::segment::segment_key)
+                .is_some_and(|found| found == key)
+                && removed(&entry.path())
+        })
+    })
+}
+
 pub fn segment_live(journal: &std::path::Path, day: &str, stream: &str, key: &str) -> bool {
     let live = |dir: &std::path::Path| {
         dir.is_dir()

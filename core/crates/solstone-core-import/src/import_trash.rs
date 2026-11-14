@@ -1009,6 +1009,14 @@ impl Kind for Imports<'_> {
         self.made
             .recordings_changed(journal, item, change, &targets_of(item))
     }
+
+    fn erasing(&self, journal: &Path, item: &Item) -> Result<(), String> {
+        let targets = targets_of(item);
+        for target in &targets {
+            solstone_core_retention::door::clear_beside_tombstone(journal, target, &item.id)?;
+        }
+        self.made.recordings_erased(journal, item, &targets)
+    }
 }
 
 /// What the trash keeps of a Strava item's people and gear lines.
@@ -1272,7 +1280,10 @@ mod tests {
     fn erase_unlinks_the_import_and_nothing_else() {
         let root = journal();
         let item = trash(root.path());
-        solstone_core_trash::erase(root.path(), &item.id, Action::Erase, surface()).unwrap();
+        crate::trash_kinds::with_kinds(root.path(), |kinds| {
+            solstone_core_trash::erase(root.path(), kinds, &item.id, Action::Erase, surface())
+        })
+        .unwrap();
         assert!(solstone_core_trash::list(root.path()).unwrap().is_empty());
         assert!(!root.path().join("imports").join(ID).exists());
         assert!(root.path().join("imports").join(OTHER).is_dir());
@@ -1374,7 +1385,10 @@ mod tests {
         let root = journal();
         let first = trash(root.path());
         let second = trash_other(root.path());
-        solstone_core_trash::erase(root.path(), &second.id, Action::Erase, surface()).unwrap();
+        crate::trash_kinds::with_kinds(root.path(), |kinds| {
+            solstone_core_trash::erase(root.path(), kinds, &second.id, Action::Erase, surface())
+        })
+        .unwrap();
         recover(root.path(), &first.id).unwrap();
         // Its own file is back and seen; what only the other held is gone.
         let shared = "chronicle/20260802/import.ics/090000_300";
@@ -1664,7 +1678,10 @@ mod tests {
             "{refused:?}"
         );
         // B erased: A comes back, its row into the hour it shared, nothing of B's.
-        solstone_core_trash::erase(root, &b_item.id, Action::Erase, surface()).unwrap();
+        crate::trash_kinds::with_kinds(root, |kinds| {
+            solstone_core_trash::erase(root, kinds, &b_item.id, Action::Erase, surface())
+        })
+        .unwrap();
         solstone_core_trash::attach(root, &kinds, &a_item.id, Action::Recover, surface()).unwrap();
         assert_eq!(ids_in(root, &format!("{only_a}/body.jsonl")), vec!["a1"]);
         assert_eq!(ids_in(root, &format!("{both}/body.jsonl")), vec!["a2"]);

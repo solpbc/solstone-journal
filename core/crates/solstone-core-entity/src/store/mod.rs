@@ -123,10 +123,11 @@ pub use voiceprints::{
     VoiceprintItem, VoiceprintKey, VoiceprintNpzError, VoiceprintOperationError,
     VoiceprintRecording, VoiceprintRemoval, VoiceprintRemovalReport, VoiceprintSkipReasons,
     entity_voiceprints_path, load_entity_voiceprints_file, load_existing_voiceprint_keys,
-    normalize_embedding, put_back_recording_voiceprints, recording_voiceprints,
-    remove_voiceprints_by_key, rewrite_voiceprint_metadata, save_voiceprints_batch,
-    save_voiceprints_batch_checked, take_recording_voiceprints, try_load_entity_voiceprints_file,
-    try_load_entity_voiceprints_in_dir, voiceprint_key_from_metadata,
+    normalize_embedding, prune_removed_recording_voiceprints, put_back_recording_voiceprints,
+    recording_voiceprints, remove_voiceprints_by_key, rewrite_voiceprint_metadata,
+    save_voiceprints_batch, save_voiceprints_batch_checked, take_recording_voiceprints,
+    try_load_entity_voiceprints_file, try_load_entity_voiceprints_in_dir,
+    voiceprint_key_from_metadata,
 };
 pub use write::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,

@@ -668,6 +668,60 @@ pub fn place_tombstone(
     sync_dir(journal, &parent_rel(target)).map_err(|error| owner_reason(&error))
 }
 
+/// When the trash erases item `cid`, what a run going at the delete wrote into
+/// its recording's place beside the tombstone goes with it: the deleted
+/// recording's own outputs. Only while the tombstone there is the item's; a
+/// recording that arrived again since is left alone. Under the segment lock
+/// a removal and an arrival take. Returns how many entries went.
+pub fn clear_beside_tombstone(journal: &Path, target: &Target, cid: &str) -> Result<usize, String> {
+    let live = segment_rel(target);
+    let path = contained_path(journal, &live).map_err(|error| owner_reason(&error))?;
+    if !path.is_dir() {
+        return Ok(0);
+    }
+    let _lock = solstone_core_journal_io::hold_lock(
+        &path,
+        solstone_core_journal_io::LockOptions::default(),
+    )
+    .map_err(|_| "the recording's place is busy".to_owned())?;
+    let ours = std::fs::read(path.join(TOMBSTONE_NAME))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .is_some_and(|body| body.get("cid").and_then(serde_json::Value::as_str) == Some(cid));
+    if !ours {
+        return Ok(0);
+    }
+    let mut cleared = 0;
+    for entry in std::fs::read_dir(&path).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let name = entry.file_name();
+        if name == TOMBSTONE_NAME || name.to_string_lossy().ends_with(".lock") {
+            continue;
+        }
+        let place = entry.path();
+        // System internal: the deleted recording's own outputs, which a run
+        // going at the delete wrote after it left, erased with it.
+        let gone = if entry
+            .file_type()
+            .map_err(|error| error.to_string())?
+            .is_dir()
+        {
+            std::fs::remove_dir_all(&place)
+        } else {
+            std::fs::remove_file(&place)
+        };
+        match gone {
+            Ok(()) => cleared += 1,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("{}: {error}", place.display())),
+        }
+    }
+    if cleared > 0 {
+        sync_dir(journal, &live).map_err(|error| owner_reason(&error))?;
+    }
+    Ok(cleared)
+}
+
 /// Tell the index about everything a run removed — **after** the run.
 ///
 /// Separate from the verbs on purpose. A verb's job is to remove and report; this

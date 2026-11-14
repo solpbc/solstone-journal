@@ -228,7 +228,15 @@ fn recover(journal: &Journal, told: &Told, item: &str) -> Result<Item, TrashErro
 }
 
 fn erase(journal: &Journal, item: &str) {
-    solstone_core_trash::erase(journal.root(), item, Action::Erase, Surface::Cli).unwrap();
+    let told = Told::default();
+    solstone_core_trash::erase(
+        journal.root(),
+        &[&Entities::new(&told)],
+        item,
+        Action::Erase,
+        Surface::Cli,
+    )
+    .unwrap();
 }
 
 /// Bob, linked in two facets, and Ann.

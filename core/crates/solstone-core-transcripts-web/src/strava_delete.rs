@@ -92,7 +92,9 @@ pub(crate) async fn delete_workout(
             Err(error) => return Err(error),
         };
         let erased = request.erase
-            && match solstone_core_trash::erase(&root, &item.id, Action::WorkoutDelete, surface) {
+            && match solstone_core_import::trash_kinds::with_kinds(&root, |kinds| {
+                solstone_core_trash::erase(&root, kinds, &item.id, Action::WorkoutDelete, surface)
+            }) {
                 Ok(()) => true,
                 Err(error) => {
                     log::warn!("trash item {}: erase now was refused: {error}", item.id);

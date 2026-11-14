@@ -402,7 +402,7 @@ fn load_state(root: &Path) -> Result<Value, String> {
         .map_err(|error| error.to_string())?
         .into_iter()
         .filter(|row| row.get("status").and_then(Value::as_str) == Some("open"))
-        .map(pair_item)
+        .map(|row| pair_item(root, row))
         .collect::<Vec<_>>();
     Ok(json!({
         "facet_items": sorted(facet_items),
@@ -693,8 +693,18 @@ fn speaker_item(row: Value) -> Value {
     )
 }
 
-fn pair_item(row: Value) -> Value {
+fn pair_item(root: &Path, row: Value) -> Value {
     let mut evidence = object(&row, "evidence");
+    // A recording in the trash, or erased, is never offered to listen to.
+    for side in ["source_samples", "target_samples"] {
+        if let Some(Value::Array(samples)) = evidence.get_mut(side) {
+            samples.retain(|sample| {
+                !solstone_core_speaker_resolve::owner_candidate_hydrate::sample_removed(
+                    root, sample,
+                )
+            });
+        }
+    }
     let similarity = row
         .get("similarity")
         .and_then(Value::as_f64)

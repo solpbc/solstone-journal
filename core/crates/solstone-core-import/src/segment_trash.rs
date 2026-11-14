@@ -383,6 +383,10 @@ impl Kind for ImportSegments<'_> {
     ) -> Result<(), String> {
         self.recordings.references(journal, item, change, files)
     }
+
+    fn erasing(&self, journal: &Path, item: &Item) -> Result<(), String> {
+        self.recordings.erasing(journal, item)
+    }
 }
 
 fn listing_of(journal: &Path) -> BTreeMap<String, BTreeSet<String>> {

@@ -404,6 +404,26 @@ pub fn save_voiceprints_batch_checked(
     let _trust =
         crate::hold_entity_trust_lock(journal_root).map_err(EntityLifecycleError::TrustLock)?;
     checkpoint().map_err(VoiceprintOperationError::PublicationRefused)?;
+    // A voice drawn from a recording that went to the trash while it was read
+    // isn't saved: its voices left with it. Checked under the trust lock,
+    // which the trash holds while a recording moves.
+    let kept_items: Vec<VoiceprintItem>;
+    let new_items = if new_items
+        .iter()
+        .any(|item| recording_removed(journal_root, &item.metadata))
+    {
+        kept_items = new_items
+            .iter()
+            .filter(|item| !recording_removed(journal_root, &item.metadata))
+            .cloned()
+            .collect();
+        if kept_items.is_empty() {
+            return Ok(0);
+        }
+        &kept_items[..]
+    } else {
+        new_items
+    };
     let (_directory, path) = resolve_voiceprint_path(journal_root, entity_id, true)?;
     let parent = capture_voiceprint_parent(&path)?;
     let admitted = || {
@@ -486,6 +506,13 @@ fn row_recording(metadata: &Value) -> Option<VoiceprintRecording> {
     Some((day, stream, key))
 }
 
+/// Whether the owner removed the recording a row was drawn from.
+fn recording_removed(journal_root: &Path, metadata: &Value) -> bool {
+    row_recording(metadata).is_some_and(|(day, stream, key)| {
+        solstone_core_segment::segment_removed(journal_root, &day, &stream, &key)
+    })
+}
+
 /// The encoder every writer stamps while the running one isn't resolved.
 fn unresolved_encoder() -> EncoderIdentity {
     EncoderIdentity {
@@ -562,6 +589,52 @@ fn voiceprints_of(
     Ok(taken)
 }
 
+/// Remove the rows drawn from recordings the owner removed, from `entity`'s
+/// voiceprints or, with `None`, every live entity's: for a person or a
+/// speakers wipe coming back from the trash, which a recording's delete
+/// couldn't reach while it waited. Returns how many went.
+pub fn prune_removed_recording_voiceprints(
+    journal_root: &Path,
+    entity: Option<&str>,
+) -> Result<usize, VoiceprintOperationError> {
+    let _trust =
+        crate::hold_entity_trust_lock(journal_root).map_err(EntityLifecycleError::TrustLock)?;
+    let ids: Vec<String> = match entity {
+        Some(id) => vec![id.to_owned()],
+        None => super::journal_entities::live_journal_entities(journal_root)
+            .map_err(|error| {
+                VoiceprintOperationError::Lifecycle(EntityLifecycleError::Store(error))
+            })?
+            .into_iter()
+            .map(|(_, entity)| entity.id)
+            .collect(),
+    };
+    let mut pruned = 0;
+    for id in ids {
+        let Some(archive) = try_load_entity_voiceprints_file(journal_root, &id)? else {
+            continue;
+        };
+        let removals: Vec<VoiceprintRemoval> = parse_metadata_values(&archive.metadata)?
+            .into_iter()
+            .filter(|row| recording_removed(journal_root, row))
+            .map(|row| VoiceprintRemoval {
+                key: row,
+                expected_metadata: None,
+            })
+            .collect();
+        if removals.is_empty() {
+            continue;
+        }
+        let encoder = archive
+            .envelope
+            .encoder
+            .clone()
+            .unwrap_or_else(unresolved_encoder);
+        pruned += remove_voiceprints_by_key(journal_root, &id, &removals, &encoder)?.removed_count;
+    }
+    Ok(pruned)
+}
+
 /// Put back rows [`take_recording_voiceprints`] took, for a recover: each to
 /// its entity when it's live and the row's key isn't there. Returns how many
 /// went back, and how many had no live entity to go to.
@@ -584,11 +657,15 @@ pub fn put_back_recording_voiceprints(
         .map(|(_, entity)| entity.id)
         .collect();
     let (mut put, mut homeless) = (0, 0);
-    for (entity_id, rows) in by_entity {
-        if !live.contains(entity_id) {
+    for (taken_by, rows) in by_entity {
+        // A person merged since takes them as their survivor.
+        let Some(entity_id) = crate::answered_or_survivor(journal_root, taken_by, |id| {
+            live.contains(id).then(|| id.to_owned())
+        }) else {
             homeless += rows.len();
             continue;
-        }
+        };
+        let entity_id = entity_id.as_str();
         let existing = load_existing_voiceprint_keys(journal_root, entity_id);
         let items: Vec<VoiceprintItem> = rows
             .into_iter()

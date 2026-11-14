@@ -412,3 +412,86 @@ fn what_a_recording_found_and_the_voices_drawn_from_it_leave_with_it_and_come_ba
     );
     assert_eq!(voice_keys(root.path(), "ann"), vec![B.to_owned()]);
 }
+
+#[test]
+fn erasing_a_recording_takes_a_late_runs_outputs_and_the_old_words_of_a_correction() {
+    let root = journal();
+    // The owner corrected the title of the meeting over A B C, before B went.
+    let mut rows = records(root.path());
+    let meeting = rows
+        .iter_mut()
+        .find(|row| row["id"] == json!("meeting_090000_300"))
+        .unwrap();
+    meeting.insert("title".into(), json!("my own title"));
+    meeting.insert(
+        "edits".into(),
+        json!([{"timestamp": "2026-11-01T00:00:00Z", "actor": "owner:update",
+            "fields": ["title"], "note": "", "set": {"title": "my own title"},
+            "before": {"title": "the kestrel secret"}}]),
+    );
+    let text: String = rows
+        .iter()
+        .map(|row| format!("{}\n", Value::Object(row.clone())))
+        .collect();
+    write(
+        root.path(),
+        &format!("facets/work/activities/{DAY}.jsonl"),
+        text.as_bytes(),
+    );
+
+    let made = MadeFromIt::new();
+    let b = delete(root.path(), B, &made);
+    // A run going at the delete wrote into its place afterwards.
+    let place = root.path().join(format!("chronicle/{DAY}/laptop/{B}"));
+    write(
+        root.path(),
+        &format!("chronicle/{DAY}/laptop/{B}/talents/sense.json"),
+        b"the kestrel secret",
+    );
+    assert!(place.join("talents").exists());
+
+    crate::trash_kinds::with_kinds(root.path(), |kinds| {
+        solstone_core_trash::erase(root.path(), kinds, &b.id, Action::Erase, surface())
+    })
+    .unwrap();
+    let left: Vec<String> = fs::read_dir(&place)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| !name.ends_with(".lock"))
+        .collect();
+    assert_eq!(left, vec!["tombstone.json".to_owned()]);
+
+    let meeting = records(root.path())
+        .into_iter()
+        .find(|row| row["id"] == json!("meeting_090000_300"))
+        .unwrap();
+    assert_eq!(meeting["title"], "my own title", "the correction stays");
+    assert!(meeting["edits"][0].get("before").is_none());
+    assert!(
+        !fs::read_to_string(
+            root.path()
+                .join(format!("facets/work/activities/{DAY}.jsonl"))
+        )
+        .unwrap()
+        .contains("\"the kestrel secret\"")
+    );
+    let refused = solstone_core_facets::remove_activity_edit(
+        root.path(),
+        "work",
+        DAY,
+        "meeting_090000_300",
+        0,
+        "2026-11-01T00:00:00Z",
+        "owner:update",
+        "2026-11-20T00:00:00Z",
+    );
+    assert!(
+        matches!(
+            refused,
+            Err(solstone_core_facets::ActivityRecordStoreError::EditRefused(
+                solstone_core_facets::EditRefusal::NotRecorded
+            ))
+        ),
+        "{refused:?}"
+    );
+}
