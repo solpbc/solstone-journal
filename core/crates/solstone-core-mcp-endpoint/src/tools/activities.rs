@@ -608,6 +608,9 @@ pub(crate) fn is_path_or_segment_pointer(val: &Value) -> bool {
 
 pub(crate) fn clean_activity_record_for_wire(mut record: Map<String, Value>) -> Map<String, Value> {
     record.remove("stream");
+    // The talent's list before the journal judged it: it can name the owner
+    // and call someone an attendee the journal found no proof of.
+    record.remove("participation_said");
     if let Some(src) = record.get("source")
         && is_path_or_segment_pointer(src)
     {

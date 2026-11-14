@@ -1521,7 +1521,23 @@ fn queue_daily(
     // stays owed, and waits for new evidence or the owner's retry.
     let owed = owed - left.len() as u64;
     if owed == 0 {
-        held(report, day, None, p.band, "awaits_owner");
+        // A unit the owner can retry already shows as its own held step.
+        let shown = |identity: &solstone_core_journal_io::DailyUnitIdentity| {
+            let unit = Unit::Daily {
+                day: day.into(),
+                talent: identity.name.clone(),
+                facet: identity.facet.clone(),
+            };
+            unit.id().is_ok_and(|id| {
+                report
+                    .holds
+                    .iter()
+                    .any(|hold| hold.retry_unit.as_ref() == Some(&id))
+            })
+        };
+        if !left.iter().all(shown) {
+            held(report, day, None, p.band, "awaits_owner");
+        }
         return Ok(false);
     }
     if ask.holds {
@@ -2102,6 +2118,11 @@ fn reconcile_pass_with_roots(
                 }
             }
         };
+    // Meetings already written follow what the owner has since said about a
+    // name. No model is asked, and a failure here holds nothing else back.
+    if let Err(error) = crate::name_answers::pass(journal, checkpoint) {
+        log::warn!("name answers not applied: {error}");
+    }
     // The owner's asks seed their activities before activity work is read,
     // so this pass's snapshot already holds them.
     let mut asks = crate::owner_asks::AskPass::seed(
@@ -5306,9 +5327,16 @@ mod tests {
             .filter(|unit| !unit.evidence_revision.is_empty() && !unit.contract_digest.is_empty())
             .cloned()
             .collect();
-        assert!(!made.is_empty());
-        let (conflicted, rest) = made.split_first().unwrap();
-        for unit in rest {
+        // A unit whose conflict the owner can't retry: the day itself is held.
+        let at = made
+            .iter()
+            .position(|unit| unit.identity.name != "entities:entities_review")
+            .unwrap();
+        let conflicted = made[at].clone();
+        for unit in made
+            .iter()
+            .filter(|unit| unit.identity != conflicted.identity)
+        {
             let mut record = solstone_core_journal_io::DailyUnitRecord::new(
                 unit.identity.clone(),
                 &unit.evidence_revision,
@@ -5369,6 +5397,97 @@ mod tests {
         conflict(&"0".repeat(64), 2);
         assert_eq!(pass(), (true, false));
         assert!(still_owed(journal, &candidate, None, &|| Ok(())).unwrap());
+    }
+
+    /// An entity review whose spent conflict a fresh preparation can clear is
+    /// held as its own step, so the owner's retry on the health page reaches
+    /// it; the day is not run, and the retry is.
+    #[test]
+    fn a_declined_review_conflict_is_held_for_the_owners_retry() {
+        let root = fixture("local");
+        let journal = root.path();
+        let day = "19990110";
+        solstone_core_facets::create_facet(journal, "work", "Work", "", "", "", None).unwrap();
+        thought_without_receipt(journal, day, &["120000_60"]);
+        let recording = journal.join("chronicle").join(day).join("notes/120000_60");
+        std::fs::create_dir_all(recording.join("talents")).unwrap();
+        std::fs::write(
+            recording.join("talents/facets.json"),
+            r#"[{"facet":"work"}]"#,
+        )
+        .unwrap();
+        // Its recording is thought and published, so a retry is ready to run.
+        let input = solstone_core_system_health::newest_segment_input_ms(&recording).unwrap();
+        solstone_core_system::segment_publication::publish(journal, &recording, input, |_, _| {
+            Ok(())
+        })
+        .unwrap();
+        let coverage = daily_coverage::read_daily_coverage(journal, day).unwrap();
+        let review = coverage
+            .units
+            .iter()
+            .find(|unit| {
+                unit.identity.name == "entities:entities_review"
+                    && !unit.evidence_revision.is_empty()
+            })
+            .cloned()
+            .unwrap();
+        for unit in coverage.units.iter().filter(|unit| {
+            unit.identity != review.identity
+                && !unit.evidence_revision.is_empty()
+                && !unit.contract_digest.is_empty()
+        }) {
+            let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+                unit.identity.clone(),
+                &unit.evidence_revision,
+                &unit.contract_digest,
+            );
+            record.status = solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput;
+            record.accepted = Some(solstone_core_journal_io::AcceptedDailyResult {
+                evidence_revision: unit.evidence_revision.clone(),
+                contract_digest: unit.contract_digest.clone(),
+                status: solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
+                packet_digest: Some("a".repeat(64)),
+                generated_result: Some(serde_json::json!({"response":"[]","output":"[]"})),
+                receipts: Vec::new(),
+                committed_at_ms: 1,
+            });
+            solstone_core_journal_io::save_daily_unit_record(journal, &record).unwrap();
+        }
+        let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+            review.identity.clone(),
+            &review.evidence_revision,
+            &review.contract_digest,
+        );
+        record.status = solstone_core_journal_io::DailyUnitStatus::Conflicting;
+        record.reason_code = Some("daily_owner_conflict".into());
+        record.owner_conflict_kind = Some("promotion_owner_state".into());
+        record.failure_count = 2;
+        solstone_core_journal_io::save_daily_unit_record(journal, &record).unwrap();
+        let unit = Unit::Daily {
+            day: day.into(),
+            talent: review.identity.name.clone(),
+            facet: review.identity.facet.clone(),
+        };
+        let id = unit.id().unwrap();
+        let queue = queue(journal);
+        reconcile(journal, &queue, &AtomicBool::new(false)).unwrap();
+        let holds = solstone_core_system::work_inventory::read(journal)
+            .unwrap()
+            .unwrap()
+            .holds
+            .into_iter()
+            .filter(|hold| hold.day == day)
+            .collect::<Vec<_>>();
+        assert_eq!(holds.len(), 1, "{holds:?}");
+        assert_eq!(holds[0].retry_unit.as_deref(), Some(id.as_str()));
+        assert!(!queue.contains_reference(&format!("supervisor-work-{day}-daily")));
+        // The owner's retry, as the health page sends it, runs that one step.
+        work_retry::request(journal, &unit).unwrap();
+        reconcile(journal, &queue, &AtomicBool::new(false)).unwrap();
+        assert!(queue.contains_reference(&format!("supervisor-retry-daily-{day}-{id}")));
+        assert!(!queue.contains_reference(&format!("supervisor-work-{day}-daily")));
+        queue.shutdown();
     }
 
     /// The history walk re-senses an older day whose outputs were already made.

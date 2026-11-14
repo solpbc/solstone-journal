@@ -102,7 +102,10 @@
       entryId = newEntryId();
       window.history.pushState(stateWith(entryId, 'view'), '', url);
     } else {
-      window.history.replaceState(stateWith(entryId || newEntryId(), window.history.state?.solRoute?.owner || 'view'), '', url);
+      // An entry the browser made for a link to a hash on this path has no
+      // id. The replace gives it one, and it is the entry the page is on.
+      if (!entryId) entryId = newEntryId();
+      window.history.replaceState(stateWith(entryId, window.history.state?.solRoute?.owner || 'view'), '', url);
     }
     // A view may replace an undated address with that day's address before
     // it draws. The path is still this view's, so later entries on it stay
