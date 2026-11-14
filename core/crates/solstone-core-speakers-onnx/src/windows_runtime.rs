@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Windows helper bootstrap, shared by speakers and FireRed VAD.
+//! Windows runtime bootstrap, shared by speakers, FireRed VAD, and describe faces.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;

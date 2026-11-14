@@ -3385,6 +3385,10 @@ fn open_or_create_file(parent: &SecureDir, name: &str) -> Result<File, IdentityE
     Ok(file)
 }
 
+// Existing storage files are only read or locked through these handles, never
+// written, so they open read-only like their Unix counterpart. Asking for write
+// access would fail with a sharing violation whenever another program (backup,
+// indexer, a script) already has the file open sharing only reads.
 #[cfg(windows)]
 fn open_existing_file(
     parent: &SecureDir,
@@ -3393,7 +3397,7 @@ fn open_existing_file(
 ) -> Result<File, IdentityError> {
     let file = open_windows_file(
         &parent.path.join(name),
-        GENERIC_READ | GENERIC_WRITE,
+        GENERIC_READ,
         OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
         "open storage file",
@@ -3410,7 +3414,7 @@ fn open_existing_file_os(
 ) -> Result<File, IdentityError> {
     let file = open_windows_file(
         &parent.path.join(name),
-        GENERIC_READ | GENERIC_WRITE,
+        GENERIC_READ,
         OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
         "open storage file",
@@ -6437,6 +6441,38 @@ mod windows_tests {
 
         assert_eq!(loaded, expected);
         assert_tree_unchanged(&fixture.root, before);
+    }
+
+    #[test]
+    fn windows_load_succeeds_while_another_program_reads_the_record_and_marker() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let _serial = serial();
+        clear_fault_control_for_test();
+        let fixture = TestRoot::new();
+        let root = r"C:\solstone\outside-reader";
+        let admission =
+            admit_setup(fixture.request(root, r"C:\solstone\journal")).expect("admit setup");
+        let expected = admission.binding().clone();
+        drop(admission);
+        let namespace = fixture.namespace_path(root);
+        // An outside reader that shares reads only, as backup tools, indexers
+        // and Get-FileHash do, holds both files for the whole load.
+        let readers: Vec<fs::File> = ["record", "adoption.marker"]
+            .into_iter()
+            .map(|name| {
+                fs::OpenOptions::new()
+                    .read(true)
+                    .share_mode(FILE_SHARE_READ)
+                    .open(namespace.join(name))
+                    .unwrap_or_else(|error| panic!("outside reader opens {name}: {error}"))
+            })
+            .collect();
+
+        let loaded = load_installation_binding(&fixture.owner, &fixture.root_token(root))
+            .expect("load while another program reads the identity files");
+
+        assert_eq!(loaded, expected);
+        drop(readers);
     }
 
     #[test]

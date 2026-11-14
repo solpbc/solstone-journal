@@ -1,6 +1,6 @@
 # Installing solstone
 
-These instructions are for a coding agent and human working together. solstone is a personal memory platform: the solstone app takes in what you share with it, and all of it goes into your journal. Your journal is always private, only yours. It lives on a device you own; see [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it. Open source, made by sol pbc.
+These instructions are for a coding agent and human working together. solstone is a personal journal platform: the solstone app takes in what you share with it, and all of it goes into your journal. Your journal is always private, only yours. It lives on a device you own; see [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it. Open source, made by sol pbc.
 
 **supported platforms:** linux, macos 15 or later on Apple Silicon, and windows 10 (22H2) or 11 on x64, or windows 11 on arm64. On mac, the journal app is the only supported way to run the journal. On windows, the journal has its own installer.
 

@@ -563,21 +563,22 @@ fn recall_response(
     let count = notes.len();
     let value = json!({"schema":1, "notes":notes, "continuation":page.continuation,
         "complete":page.complete, "reason":page.reason, "query_reason":page.query_reason, "self_resolution":page.self_resolution});
-    let shape_bytes = match bounded_json(&value, MAX_PREPARED_BYTES) {
-        Ok(bytes) => bytes,
-        Err(()) => {
-            let _ = crate::audit::write_outcome(
-                journal,
-                &audit,
-                now,
-                Outcome::Error,
-                Some("memory response could not be prepared"),
-                None,
-            );
-            return error_response(request, "memory_response_unavailable");
-        }
-    };
-    let mut shape: ResultShape = result_shape(count, targets, digest(&shape_bytes));
+    if bounded_json(&value, MAX_PREPARED_BYTES).is_err() {
+        let _ = crate::audit::write_outcome(
+            journal,
+            &audit,
+            now,
+            Outcome::Error,
+            Some("memory response could not be prepared"),
+            None,
+        );
+        return error_response(request, "memory_response_unavailable");
+    }
+    // `continuation` is sealed afresh on every call, so the digest is taken
+    // over the content with it left out: a replay of the same page records
+    // the same digest.
+    let mut shape: ResultShape =
+        result_shape(count, targets, crate::dispatch::content_digest(&value));
     shape.memory = Some(MemoryResultFacts {
         complete: page.complete,
         own_recall_ready: None,

@@ -149,7 +149,7 @@ window.SolViews.register('transcripts', {
 view takes a change of parameters in place. A view's scripts run once in the
 life of the page (they only register); the view starts each time it is
 mounted. Home (with its week and originals pages), transcripts, more, body,
-activities, the map, search, entities, speakers, sources, support and network are on the contract; every other view is not, and keeps its full page loads.
+activities, the map, search, entities, speakers, sources, support, network and agents are on the contract; every other view is not, and keeps its full page loads.
 A view with two modes at two addresses (speakers' overview and its day)
 offers `update` only from the mode that takes a day, so a move between the
 modes mounts the view again, in the page. A view that keeps a lot of state
@@ -199,8 +199,10 @@ never `location.pathname`, and writes nothing once the address is another
 view's.
 A view may replace its own address
 with another address of the same view through `ctx.history.replace`, and the
-router follows. An address of another view is the router's, and `ctx.history`
-does not write it. A move starts the next view's declared
+router follows. A link to a hash on the view's own path is the browser's, and
+its entry has no place in the page's history yet; the view's replace gives it
+one, so a back to it keeps its scroll. An address of another view is the
+router's, and `ctx.history` does not write it. A move starts the next view's declared
 first reads at once, in a table of their own, adopted as the head's are. The
 swap runs in a view transition once those reads answer or 300 ms pass. Focus
 moves to the first heading in the view's own markup, or to `<main>` when the

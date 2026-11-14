@@ -344,6 +344,52 @@ pub fn record_entity_resolution_from_name_evidence(
     )
 }
 
+/// Who a name in one of a facet's activities is.
+///
+/// The name is matched against the day's detected names, as before. The one
+/// difference is the owner's answer: when the owner has said who this name is
+/// in this facet, that entity is the result even on a day whose text never
+/// named them. ⛔ Without this, an answer the journal asked for made every
+/// later write that met the name fail (`ResolvedChoiceEntityAbsent`).
+///
+/// An answer that names an entity the journal no longer holds, or a hidden
+/// one, links the name to no one.
+pub fn resolve_activity_name(
+    journal_root: &Path,
+    query: &str,
+    detected: &[EntityResolutionEntity],
+    facet: &str,
+    origin: Value,
+    fuzzy_threshold: f64,
+) -> Result<Option<String>, EntityResolutionError> {
+    match record_entity_resolution(
+        journal_root,
+        query,
+        detected,
+        serde_json::json!({"kind":"facet","facet":facet}),
+        origin,
+        fuzzy_threshold,
+        false,
+    ) {
+        Ok(result) => Ok((result.outcome == EntityResolutionOutcome::Resolved)
+            .then(|| {
+                result
+                    .entity_index
+                    .and_then(|index| detected[index].id.clone())
+            })
+            .flatten()),
+        Err(EntityResolutionError::ResolvedChoiceEntityAbsent { entity_id, .. }) => {
+            let held = crate::load_all_journal_entities(journal_root)
+                .map_err(EntityResolutionError::Read)?
+                .iter()
+                .any(|entity| entity.id == entity_id && !entity.is_blocked());
+            Ok(held.then_some(entity_id))
+        }
+        Err(EntityResolutionError::ResolvedChoiceEntityBlocked { .. }) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 /// Resolve a query against the supplied entity slice.
 ///
 /// A high-confidence collision is returned with `ambiguity_id: None`: it is

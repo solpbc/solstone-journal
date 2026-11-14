@@ -15,14 +15,36 @@
     return window.CONVEY_COPY?.[key] || fallback;
   }
 
-  function closeModal() {
+  // Closing gives focus back: the modal layer returns it to a dialog under
+  // the review, or to what had focus before it opened, and if neither is
+  // left it goes to the workspace rather than the page. A close made by a
+  // back leaves focus to the move.
+  function settleFocus(restore) {
+    const layer = window.ConveyModalLayer;
+    if (layer && typeof layer.reconcile === 'function') layer.reconcile({ restore });
+    const focused = document.activeElement;
+    if (!focused || focused === document.body || !focused.isConnected) {
+      document.getElementById('main-content')?.focus();
+    }
+  }
+
+  function removeModal() {
     if (keydownHandler) {
       document.removeEventListener('keydown', keydownHandler, true);
       keydownHandler = null;
     }
+    const closing = currentModal;
     currentModal?.remove();
     currentModal = null;
+    return Boolean(closing);
   }
+
+  function closeModal(restore = true) {
+    if (removeModal()) settleFocus(restore);
+  }
+
+  // A back with the review open closes it, as a view's dialog closes on one.
+  window.addEventListener('popstate', () => closeModal(false));
 
   function currentAppAndRoute(context) {
     const path = window.solPathContext?.() || {};
@@ -86,7 +108,7 @@
   }
 
   async function openModal(context) {
-    closeModal();
+    removeModal();
     const platform = await fixedContext();
     const location = currentAppAndRoute(context);
     const fields = {
@@ -154,16 +176,19 @@
     actions.append(cancel, send);
     content.appendChild(actions);
 
-    cancel.addEventListener('click', closeModal);
+    cancel.addEventListener('click', () => closeModal());
     recent.addEventListener('input', () => {
       send.href = destination(fields, recent.value.trim());
     });
     modal.addEventListener('click', event => {
       if (event.target === modal) closeModal();
     });
+    // One Escape closes one dialog: the error box listens first and stops
+    // this one when it is on top, and this one stops anything after it.
     keydownHandler = event => {
       if (event.key === 'Escape') {
         event.preventDefault();
+        event.stopImmediatePropagation();
         closeModal();
       }
     };

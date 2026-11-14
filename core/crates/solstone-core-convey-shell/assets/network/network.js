@@ -32,6 +32,51 @@
     });
   }
 
+  // One rule for the page: a control whose write is out keeps focus. It is
+  // marked busy and ignores presses until the write answers; `disabled` would
+  // drop focus to the page.
+  function setBusy(el, busy) {
+    if (!el) return;
+    if (busy) {
+      el.setAttribute('aria-disabled', 'true');
+      el.setAttribute('aria-busy', 'true');
+    } else {
+      el.removeAttribute('aria-disabled');
+      el.removeAttribute('aria-busy');
+    }
+  }
+
+  function isBusy(el) {
+    return Boolean(el && typeof el.getAttribute === 'function' && el.getAttribute('aria-disabled') === 'true');
+  }
+
+  // Content in a closed <details> still has layout boxes in some engines, so
+  // ask checkVisibility() too where there is one.
+  function isShown(el) {
+    if (!el || !el.isConnected || typeof el.getClientRects !== 'function' || !el.getClientRects().length) return false;
+    return typeof el.checkVisibility === 'function' ? el.checkVisibility() : true;
+  }
+
+  // Focus is lost when it is on the page itself, or on something the page has
+  // hidden or taken out (a browser may not have moved it off yet).
+  function focusLost(doc) {
+    const active = doc?.activeElement;
+    return !active || active === doc.body || active === doc.documentElement || !isShown(active);
+  }
+
+  // After a redraw: when focus was held and is now lost, the first target
+  // still shown takes it. Focus held elsewhere, or nowhere, is left alone.
+  function refocus(doc, held, targets) {
+    if (!held || !focusLost(doc)) return false;
+    // A target the browser won't focus (inert, say) passes to the next.
+    for (const target of targets || []) {
+      if (!isShown(target)) continue;
+      target.focus();
+      if (doc.activeElement === target) return true;
+    }
+    return false;
+  }
+
   function findById(root, id) {
     if (!root) return null;
     if (typeof root.getElementById === 'function') {
@@ -161,7 +206,23 @@
       dialog.dataset.pairingDeviceType = type;
     }
 
+    // Where focus goes when a swap takes away the part that held it.
+    function landingFor(next, recovery) {
+      const title = findById(documentRef, 'link-pairing-dialog-title');
+      const close = dialog.querySelector('.modal-close');
+      if (next === 'complete') return [elements.successHeading, title, close];
+      if (next === 'unavailable' && recovery === 'window-closed') {
+        return [elements.windowClosed.querySelector('button'), title, close];
+      }
+      if (next === 'unavailable') {
+        return [elements.unavailable.querySelector('p'), ...elements.unavailable.querySelectorAll('button'), title, close];
+      }
+      if (next === 'expired') return [elements.expired.querySelector('button'), title, close];
+      return [title, close];
+    }
+
     function displayState(next, recovery = '') {
+      const held = !dialog.hidden && dialog.contains(documentRef.activeElement);
       ceremony.state = next;
       elements.starting.hidden = next !== 'starting';
       elements.material.hidden = next !== 'material';
@@ -172,12 +233,12 @@
       elements.check.hidden = next !== 'material';
       if (next !== 'material') setCheckBusy(false);
       dialog.dataset.pairingState = next;
+      // Closing and leaving move focus their own way.
+      if (next !== 'idle') refocus(documentRef, held, landingFor(next, recovery));
     }
 
     function setCheckBusy(busy) {
-      elements.check.disabled = busy;
-      if (busy) elements.check.setAttribute('aria-busy', 'true');
-      else elements.check.removeAttribute('aria-busy');
+      setBusy(elements.check, busy);
     }
 
     function formatExpiry(value) {
@@ -275,7 +336,7 @@
       elements.successHeading.hidden = false;
       elements.successVerify.hidden = false;
       elements.remove.hidden = !ceremony.pairedDevice?.cid;
-      elements.remove.disabled = false;
+      setBusy(elements.remove, false);
       elements.removeResult.hidden = true;
       elements.removeResult.textContent = '';
     }
@@ -288,9 +349,10 @@
 
     async function removePairedDevice() {
       const cid = ceremony.pairedDevice?.cid;
-      if (!cid || elements.remove.disabled) return;
+      if (!cid || isBusy(elements.remove)) return;
       const generation = ceremony.generation;
-      elements.remove.disabled = true;
+      const held = documentRef.activeElement === elements.remove;
+      setBusy(elements.remove, true);
       let removed = false;
       try {
         const response = await fetchFn(`${prefix()}/api/clients/${encodeURIComponent(cid)}`, { method: 'DELETE' });
@@ -300,12 +362,14 @@
       }
       if (generation !== ceremony.generation || ceremony.state !== 'complete') return;
       elements.remove.hidden = removed;
-      elements.remove.disabled = false;
+      setBusy(elements.remove, false);
       // Unpaired: the heading and the note describe a device that can no longer reach it.
       elements.successHeading.hidden = removed;
       elements.successVerify.hidden = removed;
       elements.removeResult.textContent = copy(removed ? 'SUCCESS_REMOVED' : 'SUCCESS_REMOVE_FAIL');
       elements.removeResult.hidden = false;
+      // Unpaired, the button goes: the line saying so takes focus.
+      refocus(documentRef, held, [elements.remove, elements.removeResult, findById(documentRef, 'link-pairing-dialog-title')]);
       if (removed) options.onDeviceRemoved?.();
     }
 
@@ -597,7 +661,7 @@
       } else if (action === 'regenerate') {
         regenerate();
       } else if (action === 'check') {
-        if (!control.disabled) checkCurrentNonce(ceremony.generation, true);
+        if (!isBusy(control)) checkCurrentNonce(ceremony.generation, true);
       } else if (action === 'copy') {
         copyLink();
       } else if (action === 'type') {
@@ -860,6 +924,10 @@
   }
 
   const NetworkRender = {
+    setBusy,
+    isBusy,
+    isShown,
+    refocus,
     createClientLabels,
     applyCopy,
     resolve,

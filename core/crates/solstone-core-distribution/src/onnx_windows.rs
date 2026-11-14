@@ -15,8 +15,8 @@
 //! (nonempty, 64-hex SHA-256, or 7-40 hex commit-shaped). They are not
 //! compared against a pinned inventory. Test fixtures in this module are
 //! illustrative, not verified evidence. Capturing and comparing real
-//! identities against this schema is Phase 3, out of scope here. The three
-//! model digests are hardcoded local consts rather than a
+//! identities against this schema is Phase 3, out of scope here. The model
+//! digests are hardcoded local consts rather than a
 //! `solstone-core-transcribe` dependency, for the same reason
 //! `parakeet_windows` states for its own model digests: this crate has no
 //! `solstone-core-assets` / `solstone-core-local` dependency to defer to,
@@ -46,8 +46,8 @@ pub const ONNX_WINDOWS_BUILD_FLAGS: &[&str] = &[
 ];
 
 pub const ONNX_WINDOWS_REDUCED_OPS_CONFIG_SHA256: &str =
-    "d384e1263f8be457bc38173f6773861f94136f151946d7dceb4642e7a5c90ec0";
-pub const ONNX_WINDOWS_REDUCED_OPS_CONFIG_SIZE_BYTES: u64 = 541;
+    "1c6d45634ec2c34235c74a99af8f1d4cadfe9fe691e42ca10cf0ad47fde44e72";
+pub const ONNX_WINDOWS_REDUCED_OPS_CONFIG_SIZE_BYTES: u64 = 777;
 
 pub const WESPEAKER_FILENAME: &str = "wespeaker-resnet34-256.onnx";
 pub const WESPEAKER_SIZE_BYTES: u64 = 26_534_365;
@@ -61,6 +61,13 @@ pub const FIRERED_VAD_FILENAME: &str = "firered_vad.onnx";
 pub const FIRERED_VAD_SIZE_BYTES: u64 = 2_388_488;
 pub const FIRERED_VAD_SHA256: &str =
     "a226e68e695548754a9ab5480a55bbcb8522aa69111cb97e4f093ddce63ad5dc";
+
+pub const YUNET_FILENAME: &str = "face_detection_yunet_2023mar.onnx";
+pub const YUNET_SIZE_BYTES: u64 = 232_589;
+pub const YUNET_SHA256: &str = "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4";
+pub const SFACE_FILENAME: &str = "face_recognition_sface_2021dec.onnx";
+pub const SFACE_SIZE_BYTES: u64 = 38_696_353;
+pub const SFACE_SHA256: &str = "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79";
 
 pub const ONNX_WINDOWS_PACKAGE_CLOSURE: &[&str] = &["onnxruntime.dll"];
 pub const ONNX_WINDOWS_NOTICE_NAMES: &[&str] = &[
@@ -128,6 +135,8 @@ pub struct OnnxWindowsBuildConfiguration {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ModelRole {
+    YuNet,
+    SFace,
     Pyannote,
     FireRedVad,
     Wespeaker,
@@ -137,6 +146,8 @@ impl ModelRole {
     fn as_str(self) -> &'static str {
         match self {
             Self::Pyannote => "pyannote",
+            Self::YuNet => "yunet",
+            Self::SFace => "sface",
             Self::FireRedVad => "firered_vad",
             Self::Wespeaker => "wespeaker",
         }
@@ -604,6 +615,8 @@ fn verify_reduced_ops_config(digest: &str) -> Result<(), OnnxWindowsError> {
 fn model_pin(role: ModelRole) -> (&'static str, u64, &'static str) {
     match role {
         ModelRole::Wespeaker => (WESPEAKER_FILENAME, WESPEAKER_SIZE_BYTES, WESPEAKER_SHA256),
+        ModelRole::YuNet => (YUNET_FILENAME, YUNET_SIZE_BYTES, YUNET_SHA256),
+        ModelRole::SFace => (SFACE_FILENAME, SFACE_SIZE_BYTES, SFACE_SHA256),
         ModelRole::Pyannote => (PYANNOTE_FILENAME, PYANNOTE_SIZE_BYTES, PYANNOTE_SHA256),
         ModelRole::FireRedVad => (
             FIRERED_VAD_FILENAME,
@@ -617,6 +630,8 @@ fn model_source_role(role: ModelRole) -> &'static str {
     match role {
         ModelRole::Wespeaker => "wespeaker source",
         ModelRole::Pyannote => "pyannote source",
+        ModelRole::YuNet => "yunet source",
+        ModelRole::SFace => "sface source",
         ModelRole::FireRedVad => "firered_vad source",
     }
 }
@@ -625,6 +640,8 @@ fn model_filename_role(role: ModelRole) -> &'static str {
     match role {
         ModelRole::Wespeaker => "wespeaker filename",
         ModelRole::Pyannote => "pyannote filename",
+        ModelRole::YuNet => "yunet filename",
+        ModelRole::SFace => "sface filename",
         ModelRole::FireRedVad => "firered_vad filename",
     }
 }
@@ -633,6 +650,8 @@ fn model_size_role(role: ModelRole) -> &'static str {
     match role {
         ModelRole::Wespeaker => "wespeaker size",
         ModelRole::Pyannote => "pyannote size",
+        ModelRole::YuNet => "yunet size",
+        ModelRole::SFace => "sface size",
         ModelRole::FireRedVad => "firered_vad size",
     }
 }
@@ -641,6 +660,8 @@ fn model_sha256_role(role: ModelRole) -> &'static str {
     match role {
         ModelRole::Wespeaker => "wespeaker sha256",
         ModelRole::Pyannote => "pyannote sha256",
+        ModelRole::YuNet => "yunet sha256",
+        ModelRole::SFace => "sface sha256",
         ModelRole::FireRedVad => "firered_vad sha256",
     }
 }
@@ -654,6 +675,8 @@ fn verify_model_inputs(models: &[ModelInputIdentity]) -> Result<(), OnnxWindowsE
         ModelRole::Pyannote,
         ModelRole::FireRedVad,
         ModelRole::Wespeaker,
+        ModelRole::YuNet,
+        ModelRole::SFace,
     ];
     let missing: Vec<String> = required
         .into_iter()
@@ -937,7 +960,32 @@ mod tests {
             pinned_model(ModelRole::Wespeaker),
             pinned_model(ModelRole::Pyannote),
             pinned_model(ModelRole::FireRedVad),
+            pinned_model(ModelRole::YuNet),
+            pinned_model(ModelRole::SFace),
         ]
+    }
+
+    #[test]
+    fn face_model_admission_refuses_a_missing_or_changed_graph() {
+        for role in [ModelRole::YuNet, ModelRole::SFace] {
+            let mut missing = pinned_models();
+            missing.retain(|model| model.role != role);
+            assert_eq!(
+                verify_model_inputs(&missing),
+                Err(OnnxWindowsError::SetMismatch {
+                    role: "model inputs",
+                    missing: vec![role.as_str().into()],
+                    unexpected: Vec::new(),
+                })
+            );
+            let mut changed = pinned_models();
+            changed
+                .iter_mut()
+                .find(|model| model.role == role)
+                .unwrap()
+                .sha256 = "0".repeat(64);
+            assert!(verify_model_inputs(&changed).is_err());
+        }
     }
 
     fn census_with_imports(imports: &[ImportSpec<'_>]) -> PeInfo {
@@ -1042,7 +1090,7 @@ mod tests {
         assert!(admitted_a.build.cpu_only);
         assert!(admitted_a.build.network_access_denied);
         assert_eq!(admitted_a.build.runtime_library, RuntimeLibrary::Md);
-        assert_eq!(admitted_a.models.len(), 3);
+        assert_eq!(admitted_a.models.len(), pinned_models().len());
         let admitted_b = admit(canonical_draft_b()).expect("canonical inputs b");
         for name in admitted_a.submodules.keys() {
             assert!(

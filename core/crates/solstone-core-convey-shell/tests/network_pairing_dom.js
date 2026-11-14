@@ -953,11 +953,13 @@ async function main() {
     const nonceStatus = deferred();
     pending.fetchQueue.push(nonceStatus);
     pending.click(pending.nodes.get('link-pairing-check'));
-    assert.strictEqual(pending.nodes.get('link-pairing-check').disabled, true);
+    // Busy, never disabled, so it keeps focus while the read is out.
+    assert.strictEqual(pending.nodes.get('link-pairing-check').disabled, false);
+    assert.strictEqual(pending.nodes.get('link-pairing-check').getAttribute('aria-disabled'), 'true');
     assert.strictEqual(pending.nodes.get('link-pairing-check').getAttribute('aria-busy'), 'true');
     nonceStatus.resolve(response({ present: true, used: false }));
     await settle();
-    assert.strictEqual(pending.nodes.get('link-pairing-check').disabled, false);
+    assert.strictEqual(pending.nodes.get('link-pairing-check').getAttribute('aria-disabled'), null);
     assert.strictEqual(pending.nodes.get('link-pairing-check').getAttribute('aria-busy'), null);
 
     const check = async (status, expectedId) => {
@@ -1761,7 +1763,7 @@ async function main() {
     });
     const deviceAddressesRow = { hidden: true };
     const start = workspace.indexOf('function renderDeviceAddresses(');
-    const end = workspace.indexOf('function setHomeCandidateRadiosDisabled', start);
+    const end = workspace.indexOf('let homeCandidatePending', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
     const context = vm.createContext({
@@ -1902,6 +1904,8 @@ async function main() {
       URL,
       setTimeout: (fn) => fn(),
       setPrivateLinkButtonsBusy: () => {},
+      keepPrivateLinkFocus: () => () => {},
+      pressed: () => null,
       setPrivateLinkOperation: () => {},
       renderPrivateLinkStatus: () => {},
       pollPrivateLinkUntilTerminal: async () => {},

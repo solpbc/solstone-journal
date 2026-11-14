@@ -4,7 +4,9 @@
 //! Signed Windows package binding for ONNX helper executables, runtime, and models.
 //!
 //! The owner verifies the complete installed package tree on every call, then returns
-//! only the named members required by the two bounded helper consumers. It
+//! only the named members required by speaker/VAD helpers and their runtime,
+//! also used by describe for face inference. Face model digests are verified by
+//! the model-asset resolver. It
 //! neither loads the ONNX Runtime DLL nor launches a helper.
 
 #[cfg(any(windows, test))]

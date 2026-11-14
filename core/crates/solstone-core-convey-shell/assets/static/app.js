@@ -831,6 +831,9 @@ window.AppServices = {
     _nextId: 1,
     _container: null,
     _dismissTimers: {},
+    // Notices whose countdown is waiting for the last dialog to close.
+    _dialogHeld: new Set(),
+    _dialogWatch: null,
     _defaultIconName: 'mailbox',
     _iconSvgByName: Object.freeze({
       'trash-2': window.ConveyIcons.svg('trash-2'),
@@ -995,7 +998,54 @@ window.AppServices = {
       this._render();
     },
 
+    // A countdown runs only while its notice can be pressed. Under a modal
+    // dialog the notices are inert, so every countdown waits for the last
+    // dialog to close. The modal layer marks <body> while one is open; that
+    // mark is the one record of it, so it is what this reads and watches.
+    _dialogOpen() {
+      return Boolean(document.body && document.body.classList.contains('has-managed-dialog'));
+    },
+
+    _watchDialogs() {
+      if (this._dialogWatch || !document.body || typeof MutationObserver !== 'function') return;
+      // Both answers are safe to give again, so any change to the classes
+      // can be answered with the mark as it stands.
+      this._dialogWatch = new MutationObserver(() => {
+        if (this._dialogOpen()) this._holdAll();
+        else this._releaseHeld();
+      });
+      this._dialogWatch.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    },
+
+    _holdForDialog(id) {
+      this._pauseDismissTimer(id);
+      this._dialogHeld.add(id);
+    },
+
+    _holdAll() {
+      Object.keys(this._dismissTimers).forEach(id => this._holdForDialog(Number(id)));
+    },
+
+    // The last dialog has closed: each waiting notice starts again as a hover
+    // or focus ending starts it, unless the pointer or focus is in it now.
+    _releaseHeld() {
+      const held = Array.from(this._dialogHeld);
+      this._dialogHeld.clear();
+      held.forEach(id => {
+        const notif = this._stack.find(n => n.id === id);
+        if (!notif || !notif.autoDismiss) return;
+        const card = this._container && this._container.querySelector(`.notification-card[data-id="${id}"]`);
+        if (card && (card.matches(':hover') || card.matches(':focus-within'))) return;
+        this._startDismissTimer(notif);
+      });
+    },
+
     _startDismissTimer(notif) {
+      this._watchDialogs();
+      if (this._dialogOpen()) {
+        this._holdForDialog(notif.id);
+        return;
+      }
       // Clear any existing timer for this notification
       if (this._dismissTimers[notif.id]) {
         clearTimeout(this._dismissTimers[notif.id]);

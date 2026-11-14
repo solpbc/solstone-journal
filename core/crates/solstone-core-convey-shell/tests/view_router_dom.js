@@ -457,6 +457,14 @@ const ENTRY_TABLE = {
       reads: [{ route: '/app/network/', urls: ['/app/network/api/state', '/app/network/api/clients'] }],
       contract: true,
     },
+    // Agents' code is inline in its fragment, as the real one's is.
+    agents: {
+      fragment: '/app/agents/workspace',
+      scripts: [],
+      styles: [],
+      reads: [{ route: '/app/agents/', urls: ['/app/agents/api/state', '/app/agents/api/memories'] }],
+      contract: true,
+    },
     health: {
       fragment: '/app/health/workspace',
       scripts: [],
@@ -679,7 +687,32 @@ const NETWORK_CODE = `
       }
     });`;
 
+// Agents reads its state and its memory summary, and opens a memory named by
+// a #memories/ hash, on arrival or in place, clearing the hash through the
+// view contract as the real one does.
+const AGENTS_CODE = `
+    window.SolViews.register('agents', {
+      mount(ctx) {
+        const views = window.__views.agents;
+        views.mounts += 1;
+        const open = () => {
+          const found = /^#memories\\/(\\w+)$/.exec(location.hash);
+          if (!found) return;
+          views.opened.push(found[1]);
+          ctx.history.replace(location.pathname + location.search);
+        };
+        Promise.all([ctx.read('/app/agents/api/state'), ctx.read('/app/agents/api/memories')])
+          .then(() => { ctx.ready('content'); open(); }, () => ctx.ready('error'));
+        ctx.on(window, 'hashchange', open);
+        return () => { views.disposes += 1; };
+      }
+    });`;
+
 const FRAGMENTS = {
+  '/app/agents/workspace': '<main class="agents" id="agents-root" tabindex="-1"><div id="agents-view"><p>agents</p>'
+    + '<a href="/app/settings#trash">open trash</a><a href="/app/settings/?facet=work">a facet</a><a href="/app/entities/">an entity</a>'
+    + '<a href="/app/agents/#memories/m2">a memory</a></div></main>'
+    + '<script>' + AGENTS_CODE + '</script>',
   '/app/sources/workspace': '<main id="sources-root" class="sources-page" tabindex="-1"></main><a href="/app/support/">support</a><a href="/app/network/">manage devices</a>'
     + '<script>' + SOURCES_CODE + '</script>',
   '/app/support/workspace': '<div class="support-workspace"><section class="support-page"><h1>support</h1>'
@@ -1016,7 +1049,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
   document.querySelectorAll = (selector) => document.root.querySelectorAll(selector);
   document.body.innerHTML =
     '<nav id="app-rail"><a href="/app/home/" data-app-name="home">home</a><a href="/app/transcripts/" data-app-name="transcripts">transcripts</a>' +
-    '<a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/speakers/" data-app-name="speakers">speakers</a><a href="/app/sources/" data-app-name="sources">sources</a><a href="/app/network/" data-app-name="network">network</a><a href="/app/support/" data-app-name="support">support</a><a href="/app/settings/" data-app-name="settings">settings</a><a href="/app/health/" data-app-name="health">health</a><a href="/app/search/" data-app-name="search">search</a>' +
+    '<a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/speakers/" data-app-name="speakers">speakers</a><a href="/app/sources/" data-app-name="sources">sources</a><a href="/app/network/" data-app-name="network">network</a><a href="/app/agents/" data-app-name="agents">agents</a><a href="/app/support/" data-app-name="support">support</a><a href="/app/settings/" data-app-name="settings">settings</a><a href="/app/health/" data-app-name="health">health</a><a href="/app/search/" data-app-name="search">search</a>' +
     '<div id="status-instrument"></div></nav><nav id="app-dock"><a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/home/" data-app-name="home">home</a></nav>' +
     '<div id="view-announcer" role="status" aria-live="polite"></div>' +
     '<main id="main-content" tabindex="-1"><div class="surface-state surface-state--loading" role="status" aria-busy="true"></div></main>';
@@ -1094,11 +1127,12 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       sources: { mounts: 0, disposes: 0 },
       support: { mounts: 0, disposes: 0 },
       network: { mounts: 0, disposes: 0, arrivals: [], pairStarts: 0 },
+      agents: { mounts: 0, disposes: 0, opened: [] },
     },
     __scriptErrors: [],
     __consoleErrors: [],
     solShellData: {
-      apps: ['home', 'transcripts', 'more', 'body', 'activities', 'map', 'search', 'entities', 'speakers', 'sources', 'support', 'network', 'settings', 'health'].map((name) => ({
+      apps: ['home', 'transcripts', 'more', 'body', 'activities', 'map', 'search', 'entities', 'speakers', 'sources', 'support', 'network', 'agents', 'settings', 'health'].map((name) => ({
         name, label: name, workspace_url: `/app/${name}/workspace`,
       })),
     },
@@ -1143,6 +1177,8 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       server.answers.set('/app/speakers/api/state', server.json({}));
       server.answers.set('/app/network/api/clients', server.json({ clients: [] }));
       server.answers.set('/app/network/api/state', server.json({ posture: 'direct' }));
+      server.answers.set('/app/agents/api/state', server.json({ connections: [] }));
+      server.answers.set('/app/agents/api/memories', server.json({ agents: [] }));
       for (const [url, body] of Object.entries(FRAGMENTS)) server.answers.set(url, server.html(body));
       server.answers.set('/api/shell', server.json({ app_names: [] }));
       server.answers.set('/api/streams/labels', server.json({}));
@@ -3613,6 +3649,47 @@ asyncCase('arrival: null on the first view, push for a link, pop for a back or f
   assert.deepStrictEqual(page.window.__scriptErrors, []);
 });
 
+asyncCase('router: a view clearing its hash after a fragment navigation keeps that entry\'s scroll for a back', async () => {
+  const page = makePage();
+  page.answerAll();
+  await page.boot('home');
+  page.click('/app/more/');
+  await page.clock.advance(400);
+  assert.ok(page.view('more'));
+  // A link to the same path with a hash is the browser's: a new entry with no state, then popstate.
+  page.history.pushState(null, '', '/app/more/#memories/x');
+  page.window.dispatchEvent({ type: 'popstate', state: null });
+  // The view reads the hash and clears it from the address through its own replace.
+  page.window.solRouter.viewEntry('replace', '/app/more/');
+  const id = page.history.state?.solRoute?.id || null;
+  assert.ok(id !== null, 'the cleared entry has an id');
+  assert.ok(page.window.solRouter.held().entryId === id, 'the router adopts the id it wrote');
+  page.window.scrollY = 310;
+  page.click('/app/home/');
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+  assert.strictEqual(page.window.scrollY, 0, 'a new view starts at the top');
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('more'));
+  assert.strictEqual(page.window.scrollY, 310, 'the back lands where that entry was left');
+  assert.deepStrictEqual(page.record.assigned, [], 'all in the page');
+});
+
+asyncCase('router: a replace on an entry that has an id keeps it', async () => {
+  const page = makePage();
+  page.answerAll();
+  await page.boot('home');
+  page.click('/app/more/');
+  await page.clock.advance(400);
+  const before = page.window.solRouter.held().entryId;
+  assert.ok(before && page.history.state?.solRoute?.id === before);
+  page.window.solRouter.viewEntry('replace', '/app/more/?x=1');
+  assert.ok(page.window.solRouter.held().entryId === before, 'the router keeps its id');
+  assert.ok(page.history.state?.solRoute?.id === before, 'the entry keeps its id');
+  assert.ok(page.history.state?.solRoute?.owner === 'router', 'and its owner');
+});
+
 asyncCase('arrival focus: a view whose root says data-arrival-focus="main" lands on the workspace though it ships a heading', async () => {
   const page = makePage();
   bootAllViews(page);
@@ -3630,6 +3707,83 @@ asyncCase('arrival focus: a view whose root says data-arrival-focus="main" lands
   const home = page.document.activeElement;
   assert.ok(home && home !== page.document.body, 'the next view is focused as it always is');
   assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
+// ---- agents: the management group's fourth contract view
+
+asyncCase('agents: to and from every other contract view in the page, its two first reads started at the move and taken once, its arrival focus on the workspace', async () => {
+  const page = makePage();
+  bootAllViews(page);
+  await page.boot('home');
+  const others = [...CONTRACT_HREFS, '/app/sources/', '/app/support/', '/app/network/'];
+  for (const href of others) {
+    const before = [page.server.of('/app/agents/api/state').length, page.server.of('/app/agents/api/memories').length];
+    page.click('/app/agents/');
+    await page.clock.advance(400);
+    assert.ok(page.view('agents'), `agents in the page (before ${href})`);
+    assert.ok(page.server.of('/app/agents/api/state').length === before[0] + 1, 'one read of the state a move');
+    assert.ok(page.server.of('/app/agents/api/memories').length === before[1] + 1, 'one read of the memory summary a move');
+    const active = page.document.activeElement;
+    assert.ok(active === page.main(), `focus on the workspace (it is on ${active && active.tagName})`);
+    assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'agents');
+    page.click(href);
+    await page.clock.advance(400);
+    const name = href.split('/')[2];
+    assert.ok(page.view(name), `${name} in the page`);
+  }
+  assert.deepStrictEqual(page.record.assigned, [], 'no page load either way');
+  assert.ok(page.window.__views.agents.mounts === others.length && page.window.__views.agents.disposes === others.length);
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
+asyncCase('agents: a #memories arrival opens it and clears the hash, keeping the entry\'s id and scroll for a back', async () => {
+  const page = makePage();
+  bootAllViews(page);
+  await page.boot('home');
+  page.window.solRouter.navigate('/app/agents/#memories/m1');
+  await page.clock.advance(400);
+  assert.ok(page.view('agents'), 'agents in the page');
+  assert.deepStrictEqual(page.window.__views.agents.opened, ['m1']);
+  assert.strictEqual(page.location.hash, '', 'the hash is cleared');
+  const route = page.history.state && page.history.state.solRoute;
+  assert.ok(route && route.id === page.window.solRouter.held().entryId && route.owner === 'router', 'the entry keeps the router\'s id and owner');
+  page.window.scrollY = 260;
+  page.click('/app/home/');
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('agents'), 'back to agents in the page');
+  assert.strictEqual(page.window.scrollY, 260, 'at the scroll it was left at');
+  assert.deepStrictEqual(page.window.__views.agents.opened, ['m1'], 'the cleared entry opens no memory again');
+  assert.deepStrictEqual(page.record.assigned, []);
+});
+
+asyncCase('agents: its own #memories link is left to the browser and opens in place; settings\' trash and a facet stay page loads', async () => {
+  const page = makePage();
+  bootAllViews(page);
+  await page.boot('home');
+  page.click('/app/agents/');
+  await page.clock.advance(400);
+  const mounts = page.window.__views.agents.mounts;
+  const event = page.link('/app/agents/#memories/m2').click();
+  assert.ok(!event.defaultPrevented, 'the router leaves a hash on agents\' own path to the browser');
+  // The browser's fragment navigation.
+  page.history.pushState(null, '', '/app/agents/#memories/m2');
+  page.window.dispatchEvent({ type: 'popstate', state: null });
+  page.window.dispatchEvent({ type: 'hashchange' });
+  await page.clock.advance(50);
+  assert.deepStrictEqual(page.window.__views.agents.opened, ['m2'], 'the memory opens in place');
+  assert.ok(page.window.__views.agents.mounts === mounts, 'no new mount');
+  assert.ok(page.history.state.solRoute.id === page.window.solRouter.held().entryId, 'the cleared entry is the router\'s');
+  for (const href of ['/app/settings#trash', '/app/settings/?facet=work']) {
+    const before = page.record.assigned.length;
+    page.click(href);
+    assert.ok(page.record.assigned.length === before + 1, `${href} is a page load`);
+  }
+  page.click('/app/entities/');
+  await page.clock.advance(400);
+  assert.ok(page.view('entities'), 'an entity is in the page');
 });
 
 (async () => {

@@ -21,6 +21,16 @@ const INVENTORY: &str = "core/distribution/inventory.toml";
 const MIRRORED_MODEL_DIGESTS: &[(&str, &str, &str)] = &[
     (
         "core/crates/solstone-core-transcribe/src/model_assets.rs",
+        "YUNET_SHA256",
+        "YUNET_SHA256",
+    ),
+    (
+        "core/crates/solstone-core-transcribe/src/model_assets.rs",
+        "SFACE_SHA256",
+        "SFACE_SHA256",
+    ),
+    (
+        "core/crates/solstone-core-transcribe/src/model_assets.rs",
         "WESPEAKER_RESNET34_SHA256",
         "WESPEAKER_SHA256",
     ),

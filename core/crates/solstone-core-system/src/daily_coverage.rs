@@ -644,6 +644,38 @@ pub fn conflict_recovery(
     }
 }
 
+/// A conflict the day's automatic run declines without asking a model: its
+/// retries are spent, or deferred to a later day, under the evidence and
+/// contract it conflicted on. New evidence or an owner's retry opens it again.
+pub fn conflict_declined(
+    record: &solstone_core_journal_io::DailyUnitRecord,
+    evidence_revision: &str,
+    contract_digest: &str,
+    today: &str,
+    journal: &Path,
+) -> bool {
+    record.evidence_revision == evidence_revision
+        && record.contract_digest == contract_digest
+        && matches!(
+            conflict_recovery(record, today, journal),
+            ConflictRecovery::Exhausted | ConflictRecovery::StaleDeferred
+        )
+}
+
+/// An owed unit the day's automatic run leaves as it is, asking no model: a
+/// write that may have landed, or a declined conflict. Running the day for it
+/// alone does nothing and ends the run incomplete.
+pub fn left_by_automatic_run(
+    record: &solstone_core_journal_io::DailyUnitRecord,
+    evidence_revision: &str,
+    contract_digest: &str,
+    today: &str,
+    journal: &Path,
+) -> bool {
+    record.has_uncommitted_started_receipt()
+        || conflict_declined(record, evidence_revision, contract_digest, today, journal)
+}
+
 /// The local day charged by this attempt, including version-one legacy records.
 pub fn conflict_attempt_day(
     record: &solstone_core_journal_io::DailyUnitRecord,

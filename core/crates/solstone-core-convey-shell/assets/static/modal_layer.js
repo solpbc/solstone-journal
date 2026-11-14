@@ -2,9 +2,9 @@
 // Copyright (c) 2026 sol pbc
 
 (function (global) {
+  // Every modal dialog in the page, the shell's own included: a view's, and
+  // the shell's report review and error box, which can open over one another.
   const MANAGED_DIALOG_SELECTOR = '[role="dialog"][aria-modal="true"]';
-  // Assignment §8 items 1-2: shell-owned dialogs stay outside this app workspace layer.
-  const UNMANAGED_DIALOG_SELECTOR = '.report-error-modal';
   const BODY_ACTIVE_CLASS = 'has-managed-dialog';
   const ACTIVE_DIALOG_ATTR = 'data-convey-active-dialog';
   const ACTIVE_HOST_ATTR = 'data-convey-active-dialog-host';
@@ -31,6 +31,9 @@
   let activeHost = null;
   let lastOutsideFocus = null;
   let lastTabWasBackward = false;
+  // The control that last had focus inside each open dialog, so a dialog that
+  // is uncovered again gets it back. Dropped when the dialog closes.
+  const lastInsideFocus = new WeakMap();
   const inertRecords = new Map();
   const temporaryTabIndexDialogs = new Set();
 
@@ -74,20 +77,20 @@
       element
       && typeof element.matches === 'function'
       && element.matches(MANAGED_DIALOG_SELECTOR)
-      && !element.matches(UNMANAGED_DIALOG_SELECTOR)
     );
   }
 
   function managedDialogs() {
-    return Array.from(bodyElement().querySelectorAll(MANAGED_DIALOG_SELECTOR))
-      .filter((dialog) => !dialog.matches(UNMANAGED_DIALOG_SELECTOR));
+    return Array.from(bodyElement().querySelectorAll(MANAGED_DIALOG_SELECTOR));
   }
 
   function findActiveDialog() {
     let visibleDialog = null;
     managedDialogs().forEach((dialog) => {
       if (isRenderedOpen(dialog)) {
-        // If multiple managed dialogs are visible, the last in document order is active.
+        // If multiple managed dialogs are visible, the last in document order is
+        // active. The shell's own dialogs go to the end of <body> as they open,
+        // so for them document order is the order they opened in.
         visibleDialog = dialog;
       }
     });
@@ -275,16 +278,32 @@
     }
   }
 
-  function reconcile() {
+  function focusReturning(dialog) {
+    const kept = lastInsideFocus.get(dialog);
+    if (kept && kept.isConnected && dialog.contains(kept) && isFocusableCandidate(kept)) {
+      kept.focus();
+      return;
+    }
+    focusDialog(dialog, false);
+  }
+
+  // `restore: false` is for a dialog closed by a move: the move places focus,
+  // so the control that opened the dialog doesn't get it back first.
+  function reconcile(options) {
+    const restore = !(options && options.restore === false);
     const previousDialog = activeDialog;
     const dialog = findActiveDialog();
+
+    if (previousDialog && previousDialog !== dialog && !isRenderedOpen(previousDialog)) {
+      lastInsideFocus.delete(previousDialog);
+    }
 
     if (!dialog) {
       bodyElement().classList.remove(BODY_ACTIVE_CLASS);
       clearMarkers();
       applyInert(null);
       restoreDialogTabIndex(null);
-      if (previousDialog) {
+      if (previousDialog && restore) {
         restoreOpener();
       }
       return;
@@ -298,7 +317,7 @@
     if (previousDialog !== dialog) {
       const focused = document.activeElement;
       if (!focused || !dialog.contains(focused)) {
-        focusDialog(dialog, false);
+        focusReturning(dialog);
       }
     }
   }
@@ -321,9 +340,26 @@
       return;
     }
 
+    // Focus moving into a dialog that has just opened over the active one:
+    // it is the new top, so reconcile now rather than pull focus back.
+    if (activeDialog && !activeDialog.contains(target)) {
+      const opening = openDialogHolding(target);
+      if (opening && opening !== activeDialog) reconcile();
+    }
+
     if (activeDialog && !activeDialog.contains(target)) {
       focusDialog(activeDialog, lastTabWasBackward);
+      return;
     }
+
+    if (activeDialog) lastInsideFocus.set(activeDialog, target);
+  }
+
+  function openDialogHolding(element) {
+    for (let node = element; node && node !== document.body; node = node.parentElement) {
+      if (isManagedDialog(node)) return isRenderedOpen(node) ? node : null;
+    }
+    return null;
   }
 
   function handleKeyDown(event) {
