@@ -10,7 +10,8 @@
 //     SolFocus.focusLost(doc)
 //     SolFocus.refocus(doc, held, targets)
 //
-// A view loads this file from its fragment, before its own code.
+// The shell carries it in its boot part, so every view has it before it mounts
+// and no view asks for it on its own.
 (function (global) {
   // A control whose write is out keeps focus. It is marked busy and ignores
   // presses until the write answers; `disabled` would drop focus to the page.
