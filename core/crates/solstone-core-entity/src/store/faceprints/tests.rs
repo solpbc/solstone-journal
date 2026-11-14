@@ -290,7 +290,7 @@ mod disk {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         choose_fixture(root);
-        let photo = root.join("entities/a").join(PHOTO);
+        let photo = root.join("entities").join("a").join(PHOTO);
         assert_eq!(fs::read(&photo).unwrap(), b"synthetic jpeg");
         let token = dismiss(root, "a").unwrap();
         assert!(load(root, "a").unwrap().1.decision.photo.is_none());
@@ -308,7 +308,7 @@ mod disk {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         let token = choose_fixture(root);
-        let photo = root.join("entities/a").join(PHOTO);
+        let photo = root.join("entities").join("a").join(PHOTO);
         assert!(photo.is_file());
         undo(root, "a", &token).unwrap();
         assert!(load(root, "a").unwrap().1.decision.photo.is_none());
@@ -320,7 +320,7 @@ mod disk {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         entity(root, "a");
-        let dir = root.join("entities/a");
+        let dir = root.join("entities").join("a");
         for write_state in [false, true] {
             if write_state {
                 publish(
@@ -406,7 +406,7 @@ mod disk {
             },
         });
         publish(
-            &root.join("entities/a"),
+            &root.join("entities").join("a"),
             STATE,
             &serde_json::to_vec(&state).unwrap(),
         )
@@ -456,7 +456,7 @@ mod disk {
             jpeg: vec![7, 8],
         });
         publish(
-            &root.join("entities/source"),
+            &root.join("entities").join("source"),
             STATE,
             &serde_json::to_vec(&state).unwrap(),
         )
@@ -466,7 +466,7 @@ mod disk {
             sha256: "0".repeat(64),
             width: 256,
         };
-        let before = fs::read(root.join("entities/target").join(ARCHIVE)).unwrap();
+        let before = fs::read(root.join("entities").join("target").join(ARCHIVE)).unwrap();
         let result = crate::store::merge::commit_entity_merge_with_injector(
             root,
             "source",
@@ -477,10 +477,10 @@ mod disk {
         );
         assert!(result.is_err());
         assert_eq!(
-            fs::read(root.join("entities/target").join(ARCHIVE)).unwrap(),
+            fs::read(root.join("entities").join("target").join(ARCHIVE)).unwrap(),
             before
         );
-        assert!(root.join("entities/source").exists());
+        assert!(root.join("entities").join("source").exists());
         crate::commit_entity_merge(
             root,
             "source",
@@ -489,7 +489,7 @@ mod disk {
             &voice,
         )
         .unwrap();
-        assert!(!root.join("entities/source").exists());
+        assert!(!root.join("entities").join("source").exists());
         let (a, s) = load(root, "target").unwrap();
         assert_eq!(a.unwrap().faces.len(), 2);
         assert!(s.decision.photo.is_some());
