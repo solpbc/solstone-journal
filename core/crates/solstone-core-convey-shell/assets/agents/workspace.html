@@ -1,5 +1,6 @@
 <!-- first-read: /app/agents/ -> /app/agents/api/state /app/agents/api/memories -->
 <!-- view-contract -->
+<script src="/static/focus.js"></script>
 <style>
   .agents{--muted:var(--ink-faint);--line:var(--hairline);--green:var(--success);--amber:var(--warn);max-width:1040px;margin:0 auto;padding:38px 28px 80px;color:var(--ink);background:var(--panel)}
   .agents *{box-sizing:border-box}.agents h1{font-size:clamp(34px,6vw,64px);line-height:1.03;letter-spacing:-.045em;margin:0 0 14px}.agents h2{font-size:20px;margin:0}.agents h3{font-size:15px;margin:0}.agents p{line-height:1.58}.agents a{color:inherit}.agents code{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.9em;background:var(--cream);border-radius:5px;padding:2px 5px}
@@ -46,6 +47,7 @@
   .agents .day{font-size:.84rem;font-weight:600;color:var(--muted);margin:20px 0 8px}.agents .day:first-of-type{margin-top:14px}.agents .peek{margin-top:10px}.agents .peek .mem{padding:11px 0}
   .agents .mem{display:flex;gap:12px;align-items:flex-start;padding:13px 16px;border-top:1px solid var(--hairline)}.agents .mem:first-child{border-top:0}.agents .mem .m{flex:1;min-width:0}.agents .mem-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;font-size:.95rem}.agents .mem-text.clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.agents .mem small{display:block;color:var(--muted);font-size:.8rem;margin-top:5px}.agents .mem .more{appearance:none;background:none;border:0;padding:0;margin:0 0 0 8px;font:inherit;color:var(--orange-text-aa);font-weight:600;cursor:pointer}.agents .mem.bad .mem-text{color:var(--muted)}.agents .mem.here{box-shadow:inset 3px 0 0 var(--orange);background:var(--cream-bright)}.agents .quote.mem-quote{white-space:pre-wrap}
   @media(max-width:640px){.agents .mem{flex-wrap:wrap}.agents .mem .m{flex-basis:100%}.agents .mem .btn{margin-left:auto;min-height:44px;min-width:44px}}
+  .agents [aria-disabled="true"]{opacity:.8;cursor:progress}
   @media(max-width:640px){.agents h1{font-size:2rem}.agents .activity-row time{flex-basis:100%}.agents .seg2{grid-template-columns:1fr}.agents .lane-row{grid-template-columns:1fr;gap:4px}}
 </style>
 
@@ -178,6 +180,71 @@
     // Which step of the delete dialog is open: 'move' (to the trash) or 'erase' (its own confirm).
     let memoryDeleteStep = 'move';
 
+    // ---- focus that stays where the owner is ------------------------------------------------------
+    // render() draws the whole view again, which takes the focused control with it. So a control is
+    // known by what it is, not by its node, and after each draw focus goes back to it, or to what took
+    // its place. Only when focus was in the view; focus on the rail, the shell or a notice stays put.
+    const SolFocus = window.SolFocus;
+    const KEY_ATTRS = ['data-action', 'data-lane', 'data-way', 'data-agent', 'data-move-byo', 'data-connection', 'data-pause',
+      'data-save-permission', 'data-revoke', 'data-rename', 'data-again', 'data-memories', 'data-memories-retry',
+      'data-memories-older', 'data-memory-open', 'data-memory-delete', 'data-memory-erase-step', 'data-memory-back',
+      'data-memory-confirm', 'data-memory-erase', 'data-activity-connection', 'data-activity-index', 'data-route',
+      'data-copy', 'data-solstone-outside', 'data-close-modal'];
+    // The two halves of one control: a press on one draws the other in its place.
+    const PAIRS = {'byo-on': 'byo-power', 'byo-off': 'byo-power'};
+    const FOCUSABLE = 'button,a,input,select,textarea,summary,[tabindex]';
+    function keyOf(el) {
+      if (!el || el.nodeType !== 1) return null;
+      if (el.getAttribute('role') === 'switch') return `switch|${el.getAttribute('aria-label')}`;
+      if (el.id) return `id|${el.id}`;
+      for (const attr of KEY_ATTRS) {
+        if (!el.hasAttribute(attr)) continue;
+        let value = el.getAttribute(attr);
+        if (attr === 'data-action') value = (PAIRS[value] || value) + (el.hasAttribute('data-notice') ? `|${el.getAttribute('data-notice')}` : '');
+        return `${el.tagName}|${attr}|${value}`;
+      }
+      if (el.tagName === 'SUMMARY') return `SUMMARY|${el.textContent}`;
+      if (el.tagName === 'A' && el.hasAttribute('href')) return `A|href|${el.getAttribute('href')}`;
+      return null;
+    }
+    function findKey(scope, key) {
+      if (!key) return null;
+      for (const el of scope.querySelectorAll(FOCUSABLE)) if (keyOf(el) === key) return el;
+      return null;
+    }
+    // A landing is a control's key (it has a "|") or a selector.
+    function resolveLanding(scope, entry) {
+      if (!entry) return null;
+      if (typeof entry !== 'string') return entry;
+      if (entry.includes('|')) return findKey(scope, entry);
+      try { return scope.querySelector(entry); } catch (_) { return null; }
+    }
+    const rowKey = (kind, id) => `BUTTON|data-connection|${kind}:${id}`;
+    const deleteKey = place => place ? `BUTTON|data-memory-delete|${place}` : null;
+    // Where a press wants focus once its write has answered, for the next draw only.
+    let landing = null;
+    // A memory link pressed inside the view: its own back-or-forward rule moves focus out of the
+    // closing dialog first, so the memory it opens takes focus even though focus left the view.
+    let followLink = false;
+    // The control that opened the dialog that is open, where its close puts focus back.
+    let dialogOpener = null;
+    // Controls whose write is out, drawn busy again by every draw until it answers.
+    const busyKeys = new Set();
+    // agents' own pages, from its first, each with the control that opened it, so going back
+    // lands on that control.
+    const trail = [];
+    let drawnRoute = null;
+    function routeKey() {
+      if (route.name === 'connection') return `connection|${route.connection?.kind}:${route.connection?.id}`;
+      if (route.name === 'memories') return `memories|${route.source}`;
+      return route.name;
+    }
+    function markBusy(key, el, busy) {
+      if (key) { if (busy) busyKeys.add(key); else busyKeys.delete(key); }
+      SolFocus.setBusy(el, busy);
+      if (!busy && key) SolFocus.setBusy(findKey(view, key), false);
+    }
+
     // Reads belong to the mount and end with it; writes go out unchanged. Every read but the first
     // load's two asks of its own, as each did before.
     async function api(path, options) { return ctx.read(path, options || {fresh: true}); }
@@ -212,7 +279,7 @@
     }
     function pending() { return Boolean(enableOp && (enableOp.phase === 'waiting' || enableOp.phase === 'starting')); }
     function usesConsentFlow() { return !state.owner_state?.address || state.owner_state?.status === 'not_accepted'; }
-    function frame(title, lead, body, titleMark = '') { return `<h1>${esc(title)}${titleMark}</h1>${lead ? `<p class="lead">${lead}</p>` : ''}${body}`; }
+    function frame(title, lead, body, titleMark = '') { return `<h1 tabindex="-1">${esc(title)}${titleMark}</h1>${lead ? `<p class="lead">${lead}</p>` : ''}${body}`; }
     function errorPage(message) { if (ctx.disposed) return; view.innerHTML = frame('agents could not open.', `<span class="error notice">${esc(message)}</span>`, `<button class="btn" data-action="reload">try again</button>`); }
     function laneChip(connection) {
       if (connection.kind !== 'oauth') return '';
@@ -435,7 +502,7 @@
       const b = state?.byo;
       if (!b) return `<div class="lane-body"><p class="note">${relayAvailable() ? "this isn't available in this version of your journal yet." : "this isn't available on windows yet."}</p></div>`;
       const host = b.hostname || '';
-      const removed = byoRemovedMessage ? `<div class="notice"><p>${esc(byoRemovedMessage)}</p>${byoCommands?.remove ? `<p class="note">on your server, paste this as an admin to undo the setup:</p><pre class="cmd-block"><code>${esc(byoCommands.remove)}</code></pre><button class="btn sm" data-copy="${esc(byoCommands.remove)}">copy</button>` : ''}</div>` : '';
+      const removed = byoRemovedMessage ? `<div class="notice" tabindex="-1" data-byo-removed><p>${esc(byoRemovedMessage)}</p>${byoCommands?.remove ? `<p class="note">on your server, paste this as an admin to undo the setup:</p><pre class="cmd-block"><code>${esc(byoCommands.remove)}</code></pre><button class="btn sm" data-copy="${esc(byoCommands.remove)}">copy</button>` : ''}</div>` : '';
       if (!host && !byoSetupOpen) {
         return `<div class="lane-body byo-setup">${removed}<p class="onlab">what you need</p><ol class="legs"><li><span class="step">1</span><span>a domain or subdomain whose DNS lets you add an A record and a CAA record</span></li><li><span class="step">2</span><span>a Linux server on the internet with a public IPv4 address, an SSH login with admin rights, and port 443 open. any provider works.</span></li><li><span class="step">3</span><span>the device running your journal on and online when your agents connect; on a phone, the app open and in the foreground</span></li></ol><div class="hand"><button class="btn primary" data-action="byo-setup">set it up</button></div></div>`;
       }
@@ -478,7 +545,7 @@
               const verdictLine = BYO_CAA_MISMATCH.includes(verdict) ? byoCaaMismatchLine(host) : (BYO_DNS_COPY[verdict] || (verdict === 'admitted' ? '' : 'not checked yet'));
               return (aOk ? '<li><span class="step">✓</span><span>A record points at your server</span></li>' : '') + [...diagLines, verdictLine].filter(Boolean).map(line => `<li><span class="step">!</span><span>${esc(line)}</span></li>`).join('');
             })();
-        step3 = `<p class="onlab">two records at your DNS host</p><p>add these two records for <code>${esc(host)}</code>:</p><table class="records"><tr><th>type</th><th>value</th><th></th></tr><tr><td>A</td><td>${rAddr ? `<code>${esc(rAddr)}</code>` : "your server's public IPv4 address"}</td><td>${rAddr ? `<button class="btn sm" data-copy="${esc(rAddr)}">copy</button>` : ''}</td></tr><tr><td>CAA</td><td><code>${esc(b.caa_record || '')}</code></td><td><button class="btn sm" data-copy="${esc(b.caa_record || '')}">copy</button></td></tr></table><p class="note">if your DNS host's form has separate fields, use flags 0, tag issue, and the text between the quotes as the value. if it offers a proxy or CDN for this name, turn it off. the CAA record lets only your journal get a certificate for this exact name, though whoever can change your domain's DNS can still get one that covers it.</p><ul class="legs">${status}</ul><div class="button-row"><button class="btn sm" data-action="byo-dns-check">check</button></div>`;
+        step3 = `<p class="onlab" tabindex="-1" data-byo-step="dns">two records at your DNS host</p><p>add these two records for <code>${esc(host)}</code>:</p><table class="records"><tr><th>type</th><th>value</th><th></th></tr><tr><td>A</td><td>${rAddr ? `<code>${esc(rAddr)}</code>` : "your server's public IPv4 address"}</td><td>${rAddr ? `<button class="btn sm" data-copy="${esc(rAddr)}">copy</button>` : ''}</td></tr><tr><td>CAA</td><td><code>${esc(b.caa_record || '')}</code></td><td><button class="btn sm" data-copy="${esc(b.caa_record || '')}">copy</button></td></tr></table><p class="note">if your DNS host's form has separate fields, use flags 0, tag issue, and the text between the quotes as the value. if it offers a proxy or CDN for this name, turn it off. the CAA record lets only your journal get a certificate for this exact name, though whoever can change your domain's DNS can still get one that covers it.</p><ul class="legs">${status}</ul><div class="button-row"><button class="btn sm" data-action="byo-dns-check">check</button></div>`;
       }
 
       // 4 · turn it on
@@ -595,7 +662,7 @@
     function agentsList() { return `${connectedAgents()}${earlierAgents()}`; }
     function connectedAgents() {
       const rows = state.connections;
-      const head = `<div class="sh"><h2>your agents</h2>${rows.length ? '<button class="btn primary" data-action="connect">connect an agent</button>' : ''}</div>`;
+      const head = `<div class="sh"><h2 tabindex="-1" data-agents-heading>your agents</h2>${rows.length ? '<button class="btn primary" data-action="connect">connect an agent</button>' : ''}</div>`;
       if (!rows.length) return `<section class="section">${head}<div class="list empty"><h3>no agents connected yet</h3><p>connect one to let it search and read your journal, within what you choose.</p><button class="btn primary" data-action="connect">connect an agent</button></div></section>`;
       return `<section class="section">${head}<div class="list">${rows.map(connection => `<button class="ag-row" data-connection="${esc(connection.kind)}:${esc(connection.id)}"><span class="m"><strong>${esc(connection.name)}${keyMark(connection.memory_source)}${laneChip(connection)}${pausedChip(connection)}</strong>${connection.paused ? pausedRowLine(connection) : `<small>${connection.kind === 'bearer' ? 'a key you created · ' : ''}${connection.activity_complete ? '' : 'at least '}${esc(connection.requests_this_week)} request${connection.requests_this_week === 1 ? '' : 's'} this week${lastRequestCopy(connection)}</small>`}<small>${esc(permissionLine(connection.permission))}</small>${memoryCountLine(connection.memory_source)}</span><span aria-hidden="true">›</span></button>`).join('')}</div><p class="foot"><a class="link" href="#" data-route="activity">recent activity →</a> what your agents asked, and what they got. recorded in your journal.</p></section>`;
     }
@@ -613,7 +680,7 @@
       const back = replaced ? `<section class="notice success" data-sme-replaced><p>your solstone.me address ${esc(replaced.address)} came back to this journal on ${esc(formatAgentTimestamp(replaced.replaced_at))}. if that wasn't you, tell support in the services portal. if an agent can't reach your journal, connect it again with a new pairing code.</p><button class="btn sm" data-action="dismiss-sme-replaced">dismiss</button></section>` : '';
       // When the journal can't read what it keeps about its agents, it refuses every agent rather than guess.
       const unreadable = state.agent_state_unreadable ? `<section class="notice error" data-agent-state-unreadable><p>your journal can't read its agent settings, so no agent can use your journal until it can. your connected agents and what each may see don't change. try again in a moment, and if it keeps happening, <a class="link" href="https://support.solstone.app/" target="_blank" rel="noopener noreferrer">tell support ↗</a>.</p><button class="btn sm" data-action="reload">try again</button></section>` : '';
-      return `<p class="brandlock"><span class="lockdot" aria-hidden="true"></span>your journal is always private, only yours.</p><h1>agents</h1><p class="status-line"><span class="sdot ${tone}" aria-hidden="true"></span>${sentence}</p>${unreadable}${lanes}${moveOffNotice}${back}${notices}${agentsList()}`;
+      return `<p class="brandlock"><span class="lockdot" aria-hidden="true"></span>your journal is always private, only yours.</p><h1 tabindex="-1">agents</h1><p class="status-line"><span class="sdot ${tone}" aria-hidden="true"></span>${sentence}</p>${unreadable}${lanes}${moveOffNotice}${back}${notices}${agentsList()}`;
     }
 
     // ---- dialogs -----------------------------------------------------------------------------------
@@ -674,12 +741,12 @@
       const connection = watch.connection;
       const name = esc(connection.name);
       const close = `<button class="btn sm" style="float:right" data-close-modal>close</button>`;
-      if (watch.phase === 'gone') return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent" data-connect-phase="gone">${close}<h2>${name} was disconnected.</h2><p class="meta">it can't read your journal any more. its activity stays in your journal.</p><div class="button-row"><button class="btn" data-close-modal>done</button></div></article></div>`;
+      if (watch.phase === 'gone') return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent" data-connect-phase="gone">${close}<h2 tabindex="-1">${name} was disconnected.</h2><p class="meta">it can't read your journal any more. its activity stays in your journal.</p><div class="button-row"><button class="btn" data-close-modal>done</button></div></article></div>`;
       const requests = watch.requests || [];
       const rows = requests.slice(0, 5).map(entry => `<div class="ag-row" data-first-request><span class="m"><strong>used ${esc(entry.tool)}</strong>${requestSummary(entry) ? `<small>${esc(requestSummary(entry))}</small>` : ''}</span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome] || entry.outcome)}</span><time>${esc(formatAgentTime(entry.timestamp))}</time></div>`).join('');
       const list = requests.length ? rows : `<div class="none"><p><span class="sdot a pulse" aria-hidden="true"></span> nothing yet. ask ${name} something it can find in your journal, and each request shows up here as it arrives.</p></div>`;
       const more = requests.length > 5 ? `<p class="foot">and ${requests.length - 5} more.</p>` : '';
-      return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${name} is connected" data-connect-phase="connected" data-connection-door="${esc(connection.door)}">${close}<h2>${name}${watch.again ? `${keyMark(connection.memory_source)} is connected again.` : ' is connected.'}</h2><p class="status-line"><span class="sdot g" aria-hidden="true"></span>it connects ${doorName(connection.door)}.${watch.again && memorySummaryFor(connection.memory_source)?.count ? ` it can recall its ${esc(memoriesWord(memorySummaryFor(connection.memory_source).count))}.` : ''}</p><dl class="lane-row"><dt>it may see</dt><dd>${esc(connection.permission ? permissionLine(connection.permission) : 'checking…')}</dd></dl><h3 class="section" data-request-list-heading>what it has asked for</h3><div class="list first" aria-live="polite">${list}</div>${more}<p class="meta">your journal records each request. you can change what it may see or disconnect it at any time.</p><div class="button-row"><button class="btn" data-action="open-connection">change what it may see</button><button class="btn" data-action="open-activity">see all its activity</button><button class="btn primary" data-close-modal>done</button></div></article></div>`;
+      return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${name} is connected" data-connect-phase="connected" data-connection-door="${esc(connection.door)}">${close}<h2 tabindex="-1">${name}${watch.again ? `${keyMark(connection.memory_source)} is connected again.` : ' is connected.'}</h2><p class="status-line"><span class="sdot g" aria-hidden="true"></span>it connects ${doorName(connection.door)}.${watch.again && memorySummaryFor(connection.memory_source)?.count ? ` it can recall its ${esc(memoriesWord(memorySummaryFor(connection.memory_source).count))}.` : ''}</p><dl class="lane-row"><dt>it may see</dt><dd>${esc(connection.permission ? permissionLine(connection.permission) : 'checking…')}</dd></dl><h3 class="section" data-request-list-heading>what it has asked for</h3><div class="list first" aria-live="polite">${list}</div>${more}<p class="meta">your journal records each request. you can change what it may see or disconnect it at any time.</p><div class="button-row"><button class="btn" data-action="open-connection">change what it may see</button><button class="btn" data-action="open-activity">see all its activity</button><button class="btn primary" data-close-modal>done</button></div></article></div>`;
     }
     function connectDialog() {
       if (watch && (watch.phase === 'connected' || watch.phase === 'gone')) return connectedDialog();
@@ -691,8 +758,8 @@
       const againName = againTarget ? `${esc(againTarget.name)}${keyMark(againTarget.source)}` : '';
       const againLive = againTarget && !String(againTarget.agent).startsWith('source:');
       const close = againTarget
-        ? `<button class="btn sm" style="float:right" data-close-modal>close</button><h2 data-again-target>connect ${againName} again</h2><p class="meta">it keeps its memories${againLive ? ' and what it may see. the one connected now stops working once this one connects' : ''}.</p>`
-        : `<button class="btn sm" style="float:right" data-close-modal>close</button><h2>connect an agent</h2>`;
+        ? `<button class="btn sm" style="float:right" data-close-modal>close</button><h2 tabindex="-1" data-again-target>connect ${againName} again</h2><p class="meta">it keeps its memories${againLive ? ' and what it may see. the one connected now stops working once this one connects' : ''}.</p>`
+        : `<button class="btn sm" style="float:right" data-close-modal>close</button><h2 tabindex="-1">connect an agent</h2>`;
       if (!choices.length) {
         connectWay = null;
         return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent" data-open-pairing="none">${close}<p class="meta">none of the ways an agent can reach your journal is ready right now.</p></article></div>`;
@@ -765,11 +832,11 @@
       if (kind === 'lan-off') {
         const own = ownState() === 'on', me = meState() === 'on' || meState() === 'renewal';
         const keep = own && me ? ' agents on this device, and through solstone.me, keep working.' : own ? ' agents on this device keep working.' : me ? ' agents through solstone.me keep working.' : '';
-        return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="turn off agents on your network"><h2>turn off agents on your network?</h2><p>agents you connected on your network stop reaching your journal within a few seconds.${keep}</p><p>the ones you connected are kept, with what each may see, for when you turn this back on. their activity stays in your journal.</p><div class="button-row"><button class="btn danger" data-action="lan-door-off">turn off</button><button class="btn" data-close-modal>keep it on</button></div></article></div>`;
+        return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="turn off agents on your network"><h2 tabindex="-1">turn off agents on your network?</h2><p>agents you connected on your network stop reaching your journal within a few seconds.${keep}</p><p>the ones you connected are kept, with what each may see, for when you turn this back on. their activity stays in your journal.</p><div class="button-row"><button class="btn danger" data-action="lan-door-off">turn off</button><button class="btn" data-close-modal>keep it on</button></div></article></div>`;
       }
       const body = kind === 'me-off'
-        ? `<h2>turn off solstone.me?</h2><p>agents connected through solstone.me stop reaching your journal on their next request.${ownState() === 'on' ? ' agents on this device keep working.' : ''}</p><p>the address and your agents are kept: turning back on uses the same address, with no new certificate while the one you have is still good. its public certificate record remains either way.</p><div class="button-row"><button class="btn danger" data-action="turn-off">turn off</button><button class="btn" data-close-modal>keep it on</button></div>`
-        : `<h2>turn off agents on this device?</h2><p>agents on this device stop reaching your journal within a few seconds.</p><p>the ones you connected are kept, with what each may see, for when you turn this back on. their activity stays in your journal.</p><div class="button-row"><button class="btn danger" data-action="door-off">turn off</button><button class="btn" data-close-modal>keep it on</button></div>`;
+        ? `<h2 tabindex="-1">turn off solstone.me?</h2><p>agents connected through solstone.me stop reaching your journal on their next request.${ownState() === 'on' ? ' agents on this device keep working.' : ''}</p><p>the address and your agents are kept: turning back on uses the same address, with no new certificate while the one you have is still good. its public certificate record remains either way.</p><div class="button-row"><button class="btn danger" data-action="turn-off">turn off</button><button class="btn" data-close-modal>keep it on</button></div>`
+        : `<h2 tabindex="-1">turn off agents on this device?</h2><p>agents on this device stop reaching your journal within a few seconds.</p><p>the ones you connected are kept, with what each may see, for when you turn this back on. their activity stays in your journal.</p><div class="button-row"><button class="btn danger" data-action="door-off">turn off</button><button class="btn" data-close-modal>keep it on</button></div>`;
       return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${kind === 'me-off' ? 'turn off solstone.me' : 'turn off agents on this device'}">${body}</article></div>`;
     }
 
@@ -827,7 +894,7 @@
       const when = memory.created_at ? formatMemoryInstant(memory.created_at, stamp ? MEMORY_STAMP : MEMORY_TIME) : formatMemoryDay(memory.day);
       const line = `${esc(when)}${clamped ? `<button class="more" data-memory-open="${esc(place)}">show all</button>` : ''}`;
       const action = `<button class="btn sm" data-memory-delete="${esc(place)}">delete</button>`;
-      return `<div class="mem${memory.unreadable ? ' bad' : ''}${here ? ' here' : ''}"><div class="m"><p class="mem-text${clamped ? ' clamp' : ''}">${esc(text)}</p><small>${line}</small></div>${action}</div>`;
+      return `<div class="mem${memory.unreadable ? ' bad' : ''}${here ? ' here' : ''}"${here ? ' tabindex="-1"' : ''}><div class="m"><p class="mem-text${clamped ? ' clamp' : ''}">${esc(text)}</p><small>${line}</small></div>${action}</div>`;
     }
     function memoriesTrouble(page) {
       if (page?.failed) return `<div class="notice" data-memories-failed><p>your journal couldn't read these memories.</p><div class="button-row"><button class="btn sm" data-memories-retry="${esc(route.source || '')}">try again</button></div></div>`;
@@ -845,7 +912,7 @@
       const see = rows.length && more ? `<button class="btn" data-memories="${esc(source)}">see all${count ? ` ${count}` : ''}</button>` : '';
       const head = `<div class="section-head"><h2>its memories</h2>${see}</div>`;
       if (page?.failed) return `<section class="card pad" data-memories-failed>${head}<p>your journal couldn't read its memories.</p><div class="button-row"><button class="btn" data-memories-retry="${esc(source)}">try again</button></div></section>`;
-      if (!rows.length) return `<section class="card pad">${head}${page?.complete === false ? memoriesTrouble(page) : `<p data-memories-none>${noMemoriesLine(connection)}</p>`}</section>`;
+      if (!rows.length) return `<section class="card pad">${head}${page?.complete === false ? memoriesTrouble(page) : `<p tabindex="-1" data-memories-none>${noMemoriesLine(connection)}</p>`}</section>`;
       return `<section class="card pad">${head}<div class="peek">${rows.map(memory => memoryRow(memory, {stamp: true})).join('')}</div></section>`;
     }
     function memoriesPage() {
@@ -865,7 +932,7 @@
         else groups.push({day: memory.day, memories: [memory]});
       }
       const list = groups.map(group => `<h3 class="day">${esc(formatMemoryDay(group.day))}</h3><div class="list">${group.memories.map(memory => memoryRow(memory)).join('')}</div>`).join('');
-      const none = readWhole && !memories.length ? `<p data-memories-none>${connection ? noMemoriesLine(connection) : 'none of its memories are left in your journal.'}</p>` : '';
+      const none = readWhole && !memories.length ? `<p tabindex="-1" data-memories-none>${connection ? noMemoriesLine(connection) : 'none of its memories are left in your journal.'}</p>` : '';
       const older = page?.next ? '<div class="button-row"><button class="btn" data-memories-older="1">show older</button></div>' : '';
       const again = connection ? '' : `<section class="card pad section"><h2>connect it again</h2><p>connect ${esc(name)} again from here and it can recall these memories. choose what it may see when you connect.</p><div class="button-row"><button class="btn primary" data-again="source:${esc(source)}">connect ${esc(name)} again</button></div></section>`;
       return frame(`${name}'s memories`, lead, `${back}${again}${gone ? `<div class="notice" data-memory-gone><p>that memory isn't in your journal anymore.</p></div>` : ''}${memoriesTrouble(page)}${none}${list}${older}`);
@@ -889,6 +956,8 @@
       await loadMemories(source);
       // A link to one memory reads on until it reaches that memory or runs out.
       while (target && memoryPages.get(source)?.next && !memoryPages.get(source).memories.some(memory => memory.day === target.day && memory.segment === target.segment)) await loadMemories(source, {more: true});
+      if (target) { landing = ['.mem.here']; if (followLink) landing.followed = true; }
+      followLink = false;
       render();
       view.querySelector?.('.mem.here')?.scrollIntoView?.({block: 'center'});
     }
@@ -923,16 +992,18 @@
       const buttons = erasing
         ? `<div class="button-row trash-dlg-foot"><span class="trash-dlg-right"><button class="btn" data-memory-back="1">${esc(TRASH_COPY.buttons.back)}</button><button class="btn danger-fill" data-memory-erase="1">${esc(TRASH_COPY.buttons.eraseNow)}</button></span></div>`
         : `<div class="button-row trash-dlg-foot"><button class="btn danger" data-memory-erase-step="1">${esc(TRASH_COPY.buttons.eraseNow)}</button><span class="trash-dlg-right"><button class="btn" data-close-modal>${esc(TRASH_COPY.buttons.cancel)}</button><button class="btn primary" data-memory-confirm="1">${esc(TRASH_COPY.buttons.moveToTrash)}</button></span></div>`;
-      return `<div class="modal" data-close-modal><article class="modal-card${erasing ? ' trash-erase' : ''}" role="dialog" aria-modal="true" aria-label="${esc(copy.title)}"><h2>${esc(copy.title)}</h2><p class="meta">${esc(memoryAgentName(source))}${keyMark(source)} · ${esc(when)}</p><p class="quote mem-quote">${esc(text)}</p>${note}${buttons}</article></div>`;
+      return `<div class="modal" data-close-modal><article class="modal-card${erasing ? ' trash-erase' : ''}" role="dialog" aria-modal="true" aria-label="${esc(copy.title)}"><h2 tabindex="-1">${esc(copy.title)}</h2><p class="meta">${esc(memoryAgentName(source))}${keyMark(source)} · ${esc(when)}</p><p class="quote mem-quote">${esc(text)}</p>${note}${buttons}</article></div>`;
     }
     // Show one step of the delete dialog and put the focus where that step wants it.
     function openMemoryDeleteStep(step, focus) {
       memoryDeleteStep = step;
       dialog = 'memory-delete';
+      landing = [focus];
       render();
+      // The step's own control takes focus even when focus wasn't in the view.
       view.querySelector?.(focus)?.focus?.();
     }
-    async function deleteMemory(memory, erase) {
+    async function deleteMemory(memory, erase, around = []) {
       const place = memoryPlace(memory);
       const source = sourceOf(memory);
       const url = `/app/transcripts/api/segment/${encodeURIComponent(memory.day)}/${encodeURIComponent(memory.stream)}/${encodeURIComponent(memory.segment)}`;
@@ -941,6 +1012,7 @@
         answer = await api(url, erase ? jsonOptions('DELETE', {erase: true}) : ownerOptions('DELETE'));
       } catch (error) {
         trashReceipt(unanswered(error) ? (erase ? 'noAnswerErase' : 'noAnswerMove') : (erase ? 'eraseRefused' : 'moveRefused'));
+        landing = [deleteKey(place)];
         render();
         return;
       }
@@ -963,6 +1035,7 @@
       const page = memoryPages.get(source);
       if (page) page.memories = page.memories.filter(item => memoryPlace(item) !== place);
       await loadMemorySummary();
+      landing = [...around.map(deleteKey), '[data-memories-none]'];
       render();
       receipt();
     }
@@ -1098,6 +1171,7 @@
       stopWatch();
       pairingCode = null;
       dialog = null;
+      landing = [dialogOpener];
       render();
       if (followed) reload(true);
     }
@@ -1105,6 +1179,42 @@
     function render() {
       if (!state || ctx.disposed) return;
       if (!lane) lane = hasDoor() ? 'own' : 'me';
+      const active = document.activeElement;
+      const modalBefore = view.querySelector?.('.modal');
+      const inView = Boolean(active && active !== view && view.contains(active));
+      const aim = landing;
+      const followed = Boolean(aim && aim.followed);
+      landing = null;
+      const held = inView || Boolean(modalBefore && SolFocus.focusLost(document)) || followed;
+      const hadKey = inView ? keyOf(active) : null;
+      const inLane = inView && Boolean(active.closest?.('.lanes'));
+      draw();
+      for (const key of busyKeys) SolFocus.setBusy(findKey(view, key), true);
+      const now = routeKey();
+      const moved = now !== drawnRoute;
+      let left = null;
+      if (moved) {
+        const at = trail.findIndex(entry => entry.key === now);
+        if (at >= 0) { left = trail[at + 1] || null; trail.length = at + 1; }
+        else trail.push({key: now, opener: hadKey, row: route.name === 'connection' ? rowKey(route.connection?.kind, route.connection?.id) : null});
+        drawnRoute = now;
+      }
+      if (!held) return;
+      const dialogs = view.querySelectorAll('[role="dialog"]');
+      const top = dialogs[dialogs.length - 1] || null;
+      // A draw that opens a dialog: the modal layer puts focus in it, unless the press named a place.
+      if (top && !modalBefore && !aim) return;
+      const scope = top || view;
+      // The followed link's memory takes focus from wherever the link's own move left it.
+      if (followed && !top) {
+        const memory = resolveLanding(view, aim[0]);
+        if (SolFocus.isShown(memory)) { memory.focus(); return; }
+      }
+      const targets = [hadKey, ...(aim || []), left?.opener, left?.row,
+        inLane && !top ? '.lanes [data-lane][aria-checked="true"]' : null, top ? 'h2' : 'h1'];
+      SolFocus.refocus(document, true, targets.map(entry => resolveLanding(scope, entry)));
+    }
+    function draw() {
       const scrolled = view.querySelector?.('.modal-card')?.scrollTop || 0;
       if (route.name === 'connection') view.innerHTML = connectionPage(route.connection);
       else if (route.name === 'activity') view.innerHTML = activityPage();
@@ -1202,7 +1312,8 @@
     }
     async function turnOn() {
       lane = 'me';
-      if (!usesConsentFlow()) { await api('/app/agents/api/capability', jsonOptions('PUT', {enabled:true})); await reload(true); return; }
+      const meNext = ['A|data-solstone-outside|', 'switch|solstone.me'];
+      if (!usesConsentFlow()) { await api('/app/agents/api/capability', jsonOptions('PUT', {enabled:true})); landing = meNext; await reload(true); return; }
       try {
         const start = await api('/app/agents/api/enable', jsonOptions('POST', {}));
         if (ctx.disposed) return;
@@ -1211,12 +1322,13 @@
           window.solstoneOutside.openDelayed(enableOp.portal_url, 'noopener,noreferrer');
         }
         lastEnableView = enableViewKey(enableOp);
+        landing = meNext;
         render();
         if (pending()) scheduleEnablePoll();
       } catch (e) {
         if (ctx.disposed) return;
         await checkEnableOp();
-        if (enableOp) { lastEnableView = enableViewKey(enableOp); render(); }
+        if (enableOp) { lastEnableView = enableViewKey(enableOp); landing = meNext; render(); }
         else notify(e.message || "couldn't start turning on solstone.me. try again.");
       }
     }
@@ -1232,22 +1344,35 @@
 
     view.addEventListener('click', async event => {
       const target = event.target.closest('button,a,[data-close-modal]'); if (!target) return;
+      // A control whose write is out ignores presses until it answers.
+      if (SolFocus.isBusy(target)) { event.preventDefault(); return; }
+      followLink = target.tagName === 'A' && /^\/app\/agents\/#memories\//.test(target.getAttribute('href') || '');
       if (target.dataset.closeModal !== undefined && (target === event.target || target.tagName === 'BUTTON')) { if (dialog) closeDialog(); else { pairingCode = null; target.closest('.modal')?.remove(); } return; }
       if (target.closest('.modal-card') === null && target.dataset.closeModal !== undefined) return;
       const action = target.dataset.action;
       if (target.dataset.lane) { lane = target.dataset.lane; render(); return; }
       if (target.dataset.way) { connectWay = target.dataset.way; pairingCode = null; stopWatch(); render(); return; }
       if (target.dataset.agent) { agentChoice = target.dataset.agent; render(); return; }
-      if (target.dataset.moveByo) { const moving = (state.connections || []).find(c => String(c.id) === target.dataset.moveByo); const kind = Object.keys(AGENT_NAMES).find(k => AGENT_NAMES[k].toLowerCase() === String(moving?.name || '').toLowerCase()); stopWatch(); dialog = 'connect'; connectWay = 'byo'; agentChoice = kind || null; pairingCode = null; render(); return; }
+      if (target.dataset.moveByo) { dialogOpener = keyOf(target); const moving = (state.connections || []).find(c => String(c.id) === target.dataset.moveByo); const kind = Object.keys(AGENT_NAMES).find(k => AGENT_NAMES[k].toLowerCase() === String(moving?.name || '').toLowerCase()); stopWatch(); dialog = 'connect'; connectWay = 'byo'; agentChoice = kind || null; pairingCode = null; render(); return; }
       if (target.dataset.route) { event.preventDefault(); if (target.dataset.route === 'activity') await loadActivity(); else { route = {name: target.dataset.route}; if (route.name === 'home') await loadMemorySummary(); render(); } return; }
       if (target.dataset.memories) { await openMemories(target.dataset.memories); return; }
       if (target.dataset.memoriesRetry !== undefined) { const source = target.dataset.memoriesRetry || route.connection?.memory_source; if (source) await loadMemories(source); render(); return; }
       if (target.dataset.memoriesOlder) { await loadMemories(route.source, {more: true}); render(); return; }
-      if (target.dataset.memoryOpen) { memoryOpen.add(target.dataset.memoryOpen); render(); return; }
-      if (target.dataset.memoryDelete) { memoryToDelete = memoryAt(target.dataset.memoryDelete); if (memoryToDelete) openMemoryDeleteStep('move', '[data-memory-confirm]'); return; }
+      if (target.dataset.memoryOpen) { memoryOpen.add(target.dataset.memoryOpen); landing = [deleteKey(target.dataset.memoryOpen)]; render(); return; }
+      if (target.dataset.memoryDelete) { memoryToDelete = memoryAt(target.dataset.memoryDelete); if (memoryToDelete) { dialogOpener = keyOf(target); openMemoryDeleteStep('move', '[data-memory-confirm]'); } return; }
       if (target.dataset.memoryEraseStep) { if (memoryToDelete) openMemoryDeleteStep('erase', '[data-memory-back]'); return; }
       if (target.dataset.memoryBack) { if (memoryToDelete) openMemoryDeleteStep('move', '[data-memory-erase-step]'); return; }
-      if (target.dataset.memoryConfirm || target.dataset.memoryErase) { const memory = memoryToDelete; const erase = Boolean(target.dataset.memoryErase); memoryToDelete = null; dialog = null; await deleteMemory(memory, erase); return; }
+      if (target.dataset.memoryConfirm || target.dataset.memoryErase) {
+        const memory = memoryToDelete; const erase = Boolean(target.dataset.memoryErase); memoryToDelete = null; dialog = null;
+        // The memories around this one, as the page shows them, for where focus goes once it's gone.
+        const places = [...view.querySelectorAll('[data-memory-delete]')].filter(el => !el.closest('.modal')).map(el => el.getAttribute('data-memory-delete'));
+        const at = memory ? places.indexOf(memoryPlace(memory)) : -1;
+        const busy = keyOf(target);
+        markBusy(busy, target, true);
+        try { await deleteMemory(memory, erase, at >= 0 ? [places[at + 1], places[at - 1]] : []); }
+        finally { markBusy(busy, target, false); }
+        return;
+      }
       if (target.dataset.activityConnection) { event.preventDefault(); await loadActivity(target.dataset.activityConnection); return; }
       if (target.dataset.connection) { event.preventDefault(); const [kind,id] = target.dataset.connection.split(':'); await openConnection(state.connections.find(item => item.kind === kind && item.id === id)); return; }
       if (target.dataset.copy) { await navigator.clipboard?.writeText(target.dataset.copy); target.textContent = 'copied'; return; }
@@ -1261,15 +1386,17 @@
         }
         return;
       }
+      const busy = keyOf(target);
+      markBusy(busy, target, true);
       try {
         if (action === 'reload' || action === 'refresh') await reload(true);
-        else if (action === 'connect') { stopWatch(); againTarget = null; dialog = 'connect'; connectWay = null; pairingCode = null; render(); }
-        else if (target.dataset.again) { const agent = target.dataset.again; const live = (state.connections || []).find(c => c.key === agent); const source = live ? live.memory_source : agent.slice('source:'.length); againTarget = {agent, name: live ? live.name : memoryAgentName(source), source}; const kind = Object.keys(AGENT_NAMES).find(k => AGENT_NAMES[k].toLowerCase() === String(againTarget.name).toLowerCase()); stopWatch(); dialog = 'connect'; connectWay = live && connectWays().some(([id]) => id === live.door) ? live.door : null; agentChoice = kind || null; pairingCode = null; render(); }
+        else if (action === 'connect') { dialogOpener = keyOf(target); stopWatch(); againTarget = null; dialog = 'connect'; connectWay = null; pairingCode = null; render(); }
+        else if (target.dataset.again) { dialogOpener = keyOf(target); const agent = target.dataset.again; const live = (state.connections || []).find(c => c.key === agent); const source = live ? live.memory_source : agent.slice('source:'.length); againTarget = {agent, name: live ? live.name : memoryAgentName(source), source}; const kind = Object.keys(AGENT_NAMES).find(k => AGENT_NAMES[k].toLowerCase() === String(againTarget.name).toLowerCase()); stopWatch(); dialog = 'connect'; connectWay = live && connectWays().some(([id]) => id === live.door) ? live.door : null; agentChoice = kind || null; pairingCode = null; render(); }
         else if (target.dataset.pause) { const [kind, id] = target.dataset.pause.split(':'); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/pause`, jsonOptions('PUT', {paused: target.dataset.pausedTo === 'true'})); await reload(true); const found = state.connections.find(item => item.kind === kind && item.id === id); if (found) await openConnection(found); else { route = {name: 'home'}; render(); } }
         else if (action === 'open-connection' || action === 'open-activity') { const key = watch?.connection?.key; stopWatch(); pairingCode = null; dialog = null; await reload(true); if (action === 'open-activity') await loadActivity(key); else { const found = state.connections.find(item => item.key === key); route = found ? {name: 'connection', connection: found} : {name: 'home'}; render(); } }
-        else if (action === 'me-off' || action === 'own-off' || action === 'lan-off') { dialog = action; render(); }
-        else if (action === 'lan-on' || action === 'lan-door-off') { await api('/app/agents/api/lan-door', jsonOptions('PUT', {enabled: action === 'lan-on'})); dialog = null; await reload(true); }
-        else if (action === 'own-on' || action === 'door-off') { await api('/app/agents/api/local-door', jsonOptions('PUT', {enabled: action === 'own-on'})); dialog = null; await reload(true); }
+        else if (action === 'me-off' || action === 'own-off' || action === 'lan-off') { dialogOpener = keyOf(target); dialog = action; render(); }
+        else if (action === 'lan-on' || action === 'lan-door-off') { await api('/app/agents/api/lan-door', jsonOptions('PUT', {enabled: action === 'lan-on'})); dialog = null; if (action === 'lan-door-off') landing = [dialogOpener, 'switch|agents on your network']; await reload(true); }
+        else if (action === 'own-on' || action === 'door-off') { await api('/app/agents/api/local-door', jsonOptions('PUT', {enabled: action === 'own-on'})); dialog = null; if (action === 'door-off') landing = [dialogOpener, 'switch|agents on this device']; await reload(true); }
         else if (action === 'byo-setup') { byoSetupOpen = true; render(); }
         else if (action === 'byo-save') { const hostname = document.getElementById('byo-hostname').value.trim(); if (!hostname) { notify("enter your journal's address first"); return; } if (state.byo?.hostname && state.byo.hostname !== hostname && !confirm("changing your journal's address disconnects agents paired at the old address. continue?")) return; await api('/app/agents/api/byo', jsonOptions('PUT', {hostname, enabled:false})); await api('/app/agents/api/byo/account', ownerOptions('POST')); await reload(true); }
         else if (action === 'byo-relay-save') { const address = document.getElementById('byo-relay-address').value.trim(); const port = parseInt(document.getElementById('byo-relay-port').value.trim(), 10) || 22; await api('/app/agents/api/byo/relay', jsonOptions('PUT', {address, port})); byoRelayCheck = null; await loadByoCommands(); await reload(true); }
@@ -1278,20 +1405,27 @@
         else if (action === 'byo-dns-check') { byoDnsResult = await api('/app/agents/api/byo/dns-check', ownerOptions('POST')); render(); }
         else if (action === 'byo-outside-check') { const res = await api('/app/agents/api/byo/outside-check', ownerOptions('POST')); byoOutsideResult = res?.code || null; render(); }
         else if (action === 'byo-on' || action === 'byo-off') { await api('/app/agents/api/byo', jsonOptions('PUT', {enabled:action === 'byo-on'})); await reload(true); }
-        else if (action === 'byo-remove') { if (!confirm("remove your journal's address? agents paired through it lose access, even if you add the same address again.")) return; await api('/app/agents/api/byo', ownerOptions('DELETE')); byoRemovedMessage = "delete the A record at your DNS host first, then the CAA record, or both together. don't leave the A record pointing at a server you no longer have."; byoRelayCheck = null; byoDnsResult = null; byoOutsideResult = null; byoSetupOpen = false; await reload(true); }
-        else if (action === 'byo-replace') { if (!confirm("replace this journal's certificate registration? the public route will turn off and you must publish a new CAA record before turning it on again.")) return; await api('/app/agents/api/byo/account/replace', ownerOptions('POST')); await reload(true); }
+        else if (action === 'byo-remove') { if (!confirm("remove your journal's address? agents paired through it lose access, even if you add the same address again.")) return; await api('/app/agents/api/byo', ownerOptions('DELETE')); byoRemovedMessage = "delete the A record at your DNS host first, then the CAA record, or both together. don't leave the A record pointing at a server you no longer have."; byoRelayCheck = null; byoDnsResult = null; byoOutsideResult = null; byoSetupOpen = false; landing = ['[data-byo-removed]']; await reload(true); }
+        else if (action === 'byo-replace') { if (!confirm("replace this journal's certificate registration? the public route will turn off and you must publish a new CAA record before turning it on again.")) return; await api('/app/agents/api/byo/account/replace', ownerOptions('POST')); landing = ['[data-byo-step="dns"]']; await reload(true); }
         else if (action === 'turn-on') await turnOn();
-        else if (action === 'turn-off') { await api('/app/agents/api/capability', jsonOptions('PUT', {enabled:false})); dialog = null; await reload(true); }
+        else if (action === 'turn-off') { await api('/app/agents/api/capability', jsonOptions('PUT', {enabled:false})); dialog = null; landing = [dialogOpener, 'switch|solstone.me']; await reload(true); }
         else if (action === 'dismiss-enable') { ctx.clearTimeout(enablePollTimer); enableOp = null; lastEnableView = ''; render(); }
         else if (action === 'sme-account-replace') { await api('/app/agents/api/solstone-me/account/replace', ownerOptions('POST')); await reload(true); }
         else if (action === 'dismiss-sme-replaced') { await api('/app/agents/api/solstone-me/account/notice/dismiss', ownerOptions('POST')); await reload(true); }
-        else if (action === 'dismiss-replay') { await api('/app/agents/api/replay-notices/' + encodeURIComponent(target.dataset.notice) + '/dismiss', ownerOptions('POST')); await reload(true); }
+        else if (action === 'dismiss-replay') {
+          const notices = (state.replay_notices || []).filter(notice => !notice.dismissed).map(notice => `BUTTON|data-action|dismiss-replay|${notice.id}`);
+          const at = notices.indexOf(busy);
+          await api('/app/agents/api/replay-notices/' + encodeURIComponent(target.dataset.notice) + '/dismiss', ownerOptions('POST'));
+          landing = [notices[at + 1], notices[at - 1], '[data-agents-heading]'];
+          await reload(true);
+        }
         else if (action === 'new-code') { if (connectWay && connectWays().some(([id]) => id === connectWay)) { const known = await pairedBefore(); const res = await api('/app/agents/api/pairing', jsonOptions('POST', againTarget ? {door: connectWay, agent: againTarget.agent} : {door: connectWay})); pairingCode = res; state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door}; stopWatch(); render(); startWatch(res, known); } }
         else if (action === 'filter-activity') { const filters = Object.fromEntries(Object.keys(activityFilters).map(key => [key, document.getElementById(`a-${key}`).value])); await applyActivityFilters(filters); }
         else if (target.dataset.savePermission) { const [kind,id] = target.dataset.savePermission.split(':'); const categories = [...document.querySelectorAll('input[name=category]:checked')].map(node => node.value); const scope = document.getElementById('scope').value; const facets = [...document.querySelectorAll('input[name=facet]:checked')].map(node => node.value); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`, jsonOptions('PUT', {categories, scope, facets})); route = {name:'home'}; await reload(true); }
-        else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (confirm(`${kind === 'bearer' ? 'revoke this key?' : 'disconnect this agent?'} what it already read stays with it. its activity and its memories stay in your journal.`)) { await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); route = {name:'home'}; await reload(true); } }
+        else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (confirm(`${kind === 'bearer' ? 'revoke this key?' : 'disconnect this agent?'} what it already read stays with it. its activity and its memories stay in your journal.`)) { const order = state.connections.map(item => rowKey(item.kind, item.id)); const at = order.indexOf(rowKey(kind, id)); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); landing = [order[at + 1], order[at - 1], '[data-agents-heading]']; route = {name:'home'}; await reload(true); } }
         else if (target.dataset.rename) { const name = prompt('name this key', route.connection.name); if (name) { await api(`/app/agents/api/connections/bearer/${encodeURIComponent(target.dataset.rename)}`, jsonOptions('PATCH', {name})); route = {name:'home'}; await reload(true); } }
       } catch (error) { notify(error.message || 'that change did not finish'); }
+      finally { markBusy(busy, target, false); }
     });
     // A back or forward onto one of this view's own entries closes an open dialog. Focus leaves it
     // first, so the page under the dialog can take focus once the layer lets it.
