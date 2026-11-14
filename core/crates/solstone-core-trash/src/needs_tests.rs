@@ -175,8 +175,10 @@ fn the_timer_erases_the_segment_before_the_import() {
     let (_dir, root) = journal();
     let first = trash_first(&root);
     let import = trash_import(&root);
-    let between = first.erase_at().unwrap() + Duration::milliseconds(1);
-    let swept = sweep(&root, &[&Needing], between.min(import.erase_at().unwrap()));
+    // Dated apart, as two deletes a day apart are.
+    let segment_due = first.erase_at().unwrap();
+    redate(&root, &import.id, segment_due + Duration::days(1));
+    let swept = sweep(&root, &[&Needing], segment_due + Duration::hours(1));
     assert_eq!(swept.failed, Vec::<String>::new());
     assert!(read_item(&root, &first.id).unwrap().is_none());
     assert!(read_item(&root, &import.id).unwrap().is_some());

@@ -19,6 +19,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `solstone-retention`'s `release-raw`, `remove-marked` and `sweep --force` also move the originals they delete to the trash now, and say the day the trash erases them.
 - erasing a segment from the trash now erases any originals deleted from it that are waiting there too.
 - a segment's transcript now says when its original audio or screen media is in the trash, with a link to the trash.
+- deleting the last segment from an import now deletes the import too: the file it kept and its row in your import history go to the trash with the segment, as one thing, and recovering it puts all three back. a photo shared from your iphone makes one segment, so deleting that segment takes the photo. deleting a segment that isn't an import's last leaves the import and its file in your journal, and the delete says so.
+- a segment you deleted from an import can't be recovered while that import is in the trash: recover the import first, then the segment. erasing an import now erases its segments still waiting in the trash too, and the import page and the trash say so before you erase.
+- `solstone-retention remove-segments` does the same when it removes an import's last segment.
 - connected agents can now read what was said on a day in one go, in time order. before, they read one segment at a time. they can also ask for one source's segments, by the label their list shows for it. what each agent may see hasn't changed.
 - an activity that belongs to more than one facet now shows once to a connected agent, under the facet it belongs to most, with the others named beside it. before, it showed once for each facet, so an agent's count of your week ran high.
 - connected agents now see what kind each activity was, such as a meeting or writing, and where it came from. a voice your journal has no name for is counted, and no longer listed as a person called Speaker 1.
