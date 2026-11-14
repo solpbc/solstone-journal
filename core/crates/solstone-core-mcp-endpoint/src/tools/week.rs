@@ -514,20 +514,15 @@ fn project_sunday(
             let memory_key = memory.map(|m| m.key.as_str());
             let state = resolve_day_cell_state(day.state.as_str(), memory_key, &left_out_keys);
             let mut cell = json!({"day": day.day, "state": state});
-            let has_place = journal.join("chronicle").join(&day.day).is_dir()
-                || facets.iter().any(|(_, folder, _)| {
-                    solstone_core_facets::load_activity_records(journal, folder, &day.day, false)
-                        .is_ok_and(|rows| !rows.is_empty())
-                });
-            if has_place {
-                crate::journal_links::attach(
-                    journal,
-                    &mut cell,
-                    solstone_core_journal_link::Place::Day {
-                        day: day.day.clone(),
-                    },
-                );
-            }
+            // A calendar cell is already admitted. Mint from its day alone:
+            // testing source existence here would reveal withheld body days.
+            crate::journal_links::attach(
+                journal,
+                &mut cell,
+                solstone_core_journal_link::Place::Day {
+                    day: day.day.clone(),
+                },
+            );
             days.push(cell);
         }
 
@@ -978,6 +973,44 @@ mod tests {
     }
 
     #[test]
+    fn day_links_do_not_disclose_a_body_only_day_without_body_permission() {
+        let root = journal("solstone-week-day-links-");
+        whole(root.path());
+        let days: Vec<_> = (8..=14)
+            .map(|day| json!({"day": format!("202603{day:02}"), "state": "nothing_shared"}))
+            .collect();
+        write_raw(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            &json!({
+                "version": 1, "week": {"start":"20260308", "end":"20260314"},
+                "days": days, "memories": [], "said": [],
+            })
+            .to_string(),
+        );
+        let before = probe(root.path(), json!({"week":"20260308"})).unwrap();
+        write_raw(
+            root.path(),
+            "chronicle/20260310/import.apple_health/090000_300/body.jsonl",
+            "{}\n",
+        );
+        let after = probe(root.path(), json!({"week":"20260308"})).unwrap();
+        assert_eq!(
+            before["days"], after["days"],
+            "a withheld source changes no day link"
+        );
+        for row in before["days"].as_array().unwrap() {
+            let sealed = row["link"].as_str().unwrap().split_once('#').unwrap().1;
+            assert_eq!(
+                solstone_core_journal_link::open(root.path(), sealed),
+                Ok(solstone_core_journal_link::Place::Day {
+                    day: row["day"].as_str().unwrap().into()
+                })
+            );
+        }
+    }
+
+    #[test]
     fn a_page_keeps_its_day_states_and_quotes() {
         let root = journal("solstone-week-page-states-");
         whole(root.path());
@@ -1024,10 +1057,7 @@ mod tests {
 
         let value = probe(root.path(), json!({"week": sunday})).unwrap();
         assert_closed(&value);
-        // State labels do not decide whether a day is a place: this
-        // not-ready day has an activity, while the absent days have none.
-        assert!(value["days"][0].get("link").is_none());
-        assert!(value["days"][2].get("link").is_none());
+        // Day links name calendar cells, independent of their state or sources.
         let opens = |row: &Value| {
             solstone_core_journal_link::open(
                 root.path(),

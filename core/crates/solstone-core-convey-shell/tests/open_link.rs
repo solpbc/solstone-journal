@@ -852,6 +852,16 @@ async fn journal_links_from_fixture_tools_open_their_places() {
             let sealed = link.strip_prefix("https://go.solstone.app/j#").unwrap();
             let place = solstone_core_journal_link::open(root, sealed).unwrap();
             let (status, body, location) = open(root, sealed).await;
+            // Every admitted weekly date gets a day link. These three dates
+            // are absent in the published fixture, so A3 answers honestly.
+            if let Place::Day { day } = &place
+                && ["20260301", "20260302", "20260303"].contains(&day.as_str())
+            {
+                assert_eq!(status, StatusCode::NOT_FOUND, "{tool} {place:?}: {body}");
+                assert!(location.is_none());
+                assert!(body.contains(ABSENT));
+                continue;
+            }
             assert_eq!(status, StatusCode::FOUND, "{tool} {place:?}: {body}");
             let location = location.unwrap();
             match place {
