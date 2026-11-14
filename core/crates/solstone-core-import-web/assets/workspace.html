@@ -1433,6 +1433,14 @@ const IMPORT_DELETE_COPY = {
     strava: 'importing a Strava download again brings back the workouts this {verb}.',
     oura: 'an Oura sync leaves out what this {verb}. one you ask for the days it covered brings it back.',
   },
+  // An import erased now erases its segments waiting in the trash on their own.
+  waiting: {
+    oneOne: 'the segment from it that waits in the trash on its own is erased with it.',
+    oneMany: 'the {w} segments from it that wait in the trash on their own are erased with it.',
+    manyOne: 'the segment from them that waits in the trash on its own is erased with them.',
+    manyMany: 'the {w} segments from them that wait in the trash on their own are erased with them.',
+    oneUnknown: 'any of its segments waiting in the trash on their own are erased with it.',
+  },
   // Said once, after the lines above, whenever the dialog holds a body import.
   hideDay: 'a day you hide on the body page stays hidden when you import or sync it again.',
   list: {
@@ -1574,7 +1582,7 @@ function importSourceName(sourceType, display) {
 }
 
 function importDeleteItem(imp) {
-  return { id: imp.timestamp, kind: imp.source_type || '', source: importSourceName(imp.source_type, imp.source_display) };
+  return { id: imp.timestamp, kind: imp.source_type || '', source: importSourceName(imp.source_type, imp.source_display), waiting: Number(imp.waiting) || 0 };
 }
 
 // What one import's dialog lists, from its preview: nothing yet while it loads,
@@ -1614,9 +1622,11 @@ function importOneListLines(preview, kind) {
       }
     }
   }
-  const originals = Number(preview.originals) || 0;
-  if (originals === 1) lines.push(L.originalOne);
-  else if (originals > 1) lines.push(importDeleteFill(L.originalMany, { n: originals }));
+  // The files it was given and keeps in its record; its segments' own audio
+  // goes under the segment count.
+  const kept = Number(preview.kept ?? preview.originals) || 0;
+  if (kept === 1) lines.push(L.originalOne);
+  else if (kept > 1) lines.push(importDeleteFill(L.originalMany, { n: kept }));
   lines.push(L.row);
   return lines;
 }
@@ -1671,9 +1681,15 @@ function importOneBody(step, item, preview) {
   const nodes = [
     importMetaLine(item),
     importDeleteEl('p', 'import-delete-reach', copy.reach),
-    importDeleteEl('p', 'import-delete-lead', copy.lead),
-    list,
   ];
+  // Erase now takes its segments waiting in the trash on their own.
+  if (step === 'erase') {
+    const W = IMPORT_DELETE_COPY.waiting;
+    const waiting = preview ? Number(preview.waiting) || 0 : null;
+    const line = waiting === null ? W.oneUnknown : waiting === 1 ? W.oneOne : waiting > 1 ? importDeleteFill(W.oneMany, { w: waiting }) : null;
+    if (line) nodes.push(importDeleteEl('p', 'import-delete-waiting', line));
+  }
+  nodes.push(importDeleteEl('p', 'import-delete-lead', copy.lead), list);
   // The earlier import's line comes before what stays; what brings it back after.
   const again = body.length && IMPORT_DELETE_COPY.again[kind] ? body.pop() : null;
   body.forEach(line => nodes.push(importDeleteEl('p', 'import-delete-shared', line)));
@@ -1701,8 +1717,15 @@ function importSetBody(step, items) {
   const nodes = [
     list,
     importDeleteEl('p', 'import-delete-reach', copy.reachMany),
-    importDeleteEl('p', 'import-delete-own', copy.ownMany),
   ];
+  // Erase now takes their segments waiting in the trash on their own, as the
+  // list rows count them.
+  const waiting = items.reduce((sum, item) => sum + (Number(item.waiting) || 0), 0);
+  if (step === 'erase' && waiting > 0) {
+    const W = IMPORT_DELETE_COPY.waiting;
+    nodes.push(importDeleteEl('p', 'import-delete-waiting', waiting === 1 ? W.manyOne : importDeleteFill(W.manyMany, { w: waiting })));
+  }
+  nodes.push(importDeleteEl('p', 'import-delete-own', copy.ownMany));
   // Some of a body import may stay with an earlier one the page lists outside the set.
   const inSet = new Set(items.map(item => item.id));
   if (items.some(item => (item.kind === 'apple_health' || item.kind === 'oura') && importEarlierOfSource(item.kind, item.id, inSet))) {

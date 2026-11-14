@@ -32,6 +32,7 @@ pub mod oura_http;
 pub mod projection;
 pub mod publish;
 pub mod saved_start;
+pub mod segment_trash;
 pub mod size;
 pub mod snapshot;
 pub mod staging;

@@ -86,6 +86,14 @@ pub const ERASE_AFTER_DAYS_KEY: &str = "erase_after_days";
 pub use solstone_core_journal::is_trash_root_name;
 
 mod linked;
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "test code"
+)]
+mod needs_tests;
 pub use linked::{Linked, detach_linked, finish_linked};
 
 /// Where an item stands.
@@ -149,6 +157,12 @@ pub struct Item {
     /// journal held them too ([`Kind::refs`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refs: Vec<String>,
+    /// Paths outside it that it can't come back without ([`Kind::needs`]): a
+    /// segment's import record, which holds the file the import was given. An
+    /// item holding one of them never erases before this one, and erasing it
+    /// erases this one too.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub needs: Vec<String>,
     /// The owner act's operation, when it moved several things together (a
     /// set); otherwise the item's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -241,6 +255,19 @@ pub trait Kind {
     /// it can tell what it shares with another thing in the trash.
     fn refs(&self, _journal: &Path, _unit: &Unit) -> Vec<String> {
         Vec::new()
+    }
+
+    /// Paths outside the thing that it can't come back without, kept with its
+    /// item ([`Item::needs`]). The kind's hold refuses a recover while one is
+    /// missing or in the trash.
+    fn needs(&self, _journal: &Path, _unit: &Unit) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Whether a thing of `unit` can hold a path another item needs, so its
+    /// detach looks for them ([`Item::needs`]).
+    fn may_be_needed(&self, _unit: &Unit) -> bool {
+        false
     }
 
     /// Files outside the thing's primary paths that must travel with it.
@@ -374,6 +401,7 @@ fn detach_as(
         bytes: 0,
         pending: None,
         refs: Vec::new(),
+        needs: Vec::new(),
         label,
         operation,
         linked: false,
@@ -389,9 +417,13 @@ fn detach_as(
         item.paths = paths;
     }
     item.refs = kind.refs(journal, &item.unit);
+    item.needs = kind.needs(journal, &item.unit);
     let _lock = lock(journal)?;
     let companions = kind.companions(journal, &item).map_err(TrashError::Io)?;
     item.paths.extend(companions);
+    if kind.may_be_needed(&item.unit) {
+        item.erase_at = not_before_needing(journal, &item)?;
+    }
     for path in &item.paths {
         if !kind.present(journal, path) {
             return Err(TrashError::Missing(describe(&item.unit).to_owned()));
@@ -510,6 +542,10 @@ fn attach_as(
         State::Detaching | State::Erasing => return Err(TrashError::InFlight),
     }
     if item.state == State::Trashed {
+        // Asked again under the trash's lock, before it starts back: a home that
+        // moved into the trash just now is seen. A recover already under way
+        // is finished, never refused part way.
+        hold.check().map_err(TrashError::Held)?;
         item.state = State::Attaching;
         item.pending = Some(Pending {
             action,
@@ -563,12 +599,88 @@ fn erase_as(
         State::Erasing => {}
         State::Detaching | State::Attaching => return Err(TrashError::InFlight),
     }
+    // What needs it is marked erasing under the same act and the same lock, so a
+    // stop part way leaves those erasing too, for the sweep to finish: never
+    // waiting in the trash without what they need.
+    let needing = mark_needing_erased(journal, &item)?;
     // Once it is marked erasing nothing else takes it, so the unlink, which
     // can take a while for a long recording, runs without the trash's lock.
     drop(lock);
     finish_erase(journal, &item)?;
     erase_linked_within(journal, &item);
+    for other in needing {
+        match finish_erase(journal, &other) {
+            // What was released from it goes with it too, as when it is
+            // erased on its own.
+            Ok(()) => erase_linked_within(journal, &other),
+            Err(error) => log::warn!(
+                "trash item {}: not erased with {}: {error}",
+                other.id,
+                item.id
+            ),
+        }
+    }
     Ok(())
+}
+
+/// Whether `held`, a path an item holds, is `needed` or above it.
+fn holds_needed(held: &str, needed: &str) -> bool {
+    needed == held || needed.starts_with(&format!("{held}/"))
+}
+
+/// The erase date for `item`, never before any item still in the trash that
+/// needs what it holds: an import's record is erased with the last of its
+/// segments to be erased. Read under the trash's lock.
+fn not_before_needing(journal: &Path, item: &Item) -> Result<String, TrashError> {
+    let mut at = item.erase_at.clone();
+    let mut latest = item.erase_at();
+    for other in all_items(journal)? {
+        if other.id == item.id || other.state == State::Erasing {
+            continue;
+        }
+        let needs_it = other
+            .needs
+            .iter()
+            .any(|needed| item.paths.iter().any(|held| holds_needed(held, needed)));
+        if needs_it
+            && let Some(theirs) = other.erase_at()
+            && latest.is_none_or(|mine| theirs > mine)
+        {
+            latest = Some(theirs);
+            at = other.erase_at.clone();
+        }
+    }
+    Ok(at)
+}
+
+/// Mark erasing, under the act erasing `erased`, every item in the trash that
+/// needs something it held: a segment is never back without its import's
+/// record. Under the trash's lock. Returns them, to erase after it.
+fn mark_needing_erased(journal: &Path, erased: &Item) -> Result<Vec<Item>, TrashError> {
+    let mut marked = Vec::new();
+    for mut other in needing(journal, erased)? {
+        other.state = State::Erasing;
+        other.pending = erased.pending.clone();
+        publish(journal, &other)?;
+        marked.push(other);
+    }
+    Ok(marked)
+}
+
+/// Items still in the trash that need a path `item` holds: what erasing it
+/// erases too.
+pub fn needing(journal: &Path, item: &Item) -> Result<Vec<Item>, TrashError> {
+    Ok(all_items(journal)?
+        .into_iter()
+        .filter(|other| {
+            other.id != item.id
+                && other.state == State::Trashed
+                && other
+                    .needs
+                    .iter()
+                    .any(|needed| item.paths.iter().any(|held| holds_needed(held, needed)))
+        })
+        .collect())
 }
 
 /// A linked item whose every file lived inside the item just erased goes with
@@ -1306,8 +1418,16 @@ fn sweep_set(journal: &Path, kinds: &[&dyn Kind], mut set: Set, swept: &mut Swep
 /// Runs at start and on the maintenance schedule.
 pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
     let mut swept = Swept::default();
+    // Soonest due first, so an item erased with one it needed is met after.
     let items = match all_items(journal) {
-        Ok(items) => items,
+        Ok(mut items) => {
+            items.sort_by(|left, right| {
+                left.erase_at
+                    .cmp(&right.erase_at)
+                    .then(left.id.cmp(&right.id))
+            });
+            items
+        }
         Err(error) => {
             swept.failed.push(error.to_string());
             return swept;
@@ -1357,8 +1477,10 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                 }
             },
         };
-        if let Err(error) = result {
-            swept.failed.push(format!("{}: {error}", item.id));
+        match result {
+            // Erased already, with an item it needed.
+            Ok(()) | Err(TrashError::NotInTrash) => {}
+            Err(error) => swept.failed.push(format!("{}: {error}", item.id)),
         }
     }
     // After the items, so a set's thing whose move a stop interrupted is in
@@ -2372,6 +2494,7 @@ mod tests {
             pending: None,
             label: None,
             refs: Vec::new(),
+            needs: Vec::new(),
             operation: None,
             linked: false,
         };
@@ -2969,6 +3092,7 @@ mod tests {
             pending: None,
             label: None,
             refs: Vec::new(),
+            needs: Vec::new(),
             operation: None,
             linked: false,
         };
@@ -3423,7 +3547,7 @@ mod tests {
     }
 
     /// A temporary journal root, removed when dropped.
-    mod tempfile_dir {
+    pub(crate) mod tempfile_dir {
         use std::path::{Path, PathBuf};
 
         pub struct Dir(PathBuf);

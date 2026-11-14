@@ -50,9 +50,13 @@ mod http1;
 mod jsonrpc;
 pub mod lan_door;
 pub mod local_door;
+mod may_see;
+#[cfg(all(test, feature = "full-tests"))]
+mod may_see_tests;
 mod memory;
 mod memory_recall;
 mod memory_tools;
+mod names;
 mod oauth;
 mod owner_memories;
 mod owner_state;

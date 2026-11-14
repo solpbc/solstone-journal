@@ -251,26 +251,50 @@ pub(crate) struct ActivityReference {
     pub source_binding: Option<String>,
 }
 
-impl ActivityReference {
-    pub(crate) fn relative_path(&self) -> Result<String, crate::tools::ToolError> {
-        activity_relative_path(&self.facet_dir, &self.day)
+/// The activity a read was asked for. A sealed reference also pins the day
+/// file it was listed from and, as a cursor, the place in its sources.
+pub(crate) struct ActivityAddress {
+    /// The facet's id or its folder; resolved against the facets this
+    /// connection reaches, never joined into a path.
+    pub facet: String,
+    pub day: String,
+    pub record_identity: String,
+    pub file_digest: Option<String>,
+    pub unit_index: Option<usize>,
+    pub source_binding: Option<String>,
+}
+
+impl From<ActivityReference> for ActivityAddress {
+    fn from(reference: ActivityReference) -> Self {
+        Self {
+            facet: reference.facet_id,
+            day: reference.day,
+            record_identity: reference.record_identity,
+            file_digest: Some(reference.file_digest),
+            unit_index: reference.unit_index,
+            source_binding: reference.source_binding,
+        }
     }
 }
 
-pub(crate) fn activity_relative_path(
-    facet_dir: &str,
-    day: &str,
-) -> Result<String, crate::tools::ToolError> {
-    if facet_dir.is_empty()
-        || facet_dir == "."
-        || facet_dir == ".."
-        || facet_dir.contains('/')
-        || facet_dir.contains('\\')
-        || !solstone_core_journal_io::is_day_key(day)
-    {
-        return Err(crate::tools::ToolError::ReferenceNotFound);
+/// The segment a read was asked for. A sealed reference also pins the
+/// transcript as it read when listed.
+pub(crate) struct SegmentAddress {
+    pub day: String,
+    pub stream: String,
+    pub segment: String,
+    pub version: Option<u64>,
+}
+
+impl From<SegmentReference> for SegmentAddress {
+    fn from(reference: SegmentReference) -> Self {
+        Self {
+            day: reference.day,
+            stream: reference.stream,
+            segment: reference.segment,
+            version: Some(reference.version),
+        }
     }
-    Ok(format!("facets/{facet_dir}/activities/{day}.jsonl"))
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

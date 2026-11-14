@@ -374,11 +374,7 @@ fn run_prepared(
         .map_err(|error| RunError::Internal(error.to_string()))?;
     let segment = output.parent().unwrap_or_else(|| Path::new(""));
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    let mut faces = if crate::faces::enabled(options.journal).map_err(RunError::Internal)? {
-        Some(crate::faces::FacePass::new(options.video))
-    } else {
-        None
-    };
+    let mut faces = crate::faces::Enrichment::new(options.journal, options.video)?;
     let recipe_id = ocr_factory.recipe_id();
     let input = match InputObservation::capture_checked(&claims, options.video, checkpoint) {
         Ok(input) => input,
@@ -561,12 +557,11 @@ fn run_prepared(
         let prepared_ocr =
             prepare_ocr_publication(options.journal, segment, staged_ocr.as_ref(), checkpoint)?;
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        let prepared_faces = faces
-            .as_ref()
-            .filter(|_| !decoded.decode_failed)
-            .map(|faces| faces.prepare(options.video, checkpoint))
-            .transpose()
-            .map_err(|error| RunError::Internal(error.to_string()))?;
+        let prepared_faces = if decoded.decode_failed {
+            None
+        } else {
+            faces.prepare(options.video, checkpoint)?
+        };
         promote(Promotion {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             journal: options.journal,
@@ -1000,29 +995,61 @@ fn run_prepared(
     };
     let selected = selected.into_iter().collect::<HashSet<_>>();
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    if let (Some(faces), Some(plan)) = (faces.as_mut(), plan.as_ref()) {
-        for (frame_id, row) in &plan.reusable_rows {
-            if row.data.pointer("/content/meeting/participants").is_some() {
+    if let Some(plan) = plan.as_ref() {
+        faces.apply(|faces| {
+            let meeting_rows = plan
+                .reusable_rows
+                .iter()
+                .filter(|(_, row)| {
+                    row.data
+                        .pointer("/content/meeting/participants")
+                        .and_then(Value::as_array)
+                        .is_some_and(|parts| !parts.is_empty())
+                })
+                .collect::<Vec<_>>();
+            if meeting_rows.is_empty() {
+                return Ok(());
+            }
+            // Replay the original winnow once, encoding only meeting frames.
+            // Retain one native PNG at a time and stop after the last request.
+            let mut pull = crate::decode::FramePull::open(options.video, options.config, true)
+                .map_err(|_| {
+                    crate::faces::FaceError::at("frame_decode", "could not reopen video")
+                })?;
+            pull.replay_text_changes(text_changed.clone());
+            pull.retain_pngs(meeting_rows.iter().map(|(id, _)| **id).collect());
+            for (frame_id, row) in meeting_rows {
                 let timestamp = row
                     .data
                     .get("timestamp")
                     .and_then(Value::as_f64)
-                    .ok_or_else(|| RunError::Internal("meeting timestamp missing".to_owned()))?;
-                let png = owned_frame_png(
-                    true,
-                    options.video,
-                    options.config,
-                    &text_changed,
-                    *frame_id,
-                    timestamp,
-                    &[],
-                    checkpoint,
+                    .ok_or_else(|| {
+                        crate::faces::FaceError::at("frame_metadata", "meeting timestamp missing")
+                    })?;
+                let frame = match pull.next(checkpoint) {
+                    PullNext::Frame(frame)
+                        if frame.frame_id == *frame_id
+                            && frame.timestamp.to_bits() == timestamp.to_bits() =>
+                    {
+                        frame
+                    }
+                    PullNext::Cancelled => return Err(RunError::Cancelled.into()),
+                    _ => {
+                        return Err(crate::faces::FaceError::at(
+                            "frame_decode",
+                            "meeting frame did not reappear with the same timestamp",
+                        ));
+                    }
+                };
+                faces.add_frame(
+                    &row.data,
+                    &frame.png,
+                    staged_ocr.borrow().as_ref(),
+                    ocr_factory,
                 )?;
-                faces
-                    .add_frame(&row.data, &png, staged_ocr.borrow().as_ref(), ocr_factory)
-                    .map_err(RunError::Internal)?;
             }
-        }
+            Ok(())
+        })?;
     }
     let mut detection_disabled = None;
     for row in categorized {
@@ -1142,11 +1169,9 @@ fn run_prepared(
             }
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        if let Some(faces) = faces.as_mut() {
-            faces
-                .add_frame(&result, &png, staged_ocr.borrow().as_ref(), ocr_factory)
-                .map_err(RunError::Internal)?;
-        }
+        faces.apply(|faces| {
+            faces.add_frame(&result, &png, staged_ocr.borrow().as_ref(), ocr_factory)
+        })?;
         emit_value(&mut rows, &mut incremental_rows, result.clone())?;
         final_rows.push(result);
     }
@@ -1241,11 +1266,9 @@ fn run_prepared(
                 }
             }
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            if let Some(faces) = faces.as_mut() {
-                faces
-                    .add_frame(&result, &png, staged_ocr.borrow().as_ref(), ocr_factory)
-                    .map_err(RunError::Internal)?;
-            }
+            faces.apply(|faces| {
+                faces.add_frame(&result, &png, staged_ocr.borrow().as_ref(), ocr_factory)
+            })?;
             emit_value(&mut rows, &mut incremental_rows, result.clone())?;
             final_rows.push(result);
         }
@@ -1272,11 +1295,7 @@ fn run_prepared(
         return Err(RunError::Cancelled);
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    let prepared_faces = faces
-        .as_ref()
-        .map(|faces| faces.prepare(options.video, checkpoint))
-        .transpose()
-        .map_err(|error| RunError::Internal(error.to_string()))?;
+    let prepared_faces = faces.prepare(options.video, checkpoint)?;
     let staged_ocr = staged_ocr.into_inner();
     let prepared_ocr =
         prepare_ocr_publication(options.journal, segment, staged_ocr.as_ref(), checkpoint)?;
@@ -1668,6 +1687,12 @@ fn request_record(
     let mut record = Map::new();
     record.insert("type".to_owned(), json!(request_type));
     record.insert("model".to_owned(), json!(model));
+    #[cfg(all(test, feature = "full-tests"))]
+    let duration = if pipeline_tests::FIXED_TIMING.with(|fixed| fixed.get()) {
+        0.25
+    } else {
+        duration
+    };
     record.insert("duration".to_owned(), json!(duration));
     if let Some(category) = category {
         record.insert("category".to_owned(), json!(category));
@@ -2633,15 +2658,6 @@ fn install_promoted(
             .map_err(|error| promotion_error(promotion, error))?;
     }
     check_promotion(promotion)?;
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    if publish_ocr
-        && promotion.faces.is_some()
-        && !crate::faces::enabled(promotion.journal).map_err(RunError::Internal)?
-    {
-        return Err(RunError::Internal(
-            "faces disabled during describe".to_owned(),
-        ));
-    }
     prepared
         .install()
         .map_err(|error| RunError::Internal(error.to_string()))?;
@@ -2652,10 +2668,13 @@ fn install_promoted(
         log::warn!("screen OCR publication failed: {:?}", error.kind());
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    if publish_ocr && let Some(faces) = promotion.faces {
-        faces
-            .install(&_commit)
-            .map_err(|e| RunError::Internal(e.to_string()))?;
+    if publish_ocr {
+        crate::faces::publish_enrichment(
+            promotion.journal,
+            promotion.video,
+            promotion.faces,
+            &_commit,
+        )?;
     }
     Ok(())
 }

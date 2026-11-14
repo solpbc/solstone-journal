@@ -85,9 +85,16 @@ fn preview_of(root: &Path, id: &str, things: &ImportThings) -> Value {
         "segments": things.segments.len(),
         "days": days.map(|(first, last)| json!([first, last])),
         "originals": kept_originals(root, things),
+        "kept": solstone_core_import::import_trash::kept_uploads(root, things),
         "shared": things.shared.len(),
         "bytes": bytes,
         "deletes_here": deletes_here(&things.source),
+        // Its segments deleted earlier, waiting in the trash: an erase now of
+        // it erases them too.
+        "waiting": solstone_core_import::segment_trash::waiting_by_import(root)
+            .get(id)
+            .copied()
+            .unwrap_or(0),
     });
     // A Strava import is its workouts; an Apple Health or Oura import can leave
     // some of what it wrote on days another import here also wrote to.
