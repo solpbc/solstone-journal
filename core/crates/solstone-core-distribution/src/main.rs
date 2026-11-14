@@ -22,12 +22,30 @@ use solstone_core_distribution::publish;
 use solstone_core_distribution::rfdetr_windows_source;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|dev-package|check-installed|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|fetch-set|windows-component-evidence|windows-native-inputs|ced-windows|ced-windows-arm64|ffmpeg-windows|onnx-windows|onnx-windows-arm64|parakeet-windows|parakeet-windows-arm64|rfdetr-windows|rfdetr-windows-arm64|restic-windows|openmp-windows|llama-windows|llama-windows-arm64|nvattest-windows|nvattest-windows-arm64|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]\n\nwindows-component-evidence PAYLOAD OUT [--windows-target windows-x86_64|windows-aarch64] (default windows-x86_64)\n\nThe inventory lists files, not an SBOM. Code compiled into an executable is outside it: FFmpeg, the WebView2 loader, Velopack, the Rust crates, and FluidAudio in parakeet-helper."
+    "usage: solstone-distribution <validate|check-build-features|produce|dev-package|check-installed|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|fetch-set|windows-component-evidence|windows-native-inputs|ced-windows|ced-windows-arm64|ffmpeg-windows|onnx-windows|onnx-windows-arm64|parakeet-windows|parakeet-windows-arm64|rfdetr-windows|rfdetr-windows-arm64|restic-windows|openmp-windows|llama-windows|llama-windows-arm64|nvattest-windows|nvattest-windows-arm64|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]\n\nwindows-component-evidence PAYLOAD OUT [--windows-target windows-x86_64|windows-aarch64] (default windows-x86_64)\n\nThe inventory lists files, not an SBOM. Code compiled into an executable is outside it: FFmpeg, the WebView2 loader, Velopack, the Rust crates, and FluidAudio in parakeet-helper."
 }
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
+        Some("check-build-features") => {
+            let start = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            match discover_and_validate_inventory(&start)
+                .map_err(|error| error.to_string())
+                .and_then(|inventory| {
+                    produce::build_features::check(&start, &inventory)
+                        .map_err(|error| error.to_string())
+                }) {
+                Ok(checked) => {
+                    println!("ORT-linked producer batches checked: {checked}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
         Some("fetch-set") => {
             let Some(target) = args.next() else {
                 eprintln!("{}", usage());

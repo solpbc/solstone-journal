@@ -3768,12 +3768,13 @@ fn digest(value: &str) -> String {
 /// journal changed, always.
 ///
 /// ✅ So the digest covers what was served — titles, dates, snippets, text,
-/// names, coverage — with `reference` and `next_cursor` excluded, and object
+/// names, coverage — with every sealed token (`reference`, `next_cursor`,
+/// `span_reference`, `next_reference`, `continuation`) excluded, and object
 /// keys sorted so a later field reordering does not silently invalidate every
 /// record already written. ⚠ It is therefore a digest of the **content**, not
 /// a fingerprint of the exact bytes on the wire; the targets beside it say
 /// which records that content came from.
-fn content_digest(value: &Value) -> String {
+pub(crate) fn content_digest(value: &Value) -> String {
     digest(&canonical_content(value).to_string())
 }
 
@@ -3786,7 +3787,11 @@ pub(crate) fn canonical_content(value: &Value) -> Value {
                 .filter(|key| {
                     !matches!(
                         *key,
-                        "reference" | "next_cursor" | "span_reference" | "next_reference"
+                        "reference"
+                            | "next_cursor"
+                            | "span_reference"
+                            | "next_reference"
+                            | "continuation"
                     )
                 })
                 .collect::<Vec<_>>();

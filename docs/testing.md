@@ -47,6 +47,7 @@ needed input into a temporary directory such as `tempfile::TempDir`.
 
 ## Running Tests
 
+- `solstone-distribution check-build-features` resolves the producer's Cargo batches for Linux and macOS without compiling release binaries. It refuses `ort-sys/disable-linking` in a batch containing a speech helper that must link ONNX Runtime. The producer runs the same preflight before building those batches, and `make ci` runs it after topology validation. Describe builds in a separate Cargo invocation because its face pass opens the screen OCR runtime dynamically; a whole-workspace Cargo build still unifies those features and is not a supported way to produce the shipped speech helpers.
 - `make test` runs selected Rust library/binary unit harnesses and reports its
   source-derived omission boundary
 - `make check-journal-device-sim` runs the dependency-free simulator unit and fake-bridge tests

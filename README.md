@@ -4,7 +4,7 @@
 
 **A memory your agents can work from. On your device, owned by you.**
 
-solstone is a personal memory platform. The solstone app takes in what you share with it, and all of it goes into your journal. This repository is the journal: the part that runs on a computer you own. It holds everything the solstone app takes in, turns audio into speaker-attributed transcripts, turns screen frames into descriptions, surfaces the people, projects and meetings in your days, makes journal entries searchable, and gives the agents you already use a way to work from it.
+solstone is a personal journal platform. The solstone app takes in what you share with it, and all of it goes into your journal. This repository is the journal: the part that runs on a computer you own. It holds everything the solstone app takes in, turns audio into speaker-attributed transcripts, turns screen frames into descriptions, surfaces the people, projects and meetings in your days, makes journal entries searchable, and gives the agents you already use a way to work from it.
 
 Your journal is a folder of dated directories on a machine you choose. You can read it, back it up, move it, and hand it down. Open source, local-first, AGPL-3.0-only, made by [sol pbc](https://solpbc.org).
 

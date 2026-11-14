@@ -2999,6 +2999,36 @@ mod tests {
             [text.as_str(), mixed.as_str()].contains(&note["content"].as_str().unwrap())
         }));
         assert!(result["continuation"].is_string());
+        let replay = post_json(
+            &mut client,
+            &token.token,
+            memory_call("recall_memory", json!({"limit":20})),
+        )
+        .await;
+        assert_ne!(
+            memory_result(&replay)["continuation"],
+            result["continuation"],
+            "the token is sealed afresh on every call"
+        );
+        let recalls = crate::activity::read_activity(
+            server.journal.path(),
+            &crate::activity::ActivityQuery {
+                tool: Some(solstone_core_mcp_audit::ToolName::RecallMemory),
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let digests = recalls
+            .entries
+            .iter()
+            .map(|entry| entry.result.as_ref().unwrap().digest.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(digests.len(), 2);
+        assert_eq!(
+            digests[0], digests[1],
+            "a replay of the same page records the same digest"
+        );
         let next = post_json(
             &mut client,
             &token.token,
