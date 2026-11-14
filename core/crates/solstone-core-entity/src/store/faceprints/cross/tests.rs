@@ -76,7 +76,7 @@ fn a_dropped_panel_cannot_contest_a_surviving_panel() {
     assert!(r.contested_pairs.is_empty());
 }
 
-#[cfg(feature = "full-tests")]
+#[cfg(all(test, feature = "full-tests"))]
 mod disk {
     // Synthetic journal before-images are fixtures, not entity mutations.
     #![allow(clippy::disallowed_methods)]
@@ -249,6 +249,89 @@ mod disk {
         super::super::super::accumulation::clear(&alias, solstone_core_removals::Surface::Cli)
             .unwrap();
         assert!(!derived.exists());
+    }
+    #[cfg(unix)]
+    fn test_link(target: &Path, link: &Path, _directory: bool) {
+        std::os::unix::fs::symlink(target, link).unwrap();
+    }
+    #[cfg(windows)]
+    fn test_link(target: &Path, link: &Path, directory: bool) {
+        if directory {
+            let output = std::process::Command::new("cmd")
+                .args(["/d", "/c", "mklink", "/J"])
+                .arg(link)
+                .arg(target)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "junction fixture failed: {output:?}"
+            );
+        } else {
+            std::os::windows::fs::symlink_file(target, link).unwrap();
+        }
+    }
+    #[cfg(any(unix, windows))]
+    fn refuse_linked_entry(directory: bool) {
+        let t = tempfile::tempdir().unwrap();
+        let root = t.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::create_dir_all(root.join("entities")).unwrap();
+        std::fs::write(
+            root.join("config").join("journal.json"),
+            json!({"faces":{"enabled":false}}).to_string(),
+        )
+        .unwrap();
+        let target = root.join("protected");
+        let payload = if directory {
+            std::fs::create_dir(&target).unwrap();
+            target.join("record")
+        } else {
+            target.clone()
+        };
+        std::fs::write(&payload, b"keep this owner data").unwrap();
+        let link = root.join("entities").join(FILE);
+        test_link(&target, &link, directory);
+        let result =
+            super::super::super::accumulation::clear(root, solstone_core_removals::Surface::Cli);
+        assert!(payload.exists(), "clear deleted the linked target");
+        assert!(result.is_err(), "clear followed a linked face entry");
+        assert_eq!(std::fs::read(payload).unwrap(), b"keep this owner data");
+        assert!(std::fs::symlink_metadata(link).is_ok());
+    }
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn clear_refuses_a_file_symlink_and_preserves_its_target() {
+        refuse_linked_entry(false);
+    }
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn clear_refuses_a_directory_symlink_and_preserves_its_target() {
+        refuse_linked_entry(true);
+    }
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn clear_refuses_a_linked_namespace_before_recovery() {
+        let t = tempfile::tempdir().unwrap();
+        let root = t.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config").join("journal.json"),
+            json!({"faces":{"enabled":false}}).to_string(),
+        )
+        .unwrap();
+        let target = root.join("protected");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join(FILE), b"keep this owner data").unwrap();
+        test_link(&target, &root.join("entities"), true);
+        assert!(
+            super::super::super::accumulation::clear(root, solstone_core_removals::Surface::Cli)
+                .is_err()
+        );
+        assert_eq!(
+            std::fs::read(target.join(FILE)).unwrap(),
+            b"keep this owner data"
+        );
     }
 }
 
