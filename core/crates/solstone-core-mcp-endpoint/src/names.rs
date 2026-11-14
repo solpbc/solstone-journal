@@ -21,9 +21,7 @@
 //!
 //! Paging cursors, spans and search entries stay sealed references.
 
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::path::Path;
 
 use ring::hmac;
 use solstone_core_journal_io::is_day_key;
@@ -165,20 +163,17 @@ pub(crate) fn source_code(journal_root: &Path, stream: &str) -> Option<String> {
     )
 }
 
-/// The sub-key source codes are made with, derived once for each journal a
-/// process serves.
+/// The sub-key source codes are made with.
+///
+/// ⚠ Read from the journal each time, never kept: a restore can put another
+/// journal's root in place under a running process, and a kept key would go
+/// on giving names that stop resolving at the next start.
 fn code_key(journal_root: &Path) -> Option<[u8; CODE_KEY_BYTES]> {
-    static KEYS: OnceLock<Mutex<BTreeMap<PathBuf, [u8; CODE_KEY_BYTES]>>> = OnceLock::new();
-    let mut keys = KEYS.get_or_init(Mutex::default).lock().ok()?;
-    if let Some(key) = keys.get(journal_root) {
-        return Some(*key);
-    }
     let mut key = [0_u8; CODE_KEY_BYTES];
     // The journal's one root secret, under its own label: no other use of
     // the root shares these bytes. Naming something makes the root when the
     // journal has none.
     sub_key(journal_root, CODE_KEY_LABEL, WhenAbsent::Create, &mut key).ok()?;
-    keys.insert(journal_root.to_owned(), key);
     Some(key)
 }
 
@@ -332,6 +327,27 @@ mod tests {
                 .collect::<String>()
         };
         assert_eq!(source_code(root, "desk").unwrap(), expected);
+    }
+
+    #[test]
+    fn a_root_replaced_under_a_running_journal_is_the_one_names_use() {
+        let running = journal();
+        let restarted = journal();
+        let root = running.path();
+        std::fs::create_dir_all(root.join("link")).unwrap();
+        std::fs::write(root.join(ROOT_KEY_PATH), format!("{}\n", "0f".repeat(32))).unwrap();
+        let before = source_code(root, "macbook").unwrap();
+        // What a restore of another journal does while this one runs.
+        std::fs::write(root.join(ROOT_KEY_PATH), format!("{}\n", "a5".repeat(32))).unwrap();
+        let after = source_code(root, "macbook").unwrap();
+        assert_ne!(before, after);
+        std::fs::create_dir_all(restarted.path().join("link")).unwrap();
+        std::fs::write(
+            restarted.path().join(ROOT_KEY_PATH),
+            format!("{}\n", "a5".repeat(32)),
+        )
+        .unwrap();
+        assert_eq!(source_code(restarted.path(), "macbook").unwrap(), after);
     }
 
     #[test]

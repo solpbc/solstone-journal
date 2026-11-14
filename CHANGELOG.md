@@ -72,6 +72,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
 - on the sources page, focus now stays on the page after you press "try again", or when a narrower or wider window changes the layout: on the same button or link if it's drawn again, otherwise at the start of the page. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 - on linux, `solstone update --check` shows its `platform:` line again if you installed the journal as an `.rpm` package, or added the solstone app as a `.deb` or `.rpm` package. before, that line was missing, though updates were still offered.
+- on the network page, focus now stays where you were after you change a setting, or unpair or forget a device, and when the page refreshes itself: on the same button or choice if it's still there, otherwise on what took its place, such as the next device or the line that says what happened. in the "pair a device" box, it also stays when you check a pairing, when a code runs out or when you ask for a new one. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
+- the "pair a device" box now fits your window, and its buttons stay in view while the rest scrolls.
 
 ## [2.0.78] - 2026-11-13
 
