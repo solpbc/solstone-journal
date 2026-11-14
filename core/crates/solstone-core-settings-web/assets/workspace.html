@@ -7786,7 +7786,7 @@ function removalSegmentTime(key) {
   const start = new Date(2000, 0, 1, Number(match[1]), Number(match[2]), Number(match[3]));
   const end = new Date(start.getTime() + Number(match[4]) * 1000);
   const format = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
-  return format.formatRange ? format.formatRange(start, end) : format.format(start);
+  return (format.formatRange ? format.formatRange(start, end) : format.format(start)).toLowerCase();
 }
 
 // A stretch of time's bounds: `sat nov 7, 2:05 – 3:35 pm`, or across days

@@ -4800,6 +4800,10 @@
             linkMoment(seg, moment);
             // selectSegment recenters the detail zoom range when needed.
             selectSegment(seg, false, tabIdFromHash);
+          } else {
+            // A link to a segment the day doesn't list may lead to the trash.
+            const stream = new URLSearchParams(window.location.search).get('stream');
+            if (stream) showSegmentInTrash(stream, segKey);
           }
         }
       })
@@ -5644,8 +5648,9 @@
         const asked = { from: stretchDialog.from, to: stretchDialog.to, shown: stretchDialog.plan };
         if (!asked.shown || asked.shown.empty) return;
         closeDeleteSegmentModal(false);
+        if (stretchButton) stretchButton.dataset.focusOnShow = '1';
         await performStretchDelete(asked, erase);
-        stretchButton?.focus();
+        syncStretchButton();
         return;
       }
       const segs = deleteDialogSegs;
@@ -6122,6 +6127,11 @@
       if (!button) return;
       const shown = dayLoad === 'ready' && (allSegments.length > 0 || locationSegments.length > 0);
       button.hidden = !shown;
+      // After a stretch delete, focus returns here once the reloaded day shows it.
+      if (shown && button.dataset.focusOnShow) {
+        delete button.dataset.focusOnShow;
+        button.focus();
+      }
       const label = button.dataset.labelTemplate;
       if (label) button.setAttribute('aria-label', label.split('{day}').join(window.JournalFormat.day(day).toLowerCase()));
     }

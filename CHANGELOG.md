@@ -8,6 +8,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- you can now delete a stretch of time. on a day in transcripts, choose "delete a stretch of time" and pick a from and a to, on one day or across several. everything in your journal from then goes to the trash together, as one thing: each device's audio, screen and location, what you imported, body data and anything else from then. it takes whole segments, so it can reach past the times you pick, and it shows you the times it takes before you confirm. recovering it puts all of it back, and erasing it erases all of it.
+- what's still arriving from a device or still being worked on stays in your journal, and the delete says so before you confirm. an import with segments outside the stretch keeps its file. memories your agents saved about that time stay too, and so do activities, summaries and entities made from that stretch, which may still mention it.
+- `solstone-retention remove-stretch --from --to` does the same from the command line, into the same trash, and `--dry-run true` shows what it would take first.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -15,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- a link to a segment that's in the trash now says so and the day it's erased, instead of opening the day as if the link led nowhere.
 - on home, originals your retention settings marked now go to the trash when you delete them, one item for each segment. the segment and everything made from it stay in your journal. you can recover them until the trash erases them, and their space comes back then.
 - `solstone-retention`'s `release-raw`, `remove-marked` and `sweep --force` also move the originals they delete to the trash now, and say the day the trash erases them.
 - erasing a segment from the trash now erases any originals deleted from it that are waiting there too.
