@@ -75,6 +75,9 @@ mod facet_read_purity;
 #[cfg(test)]
 #[path = "contracts/generated_native_inventory.rs"]
 mod generated_native_inventory;
+#[cfg(test)]
+#[path = "contracts/windows_onnx_operators.rs"]
+mod windows_onnx_operators;
 // Routine: it reads a closed list of named sources at compile time and walks
 // nothing, so a new crate-root module fails `make ci` in the landing.
 #[cfg(test)]
