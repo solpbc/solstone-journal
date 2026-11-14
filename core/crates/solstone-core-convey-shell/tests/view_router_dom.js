@@ -3460,6 +3460,48 @@ asyncCase('sources and support: between each other, back and forward stay in the
   assert.deepStrictEqual(settings.window.__scriptErrors, []);
 });
 
+// ---- how a view arrived, and a view that asks to be arrived at on <main>
+
+asyncCase('arrival: null on the first view, push for a link, pop for a back or forward, replace for the same address again', async () => {
+  const page = makePage();
+  bootAllViews(page);
+  await page.boot('home');
+  assert.ok(page.window.solRouter.arrival() === null, 'the page\'s first view');
+  page.click('/app/support/');
+  await page.clock.advance(400);
+  assert.ok(page.view('support') && page.window.solRouter.arrival() === 'push', 'a link is a push');
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('home') && page.window.solRouter.arrival() === 'pop', 'a back is a pop');
+  page.history.forward();
+  await page.clock.advance(400);
+  assert.ok(page.view('support') && page.window.solRouter.arrival() === 'pop', 'a forward is a pop');
+  page.click('/app/support/');
+  await page.clock.advance(400);
+  assert.ok(page.view('support') && page.window.solRouter.arrival() === 'replace', 'the same address again is a replace');
+  assert.deepStrictEqual(page.record.assigned, [], 'all in the page');
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
+asyncCase('arrival focus: a view whose root says data-arrival-focus="main" lands on the workspace though it ships a heading', async () => {
+  const page = makePage();
+  bootAllViews(page);
+  page.server.answers.set('/app/support/workspace', page.server.html(
+    FRAGMENTS['/app/support/workspace'].replace('<div class="support-workspace">', '<div class="support-workspace" data-arrival-focus="main">')));
+  await page.boot('home');
+  page.click('/app/support/');
+  await page.clock.advance(400);
+  assert.ok(page.view('support'), 'support in the page');
+  const active = page.document.activeElement;
+  assert.ok(active === page.main(), `focus on the workspace, not the shipped heading (it is on ${active && active.tagName})`);
+  assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'support');
+  page.click('/app/home/');
+  await page.clock.advance(400);
+  const home = page.document.activeElement;
+  assert.ok(home && home !== page.document.body, 'the next view is focused as it always is');
+  assert.deepStrictEqual(page.window.__scriptErrors, []);
+});
+
 (async () => {
   for (const run of queue) await run();
   console.log('DOM CASES: ' + cases + ' passed');
