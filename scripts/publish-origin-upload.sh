@@ -36,6 +36,10 @@
 # upload is publishing a real, HEAD-bound release lane cut and you want the
 # origin's copy of CHANGELOG.md to move — the script does not infer this from
 # lane names because a stage tree can legitimately mix lanes.
+#
+# Files over 300 MiB use the AWS CLI S3 API instead of Wrangler. Set
+# SOLSTONE_R2_ENDPOINT, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for those
+# uploads. Smaller objects and all reads retain the Wrangler credential path.
 
 set -euo pipefail
 
@@ -172,7 +176,27 @@ remote_get() {
 }
 
 remote_put() {
-    local key="$1" file="$2" content_type="$3" cache_control="$4"
+    local key="$1" file="$2" content_type="$3" cache_control="$4" size
+    size="$(wc -c < "$file")"
+    if ((size > 300 * 1024 * 1024)); then
+        # R2's single-PUT ceiling; larger objects require a multipart publisher.
+        ((size <= 5363466240)) || die "object-too-large: $key exceeds the S3 single-PUT limit"
+        command -v aws >/dev/null 2>&1 || die "required release tool is unavailable: aws"
+        [[ -n "${SOLSTONE_R2_ENDPOINT:-}" && -n "${AWS_ACCESS_KEY_ID:-}" &&
+           -n "${AWS_SECRET_ACCESS_KEY:-}" ]] ||
+            die "origin-auth-missing: large uploads require SOLSTONE_R2_ENDPOINT, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+        local -a condition=()
+        # Make the large immutable write atomic, including against a racing publisher.
+        case "$key" in
+            "$PRODUCT/release/"* | "$PRODUCT/staging/"*) condition=(--if-none-match '*') ;;
+        esac
+        AWS_EC2_METADATA_DISABLED=true AWS_PAGER='' aws s3api put-object \
+            --endpoint-url "$SOLSTONE_R2_ENDPOINT" --region auto \
+            --bucket "$BUCKET" --key "$key" --body "$file" \
+            --content-type "$content_type" --cache-control "$cache_control" \
+            "${condition[@]}" >/dev/null || die "origin-unreachable: could not write $key via S3"
+        return
+    fi
     wrangler r2 object put "$BUCKET/$key" \
         --file "$file" \
         --content-type "$content_type" \
