@@ -27,6 +27,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - connected agents now see what kind each activity was, such as a meeting or writing, and where it came from. a voice your journal has no name for is counted, and no longer listed as a person called Speaker 1.
 - an agent asking about a week by a day in the middle of it now gets that week. before, it got nothing unless it named the sunday.
 - connected agents now get a short name for each segment, activity, person and project, and it stays the same from one answer to the next, so an agent can keep one and come back to it later. before, each was a long code that changed on every answer and stopped working when your journal restarted or you changed what that agent may see. what each agent may see hasn't changed: your journal checks it every time an agent reads something by its name.
+- the sources page and the support page now work like home, transcripts and search: moving between them and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 
 ### Fixed
 
@@ -64,6 +65,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a first restore on a phone or tablet now waits for work in your journal to finish before copying. if restore is interrupted, you can retry the same backup.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+- on the sources page, focus now stays on the page after you press "try again", or when a narrower or wider window changes the layout: on the same button or link if it's drawn again, otherwise at the start of the page. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 
 ## [2.0.78] - 2026-11-13
 
