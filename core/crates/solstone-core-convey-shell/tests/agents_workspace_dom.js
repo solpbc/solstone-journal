@@ -218,7 +218,34 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
     window[window.solstoneJournalWebHost.javascriptCapability] = 1;
   }
   vm.runInContext(navJs, context, {filename: 'external-navigation.js'});
+  // The script only registers the view; the harness mounts it, as the page's view contract does,
+  // with a context over this file's own clock and requests.
+  let definition = null;
+  window.SolViews = {register(name, def) { if (name === 'agents') definition = def; }};
   vm.runInContext(script, context, {filename: 'agents-workspace.js'});
+  assert(definition && typeof definition.mount === 'function', 'agents registers a mount');
+  assert.strictEqual(calls.length, 0, 'nothing is asked when the script loads');
+  const disposers = [];
+  const ctx = {
+    view: 'agents',
+    route: {pathname: location.pathname, search: '', hash: location.hash},
+    disposed: false,
+    read(url, options) {
+      const rest = options ? {...options} : undefined;
+      if (rest) delete rest.fresh;
+      return window.apiJson(url, rest);
+    },
+    setTimeout: (fn, ms) => context.setTimeout(fn, ms),
+    clearTimeout: id => context.clearTimeout(id),
+    setInterval: () => 0,
+    clearInterval() {},
+    visibleInterval: () => () => {},
+    on() { return () => {}; },
+    ready() {},
+    onDispose(fn) { disposers.push(fn); },
+    history: {push() {}, replace(url) { location.hash = ''; location.replaced = url; }},
+  };
+  definition.mount(ctx);
   await settle();
   const click = async dataset => {
     const target = {
