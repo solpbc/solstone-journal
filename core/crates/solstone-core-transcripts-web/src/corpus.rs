@@ -859,7 +859,11 @@ mod tests {
                             || path == Path::new("health/locks/entity-trust.lock")
                             // The day is asked to be made again from what remains.
                             || path == Path::new("health/owner-asks.json")
-                            || path.to_string_lossy().starts_with("health/owner-asks.")
+                            // Its lock files too, by component so a Windows path matches.
+                            || (path.parent() == Some(Path::new("health"))
+                                && path
+                                    .file_name()
+                                    .is_some_and(|name| name.to_string_lossy().starts_with("owner-asks.")))
                             || path.starts_with(solstone_core_removals::RECORD_DIR),
                         "unexpected journal mutation: {}",
                         path.display()
