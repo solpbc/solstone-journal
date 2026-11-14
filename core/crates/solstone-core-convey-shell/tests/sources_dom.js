@@ -474,35 +474,13 @@ test('a paired device links to network and has no pairing controls', () => {
   });
 });
 
-test('phone width boots as one card per device', async () => {
-  const { doc, root } = documentFor();
-  const queries = [];
-  const view = {
-    document: doc,
-    matchMedia: (query) => {
-      queries.push(query);
-      return { matches: true, addEventListener() {} };
-    },
-    fetch: async () => ({
-      status: 200,
-      json: async () => ok([
-        client('studio', { last_accepted_ingest_at: iso(NOW - 5 * MIN), source_delivery: { audio: at(NOW - 5 * MIN) } }),
-        client('phone', { last_accepted_ingest_at: iso(NOW - 8 * MIN), source_delivery: { screen: at(NOW - 8 * MIN) } }),
-      ]).body,
-    }),
-  };
-  await sources.boot(view);
-  assert.deepStrictEqual(queries, ['(max-width: 700px)']);
-  assert.strictEqual(root.querySelector('table'), null);
-  assert.strictEqual(root.querySelectorAll('article').length, 2);
-});
-
 (async () => {
   let passed = 0;
   for (let i = 0; i < tests.length; i += 1) {
     await tests[i][1]();
     passed += 1;
   }
+  passed += await require(path.join(__dirname, 'sources_contract_dom.js'))(path.join(__dirname, '..'));
   console.log('DOM CASES: ' + passed + ' passed');
 })().catch((error) => {
   console.error(error);

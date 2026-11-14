@@ -298,7 +298,7 @@ fn observe_parakeet_truth(
     #[cfg(windows)]
     {
         let _ = follow;
-        return observe_windows_parakeet_truth(shared, config, &latch);
+        observe_windows_parakeet_truth(shared, config, &latch)
     }
 
     #[cfg(not(windows))]

@@ -35,8 +35,9 @@ use crate::audit;
 use crate::permissions::{ConnectionReadSnapshot, PermissionDecision, evaluate_connection_read};
 use crate::possible_names::ConnectionPossibleNames;
 use crate::references::{
-    CursorReference, EntityListCursor, EntityReference, EntryReference, FacetListCursor,
-    ReferenceCodec, ReferenceKind, ReferenceTarget, SegmentReference, TranscriptListCursor,
+    ActivityReference, CursorReference, EntityListCursor, EntityReference, EntryReference,
+    FacetListCursor, ReferenceCodec, ReferenceKind, ReferenceTarget, SegmentReference,
+    TranscriptListCursor,
 };
 use crate::registry::{ToolEntry, category_token, find_tool, requirement_refusal};
 use crate::segment_links::{LinkSubject, LiveTranscriptPages, issue_segment_links};
@@ -429,6 +430,16 @@ fn fetch_target_category_refusal(
     let ValidatedTool::Fetch(fetch) = request else {
         return None;
     };
+    // An activity's name follows the facets category whatever it names, so
+    // the refusal says nothing of whether the activity is there.
+    if crate::names::parse_activity(&fetch.reference).is_some() {
+        return (!snapshot.categories.contains(&AdmittedCategory::Facets)).then(|| {
+            format!(
+                "this connection does not have the {} category",
+                category_token(&AdmittedCategory::Facets)
+            )
+        });
+    }
     let Ok(target) = codec().resolve_entry_or_activity(
         &fetch.reference,
         principal.connection,
@@ -881,6 +892,71 @@ pub(crate) fn live_allows(
         .is_ok_and(|classification| boundary.allows_classification(journal_root, &classification))
 }
 
+/// The reference an answer gives for an activity: its name, which stays the
+/// same from one answer to the next, or a sealed reference when a part of the
+/// name can't be written in one.
+pub(crate) fn activity_reference(
+    principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    target: ActivityReference,
+) -> Result<String, DispatchError> {
+    if let Some(name) =
+        crate::names::activity_name(&target.day, &target.facet_dir, &target.record_identity)
+    {
+        return Ok(name);
+    }
+    codec()
+        .mint(
+            principal.connection,
+            snapshot.generation,
+            ReferenceTarget::Activity(target),
+        )
+        .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))
+}
+
+/// The reference an answer gives for a segment: its name, or a sealed
+/// reference when the name can't be written.
+pub(crate) fn segment_reference(
+    journal_root: &Path,
+    principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    target: SegmentReference,
+) -> Result<String, DispatchError> {
+    if let Some(name) =
+        crate::names::segment_name(journal_root, &target.day, &target.stream, &target.segment)
+    {
+        return Ok(name);
+    }
+    codec()
+        .mint(
+            principal.connection,
+            snapshot.generation,
+            ReferenceTarget::Segment(target),
+        )
+        .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))
+}
+
+/// The reference an answer gives for an entity in one facet: its name, or a
+/// sealed reference when the name can't be written.
+pub(crate) fn entity_reference(
+    principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    facet_dir: Option<&str>,
+    target: EntityReference,
+) -> Result<String, DispatchError> {
+    if let Some(name) = facet_dir.and_then(|dir| crate::names::entity_name(dir, &target.entity_id))
+    {
+        return Ok(name);
+    }
+    codec()
+        .mint(
+            principal.connection,
+            snapshot.generation,
+            ReferenceTarget::Entity(target),
+        )
+        .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))
+}
+
 pub(crate) fn codec() -> &'static ReferenceCodec {
     REFERENCES.get_or_init(|| {
         ReferenceCodec::new().expect("system randomness initializes MCP reference codec")
@@ -1208,13 +1284,14 @@ fn resolve_search_entities(
 
         let is_truncated = desc_was_cut || joined_was_cut || indexed_notes.truncated;
 
-        let reference = match codec().mint(
-            principal.connection,
-            snapshot.generation,
-            ReferenceTarget::Entity(EntityReference {
+        let reference = match entity_reference(
+            principal,
+            snapshot,
+            Some(&m.facet_dir),
+            EntityReference {
                 facet_id: m.facet_id.clone(),
                 entity_id: m.entity_id.clone(),
-            }),
+            },
         ) {
             Ok(r) => r,
             Err(_) => {
@@ -1974,6 +2051,12 @@ fn fetch(
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedFetch,
 ) -> Result<Prepared, DispatchError> {
+    // An activity's name: read as this connection's own list shows it now.
+    if crate::names::is_name(&request.reference) {
+        let address = crate::names::parse_activity(&request.reference)
+            .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+        return fetch_activity(journal_root, principal, snapshot, &address);
+    }
     let target = codec()
         .resolve_entry_or_activity(
             &request.reference,
@@ -2087,6 +2170,28 @@ fn fetch(
             )
             .map_err(index_error)?
             {
+                // An activity file's record passes the same test the lists
+                // make: hidden, superseded, a Strava line this connection no
+                // longer reads and a body record without the body permission
+                // are not found, as a missing one isn't.
+                ActivityAdmit::Admitted(a)
+                    if a.hidden
+                        || crate::body_source::activity_file_place(&entry.path).is_some_and(
+                            |(facet, day)| {
+                                crate::may_see::ActivityDay::read(
+                                    journal_root,
+                                    snapshot,
+                                    &facet,
+                                    &day,
+                                )
+                                .is_none_or(|judged| {
+                                    judged.shows(&a.record) != crate::may_see::Shown::Yes
+                                })
+                            },
+                        ) =>
+                {
+                    return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+                }
                 // Never the file's row: a body record is served composed, for
                 // this connection.
                 ActivityAdmit::Admitted(a) if solstone_core_facets::is_body_record(&a.record) => {
@@ -2101,24 +2206,6 @@ fn fetch(
                         &entry.path,
                         &a.record,
                     );
-                }
-                // A hidden activity is not found, as a missing one isn't. Nor
-                // is a Strava line this connection no longer reads: its day
-                // hidden, or the body permission gone, since search found it.
-                ActivityAdmit::Admitted(a)
-                    if a.hidden
-                        || crate::body_source::activity_file_place(&entry.path).is_some_and(
-                            |(_, day)| {
-                                crate::body_source::strava_line_hidden(
-                                    journal_root,
-                                    snapshot,
-                                    &day,
-                                    &a.record,
-                                )
-                            },
-                        ) =>
-                {
-                    return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
                 }
                 ActivityAdmit::Admitted(a) => {
                     let cleaned =
@@ -2219,111 +2306,95 @@ fn fetch(
             Ok(Prepared::new(value, 1, vec![target]).served_as_is(served_as_is))
         }
         ReferenceTarget::Activity(act_ref) => {
-            let rel_path = act_ref.relative_path().map_err(DispatchError::Tool)?;
-            let boundary = boundary(snapshot, None, None);
-            if !live_allows(journal_root, &boundary, &rel_path, None) {
-                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
-            }
-            let Some(bytes) = crate::activity_admit::read_contained_source(journal_root, &rel_path)
-            else {
-                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
-            };
-            let file_digest = crate::activity_admit::hex_encode(&Sha256::digest(&bytes));
-            if file_digest != act_ref.file_digest {
-                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
-            }
-            let Ok(file_text) = String::from_utf8(bytes) else {
-                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
-            };
-            if let Some(body) =
-                crate::activity_admit::body_record_by_identity(&file_text, &act_ref.record_identity)
-            {
-                return fetch_body_face(
-                    journal_root,
-                    snapshot,
-                    &act_ref.facet_dir,
-                    &act_ref.day,
-                    &act_ref.record_identity,
-                    &rel_path,
-                    &body,
-                );
-            }
-            let Some((record, _)) =
-                crate::activity_admit::record_by_identity(&file_text, &act_ref.record_identity)
-            else {
-                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
-            };
-
-            // A hidden activity is not found, as a missing one isn't.
-            if record
-                .get("hidden")
-                .is_some_and(solstone_core_facets::activity_value_truthy)
-                || crate::body_source::strava_line_hidden(
-                    journal_root,
-                    snapshot,
-                    &act_ref.day,
-                    &record,
-                )
-            {
-                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
-            }
-            let cleaned = crate::tools::activities::clean_activity_record_for_wire(record.clone());
-            let text = literal_record_text(cleaned)?;
-
-            #[cfg(feature = "test-hooks")]
-            crate::source_freeze_barrier::checkpoint(
-                crate::source_freeze_barrier::FreezePoint::Before,
-            );
-            let allowed =
-                crate::source_release::check_indexed_source_release(journal_root, &rel_path);
-            let mut subjects = [LinkSubject {
-                path: &rel_path,
-                idx: 0,
-                text: &text,
-                segments: Vec::new(),
-                more_segments: false,
-                activity_record: Some(&record),
-            }];
-            let mut checker =
-                LiveTranscriptPages::new(ConnectionPossibleNames::new(journal_root, snapshot));
-            let mut response_checks = 0;
-            if allowed {
-                issue_segment_links(
-                    journal_root,
-                    principal,
-                    snapshot,
-                    &mut subjects,
-                    48,
-                    48,
-                    &mut response_checks,
-                    &mut checker,
-                );
-            }
-            #[cfg(feature = "test-hooks")]
-            crate::source_freeze_barrier::checkpoint(
-                crate::source_freeze_barrier::FreezePoint::After,
-            );
-
-            if !allowed {
-                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
-            }
-
-            let mut value = json!({
-                "title": entry_title(&act_ref.day),
-                "date": act_ref.day,
-                "text": text,
-            });
-            if !subjects[0].segments.is_empty() {
-                value["segments"] = Value::Array(subjects[0].segments.clone());
-            }
-            if subjects[0].more_segments {
-                value["more_segments"] = Value::Bool(true);
-            }
-            let target = format!("{rel_path}#{}", act_ref.record_identity);
-            Ok(Prepared::new(value, 1, vec![target]).served_as_is(&["text"]))
+            fetch_activity(journal_root, principal, snapshot, &act_ref.into())
         }
         _ => Err(DispatchError::Tool(ToolError::ReferenceNotFound)),
     }
+}
+
+/// An activity fetched by reference: its record as this connection's own
+/// list shows it now.
+pub(crate) fn fetch_activity(
+    journal_root: &Path,
+    principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    address: &crate::references::ActivityAddress,
+) -> Result<Prepared, DispatchError> {
+    // Hidden, superseded, out of scope and gone all read as not found.
+    let seen = crate::may_see::activity_at(
+        journal_root,
+        snapshot,
+        &address.facet,
+        &address.day,
+        &address.record_identity,
+        address.file_digest.as_deref(),
+    )
+    .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+    let place = seen.place;
+    let record = match seen.record {
+        crate::may_see::SeenRecord::Body(body) => {
+            return fetch_body_face(
+                journal_root,
+                snapshot,
+                &place.facet_dir,
+                &place.day,
+                &address.record_identity,
+                &place.rel_path,
+                &body,
+            );
+        }
+        crate::may_see::SeenRecord::Activity(record) => record,
+    };
+    let cleaned = crate::tools::activities::clean_activity_record_for_wire(record.clone());
+    let text = literal_record_text(cleaned)?;
+
+    #[cfg(feature = "test-hooks")]
+    crate::source_freeze_barrier::checkpoint(crate::source_freeze_barrier::FreezePoint::Before);
+    let allowed =
+        crate::source_release::check_indexed_source_release(journal_root, &place.rel_path);
+    let mut subjects = [LinkSubject {
+        path: &place.rel_path,
+        idx: 0,
+        text: &text,
+        segments: Vec::new(),
+        more_segments: false,
+        activity_record: Some(&record),
+    }];
+    let mut checker =
+        LiveTranscriptPages::new(ConnectionPossibleNames::new(journal_root, snapshot));
+    let mut response_checks = 0;
+    if allowed {
+        issue_segment_links(
+            journal_root,
+            principal,
+            snapshot,
+            &mut subjects,
+            48,
+            48,
+            &mut response_checks,
+            &mut checker,
+        );
+    }
+    #[cfg(feature = "test-hooks")]
+    crate::source_freeze_barrier::checkpoint(crate::source_freeze_barrier::FreezePoint::After);
+
+    if !allowed {
+        return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+    }
+
+    let mut value = json!({
+        "title": entry_title(&place.day),
+        "date": place.day,
+        "text": text,
+    });
+    if !subjects[0].segments.is_empty() {
+        value["segments"] = Value::Array(subjects[0].segments.clone());
+    }
+    if subjects[0].more_segments {
+        value["more_segments"] = Value::Bool(true);
+    }
+    let target = format!("{}#{}", place.rel_path, address.record_identity);
+    Ok(Prepared::new(value, 1, vec![target]).served_as_is(&["text"]))
 }
 
 /// A body record fetched by reference: the group it is in, as this connection
@@ -2603,6 +2674,11 @@ fn list_entities(
     let mut identities = None;
     // Every facet in the effective filter must be read before paging so a malformed relationship fails closed.
     let mut all_entities = Vec::new();
+    // Each facet's folder, which an entity's name is written with.
+    let folders: BTreeMap<String, String> = facets
+        .iter()
+        .map(|(id, dir, _)| (id.clone(), dir.clone()))
+        .collect();
     for (facet_id, facet_dir, _) in facets {
         if request.facet_id.as_deref().is_some_and(|id| id != facet_id) {
             continue;
@@ -2648,16 +2724,15 @@ fn list_entities(
     let mut targets = Vec::new();
     let mut entities = Vec::new();
     for (facet_id, facet_dir, item) in page {
-        let reference = codec()
-            .mint(
-                principal.connection,
-                snapshot.generation,
-                ReferenceTarget::Entity(EntityReference {
-                    facet_id: facet_id.clone(),
-                    entity_id: item.entity_id.clone(),
-                }),
-            )
-            .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
+        let reference = entity_reference(
+            principal,
+            snapshot,
+            folders.get(&facet_id).map(String::as_str),
+            EntityReference {
+                facet_id: facet_id.clone(),
+                entity_id: item.entity_id.clone(),
+            },
+        )?;
         targets.push(format!("facet:{facet_id}/entity:{}", item.entity_id));
         // An entity in two facets is listed once for each; the facet tells the rows apart.
         entities.push(json!({
@@ -2705,6 +2780,11 @@ fn get_entity(
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedGetEntity,
 ) -> Result<Prepared, DispatchError> {
+    if crate::names::is_name(&request.reference) {
+        let (entity_id, facet) = crate::names::parse_entity(&request.reference)
+            .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+        return read_entity(journal_root, snapshot, &facet, &entity_id);
+    }
     let ReferenceTarget::Entity(reference) = codec()
         .resolve(
             &request.reference,
@@ -2716,20 +2796,35 @@ fn get_entity(
     else {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     };
-    let Some((_, facet_dir, _)) = available_facets(journal_root, snapshot)?
-        .into_iter()
-        .find(|(id, _, _)| id == &reference.facet_id)
+    read_entity(
+        journal_root,
+        snapshot,
+        &reference.facet_id,
+        &reference.entity_id,
+    )
+}
+
+/// One entity as one facet holds it, when this connection's own list of that
+/// facet's entities shows it now. `facet` is the facet's id or its folder,
+/// matched against the facets this connection reaches.
+pub(crate) fn read_entity(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    facet: &str,
+    entity_id: &str,
+) -> Result<Prepared, DispatchError> {
+    if !snapshot.categories.contains(&AdmittedCategory::Entities) {
+        return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+    }
+    let Some((facet_id, facet_dir)) = crate::may_see::reached_facet(journal_root, snapshot, facet)
     else {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     };
     let item = read_scoped_entities(journal_root, &facet_dir)?
         .into_iter()
-        .find(|item| item.entity_id == reference.entity_id)
+        .find(|item| item.entity_id == entity_id)
         .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
-    let mut targets = vec![format!(
-        "facet:{}/entity:{}",
-        reference.facet_id, reference.entity_id
-    )];
+    let mut targets = vec![format!("facet:{facet_id}/entity:{entity_id}")];
     // 🔑 Only what this facet holds about the entity: its relationship here and
     // its notes here. ⛔ Never the journal-level aliases or description, nor
     // anything from another facet, even when the entity is shared.
@@ -2765,11 +2860,7 @@ fn get_entity(
             .observations_rel(&item.relationship_dir);
     let notes = read_indexed_path_entries(
         journal_root,
-        &boundary(
-            snapshot,
-            Some(AdmittedCategory::Entities),
-            Some(&reference.facet_id),
-        ),
+        &boundary(snapshot, Some(AdmittedCategory::Entities), Some(&facet_id)),
         &notes_path,
         MAX_ENTITY_NOTES,
         MAX_ENTITY_NOTE_BYTES,
@@ -2796,12 +2887,9 @@ fn get_entity(
         .and_then(Value::as_bool)
         == Some(true)
     {
-        let photo = solstone_core_entities::photos::photo(
-            journal_root,
-            &reference.entity_id,
-            Some(&facet_dir),
-        )
-        .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+        let photo =
+            solstone_core_entities::photos::photo(journal_root, entity_id, Some(&facet_dir))
+                .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
         value["photo"] = json!({"state": photo.state});
         image = photo.jpeg.map(|bytes| bounded_photo(&bytes)).transpose()?;
     }
@@ -2965,6 +3053,7 @@ fn list_transcripts(
     let mut omitted_workouts = std::collections::BTreeSet::new();
     // What the owner hid of their body data, read once for the list.
     let hides = crate::body_source::BodyHides::read(journal_root);
+    let declarations = FacetDeclarationSet::from_journal(journal_root).ok();
 
     'outer: for day in &days {
         let day_segments =
@@ -3069,13 +3158,22 @@ fn list_transcripts(
             }
 
             // Scope comes first: a segment this connection may not read neither
-            // fills the page nor earns a `next_cursor`.
-            let probe_path = segment_assignment_probe_path(day, &stream, &name);
-            if !segments_boundary.as_ref().is_some_and(|boundary| {
-                live_allows(journal_root, boundary, &probe_path, Some(&stream))
-            }) {
+            // fills the page nor earns a `next_cursor`. The test is the one a
+            // read of this segment makes again.
+            let Some(left_out) = segments_boundary.as_ref().and_then(|boundary| {
+                crate::may_see::segment_shown_within(
+                    journal_root,
+                    boundary,
+                    declarations.as_ref()?,
+                    &hides,
+                    day,
+                    &stream,
+                    &name,
+                    &segment,
+                )
+            }) else {
                 continue;
-            }
+            };
 
             #[cfg(feature = "test-hooks")]
             crate::source_freeze_barrier::checkpoint(
@@ -3090,9 +3188,6 @@ fn list_transcripts(
             let page = if allowed && segments.len() < request.limit {
                 // Read as get_transcript serves it, so `lines` counts nothing
                 // the owner hid.
-                let left_out = hides
-                    .shown(journal_root, day, &stream, &segment)
-                    .unwrap_or_default();
                 Some(
                     solstone_core_transcripts::read_segment_transcript_page_leaving_out(
                         &segment,
@@ -3138,21 +3233,20 @@ fn list_transcripts(
                 }
             };
 
-            let reference = codec()
-                .mint(
-                    principal.connection,
-                    snapshot.generation,
-                    ReferenceTarget::Segment(SegmentReference {
-                        day: day.clone(),
-                        stream: stream.clone(),
-                        segment: name.clone(),
-                        version: page.version.fingerprint(),
-                        source_index: None,
-                        byte_offset: None,
-                        statement_ordinal: None,
-                    }),
-                )
-                .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
+            let reference = segment_reference(
+                journal_root,
+                principal,
+                snapshot,
+                SegmentReference {
+                    day: day.clone(),
+                    stream: stream.clone(),
+                    segment: name.clone(),
+                    version: page.version.fingerprint(),
+                    source_index: None,
+                    byte_offset: None,
+                    statement_ordinal: None,
+                },
+            )?;
 
             targets.push(format!("{day}/{stream}/{name}"));
             let time_str = clock.as_ref().map(|c| c.label.as_str()).unwrap_or("");
@@ -3293,7 +3387,19 @@ fn get_transcript(
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedGetTranscript,
 ) -> Result<Prepared, DispatchError> {
-    let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
+    // A segment's name: found among the day's segments as the journal lists
+    // them, then read as any segment is.
+    if crate::names::is_name(&request.reference) {
+        let address = crate::names::resolve_segment(journal_root, &request.reference)
+            .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+        return read_segment(
+            journal_root,
+            principal,
+            snapshot,
+            &address,
+            request.cursor.as_deref(),
+        );
+    }
     let reference = match codec()
         .resolve_segment_or_span(
             &request.reference,
@@ -3323,6 +3429,24 @@ fn get_transcript(
         }
         _ => return Err(DispatchError::Tool(ToolError::ReferenceNotFound)),
     };
+    read_segment(
+        journal_root,
+        principal,
+        snapshot,
+        &reference.into(),
+        request.cursor.as_deref(),
+    )
+}
+
+/// One segment's transcript, when this connection may read that segment now.
+pub(crate) fn read_segment(
+    journal_root: &Path,
+    principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    reference: &crate::references::SegmentAddress,
+    cursor: Option<&str>,
+) -> Result<Prepared, DispatchError> {
+    let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
     let segment =
         iter_segments_skipping_unreadable_streams(journal_root, PathOrDay::Day(&reference.day))
             .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?
@@ -3332,28 +3456,23 @@ fn get_transcript(
                     .record_identity()
                     .is_ok_and(|id| id.stream == reference.stream && id.name == reference.segment)
             })
-            .filter(|segment| !solstone_core_segment::is_calendar_segment(journal_root, segment))
             .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
-    // A body window the owner hid reads as one that isn't there; a later
-    // day's window leaves out what a hidden night left in it.
-    let left_out = crate::body_source::BodyHides::read(journal_root)
-        .shown(journal_root, &reference.day, &reference.stream, &segment)
-        .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
-    let probe_path =
-        segment_assignment_probe_path(&reference.day, &reference.stream, &reference.segment);
-    if !segment_boundary(snapshot, None).is_some_and(|boundary| {
-        live_allows(
-            journal_root,
-            &boundary,
-            &probe_path,
-            Some(&reference.stream),
-        )
-    }) {
-        return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
-    }
-    let continuation = request
-        .cursor
-        .as_deref()
+    // The same test every list and link makes before it shows this segment:
+    // out of scope, a calendar note, a workout tile and a body window the
+    // owner hid all read as one that isn't there. A later day's window leaves
+    // out what a hidden night left in it.
+    let left_out = crate::may_see::segment_shown(
+        journal_root,
+        snapshot,
+        &crate::body_source::BodyHides::read(journal_root),
+        None,
+        &reference.day,
+        &reference.stream,
+        &reference.segment,
+        &segment,
+    )
+    .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+    let continuation = cursor
         .map(|token| {
             let ReferenceTarget::Segment(cursor) = codec()
                 .resolve(
@@ -3369,7 +3488,9 @@ fn get_transcript(
             if cursor.day != reference.day
                 || cursor.stream != reference.stream
                 || cursor.segment != reference.segment
-                || cursor.version != reference.version
+                || reference
+                    .version
+                    .is_some_and(|version| cursor.version != version)
             {
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             }
@@ -3389,6 +3510,10 @@ fn get_transcript(
             })
         })
         .transpose()?;
+    // A cursor keeps its pin: the transcript as it read on the page before.
+    let pinned = reference.version.or(continuation
+        .as_ref()
+        .map(|continuation| continuation.version.fingerprint()));
     #[cfg(feature = "test-hooks")]
     crate::source_freeze_barrier::checkpoint(crate::source_freeze_barrier::FreezePoint::Before);
     let allowed = crate::source_release::check_segment_transcript_release(
@@ -3431,7 +3556,8 @@ fn get_transcript(
     let page = page_res
         .expect("allowed reads page")
         .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
-    if page.version.fingerprint() != reference.version {
+    let version = page.version.fingerprint();
+    if pinned.is_some_and(|pinned| pinned != version) {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     }
     let next_cursor = page
@@ -3445,7 +3571,7 @@ fn get_transcript(
                         day: reference.day.clone(),
                         stream: reference.stream.clone(),
                         segment: reference.segment.clone(),
-                        version: reference.version,
+                        version,
                         source_index: Some(next.source_index),
                         byte_offset: Some(next.byte_offset),
                         statement_ordinal: Some(next.statement_ordinal),
@@ -3657,7 +3783,12 @@ pub(crate) fn canonical_content(value: &Value) -> Value {
             let mut keys = fields
                 .iter()
                 .map(|(key, _)| key.as_str())
-                .filter(|key| !matches!(*key, "reference" | "next_cursor" | "span_reference"))
+                .filter(|key| {
+                    !matches!(
+                        *key,
+                        "reference" | "next_cursor" | "span_reference" | "next_reference"
+                    )
+                })
                 .collect::<Vec<_>>();
             keys.sort_unstable();
             let mut canonical = Map::new();

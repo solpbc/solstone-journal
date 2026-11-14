@@ -535,10 +535,13 @@ fn retry_class(helper_only: bool, deadline: Instant) -> HelperAdmissionStatus {
 }
 
 /// Private construction guarantees incomplete outcomes have real ownership.
+///
+/// `cause` and `cleanup` are boxed so `Result<_, BoundedHelperFailure>` stays
+/// small; `Box`'s `Debug` is transparent, so the derived output is unchanged.
 #[derive(Debug)]
 pub struct BoundedHelperFailure {
-    cause: BoundedHelperError,
-    cleanup: Option<BoundedHelperCleanup>,
+    cause: Box<BoundedHelperError>,
+    cleanup: Option<Box<BoundedHelperCleanup>>,
     blockers: Vec<BoundedHelperCleanup>,
 }
 
@@ -547,7 +550,7 @@ impl BoundedHelperFailure {
         &self.cause
     }
     pub fn cleanup(&self) -> Option<&BoundedHelperCleanup> {
-        self.cleanup.as_ref()
+        self.cleanup.as_deref()
     }
     pub fn blockers(&self) -> &[BoundedHelperCleanup] {
         &self.blockers
@@ -568,7 +571,7 @@ impl BoundedHelperFailure {
                 | BoundedHelperError::JobNotQuiescent { .. }
         ));
         Self {
-            cause,
+            cause: Box::new(cause),
             cleanup: None,
             blockers: Vec::new(),
         }
@@ -593,7 +596,7 @@ impl fmt::Display for BoundedHelperFailure {
 }
 impl std::error::Error for BoundedHelperFailure {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.cause)
+        Some(&*self.cause)
     }
 }
 
@@ -608,7 +611,7 @@ impl Reservation {
             HelperAdmissionStatus::Ready => {}
             HelperAdmissionStatus::Pending(blockers) => {
                 return Err(BoundedHelperFailure {
-                    cause: BoundedHelperError::CleanupPending,
+                    cause: Box::new(BoundedHelperError::CleanupPending),
                     cleanup: None,
                     blockers,
                 });
@@ -656,7 +659,7 @@ impl Reservation {
             drop(registry);
             return Err(match snapshot(true) {
                 HelperAdmissionStatus::Pending(blockers) => BoundedHelperFailure {
-                    cause: BoundedHelperError::CleanupPending,
+                    cause: Box::new(BoundedHelperError::CleanupPending),
                     cleanup: None,
                     blockers,
                 },
@@ -700,7 +703,7 @@ impl Reservation {
                 };
                 self.finish_failure(
                     cause,
-                    PendingNativeOwner::Unfinalized(owner),
+                    PendingNativeOwner::Unfinalized(*owner),
                     HelperIo::unstarted(),
                     resources,
                 )
@@ -764,7 +767,7 @@ impl Reservation {
             && io.settled()
         {
             return BoundedHelperFailure {
-                cause,
+                cause: Box::new(cause),
                 cleanup: None,
                 blockers: Vec::new(),
             };
@@ -800,8 +803,8 @@ impl Reservation {
         // separate legs without the mechanism ever being named.
         eprintln!("native launch cleanup incomplete: {cleanup:?}; cause: {cause:?}");
         BoundedHelperFailure {
-            cause,
-            cleanup: Some(cleanup),
+            cause: Box::new(cause),
+            cleanup: Some(Box::new(cleanup)),
             blockers: Vec::new(),
         }
     }

@@ -2422,6 +2422,7 @@ fn a_finished_import_isnt_told_it_was_replaced_before_it_finished() {
     assert_eq!(before, fs::read_to_string(&summary).unwrap());
 }
 
+#[cfg(unix)]
 fn stage(start: &str, end: &str, value: &str) -> String {
     format!(
         r#"<Record type="HKCategoryTypeIdentifierSleepAnalysis" {SOURCE} startDate="{start}" endDate="{end}" value="HKCategoryValueSleepAnalysis{value}"/>"#

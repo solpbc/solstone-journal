@@ -23,6 +23,7 @@ members = [
     "crates/solstone-core-journal-config-write",
     "crates/solstone-core-journal-archive",
     "crates/solstone-core-journal-io",
+    "crates/solstone-core-journal-link",
     "crates/solstone-core-win-owner-rail",
     "crates/solstone-core-win-dll-load",
     "crates/solstone-core-system-health",
@@ -183,6 +184,7 @@ solstone-core-cli-boundary = { path = "crates/solstone-core-cli-boundary" }
 solstone-core-journal-config = { path = "crates/solstone-core-journal-config" }
 solstone-core-journal-config-write = { path = "crates/solstone-core-journal-config-write" }
 solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }
+solstone-core-journal-link = { path = "crates/solstone-core-journal-link" }
 solstone-core-mcp-audit = { path = "crates/solstone-core-mcp-audit" }
 solstone-core-win-dll-load = { path = "crates/solstone-core-win-dll-load" }
 solstone-core-win-owner-rail = { path = "crates/solstone-core-win-owner-rail" }

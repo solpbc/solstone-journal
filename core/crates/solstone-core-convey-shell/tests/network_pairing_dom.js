@@ -59,12 +59,12 @@ function settle() {
 
 function renderEmptyStateHTML(workspace, copy) {
   const start = workspace.indexOf('function emptyStateHTML() {');
-  const end = workspace.indexOf('\nfunction clientStatsHTML', start);
+  const end = workspace.indexOf('function clientStatsHTML', start);
   assert.notStrictEqual(start, -1);
   assert.notStrictEqual(end, -1);
   const context = vm.createContext({
-    window: { createViewReady: () => () => {},
-      LinkCopy: copy,
+    linkCopy: copy,
+    window: {
       NetworkRender: { resolve: (values, key) => values[key] || '' },
       SurfaceState: {
         empty: ({ heading, desc, action }) => `${heading}|${desc}|${action}`,
@@ -83,7 +83,8 @@ function localNetworkEnvironment(workspace, copy) {
   assert.notStrictEqual(end, -1);
   const nodes = new Map();
   const context = vm.createContext({
-    window: { createViewReady: () => () => {}, LinkCopy: copy },
+    linkCopy: copy,
+    window: {},
     document: { getElementById(id) {
       if (!nodes.has(id)) nodes.set(id, { hidden: false, textContent: '' });
       return nodes.get(id);
@@ -519,8 +520,10 @@ function createEnvironment(manifestDir, options = {}) {
     onDeviceRemoved: () => removedDevices.push(true),
     windowsAsks: () => options.windowsAsks === true,
     canPairThisComputer: () => options.canPairThisComputer !== false,
+    canChangeLocalNetwork: () => options.canChangeLocalNetwork !== false,
     deviceType: options.deviceType,
     now: () => clock,
+    ...(options.ceremony || {}),
   });
 
   function click(target) {
@@ -551,6 +554,7 @@ function createEnvironment(manifestDir, options = {}) {
     timers: timerQueue,
     intervals,
     removedDevices,
+    linkListenerCount: () => linkListeners.size,
     advance(ms) {
       clock += ms;
       intervals.forEach(({ callback }) => callback());
@@ -583,7 +587,7 @@ async function main() {
   await testCase('a retained Windows Block rule replaces the open-network claim and clears after recovery', async () => {
     const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/network_copy.json'), 'utf8'));
     const env = localNetworkEnvironment(workspace, copy);
-    const status = { open: true, listening_on: 'local_network', windows_asks: true, windows_firewall_blocked: true };
+    const status = { open: true, can_change: true, listening_on: 'local_network', windows_asks: true, windows_firewall_blocked: true };
     env.render(status);
     assert.strictEqual(env.nodes.get('link-local-network-state').textContent, copy.LOCAL_NETWORK_FIREWALL_BLOCKED);
     assert.strictEqual(env.nodes.get('link-local-network-note').textContent, copy.LOCAL_NETWORK_FIREWALL_BLOCKED_NOTE);
@@ -614,6 +618,72 @@ async function main() {
     assert.strictEqual(env.nodes.get('link-device-label').tagName, 'SPAN');
     assert.ok(workspace.includes('<span id="link-device-label"'));
     assert.strictEqual(env.requests[0].url, '/app/network/pair-start');
+  });
+
+  await testCase('dispose ends the code, its clock and its subscription, and hides the dialog', async () => {
+    const env = createEnvironment(manifestDir);
+    env.fetchQueue.push(response(material()));
+    env.click(env.opener);
+    await settle();
+    assert.ok(env.intervals.size === 1, 'the tick runs while the code is shown');
+    assert.ok(env.timers.size >= 1, 'the expiry is armed');
+    assert.ok(env.linkListenerCount() === 1, 'the stream is heard');
+    env.controller.dispose();
+    assert.ok(env.intervals.size === 0, 'no tick after dispose');
+    assert.ok(env.timers.size === 0, 'no expiry after dispose');
+    assert.ok(env.linkListenerCount() === 0, 'no stream subscription after dispose');
+    assert.ok(env.dialog.hidden === true, 'the dialog is hidden');
+    const requestsBefore = env.requests.length;
+    env.emitLink();
+    await settle();
+    assert.ok(env.requests.length === requestsBefore, 'a late stream event asks for nothing');
+  });
+
+  await testCase('dispose while the code is asked for: its answer draws nothing and arms nothing', async () => {
+    const env = createEnvironment(manifestDir);
+    let answer;
+    env.fetchQueue.push({ promise: new Promise((resolve) => { answer = resolve; }) });
+    env.click(env.opener);
+    await settle();
+    env.controller.dispose();
+    answer(response(material()));
+    await settle();
+    assert.ok(env.nodes.get('link-pairing-material').hidden === true, 'no code is shown');
+    assert.ok(env.intervals.size === 0 && env.timers.size === 0, 'no clock is armed');
+    assert.ok(env.linkListenerCount() === 0, 'nothing listens');
+    assert.ok(env.nodes.get('link-pairing-link-value').textContent === '', 'no link is in the page');
+  });
+
+  await testCase('the ceremony adds its listener, timers, subscription and reads through the hooks it is given', async () => {
+    const added = [];
+    const timers = [];
+    const listens = [];
+    const fetches = [];
+    let env;
+    env = createEnvironment(manifestDir, {
+      ceremony: {
+        on: (target, type, fn) => { added.push([target === env?.document || target?.nodeType === 9 ? 'document' : 'other', type]); target.addEventListener(type, fn); },
+        setTimeout: (fn, ms) => { timers.push(['timeout', ms]); return env.window.setTimeout(fn, ms); },
+        clearTimeout: (id) => env.window.clearTimeout(id),
+        setInterval: (fn, ms) => { timers.push(['interval', ms]); return env.window.setInterval(fn, ms); },
+        clearInterval: (id) => env.window.clearInterval(id),
+        listen: (tract, fn) => { listens.push(tract); return env.window.appEvents.listen(tract, fn); },
+        fetch: (url, init) => { fetches.push(url); return env.window.fetch(url, init); },
+        copy: () => env.window.LinkCopy,
+      },
+    });
+    assert.ok(added.length === 1 && added[0][1] === 'keydown', 'the keydown listener comes through on');
+    env.fetchQueue.push(response(material()));
+    env.click(env.opener);
+    await settle();
+    assert.ok(fetches.length === 1 && fetches[0] === '/app/network/pair-start', 'pair-start comes through fetch');
+    assert.ok(timers.some(([kind, ms]) => kind === 'interval' && ms === 1000), 'the tick comes through setInterval');
+    assert.ok(timers.some(([kind]) => kind === 'timeout'), 'the expiry comes through setTimeout');
+    assert.ok(listens.length === 1 && listens[0] === 'link', 'the stream comes through listen');
+    env.fetchQueue.push(response({ present: true, used: false }));
+    env.emitLink();
+    await settle();
+    assert.ok(fetches.length === 2 && fetches[1].startsWith('/app/network/api/pair/nonce-status'), 'the nonce read comes through fetch');
   });
 
   await testCase('a direct link lists the addresses it encodes under the dialog line', async () => {
@@ -763,7 +833,8 @@ async function main() {
       const section = { hidden: true, querySelector: () => disclosure };
       const context = vm.createContext({
         document: { getElementById: (id) => ({ 'link-identity-header': section, 'link-identity-id-value': idValue })[id] || null },
-        window: { createViewReady: () => () => {}, apiJson: async () => body },
+        ctx: { read: async () => body },
+        window: {},
         validMarkSpec: () => false,
         applyIdentityToAll() {},
       });
@@ -1063,13 +1134,15 @@ async function main() {
   await testCase('unpair asks with the unpair copy and removes nothing when declined', async () => {
     const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/network_copy.json'), 'utf8'));
     const start = workspace.indexOf('function clientNameFor(button) {');
-    const end = workspace.indexOf('\nfunction initClients', start);
+    const end = workspace.indexOf('function landOnDevices', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
     const asked = [];
     const fetched = [];
     const context = vm.createContext({
-      window: { createViewReady: () => () => {}, LinkCopy: copy },
+      linkCopy: copy,
+      ctx: { disposed: false },
+      window: {},
       confirm: (message) => { asked.push(message); return false; },
       fetch: async (url) => { fetched.push(url); return response({}); },
     });
@@ -1086,12 +1159,12 @@ async function main() {
 
   await testCase('G3-208: only a never-delivered row offers forget, and it asks in place', async () => {
     const start = workspace.indexOf('const CHECK_IN_NOTE =');
-    const end = workspace.indexOf('\nfunction renderClients', start);
+    const end = workspace.indexOf('function renderClients', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
     globalThis.relativeTime = () => '2 months';
     const context = vm.createContext({
-      window: { createViewReady: () => () => {}, NetworkRender: require(activeAsset), JournalFormat: { timestamp: () => 'Sep 1, 11:52 PM', day: () => 'Jul 2' } },
+      window: { NetworkRender: require(activeAsset), JournalFormat: { timestamp: () => 'Sep 1, 11:52 PM', day: () => 'Jul 2' } },
       clientsList: { addEventListener() {} },
       escapeHtml: (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
     });
@@ -1688,7 +1761,7 @@ async function main() {
     });
     const deviceAddressesRow = { hidden: true };
     const start = workspace.indexOf('function renderDeviceAddresses(');
-    const end = workspace.indexOf('\n  function setHomeCandidateRadiosDisabled', start);
+    const end = workspace.indexOf('function setHomeCandidateRadiosDisabled', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
     const context = vm.createContext({
@@ -1741,11 +1814,12 @@ async function main() {
     };
 
     const start = workspace.indexOf('function renderHomeAddress(');
-    const end = workspace.indexOf('\n  function renderReach', start);
+    const end = workspace.indexOf('function renderReach', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
     const context = vm.createContext({
-      window: { createViewReady: () => () => {}, LinkCopy: copy },
+      linkCopy: copy,
+      window: {},
       document: { activeElement: null },
       ...elements,
     });
@@ -1782,7 +1856,7 @@ async function main() {
     assert.ok(workspace.includes('data-solstone-outside'));
 
     const start = workspace.indexOf('async function startPrivateLinkSetup() {');
-    const end = workspace.indexOf('\n  async function disablePrivateLink() {', start);
+    const end = workspace.indexOf('async function disablePrivateLink() {', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
 
@@ -1817,6 +1891,8 @@ async function main() {
     const navigator = { userAgent: 'Mozilla/5.0 (X11; Linux x86_64)' };
     const context = vm.createContext({
       window,
+      linkCopy: {},
+      ctx: { disposed: false },
       document: {
         getElementById: () => ({ setAttribute() {}, disabled: false }),
         querySelectorAll: () => [],
@@ -1843,6 +1919,8 @@ async function main() {
     assert.strictEqual(opened.length, 0, 'capable host does not call window.open');
     assert.strictEqual(location.assigned, 'https://services.example/consent', 'assigned consent portal URL');
   });
+
+  cases += await require(path.join(__dirname, 'network_contract_dom.js'))(manifestDir);
 
   console.log(`DOM CASES: ${cases} passed`);
 }

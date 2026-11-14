@@ -142,27 +142,17 @@ pub(crate) fn resolve_pipe_namespace(socket_path: &Path) -> io::Result<LiveWindo
     let guard_fields = inherited_guard(|name| std::env::var_os(name))?;
 
     let owner = solstone_core_installation_identity::owner_base()
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("owner base: {error}")))?;
+        .map_err(|error| io::Error::other(format!("owner base: {error}")))?;
     let exe = std::env::current_exe()
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("current exe: {error}")))?;
+        .map_err(|error| io::Error::other(format!("current exe: {error}")))?;
     let exe_dir = exe.parent().unwrap_or_else(|| Path::new("."));
     let root = solstone_core_journal::resolve_identity_root_from_executable_dir(exe_dir)
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                "could not resolve identity root".to_owned(),
-            )
-        })?;
+        .ok_or_else(|| io::Error::other("could not resolve identity root".to_owned()))?;
     let root_token = solstone_core_installation_identity::root_token_from_path(&root)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("root token: {error}")))?;
+        .map_err(|error| io::Error::other(format!("root token: {error}")))?;
     let binding =
         solstone_core_installation_identity::load_installation_binding(&owner, &root_token)
-            .map_err(|error| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("installation binding: {error}"),
-                )
-            })?;
+            .map_err(|error| io::Error::other(format!("installation binding: {error}")))?;
 
     validate_inherited_guard(
         guard_fields.as_ref(),
@@ -249,6 +239,8 @@ pub(crate) fn pipe_name_from_utf16(
     Ok(pipe_name)
 }
 
+// The wire server is its only caller outside tests.
+#[cfg(any(test, feature = "wire"))]
 pub(crate) fn server_greeting(challenge: [u8; PIPE_CHALLENGE_LEN]) -> [u8; PIPE_HANDSHAKE_LEN] {
     let mut greeting = [0_u8; PIPE_HANDSHAKE_LEN];
     greeting[..4].copy_from_slice(&PIPE_MAGIC);
@@ -278,6 +270,8 @@ pub(crate) fn client_proof(
     Ok(proof)
 }
 
+// The wire server is its only caller outside tests.
+#[cfg(any(test, feature = "wire"))]
 pub(crate) fn verify_client_proof(
     secret: &[u8; PIPE_CHALLENGE_LEN],
     greeting: &[u8; PIPE_HANDSHAKE_LEN],
@@ -334,7 +328,7 @@ pub(crate) fn read_secret(socket_path: &Path) -> io::Result<[u8; PIPE_CHALLENGE_
     })
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "wire"))]
 pub(crate) fn create_or_read_secret(socket_path: &Path) -> io::Result<[u8; PIPE_CHALLENGE_LEN]> {
     use std::fs::OpenOptions;
     use std::io::Write;
@@ -343,8 +337,7 @@ pub(crate) fn create_or_read_secret(socket_path: &Path) -> io::Result<[u8; PIPE_
     match OpenOptions::new().create_new(true).write(true).open(&path) {
         Ok(mut file) => {
             let mut secret = [0_u8; PIPE_CHALLENGE_LEN];
-            getrandom::fill(&mut secret)
-                .map_err(|error| io::Error::new(io::ErrorKind::Other, error.to_string()))?;
+            getrandom::fill(&mut secret).map_err(|error| io::Error::other(error.to_string()))?;
             // Intentional: the ordinary inherited file descriptor protects this secret. Round 21's
             // custom DACL carve-out applies to the named-pipe endpoint only, never this file.
             file.write_all(&secret)?;

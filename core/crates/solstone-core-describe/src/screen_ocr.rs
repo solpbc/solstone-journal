@@ -1666,10 +1666,10 @@ fn publish_record_bytes(
     authority: &dyn Fn() -> Result<(), String>,
 ) -> io::Result<()> {
     authority().map_err(io::Error::other)?;
-    if let Ok(metadata) = fs::symlink_metadata(directory) {
-        if !metadata.file_type().is_dir() {
-            return Err(io::Error::other("screen text parent is not a directory"));
-        }
+    if let Ok(metadata) = fs::symlink_metadata(directory)
+        && !metadata.file_type().is_dir()
+    {
+        return Err(io::Error::other("screen text parent is not a directory"));
     }
     atomic_replace(path, bytes, AtomicWriteOptions { mode: Some(0o600) }).map_err(io::Error::other)
 }

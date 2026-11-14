@@ -6,9 +6,12 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
 use std::time::{Duration, UNIX_EPOCH};
 
+#[cfg(unix)]
 use serde_json::{Value, json};
 
 use crate::store_tests::{TempDir, create_test_facet};
@@ -33,10 +36,12 @@ fn append_detected(root: &Path, facet: &str, day: &str, line: &str) {
     file.write_all(line.as_bytes()).unwrap();
 }
 
+#[cfg(unix)]
 fn cache_value(root: &Path) -> Value {
     serde_json::from_slice(&fs::read(root.join(CACHE_REL)).unwrap()).unwrap()
 }
 
+#[cfg(unix)]
 fn write_cache_value(root: &Path, value: &Value) {
     fs::write(
         root.join(CACHE_REL),

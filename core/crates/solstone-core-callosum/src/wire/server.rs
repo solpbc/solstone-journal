@@ -1200,8 +1200,6 @@ mod local_transport_tests;
 
 #[cfg(all(test, windows, feature = "full-tests"))]
 mod windows_native_tests {
-    #![cfg(windows)]
-
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};

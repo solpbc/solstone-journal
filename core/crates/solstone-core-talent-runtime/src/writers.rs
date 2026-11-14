@@ -637,7 +637,7 @@ fn stage_error(stage: &str, detail: String) -> StageError {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, unix, feature = "full-tests"))]
     use std::io::Cursor;
     #[cfg(unix)]
     use std::os::unix::fs::MetadataExt;
@@ -919,15 +919,17 @@ mod tests {
         assert!(!journal.join("facets/work").exists());
     }
 
+    #[cfg(unix)]
     fn reset_index_warnings() {
         TEST_INDEX_WARNINGS.with(|warnings| warnings.set(0));
     }
 
+    #[cfg(unix)]
     fn index_warnings() -> usize {
         TEST_INDEX_WARNINGS.with(|warnings| warnings.get())
     }
 
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, unix, feature = "full-tests"))]
     fn worker_events(bytes: &[u8]) -> Vec<Value> {
         std::str::from_utf8(bytes)
             .unwrap()
@@ -937,7 +939,7 @@ mod tests {
             .unwrap()
     }
 
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, unix, feature = "full-tests"))]
     fn accumulator_worker_fixture(
         root: &tempfile::TempDir,
     ) -> (crate::prepare::RuntimePaths, ExecutionContext) {

@@ -86,6 +86,14 @@ pub const ERASE_AFTER_DAYS_KEY: &str = "erase_after_days";
 pub use solstone_core_journal::is_trash_root_name;
 
 mod linked;
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "test code"
+)]
+mod needs_tests;
 pub use linked::{Linked, detach_linked, finish_linked};
 
 /// Where an item stands.
@@ -149,6 +157,12 @@ pub struct Item {
     /// journal held them too ([`Kind::refs`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refs: Vec<String>,
+    /// Paths outside it that it can't come back without ([`Kind::needs`]): a
+    /// segment's import record, which holds the file the import was given. An
+    /// item holding one of them never erases before this one, and erasing it
+    /// erases this one too.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub needs: Vec<String>,
     /// The owner act's operation, when it moved several things together (a
     /// set); otherwise the item's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -158,6 +172,29 @@ pub struct Item {
     /// moved.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub linked: bool,
+    /// The stretch of time it was deleted with, when it was ([`detach_stretch`]):
+    /// every item of a stretch carries it, so the trash shows, recovers and
+    /// erases them as one thing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stretch: Option<Stretch>,
+}
+
+/// A stretch of time the owner deleted as one thing. Each item it moved carries
+/// it; nothing else records it, so it is gone when the last of them is.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Stretch {
+    /// The stretch: the operation it was deleted under, which every item of it
+    /// shares.
+    #[serde(default)]
+    pub id: String,
+    /// Its bounds as the owner was shown them, whole segments counted, in the
+    /// owner's local wall time (`YYYY-MM-DDTHH:MM:SS`).
+    pub from: String,
+    pub to: String,
+    /// The kinds of recording it took, in the owner's terms (`audio`,
+    /// `screen`, `location`, `body`, ...), never what they held.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kinds: Vec<String>,
 }
 
 impl Item {
@@ -241,6 +278,19 @@ pub trait Kind {
     /// it can tell what it shares with another thing in the trash.
     fn refs(&self, _journal: &Path, _unit: &Unit) -> Vec<String> {
         Vec::new()
+    }
+
+    /// Paths outside the thing that it can't come back without, kept with its
+    /// item ([`Item::needs`]). The kind's hold refuses a recover while one is
+    /// missing or in the trash.
+    fn needs(&self, _journal: &Path, _unit: &Unit) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Whether a thing of `unit` can hold a path another item needs, so its
+    /// detach looks for them ([`Item::needs`]).
+    fn may_be_needed(&self, _unit: &Unit) -> bool {
+        false
     }
 
     /// Files outside the thing's primary paths that must travel with it.
@@ -335,8 +385,20 @@ pub fn detach_labelled(
         surface,
         paths,
         label,
-        None,
+        Placed::default(),
     )
+}
+
+/// What a set gives each item it moves: its operation, and for a stretch the
+/// stretch and the one moment the owner confirmed it, so every item of it
+/// shares one trash date and one erase date.
+#[derive(Clone, Debug, Default)]
+struct Placed {
+    operation: Option<String>,
+    stretch: Option<Stretch>,
+    at: Option<DateTime<Utc>>,
+    /// The stretch's erase date, fixed when the owner confirmed it.
+    erase_at: Option<DateTime<Utc>>,
 }
 
 /// [`detach_labelled`] under an item id the caller chose, so a set can write
@@ -354,13 +416,20 @@ fn detach_as(
     surface: Surface,
     paths: Vec<String>,
     label: Option<String>,
-    operation: Option<String>,
+    placed: Placed,
 ) -> Result<Item, TrashError> {
     if paths.is_empty() {
         return Err(TrashError::Missing(describe(&unit).to_owned()));
     }
-    let now = Utc::now();
-    let erase_at = now + Duration::days(i64::from(erase_after_days(journal)));
+    let Placed {
+        operation,
+        stretch,
+        at,
+        erase_at: fixed_erase_at,
+    } = placed;
+    let now = at.unwrap_or_else(Utc::now);
+    let erase_at = fixed_erase_at
+        .unwrap_or_else(|| now + Duration::days(i64::from(erase_after_days(journal))));
     let mut item = Item {
         schema: SCHEMA,
         id,
@@ -374,9 +443,11 @@ fn detach_as(
         bytes: 0,
         pending: None,
         refs: Vec::new(),
+        needs: Vec::new(),
         label,
         operation,
         linked: false,
+        stretch,
     };
     let hold = kind.hold(journal, &item).map_err(TrashError::Held)?;
     hold.check().map_err(TrashError::Held)?;
@@ -389,9 +460,13 @@ fn detach_as(
         item.paths = paths;
     }
     item.refs = kind.refs(journal, &item.unit);
+    item.needs = kind.needs(journal, &item.unit);
     let _lock = lock(journal)?;
     let companions = kind.companions(journal, &item).map_err(TrashError::Io)?;
     item.paths.extend(companions);
+    if kind.may_be_needed(&item.unit) {
+        item.erase_at = not_before_needing(journal, &item)?;
+    }
     for path in &item.paths {
         if !kind.present(journal, path) {
             return Err(TrashError::Missing(describe(&item.unit).to_owned()));
@@ -510,6 +585,10 @@ fn attach_as(
         State::Detaching | State::Erasing => return Err(TrashError::InFlight),
     }
     if item.state == State::Trashed {
+        // Asked again under the trash's lock, before it starts back: a home that
+        // moved into the trash just now is seen. A recover already under way
+        // is finished, never refused part way.
+        hold.check().map_err(TrashError::Held)?;
         item.state = State::Attaching;
         item.pending = Some(Pending {
             action,
@@ -563,12 +642,88 @@ fn erase_as(
         State::Erasing => {}
         State::Detaching | State::Attaching => return Err(TrashError::InFlight),
     }
+    // What needs it is marked erasing under the same act and the same lock, so a
+    // stop part way leaves those erasing too, for the sweep to finish: never
+    // waiting in the trash without what they need.
+    let needing = mark_needing_erased(journal, &item)?;
     // Once it is marked erasing nothing else takes it, so the unlink, which
     // can take a while for a long recording, runs without the trash's lock.
     drop(lock);
     finish_erase(journal, &item)?;
     erase_linked_within(journal, &item);
+    for other in needing {
+        match finish_erase(journal, &other) {
+            // What was released from it goes with it too, as when it is
+            // erased on its own.
+            Ok(()) => erase_linked_within(journal, &other),
+            Err(error) => log::warn!(
+                "trash item {}: not erased with {}: {error}",
+                other.id,
+                item.id
+            ),
+        }
+    }
     Ok(())
+}
+
+/// Whether `held`, a path an item holds, is `needed` or above it.
+fn holds_needed(held: &str, needed: &str) -> bool {
+    needed == held || needed.starts_with(&format!("{held}/"))
+}
+
+/// The erase date for `item`, never before any item still in the trash that
+/// needs what it holds: an import's record is erased with the last of its
+/// segments to be erased. Read under the trash's lock.
+fn not_before_needing(journal: &Path, item: &Item) -> Result<String, TrashError> {
+    let mut at = item.erase_at.clone();
+    let mut latest = item.erase_at();
+    for other in all_items(journal)? {
+        if other.id == item.id || other.state == State::Erasing {
+            continue;
+        }
+        let needs_it = other
+            .needs
+            .iter()
+            .any(|needed| item.paths.iter().any(|held| holds_needed(held, needed)));
+        if needs_it
+            && let Some(theirs) = other.erase_at()
+            && latest.is_none_or(|mine| theirs > mine)
+        {
+            latest = Some(theirs);
+            at = other.erase_at.clone();
+        }
+    }
+    Ok(at)
+}
+
+/// Mark erasing, under the act erasing `erased`, every item in the trash that
+/// needs something it held: a segment is never back without its import's
+/// record. Under the trash's lock. Returns them, to erase after it.
+fn mark_needing_erased(journal: &Path, erased: &Item) -> Result<Vec<Item>, TrashError> {
+    let mut marked = Vec::new();
+    for mut other in needing(journal, erased)? {
+        other.state = State::Erasing;
+        other.pending = erased.pending.clone();
+        publish(journal, &other)?;
+        marked.push(other);
+    }
+    Ok(marked)
+}
+
+/// Items still in the trash that need a path `item` holds: what erasing it
+/// erases too.
+pub fn needing(journal: &Path, item: &Item) -> Result<Vec<Item>, TrashError> {
+    Ok(all_items(journal)?
+        .into_iter()
+        .filter(|other| {
+            other.id != item.id
+                && other.state == State::Trashed
+                && other
+                    .needs
+                    .iter()
+                    .any(|needed| item.paths.iter().any(|held| holds_needed(held, needed)))
+        })
+        .collect())
 }
 
 /// A linked item whose every file lived inside the item just erased goes with
@@ -604,6 +759,205 @@ fn erase_linked_within(journal: &Path, erased: &Item) {
             );
         }
     }
+}
+
+/// Every item in the trash that stretch `id` moved, whatever its state: what
+/// recovering or erasing the stretch acts on.
+pub fn stretch_members(journal: &Path, id: &str) -> Result<Vec<Item>, TrashError> {
+    let mut members: Vec<Item> = all_items(journal)?
+        .into_iter()
+        .filter(|item| {
+            item.stretch
+                .as_ref()
+                .is_some_and(|stretch| stretch.id == id)
+        })
+        .collect();
+    members.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(members)
+}
+
+/// Why a stretch can't be recovered or erased now, as a code the pages give
+/// their own words: a stop left it part way into the trash, and the sweep is
+/// still moving the rest in.
+pub const STRETCH_FINISHING: &str = "stretch_finishing";
+
+/// Why a stretch can't be recovered yet: one of its things needs an import
+/// that waits in the trash outside it. Recover that first.
+pub const STRETCH_NEEDS: &str = "import_in_trash";
+
+fn refused_code(code: &str, extra: Option<(&str, String)>) -> TrashError {
+    let mut value = serde_json::json!({ "code": code });
+    if let Some((key, text)) = extra {
+        value[key] = serde_json::json!(text);
+    }
+    TrashError::Held(value.to_string())
+}
+
+/// Whether stretch `id`'s set is still owed something.
+fn stretch_finishing(journal: &Path, id: &str) -> bool {
+    stretches_unfinished(journal)
+        .iter()
+        .any(|(stretch, owed)| stretch.id == id && *owed > 0)
+}
+
+/// Recover a stretch of time whole, as one act. Every one of its items is
+/// marked recovering under the trash's lock before any moves, so a stop part
+/// way leaves them all recovering, and the sweep finishes every one: no part
+/// of a stretch comes back alone. Refused whole while its set is still being
+/// moved in, while any item of it is part way through another step, and while
+/// one of its things needs something outside it that waits in the trash.
+/// Imports come back before what needs them.
+pub fn recover_stretch(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    id: &str,
+    action: Action,
+    surface: Surface,
+    operation: &OperationId,
+) -> Result<Vec<Item>, TrashError> {
+    let members = {
+        let _lock = lock(journal)?;
+        if stretch_finishing(journal, id) {
+            return Err(refused_code(STRETCH_FINISHING, None));
+        }
+        let members = stretch_members(journal, id)?;
+        if members.is_empty() {
+            return Err(TrashError::NotInTrash);
+        }
+        if members.iter().any(|item| item.state != State::Trashed) {
+            return Err(TrashError::InFlight);
+        }
+        let inside: Vec<&str> = members.iter().map(|item| item.id.as_str()).collect();
+        let everything = all_items(journal)?;
+        for item in &members {
+            for need in &item.needs {
+                let outside = everything.iter().find(|other| {
+                    !inside.contains(&other.id.as_str())
+                        && other.paths.iter().any(|held| holds_needed(held, need))
+                });
+                if let Some(other) = outside {
+                    return Err(refused_code(
+                        STRETCH_NEEDS,
+                        Some(("item", other.id.clone())),
+                    ));
+                }
+                let met_inside = members
+                    .iter()
+                    .any(|other| other.paths.iter().any(|held| holds_needed(held, need)));
+                if !met_inside && !journal.join(need).exists() {
+                    return Err(refused_code("import_gone", None));
+                }
+            }
+        }
+        let pending = Pending {
+            action,
+            surface,
+            at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            operation: Some(operation.to_string()),
+        };
+        let mut marked = Vec::new();
+        for mut item in members {
+            item.state = State::Attaching;
+            item.pending = Some(pending.clone());
+            publish(journal, &item)?;
+            marked.push(item);
+        }
+        marked
+    };
+    let mut ordered = members;
+    ordered.sort_by_key(|item| {
+        let needed = kind_for(kinds, &item.unit).is_ok_and(|kind| kind.may_be_needed(&item.unit));
+        (!needed, !item.needs.is_empty())
+    });
+    let mut first_error = None;
+    for item in &ordered {
+        // Marked recovering: each is finished, now or by the sweep.
+        if let Err(error) = attach_as(journal, kinds, &item.id, action, surface, None)
+            && first_error.is_none()
+        {
+            log::warn!(
+                "trash item {}: recover of its stretch left for the sweep: {error}",
+                item.id
+            );
+            first_error = Some(TrashError::Unfinished(item.id.clone()));
+        }
+    }
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(ordered),
+    }
+}
+
+/// Erase a stretch of time whole, as one act. Every one of its items, and
+/// every item outside it that needs one of them (an import's segments deleted
+/// earlier, never back without it), is marked erasing under the trash's lock
+/// before anything is unlinked, so a stop part way leaves them all erasing for
+/// the sweep. Refused while its set is still being moved in.
+pub fn erase_stretch(
+    journal: &Path,
+    id: &str,
+    action: Action,
+    surface: Surface,
+    operation: &OperationId,
+) -> Result<Vec<Item>, TrashError> {
+    let (members, needing) = {
+        let _lock = lock(journal)?;
+        if stretch_finishing(journal, id) {
+            return Err(refused_code(STRETCH_FINISHING, None));
+        }
+        let members = stretch_members(journal, id)?;
+        if members.is_empty() {
+            return Err(TrashError::NotInTrash);
+        }
+        if members
+            .iter()
+            .any(|item| matches!(item.state, State::Detaching | State::Attaching))
+        {
+            return Err(TrashError::InFlight);
+        }
+        let pending = Pending {
+            action,
+            surface,
+            at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            operation: Some(operation.to_string()),
+        };
+        let mut marked = Vec::new();
+        for mut item in members {
+            if item.state == State::Trashed {
+                item.state = State::Erasing;
+                item.pending = Some(pending.clone());
+                publish(journal, &item)?;
+            }
+            marked.push(item);
+        }
+        let mut needing = Vec::new();
+        for item in &marked {
+            needing.extend(mark_needing_erased(journal, item)?);
+        }
+        (marked, needing)
+    };
+    for item in members.iter().chain(needing.iter()) {
+        match finish_erase(journal, item) {
+            Ok(()) => erase_linked_within(journal, item),
+            Err(error) => log::warn!(
+                "trash item {}: erase of its stretch left for the sweep: {error}",
+                item.id
+            ),
+        }
+    }
+    Ok(members)
+}
+
+/// Stretches whose set a stop left part way: still being moved into the trash,
+/// for the sweep to finish. Each with how many of its things are still owed.
+pub fn stretches_unfinished(journal: &Path) -> Vec<(Stretch, usize)> {
+    waiting_sets(journal)
+        .into_iter()
+        .filter_map(|set| {
+            let owed = set.entries.iter().filter(|entry| !entry.settled).count();
+            set.stretch.map(|stretch| (stretch, owed))
+        })
+        .collect()
 }
 
 /// Everything in the trash, newest first. Items part-way through a step are
@@ -925,6 +1279,10 @@ struct Entry {
     /// asked), or it was refused for good.
     #[serde(default)]
     settled: bool,
+    /// What of a stretch this thing is: its own bounds and kinds, which its
+    /// item carries under the stretch's id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    part: Option<Stretch>,
 }
 
 /// A set the owner chose together and confirmed once, kept until every thing
@@ -943,6 +1301,18 @@ struct Set {
     /// shows the set as the one act the owner confirmed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     operation: Option<String>,
+    /// The stretch of time this set is, when it is one: each item it moves
+    /// carries it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stretch: Option<Stretch>,
+    /// When the owner confirmed it, for a stretch: every item of it is trashed
+    /// at this moment, and so erased at one moment too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    at: Option<String>,
+    /// The stretch's erase date, fixed when the owner confirmed it: every item
+    /// of it erases then, whenever the sweep moves it in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    erase_at: Option<String>,
 }
 
 /// Where sets wait, inside the trash.
@@ -970,22 +1340,72 @@ pub fn detach_set(
     surface: Surface,
     erase: bool,
 ) -> Result<Vec<SetResult>, TrashError> {
+    let parts = chosen.into_iter().map(|chosen| (chosen, None)).collect();
+    detach_set_as(journal, kinds, parts, action, surface, erase, None).map(|(_, results)| results)
+}
+
+/// Move a stretch of time to the trash as one thing: [`detach_set`], each
+/// thing given with its own part of the stretch (its bounds and kinds), which
+/// its item carries under the stretch's id, the set's operation, filled in
+/// here. Every item is trashed at the moment the owner confirmed and erases at
+/// one date, fixed then. Returns `whole` with its id, and the results.
+pub fn detach_stretch(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    parts: Vec<(Chosen, Stretch)>,
+    action: Action,
+    surface: Surface,
+    erase: bool,
+    whole: Stretch,
+) -> Result<(Stretch, Vec<SetResult>), TrashError> {
+    let parts = parts
+        .into_iter()
+        .map(|(chosen, part)| (chosen, Some(part)))
+        .collect();
+    let (stretch, results) =
+        detach_set_as(journal, kinds, parts, action, surface, erase, Some(whole))?;
+    let stretch = stretch.ok_or_else(|| TrashError::Io("the stretch wasn't written".into()))?;
+    Ok((stretch, results))
+}
+
+fn detach_set_as(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    parts: Vec<(Chosen, Option<Stretch>)>,
+    action: Action,
+    surface: Surface,
+    erase: bool,
+    stretch: Option<Stretch>,
+) -> Result<(Option<Stretch>, Vec<SetResult>), TrashError> {
     let at = Utc::now();
     let id = item_id(at);
+    let operation = OperationId::durable(at, &id).to_string();
+    let stretch = stretch.map(|mut stretch| {
+        stretch.id = operation.clone();
+        stretch
+    });
+    let fixed = stretch.is_some();
     let mut set = Set {
         schema: SCHEMA,
-        operation: Some(OperationId::durable(at, &id).to_string()),
+        operation: Some(operation),
+        at: fixed.then(|| at.to_rfc3339_opts(SecondsFormat::Millis, true)),
+        erase_at: fixed.then(|| {
+            (at + Duration::days(i64::from(erase_after_days(journal))))
+                .to_rfc3339_opts(SecondsFormat::Millis, true)
+        }),
+        stretch: stretch.clone(),
         id,
         action,
         surface,
         erase,
-        entries: chosen
+        entries: parts
             .into_iter()
-            .map(|chosen| Entry {
+            .map(|(chosen, part)| Entry {
                 chosen,
                 item: None,
                 arrived: false,
                 settled: false,
+                part,
             })
             .collect(),
     };
@@ -997,7 +1417,10 @@ pub fn detach_set(
     let results = run_set(journal, kinds, &mut set, false);
     drop(running);
     remove_set_lock(journal, &set.id);
-    Ok(results.into_iter().map(|(_, result)| result).collect())
+    Ok((
+        stretch,
+        results.into_iter().map(|(_, result)| result).collect(),
+    ))
 }
 
 /// Work through what of a set is still owed. `resuming` is a sweep finishing
@@ -1103,7 +1526,15 @@ fn settle(
                 set.surface,
                 paths,
                 entry.chosen.label.clone(),
-                set.operation.clone(),
+                Placed {
+                    operation: set.operation.clone(),
+                    stretch: entry.part.clone().map(|mut part| {
+                        part.id = set.operation.clone().unwrap_or_default();
+                        part
+                    }),
+                    at: parse_utc(set.at.as_deref()),
+                    erase_at: parse_utc(set.erase_at.as_deref()),
+                },
             ) {
                 Ok(_) | Err(TrashError::Unfinished(_)) => {}
                 Err(error @ (TrashError::Held(_) | TrashError::InFlight)) if resuming => {
@@ -1177,6 +1608,11 @@ fn settle(
             }),
         ),
     }
+}
+
+fn parse_utc(at: Option<&str>) -> Option<DateTime<Utc>> {
+    at.and_then(|at| DateTime::parse_from_rfc3339(at).ok())
+        .map(|at| at.with_timezone(&Utc))
 }
 
 fn set_rel(id: &str) -> String {
@@ -1306,13 +1742,33 @@ fn sweep_set(journal: &Path, kinds: &[&dyn Kind], mut set: Set, swept: &mut Swep
 /// Runs at start and on the maintenance schedule.
 pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
     let mut swept = Swept::default();
+    // Soonest due first, so an item erased with one it needed is met after.
     let items = match all_items(journal) {
-        Ok(items) => items,
+        Ok(mut items) => {
+            items.sort_by(|left, right| {
+                left.erase_at
+                    .cmp(&right.erase_at)
+                    .then(left.id.cmp(&right.id))
+            });
+            items
+        }
         Err(error) => {
             swept.failed.push(error.to_string());
             return swept;
         }
     };
+    // When each stretch is due: when the last of its items is.
+    let mut stretch_due: std::collections::BTreeMap<String, DateTime<Utc>> =
+        std::collections::BTreeMap::new();
+    for item in &items {
+        if let (Some(stretch), Some(at)) = (&item.stretch, item.erase_at()) {
+            let due = stretch_due.entry(stretch.id.clone()).or_insert(at);
+            if at > *due {
+                *due = at;
+            }
+        }
+    }
+    let mut stretch_erased = std::collections::BTreeSet::new();
     for item in items {
         let result = match item.state {
             State::Detaching => resume_detach(journal, kinds, &item.id).map(|()| {
@@ -1339,6 +1795,37 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                     swept.resumed += 1;
                 })
             }
+            State::Trashed if item.stretch.is_some() => {
+                let id = item
+                    .stretch
+                    .as_ref()
+                    .map(|stretch| stretch.id.clone())
+                    .unwrap_or_default();
+                // A stretch is due when the last of it is, and the timer erases
+                // it whole, as the owner would.
+                match stretch_due.get(&id) {
+                    Some(at) if *at <= now => {
+                        if stretch_erased.insert(id.clone()) {
+                            erase_stretch(
+                                journal,
+                                &id,
+                                Action::Erase,
+                                timer_surface(),
+                                &OperationId::fresh(now),
+                            )
+                            .map(|erased| {
+                                swept.erased += erased.len();
+                            })
+                        } else {
+                            Ok(())
+                        }
+                    }
+                    _ => {
+                        swept.waiting += 1;
+                        Ok(())
+                    }
+                }
+            }
             State::Trashed => match item.erase_at() {
                 Some(at) if at <= now => erase(journal, &item.id, Action::Erase, timer_surface())
                     .map(|()| {
@@ -1357,8 +1844,10 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                 }
             },
         };
-        if let Err(error) = result {
-            swept.failed.push(format!("{}: {error}", item.id));
+        match result {
+            // Erased already, with an item it needed.
+            Ok(()) | Err(TrashError::NotInTrash) => {}
+            Err(error) => swept.failed.push(format!("{}: {error}", item.id)),
         }
     }
     // After the items, so a set's thing whose move a stop interrupted is in
@@ -1529,6 +2018,13 @@ fn removal(
     action: Action,
     surface: Surface,
 ) -> Removal {
+    let span = item
+        .stretch
+        .as_ref()
+        .map(|stretch| solstone_core_removals::Span {
+            from: stretch.from.clone(),
+            to: stretch.to.clone(),
+        });
     match shared {
         Some(operation) => {
             Removal::with_id(journal, OperationId::recorded(operation), action, surface)
@@ -1536,6 +2032,7 @@ fn removal(
         }
         None => Removal::with_id(journal, OperationId::durable(at, &item.id), action, surface),
     }
+    .in_stretch(span)
 }
 
 /// Unlink the item's files, record, and remove the item. Safe to run again.
@@ -2372,8 +2869,10 @@ mod tests {
             pending: None,
             label: None,
             refs: Vec::new(),
+            needs: Vec::new(),
             operation: None,
             linked: false,
+            stretch: None,
         };
         fs::create_dir(root.join(TRASH_DIR).join(&stale.id)).unwrap();
         publish_new(&root, &stale).unwrap();
@@ -2478,8 +2977,12 @@ mod tests {
                 item: None,
                 arrived: false,
                 settled: false,
+                part: None,
             }],
             operation: None,
+            stretch: None,
+            at: None,
+            erase_at: None,
         }
     }
 
@@ -2857,15 +3360,261 @@ mod tests {
                     item: None,
                     arrived: false,
                     settled: false,
+                    part: None,
                 })
                 .collect(),
             operation: Some("20261111T000000000Z-20261111T000000000Zabcd1234".into()),
+            stretch: None,
+            at: None,
+            erase_at: None,
         };
         publish_set(&root, &set, true).unwrap();
         sweep(&root, &[&kind], Utc::now());
         let found = entries(&root);
         assert_eq!(found.len(), 2);
         assert_eq!(Some(one_operation(&found)), set.operation);
+    }
+
+    fn a_stretch(id: &str) -> Stretch {
+        Stretch {
+            id: id.into(),
+            from: "2026-08-01T14:00:00".into(),
+            to: "2026-08-01T15:30:00".into(),
+            kinds: vec!["audio".into()],
+        }
+    }
+
+    /// A stretch a stop interrupted after its first thing moved: the sweep
+    /// moves the rest, each carrying the stretch, at the moment the owner
+    /// confirmed it, so the stretch keeps one erase date; while it waits, it
+    /// reports as unfinished.
+    #[test]
+    fn a_stretch_stopped_part_way_is_finished_by_a_sweep_as_one_thing() {
+        let (_dir, root) = journal();
+        let kind = Plain::default();
+        let operation = "20261111T000000000Z-20261111T000000000Zabcd1234";
+        let confirmed = "2026-11-11T00:00:00.000Z";
+        let mut set = Set {
+            schema: SCHEMA,
+            id: item_id(Utc::now()),
+            action: Action::StretchDelete,
+            surface: web(),
+            erase: false,
+            entries: people(&root)
+                .into_iter()
+                .map(|chosen| Entry {
+                    chosen,
+                    item: None,
+                    arrived: false,
+                    settled: false,
+                    part: Some(a_stretch("")),
+                })
+                .collect(),
+            operation: Some(operation.into()),
+            stretch: Some(a_stretch(operation)),
+            at: Some(confirmed.into()),
+            erase_at: Some("2026-11-18T00:00:00.000Z".into()),
+        };
+        publish_set(&root, &set, true).unwrap();
+        // The first thing moves; then the stop.
+        let mut first = set.entries.first().cloned().unwrap();
+        first.item = Some(item_id(Utc::now()));
+        let (first, _) = settle(&root, &[&kind], &set, first, false);
+        set.entries[0] = first;
+        publish_set(&root, &set, false).unwrap();
+        assert_eq!(stretch_members(&root, operation).unwrap().len(), 1);
+        let waiting = stretches_unfinished(&root);
+        assert_eq!(waiting.len(), 1);
+        assert_eq!(waiting[0].1, 1);
+        sweep(&root, &[&kind], Utc::now());
+        let members = stretch_members(&root, operation).unwrap();
+        assert_eq!(members.len(), 2);
+        assert!(stretches_unfinished(&root).is_empty());
+        for member in &members {
+            assert_eq!(
+                member.stretch.as_ref().map(|s| s.id.as_str()),
+                Some(operation)
+            );
+            assert_eq!(member.trashed_at, confirmed);
+            assert_eq!(member.erase_at, "2026-11-18T00:00:00.000Z");
+        }
+        assert_eq!(Some(one_operation(&entries(&root))), set.operation);
+    }
+
+    /// A kind whose hold refuses while `balks` is set: a stop between steps.
+    #[derive(Default)]
+    struct Balky {
+        balks: std::cell::Cell<bool>,
+        free: std::cell::Cell<u32>,
+    }
+
+    impl Kind for Balky {
+        fn handles(&self, unit: &Unit) -> bool {
+            matches!(unit, Unit::Entity)
+        }
+        fn hold<'a>(&'a self, _: &Path, _: &Item) -> Result<Box<dyn Hold + 'a>, String> {
+            if self.balks.get() {
+                Err("busy".into())
+            } else {
+                Ok(Box::new(Free(&self.free)))
+            }
+        }
+        fn present(&self, journal: &Path, path: &str) -> bool {
+            journal.join(path).exists()
+        }
+        fn references(&self, _: &Path, _: &Item, _: Change, _: &[String]) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    fn stretch_of_people(root: &Path, kind: &dyn Kind) -> Stretch {
+        detach_stretch(
+            root,
+            &[kind],
+            people(root)
+                .into_iter()
+                .map(|chosen| (chosen, a_stretch("")))
+                .collect(),
+            Action::StretchDelete,
+            web(),
+            false,
+            a_stretch(""),
+        )
+        .unwrap()
+        .0
+    }
+
+    /// A stretch recover that stops part way leaves every item of it
+    /// recovering, never some back and some waiting, and the sweep brings back
+    /// the rest.
+    #[test]
+    fn a_stretch_recover_stopped_part_way_is_finished_whole_by_the_sweep() {
+        let (_dir, root) = journal();
+        let kind = Balky::default();
+        let stretch = stretch_of_people(&root, &kind);
+        kind.balks.set(true);
+        let operation = OperationId::fresh(Utc::now());
+        let stopped = recover_stretch(
+            &root,
+            &[&kind],
+            &stretch.id,
+            Action::Recover,
+            web(),
+            &operation,
+        );
+        assert!(
+            matches!(stopped, Err(TrashError::Unfinished(_))),
+            "{stopped:?}"
+        );
+        let members = stretch_members(&root, &stretch.id).unwrap();
+        assert_eq!(members.len(), 2);
+        assert!(members.iter().all(|item| item.state == State::Attaching));
+        assert!(
+            list(&root).unwrap().is_empty(),
+            "no part of it waits as trashed"
+        );
+        kind.balks.set(false);
+        sweep(&root, &[&kind], Utc::now());
+        assert!(stretch_members(&root, &stretch.id).unwrap().is_empty());
+        for path in PEOPLE {
+            assert!(root.join(path).join("entity.json").is_file());
+        }
+    }
+
+    /// Erasing a stretch erases all of it under one operation.
+    #[test]
+    fn a_stretch_erased_now_goes_whole_under_one_operation() {
+        let (_dir, root) = journal();
+        let kind = Plain::default();
+        let stretch = stretch_of_people(&root, &kind);
+        let operation = OperationId::fresh(Utc::now());
+        let erased = erase_stretch(&root, &stretch.id, Action::Erase, web(), &operation).unwrap();
+        assert_eq!(erased.len(), 2);
+        assert!(stretch_members(&root, &stretch.id).unwrap().is_empty());
+        let found: Vec<_> = entries(&root)
+            .into_iter()
+            .filter(|entry| entry.event == Event::Erased)
+            .collect();
+        assert_eq!(one_operation(&found), operation.to_string());
+    }
+
+    /// While a stop has left a stretch part way into the trash, it can be
+    /// neither recovered nor erased: the sweep finishes moving it first.
+    #[test]
+    fn a_stretch_still_moving_in_is_refused_whole() {
+        let (_dir, root) = journal();
+        let kind = Plain::default();
+        let operation = "20261111T000000000Z-20261111T000000000Zabcd1234";
+        let mut set = Set {
+            schema: SCHEMA,
+            id: item_id(Utc::now()),
+            action: Action::StretchDelete,
+            surface: web(),
+            erase: false,
+            entries: people(&root)
+                .into_iter()
+                .map(|chosen| Entry {
+                    chosen,
+                    item: None,
+                    arrived: false,
+                    settled: false,
+                    part: Some(a_stretch("")),
+                })
+                .collect(),
+            operation: Some(operation.into()),
+            stretch: Some(a_stretch(operation)),
+            at: None,
+            erase_at: None,
+        };
+        publish_set(&root, &set, true).unwrap();
+        let mut first = set.entries.first().cloned().unwrap();
+        first.item = Some(item_id(Utc::now()));
+        let (first, _) = settle(&root, &[&kind], &set, first, false);
+        set.entries[0] = first;
+        publish_set(&root, &set, false).unwrap();
+        let op = OperationId::fresh(Utc::now());
+        for refused in [
+            recover_stretch(&root, &[&kind], operation, Action::Recover, web(), &op).map(|_| ()),
+            erase_stretch(&root, operation, Action::Erase, web(), &op).map(|_| ()),
+        ] {
+            let Err(TrashError::Held(text)) = refused else {
+                panic!("not refused: {refused:?}");
+            };
+            assert!(text.contains(STRETCH_FINISHING), "{text}");
+        }
+        sweep(&root, &[&kind], Utc::now());
+        assert_eq!(stretch_members(&root, operation).unwrap().len(), 2);
+    }
+
+    /// A stretch's items come due together, and the timer erases them as one
+    /// act.
+    #[test]
+    fn the_timer_erases_a_stretch_as_one_act() {
+        let (_dir, root) = journal();
+        let kind = Plain::default();
+        let (stretch, results) = detach_stretch(
+            &root,
+            &[&kind],
+            people(&root)
+                .into_iter()
+                .map(|chosen| (chosen, a_stretch("")))
+                .collect(),
+            Action::StretchDelete,
+            web(),
+            false,
+            a_stretch(""),
+        )
+        .unwrap();
+        assert!(!stretch.id.is_empty());
+        assert_eq!(results.len(), 2);
+        let swept = sweep(&root, &[&kind], Utc::now() + Duration::days(60));
+        assert_eq!(swept.erased, 2);
+        let erased: Vec<_> = entries(&root)
+            .into_iter()
+            .filter(|entry| entry.event == Event::Erased)
+            .collect();
+        assert_eq!(erased.len(), 2);
+        one_operation(&erased);
     }
 
     /// Several items recovered together, then several erased together: each
@@ -2969,8 +3718,10 @@ mod tests {
             pending: None,
             label: None,
             refs: Vec::new(),
+            needs: Vec::new(),
             operation: None,
             linked: false,
+            stretch: None,
         };
         ensure_trash(&root).unwrap();
         fs::create_dir(root.join(TRASH_DIR).join(&item.id)).unwrap();
@@ -3423,7 +4174,7 @@ mod tests {
     }
 
     /// A temporary journal root, removed when dropped.
-    mod tempfile_dir {
+    pub(crate) mod tempfile_dir {
         use std::path::{Path, PathBuf};
 
         pub struct Dir(PathBuf);

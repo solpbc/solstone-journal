@@ -88,7 +88,10 @@ fn is_exempt_with_agents(path: &str, include_agents: bool) -> bool {
                         // `/app/devices` left the registry; leftover ingest
                         // routes and the permanent redirects must stay gated.
                         // Leftover news paths stay gated.
+                        // `/app/open` is the journal-link route, not an app:
+                        // a link opens nothing before setup or during a restore.
                         name != "link"
+                            && name != "open"
                             && name != "devices"
                             && name != "news"
                             && name != "agents"
@@ -707,6 +710,8 @@ mod tests {
         assert!(is_exempt("/init/api/state"));
         assert!(!is_exempt("/initfoo"));
         assert!(!is_exempt("/app/link/workspace"));
+        assert!(!is_exempt("/app/open/AQ"));
+        assert!(!is_exempt("/app/open/AQ~100212"));
         assert!(!is_exempt("/app/devices"));
         assert!(!is_exempt("/app/devices/"));
         assert!(!is_exempt("/app/devices/workspace"));

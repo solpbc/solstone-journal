@@ -49,10 +49,11 @@ use super::model::{
 #[cfg(windows)]
 use super::parakeet_truth_seam::parakeet_cpu_environment;
 use super::seams::{LifecycleSeam, ProbeSeam};
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
+use super::store::insert_ready_tuple;
 use super::store::{
     CurrentProcessResolution, FenceKey, ReadyChild, ReadyChildIdentity, ReadyProcess,
-    ReadyProcessLookup, RuntimeClock, insert_ready_tuple, remove_ready_tuple,
-    resolve_current_process,
+    ReadyProcessLookup, RuntimeClock, remove_ready_tuple, resolve_current_process,
 };
 
 pub const PARAKEET_SERVER_PROCESS_NAME: &str = "parakeet-server";
@@ -492,7 +493,7 @@ impl ParakeetRuntimeShared {
             .insert(key, started_at);
     }
 
-    #[cfg(any(unix, windows))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     fn register_ready_process(
         &self,
         fence: &ProviderFence,
@@ -1338,7 +1339,7 @@ fn spawn_parakeet(
     command.spawn()
 }
 
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn probe_health(port: u16) -> bool {
     let credentials: Option<ParakeetCredentials> = None;
     probe_health_with_timeout(port, HEALTH_PROBE_TIMEOUT, credentials.as_ref())

@@ -584,6 +584,12 @@ mod tests {
         use super::*;
 
         struct Fixture {
+            // Keeps the scratch tree alive on every platform; only the unix
+            // tests also read its path.
+            #[cfg_attr(
+                not(unix),
+                expect(dead_code, reason = "drop guard only where no test reads its path")
+            )]
             temporary: TempDir,
             parent: Arc<MediaDirectory>,
             parent_path: PathBuf,

@@ -227,7 +227,7 @@ impl DoorStartParts {
 }
 
 impl DoorLifecycle {
-    pub(super) fn new(options: DoorStartOptions) -> Self {
+    pub(super) fn new(options: DoorStartOptions) -> Arc<Self> {
         let target_use = solstone_core_journal_io::whole_journal_restore::TargetUseOwner::new(
             &options.journal_root,
         );
@@ -235,20 +235,24 @@ impl DoorLifecycle {
     }
 
     pub(super) fn with_target_use(
-        options: DoorStartOptions,
+        mut options: DoorStartOptions,
         target_use: solstone_core_journal_io::whole_journal_restore::TargetUseOwner,
-    ) -> Self {
+    ) -> Arc<Self> {
         let selected_port = AtomicU16::new(options.port);
-        Self {
-            parts: DoorStartParts::from_options(options),
-            running: Mutex::new(None),
-            stopped: AtomicBool::new(false),
-            recovery_paused: AtomicBool::new(false),
-            selected_port,
-            loopback_carriers: Arc::new(recovery::Carriers::new()),
-            target_use,
-            rebinding: AsyncMutex::new(()),
-        }
+        Arc::new_cyclic(|door| {
+            // A route holds a weak reference so the lifecycle never owns itself.
+            options.router = options.router.layer(Extension(door.clone()));
+            Self {
+                parts: DoorStartParts::from_options(options),
+                running: Mutex::new(None),
+                stopped: AtomicBool::new(false),
+                recovery_paused: AtomicBool::new(false),
+                selected_port,
+                loopback_carriers: Arc::new(recovery::Carriers::new()),
+                target_use,
+                rebinding: AsyncMutex::new(()),
+            }
+        })
     }
 
     pub(crate) fn journal_root(&self) -> &std::path::Path {

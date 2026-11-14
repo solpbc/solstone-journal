@@ -119,9 +119,11 @@ pub fn detach_linked(
         bytes: 0,
         pending: None,
         refs: Vec::new(),
+        needs: Vec::new(),
         label: None,
         operation,
         linked: true,
+        stretch: None,
     };
     let hold = kind.hold(journal, &item).map_err(TrashError::Held)?;
     hold.check().map_err(TrashError::Held)?;

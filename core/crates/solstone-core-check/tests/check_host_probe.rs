@@ -3,6 +3,8 @@
 
 //! Real-host identity probe with an owned, bounded process group.
 
+#![cfg(unix)]
+
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;

@@ -383,13 +383,13 @@
     const deleteSegmentModalConfirm = document.getElementById('trDeleteSegmentModalConfirm');
     const deleteSegmentModalBack = document.getElementById('trDeleteSegmentModalBack');
     const deleteSegmentModalEraseConfirm = document.getElementById('trDeleteSegmentModalEraseConfirm');
-    // The "pick a stretch of the day" invitation is for a day that has loaded.
+    // The "pick a time of day" invitation is for a day that has loaded.
     // While the day is read the panel says so; on a slow link the invitation
     // read as an empty day.
     const dayInvitationHtml = window.SurfaceState.empty({
       icon: window.ConveyIcons.svg('clock'),
       heading: 'your day at a glance',
-      desc: 'pick a stretch of the day on the left, then a block in detail to read it'
+      desc: 'pick part of the day on the left, then a block in detail to read it'
     });
 
     function emptyIconForModality(modality) {
@@ -1907,10 +1907,31 @@
       });
     }
 
+    // A link to one second of a recording: `#<key>/<tab>/<HHMMSS>`, the clock
+    // its line shows. The moment stays in the address while that recording is
+    // open, and its line is cued once, without playing.
+    let linkedMoment = null;
+
+    function hashLocation() {
+      const [segKey, tab, moment] = window.location.hash.slice(1).split('/', 3);
+      return { segKey, tab, moment: /^\d{6}$/.test(moment || '') ? moment : null };
+    }
+
+    function linkMoment(seg, clock) {
+      linkedMoment = clock ? { key: seg.key, stream: seg.stream, clock, cued: false } : null;
+    }
+
+    function momentFor(seg) {
+      return linkedMoment && linkedMoment.key === seg.key && linkedMoment.stream === seg.stream
+        ? linkedMoment
+        : null;
+    }
+
     function segmentLocation(seg, tab) {
       const url = new URL(window.location.href);
       url.searchParams.set('stream', seg.stream);
-      url.hash = `${seg.key}/${tab}`;
+      const moment = momentFor(seg);
+      url.hash = moment ? `${seg.key}/${tab}/${moment.clock}` : `${seg.key}/${tab}`;
       return url.pathname + url.search + url.hash;
     }
 
@@ -1942,10 +1963,12 @@
       // Choosing a segment opens another page. Choosing the same one again refines this page.
       if (updateHash) {
         const tab = activeTab || 'transcript';
-        const url = segmentLocation(seg, tab);
         const samePair = previous
           && previous.key === seg.key
           && previous.stream === seg.stream;
+        // Choosing another recording leaves the linked moment behind.
+        if (!samePair) linkedMoment = null;
+        const url = segmentLocation(seg, tab);
         if (samePair) ctx.history.replace(url);
         else ctx.history.push(url);
       }
@@ -2027,10 +2050,12 @@
 
       if (updateHash) {
         const tab = activeTab || 'transcript';
-        const url = segmentLocation(seg, tab);
         const samePair = previous
           && previous.key === seg.key
           && previous.stream === seg.stream;
+        // Choosing another recording leaves the linked moment behind.
+        if (!samePair) linkedMoment = null;
+        const url = segmentLocation(seg, tab);
         if (samePair) ctx.history.replace(url);
         else ctx.history.push(url);
       }
@@ -2090,6 +2115,11 @@
             return;
           }
           panel.classList.remove('loading');
+          if (data && data.trash && !data.media) {
+            panel.innerHTML = segmentInTrashHtml(data.trash);
+            panel.querySelector('[data-open-trash]')?.addEventListener('click', goToSettingsTrash);
+            return;
+          }
           renderLoadedSegmentData(data, requestedTabId);
           if (!isLocationOnlySegment(data)) {
             const analyzing = currentAnalyzingModalities(data.data_state || {});
@@ -2334,6 +2364,11 @@
 
       pane.classList.add('active');
       collapseLongPreBlocks(pane);
+      // A link's moment was cued while this pane was still hidden.
+      if (linkedMoment?.reveal?.pane === pane) {
+        linkedMoment.reveal.entry.scrollIntoView({ block: 'center' });
+        linkedMoment.reveal = null;
+      }
       // A cached pane is not re-rendered, so restore the count it reported.
       updateSegmentEntryCount(tabEntryCounts[tabId] ?? null);
       activeTab = tabId;
@@ -3727,6 +3762,8 @@
 
       // Get audio element reference
       const paneAudioEl = targetEl.querySelector('audio[data-role="segment-audio"]');
+      // Where a link's moment set the player, until the owner plays something.
+      let cueSeconds = null;
       if (paneAudioEl) {
         paneAudioEl.addEventListener('loadedmetadata', () => {
           if (Number.isFinite(paneAudioEl.duration) && paneAudioEl.duration > 0) {
@@ -3737,7 +3774,8 @@
             if (!Number.isFinite(paneAudioEl.duration) || paneAudioEl.duration === 0) {
               return;
             }
-            paneAudioEl.currentTime = 0;
+            // Back to the start, or to the moment a link cued meanwhile.
+            paneAudioEl.currentTime = cueSeconds ?? 0;
             paneAudioEl.removeEventListener('durationchange', handleDurationChange);
           };
 
@@ -3746,29 +3784,35 @@
         }, { once: true });
       }
 
+      // Set the player to an entry's line: played on a click, only cued for a
+      // link's moment.
+      const seekToEntry = (entry, play) => {
+        if (!paneAudioEl) return;
+        const audioUrl = entry.dataset.audioUrl;
+        const audioOrigin = entry.dataset.audioOrigin;
+        const timestamp = parseInt(entry.dataset.timestamp, 10);
+        let offsetSec;
+        if (audioUrl && audioOrigin !== undefined) {
+          offsetSec = Math.max(0, (timestamp - parseInt(audioOrigin, 10)) / 1000);
+          if (paneAudioEl.getAttribute('src') !== audioUrl && paneAudioEl.src !== audioUrl) {
+            paneAudioEl.src = audioUrl;
+          }
+        } else if (segmentData?.audio_file) {
+          const baseTimestamp = chunks[0]?.timestamp || timestamp;
+          offsetSec = Math.max(0, (timestamp - baseTimestamp) / 1000);
+        } else {
+          return;
+        }
+        paneAudioEl.currentTime = offsetSec;
+        cueSeconds = play ? null : offsetSec;
+        if (play) paneAudioEl.play();
+      };
+
       // Add click handlers for audio entries to seek
       targetEl.querySelectorAll('.tr-entry-audio').forEach(entry => {
         entry.addEventListener('click', e => {
           if (e.target.closest('[data-action="speaker-picker"]')) return;
-          if (!paneAudioEl) return;
-          const audioUrl = entry.dataset.audioUrl;
-          const audioOrigin = entry.dataset.audioOrigin;
-          if (audioUrl && audioOrigin !== undefined) {
-            const timestamp = parseInt(entry.dataset.timestamp, 10);
-            const origin = parseInt(audioOrigin, 10);
-            const offsetSec = Math.max(0, (timestamp - origin) / 1000);
-            if (paneAudioEl.getAttribute('src') !== audioUrl && paneAudioEl.src !== audioUrl) {
-              paneAudioEl.src = audioUrl;
-            }
-            paneAudioEl.currentTime = offsetSec;
-            paneAudioEl.play();
-          } else if (segmentData?.audio_file) {
-            const timestamp = parseInt(entry.dataset.timestamp, 10);
-            const baseTimestamp = chunks[0]?.timestamp || timestamp;
-            const offsetSec = (timestamp - baseTimestamp) / 1000;
-            paneAudioEl.currentTime = Math.max(0, offsetSec);
-            paneAudioEl.play();
-          }
+          seekToEntry(entry, true);
         });
       });
 
@@ -3784,9 +3828,9 @@
       });
 
       // Playback highlight: track current entry during audio playback
+      let activeEntry = null;
       if (paneAudioEl) {
         const baseTimestamp = chunks[0]?.timestamp || 0;
-        let activeEntry = null;
 
         paneAudioEl.addEventListener('timeupdate', () => {
           const currentSrc = paneAudioEl.getAttribute('src') || paneAudioEl.src || paneAudioEl.querySelector('source')?.getAttribute('src') || '';
@@ -3827,6 +3871,31 @@
             activeEntry = null;
           }
         });
+      }
+
+      // A link's moment: bring the line being said at that second into view,
+      // marked, with the player set there. Nothing plays until the owner asks.
+      // The match is on the clock each line shows, the one an agent reads; a
+      // re-transcribed recording cues the line that now holds that second.
+      const moment = selectedSegment && momentFor(selectedSegment);
+      if (moment && !moment.cued) {
+        let cue = null;
+        for (const entry of targetEl.querySelectorAll('.tr-entry-audio[data-timestamp]')) {
+          const clock = String(displayItems[entry.dataset.idx]?.time || '').replace(/:/g, '');
+          if (!/^\d{6}$/.test(clock)) continue;
+          if (clock > moment.clock) break;
+          cue = entry;
+        }
+        if (cue) {
+          moment.cued = true;
+          revealBoundedEntry(targetEl, cue);
+          activeEntry = cue;
+          cue.classList.add('tr-entry-active');
+          // This pane isn't showing yet: activateTab brings the line into
+          // view once it is.
+          moment.reveal = { pane: targetEl, entry: cue };
+          seekToEntry(cue, false);
+        }
       }
 
       // Add click handlers for enhanced screen and image entries to open modal
@@ -4582,6 +4651,7 @@
     // Load combined transcript data
     function loadDayData() {
       dayLoad = 'pending';
+      syncStretchButton();
       if (!selectedSegment) {
         panel.innerHTML = window.SurfaceState.loading({ text: 'loading this day…', busy: false });
       }
@@ -4714,6 +4784,7 @@
         // Store segments and update zoom
         allSegments = data.segments || [];
         dayLoad = 'ready';
+        syncStretchButton();
         if (allSegments.length && !selectedSegment) {
           panel.innerHTML = dayInvitationHtml;
         }
@@ -4722,19 +4793,24 @@
         refreshUnselectedLocation(null);
 
         // Check for hash fragment to auto-select segment
-        const rawHash = window.location.hash.slice(1);
-        const [segKey, tabIdFromHash] = rawHash.split('/', 2);
+        const { segKey, tab: tabIdFromHash, moment } = hashLocation();
         if (segKey) {
           const seg = linkedSegment(segKey);
           if (seg) {
+            linkMoment(seg, moment);
             // selectSegment recenters the detail zoom range when needed.
             selectSegment(seg, false, tabIdFromHash);
+          } else {
+            // A link to a segment the day doesn't list may lead to the trash.
+            const stream = new URLSearchParams(window.location.search).get('stream');
+            if (stream) showSegmentInTrash(stream, segKey);
           }
         }
       })
       .catch(err => {
         console.error('transcripts: day data load did not complete:', err);
         dayLoad = 'error';
+        syncStretchButton();
         zoomSegments.innerHTML = '';
         segmentPicker.innerHTML = '<option value="">choose a segment</option>';
         segmentPicker.disabled = true;
@@ -4939,8 +5015,7 @@
       // of the same segment and tab is already that page. The activeTab == null guard
       // is what stops a stale in-flight record from swallowing a tab change after the tab is shown.
       function restoreHistoryLocation() {
-        const rawHash = window.location.hash.slice(1);
-        const [segKey, tabIdFromHash] = rawHash.split('/', 2);
+        const { segKey, tab: tabIdFromHash, moment } = hashLocation();
         if (!segKey) {
           resetSegmentSelection();
           return;
@@ -4954,12 +5029,25 @@
             return;
           }
           resetSegmentSelection();
+          // A segment the day doesn't list may wait in the trash: say so, and
+          // where, rather than show the day as if the link led nowhere.
+          if (stream) showSegmentInTrash(stream, segKey);
           return;
         }
         const wantedTab = tabIdFromHash || 'transcript';
         const samePair = selectedSegment
           && selectedSegment.key === seg.key
           && selectedSegment.stream === seg.stream;
+        // Another moment of the recording already open is a place of its own:
+        // load it again so its line is cued.
+        // Coming back to a moment from another recording cues it again.
+        if ((momentFor(seg)?.clock || null) !== moment || (moment && !samePair)) {
+          linkMoment(seg, moment);
+          if (moment) {
+            selectSegment(seg, false, wantedTab);
+            return;
+          }
+        }
         const inFlightMatches = activeTab == null
           && inFlightSegmentRequest
           && inFlightSegmentRequest.key === seg.key
@@ -5190,6 +5278,69 @@
         stays: 'summaries made from it elsewhere in your journal stay where they are and may still mention it.',
         size: 'current raw media size: {size}',
       },
+      // A segment from an import: its last takes the import and the file it
+      // kept; any other leaves them. Keyed on `kept`, the files the import's
+      // own record holds.
+      imports: {
+        importGoes: {
+          label: "it's the last segment from {label}, so that file and its row in your import history go to the trash with it.",
+          one: "it's the last segment from its import, so the file it kept and its row in your import history go to the trash with it.",
+          many: "it's the last segment from its import, so the {n} files it kept and its row in your import history go to the trash with it.",
+          none: "it's the last segment from its import, so its row in your import history goes to the trash with it.",
+          unknown: "it's the last segment from its import, so any file it kept and its row in your import history go to the trash with it.",
+        },
+        importErased: {
+          label: "it's the last segment from {label}, so that file and its row in your import history are erased with it.",
+          one: "it's the last segment from its import, so the file it kept and its row in your import history are erased with it.",
+          many: "it's the last segment from its import, so the {n} files it kept and its row in your import history are erased with it.",
+          none: "it's the last segment from its import, so its row in your import history is erased with it.",
+          unknown: "it's the last segment from its import, so any file it kept and its row in your import history are erased with it.",
+        },
+        waitingErased: {
+          one: "the import's other segment in the trash is erased with it.",
+          many: "the import's {w} other segments in the trash are erased with it.",
+        },
+        importStays: {
+          label: '{label}, the file it came from, stays in your journal, because other segments still come from it. to remove it, delete the import.',
+          one: 'the file it came from stays in your journal, because other segments still come from it. to remove it, delete the import.',
+          many: 'the files its import kept stay in your journal, because other segments still come from them. to remove them, delete the import.',
+          unknown: 'any file its import kept stays in your journal, because other segments still come from it. to remove it, delete the import.',
+        },
+        openImport: 'open the import',
+        importMaybe: {
+          move: "if it's the last segment from its import, the import and any file it kept go to the trash with it.",
+          erase: "if it's the last segment from its import, the import, any file it kept and any of its segments in the trash are erased with it.",
+        },
+        setTakes: {
+          label: 'this includes the last of the segments from {label}, so that file and its row in your import history go to the trash too.',
+          one: 'this includes the last of the segments from 1 import, so the file it kept and its row in your import history go to the trash too.',
+          oneNone: 'this includes the last of the segments from 1 import, so its row in your import history goes to the trash too.',
+          many: 'this includes the last of the segments from {k} imports, so the files they kept and their rows in your import history go to the trash too.',
+          manyNone: 'this includes the last of the segments from {k} imports, so their rows in your import history go to the trash too.',
+        },
+        setErases: {
+          label: 'this includes the last of the segments from {label}, so that file and its row in your import history are erased too.',
+          one: 'this includes the last of the segments from 1 import, so the file it kept and its row in your import history are erased too.',
+          oneNone: 'this includes the last of the segments from 1 import, so its row in your import history is erased too.',
+          many: 'this includes the last of the segments from {k} imports, so the files they kept and their rows in your import history are erased too.',
+          manyNone: 'this includes the last of the segments from {k} imports, so their rows in your import history are erased too.',
+        },
+        setWaiting: {
+          oneOne: '1 other segment from that import in the trash is erased too.',
+          oneMany: '{w} other segments from that import in the trash are erased too.',
+          manyOne: '1 other segment from those imports in the trash is erased too.',
+          manyMany: '{w} other segments from those imports in the trash are erased too.',
+        },
+        setStays: {
+          label: '{label} stays in your journal, because other segments still come from it. to remove it, delete its import on the import page.',
+          one: 'the file 1 import kept stays in your journal, because other segments still come from it. to remove it, delete the import on the import page.',
+          many: 'the files {j} imports kept stay in your journal, because other segments still come from them. to remove one, delete its import on the import page.',
+        },
+        setMaybe: {
+          move: 'if these include the last segments from an import, the import and any file it kept go to the trash with them.',
+          erase: 'if these include the last segments from an import, the import, any file it kept and any of its segments in the trash are erased with them.',
+        },
+      },
       // Erasing a segment erases its original media waiting in the trash too.
       originalsGo: {
         one: 'its original media in the trash is erased with it.',
@@ -5210,6 +5361,7 @@
         // J8 in the design system's screenshots copy file: a screenshot's
         // segment holds its screenshot, not audio or frames.
         screenshot: 'screenshot',
+        photo: 'photo',
       },
       buttons: {
         eraseNow: 'erase now',
@@ -5248,16 +5400,130 @@
 
     // What a delete takes from each segment, so the confirm states its reach:
     // a screenshot's segment holds its screenshot and what was made from it.
+    // Where the page knows a segment's kinds it lists only what it holds, and a
+    // photo's is its photo; otherwise audio, screen frames and a transcript.
+    function segmentKinds(seg) {
+      if (isScreenshotsStream(seg.stream)) return { screenshot: true };
+      const types = Array.isArray(seg.types) ? seg.types : null;
+      if (!types) return null;
+      const audio = types.includes('audio');
+      const screen = types.includes('screen');
+      if (isPhotoSegment(seg)) return { photo: true };
+      if (!audio && !screen) return null;
+      return { audio, screen, transcript: true };
+    }
+
+    function isPhotoSegment(seg) {
+      const types = Array.isArray(seg.types) ? seg.types : [];
+      return types.includes('image') && !['audio', 'screen', 'markdown', 'browser'].some((kind) => types.includes(kind));
+    }
+
     function segmentParts(segs, holdsLoc) {
-      const shots = segs.some((seg) => isScreenshotsStream(seg.stream));
-      const others = segs.some((seg) => !isScreenshotsStream(seg.stream));
+      const kinds = segs.map((seg) => segmentKinds(seg) || { audio: true, screen: true, transcript: true });
+      const any = (kind) => kinds.some((held) => held[kind]);
       return [
-        ...(others ? ['audio', 'screen'] : []),
-        ...(shots ? ['screenshot'] : []),
-        ...(others ? ['transcript'] : []),
+        ...(any('audio') ? ['audio'] : []),
+        ...(any('screen') ? ['screen'] : []),
+        ...(any('photo') ? ['photo'] : []),
+        ...(any('screenshot') ? ['screenshot'] : []),
+        ...(any('transcript') ? ['transcript'] : []),
         'analysis',
         ...(holdsLoc ? ['location'] : []),
       ];
+    }
+
+    // What the dialog's segments would take of the imports that made them, read
+    // when it opens: null until the journal answers, or if it doesn't.
+    let dialogImports = null;
+    const BODY_IMPORT_STREAMS = new Set(['import.strava', 'import.apple_health', 'import.oura']);
+    const isImportStream = (stream) => typeof stream === 'string' && stream.startsWith('import.') && !BODY_IMPORT_STREAMS.has(stream);
+
+    function readDialogImports(segs) {
+      dialogImports = null;
+      const asked = segs;
+      fetch('/app/transcripts/api/segments/imports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ segments: segs.map((seg) => ({ day, stream: seg.stream, key: seg.key })) }),
+      })
+        .then(response => (response.ok ? response.json() : null))
+        .then((answer) => {
+          if (!Array.isArray(answer?.imports) || deleteDialogSegs !== asked) return;
+          dialogImports = answer.imports;
+          if (deleteSegmentModal.style.display !== 'none') renderDeleteStep(deleteSegmentModalBody.dataset.step || 'move');
+        })
+        .catch(() => {});
+    }
+
+    // The paragraph about the import, with its link when the owner should go there.
+    function importLine(text, href) {
+      if (!href) return deleteDialogElement('p', 'tr-delete-import', text);
+      const line = deleteDialogElement('p', 'tr-delete-import');
+      const link = deleteDialogElement('a', null, TRASH_COPY.imports.openImport);
+      link.href = href;
+      line.append(deleteDialogElement('span', null, `${text} `), link);
+      return line;
+    }
+
+    // Which of a string's forms the kept upload decides: its name, one, several,
+    // none, or unknown when the journal didn't say.
+    function keptForm(imp, withNone = true) {
+      const kept = imp?.kept;
+      if (typeof kept !== 'number') return 'unknown';
+      if (kept >= 1 && imp.label) return 'label';
+      if (kept === 1) return 'one';
+      if (kept > 1) return 'many';
+      return withNone ? 'none' : null;
+    }
+
+    // The lines a delete dialog adds after its reach about the imports it takes
+    // or leaves. One segment says only when one import made it.
+    function importLines(segs, step) {
+      const C = TRASH_COPY.imports;
+      const erasing = step === 'erase';
+      if (dialogImports === null) {
+        if (!segs.some((seg) => isImportStream(seg.stream))) return [];
+        const maybe = segs.length === 1 ? C.importMaybe : C.setMaybe;
+        return [importLine(erasing ? maybe.erase : maybe.move)];
+      }
+      if (segs.length === 1) {
+        const imp = dialogImports[0];
+        if (!imp) return [];
+        if (imp.takes) {
+          const form = keptForm(imp);
+          const table = erasing ? C.importErased : C.importGoes;
+          const lines = [importLine(segPickFill(table[form], { n: imp.kept, label: imp.label || '' }))];
+          if (erasing && imp.waiting > 0) {
+            lines.push(importLine(segPickFill(imp.waiting === 1 ? C.waitingErased.one : C.waitingErased.many, { w: imp.waiting })));
+          }
+          return lines;
+        }
+        const form = keptForm(imp, false);
+        if (!form) return [];
+        return [importLine(segPickFill(C.importStays[form], { label: imp.label || '' }), `/app/import/${encodeURIComponent(imp.id)}`)];
+      }
+      const lines = [];
+      const taken = dialogImports.filter((imp) => imp.takes);
+      const left = dialogImports.filter((imp) => !imp.takes && imp.kept > 0);
+      if (taken.length) {
+        const table = erasing ? C.setErases : C.setTakes;
+        const anyKept = taken.some((imp) => imp.kept > 0);
+        let key;
+        if (taken.length === 1) key = taken[0].kept >= 1 && taken[0].label ? 'label' : (anyKept ? 'one' : 'oneNone');
+        else key = anyKept ? 'many' : 'manyNone';
+        lines.push(importLine(segPickFill(table[key], { k: taken.length, label: taken[0].label || '' })));
+        const waiting = taken.reduce((sum, imp) => sum + (imp.waiting || 0), 0);
+        if (erasing && waiting > 0) {
+          const key = `${taken.length === 1 ? 'one' : 'many'}${waiting === 1 ? 'One' : 'Many'}`;
+          lines.push(importLine(segPickFill(C.setWaiting[key], { w: waiting })));
+        }
+      }
+      if (left.length === 1) {
+        lines.push(importLine(segPickFill(left[0].label ? C.setStays.label : C.setStays.one, { label: left[0].label || '' })));
+      } else if (left.length > 1) {
+        lines.push(importLine(segPickFill(C.setStays.many, { j: left.length })));
+      }
+      return lines;
     }
 
     // One step of the delete dialog: 'move' (the trash, the default) or 'erase'
@@ -5281,7 +5547,7 @@
       const streamName = deleteDialogElement('strong', null, humanizeStreamName(seg.stream));
       streamName.setAttribute('title', seg.stream);
       const dayName = deleteDialogElement('strong', null, window.JournalFormat.day(day).toLowerCase());
-      const timeName = deleteDialogElement('strong', null, isLocRow || isScreenshotsStream(seg.stream) ? seg.start : `${seg.start} - ${seg.end}`);
+      const timeName = deleteDialogElement('strong', null, isLocRow || isScreenshotsStream(seg.stream) || isPhotoSegment(seg) ? seg.start : `${seg.start} - ${seg.end}`);
       meta.append(streamName, deleteDialogElement('span', null, ' · '), dayName, deleteDialogElement('span', null, ' · '), timeName);
 
       const parts = isLocRow ? ['location'] : segmentParts([seg], holdsLoc);
@@ -5292,6 +5558,7 @@
       deleteSegmentModalBody.append(
         meta,
         deleteDialogElement('p', 'tr-delete-reach', copy.reach),
+        ...importLines([seg], step),
         ...(erasing && originalsInTrash.has(`${day}/${seg.stream}/${seg.key}`)
           ? [deleteDialogElement('p', 'tr-delete-originals', TRASH_COPY.originalsGo.one)]
           : []),
@@ -5310,7 +5577,8 @@
     let deleteDialogSegs = null;
 
     function renderDeleteStep(step) {
-      if (deleteDialogSegs.length === 1) renderDeleteSegmentStep(deleteDialogSegs[0], step);
+      if (stretchDialog) renderStretchStep(step);
+      else if (deleteDialogSegs.length === 1) renderDeleteSegmentStep(deleteDialogSegs[0], step);
       else renderDeleteSetStep(deleteDialogSegs, step);
     }
 
@@ -5335,6 +5603,7 @@
       readOriginalsInTrash();
 
       deleteDialogSegs = segs;
+      readDialogImports(segs);
       renderDeleteStep('move');
       deleteModalReturnFocus = document.activeElement;
       deleteModalPrevOverflow = document.body.style.overflow;
@@ -5345,13 +5614,13 @@
     }
 
     function showEraseSegmentStep() {
-      if (!deleteDialogSegs || deleteSegmentModal.style.display === 'none') return;
+      if ((!deleteDialogSegs && !stretchDialog) || deleteSegmentModal.style.display === 'none') return;
       renderDeleteStep('erase');
       deleteSegmentModalBack.focus();
     }
 
     function backFromEraseSegmentStep() {
-      if (!deleteDialogSegs || deleteSegmentModal.style.display === 'none') return;
+      if ((!deleteDialogSegs && !stretchDialog) || deleteSegmentModal.style.display === 'none') return;
       renderDeleteStep('move');
       deleteSegmentModalErase.focus();
     }
@@ -5362,6 +5631,10 @@
       deleteSegmentModal.style.display = 'none';
       deleteSegmentModalBody.replaceChildren();
       deleteDialogSegs = null;
+      if (stretchDialog) clearTimeout(stretchDialog.timer);
+      stretchDialog = null;
+      deleteSegmentModalConfirm.disabled = false;
+      deleteSegmentModalErase.disabled = false;
       document.body.style.overflow = deleteModalPrevOverflow;
       deleteModalPrevOverflow = '';
       if (restoreFocus && deleteModalReturnFocus && document.contains(deleteModalReturnFocus)) {
@@ -5371,6 +5644,20 @@
     }
 
     async function confirmDeleteSegment(erase = false) {
+      if (stretchDialog) {
+        // Only what the dialog shows now is ever sent: the bounds its answer
+        // was read for, and only while the fields still say them.
+        const dialog = stretchDialog;
+        const shownFor = dialog.planFor;
+        if (dialog.state !== 'ready' || !dialog.plan || dialog.plan.empty || !shownFor
+          || shownFor.from !== dialog.from || shownFor.to !== dialog.to) return;
+        const asked = { from: shownFor.from, to: shownFor.to, shown: dialog.plan };
+        closeDeleteSegmentModal(false);
+        if (stretchButton) stretchButton.dataset.focusOnShow = '1';
+        await performStretchDelete(asked, erase);
+        syncStretchButton();
+        return;
+      }
       const segs = deleteDialogSegs;
       if (!segs) return;
 
@@ -5389,6 +5676,485 @@
     deleteSegmentModalErase.addEventListener('click', () => showEraseSegmentStep());
     deleteSegmentModalBack.addEventListener('click', () => backFromEraseSegmentStep());
     deleteSegmentModalEraseConfirm.addEventListener('click', () => confirmEraseSegment());
+
+    // ── deleting a stretch of time ──────────────────────────────────────────
+    // A from and a to, in the journal's wall time; everything in the journal
+    // from then moves to the trash as one thing. The journal answers what it
+    // would take, and the dialog shows only that answer's bounds and kinds,
+    // never a count.
+    const STRETCH_COPY = {
+      button: 'delete a stretch of time',
+      buttonLabel: 'delete a stretch of time, starting {day}',
+      from: 'from',
+      to: 'to',
+      zone: "times are in your journal's time zone, {zone}.",
+      checking: "checking what's in your journal from then…",
+      move: {
+        title: 'delete a stretch of time?',
+        bounds: 'this moves everything in your journal from {from} to {to}.',
+        reach: "it all leaves your journal now and waits in the trash as one thing, then it's erased. you can recover it until then.",
+        made: 'activities, summaries and entities made from it, which may still mention it',
+      },
+      erase: {
+        title: 'erase this stretch of time now?',
+        bounds: 'this erases everything in your journal from {from} to {to}.',
+        reach: "it all leaves your journal now and can't be recovered.",
+        made: "activities, summaries and entities made from it, which aren't erased and may still mention it",
+      },
+      kinds: 'that\'s {kinds}.',
+      kindWords: {
+        audio: 'audio',
+        screen: 'screen',
+        location: 'location',
+        body: 'body data',
+        imported: 'things you imported',
+        other: 'other things in your journal',
+      },
+      staysLead: 'these stay in your journal:',
+      stays: {
+        arriving: 'anything still arriving from a device',
+        processing: 'anything your journal is still working on',
+        import_running: "anything from an import that's still running",
+        whole_day: "whole-day body data, like a day's sleep score or readiness score, for a day this doesn't fully cover",
+        in_trash: "anything from then that's already in the trash, which keeps its own date",
+        memories: 'memories your agents saved about that time',
+      },
+      inFlight: "to move those, delete this stretch again once they're done.",
+      emptyNone: 'your journal has nothing from that time.',
+      emptyLeft: 'nothing from that time can go to the trash.',
+      backwards: 'the end has to be after the start.',
+      tooLong: 'choose 31 days or less.',
+      failed: "couldn't check what's in your journal from then.",
+      retry: 'try again',
+      receipt: {
+        moved: { title: 'moved {bounds} to the trash', message: 'it erases {date} unless you recover it.' },
+        partMoved: { title: 'moved {bounds} to the trash', message: "some of it couldn't be moved and is still in your journal. delete this stretch again to move the rest." },
+        erased: { title: 'erased {bounds} from your journal' },
+        recovered: { title: '{bounds} recovered', message: "it's back in your journal." },
+        recoverBlocked: { title: "couldn't recover that", message: "part of it comes from an import that's in the trash. recover that first." },
+        recoverFinishing: { title: "couldn't recover that yet", message: "it's still moving into the trash. try again from there once it's done." },
+        empty: { title: 'nothing was moved', message: 'nothing from that time could go to the trash.' },
+      },
+      inTrash: {
+        heading: 'this segment is in the trash',
+        stretch: 'it went with everything from {bounds}, and it comes back only with all of it. it erases {date} unless you recover it.',
+        alone: 'it erases {date} unless you recover it.',
+      },
+    };
+    const STRETCH_KIND_ORDER = ['audio', 'screen', 'location', 'body', 'imported', 'other'];
+    const STRETCH_WHY_ORDER = ['arriving', 'processing', 'import_running', 'whole_day'];
+    const STRETCH_MAX_DAYS = 31;
+
+    let stretchDialog = null;
+    const stretchButton = document.getElementById('trStretchBtn');
+
+    function stretchFill(template, values = {}) {
+      return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
+    }
+
+    // A wall time `YYYY-MM-DDTHH:MM[:SS]` as a Date on the browser's clock that
+    // reads the same digits, for formatting only.
+    function stretchWall(value) {
+      const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value || '');
+      if (!match) return null;
+      const [, y, mo, d, h, mi] = match.map(Number);
+      return { date: new Date(y, mo - 1, d, h, mi), day: `${match[1]}${match[2]}${match[3]}` };
+    }
+
+    const stretchTimeFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+
+    function stretchTime(at) {
+      return stretchTimeFormat.format(at.date).toLowerCase();
+    }
+
+    function stretchDayWord(at) {
+      return window.JournalFormat.day(at.day).toLowerCase();
+    }
+
+    // `sat nov 7, 2:05 – 3:35 pm`, or across days `sat nov 7, 11:00 pm – sun nov 8, 1:10 am`.
+    function stretchBounds(from, to) {
+      const a = stretchWall(from);
+      const b = stretchWall(to);
+      if (!a || !b) return '';
+      if (a.day === b.day) {
+        const range = typeof stretchTimeFormat.formatRange === 'function'
+          ? stretchTimeFormat.formatRange(a.date, b.date).toLowerCase()
+          : `${stretchTime(a)} – ${stretchTime(b)}`;
+        return `${stretchDayWord(a)}, ${range}`;
+      }
+      return `${stretchDayWord(a)}, ${stretchTime(a)} – ${stretchDayWord(b)}, ${stretchTime(b)}`;
+    }
+
+    // The bounds sentence's halves: `{day}, {t1}` and `{t2}` on the same day.
+    function stretchFromTo(from, to) {
+      const a = stretchWall(from);
+      const b = stretchWall(to);
+      if (!a || !b) return { from: '', to: '' };
+      return {
+        from: `${stretchDayWord(a)}, ${stretchTime(a)}`,
+        to: a.day === b.day ? stretchTime(b) : `${stretchDayWord(b)}, ${stretchTime(b)}`,
+      };
+    }
+
+    function stretchKindsText(kinds) {
+      const words = STRETCH_KIND_ORDER.filter((kind) => kinds.includes(kind)).map((kind) => STRETCH_COPY.kindWords[kind]);
+      if (!words.length) return '';
+      const list = words.length === 1 ? words[0] : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
+      return stretchFill(STRETCH_COPY.kinds, { kinds: list });
+    }
+
+    function minutesWall(dayKey, minutes) {
+      const clamped = Math.max(0, Math.min(minutes, 24 * 60 - 1));
+      const hh = String(Math.floor(clamped / 60)).padStart(2, '0');
+      const mm = String(clamped % 60).padStart(2, '0');
+      return `${dayKey.slice(0, 4)}-${dayKey.slice(4, 6)}-${dayKey.slice(6, 8)}T${hh}:${mm}`;
+    }
+
+    // What the fields say is wrong, before asking the journal.
+    function stretchFieldError(from, to) {
+      const a = stretchWall(from);
+      const b = stretchWall(to);
+      if (!a || !b) return null;
+      if (b.date <= a.date) return STRETCH_COPY.backwards;
+      if (b.date - a.date > STRETCH_MAX_DAYS * 86400000) return STRETCH_COPY.tooLong;
+      return null;
+    }
+
+    function showStretchDialog() {
+      readOriginalsInTrash();
+      stretchDialog = {
+        from: minutesWall(day, range.start),
+        to: minutesWall(day, range.end),
+        plan: null,
+        planFor: null,
+        state: 'checking',
+        error: null,
+        timer: null,
+        asked: 0,
+      };
+      deleteDialogSegs = null;
+      renderStretchStep('move');
+      deleteModalReturnFocus = stretchButton || document.activeElement;
+      deleteModalPrevOverflow = document.body.style.overflow;
+      deleteSegmentModal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+      deleteSegmentModalBody.querySelector('#trStretchFrom')?.focus();
+      previewStretch();
+    }
+
+    // Ask the journal what the fields would take; an answer for fields that
+    // have changed since is dropped.
+    function previewStretch() {
+      const dialog = stretchDialog;
+      if (!dialog) return;
+      const error = stretchFieldError(dialog.from, dialog.to);
+      dialog.error = error;
+      dialog.plan = null;
+      if (error || !stretchWall(dialog.from) || !stretchWall(dialog.to)) {
+        dialog.state = error ? 'invalid' : 'checking';
+        renderStretchStep('move');
+        return;
+      }
+      dialog.state = 'checking';
+      const asked = ++dialog.asked;
+      const bounds = { from: dialog.from, to: dialog.to };
+      renderStretchStep('move');
+      fetch('/app/transcripts/api/stretch/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ from: dialog.from, to: dialog.to }),
+      })
+        .then(async (response) => {
+          const answer = await response.json().catch(() => null);
+          if (stretchDialog !== dialog || dialog.asked !== asked) return;
+          if (!response.ok) {
+            const code = answer?.reason_code;
+            if (code === 'stretch_backwards') { dialog.error = STRETCH_COPY.backwards; dialog.state = 'invalid'; }
+            else if (code === 'stretch_too_long') { dialog.error = STRETCH_COPY.tooLong; dialog.state = 'invalid'; }
+            else dialog.state = 'failed';
+          } else {
+            dialog.plan = answer;
+            dialog.planFor = bounds;
+            dialog.state = 'ready';
+          }
+          renderStretchStep(deleteSegmentModalBody.dataset.step || 'move');
+        })
+        .catch(() => {
+          if (stretchDialog !== dialog || dialog.asked !== asked) return;
+          dialog.state = 'failed';
+          renderStretchStep('move');
+        });
+    }
+
+    function stretchField(id, label, value) {
+      const wrap = deleteDialogElement('label', 'tr-stretch-field');
+      wrap.htmlFor = id;
+      wrap.append(deleteDialogElement('span', null, label));
+      const input = document.createElement('input');
+      input.type = 'datetime-local';
+      input.step = '60';
+      input.id = id;
+      input.value = value;
+      wrap.append(input);
+      return { wrap, input };
+    }
+
+    function stretchStaysList(plan, step) {
+      const copy = STRETCH_COPY;
+      const whys = new Set((plan?.left_out || []).map((left) => left.why));
+      const items = STRETCH_WHY_ORDER.filter((why) => whys.has(why)).map((why) => copy.stays[why]);
+      if (plan?.in_trash) items.push(copy.stays.in_trash);
+      items.push(copy.stays.memories, copy[step].made);
+      const list = deleteDialogElement('ul', 'tr-delete-segment-list');
+      items.forEach((text) => list.append(deleteDialogElement('li', null, text)));
+      const nodes = [deleteDialogElement('p', 'tr-delete-lead', copy.staysLead), list];
+      if (['arriving', 'processing', 'import_running'].some((why) => whys.has(why))) {
+        nodes.push(deleteDialogElement('p', 'tr-delete-stays', copy.inFlight));
+      }
+      return nodes;
+    }
+
+    function renderStretchStep(step) {
+      const dialog = stretchDialog;
+      if (!dialog) return;
+      const copy = STRETCH_COPY[step];
+      const erasing = step === 'erase';
+      const plan = dialog.state === 'ready' ? dialog.plan : null;
+      deleteSegmentModalTitle.textContent = copy.title;
+      deleteSegmentModalHeader.classList.toggle('danger', erasing);
+      deleteSegmentModalBody.className = erasing ? 'delete-warning' : 'trash-dlg-note';
+      deleteSegmentModalBody.dataset.step = step;
+      deleteSegmentModalMoveFoot.hidden = erasing;
+      deleteSegmentModalEraseFoot.hidden = !erasing;
+      const actionable = Boolean(plan && !plan.empty);
+      deleteSegmentModalConfirm.disabled = !actionable;
+      deleteSegmentModalErase.disabled = !actionable;
+      deleteSegmentModalEraseConfirm.disabled = !actionable;
+
+      const nodes = [];
+      if (!erasing) {
+        // The fields keep what the owner typed, and focus, across a re-render.
+        const focused = document.activeElement?.id;
+        const fields = deleteDialogElement('div', 'tr-stretch-fields');
+        const from = stretchField('trStretchFrom', STRETCH_COPY.from, dialog.from);
+        const to = stretchField('trStretchTo', STRETCH_COPY.to, dialog.to);
+        fields.append(from.wrap, to.wrap);
+        nodes.push(fields);
+        if (dialog.error) {
+          const err = deleteDialogElement('p', 'tr-stretch-err', dialog.error);
+          err.id = 'trStretchErr';
+          to.input.setAttribute('aria-invalid', 'true');
+          to.input.setAttribute('aria-describedby', 'trStretchErr');
+          nodes.push(err);
+        }
+        const journalZone = window.JournalClock?.zone?.();
+        const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (journalZone && browserZone && journalZone !== browserZone) {
+          nodes.push(deleteDialogElement('p', 'tr-delete-stays', stretchFill(STRETCH_COPY.zone, { zone: journalZone })));
+        }
+        // A change makes what the dialog shows no longer what it would take:
+        // the answer it showed, and any answer still on its way, are dropped,
+        // and neither act is offered until the new bounds have been read.
+        const onChange = () => {
+          dialog.from = from.input.value;
+          dialog.to = to.input.value;
+          dialog.asked += 1;
+          dialog.plan = null;
+          dialog.planFor = null;
+          dialog.state = 'checking';
+          deleteSegmentModalConfirm.disabled = true;
+          deleteSegmentModalErase.disabled = true;
+          deleteSegmentModalEraseConfirm.disabled = true;
+          while (fields.nextSibling) fields.nextSibling.remove();
+          deleteSegmentModalBody.append(deleteDialogElement('p', 'tr-stretch-checking', STRETCH_COPY.checking));
+          clearTimeout(dialog.timer);
+          dialog.timer = setTimeout(previewStretch, 400);
+        };
+        from.input.addEventListener('input', onChange);
+        to.input.addEventListener('input', onChange);
+        deleteSegmentModalBody.replaceChildren(...nodes);
+        if (focused === 'trStretchFrom') from.input.focus();
+        if (focused === 'trStretchTo') to.input.focus();
+        nodes.length = 0;
+      }
+      if (dialog.state === 'checking') {
+        nodes.push(deleteDialogElement('p', 'tr-stretch-checking', STRETCH_COPY.checking));
+      } else if (dialog.state === 'failed') {
+        const line = deleteDialogElement('p', 'tr-stretch-checking');
+        const retry = deleteDialogElement('button', 'tr-stretch-retry', STRETCH_COPY.retry);
+        retry.type = 'button';
+        retry.addEventListener('click', previewStretch);
+        line.append(deleteDialogElement('span', null, `${STRETCH_COPY.failed} `), retry);
+        nodes.push(line);
+      } else if (plan && plan.empty) {
+        const left = (plan.left_out || []).length > 0;
+        nodes.push(deleteDialogElement('p', 'tr-delete-reach', left ? STRETCH_COPY.emptyLeft : STRETCH_COPY.emptyNone));
+        if (left) nodes.push(...stretchStaysList(plan, step));
+      } else if (plan) {
+        const halves = stretchFromTo(plan.from, plan.to);
+        nodes.push(
+          deleteDialogElement('p', 'tr-stretch-bounds', stretchFill(copy.bounds, halves)),
+          deleteDialogElement('p', 'tr-delete-reach', copy.reach),
+        );
+        const kinds = stretchKindsText(plan.kinds || []);
+        if (kinds) nodes.push(deleteDialogElement('p', 'tr-delete-lead', kinds));
+        dialogImports = Array.isArray(plan.imports) ? plan.imports : [];
+        nodes.push(...importLines([{}, {}], step));
+        nodes.push(...stretchStaysList(plan, step));
+      }
+      if (erasing) deleteSegmentModalBody.replaceChildren(...nodes);
+      else deleteSegmentModalBody.append(...nodes);
+    }
+
+    function stretchReceipt(kind, fill = {}, buttons = []) {
+      const copy = STRETCH_COPY.receipt[kind];
+      const settled = kind === 'moved' || kind === 'recovered' || kind === 'erased';
+      const notice = {
+        app: 'transcripts',
+        icon: settled ? (kind === 'recovered' ? 'undo-2' : 'trash-2') : 'triangle-alert',
+        title: stretchFill(copy.title, fill),
+        dismissible: true,
+        buttons,
+      };
+      if (copy.message && (kind !== 'moved' || fill.date)) notice.message = stretchFill(copy.message, fill);
+      if (settled) notice.autoDismiss = 10000;
+      window.AppServices.notifications.show(notice);
+    }
+
+    // The receipt's recover is the trash page's recover of the stretch, whole.
+    function stretchRecoverClick(stretch, bounds) {
+      return async function () {
+        let response;
+        try {
+          response = await fetch('/app/settings/api/trash/recover', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: [stretch.id], page: 'transcripts' }),
+          });
+        } catch (_) {
+          trashReceipt('noAnswerRecover');
+          return;
+        }
+        const answer = await response.json().catch(() => null);
+        const failed = Array.isArray(answer?.failed) ? answer.failed : [];
+        if (!response.ok || !answer) {
+          trashReceipt('recoverFailed', {}, [openTrashButton()]);
+          return;
+        }
+        if (failed.length) {
+          if (failed.some((row) => row.reason === 'import_in_trash')) stretchReceipt('recoverBlocked', {}, [openTrashButton()]);
+          else if (failed.some((row) => row.reason === 'stretch_finishing')) stretchReceipt('recoverFinishing', {}, [openTrashButton()]);
+          else trashReceipt('recoverFailed', {}, [openTrashButton()]);
+          return;
+        }
+        stretchReceipt('recovered', { bounds });
+        reloadAfterStretch();
+      };
+    }
+
+    // The day's lists read again: what the stretch took has left them.
+    function reloadAfterStretch() {
+      if (selectedSegment) clearSegmentSelection();
+      loadDayData();
+      loadLocationData();
+      refreshSegmentIndicators();
+    }
+
+    // Send what the owner typed: the journal plans again at confirm, and the
+    // receipt shows what it took.
+    async function performStretchDelete(asked, erase) {
+      let response;
+      try {
+        response = await fetch('/app/transcripts/api/stretch/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from: asked.from, to: asked.to, erase }),
+        });
+      } catch (_) {
+        trashReceipt(erase ? 'noAnswerErase' : 'noAnswerMove');
+        return;
+      }
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        const code = data?.reason_code;
+        if (code === 'stretch_empty') stretchReceipt('empty');
+        else trashReceipt(erase ? 'eraseRefused' : 'moveRefused');
+        return;
+      }
+      if (!data || data.success !== true || !data.stretch) {
+        trashReceipt(erase ? 'noAnswerErase' : 'noAnswerMove');
+        return;
+      }
+      const bounds = stretchBounds(data.stretch.from, data.stretch.to);
+      reloadAfterStretch();
+      if (erase && data.erased === true) {
+        stretchReceipt('erased', { bounds });
+        return;
+      }
+      if (erase) {
+        trashReceipt('eraseFailed', {}, [openTrashButton()]);
+        return;
+      }
+      const refused = Array.isArray(data.refused) && data.refused.length > 0;
+      stretchReceipt(refused ? 'partMoved' : 'moved', { bounds, date: trashEraseDate(data.erase_at) }, [
+        { label: TRASH_COPY.buttons.recover, onClick: stretchRecoverClick(data.stretch, bounds) },
+        openTrashButton(),
+      ]);
+    }
+
+    function showSegmentInTrash(stream, key) {
+      const asked = day;
+      dayRead(`/app/transcripts/api/segment/${day}/${encodeURIComponent(stream)}/${encodeURIComponent(key)}`)
+        .then((data) => {
+          if (!data || !data.trash || asked !== day || selectedSegment) return;
+          panel.innerHTML = segmentInTrashHtml(data.trash);
+          panel.querySelector('[data-open-trash]')?.addEventListener('click', goToSettingsTrash);
+        })
+        .catch(() => {});
+    }
+
+    // A segment the page was opened at that waits in the trash.
+    function segmentInTrashHtml(trash) {
+      const date = trashEraseDate(trash.erase_at);
+      const desc = trash.stretch
+        ? stretchFill(STRETCH_COPY.inTrash.stretch, { bounds: stretchBounds(trash.stretch.from, trash.stretch.to), date })
+        : stretchFill(STRETCH_COPY.inTrash.alone, { date });
+      const label = document.createElement('span');
+      label.textContent = TRASH_COPY.buttons.openTrash;
+      return window.SurfaceState.empty({
+        icon: window.ConveyIcons.svg('trash-2'),
+        heading: STRETCH_COPY.inTrash.heading,
+        desc,
+        action: `<button type="button" class="btn-secondary" data-open-trash>${label.innerHTML}</button>`,
+      });
+    }
+
+    if (stretchButton) {
+      const label = stretchButton.querySelector('[data-stretch-label]');
+      if (label) label.textContent = STRETCH_COPY.button;
+      stretchButton.dataset.labelTemplate = STRETCH_COPY.buttonLabel;
+      const icon = stretchButton.querySelector('[data-stretch-icon]');
+      if (icon && window.ConveyIcons) icon.innerHTML = window.ConveyIcons.svg('trash-2');
+      stretchButton.addEventListener('click', showStretchDialog);
+      syncStretchButton();
+    }
+
+    // Shown once the day has loaded, on a day with anything listed.
+    // Called from the day's load, which can run before this block does, so it
+    // reads nothing declared here.
+    function syncStretchButton() {
+      const button = document.getElementById('trStretchBtn');
+      if (!button) return;
+      const shown = dayLoad === 'ready' && (allSegments.length > 0 || locationSegments.length > 0);
+      button.hidden = !shown;
+      // After a stretch delete, focus returns here once the reloaded day shows it.
+      if (shown && button.dataset.focusOnShow) {
+        delete button.dataset.focusOnShow;
+        button.focus();
+      }
+      const label = button.dataset.labelTemplate;
+      if (label) button.setAttribute('aria-label', label.split('{day}').join(window.JournalFormat.day(day).toLowerCase()));
+    }
 
     function sortSegmentsByKey() {
       allSegments.sort((a, b) => a.key.localeCompare(b.key));
@@ -5573,6 +6339,7 @@
     function resetSegmentSelection() {
       stopAnalyzePoller();
       selectedSegment = null;
+      linkedMoment = null;
       segmentPicker.value = '';
       segmentData = null;
       currentVideoFiles = {};
@@ -5604,7 +6371,7 @@
       refreshUnselectedLocation(window.SurfaceState.empty({
         icon: window.ConveyIcons.svg('clock'),
         heading: 'your day at a glance',
-        desc: 'pick a stretch of the day on the left, then a block in detail to read it'
+        desc: 'pick part of the day on the left, then a block in detail to read it'
       }));
 
       // Clear active state in zoom view
@@ -5761,6 +6528,7 @@
         meta,
         shown,
         deleteDialogElement('p', 'tr-delete-reach', erasing ? copy.eraseReach : copy.moveReach),
+        ...importLines(segs, step),
         ...(erasing && segs.some(seg => originalsInTrash.has(`${day}/${seg.stream}/${seg.key}`))
           ? [deleteDialogElement('p', 'tr-delete-originals', TRASH_COPY.originalsGo.many)]
           : []),

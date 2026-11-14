@@ -223,16 +223,20 @@ fn get_transcript_labels_live_names_for_this_connection_and_binds_them_into_the_
         line("ask Fryer (possible name: Friar) to call anna")
     );
 
-    // A rename hides Ana's label, and a reference minted before it no longer reads.
+    // A rename hides Ana's label, and the segment's name from before it reads
+    // the transcript as it is now.
     journal.grant(whole());
     fs::write(
         journal.path().join("entities/ana/entity.json"),
         json!({"id": "ana", "name": "Ana L."}).to_string(),
     )
     .unwrap();
+    let after = journal
+        .probe("get_transcript", json!({"reference": reference}))
+        .unwrap();
     assert_eq!(
-        journal.probe("get_transcript", json!({"reference": reference})),
-        Err(McpProbeError::Unavailable)
+        after["entries"][0].as_str().unwrap(),
+        line("ask Fryer (possible name: Friar) to call anna")
     );
     let (_, renamed) = journal.first_line();
     assert_eq!(

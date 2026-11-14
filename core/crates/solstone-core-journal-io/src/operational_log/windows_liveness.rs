@@ -104,7 +104,7 @@ pub(super) fn on_disk_leaf_matches(handle: RawHandle, leaf: &OsStr) -> bool {
         return false;
     }
     let byte_len = buffer.length as usize;
-    if byte_len % 2 != 0 {
+    if !byte_len.is_multiple_of(2) {
         return false;
     }
     let chars = byte_len / 2;

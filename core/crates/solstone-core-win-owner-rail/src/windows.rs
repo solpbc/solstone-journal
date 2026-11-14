@@ -2192,12 +2192,14 @@ fn read_probe_xml_bytes(path: &str) -> Result<Vec<u8>, String> {
     read_file_bytes(path)
 }
 
-fn real_probe_xml_file_steps() -> ProbeXmlFileSteps<
+type RealProbeXmlFileSteps = ProbeXmlFileSteps<
     fn(&str) -> Result<File, String>,
     fn(&mut File, &[u8]) -> Result<(), String>,
     fn(&File) -> Result<(), String>,
     fn(&str) -> Result<Vec<u8>, String>,
-> {
+>;
+
+fn real_probe_xml_file_steps() -> RealProbeXmlFileSteps {
     ProbeXmlFileSteps {
         create: create_new,
         write: write_probe_xml_bytes,

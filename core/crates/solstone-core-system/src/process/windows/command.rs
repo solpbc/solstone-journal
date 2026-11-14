@@ -189,12 +189,12 @@ impl CommandProcess {
         // Close unextracted pipe ends before waiting. Extracted files carry no
         // native Job authority and remain under their caller's I/O contract.
         self.streams = [None, None, None];
-        if !self.bounded_cleanup_attempted {
-            if let Ok(mut owner) = self.owner_until(Some(deadline)) {
-                if owner.is_quiescent().ok() != Some(true) && Instant::now() < deadline {
-                    let _ = owner.hard_stop_until(deadline);
-                }
-            }
+        if !self.bounded_cleanup_attempted
+            && let Ok(mut owner) = self.owner_until(Some(deadline))
+            && owner.is_quiescent().ok() != Some(true)
+            && Instant::now() < deadline
+        {
+            let _ = owner.hard_stop_until(deadline);
         }
         self.io.drain_until(deadline);
         self.reservation

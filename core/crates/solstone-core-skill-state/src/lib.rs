@@ -274,6 +274,7 @@ fn lexical_parts(path: &Path) -> (bool, Vec<OsString>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::fs;
 
     // This fixture creates POSIX symlinks; Windows user-skill copies are tested separately.

@@ -779,7 +779,7 @@ impl Updater {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "full-tests"))]
     pub fn new_with_locator(
         feed: Option<&str>,
         locator: velopack::locator::VelopackLocatorConfig,
@@ -850,10 +850,12 @@ impl Updater {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     pub fn set_clock(&self, clock: Arc<dyn Fn() -> u64 + Send + Sync>) {
         self.inner.lock().expect("update state").clock = clock;
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     pub fn set_probe(&self, probe: Arc<dyn Fn() -> ConnectionReport + Send + Sync>) {
         self.inner.lock().expect("update state").probe = probe;
     }
@@ -1338,7 +1340,7 @@ impl Updater {
         self.note_start(outcome);
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "full-tests"))]
     pub fn install_with_hooks(&self, hooks: ApplyHooks) {
         let (packages_dir, current_version) = {
             let mut inner = self.inner.lock().expect("update state");

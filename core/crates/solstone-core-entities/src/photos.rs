@@ -254,6 +254,9 @@ pub fn photo(journal: &Path, entity: &str, facet: Option<&str>) -> Result<Photo,
     }
     let c = context(journal, entity)?;
     let state = c.panel.state.into();
+    if c.state.decision.photo.is_none() {
+        let _ = fp::confirmed_photo(journal, &c.id)?;
+    }
     let Some(key) = c.panel.default.as_ref() else {
         return Ok(Photo { state, jpeg: None });
     };

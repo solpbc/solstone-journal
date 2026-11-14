@@ -848,6 +848,7 @@ impl Drop for NamespaceWitness<'_> {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // recursive walk threads its budget, usage and witness state
 fn walk_directory(
     root: &JournalRoot,
     directory: std::os::windows::io::RawHandle,

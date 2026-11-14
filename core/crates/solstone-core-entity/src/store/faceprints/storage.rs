@@ -138,13 +138,28 @@ fn save_state(dir: &Path, binding: &JournalRoot, state: &FacesState) -> Result<(
         &serde_json::to_vec(state).map_err(err)?,
     )
 }
+fn publish_photo(dir: &Path, binding: &JournalRoot, state: &FacesState) -> Result<()> {
+    binding.revalidate_canonical_binding().map_err(err)?;
+    if let Some(photo) = &state.decision.photo {
+        publish(dir, binding, PHOTO, &photo.jpeg)?;
+    } else {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "system internal: remove the photo projection; owner state retains the authoritative JPEG and undo"
+        )]
+        solstone_core_journal_io::remove_file(dir, PHOTO).map_err(err)?;
+    }
+    binding.revalidate_canonical_binding().map_err(err)
+}
 
 /// State is authoritative; photo.jpg is its repairable materialized copy.
 /// Routes serving a confirmed photo use this function, including after a crash.
 pub fn confirmed_photo(journal: &Path, entity: &str) -> Result<Option<Vec<u8>>> {
     let _trust = crate::hold_entity_trust_lock(journal).map_err(err)?;
     let dir = entity_directory(journal, entity)?;
-    if !solstone_core_journal_io::path_lexists(&dir.join(STATE)).map_err(err)? {
+    if !solstone_core_journal_io::path_lexists(&dir.join(STATE)).map_err(err)?
+        && !solstone_core_journal_io::path_lexists(&dir.join(PHOTO)).map_err(err)?
+    {
         return Ok(None);
     }
     let (binding, _lock) = hold_directory(&dir)?;
@@ -155,6 +170,7 @@ pub fn confirmed_photo(journal: &Path, entity: &str) -> Result<Option<Vec<u8>>> 
         }
         Ok(Some(photo.jpeg))
     } else {
+        publish_photo(&dir, &binding, &state)?;
         Ok(None)
     }
 }
@@ -223,9 +239,7 @@ fn action(
     apply_rejections(&mut archive, &state);
     save_archive(&dir, &binding, &archive)?;
     // A failed projection never loses the committed choice or undo snapshot.
-    if let Some(photo) = &state.decision.photo {
-        publish(&dir, &binding, PHOTO, &photo.jpeg)?;
-    }
+    publish_photo(&dir, &binding, &state)?;
     Ok(token)
 }
 
@@ -302,9 +316,7 @@ pub fn undo(journal: &Path, entity: &str, last: &str) -> ActionResult<()> {
         apply_rejections(&mut a, &state);
         save_archive(&dir, &binding, &a)?;
     }
-    if let Some(photo) = &state.decision.photo {
-        publish(&dir, &binding, PHOTO, &photo.jpeg)?;
-    }
+    publish_photo(&dir, &binding, &state)?;
     Ok(())
 }
 

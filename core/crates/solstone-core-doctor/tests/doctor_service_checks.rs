@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(unix)]
+
 use chrono::TimeZone;
 use serde_json::{Map, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};

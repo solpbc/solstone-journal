@@ -21,6 +21,8 @@
 //! path, exactly like the shipped binary does, is what makes this test see
 //! what an installed journal saw.
 
+#![cfg(unix)]
+
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};

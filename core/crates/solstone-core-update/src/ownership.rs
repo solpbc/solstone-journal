@@ -856,21 +856,26 @@ fn classify_platform_package(
     let journal_ver = probe.journal_version(executable)?;
     let live_desktop = probe.installed_package_version("solstone-linux");
 
+    // The catalogue records a package's own version (rpm `2.0.78-1`, deb `2.0.78`),
+    // while the live versions are plain semver, so both sides compare normalized.
+    let recorded_package_ver =
+        |raw: &String| normalize_package_semver(raw).unwrap_or_else(|| raw.clone());
     let recorded_journal_ver = journal_sec
         .get("package_version")
-        .map(String::as_str)
+        .map(recorded_package_ver)
         .or_else(|| {
             recorded_plat_ver
                 .as_deref()
-                .map(|v| v.rsplit_once("-r").map_or(v, |(core, _)| core))
+                .map(|v| v.rsplit_once("-r").map_or(v, |(core, _)| core).to_owned())
         });
     let journal_advanced = recorded_journal_ver.is_some_and(|rec| rec != journal_ver);
     let desktop_advanced = ini
         .sections
         .get("component:desktop")
         .and_then(|s| s.get("package_version"))
+        .map(recorded_package_ver)
         .zip(live_desktop.as_ref())
-        .is_some_and(|(rec, live)| rec != live);
+        .is_some_and(|(rec, live)| &rec != live);
     let plat_ver = if journal_advanced || desktop_advanced {
         None
     } else {
@@ -906,7 +911,7 @@ fn classify_platform_package(
             let version = if comp == "desktop" {
                 live_desktop
                     .clone()
-                    .or_else(|| sec.get("package_version").cloned())
+                    .or_else(|| sec.get("package_version").map(recorded_package_ver))
             } else {
                 sec.get("package_version").cloned()
             };
@@ -1592,6 +1597,43 @@ mod tests {
                 assert_eq!(pos.components[1].version.as_deref(), Some("2.0.41"));
             }
             other => panic!("expected positive ownership after upgrade, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ownership_keeps_platform_version_when_rpm_package_revisions_match_live_versions() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("data");
+        let etc = temp.path().join("etc");
+        fs::create_dir_all(&data).unwrap();
+        fs::create_dir_all(etc.join("solstone")).unwrap();
+
+        let ini = "[solstone]\nschema_version=1\norigin=https://updates.solstone.app\nlane=release\nplatform_version=2.0.78-r1\n\n[component:journal]\nrole=journal\nroute=rpm\nphase=complete\nstatus=installed\npackage_name=solstone-journal\npackage_version=2.0.78-1\nservice_policy=start\n\n[component:desktop]\nrole=desktop\nroute=rpm\nphase=complete\nstatus=installed\npackage_name=solstone-linux\npackage_version=2.0.42-1\nservice_policy=skip-service\n";
+        fs::write(etc.join("solstone/install.conf"), ini).unwrap();
+
+        let probe = RepoPackageProbe {
+            journal_ver: "2.0.78",
+            desktop_ver: Some("2.0.42"),
+            route: "rpm",
+        };
+        match classify_ownership(Path::new("/usr/bin/solstone"), &data, &etc, &probe) {
+            OwnershipResult::Positive(pos) => {
+                assert_eq!(pos.current_platform_version.as_deref(), Some("2.0.78-r1"));
+                assert_eq!(pos.components[1].version.as_deref(), Some("2.0.42"));
+            }
+            other => panic!("expected positive rpm package ownership, got {other:?}"),
+        }
+
+        let probe = RepoPackageProbe {
+            journal_ver: "2.0.78",
+            desktop_ver: None,
+            route: "rpm",
+        };
+        match classify_ownership(Path::new("/usr/bin/solstone"), &data, &etc, &probe) {
+            OwnershipResult::Positive(pos) => {
+                assert_eq!(pos.components[1].version.as_deref(), Some("2.0.42"));
+            }
+            other => panic!("expected positive rpm package ownership, got {other:?}"),
         }
     }
 }

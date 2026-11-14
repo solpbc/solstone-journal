@@ -664,10 +664,7 @@ mod native {
                     NativePublication::Create(write_bytes_exclusive_detailed(
                         &path,
                         &bytes,
-                        AtomicWriteOptions {
-                            mode: Some(0o600),
-                            ..Default::default()
-                        },
+                        AtomicWriteOptions { mode: Some(0o600) },
                     ))
                 });
             }

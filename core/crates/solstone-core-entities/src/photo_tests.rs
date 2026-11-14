@@ -232,6 +232,27 @@ async fn photos_routes_offer_only_public_metadata_and_images_and_owner_actions_u
 }
 
 #[tokio::test]
+async fn photos_read_repairs_a_leftover_projection_without_an_owner_choice() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    seed(root);
+    fp::dismiss(root, "person").unwrap();
+    fs::write(
+        root.join("entities").join("person").join(fp::PHOTO),
+        b"stale projection",
+    )
+    .unwrap();
+    assert!(crate::photos::has_photo_in_dir(root, "person", true));
+    assert_eq!(
+        call(root, "GET", &format!("{BASE}/photo"), Value::Null)
+            .await
+            .0,
+        404
+    );
+    assert!(!crate::photos::has_photo_in_dir(root, "person", true));
+}
+
+#[tokio::test]
 async fn photos_routes_distinguish_unknown_entity_key_stale_undo_and_busy_clear() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();

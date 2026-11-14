@@ -841,6 +841,7 @@ impl RecordingEffects {
         self.dry_runs.lock().unwrap().clone()
     }
 
+    #[cfg(unix)]
     fn inventories(&self) -> Vec<Value> {
         self.inventories.lock().unwrap().clone()
     }

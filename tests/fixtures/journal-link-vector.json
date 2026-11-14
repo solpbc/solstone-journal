@@ -1,0 +1,128 @@
+{
+  "about": "Journal links against the repo fixture journal (tests/fixtures/journal). Open each as GET /app/open/<t> on a journal holding the key below; a link host or app receives the same <t> after https://go.solstone.app/j# or solstone://open#.",
+  "sealed_by": {
+    "root_key_file": "tests/fixtures/journal/link/root.key",
+    "root_key_hex": "5abc343c6a4373f0e460cc4fd05ba34bed2eae6db5a369b5941dbd96e8e81909",
+    "construction": "AES-256-SIV (RFC 5297) under HKDF-SHA256(root, no salt, info='solstone journal link seal v1', 64 bytes); associated data 'solstone journal link' then the version byte 0x01; output is base64url(0x01 || SIV output) without padding"
+  },
+  "another_journals_root_key_hex": "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+  "links": [
+    {
+      "id": "day-with-activities",
+      "kind": "good",
+      "place": "the day 2026-03-05",
+      "t": "Ae-dnDlBpuNhZ_rn9mI0iIC-_riM4eorcuYY",
+      "status": 302,
+      "location": "/app/activities/20260305",
+      "app_grammar": true
+    },
+    {
+      "id": "day-with-recordings-only",
+      "kind": "good",
+      "place": "the day 2026-05-20",
+      "t": "AQ6ONYWBfiMsHOhHEU8jlpUDEcSlaSrzE2CI",
+      "status": 302,
+      "location": "/app/transcripts/20260520",
+      "app_grammar": true
+    },
+    {
+      "id": "recording",
+      "kind": "good",
+      "place": "the recording at 09:00 on 2026-03-04",
+      "t": "AZ_DXxmbV9s6MBxO_kTc9Fj2UaJ4a9IqvsmpKuk6fZ6r5i9R7sSEJdl4qzuMUg",
+      "status": 302,
+      "location": "/app/transcripts/20260304?stream=default#090000_300",
+      "app_grammar": true
+    },
+    {
+      "id": "second",
+      "kind": "good",
+      "place": "09:00:20 in that recording",
+      "t": "AZ_DXxmbV9s6MBxO_kTc9Fj2UaJ4a9IqvsmpKuk6fZ6r5i9R7sSEJdl4qzuMUg~090020",
+      "status": 302,
+      "location": "/app/transcripts/20260304?stream=default#090000_300/transcript/090020",
+      "app_grammar": true
+    },
+    {
+      "id": "activity",
+      "kind": "good",
+      "place": "an activity in the verona facet on 2026-03-05",
+      "t": "AWLqhpOOdnxfago-Ykxp0YyiFijPuQTUJjRzFO8AaEByzlNRQqvzjrw6lOBabPiKyRyhtAPIzcsz",
+      "status": 302,
+      "location": "/app/activities/20260305?facet=verona#verona/engineering_220000_300",
+      "app_grammar": true
+    },
+    {
+      "id": "person",
+      "kind": "good",
+      "place": "the person Romeo Montague",
+      "t": "ATLGbuqC0BZIOS6SAQA1OKQ453yDRjFfuvUDGPn7miU8",
+      "status": 302,
+      "location": "/app/entities/#romeo_montague",
+      "app_grammar": true
+    },
+    {
+      "id": "moment-outside-the-recording",
+      "kind": "bad-moment",
+      "place": "a second outside the recording: it opens without a cue",
+      "t": "AZ_DXxmbV9s6MBxO_kTc9Fj2UaJ4a9IqvsmpKuk6fZ6r5i9R7sSEJdl4qzuMUg~101500",
+      "status": 302,
+      "location": "/app/transcripts/20260304?stream=default#090000_300",
+      "app_grammar": true
+    },
+    {
+      "id": "moment-not-a-time",
+      "kind": "bad-moment",
+      "place": "six digits that are not a time: it opens without a cue",
+      "t": "AZ_DXxmbV9s6MBxO_kTc9Fj2UaJ4a9IqvsmpKuk6fZ6r5i9R7sSEJdl4qzuMUg~256199",
+      "status": 302,
+      "location": "/app/transcripts/20260304?stream=default#090000_300",
+      "app_grammar": true
+    },
+    {
+      "id": "moment-too-short",
+      "kind": "bad-moment",
+      "place": "a moment of four digits: an app refuses this before asking the journal; the journal opens the recording without a cue",
+      "t": "AZ_DXxmbV9s6MBxO_kTc9Fj2UaJ4a9IqvsmpKuk6fZ6r5i9R7sSEJdl4qzuMUg~0900",
+      "status": 302,
+      "location": "/app/transcripts/20260304?stream=default#090000_300",
+      "app_grammar": false
+    },
+    {
+      "id": "altered-character",
+      "kind": "bad",
+      "place": "the first link with one character changed",
+      "t": "Ae-dnDlBpuNhB_rn9mI0iIC-_riM4eorcuYY",
+      "status": 404,
+      "reason": "this link can't be opened here.",
+      "app_grammar": true
+    },
+    {
+      "id": "another-journals-key",
+      "kind": "bad",
+      "place": "a well-formed day link sealed under another key",
+      "t": "AcCAFbutzmArtwbjVhJOdun55VOT0ZJx3WcP",
+      "status": 404,
+      "reason": "this link can't be opened here.",
+      "app_grammar": true
+    },
+    {
+      "id": "too-long",
+      "kind": "bad",
+      "place": "513 characters: an app refuses this before asking the journal",
+      "t": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "status": 404,
+      "reason": "this link can't be opened here.",
+      "app_grammar": false
+    },
+    {
+      "id": "place-not-in-the-journal",
+      "kind": "absent",
+      "place": "an activity this journal never had",
+      "t": "AUfT9xIGpxPl_Cu2EHirU5wHgA55iS6DJupra0POU9zJezx-peBwHqT3sNA",
+      "status": 404,
+      "reason": "it isn't in your journal.",
+      "app_grammar": true
+    }
+  ]
+}

@@ -406,6 +406,7 @@ fn bad_attribute_table() {
     }
 }
 
+#[cfg(unix)]
 fn crc32(bytes: &[u8]) -> u32 {
     let mut crc = !0_u32;
     for byte in bytes {
@@ -422,6 +423,7 @@ fn crc32(bytes: &[u8]) -> u32 {
 }
 
 /// A plain end record pointing at a zip64 record, with chosen fields left real.
+#[cfg(unix)]
 fn zip64_real(path: &Path, xml: &[u8], hole: u64, entries_max: bool, size_max: bool) {
     use std::io::{Seek, SeekFrom};
     let name = b"apple_health_export/export.xml";
@@ -627,6 +629,7 @@ fn crafted_zip64_ends_are_refused_without_panic() {
     }
 }
 
+#[cfg(unix)]
 const SHORT_EXPORT: &[u8] =
     b"<HealthData><Record type=\"a\" startDate=\"2026-01-02 00:00:00 +0000\"/></HealthData>";
 

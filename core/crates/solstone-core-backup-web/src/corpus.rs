@@ -13,6 +13,7 @@ use solstone_core_backup_runtime::{
     NativeRestoreRecorder, ToolOutput, ToolRequest, ToolRunner,
 };
 
+#[cfg(unix)]
 #[cfg(feature = "full-tests")]
 const RESTIC_VERSION: &str = "0.19.0";
 use std::collections::VecDeque;
@@ -1111,6 +1112,7 @@ impl ScriptRunner {
         }
     }
 
+    #[cfg(unix)]
     #[cfg(feature = "full-tests")]
     fn argv_heads(&self) -> Vec<String> {
         self.calls
@@ -1164,9 +1166,11 @@ impl ToolRunner for ScriptRunner {
     }
 }
 
+#[cfg(unix)]
 #[cfg(feature = "full-tests")]
 struct PanicAfterVersionRunner;
 
+#[cfg(unix)]
 #[cfg(feature = "full-tests")]
 impl ToolRunner for PanicAfterVersionRunner {
     fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
@@ -1255,6 +1259,7 @@ impl HttpScript {
         }
     }
 
+    #[cfg(unix)]
     #[cfg(all(test, feature = "full-tests"))]
     fn with_hold_for_url_suffix(self, suffix: &'static str, hold: Arc<Hold>) -> Self {
         Self {
@@ -1352,6 +1357,7 @@ impl JournalMaintenance for OkMaintenance {
     }
 }
 
+#[cfg(any(unix, feature = "full-tests"))]
 fn output(code: i32, stdout: &str) -> ToolOutput {
     ToolOutput {
         returncode: code,
@@ -1360,6 +1366,7 @@ fn output(code: i32, stdout: &str) -> ToolOutput {
     }
 }
 
+#[cfg(unix)]
 #[cfg(feature = "full-tests")]
 fn version_output() -> ToolOutput {
     output(0, &format!("restic {RESTIC_VERSION}\n"))
@@ -1561,6 +1568,7 @@ fn restore_body() -> Value {
     })
 }
 
+#[cfg(unix)]
 #[cfg(feature = "full-tests")]
 const JOURNAL_SNAPSHOT_ID: &str =
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -1684,6 +1692,7 @@ fn restore_outputs() -> Vec<ToolOutput> {
     ]
 }
 
+#[cfg(unix)]
 #[cfg(feature = "full-tests")]
 fn rotate_outputs() -> Vec<ToolOutput> {
     vec![
@@ -2207,6 +2216,7 @@ async fn rotate_does_not_echo_recovery_key() {
     hold_until_rotate_done(deps, runner).await;
 }
 
+#[cfg(unix)]
 #[cfg(feature = "full-tests")]
 async fn hold_until_rotate_done(deps: crate::BackupWebDeps, runner: Arc<ScriptRunner>) {
     let done = wait_terminal(&deps).await;
@@ -4322,6 +4332,7 @@ fn exact_poll_url(nonce: &str) -> String {
     )
 }
 
+#[cfg(unix)]
 #[cfg(feature = "full-tests")]
 fn argv_in_order(heads: &[String], expected: &[&str]) {
     let mut start = 0;
@@ -4522,6 +4533,7 @@ fn hosted_handoff_payload_from(
     })
 }
 
+#[cfg(unix)]
 #[cfg(all(test, feature = "full-tests"))]
 fn poll_json(status: u16, body: Value) -> HttpResponse {
     HttpResponse {

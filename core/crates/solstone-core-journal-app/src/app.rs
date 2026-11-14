@@ -82,11 +82,6 @@ fn asset(path: &str) -> Option<(&'static [u8], &'static str)> {
     })
 }
 
-/// The only journal routes the page may call, with the methods each takes.
-fn convey_route_allowed(method: &str, path: &str) -> bool {
-    crate::setup_flow::convey_route_allowed(method, path)
-}
-
 /// The pages the app opens in the owner's browser, by name, never by URL.
 /// The window finishes setup itself. The journal UI still opens in the browser
 /// when the owner asks.
@@ -215,11 +210,6 @@ fn dispatch_effect(context: &Context, effect: &crate::setup_flow::Effect, port: 
                     result,
                 }));
             });
-        }
-        crate::setup_flow::Effect::SetSignInLaunch(on) => {
-            if let Err(message) = shell::set_sign_in_launch(*on) {
-                context.push(json!({"type": "sign-in-launch", "error": message}));
-            }
         }
         crate::setup_flow::Effect::CheckModels { generation } => {
             let proxy = context.proxy.clone();
@@ -752,10 +742,10 @@ fn handle(context: &Context, window: &Window, message: &str) {
         }
         "flow" => {
             let intent = text("intent").unwrap_or_default();
-            if matches!(intent.as_str(), "start-setup" | "startSetup") {
-                if let Some(path) = text("path").filter(|path| !path.trim().is_empty()) {
-                    context.session.borrow_mut().journal_path = PathBuf::from(path);
-                }
+            if matches!(intent.as_str(), "start-setup" | "startSetup")
+                && let Some(path) = text("path").filter(|path| !path.trim().is_empty())
+            {
+                context.session.borrow_mut().journal_path = PathBuf::from(path);
             }
             let event = match crate::setup_flow::event_from_intent(&intent, &args) {
                 Ok(event) => event,

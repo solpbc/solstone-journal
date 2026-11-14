@@ -2069,7 +2069,7 @@ test('deep link with deferred location list opens row on release, history transi
   assert.strictEqual(h.doc.querySelectorAll('.tr-zoom-pill.tr-active').length, 0);
 });
 
-test('delete dialog li counts: audio 4, screen-only 4, holds_location 5, location row 1, survives reject', async () => {
+test('delete dialog li counts: a segment lists what it holds: audio 3, screen-only 3, holds_location 4, location row 1, survives reject', async () => {
   const locSegments = [
     { key: '090000_60', stream: 'phone', start: '09:00' },
   ];
@@ -2084,25 +2084,25 @@ test('delete dialog li counts: audio 4, screen-only 4, holds_location 5, locatio
     { locationSegments: locSegments }
   );
 
-  // 1. Audio timeline row: 4
+  // 1. Audio timeline row: audio, transcript, analysis
   getZoomPills(h.doc)[0].dispatchEvent({ type: 'click' });
   await h.releasePendingSegmentGets('analyzed', { data_state: { audio: 'analyzed' } });
   h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
-  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
+  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 3);
   h.doc.querySelector('#trDeleteSegmentModalClose').dispatchEvent({ type: 'click' });
 
-  // 2. Screen-only timeline row: 4
+  // 2. Screen-only timeline row: screen frames, transcript, analysis
   getZoomPills(h.doc)[1].dispatchEvent({ type: 'click' });
   await h.releasePendingSegmentGets('absent', { data_state: { screen: 'analyzed' } });
   h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
-  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
+  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 3);
   h.doc.querySelector('#trDeleteSegmentModalClose').dispatchEvent({ type: 'click' });
 
-  // 3. Timeline row with holds_location: 5
+  // 3. Timeline row with holds_location: and location
   getZoomPills(h.doc)[0].dispatchEvent({ type: 'click' });
   await h.releasePendingSegmentGets('analyzed', { holds_location: true, data_state: { audio: 'analyzed' } });
   h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
-  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 5);
+  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
   h.doc.querySelector('#trDeleteSegmentModalClose').dispatchEvent({ type: 'click' });
 
   // 4. Location row: 1 li before resolve and after reject
@@ -2446,6 +2446,141 @@ test('audio archive placement parts switch audio source and seek relative to par
   assert.strictEqual(legacyAudioElement.currentTime, 30);
 });
 
+const MOMENT_CHUNKS = [
+  { type: 'audio', time: '11:45:10', timestamp: 10000, markdown: 'first line' },
+  { type: 'audio', time: '11:47:30', timestamp: 150000, markdown: 'second line' },
+  { type: 'audio', time: '11:48:00', timestamp: 180000, markdown: 'third line' },
+];
+const MOMENT_AUDIO = '/app/transcripts/api/serve_file/20200115/room/114500_300/audio.opus';
+
+async function openAtMoment(moment) {
+  // Scrolling a line into view does nothing while its pane is hidden, so
+  // record whether the pane was showing when each line was scrolled to.
+  const scrolled = [];
+  const mockScroll = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function scrollIntoView() {
+    let pane = this;
+    while (pane && !pane.classList.contains('tr-tab-pane')) pane = pane.parentElement;
+    scrolled.push({ clock: MOMENT_CHUNKS[this.dataset.idx]?.time, shown: !!pane && pane.classList.contains('active') });
+  };
+  try {
+    return { ...(await loadAtMoment(moment)), scrolled };
+  } finally {
+    Element.prototype.scrollIntoView = mockScroll;
+  }
+}
+
+async function loadAtMoment(moment) {
+  const env = await createEnvironment(
+    `https://journal.example/app/transcripts/20200115?stream=room#114500_300/transcript${moment}`
+  );
+  await env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+  const audio = env.doc.querySelector('audio[data-role="segment-audio"]');
+  const entries = env.doc.querySelectorAll('.tr-entry-audio');
+  const cued = entries.map((entry) => entry.classList.contains('tr-entry-active'));
+  return { env, audio, entries, cued };
+}
+
+test('a linked moment cues its line without playing and stays in the address', async () => {
+  // The second a line starts on.
+  let page = await openAtMoment('/114730');
+  assert.deepStrictEqual(page.cued, [false, true, false]);
+  assert.strictEqual(page.audio.currentTime, 140);
+  assert.ok(!page.audio._playing, 'a link never starts playback');
+  assert.deepStrictEqual(page.scrolled, [{ clock: '11:47:30', shown: true }]);
+  // Showing the tab rewrites the address, and the moment is still in it.
+  assert.strictEqual(page.env.window.location.hash, '#114500_300/transcript/114730');
+  assert.strictEqual(page.env.history.length, 1);
+
+  // A second inside a line cues the line being said then.
+  page = await openAtMoment('/114759');
+  assert.deepStrictEqual(page.cued, [false, true, false]);
+  assert.strictEqual(page.audio.currentTime, 140);
+
+  // Before the first line, or not a moment: the recording opens as it always did.
+  for (const moment of ['/114500', '/1147', '/11473x', '']) {
+    page = await openAtMoment(moment);
+    assert.deepStrictEqual(page.cued, [false, false, false], moment);
+    assert.strictEqual(page.audio.currentTime, 0, moment);
+    assert.ok(!page.audio._playing, moment);
+  }
+
+  // Playing from a line still plays.
+  page = await openAtMoment('/114730');
+  page.entries[2].dispatchEvent({ type: 'click' });
+  assert.strictEqual(page.audio.currentTime, 170);
+  assert.ok(page.audio._playing);
+});
+
+test('a linked moment survives the duration fix-up, and another moment cues again', async () => {
+  const page = await openAtMoment('/114730');
+  // A file whose length isn't known yet: the page seeks to its end to learn
+  // it, then returns to the cue and not to the start.
+  page.audio.dispatchEvent({ type: 'loadedmetadata' });
+  assert.strictEqual(page.audio.currentTime, 1e7);
+  page.audio.duration = 300;
+  page.audio.dispatchEvent({ type: 'durationchange' });
+  assert.strictEqual(page.audio.currentTime, 140);
+
+  // Another second of the recording already open.
+  page.env.window.location.hash = '#114500_300/transcript/114800';
+  setTimeout(() => page.env.window.dispatchEvent({ type: 'hashchange' }), 0);
+  await page.env.flushHashchanges();
+  await page.env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+  const entries = page.env.doc.querySelectorAll('.tr-entry-audio');
+  assert.deepStrictEqual(
+    entries.map((entry) => entry.classList.contains('tr-entry-active')),
+    [false, false, true]
+  );
+  const audio = page.env.doc.querySelector('audio[data-role="segment-audio"]');
+  assert.strictEqual(audio.currentTime, 170);
+  assert.ok(!audio._playing);
+  assert.strictEqual(page.env.window.location.hash, '#114500_300/transcript/114800');
+});
+
+test('choosing another recording leaves the linked moment behind, and going back cues it again', async () => {
+  const page = await openAtMoment('/114730');
+  const { env } = page;
+  // The owner picks another recording, then this one again: a plain address.
+  const pills = getZoomPills(env.doc);
+  pills[1].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+  assert.strictEqual(env.window.location.hash, '#115500_300/transcript');
+  pills[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+  assert.strictEqual(env.window.location.hash, '#114500_300/transcript');
+  assert.deepStrictEqual(
+    env.doc.querySelectorAll('.tr-entry-audio').map((entry) => entry.classList.contains('tr-entry-active')),
+    [false, false, false]
+  );
+
+  // Back to the linked address from the other recording: its line is cued again.
+  pills[1].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+  env.window.location.hash = '#114500_300/transcript/114730';
+  setTimeout(() => env.window.dispatchEvent({ type: 'hashchange' }), 0);
+  await env.flushHashchanges();
+  await env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+  assert.deepStrictEqual(
+    env.doc.querySelectorAll('.tr-entry-audio').map((entry) => entry.classList.contains('tr-entry-active')),
+    [false, true, false]
+  );
+  assert.strictEqual(env.window.location.hash, '#114500_300/transcript/114730');
+});
+
+test('back and forward between recordings cue a linked moment each time it is reached', async () => {
+  const { env } = await openAtMoment('/114730');
+  const go = async (hash) => {
+    env.window.location.hash = hash;
+    setTimeout(() => env.window.dispatchEvent({ type: 'hashchange' }), 0);
+    await env.flushHashchanges();
+    await env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+    return env.doc.querySelectorAll('.tr-entry-audio').map((entry) => entry.classList.contains('tr-entry-active'));
+  };
+  assert.deepStrictEqual(await go('#115500_300/transcript'), [false, false, false]);
+  assert.deepStrictEqual(await go('#114500_300/transcript/114730'), [false, true, false]);
+});
+
 test('provenance labels reach every transcripts site and the stream name stays one hover away', async () => {
   const format = seededJournalFormat(
     { room: 'LABEL-A · audio', desk: 'LABEL-B', phone: 'LABEL-C', watch: 'LABEL-D' },
@@ -2617,7 +2752,7 @@ test('delete dialog: a neutral first step with three buttons, and erase now swap
   assert.strictEqual(text('.tr-delete-lead'), TRASH_COPY.erase.lead);
   assert.strictEqual(text('.tr-delete-stays'), TRASH_COPY.erase.stays);
   assert.strictEqual(env.doc.querySelector('#trDeleteSegmentModalBody .tr-delete-segment-size'), null, 'no size line on the erase step');
-  assert.strictEqual(env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
+  assert.strictEqual(env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 3, 'an audio segment: audio, transcript, analysis');
 
   // Back returns to the first step with focus on erase now; nothing was deleted.
   $('trDeleteSegmentModalBack').dispatchEvent({ type: 'click' });
@@ -3298,7 +3433,7 @@ test('select mode: the set dialog lists five segments then how many more, and mo
   assert.strictEqual(text('.tr-delete-reach'), C.moveReach);
   assert.strictEqual(text('.tr-delete-lead'), C.moveLead);
   assert.strictEqual(text('.tr-delete-stays'), C.moveStays);
-  assert.strictEqual(env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
+  assert.strictEqual(env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 3, 'audio segments: audio, transcript, analysis');
   assert.strictEqual(env.doc.querySelector('#trDeleteSegmentModalBody .tr-delete-segment-size'), null, 'no size unless every size is known');
   $('trDeleteSegmentModalErase').dispatchEvent({ type: 'click' });
   assert.strictEqual($('trDeleteSegmentModalTitle').textContent, pickFill(C.eraseTitle, { n: 7 }));
@@ -3635,3 +3770,99 @@ async function run() {
 }
 
 run();
+
+// A segment from an import: the dialog reads what its delete takes of the
+// import, and says it after the reach.
+const IMPORT_SEGS = [
+  { key: '114500_300', stream: 'import.image', start: '11:45', end: '11:50', types: ['audio'], data_state: { audio: 'analyzed' } },
+  { key: '115500_300', stream: 'import.audio', start: '11:55', end: '12:00', types: ['audio'], data_state: { audio: 'analyzed' } },
+];
+
+function importEnv(imports) {
+  return createEnvironment(undefined, 'analyzed', false, IMPORT_SEGS, {
+    postResponse: (record) => {
+      if (String(record.url).endsWith('/app/transcripts/api/segments/imports')) {
+        return imports === null ? { status: 500, body: {} } : { status: 200, body: { imports: imports(record.body.segments) } };
+      }
+      return { status: 200, body: { done: [], failed: [] } };
+    },
+  });
+}
+
+test('delete dialog: an import\'s last segment says its file and history row go, and erase says what waits goes too', async () => {
+  const env = await importEnv(() => [{ id: '20200115_090000', source: 'image', label: 'IMG_0412.HEIC', originals: 1, kept: 1, takes: true, waiting: 2 }]);
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {});
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  await settle();
+  const C = TRASH_COPY.imports;
+  const lines = () => env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-import').map((line) => line.textContent);
+  assert.deepStrictEqual(lines(), [pickFill(C.importGoes.label, { label: 'IMG_0412.HEIC' })]);
+  const sent = env.posts.find((post) => String(post.url).endsWith('/app/transcripts/api/segments/imports'));
+  assert.deepStrictEqual(sent.body.segments, [{ day: '20200115', stream: 'import.image', key: '114500_300' }]);
+  env.doc.getElementById('trDeleteSegmentModalErase').dispatchEvent({ type: 'click' });
+  assert.deepStrictEqual(lines(), [
+    pickFill(C.importErased.label, { label: 'IMG_0412.HEIC' }),
+    pickFill(C.waitingErased.many, { w: 2 }),
+  ]);
+});
+
+test('delete dialog: a segment that isn\'t its import\'s last says the file stays and links to the import', async () => {
+  const env = await importEnv(() => [{ id: '20200115_100000', source: 'audio', label: 'standup.m4a', originals: 1, kept: 1, takes: false, waiting: 0 }]);
+  getZoomPills(env.doc).find((pill) => pill.dataset.key === '115500_300').dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {});
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  await settle();
+  const line = env.doc.querySelector('#trDeleteSegmentModalBody .tr-delete-import');
+  assert.ok(line.textContent.startsWith(pickFill(TRASH_COPY.imports.importStays.label, { label: 'standup.m4a' })));
+  const link = line.querySelector('a');
+  assert.strictEqual(link.textContent, TRASH_COPY.imports.openImport);
+  assert.strictEqual(link.href, '/app/import/20200115_100000');
+});
+
+test('delete dialog: with no answer about the import, an import segment says the conditional form', async () => {
+  const env = await importEnv(null);
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {});
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  await settle();
+  const line = env.doc.querySelector('#trDeleteSegmentModalBody .tr-delete-import');
+  assert.strictEqual(line.textContent, TRASH_COPY.imports.importMaybe.move);
+});
+
+test('select mode: the set dialog names the import it takes and the file another leaves', async () => {
+  const env = await importEnv(() => [
+    { id: '20200115_090000', source: 'image', label: 'IMG_0412.HEIC', originals: 1, kept: 1, takes: true, waiting: 1 },
+    { id: '20200115_100000', source: 'audio', label: 'standup.m4a', originals: 1, kept: 1, takes: false, waiting: 0 },
+  ]);
+  const $ = (id) => env.doc.getElementById(id);
+  $('trSelectBtn').dispatchEvent({ type: 'click' });
+  $('trPickAll').dispatchEvent({ type: 'change' });
+  $('trPickDelete').dispatchEvent({ type: 'click' });
+  await settle();
+  const C = TRASH_COPY.imports;
+  const lines = () => env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-import').map((line) => line.textContent);
+  assert.deepStrictEqual(lines(), [
+    pickFill(C.setTakes.label, { label: 'IMG_0412.HEIC' }),
+    pickFill(C.setStays.label, { label: 'standup.m4a' }),
+  ]);
+  $('trDeleteSegmentModalErase').dispatchEvent({ type: 'click' });
+  assert.deepStrictEqual(lines(), [
+    pickFill(C.setErases.label, { label: 'IMG_0412.HEIC' }),
+    C.setWaiting.oneOne,
+    pickFill(C.setStays.label, { label: 'standup.m4a' }),
+  ]);
+});
+
+test('delete dialog: a photo\'s segment lists its photo, not audio or screen, and shows its start alone', async () => {
+  const env = await createEnvironment(undefined, 'analyzed', false, [
+    { key: '114500_1', stream: 'import.image', start: '11:45', end: '11:45', types: ['image'], data_state: { audio: 'analyzed' } },
+  ], { postResponse: () => ({ status: 200, body: { imports: [] } }) });
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {});
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  const listed = env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').map((li) => li.textContent);
+  assert.deepStrictEqual(listed, [TRASH_COPY.parts.photo, TRASH_COPY.parts.analysis]);
+  const time = env.doc.querySelectorAll('.tr-delete-segment-meta strong')[2];
+  assert.strictEqual(time.textContent, '11:45');
+});

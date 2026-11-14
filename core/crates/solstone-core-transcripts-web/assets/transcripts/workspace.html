@@ -1535,6 +1535,26 @@
   flex-shrink: 0;
 }
 
+/* deleting a stretch of time: the day-level act on the heading row, and the dialog's fields */
+.tr-day-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 20px; }
+.tr-day-head .tr-day-heading { margin-bottom: 0; }
+.tr-stretch-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; background: var(--paper); color: var(--ink-soft); border: 1px solid var(--hairline); border-radius: 9px; font: inherit; font-size: .9em; cursor: pointer; }
+.tr-stretch-btn[hidden] { display: none; }
+.tr-stretch-btn:hover { color: var(--ink); border-color: var(--ink-faint); }
+.tr-stretch-btn:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+.tr-stretch-btn svg { width: 16px; height: 16px; }
+.tr-stretch-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 0 14px; }
+.tr-stretch-field { min-width: 0; display: flex; flex-direction: column; gap: 4px; font-size: .9em; color: var(--ink-soft); }
+.tr-stretch-field input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 0 10px; font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--hairline); border-radius: 6px; }
+.tr-stretch-field input[aria-invalid="true"] { border-color: var(--danger); }
+.tr-stretch-err { color: var(--danger); font-size: .9em; }
+.tr-stretch-bounds { font-weight: 600; color: var(--ink); }
+.tr-stretch-checking { color: var(--ink-soft); }
+.tr-stretch-later { color: var(--ink-soft); }
+.tr-stretch-retry { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-decoration: underline; cursor: pointer; }
+#trDeleteSegmentModal .trash-danger-outline:disabled, #trDeleteSegmentModal .trash-primary:disabled, #trDeleteSegmentModal .btn-danger:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 560px) { .tr-stretch-fields { grid-template-columns: 1fr; } }
+
 #trDeleteSegmentModal {
   position: fixed;
   inset: 0;
@@ -1678,6 +1698,9 @@
 #trDeleteSegmentModal .delete-warning .tr-delete-segment-meta {
   color: var(--danger);
 }
+
+/* the import line in the segment and set dialogs: its link is ink, underlined, as the page's other links */
+#trDeleteSegmentModal .tr-delete-import a { color: inherit; text-decoration: underline; }
 
 #trDeleteSegmentModal .tr-delete-segment-list {
   margin: 0 0 12px;
@@ -2811,7 +2834,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
 <div class="tr-wrap">
   <div data-date-nav></div>
-  <h2 class="tr-day-heading" data-date-nav-heading></h2>
+  <div class="tr-day-head">
+    <h2 class="tr-day-heading" data-date-nav-heading></h2>
+    <button type="button" id="trStretchBtn" class="tr-stretch-btn" hidden><span data-stretch-icon aria-hidden="true"></span><span data-stretch-label></span></button>
+  </div>
   <p class="tr-day-zones" id="trDayZones" hidden></p>
   <div class="tr-card">
     <!-- Left timeline -->

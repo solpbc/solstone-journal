@@ -866,6 +866,7 @@ fn windows_lock_hook_pause_helper() {
                 .read(true)
                 .write(true)
                 .create(true)
+                .truncate(false)
                 .open(&redirected)
                 .unwrap();
             let ((guard, trace), consumed) = run_with_windows_lock_file_ex_substitution(

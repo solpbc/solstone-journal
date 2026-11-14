@@ -71,7 +71,9 @@ impl Drop for RawOwnedHandle {
 }
 
 macro_rules! semantic_handle {
-    ($name:ident, $doc:literal) => {
+    // An optional trailing attribute gates `raw` for a handle that production
+    // code only ever closes.
+    ($name:ident, $doc:literal $(, #[$raw_attr:meta])?) => {
         #[doc = $doc]
         #[cfg_attr(not(windows), allow(dead_code))]
         pub(super) struct $name(RawOwnedHandle);
@@ -82,6 +84,7 @@ macro_rules! semantic_handle {
                 Self(RawOwnedHandle::new(raw))
             }
 
+            $(#[$raw_attr])?
             pub(super) fn raw(&self) -> RawWindowsHandle {
                 self.0.raw()
             }
@@ -99,7 +102,8 @@ semantic_handle!(
 );
 semantic_handle!(
     PrimaryThreadHandle,
-    "An owning handle to the launched primary thread."
+    "An owning handle to the launched primary thread.",
+    #[cfg(test)]
 );
 semantic_handle!(
     PipeEndHandle,

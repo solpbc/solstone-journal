@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(unix)]
 use std::ffi::OsString;
+#[cfg(unix)]
 use std::io::Write;
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 use std::net::{SocketAddr, TcpStream};
@@ -35,11 +37,14 @@ use solstone_core_system::lifecycle::{
     ParentLossCoordinator, ParentLossLedger, ParentLossPhase, ParentLossTerminalDisposition,
     PreReadySupervisorLifecycle,
 };
+#[cfg(unix)]
 use solstone_core_system::process::{
-    CommandLaunchRequest, Disposition, HostedLaunchProvenance, InspectResult, InstanceVerdict,
-    LaunchError, LaunchedProcessIdentity, ManagedLaunchRequest, ManagedProcess, ProcessInstance,
-    ProcessInstanceSource, RestartPolicy, STRUGGLING_THRESHOLD, SpawnOptions,
-    SystemProcessInstanceSource, describe_exit, launch_command, launch_managed_hosted,
+    CommandLaunchRequest, InspectResult, InstanceVerdict, LaunchError, LaunchedProcessIdentity,
+    ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource, launch_command,
+};
+use solstone_core_system::process::{
+    Disposition, HostedLaunchProvenance, ManagedLaunchRequest, ManagedProcess, RestartPolicy,
+    STRUGGLING_THRESHOLD, SpawnOptions, describe_exit, launch_managed_hosted,
 };
 use solstone_core_system::provider_runtime::{
     FileRuntimeStore, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared, LocalTruthConfig,
@@ -80,6 +85,7 @@ const FAST_FIXTURE_CONVEY_READY_INTERVAL: Duration = Duration::from_millis(5);
 const FAST_FIXTURE_PRE_READY_HEARTBEAT_INTERVAL: Duration = Duration::from_millis(20);
 const CALLOSUM_CONNECTION_READY_WINDOW: Duration = Duration::from_secs(2);
 const CALLOSUM_CONNECTION_READY_INTERVAL: Duration = Duration::from_millis(5);
+#[cfg(unix)]
 const PARENT_LOSS_COORDINATOR_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(3);
 /// How long the supervisor waits for the coordinator's ready marker. A
 /// coordinator that finds an abandoned predecessor retires everything that
@@ -95,6 +101,9 @@ const PARENT_LOSS_CHILD_ADMISSION_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// The typed refusal returned when hosted start cannot establish the sole
 /// parent-loss terminal authority before it could admit any service work.
+/// Only unix hosted start bootstraps a coordinator; tests read its owner copy
+/// on every platform.
+#[cfg(any(unix, test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParentLossCoordinatorBootstrapFailure {
     Launch,
@@ -106,6 +115,7 @@ pub(crate) enum ParentLossCoordinatorBootstrapFailure {
     CoordinatorRetirementUnverified,
 }
 
+#[cfg(any(unix, test))]
 impl std::fmt::Display for ParentLossCoordinatorBootstrapFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -1450,6 +1460,7 @@ pub(crate) struct SupervisorOutcome {
 #[derive(Debug)]
 pub(crate) enum RuntimeBootError {
     Startup(String),
+    #[cfg(unix)]
     BootstrapRecoveryRequired(ParentLossCoordinatorBootstrapFailure),
     SyncScan(solstone_core_system::lifecycle::SyncScanFailure),
     AdmissionWaitTerminal,
@@ -1460,6 +1471,7 @@ impl std::fmt::Display for RuntimeBootError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Startup(error) => formatter.write_str(error),
+            #[cfg(unix)]
             Self::BootstrapRecoveryRequired(reason) => {
                 write!(
                     formatter,
@@ -1907,6 +1919,7 @@ async fn start_app_stack(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)] // Windows adds the service guard and installed-task launch.
 pub(crate) async fn boot_and_tick(
     #[cfg(unix)] lifecycle: PreReadySupervisorLifecycle,
     #[cfg(windows)] lifecycle: SupervisorLifecycle,

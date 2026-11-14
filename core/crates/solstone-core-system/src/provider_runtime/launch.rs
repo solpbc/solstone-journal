@@ -30,8 +30,8 @@ use solstone_core_local::plan::{PlanOutcome, plan};
 use solstone_core_local::{ConnectInput, ConnectOutcome, LoopbackAddr, connect};
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-use crate::process::apply_parent_death_kill;
-use crate::process::{Disposition, LaunchError, SERVICE_SHUTDOWN_TIMEOUT};
+use crate::process::{Disposition, apply_parent_death_kill};
+use crate::process::{LaunchError, SERVICE_SHUTDOWN_TIMEOUT};
 
 use super::local_follow::{LocalFollow, LocalInstallerLauncher};
 use super::model::ManagedProcess;

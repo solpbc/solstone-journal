@@ -130,6 +130,8 @@ pub enum Action {
     RetentionTool,
     /// Finished removals that had stopped partway (Home's "finish them").
     FinishStopped,
+    /// Deleted a stretch of time: everything recorded then, as one thing.
+    StretchDelete,
     /// Recovered something from the trash.
     Recover,
     /// Erased something from the trash: a selection on the trash page, or
@@ -256,6 +258,18 @@ pub struct Entry {
     #[serde(flatten)]
     pub surface: Surface,
     pub unit: Unit,
+    /// The stretch of time the unit went or came back with, when it did: its
+    /// bounds in the owner's wall time, no content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stretch: Option<Span>,
+}
+
+/// A stretch of time's bounds in the owner's wall time
+/// (`YYYY-MM-DDTHH:MM:SS`).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Span {
+    pub from: String,
+    pub to: String,
 }
 
 /// Recording an entry failed. The removal it describes has already happened.
@@ -339,6 +353,8 @@ pub struct Removal {
     /// The one thing of several in this operation that these entries are
     /// about, when the operation spans more than one.
     item: Option<String>,
+    /// The stretch of time these entries' units belong to.
+    stretch: Option<Span>,
 }
 
 impl Removal {
@@ -364,7 +380,15 @@ impl Removal {
             sequence: AtomicU32::new(0),
             durable: true,
             item: None,
+            stretch: None,
         }
+    }
+
+    /// Record this operation's entries as part of a stretch of time.
+    #[must_use]
+    pub fn in_stretch(mut self, stretch: Option<Span>) -> Self {
+        self.stretch = stretch;
+        self
     }
 
     /// Name this operation's entries by `item` too: for a durable operation
@@ -510,6 +534,7 @@ impl Removal {
             action: self.action,
             surface: self.surface,
             unit,
+            stretch: self.stretch.clone(),
         };
         write_entry(&self.journal_root, &entry)
     }

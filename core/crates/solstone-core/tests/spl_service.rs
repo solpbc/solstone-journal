@@ -4,6 +4,8 @@
 //! Process-level proof that the native SPL service drives and closes its relay
 //! listener under the posture gate.
 
+#![cfg(unix)]
+
 use std::{
     fs,
     path::PathBuf,

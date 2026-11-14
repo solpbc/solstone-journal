@@ -1249,7 +1249,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "full-tests")]
+    #[cfg(all(feature = "full-tests", unix))]
     fn permit_owner_daily(context: &ThinkContext, identity: &DailyUnitIdentity) -> ThinkContext {
         use solstone_core_system::work_retry::{self, Unit};
         let unit = Unit::Daily {
@@ -1287,7 +1287,7 @@ mod tests {
         context
     }
 
-    #[cfg(feature = "full-tests")]
+    #[cfg(all(feature = "full-tests", unix))]
     fn permit_changed_daily(context: &ThinkContext, identity: &DailyUnitIdentity) -> ThinkContext {
         use solstone_core_system::work_retry::{self, Unit};
         let unit = Unit::Daily {
@@ -2064,18 +2064,18 @@ mod tests {
             .is_err()
         );
     }
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, feature = "full-tests", unix))]
     use solstone_core_cortex_client::{
         CortexRequest, UseCompletion, UseEndState, WaitForUsesReport,
     };
     #[cfg(unix)]
     #[cfg(all(test, feature = "full-tests"))]
     use std::os::unix::fs::PermissionsExt;
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, feature = "full-tests", unix))]
     use std::path::PathBuf;
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, feature = "full-tests", unix))]
     use std::sync::Arc;
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, feature = "full-tests", unix))]
     use std::sync::Mutex;
     #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]

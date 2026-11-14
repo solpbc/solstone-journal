@@ -50,6 +50,30 @@ const PRIVATE: AtomicWriteOptions = AtomicWriteOptions { mode: Some(0o600) };
 /// it is running.
 const LOCK_WAIT: Duration = Duration::from_secs(2);
 
+/// The streams body sources write their windows and workouts to.
+const BODY_STREAMS: &[(&str, &str)] = &[
+    (STRAVA_STREAM, STRAVA),
+    ("import.apple_health", APPLE_HEALTH),
+    ("import.oura", OURA),
+];
+
+/// Whether `stream` is a body source's.
+pub fn is_body_stream(stream: &str) -> bool {
+    BODY_STREAMS.iter().any(|(name, _)| *name == stream)
+}
+
+/// Whether an import of the body source writing `stream` holds its source's
+/// lock now: it is running, and can still write that stream.
+pub fn stream_importing(journal: &Path, stream: &str) -> bool {
+    BODY_STREAMS
+        .iter()
+        .find(|(name, _)| *name == stream)
+        .and_then(|(_, source)| lock_rel(source))
+        .is_some_and(|lock| {
+            solstone_core_journal_io::lock_is_held(journal.join(lock)).unwrap_or(false)
+        })
+}
+
 /// Whether `source` is a body source, whose imports hold what they first wrote.
 pub fn is_body_source(source: &str) -> bool {
     matches!(source, STRAVA | APPLE_HEALTH | OURA)

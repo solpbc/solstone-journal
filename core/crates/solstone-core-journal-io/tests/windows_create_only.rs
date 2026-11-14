@@ -222,7 +222,7 @@ fn existing_destination_is_untouched_and_leaves_no_stage() {
     assert_eq!(after_bytes.created().ok(), before.created().ok());
     assert_eq!(file_identity(&path), before_identity);
 
-    let mut reader = &PAYLOAD[..];
+    let mut reader = PAYLOAD;
     let reader_error = write_reader_exclusive(&path, &mut reader, AtomicWriteOptions::default())
         .expect_err("occupied destination must refuse reader exclusive");
     assert!(already_exists(&reader_error), "{reader_error}");
@@ -250,7 +250,7 @@ fn existing_directory_is_an_already_exists_collision() {
     let bytes_error = write_bytes_exclusive(&path, PAYLOAD, AtomicWriteOptions::default())
         .expect_err("occupied directory must refuse bytes exclusive");
     assert!(already_exists(&bytes_error), "{bytes_error}");
-    let mut reader = &PAYLOAD[..];
+    let mut reader = PAYLOAD;
     let reader_error = write_reader_exclusive(&path, &mut reader, AtomicWriteOptions::default())
         .expect_err("occupied directory must refuse reader exclusive");
     assert!(already_exists(&reader_error), "{reader_error}");
@@ -269,7 +269,7 @@ fn over_budget_relative_destination_under_missing_ancestor_does_not_mutate() {
     let bytes_error = write_bytes_exclusive(&dest, PAYLOAD, AtomicWriteOptions::default())
         .expect_err("over-budget destination must refuse");
     assert!(invalid_input(&bytes_error), "{bytes_error}");
-    let mut reader = &PAYLOAD[..];
+    let mut reader = PAYLOAD;
     let reader_error = write_reader_exclusive(&dest, &mut reader, AtomicWriteOptions::default())
         .expect_err("over-budget destination must refuse the reader path");
     assert!(invalid_input(&reader_error), "{reader_error}");
@@ -289,7 +289,7 @@ fn short_destination_with_over_budget_stage_does_not_mutate() {
     let bytes_error = write_bytes_exclusive(&dest, PAYLOAD, AtomicWriteOptions::default())
         .expect_err("over-budget stage leaf must refuse");
     assert!(invalid_input(&bytes_error), "{bytes_error}");
-    let mut reader = &PAYLOAD[..];
+    let mut reader = PAYLOAD;
     let reader_error = write_reader_exclusive(&dest, &mut reader, AtomicWriteOptions::default())
         .expect_err("over-budget stage leaf must refuse the reader path");
     assert!(invalid_input(&reader_error), "{reader_error}");
@@ -305,7 +305,7 @@ fn exclusive_writers_publish_exact_bytes() {
     assert_eq!(fs::read(&bytes_path).unwrap(), PAYLOAD);
 
     let reader_path = temporary.path().join("reader.bin");
-    let mut reader = &PAYLOAD[..];
+    let mut reader = PAYLOAD;
     let copied =
         write_reader_exclusive(&reader_path, &mut reader, AtomicWriteOptions::default()).unwrap();
     assert_eq!(copied, PAYLOAD.len() as u64);

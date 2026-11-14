@@ -3,15 +3,15 @@
 
 //! Owned process boundary for whole-day phases without cooperative cancellation.
 
-#[cfg(any(not(test), feature = "full-tests"))]
+#[cfg(any(not(test), all(feature = "full-tests", unix)))]
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-#[cfg(any(not(test), feature = "full-tests"))]
+#[cfg(any(not(test), all(feature = "full-tests", unix)))]
 use std::thread;
 use std::time::{Duration, Instant};
 
-#[cfg(any(not(test), feature = "full-tests"))]
+#[cfg(any(not(test), all(feature = "full-tests", unix)))]
 use solstone_core_system::process::{CAP_TERMINATION_TIMEOUT, ManagedProcess, SpawnOptions};
 
 pub(crate) enum PhaseProcessOutcome {
@@ -19,7 +19,7 @@ pub(crate) enum PhaseProcessOutcome {
     TimedOut {
         cleanup_error: Option<String>,
     },
-    #[cfg(any(not(test), feature = "full-tests"))]
+    #[cfg(any(not(test), all(feature = "full-tests", unix)))]
     Failed(String),
 }
 
@@ -138,7 +138,7 @@ pub(crate) fn journal_command(arguments: &[&str]) -> Result<Vec<String>, String>
         .collect())
 }
 
-#[cfg(any(not(test), feature = "full-tests"))]
+#[cfg(any(not(test), all(feature = "full-tests", unix)))]
 fn run_owned_process(
     phase: &'static str,
     command: Vec<String>,
@@ -361,8 +361,9 @@ mod hosted_tests {
     }
 }
 
-#[cfg(test)]
-#[cfg(all(test, feature = "full-tests"))]
+// These drive real `/bin/sh` children, so `run_owned_process` is compiled under test
+// only where they run.
+#[cfg(all(test, feature = "full-tests", unix))]
 mod tests {
     use tempfile::tempdir;
 

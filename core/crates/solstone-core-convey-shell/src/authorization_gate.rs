@@ -88,7 +88,7 @@ pub struct DoorRouter(Router);
 impl DoorRouter {
     /// Keep the non-confining library test surface explicit at the type boundary.
     pub fn unconfined(router: Router) -> Self {
-        Self(router)
+        Self(router.merge(crate::local_network::status_routes()))
     }
 
     /// Deliberately unwrap a door router for a non-door surface or direct router test.
@@ -153,6 +153,7 @@ fn authorized_router_with_router_inner(
     // surface, including routes from merged sub-routers.
     DoorRouter(
         router
+            .merge(crate::local_network::status_routes())
             .route_layer(middleware::from_fn_with_state(
                 AuthorizationGateState {
                     authorization,
@@ -415,6 +416,15 @@ mod tests {
                 AuthorizationExemption::TopLevelStatic,
             ]
         );
+    }
+
+    /// A journal link is a pointer, never a credential: its route answers
+    /// only a caller the gate has already let through.
+    #[test]
+    fn a_journal_link_route_is_never_exempt() {
+        for path in ["/app/open/AQ", "/app/open/AQ~100212", "/app/open/"] {
+            assert!(!super::is_exempt(path), "{path}");
+        }
     }
 
     #[tokio::test]

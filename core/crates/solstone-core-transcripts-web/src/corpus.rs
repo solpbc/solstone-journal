@@ -612,6 +612,144 @@ mod tests {
         output
     }
 
+    /// A segment an import made: its last takes the import and the file it
+    /// kept; any other leaves them.
+    mod import_segments {
+        use super::*;
+
+        const ID: &str = "20260731_090000";
+        const FIRST: (&str, &str) = ("import.audio", "090000_300");
+        const LAST: (&str, &str) = ("import.audio", "090500_300");
+
+        fn journal(segments: &[(&str, &str)]) -> TempDir {
+            let root = TempDir::new().expect("journal");
+            config(root.path());
+            let listed: Vec<Value> = segments
+                .iter()
+                .map(|(stream, key)| json!({"day": DAY, "stream": stream, "segment": key}))
+                .collect();
+            write(
+                root.path(),
+                &format!("imports/{ID}/imported.json"),
+                json!({"source_type": "audio", "segments": listed}).to_string(),
+            );
+            write(
+                root.path(),
+                &format!("imports/{ID}/import.json"),
+                json!({"original_filename": "talk.m4a", "file_path": format!("imports/{ID}/talk.m4a")})
+                    .to_string(),
+            );
+            write(root.path(), &format!("imports/{ID}/talk.m4a"), b"upload");
+            for (stream, key) in segments {
+                segment(
+                    root.path(),
+                    DAY,
+                    stream,
+                    key,
+                    &[("audio.flac", b"raw"), ("audio.jsonl", b"{}\n")],
+                );
+            }
+            root
+        }
+
+        fn app(root: &Path) -> axum::Router {
+            crate::router_with_delete_window(
+                root.to_path_buf(),
+                Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
+                shell,
+                Duration::from_secs(10),
+            )
+        }
+
+        async fn call(root: &Path, method: Method, path: &str, body: &str) -> (StatusCode, Value) {
+            let (status, _, body) = request_body(
+                app(root),
+                method,
+                path,
+                &BTreeMap::new(),
+                Body::from(body.to_owned()),
+            )
+            .await;
+            (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+        }
+
+        fn url((stream, key): (&str, &str)) -> String {
+            format!("/app/transcripts/api/segment/{DAY}/{stream}/{key}")
+        }
+
+        fn upload(root: &Path) -> bool {
+            root.join(format!("imports/{ID}/talk.m4a")).is_file()
+        }
+
+        #[tokio::test]
+        async fn the_dialog_reads_whether_a_delete_takes_the_import() {
+            let root = journal(&[FIRST, LAST]);
+            let ask = |segments: &[(&str, &str)]| {
+                json!({"segments": segments
+                    .iter()
+                    .map(|(stream, key)| json!({"day": DAY, "stream": stream, "key": key}))
+                    .collect::<Vec<_>>()})
+                .to_string()
+            };
+            let path = "/app/transcripts/api/segments/imports";
+            let (status, shown) = call(root.path(), Method::POST, path, &ask(&[FIRST])).await;
+            assert_eq!(status, StatusCode::OK, "{shown}");
+            assert_eq!(shown["imports"][0]["id"], ID);
+            assert_eq!(shown["imports"][0]["label"], "talk.m4a");
+            assert_eq!(shown["imports"][0]["takes"], false);
+            let (_, both) = call(root.path(), Method::POST, path, &ask(&[FIRST, LAST])).await;
+            assert_eq!(both["imports"][0]["takes"], true);
+            call(root.path(), Method::DELETE, &url(FIRST), "").await;
+            let (_, shown) = call(root.path(), Method::POST, path, &ask(&[LAST])).await;
+            assert_eq!(shown["imports"][0]["takes"], true);
+            assert_eq!(shown["imports"][0]["waiting"], 1);
+            assert!(fs::read_dir(root.path().join("chronicle")).is_ok());
+        }
+
+        #[tokio::test]
+        async fn deleting_the_last_segment_takes_the_import_and_its_upload() {
+            let root = journal(&[FIRST, LAST]);
+            let (status, first) = call(root.path(), Method::DELETE, &url(FIRST), "").await;
+            assert_eq!(status, StatusCode::OK, "{first}");
+            assert!(first.get("import").is_none());
+            assert!(upload(root.path()));
+            let (status, last) = call(root.path(), Method::DELETE, &url(LAST), "").await;
+            assert_eq!(status, StatusCode::OK, "{last}");
+            assert_eq!(last["import"], ID);
+            assert!(!upload(root.path()));
+            let items = solstone_core_trash::list(root.path()).unwrap();
+            assert_eq!(items.len(), 2);
+            assert!(items.iter().any(|item| matches!(
+                &item.unit,
+                solstone_core_removals::Unit::Import { id, .. } if id == ID
+            )));
+        }
+
+        #[tokio::test]
+        async fn a_set_of_every_remaining_segment_takes_the_import_as_one_item() {
+            let root = journal(&[FIRST, LAST]);
+            let body = json!({"segments": [
+                {"day": DAY, "stream": FIRST.0, "key": FIRST.1},
+                {"day": DAY, "stream": LAST.0, "key": LAST.1},
+            ]})
+            .to_string();
+            let (status, answer) = call(
+                root.path(),
+                Method::POST,
+                "/app/transcripts/api/segments/delete",
+                &body,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{answer}");
+            let done = answer["done"].as_array().unwrap();
+            assert_eq!(done.len(), 2);
+            assert_eq!(done[0]["trash"]["id"], done[1]["trash"]["id"]);
+            assert_eq!(done[0]["import"], ID);
+            assert!(!upload(root.path()));
+            assert_eq!(solstone_core_trash::list(root.path()).unwrap().len(), 1);
+        }
+    }
+
     /// A recording delete moves it to the trash at once: the trash is the hold.
     mod delete_to_trash {
         use super::*;

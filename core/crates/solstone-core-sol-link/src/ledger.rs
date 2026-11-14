@@ -1488,6 +1488,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    #[cfg(unix)]
     use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 
     use super::*;

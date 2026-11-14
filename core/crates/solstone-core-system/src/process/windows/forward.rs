@@ -206,7 +206,7 @@ mod session_end {
                 Ok(())
             })
             .as_ref()
-            .map(|()| ())
+            .copied()
             .map_err(|error| io::Error::new(error.kind(), error.to_string()))
     }
 
@@ -223,7 +223,7 @@ mod session_end {
                     .map_err(|error| io::Error::other(error.to_string()))
             })
             .as_ref()
-            .map(|()| ())
+            .copied()
             .map_err(|error| io::Error::new(error.kind(), error.to_string()))
     }
 
@@ -494,14 +494,15 @@ fn forward(
                 }
                 return Ok(code);
             }
-            if let Some(incoming) = admitted {
-                if incoming.stop_requested()? && stop_deadline.is_none() {
-                    signal_stop(
-                        stop.as_ref()
-                            .ok_or_else(|| io::Error::other("missing forwarding stop"))?,
-                    )?;
-                    stop_deadline = Some(Instant::now() + SERVICE_SHUTDOWN_TIMEOUT);
-                }
+            if let Some(incoming) = admitted
+                && incoming.stop_requested()?
+                && stop_deadline.is_none()
+            {
+                signal_stop(
+                    stop.as_ref()
+                        .ok_or_else(|| io::Error::other("missing forwarding stop"))?,
+                )?;
+                stop_deadline = Some(Instant::now() + SERVICE_SHUTDOWN_TIMEOUT);
             }
             if session_end::requested() && stop_deadline.is_none() {
                 // Session end: ask the child to stop, then bound the drain to

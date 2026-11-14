@@ -106,7 +106,9 @@ pub struct BrainRefreshPermit {
     credential_publication_deadline: Option<std::time::Instant>,
     bundled_runtime_fingerprint_sha256: Option<String>,
     root: Box<BrainWriteRoot>,
-    _lease: FileLease,
+    // Boxed: the Windows lock guard makes `FileLease` large, and this permit
+    // travels by value inside `BeginPrerequisiteRenewal::Started`.
+    _lease: Box<FileLease>,
 }
 
 /// Credential authority for the active BYO lane, captured before real work.
@@ -2295,7 +2297,7 @@ pub fn begin_prerequisite_renewal_checked(
                 credential_publication_deadline: None,
                 bundled_runtime_fingerprint_sha256,
                 root: Box::new(root),
-                _lease: lease,
+                _lease: Box::new(lease),
             }))
         })();
         result.unwrap_or_else(|error| BeginPrerequisiteRenewal::Unsafe {
@@ -3234,7 +3236,7 @@ fn begin_refresh_under_lease(
         credential_publication_deadline: None,
         bundled_runtime_fingerprint_sha256: bundled_runtime,
         root: Box::new(root),
-        _lease: lease,
+        _lease: Box::new(lease),
     }))
 }
 

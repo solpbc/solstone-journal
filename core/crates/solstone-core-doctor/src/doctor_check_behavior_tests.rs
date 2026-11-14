@@ -445,11 +445,11 @@ fn executable(path: &std::path::Path, body: &str) {
     fs::set_permissions(&staging, permissions).unwrap();
     fs::rename(&staging, path).unwrap();
 }
-#[cfg(all(test, feature = "full-tests"))]
+#[cfg(all(test, feature = "full-tests", unix))]
 fn parakeet_ready_probe(_: &std::path::Path, _: Duration) -> Result<(), String> {
     Ok(())
 }
-#[cfg(all(test, feature = "full-tests"))]
+#[cfg(all(test, feature = "full-tests", unix))]
 fn parakeet_unreachable_probe(_: &std::path::Path, _: Duration) -> Result<(), String> {
     Err("fixture unreachable".into())
 }
@@ -650,7 +650,10 @@ enum SecondBranch {
 
 #[cfg(all(test, feature = "full-tests"))]
 fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
+    #[cfg(unix)]
     let mut context = fixture();
+    #[cfg(not(unix))]
+    let context = fixture();
     match name {
         "journal_sync" => {
             if !ok {
@@ -2234,12 +2237,12 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-#[cfg(all(test, feature = "full-tests"))]
+#[cfg(all(test, feature = "full-tests", unix))]
 fn vad_injected_resolver() -> crate::context::VadRuntimeProbeSeam {
     VAD_SEAM.with(|slot| slot.borrow().clone().expect("injected VAD runtime seam"))
 }
 
-#[cfg(all(test, feature = "full-tests"))]
+#[cfg(all(test, feature = "full-tests", unix))]
 fn inject_vad_probe(context: &mut CheckContext, binary: PathBuf, timeout: Duration) {
     VAD_SEAM.with(|slot| {
         *slot.borrow_mut() = Some(crate::context::VadRuntimeProbeSeam { binary, timeout });
