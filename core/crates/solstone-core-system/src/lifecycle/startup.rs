@@ -4,21 +4,25 @@
 //! Phased supervisor admission. Hosts that need an interlock between child
 //! launch and readiness use these phases instead of the convenience `boot`.
 
-use std::ffi::{OsStr, OsString};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::time::{Duration, Instant};
 
-use solstone_core_journal_io::{
-    BoundParentLock, FlatDirectory, JournalRoot, create_or_open_flat_directory_bound,
-};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use solstone_core_journal_io::create_or_open_flat_directory_bound;
+use solstone_core_journal_io::{BoundParentLock, FlatDirectory, JournalRoot};
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::clock::{AdmissionWaitClock, wall_clock_discontinuous};
-use super::{
-    LifecycleError, OrphanSweepOutcome, SupervisorLifecycle, epoch_seconds, hostname,
-    self_heartbeat_filename,
-};
+use super::{LifecycleError, OrphanSweepOutcome, SupervisorLifecycle};
 use super::{RunId, WriterId};
-use super::{state, sweep, sync};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use super::{epoch_seconds, hostname, self_heartbeat_filename, sweep};
+use super::{state, sync};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use crate::process::{
     InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
     SystemProcessInstanceSource,
@@ -47,10 +51,12 @@ fn monotonic_wait_seconds(wall_seconds: f64) -> f64 {
     wall_seconds / (1.0 - WALL_CLOCK_SLEW_ALLOWANCE)
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 struct SystemAdmissionWaitClock {
     started: Instant,
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl SystemAdmissionWaitClock {
     fn new() -> Self {
         Self {
@@ -59,6 +65,7 @@ impl SystemAdmissionWaitClock {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl AdmissionWaitClock for SystemAdmissionWaitClock {
     fn wall_seconds(&mut self) -> f64 {
         epoch_seconds()
@@ -127,16 +134,29 @@ impl std::fmt::Display for AdmissionWaitTerminalReason {
 }
 
 pub struct SupervisorBootAdmission {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     journal: PathBuf,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     root: JournalRoot,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     health: FlatDirectory,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     sync: FlatDirectory,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     lease: BoundParentLock,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     writer_id: WriterId,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     run_id: RunId,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     heartbeat_filename: String,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     admission_snapshot: sync::SyncSnapshot,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     now: f64,
+    /// No admission can be acquired on this platform, so none can exist.
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    unsupported: std::convert::Infallible,
 }
 
 pub struct PreReadySupervisorLifecycle {
@@ -167,9 +187,7 @@ impl SupervisorBootAdmission {
 
     #[cfg(any(target_os = "android", target_os = "ios"))]
     pub fn activate(self) -> Result<PreReadySupervisorLifecycle, LifecycleError> {
-        Err(LifecycleError::Identity(
-            "supervisor lifecycle is unsupported on this platform",
-        ))
+        match self.unsupported {}
     }
 
     /// Bind `health`/`sync` beneath a resolved journal root, retain the
@@ -398,6 +416,7 @@ impl SupervisorBootAdmission {
         })
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn abort_after_publication(
         &self,
         retained_self_heartbeat: &solstone_core_journal_io::FileObservation,
@@ -414,6 +433,7 @@ impl SupervisorBootAdmission {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn reject_unverifiable_live_heartbeat(
     result: &sync::SyncCheckResult,
 ) -> Result<(), LifecycleError> {
@@ -433,6 +453,7 @@ fn reject_unverifiable_live_heartbeat(
     Ok(())
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn current_process_instance(
     process_source: &dyn ProcessInstanceSource,
 ) -> Result<ProcessInstance, LifecycleError> {
@@ -444,6 +465,7 @@ fn current_process_instance(
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn remove_stale_wait_markers(
     sync_directory: &FlatDirectory,
     result: &sync::SyncCheckResult,
@@ -532,6 +554,7 @@ fn remove_stale_wait_markers(
     Ok(())
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn admission_wait_scan_failure(failure: sync::SyncScanFailure) -> LifecycleError {
     let marker_filename = match &failure {
         sync::SyncScanFailure::UnsafeEntry { name, .. }

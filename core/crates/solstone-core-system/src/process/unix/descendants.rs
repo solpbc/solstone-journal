@@ -1,20 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::HashMap;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     io,
     time::Instant,
 };
 
-use super::super::Descendant;
 #[cfg(test)]
 use super::super::ProcessBirth;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::super::{
-    CensusRow, InspectResult, InstanceCensus, ProcessInstanceSource, ProcessTreeSnapshot,
-    SystemProcessInstanceSource,
+    CensusRow, Descendant, InspectResult, InstanceCensus, ProcessInstanceSource,
+    ProcessTreeSnapshot, SystemProcessInstanceSource,
 };
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]

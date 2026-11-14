@@ -10,14 +10,17 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::sync::atomic::{AtomicU64, Ordering};
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::time::Duration;
 
 #[cfg(unix)]
 use solstone_core_journal_io::{
-    BoundAtomicOutcome, BoundParentLock, ClaimName, ExistingParentLockError, FlatDirectory,
-    JournalRoot, acquire_existing_parent_lock_bound, atomic_replace_bound,
-    claim_and_remove_observed, create_or_open_flat_directory_bound,
+    BoundAtomicOutcome, ClaimName, FlatDirectory, atomic_replace_bound, claim_and_remove_observed,
+};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use solstone_core_journal_io::{
+    BoundParentLock, ExistingParentLockError, JournalRoot, acquire_existing_parent_lock_bound,
+    create_or_open_flat_directory_bound,
 };
 use solstone_core_journal_io::{
     ClaimRemovalError, ClaimRemovalOutcome, DetailedAtomicError, FileObservation,
@@ -37,14 +40,14 @@ fn health(journal: &Path) -> PathBuf {
 }
 
 /// The retained health capability and singleton lock acquired beneath it.
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) struct SupervisorLock {
     pub(crate) health: FlatDirectory,
     pub(crate) lease: BoundParentLock,
 }
 
 #[derive(Debug, Error)]
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) enum SupervisorLockError {
     #[error("supervisor already running")]
     AlreadyRunning,
@@ -434,7 +437,7 @@ fn publication_observation_uncertain_source(
 
 /// Claim-remove a wait marker only when the exact published observation was
 /// retained. Any outcome other than a durably removed marker is a failure.
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) fn clear_admission_wait_marker(
     sync: &FlatDirectory,
     filename: &str,
@@ -455,7 +458,7 @@ pub(crate) fn clear_admission_wait_marker(
     ))
 }
 
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn admission_wait_marker_cleanup_result(
     result: Result<ClaimRemovalOutcome, ClaimRemovalError>,
 ) -> Result<(), LifecycleError> {
