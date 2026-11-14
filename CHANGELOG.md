@@ -8,40 +8,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- you can now delete a stretch of time. on a day in transcripts, choose "delete a stretch of time" and pick a from and a to, on one day or across several. everything in your journal from then goes to the trash together, as one thing: each device's audio, screen and location, what you imported, body data and anything else from then. it takes whole segments, so it can reach past the times you pick, and it shows you the times it takes before you confirm. recovering it puts all of it back, and erasing it erases all of it.
-- what's still arriving from a device or still being worked on stays in your journal, and the delete says so before you confirm. an import with segments outside the stretch keeps its file. memories your agents saved about that time stay too, and so do activities, summaries and entities made from that stretch, which may still mention it.
-- `solstone-retention remove-stretch --from --to` does the same from the command line, into the same trash, and `--dry-run true` shows what it would take first.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
-### Changed
-
-- a link to a segment that's in the trash now says so and the day it's erased, instead of opening the day as if the link led nowhere.
-- on home, originals your retention settings marked now go to the trash when you delete them, one item for each segment. the segment and everything made from it stay in your journal. you can recover them until the trash erases them, and their space comes back then.
-- `solstone-retention`'s `release-raw`, `remove-marked` and `sweep --force` also move the originals they delete to the trash now, and say the day the trash erases them.
-- erasing a segment from the trash now erases any originals deleted from it that are waiting there too.
-- a segment's transcript now says when its original audio or screen media is in the trash, with a link to the trash.
-- deleting the last segment from an import now deletes the import too: the file it kept and its row in your import history go to the trash with the segment, as one thing, and recovering it puts all three back. a photo shared from your iphone makes one segment, so deleting that segment takes the photo. deleting a segment that isn't an import's last leaves the import and its file in your journal, and the delete says so.
-- a segment you deleted from an import can't be recovered while that import is in the trash: recover the import first, then the segment. erasing an import now erases its segments still waiting in the trash too, and the import page and the trash say so before you erase.
-- `solstone-retention remove-segments` does the same when it removes an import's last segment.
-- connected agents can now read what was said on a day in one go, in time order. before, they read one segment at a time. they can also ask for one source's segments, by the label their list shows for it. what each agent may see hasn't changed.
-- an activity that belongs to more than one facet now shows once to a connected agent, under the facet it belongs to most, with the others named beside it. before, it showed once for each facet, so an agent's count of your week ran high.
-- connected agents now see what kind each activity was, such as a meeting or writing, and where it came from. a voice your journal has no name for is counted, and no longer listed as a person called Speaker 1.
-- an agent asking about a week by a day in the middle of it now gets that week. before, it got nothing unless it named the sunday.
-- connected agents now get a short name for each segment, activity, person and project, and it stays the same from one answer to the next, so an agent can keep one and come back to it later. before, each was a long code that changed on every answer and stopped working when your journal restarted or you changed what that agent may see. what each agent may see hasn't changed: your journal checks it every time an agent reads something by its name.
-- the sources, support and network pages now work like home, transcripts and search: moving between them and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
-
 ### Fixed
 
-- security fix: a connected agent that had already found one of your earlier Strava records by searching could still read that record after you hid its day, or after you connected that agent again without the body permission, until your journal next restarted. now that agent can't read it from that moment. only an agent you had connected could do this, and only for a record your journal had already shown it.
-- security fix: after you hid a day's body data, a connected agent listing that day's segments could still see a segment that held body data along with a recording or notes, with its time, where it came from, how long it ran and how many lines it held. it couldn't read what was in it. now the list leaves that segment out. only an agent you had connected could see this.
-- on windows, after you removed the journal app and installed it again, it could open to nothing but "installation identity record is tombstoned", and "try again" didn't help. it now starts setup instead, with your journal folder already filled in, and setup picks up your journal where it is, with everything in it.
-- an activity whose pages, notes or summaries hold a heading the journal also uses, such as "Highlights" or "Note", now gets its list of people. before, the list was never made for it. on a long activity, a line shaped like a date and time range no longer cuts short what the list is made from. activities from before you update stay as they are.
-- "finish them" on home now says what finishing does: any original a stopped deletion hadn't deleted yet goes back in its segment. before, it said nothing was put back.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
-- the network page on a paired device now shows when your journal is closed to devices on your network.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
@@ -70,6 +44,37 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a first restore on a phone or tablet now waits for work in your journal to finish before copying. if restore is interrupted, you can retry the same backup.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.79] - 2026-11-14
+
+### Added
+
+- you can now delete a stretch of time. on a day in transcripts, choose "delete a stretch of time" and pick a "from" and a "to", on one day or across several. everything in your journal from then goes to the trash together, as one thing: each device's audio, screen and location, what you imported, body data and anything else from then. it takes whole segments, so it can reach past the times you pick, and it shows you the times it takes before you confirm. recovering it puts all of it back, and erasing it erases all of it.
+- what's still arriving from a device or still being worked on stays in your journal, and the delete says so before you confirm. an import with segments outside the stretch keeps its file. memories your agents saved about that time stay too, and so do activities, summaries and entities made from that stretch, which may still mention it.
+
+### Changed
+
+- a link to a segment that's in the trash now says so and the day it's erased, instead of opening the day as if the link led nowhere.
+- on home, originals your retention settings marked now go to the trash when you delete them, one item for each segment. the segment and everything made from it stay in your journal. you can recover them until the trash erases them, and their space comes back then.
+- erasing a segment from the trash now erases any originals deleted from it that are waiting there too.
+- a segment's transcript now says when its original audio or screen media is in the trash, with a link to the trash.
+- deleting the last segment from an import now deletes the import too: the file it kept and its row in your import history go to the trash with the segment, as one thing, and recovering it puts all three back. a photo shared from your iphone makes one segment, so deleting that segment takes the photo. deleting a segment that isn't an import's last leaves the import and its file in your journal, and the delete says so.
+- a segment you deleted from an import can't be recovered while that import is in the trash: recover the import first, then the segment. erasing an import now erases its segments still waiting in the trash too, and the import page and the trash say so before you erase.
+- connected agents can now read what was said on a day in one go, in time order. before, they read one segment at a time. they can also ask for one source's segments, by the label their list shows for it. what each agent may see hasn't changed.
+- an activity that belongs to more than one facet now shows once to a connected agent, under the facet it belongs to most, with the others named beside it. before, it showed once for each facet, so an agent's count of your week ran high.
+- connected agents now see what kind each activity was, such as a meeting or writing, and where it came from. a voice your journal has no name for is counted, and no longer listed as a person called Speaker 1.
+- an agent asking about a week by a day in the middle of it now gets that week. before, it got nothing unless it named the sunday.
+- connected agents now get a short name for each segment, activity, person and project, and it stays the same from one answer to the next, so an agent can keep one and come back to it later. before, each was a long code that changed on every answer and stopped working when your journal restarted or you changed what that agent may see. what each agent may see hasn't changed: your journal checks it every time an agent reads something by its name.
+- the sources, support and network pages now work like home, transcripts and search: moving between them and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+
+### Fixed
+
+- security fix: a connected agent that had already found one of your earlier Strava records by searching could still read that record after you hid its day, or after you connected that agent again without the body permission, until your journal next restarted. now that agent can't read it from that moment. only an agent you had connected could do this, and only for a record your journal had already shown it.
+- security fix: after you hid a day's body data, a connected agent listing that day's segments could still see a segment that held body data along with a recording or notes, with its time, where it came from, how long it ran and how many lines it held. it couldn't read what was in it. now the list leaves that segment out. only an agent you had connected could see this.
+- on windows, after you removed the journal app and installed it again, it could open to nothing but "installation identity record is tombstoned", and "try again" didn't help. it now starts setup instead, with your journal folder already filled in, and setup picks up your journal where it is, with everything in it.
+- an activity whose pages, notes or summaries hold a heading the journal also uses, such as "Highlights" or "Note", now gets its list of people. before, the list was never made for it. on a long activity, a line shaped like a date and time range no longer cuts short what the list is made from.
+- "finish them" on home now says what finishing does: any original a stopped deletion hadn't deleted yet goes back in its segment. before, it said nothing was put back.
+- the network page on a paired device now shows when your journal is closed to devices on your network.
 - on the sources page, focus now stays on the page after you press "try again", or when a narrower or wider window changes the layout: on the same button or link if it's drawn again, otherwise at the start of the page. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 - on linux, `solstone update --check` shows its `platform:` line again if you installed the journal as an `.rpm` package, or added the solstone app as a `.deb` or `.rpm` package. before, that line was missing, though updates were still offered.
 
