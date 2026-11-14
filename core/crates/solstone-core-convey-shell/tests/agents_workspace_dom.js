@@ -1390,5 +1390,6 @@ async function test(name, body) {
     lacks(paired.view, 'data-again=');
   });
 
+  cases += await require('./agents_contract_dom.js')(root);
   console.log(`DOM CASES: ${cases} passed`);
 })().catch(error => { console.error(error); process.exit(1); });
