@@ -61,11 +61,16 @@ impl std::fmt::Display for FaceError {
 pub(crate) struct Enrichment(Option<FacePass>);
 impl Enrichment {
     pub(crate) fn new(journal: &Path, video: &Path) -> Result<Self, crate::pipeline::RunError> {
-        Ok(Self(
-            best_effort(enabled(journal).map_err(|e| FaceError::at("config", e)))?
-                .filter(|enabled| *enabled)
-                .map(|_| FacePass::new(video)),
-        ))
+        let pass = if best_effort(enabled(journal).map_err(|e| FaceError::at("config", e)))?
+            .unwrap_or(false)
+        {
+            best_effort(
+                FacePass::try_new(journal, video).map_err(|e| FaceError::at("model_lease", e)),
+            )?
+        } else {
+            None
+        };
+        Ok(Self(pass))
     }
 
     pub(crate) fn apply(
@@ -288,10 +293,19 @@ pub struct FacePass {
     crops: Vec<(String, Vec<u8>)>,
     prefix: String,
     pub stats: PassStats,
+    // Fields drop in declaration order: sessions must be gone before a new
+    // producer can acquire permission to load its own model pair.
+    _model_lease: solstone_core_segment::face_backfill::ModelLease,
 }
 impl FacePass {
-    pub fn new(video: &Path) -> Self {
+    pub fn try_new(journal: &Path, video: &Path) -> PassResult<Self> {
+        let lease =
+            solstone_core_segment::face_backfill::live_lease(journal).map_err(|e| e.to_string())?;
+        Ok(Self::new(video, lease))
+    }
+    fn new(video: &Path, lease: solstone_core_segment::face_backfill::ModelLease) -> Self {
         Self {
+            _model_lease: lease,
             models: None,
             rows: Vec::new(),
             embeddings: Vec::new(),
@@ -541,7 +555,45 @@ pub fn run_segment(
 ) -> PassResult<PassStats> {
     let resolver = screen_ocr::InstalledHelperResolver;
     let mut ocr = screen_ocr::ResolvedWorkerFactory::new(&resolver);
-    run_segment_with_ocr(journal, video, screen, &mut ocr, stop)
+    run_segment_with_ocr(
+        journal,
+        video,
+        screen,
+        &mut ocr,
+        stop,
+        Default::default(),
+        None,
+    )
+}
+
+/// Backfill yields immediately to a producer holding this source's claim.
+pub fn run_segment_with_lease(
+    journal: &Path,
+    video: &Path,
+    screen: &Path,
+    stop: &dyn Fn() -> bool,
+    lease: solstone_core_segment::face_backfill::ModelLease,
+) -> PassResult<PassStats> {
+    let resolver = screen_ocr::InstalledHelperResolver;
+    let mut ocr = screen_ocr::ResolvedWorkerFactory::new(&resolver);
+    run_segment_with_ocr(
+        journal,
+        video,
+        screen,
+        &mut ocr,
+        stop,
+        solstone_core_journal_io::LockOptions {
+            timeout: std::time::Duration::ZERO,
+            ..Default::default()
+        },
+        Some(lease),
+    )
+}
+
+/// Ask the exact decoder registry used by describe, without decoding frames.
+/// An unreadable container is an error, not an unsupported-codec disposition.
+pub fn recording_supported(video: &Path) -> PassResult<bool> {
+    crate::decode::recording_supported(video).map_err(|e| e.to_string())
 }
 
 /// Developer entry using an explicitly selected, verified installed payload's OCR helper.
@@ -555,7 +607,15 @@ pub fn run_segment_using_payload(
 ) -> PassResult<PassStats> {
     let resolver = screen_ocr::InstalledHelperResolver;
     let mut ocr = screen_ocr::ResolvedWorkerFactory::from_executable(&resolver, executable)?;
-    run_segment_with_ocr(journal, video, screen, &mut ocr, stop)
+    run_segment_with_ocr(
+        journal,
+        video,
+        screen,
+        &mut ocr,
+        stop,
+        Default::default(),
+        None,
+    )
 }
 
 fn run_segment_with_ocr(
@@ -564,6 +624,8 @@ fn run_segment_with_ocr(
     screen: &Path,
     ocr: &mut dyn OcrWorkerFactory,
     stop: &dyn Fn() -> bool,
+    lock_options: solstone_core_journal_io::LockOptions,
+    lease: Option<solstone_core_segment::face_backfill::ModelLease>,
 ) -> PassResult<PassStats> {
     if !enabled(journal)? {
         return Ok(PassStats::default());
@@ -571,8 +633,8 @@ fn run_segment_with_ocr(
     if video.with_extension("jsonl") != screen {
         return Err("screen JSONL must be the recording's sibling".into());
     }
-    let claims = OutputClaims::acquire([screen.to_owned()], Default::default())
-        .map_err(|e| e.to_string())?;
+    let claims =
+        OutputClaims::acquire([screen.to_owned()], lock_options).map_err(|e| e.to_string())?;
     let input =
         InputObservation::capture_checked(&claims, video, stop).map_err(|e| e.to_string())?;
     let screen_input =
@@ -597,7 +659,10 @@ fn run_segment_with_ocr(
     let cached = screen_ocr::load_segment_sidecars(segment)
         .into_iter()
         .find(|s| s.source_name == video.file_name().unwrap_or_default().to_string_lossy());
-    let mut pass = FacePass::new(video);
+    let mut pass = match lease {
+        Some(lease) => FacePass::new(video, lease),
+        None => FacePass::try_new(journal, video)?,
+    };
     if !wanted.is_empty() {
         let config = crate::WinnowConfig {
             dhash_threshold: 0,
@@ -812,8 +877,10 @@ pub(crate) mod tests {
     #[test]
     fn optional_face_cancellation_still_cancels_and_staging_is_removed() {
         let root = tempfile::tempdir().unwrap();
-        let raw = root.path().join("screen.webm");
-        let mut pass = Enrichment(Some(FacePass::new(&raw)));
+        let segment = root.path().join("segment");
+        fs::create_dir(&segment).unwrap();
+        let raw = segment.join("screen.webm");
+        let mut pass = Enrichment(Some(FacePass::try_new(root.path(), &raw).unwrap()));
         assert!(matches!(
             pass.apply(|_| Err(crate::pipeline::RunError::Cancelled.into())),
             Err(crate::pipeline::RunError::Cancelled)
@@ -825,7 +892,7 @@ pub(crate) mod tests {
             checks.get() == 3
         });
         assert!(matches!(result, Err(crate::pipeline::RunError::Cancelled)));
-        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+        assert_eq!(fs::read_dir(&segment).unwrap().count(), 0);
     }
 
     #[cfg(feature = "full-tests")]
@@ -840,7 +907,7 @@ pub(crate) mod tests {
         let input = InputObservation::capture_checked(&claims, &raw, &|| false).unwrap();
         let commit = input.commit_checked(&claims, &|| false).unwrap();
         let make_pass = |value, bytes: Vec<u8>| {
-            let mut pass = FacePass::new(&raw);
+            let mut pass = FacePass::try_new(root.path(), &raw).unwrap();
             pass.embeddings.push([value; 128]);
             let name = crop_reference(&pass.prefix, 1, 0, &bytes);
             pass.crops.push((name, bytes));
@@ -856,6 +923,8 @@ pub(crate) mod tests {
         let old_npy = root.path().join(header["embeddings"].as_str().unwrap());
         let old_embeddings = fs::read(&old_npy).unwrap();
         let old_crop = root.path().join(&old.crops[0].0);
+        let old_crop_bytes = old.crops[0].1.clone();
+        drop(old);
 
         fs::write(
             raw.with_extension("jsonl"),
@@ -890,7 +959,7 @@ pub(crate) mod tests {
         staged.files[0].install().unwrap();
         assert_eq!(fs::read(sidecar_path(&raw)).unwrap(), header_bytes);
         assert_eq!(fs::read(&old_npy).unwrap(), old_embeddings);
-        assert_eq!(fs::read(&old_crop).unwrap(), old.crops[0].1);
+        assert_eq!(fs::read(&old_crop).unwrap(), old_crop_bytes);
         drop(staged);
 
         new.prepare(&raw, &|| false)

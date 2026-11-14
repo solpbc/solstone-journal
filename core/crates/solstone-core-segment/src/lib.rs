@@ -19,6 +19,7 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 mod body_only;
+pub mod face_backfill;
 /// Digest of exact screen frame rows, excluding the mutable retry header.
 pub fn screen_body_digest(screen: &std::path::Path) -> std::io::Result<String> {
     use sha2::{Digest, Sha256};

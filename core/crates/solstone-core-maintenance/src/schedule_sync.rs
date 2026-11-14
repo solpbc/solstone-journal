@@ -69,9 +69,9 @@ pub struct SyncSummary {
 /// already present, so the scheduler never records a daily failure for work
 /// that does not run.
 pub fn host_unscheduled() -> &'static [&'static str] {
-    if cfg!(any(target_os = "android", target_os = "ios"))
-        || solstone_core_offload::cli_run::PRODUCER_SUPPORTED
-    {
+    if cfg!(any(target_os = "android", target_os = "ios")) {
+        &["faces:reconcile", "faces:backfill"]
+    } else if solstone_core_offload::cli_run::PRODUCER_SUPPORTED {
         &[]
     } else {
         &["backup:offload"]

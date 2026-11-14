@@ -4,11 +4,12 @@
 use super::*;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
-use solstone_core_journal_io::{
-    LockOptions, PathOrDay, StreamLocation, contained_path, iter_segments,
-};
+use solstone_core_journal_io::{LockOptions, PathOrDay, StreamLocation, iter_segments};
 use solstone_core_segment::output_attempt::OutputClaims;
 use std::{collections::BTreeMap, path::Path};
+
+const LINKED_FACE_PATH: &str = "face data cannot be cleared through linked paths";
+const UNSUPPORTED_FACE_ENTRY: &str = "unsupported face data entry";
 
 pub(super) fn claim_options() -> LockOptions {
     // Derived work under entity trust never waits on a producer that could be
@@ -87,6 +88,48 @@ pub fn participant_entity(
         .flatten()
 }
 
+/// Restrict filesystem work to current participants, the principal and people
+/// who already hold face material. The authoritative identity census still
+/// resolves collisions and aliases; unrelated identities cannot join a meeting.
+pub fn relevant_entities(
+    record: &Map<String, Value>,
+    directories: &[(String, crate::JournalEntity)],
+    holders: &BTreeSet<String>,
+) -> Vec<(String, crate::JournalEntity)> {
+    let ids: BTreeSet<_> = record
+        .get("participation")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|p| p.get("entity_id").and_then(Value::as_str))
+        .collect();
+    directories
+        .iter()
+        .filter(|(folder, e)| {
+            e.is_principal() || ids.contains(e.id.as_str()) || holders.contains(folder)
+        })
+        .cloned()
+        .collect()
+}
+
+pub fn face_holders(
+    journal: &Path,
+    directories: &[(String, crate::JournalEntity)],
+) -> Result<BTreeSet<String>> {
+    let mut holders = BTreeSet::new();
+    for (folder, _) in directories {
+        let dir = solstone_core_journal_io::contained_path(journal, &format!("entities/{folder}"))
+            .map_err(|e| e.to_string())?;
+        for name in [ARCHIVE, STATE] {
+            if solstone_core_journal_io::path_lexists(&dir.join(name)).map_err(|e| e.to_string())? {
+                holders.insert(folder.clone());
+                break;
+            }
+        }
+    }
+    Ok(holders)
+}
+
 pub fn reconcile_activity(
     journal: &Path,
     facet: &str,
@@ -98,7 +141,9 @@ pub fn reconcile_activity(
     }
     let _trust = crate::hold_entity_trust_lock(journal).map_err(|e| e.to_string())?;
     let directories = crate::live_journal_entities(journal).map_err(|e| e.to_string())?;
-    reconcile_activity_with_entities(journal, facet, day, record, &directories)
+    let holders = face_holders(journal, &directories)?;
+    let relevant = relevant_entities(record, &directories, &holders);
+    reconcile_activity_with_entities(journal, facet, day, record, &relevant)
 }
 
 /// A batch resolves identities once while holding entity trust for the batch.
@@ -369,6 +414,15 @@ pub fn clear(
     journal: &Path,
     surface: solstone_core_removals::Surface,
 ) -> super::ActionResult<usize> {
+    let root = solstone_core_journal_io::realpath_non_strict(journal).map_err(|e| e.to_string())?;
+    let journal = root.as_path();
+    for name in ["entities", "chronicle"] {
+        let path = journal.join(name);
+        if solstone_core_journal_io::realpath_non_strict(&path).map_err(|e| e.to_string())? != path
+        {
+            return Err(LINKED_FACE_PATH.into());
+        }
+    }
     let _trust = crate::hold_entity_trust_lock(journal).map_err(|e| e.to_string())?;
     if enabled(journal)? {
         return Err(super::ActionError::FacesOn);
@@ -392,6 +446,13 @@ pub fn clear(
         solstone_core_removals::Unit::Faces,
         |io| -> super::ActionResult<usize> {
             let mut count = 0;
+            // Keep the literal leaf: resolving it could turn a link into its target.
+            let derived = journal.join("entities").join(super::cross::FILE);
+            if solstone_core_journal_io::path_lexists(&derived).map_err(|e| e.to_string())? {
+                remove_path(journal, io, &derived)?;
+                count += 1;
+            }
+            super::cross::clear_candidates(journal)?;
             for (_, day) in
                 solstone_core_journal_io::day_dirs(journal).map_err(|e| e.to_string())?
             {
@@ -435,6 +496,7 @@ pub fn clear(
                 .remove_files(|relative| {
                     let components: Vec<_> = relative.split('/').collect();
                     match components.as_slice() {
+                        ["entities", name] => *name == super::cross::FILE,
                         ["entities", _, name] => entity_face_or_stage(name),
                         ["chronicle", ..] => components.iter().any(|s| face_sidecar_name(s)),
                         _ => false,
@@ -459,15 +521,32 @@ fn entity_face_or_stage(name: &str) -> bool {
         || solstone_core_journal_io::is_publication_candidate_name(std::ffi::OsStr::new(name))
 }
 fn remove_path(journal: &Path, io: &solstone_core_removals::RemovalIo<'_>, p: &Path) -> Result<()> {
-    let rel = p
+    let parent = p.parent().ok_or(LINKED_FACE_PATH)?;
+    let canonical =
+        solstone_core_journal_io::realpath_non_strict(parent).map_err(|e| e.to_string())?;
+    if canonical != parent {
+        return Err(LINKED_FACE_PATH.into());
+    }
+    let name = p.file_name().ok_or(LINKED_FACE_PATH)?;
+    let entry = canonical.join(name);
+    if solstone_core_journal_io::realpath_non_strict(&entry).map_err(|e| e.to_string())? != entry {
+        return Err(LINKED_FACE_PATH.into());
+    }
+    let rel = entry
         .strip_prefix(journal)
         .map_err(|e| e.to_string())?
         .to_string_lossy()
         .replace('\\', "/");
-    let p = contained_path(journal, &rel).map_err(|e| e.to_string())?;
-    if p.is_dir() {
-        io.remove_tree(&rel).map_err(|e| e.to_string())
-    } else {
-        io.remove_file(&rel).map(|_| ()).map_err(|e| e.to_string())
+    let kind = solstone_core_journal_io::list_dir_entries(&canonical)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|child| child.name.as_os_str() == name)
+        .map(|child| child.kind);
+    match kind {
+        Some(solstone_core_journal_io::DirEntryKind::Directory) => {
+            io.remove_tree(&rel).map_err(|e| e.to_string())
+        }
+        Some(solstone_core_journal_io::DirEntryKind::Other) => Err(UNSUPPORTED_FACE_ENTRY.into()),
+        _ => io.remove_file(&rel).map(|_| ()).map_err(|e| e.to_string()),
     }
 }

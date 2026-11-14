@@ -6,9 +6,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-- connected agents can show a person's suggested or confirmed photo from meetings, when photo suggestions are on.
-
 ### Added
+
+- past meetings now contribute to photo suggestions for people when enabled.
 
 - when you answer whether a name in your journal is one of your people, activities in the facet you answered in that already named them now follow your answer. they list that person. recent activities also show them as attending when the recording shows it, and older ones keep the role they had. change your answer and they follow that too. an activity whose people you edited yourself stays as you left it.
 - your journal keeps the screenshots the solstone app takes in, each at the minute you took it. a journal from before 2.0.75 doesn't keep them, so the app says your screenshots are waiting for a journal update.
