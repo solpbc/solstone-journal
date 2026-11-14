@@ -66,6 +66,7 @@ solstone-core-facets.workspace = true
 solstone-core-location.workspace = true
 solstone-core-talent-runtime.workspace = true
 solstone-core-transcripts.workspace = true
+solstone-core-transcripts-web.workspace = true
 spl-core.workspace = true
 spl-home.workspace = true
 time = "0.3.55"

@@ -1902,7 +1902,8 @@ fn a_summary_hit_links_only_to_its_own_streams_segment() {
     assert_eq!(link["time"], "09:00-09:05");
     assert!(link["reference"].is_string());
     assert!(link["source"].is_string());
-    assert_eq!(link.as_object().unwrap().len(), 3);
+    assert_eq!(link.as_object().unwrap().len(), 4);
+    assert!(link["link"].is_string());
 
     let transcript = probe(
         &journal,
@@ -2498,7 +2499,8 @@ fn links_keep_the_replay_digest_stable() {
                 assert!(seg.get("time").is_some());
                 assert!(seg.get("reference").is_some());
                 assert!(seg.get("source").is_some());
-                assert_eq!(seg.as_object().unwrap().len(), 3);
+                assert_eq!(seg.as_object().unwrap().len(), 4);
+                assert!(seg["link"].is_string());
             }
         }
     }
@@ -11488,7 +11490,11 @@ fn fetch_source_links_scoped_by_facet() {
         let obj = s.as_object().unwrap();
         for k in obj.keys() {
             assert!(
-                k == "time" || k == "reference" || k == "source" || k == "capture_zone",
+                k == "time"
+                    || k == "reference"
+                    || k == "source"
+                    || k == "capture_zone"
+                    || k == "link",
                 "Unexpected key {k} in segment link"
             );
         }
@@ -13332,9 +13338,10 @@ fn listed(journal: &tempfile::TempDir, permission: Option<ReadPermission>) -> Va
         json!({"from": "20260308", "to": "20260314"}),
     )
     .unwrap();
-    // References are minted per call; compare what they point at by title.
+    // Compare content across independent journals; their pointer keys differ.
     for activity in res["activities"].as_array_mut().unwrap() {
         activity.as_object_mut().unwrap().remove("reference");
+        activity.as_object_mut().unwrap().remove("link");
     }
     res
 }
@@ -16051,4 +16058,203 @@ fn entity_photos_follow_state_and_the_source_activity_facet() {
     let rendered = crate::jsonrpc::image_tool_result(output.value.clone(), None, None);
     assert_eq!(rendered["structuredContent"], output.value);
     assert!(!output.value.to_string().contains("embedding"));
+}
+
+// ---- journal links are owner pointers, separate from tool references ----
+
+fn opened_journal_link(journal: &Path, row: &Value) -> solstone_core_journal_link::Place {
+    let link = row["link"].as_str().expect("eligible row has a link");
+    let sealed = link
+        .strip_prefix("https://go.solstone.app/j#")
+        .expect("journal URL");
+    assert!(!link.contains(['[', ']', '<', '&', '\\']));
+    solstone_core_journal_link::open(journal, sealed).unwrap()
+}
+
+#[test]
+fn journal_links_keep_recording_identity_and_stay_out_of_entries() {
+    use solstone_core_journal_link::Place;
+    let journal = span_journal(None);
+    for stream in ["desk", "phone", "default"] {
+        write_span_segment(
+            journal.path(),
+            stream,
+            "090000_300",
+            "alpha",
+            "[09:00:20] a line\n",
+        );
+    }
+    let direct = journal.path().join("chronicle/20261010/090000_300");
+    fs::create_dir_all(&direct).unwrap();
+    fs::write(
+        direct.join("meeting_transcript.md"),
+        "[09:00:20] a direct line\n",
+    )
+    .unwrap();
+    let list = probe(&journal, "list_transcripts", json!({"day":"20261010"})).unwrap();
+    let rows = list["transcripts"].as_array().unwrap();
+    assert_eq!(rows.len(), 4, "{list}");
+    let mut streams = BTreeSet::new();
+    for row in rows {
+        let stream = segment_stream(journal.path(), row["reference"].as_str().unwrap());
+        streams.insert(stream.clone());
+        let expected = Place::Recording {
+            day: "20261010".into(),
+            stream,
+            segment: "090000_300".into(),
+        };
+        assert_eq!(opened_journal_link(journal.path(), row), expected);
+        let read = probe(
+            &journal,
+            "get_transcript",
+            json!({"reference":row["reference"]}),
+        )
+        .unwrap();
+        assert_eq!(opened_journal_link(journal.path(), &read), expected);
+        assert!(!read["entries"].to_string().contains("go.solstone.app"));
+    }
+    assert_eq!(
+        streams,
+        BTreeSet::from([
+            "_default".into(),
+            "default".into(),
+            "desk".into(),
+            "phone".into()
+        ])
+    );
+    let span = probe(
+        &journal,
+        "get_transcript",
+        json!({"reference":list["span_reference"]}),
+    )
+    .unwrap();
+    assert_eq!(span["segments"].as_array().unwrap().len(), 4);
+    for section in span["segments"].as_array().unwrap() {
+        let read = probe(
+            &journal,
+            "get_transcript",
+            json!({"reference":section["reference"]}),
+        )
+        .unwrap();
+        assert_eq!(
+            opened_journal_link(journal.path(), section),
+            opened_journal_link(journal.path(), &read)
+        );
+        assert!(!section["entries"].to_string().contains("go.solstone.app"));
+    }
+}
+
+#[test]
+fn journal_links_keep_activity_facets_and_body_out_of_recording_links() {
+    use solstone_core_journal_link::Place;
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    fs::create_dir_all(root.join("streams")).unwrap();
+    fs::write(root.join("streams/import.apple_health.json"), json!({
+        "name":"import.apple_health", "kind":"import:apple_health", "host":null, "platform":null,
+        "created_at":0, "last_day":null, "last_segment":null, "seq":1,
+    }).to_string()).unwrap();
+    for facet in ["alpha", "beta"] {
+        write_activity_line(
+            root,
+            facet,
+            "20260308",
+            "same_id",
+            "Linkneedle",
+            100,
+            Some("work"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+    }
+    let list = probe(&journal, "list_activities", json!({"day":"20260308"})).unwrap();
+    let mut places = BTreeSet::new();
+    for row in list["activities"].as_array().unwrap() {
+        let Place::Activity { facet, day, id } = opened_journal_link(root, row) else {
+            panic!("activity place")
+        };
+        assert_eq!(day, "20260308");
+        places.insert((facet, id));
+    }
+    assert!(places.contains(&("alpha".into(), "same_id".into())));
+    assert!(places.contains(&("beta".into(), "same_id".into())));
+    assert!(places.contains(&("alpha".into(), "body_0123456789abcdef".into())));
+    let week = probe(&journal, "get_week", json!({"week":"20260308"})).unwrap();
+    assert_eq!(
+        opened_journal_link(root, &week["body"][0]),
+        Place::Activity {
+            facet: "alpha".into(),
+            day: "20260308".into(),
+            id: "body_0123456789abcdef".into(),
+        }
+    );
+    for row in week["activities"].as_array().unwrap() {
+        opened_journal_link(root, row);
+    }
+    for memory in week["memories"].as_array().unwrap() {
+        assert!(memory.get("link").is_none());
+    }
+    let plain = probe(&journal, "list_transcripts", json!({"day":"20260308"})).unwrap();
+    let source = plain["other_sources"][0]
+        .as_str()
+        .unwrap_or_else(|| panic!("{plain}"));
+    let body = probe(
+        &journal,
+        "list_transcripts",
+        json!({"day":"20260308", "source":source}),
+    )
+    .unwrap();
+    assert!(
+        !body["transcripts"].as_array().unwrap().is_empty(),
+        "{body}"
+    );
+    assert!(
+        body["transcripts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row.get("link").is_none())
+    );
+    let facets = probe(&journal, "list_facets", json!({})).unwrap();
+    assert!(!facets.to_string().contains("go.solstone.app"));
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    let hits = probe(&journal, "search", json!({"query":"Linkneedle"})).unwrap();
+    assert_eq!(hits["results"].as_array().unwrap().len(), 2, "{hits}");
+    for hit in hits["results"].as_array().unwrap() {
+        let Place::Activity { id, .. } = opened_journal_link(root, hit) else {
+            panic!("activity hit")
+        };
+        assert_eq!(id, "same_id");
+    }
+}
+
+#[test]
+fn journal_links_attach_to_entity_rows_without_changing_tool_references() {
+    use solstone_core_journal_link::Place;
+    let journal = person_journal();
+    let listed = probe(&journal, "list_entities", json!({})).unwrap();
+    let rows = listed["entities"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{listed}");
+    for row in rows {
+        let reference = row["reference"].as_str().unwrap();
+        let (id, _) = crate::names::parse_entity(reference).unwrap();
+        assert_eq!(
+            opened_journal_link(journal.path(), row),
+            Place::Person { id }
+        );
+        assert!(probe(&journal, "get_entity", json!({"reference":reference})).is_ok());
+    }
+    let searched = probe(&journal, "search", json!({"query":"Bob Smith"})).unwrap();
+    let cards = searched["entity_matches"].as_array().unwrap();
+    assert!(!cards.is_empty(), "{searched}");
+    for row in cards {
+        assert_eq!(
+            opened_journal_link(journal.path(), row),
+            Place::Person { id: "bob".into() }
+        );
+    }
 }

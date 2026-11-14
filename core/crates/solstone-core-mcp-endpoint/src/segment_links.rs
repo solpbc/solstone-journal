@@ -152,6 +152,7 @@ pub(crate) fn issue_segment_links(
     let mut hides = None;
 
     let mut day_cache: BTreeMap<String, Vec<Segment>> = BTreeMap::new();
+    let mut owner_links = crate::journal_links::Recordings::default();
 
     for subject in subjects.iter_mut() {
         let candidates = resolve_candidates(journal_root, subject, &mut day_cache);
@@ -223,6 +224,13 @@ pub(crate) fn issue_segment_links(
                         ),
                         "reference": token,
                     });
+                    owner_links.attach(
+                        journal_root,
+                        &mut link_val,
+                        &day,
+                        identity.stream,
+                        identity.name,
+                    );
                     if let Some(zone) = differing_capture_zone(
                         journal_root,
                         &owner_zone,

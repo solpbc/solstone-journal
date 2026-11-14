@@ -415,6 +415,13 @@ fn project_sunday(
             "reference": reference.clone(),
             "zone": zone_str,
         });
+        crate::journal_links::activity(
+            journal,
+            &mut activity,
+            &rep.facet_dir,
+            &rep.day,
+            &rep.record_identity,
+        );
         if let Some(kind) = crate::tools::activities::activity_kind(&rep.record) {
             activity["kind"] = json!(kind);
         }
@@ -506,7 +513,22 @@ fn project_sunday(
                 .and_then(|id| memory_by_id.get(id).copied());
             let memory_key = memory.map(|m| m.key.as_str());
             let state = resolve_day_cell_state(day.state.as_str(), memory_key, &left_out_keys);
-            days.push(json!({"day": day.day, "state": state}));
+            let mut cell = json!({"day": day.day, "state": state});
+            let has_place = journal.join("chronicle").join(&day.day).is_dir()
+                || facets.iter().any(|(_, folder, _)| {
+                    solstone_core_facets::load_activity_records(journal, folder, &day.day, false)
+                        .is_ok_and(|rows| !rows.is_empty())
+                });
+            if has_place {
+                crate::journal_links::attach(
+                    journal,
+                    &mut cell,
+                    solstone_core_journal_link::Place::Day {
+                        day: day.day.clone(),
+                    },
+                );
+            }
+            days.push(cell);
         }
 
         if !left_out_unreadable && let Said::Entries(said_entries) = &trusted.said {
@@ -514,11 +536,21 @@ fn project_sunday(
                 if left_out_keys.contains(&entry.key) {
                     continue;
                 }
-                said.push(json!({
+                let mut quote = json!({
                     "day": entry.day,
                     "quote": entry.quote,
                     "uri": entry.uri,
-                }));
+                });
+                // The weekly reader already validated this activity URI.
+                if let Some((facet, rest)) = entry
+                    .uri
+                    .strip_prefix("sol://facets/")
+                    .and_then(|uri| uri.split_once("/activities/"))
+                    && let Some((day, id)) = rest.split_once('#')
+                {
+                    crate::journal_links::activity(journal, &mut quote, facet, day, id);
+                }
+                said.push(quote);
             }
         }
     }
@@ -535,15 +567,23 @@ fn project_sunday(
     body.sort_by(|left, right| (&left.0, &left.1).cmp(&(&right.0, &right.1)));
     let mut body_items = Vec::new();
     for (day, _, target, facet_title, face) in body {
-        let reference = crate::dispatch::activity_reference(principal, snapshot, target)
+        let reference = crate::dispatch::activity_reference(principal, snapshot, target.clone())
             .map_err(|_| ToolError::ReferenceNotFound)?;
-        body_items.push(crate::tools::activities::body_activity(
+        let mut item = crate::tools::activities::body_activity(
             &face,
             &facet_title,
             &day,
             reference,
             &zone_str,
-        ));
+        );
+        crate::journal_links::activity(
+            journal,
+            &mut item,
+            &target.facet_dir,
+            &target.day,
+            &target.record_identity,
+        );
+        body_items.push(item);
     }
 
     let value = json!({
@@ -807,6 +847,8 @@ mod tests {
             BTreeSet::from(["end".to_owned(), "start".to_owned()])
         );
         for day in value["days"].as_array().unwrap() {
+            let mut day = day.clone();
+            day.as_object_mut().unwrap().remove("link");
             assert_eq!(
                 day.as_object()
                     .unwrap()
@@ -835,6 +877,8 @@ mod tests {
             assert!(memory["refs"].is_array());
         }
         for quote in value["said"].as_array().unwrap() {
+            let mut quote = quote.clone();
+            quote.as_object_mut().unwrap().remove("link");
             assert_eq!(
                 quote
                     .as_object()
@@ -980,8 +1024,37 @@ mod tests {
 
         let value = probe(root.path(), json!({"week": sunday})).unwrap();
         assert_closed(&value);
+        // State labels do not decide whether a day is a place: this
+        // not-ready day has an activity, while the absent days have none.
+        assert!(value["days"][0].get("link").is_none());
+        assert!(value["days"][2].get("link").is_none());
+        let opens = |row: &Value| {
+            solstone_core_journal_link::open(
+                root.path(),
+                row["link"].as_str().unwrap().split_once('#').unwrap().1,
+            )
+            .unwrap()
+        };
         assert_eq!(
-            value["days"],
+            opens(&value["days"][1]),
+            solstone_core_journal_link::Place::Day {
+                day: "20260309".into()
+            }
+        );
+        assert_eq!(
+            opens(&value["said"][0]),
+            solstone_core_journal_link::Place::Activity {
+                facet: "work".into(),
+                day: "20260309".into(),
+                id: "standup".into(),
+            }
+        );
+        let mut days = value["days"].clone();
+        for day in days.as_array_mut().unwrap() {
+            day.as_object_mut().unwrap().remove("link");
+        }
+        assert_eq!(
+            days,
             json!([
                 {"day": "20260308", "state": "memory"},
                 {"day": "20260309", "state": "not_ready"},
@@ -992,8 +1065,12 @@ mod tests {
                 {"day": "20260314", "state": "nothing_shared"},
             ])
         );
+        let mut said = value["said"].clone();
+        for quote in said.as_array_mut().unwrap() {
+            quote.as_object_mut().unwrap().remove("link");
+        }
         assert_eq!(
-            value["said"],
+            said,
             json!([{
                 "day": "20260309",
                 "quote": "the owner's words",
