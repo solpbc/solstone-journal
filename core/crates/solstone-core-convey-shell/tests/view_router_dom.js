@@ -3613,6 +3613,47 @@ asyncCase('arrival: null on the first view, push for a link, pop for a back or f
   assert.deepStrictEqual(page.window.__scriptErrors, []);
 });
 
+asyncCase('router: a view clearing its hash after a fragment navigation keeps that entry\'s scroll for a back', async () => {
+  const page = makePage();
+  page.answerAll();
+  await page.boot('home');
+  page.click('/app/more/');
+  await page.clock.advance(400);
+  assert.ok(page.view('more'));
+  // A link to the same path with a hash is the browser's: a new entry with no state, then popstate.
+  page.history.pushState(null, '', '/app/more/#memories/x');
+  page.window.dispatchEvent({ type: 'popstate', state: null });
+  // The view reads the hash and clears it from the address through its own replace.
+  page.window.solRouter.viewEntry('replace', '/app/more/');
+  const id = page.history.state?.solRoute?.id || null;
+  assert.ok(id !== null, 'the cleared entry has an id');
+  assert.ok(page.window.solRouter.held().entryId === id, 'the router adopts the id it wrote');
+  page.window.scrollY = 310;
+  page.click('/app/home/');
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+  assert.strictEqual(page.window.scrollY, 0, 'a new view starts at the top');
+  page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('more'));
+  assert.strictEqual(page.window.scrollY, 310, 'the back lands where that entry was left');
+  assert.deepStrictEqual(page.record.assigned, [], 'all in the page');
+});
+
+asyncCase('router: a replace on an entry that has an id keeps it', async () => {
+  const page = makePage();
+  page.answerAll();
+  await page.boot('home');
+  page.click('/app/more/');
+  await page.clock.advance(400);
+  const before = page.window.solRouter.held().entryId;
+  assert.ok(before && page.history.state?.solRoute?.id === before);
+  page.window.solRouter.viewEntry('replace', '/app/more/?x=1');
+  assert.ok(page.window.solRouter.held().entryId === before, 'the router keeps its id');
+  assert.ok(page.history.state?.solRoute?.id === before, 'the entry keeps its id');
+  assert.ok(page.history.state?.solRoute?.owner === 'router', 'and its owner');
+});
+
 asyncCase('arrival focus: a view whose root says data-arrival-focus="main" lands on the workspace though it ships a heading', async () => {
   const page = makePage();
   bootAllViews(page);
