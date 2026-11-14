@@ -106,6 +106,7 @@ fn observe_using_checked(
         return Ok(None);
     };
     if observed.status != DailyUnitStatus::Capped
+        && !crate::daily_coverage::review_conflict_reprepares(&observed)
         && super::read(journal, &unit.id()?)?.is_none_or(|record| !record.held)
     {
         return Ok(None);
@@ -134,8 +135,21 @@ fn observe_using_checked(
         }
         return Ok(None);
     }
+    // An entity review whose conflict its own run declines, and which a fresh
+    // preparation can clear, waits on the owner the way a capped unit does, so
+    // it is held for the same per-unit retry.
+    let declined = || {
+        crate::daily_coverage::review_conflict_reprepares(&record)
+            && crate::daily_coverage::conflict_declined(
+                &record,
+                &evidence.revision,
+                &evidence.contract,
+                &crate::daily_coverage::local_day(journal, chrono::Utc::now()),
+                journal,
+            )
+    };
     if record.has_uncommitted_started_receipt()
-        || (record.status != DailyUnitStatus::Capped && held.is_none())
+        || (record.status != DailyUnitStatus::Capped && held.is_none() && !declined())
     {
         return Ok(None);
     }
