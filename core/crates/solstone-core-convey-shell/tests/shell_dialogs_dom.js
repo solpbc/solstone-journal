@@ -264,7 +264,7 @@ function shellPart(open, close) {
   return html.slice(start, end + close.length);
 }
 
-function makePage() {
+function makePage(options = {}) {
   const win = new Target();
   const doc = new Target();
   const frames = [];
@@ -380,6 +380,7 @@ function makePage() {
   });
   context.globalThis = context;
   const files = ['modal_layer.js', 'error-handler.js', 'report-error.js'];
+  if (options.console) files.push('diagnostic-console.js');
   for (const file of files) {
     vm.runInContext(fs.readFileSync(path.join(staticDir, file), 'utf8'), context, { filename: file });
   }
@@ -641,6 +642,38 @@ async function main() {
     assert.ok(dialog.style.display === 'block', "one Escape leaves the view's dialog open");
     focusIs(p, 'view-save', "back on save in the view's dialog");
   });
+
+  // ---- the diagnostic console, the review's opener
+
+  for (const [how, close] of [
+    ['cancel', (p, modal) => modal.querySelector('.report-error-actions button').click()],
+    ['Escape', (p) => p.key('Escape')],
+    ['a click on its backdrop', (p, modal) => modal.click()],
+  ]) {
+    await test(`a review sent from the console, closed by ${how}, comes back to the console's send`, async () => {
+      const p = makePage({ console: true });
+      const api = p.win.convey.diagnosticConsole;
+      api.push({ severity: 'error', source: 'js', summary: 'something on this page didn\'t work.', detail: { message: 'x' } });
+      api.open();
+      const root = p.el('diagnostic-console');
+      assert.ok(root.classList.contains('visible'), 'the console is open');
+      const send = root.querySelector('[data-diagnostic-send]');
+      assert.ok(send, 'the entry has its send button');
+      send.click();
+      await settle();
+      const modal = p.doc.querySelector('.report-error-modal');
+      assert.ok(modal, 'the review opened');
+      p.frame();
+      assert.ok(root.hasAttribute('inert'), 'the console is inert under the review');
+      modal.querySelector('#report-error-recent').click();
+      assert.ok(root.classList.contains('visible'), 'a click inside the review leaves the console open');
+      close(p, modal);
+      assert.ok(!p.doc.querySelector('.report-error-modal'), 'the review is gone');
+      assert.ok(root.classList.contains('visible'), 'the console is still open');
+      const at = p.doc.activeElement;
+      assert.ok(at.hasAttribute && at.hasAttribute('data-diagnostic-send'), `focus back on send, not ${at.id || at.tagName}`);
+    });
+  }
 
   if (failed.length) {
     failed.forEach((line) => console.error(`FAIL ${line}`));
