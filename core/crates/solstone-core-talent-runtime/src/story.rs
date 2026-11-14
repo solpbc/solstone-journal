@@ -521,29 +521,16 @@ pub(crate) fn apply_story_cancellable(
             NamedActor::Agent | NamedActor::Unknown => return Ok(Value::Null),
             NamedActor::Other => {}
         }
-        let result = solstone_core_entity::record_entity_resolution(
+        Ok(solstone_core_entity::resolve_activity_name(
             root,
             name,
             &entities,
-            json!({"kind":"facet","facet":facet}),
+            facet,
             json!({"lane":"talent.story","facet":facet,"day":day,"record_id":record_id,"field":field}),
             90.0,
-            false,
         )
-        .map_err(|error| error.to_string())?;
-        Ok(
-            if matches!(
-                result.outcome,
-                solstone_core_entity::EntityResolutionOutcome::Resolved
-            ) {
-                result
-                    .entity_index
-                    .and_then(|index| entities[index].id.clone())
-                    .map_or(Value::Null, Value::String)
-            } else {
-                Value::Null
-            },
-        )
+        .map_err(|error| error.to_string())?
+        .map_or(Value::Null, Value::String))
     };
     let mut relations = Vec::new();
     for item in value["relations"].as_array().unwrap() {

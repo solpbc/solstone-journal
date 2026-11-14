@@ -17,7 +17,7 @@ pub use archive_dedupe::{archive_dedupe_akas, archive_dedupe_emails, archive_ded
 pub use resolution::{
     EntityResolution, EntityResolutionEntity, EntityResolutionError, EntityResolutionOutcome,
     ResolutionCandidate, record_entity_resolution, record_entity_resolution_checked,
-    record_entity_resolution_from_name_evidence,
+    record_entity_resolution_from_name_evidence, resolve_activity_name,
 };
 pub use review_owner::{ReviewOwnerConflictKind, ReviewOwnerError};
 pub use solstone_core_journal_io::FileLock;
