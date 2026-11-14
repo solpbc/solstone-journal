@@ -766,7 +766,11 @@ fn erase_linked_within(journal: &Path, erased: &Item) {
 pub fn stretch_members(journal: &Path, id: &str) -> Result<Vec<Item>, TrashError> {
     let mut members: Vec<Item> = all_items(journal)?
         .into_iter()
-        .filter(|item| item.stretch.as_ref().is_some_and(|stretch| stretch.id == id))
+        .filter(|item| {
+            item.stretch
+                .as_ref()
+                .is_some_and(|stretch| stretch.id == id)
+        })
         .collect();
     members.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(members)
@@ -832,7 +836,10 @@ pub fn recover_stretch(
                         && other.paths.iter().any(|held| holds_needed(held, need))
                 });
                 if let Some(other) = outside {
-                    return Err(refused_code(STRETCH_NEEDS, Some(("item", other.id.clone()))));
+                    return Err(refused_code(
+                        STRETCH_NEEDS,
+                        Some(("item", other.id.clone())),
+                    ));
                 }
                 let met_inside = members
                     .iter()
@@ -868,7 +875,10 @@ pub fn recover_stretch(
         if let Err(error) = attach_as(journal, kinds, &item.id, action, surface, None)
             && first_error.is_none()
         {
-            log::warn!("trash item {}: recover of its stretch left for the sweep: {error}", item.id);
+            log::warn!(
+                "trash item {}: recover of its stretch left for the sweep: {error}",
+                item.id
+            );
             first_error = Some(TrashError::Unfinished(item.id.clone()));
         }
     }
@@ -929,7 +939,10 @@ pub fn erase_stretch(
     for item in members.iter().chain(needing.iter()) {
         match finish_erase(journal, item) {
             Ok(()) => erase_linked_within(journal, item),
-            Err(error) => log::warn!("trash item {}: erase of its stretch left for the sweep: {error}", item.id),
+            Err(error) => log::warn!(
+                "trash item {}: erase of its stretch left for the sweep: {error}",
+                item.id
+            ),
         }
     }
     Ok(members)
@@ -1337,7 +1350,10 @@ fn detach_set_as(
     let results = run_set(journal, kinds, &mut set, false);
     drop(running);
     remove_set_lock(journal, &set.id);
-    Ok((stretch, results.into_iter().map(|(_, result)| result).collect()))
+    Ok((
+        stretch,
+        results.into_iter().map(|(_, result)| result).collect(),
+    ))
 }
 
 /// Work through what of a set is still owed. `resuming` is a sweep finishing
@@ -1713,16 +1729,26 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                 })
             }
             State::Trashed if item.stretch.is_some() => {
-                let id = item.stretch.as_ref().map(|stretch| stretch.id.clone()).unwrap_or_default();
+                let id = item
+                    .stretch
+                    .as_ref()
+                    .map(|stretch| stretch.id.clone())
+                    .unwrap_or_default();
                 // A stretch is due when the last of it is, and the timer erases
                 // it whole, as the owner would.
                 match stretch_due.get(&id) {
                     Some(at) if *at <= now => {
                         if stretch_erased.insert(id.clone()) {
-                            erase_stretch(journal, &id, Action::Erase, timer_surface(), &OperationId::fresh(now))
-                                .map(|erased| {
-                                    swept.erased += erased.len();
-                                })
+                            erase_stretch(
+                                journal,
+                                &id,
+                                Action::Erase,
+                                timer_surface(),
+                                &OperationId::fresh(now),
+                            )
+                            .map(|erased| {
+                                swept.erased += erased.len();
+                            })
                         } else {
                             Ok(())
                         }
@@ -1734,11 +1760,10 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                 }
             }
             State::Trashed => match item.erase_at() {
-                Some(at) if at <= now => {
-                    erase(journal, &item.id, Action::Erase, timer_surface()).map(|()| {
+                Some(at) if at <= now => erase(journal, &item.id, Action::Erase, timer_surface())
+                    .map(|()| {
                         swept.erased += 1;
-                    })
-                }
+                    }),
                 Some(_) => {
                     swept.waiting += 1;
                     Ok(())
@@ -1926,10 +1951,13 @@ fn removal(
     action: Action,
     surface: Surface,
 ) -> Removal {
-    let span = item.stretch.as_ref().map(|stretch| solstone_core_removals::Span {
-        from: stretch.from.clone(),
-        to: stretch.to.clone(),
-    });
+    let span = item
+        .stretch
+        .as_ref()
+        .map(|stretch| solstone_core_removals::Span {
+            from: stretch.from.clone(),
+            to: stretch.to.clone(),
+        });
     match shared {
         Some(operation) => {
             Removal::with_id(journal, OperationId::recorded(operation), action, surface)
@@ -3291,7 +3319,10 @@ mod tests {
         assert_eq!(members.len(), 2);
         assert!(stretches_unfinished(&root).is_empty());
         for member in &members {
-            assert_eq!(member.stretch.as_ref().map(|s| s.id.as_str()), Some(operation));
+            assert_eq!(
+                member.stretch.as_ref().map(|s| s.id.as_str()),
+                Some(operation)
+            );
             assert_eq!(member.trashed_at, confirmed);
             assert_eq!(member.erase_at, "2026-11-18T00:00:00.000Z");
         }
@@ -3351,12 +3382,25 @@ mod tests {
         let stretch = stretch_of_people(&root, &kind);
         kind.balks.set(true);
         let operation = OperationId::fresh(Utc::now());
-        let stopped = recover_stretch(&root, &[&kind], &stretch.id, Action::Recover, web(), &operation);
-        assert!(matches!(stopped, Err(TrashError::Unfinished(_))), "{stopped:?}");
+        let stopped = recover_stretch(
+            &root,
+            &[&kind],
+            &stretch.id,
+            Action::Recover,
+            web(),
+            &operation,
+        );
+        assert!(
+            matches!(stopped, Err(TrashError::Unfinished(_))),
+            "{stopped:?}"
+        );
         let members = stretch_members(&root, &stretch.id).unwrap();
         assert_eq!(members.len(), 2);
         assert!(members.iter().all(|item| item.state == State::Attaching));
-        assert!(list(&root).unwrap().is_empty(), "no part of it waits as trashed");
+        assert!(
+            list(&root).unwrap().is_empty(),
+            "no part of it waits as trashed"
+        );
         kind.balks.set(false);
         sweep(&root, &[&kind], Utc::now());
         assert!(stretch_members(&root, &stretch.id).unwrap().is_empty());

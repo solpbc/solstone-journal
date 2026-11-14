@@ -82,11 +82,23 @@ fn afternoon() -> TempDir {
     }
     for key in ["135800_300", "141500_300"] {
         write(root, &format!("{}/audio.m4a", seg("phone", key)), b"a");
-        write(root, &format!("{}/location.jsonl", seg("phone", key)), b"{}\n");
+        write(
+            root,
+            &format!("{}/location.jsonl", seg("phone", key)),
+            b"{}\n",
+        );
     }
     // Before and after: not in it.
-    write(root, &format!("{}/audio.flac", seg("laptop", "120000_300")), b"a");
-    write(root, &format!("{}/audio.flac", seg("laptop", "170000_300")), b"a");
+    write(
+        root,
+        &format!("{}/audio.flac", seg("laptop", "120000_300")),
+        b"a",
+    );
+    write(
+        root,
+        &format!("{}/audio.flac", seg("laptop", "170000_300")),
+        b"a",
+    );
     // A body window (Apple Health, hourly) and the day's totals.
     write(
         root,
@@ -99,7 +111,12 @@ fn afternoon() -> TempDir {
         b"{}\n",
     );
     // An import inside, and one across the end.
-    import(root, INSIDE_ID, "audio", &[&seg("import.audio", "141000_300")]);
+    import(
+        root,
+        INSIDE_ID,
+        "audio",
+        &[&seg("import.audio", "141000_300")],
+    );
     import(
         root,
         ACROSS_ID,
@@ -111,12 +128,32 @@ fn afternoon() -> TempDir {
         ],
     );
     // An agent's memory of the afternoon: not recorded then.
-    write(root, &format!("{}/memory.md", seg("agent-memory-claude", "143000_300")), b"m");
+    write(
+        root,
+        &format!("{}/memory.md", seg("agent-memory-claude", "143000_300")),
+        b"m",
+    );
     // Arriving and processing.
-    write(root, &format!("{}/audio.flac", seg("phone", "144000_300")), b"a");
-    write(root, &format!("{}/.tmp_ingest-stage.tmp", seg("phone", "144000_300")), b"");
-    write(root, &format!("{}/audio.flac", seg("phone", "145000_300")), b"a");
-    write(root, &format!("{}/.analyzing_audio", seg("phone", "145000_300")), b"{}");
+    write(
+        root,
+        &format!("{}/audio.flac", seg("phone", "144000_300")),
+        b"a",
+    );
+    write(
+        root,
+        &format!("{}/.tmp_ingest-stage.tmp", seg("phone", "144000_300")),
+        b"",
+    );
+    write(
+        root,
+        &format!("{}/audio.flac", seg("phone", "145000_300")),
+        b"a",
+    );
+    write(
+        root,
+        &format!("{}/.analyzing_audio", seg("phone", "145000_300")),
+        b"{}",
+    );
     temp
 }
 
@@ -192,7 +229,10 @@ fn a_stretch_takes_every_source_overlapping_it_and_names_what_stays() {
         .collect();
     assert_eq!(why.get("phone/144000_300"), Some(&Why::Arriving));
     assert_eq!(why.get("phone/145000_300"), Some(&Why::Processing));
-    assert_eq!(why.get("import.apple_health/000000_86400"), Some(&Why::WholeDay));
+    assert_eq!(
+        why.get("import.apple_health/000000_86400"),
+        Some(&Why::WholeDay)
+    );
     assert_eq!(why.len(), 3, "{why:?}");
     // The import inside goes whole; the one across the end keeps its upload.
     let imports: BTreeMap<&str, bool> = plan
@@ -211,9 +251,15 @@ fn a_stretch_is_one_thing_in_the_trash_recovered_and_erased_whole() {
     let temp = afternoon();
     let root = temp.path();
     let earlier = trash_earlier(root, &seg("laptop", "140500_300"));
-    let outcome = trash(root, at("2026-08-01T14:00"), at("2026-08-01T15:30"), web(), false)
-        .unwrap()
-        .unwrap();
+    let outcome = trash(
+        root,
+        at("2026-08-01T14:00"),
+        at("2026-08-01T15:30"),
+        web(),
+        false,
+    )
+    .unwrap()
+    .unwrap();
     assert!(outcome.refused.is_empty(), "{:?}", outcome.refused);
     assert_eq!(outcome.imports_taken, vec![INSIDE_ID.to_owned()]);
     let members = solstone_core_trash::stretch_members(root, &outcome.stretch.id).unwrap();
@@ -222,7 +268,11 @@ fn a_stretch_is_one_thing_in_the_trash_recovered_and_erased_whole() {
     assert_eq!(members.len(), 9);
     let erase_at: BTreeSet<&str> = members.iter().map(|item| item.erase_at.as_str()).collect();
     assert_eq!(erase_at.len(), 1, "one erase date: {erase_at:?}");
-    assert!(members.iter().all(|item| item.action == Action::StretchDelete));
+    assert!(
+        members
+            .iter()
+            .all(|item| item.action == Action::StretchDelete)
+    );
     // The inside import's upload is in the trash with it; the across import's
     // stays, and its segment in the stretch names it.
     assert!(!root.join(format!("imports/{INSIDE_ID}")).exists());
@@ -233,9 +283,21 @@ fn a_stretch_is_one_thing_in_the_trash_recovered_and_erased_whole() {
         .unwrap();
     assert_eq!(needing.needs, vec![format!("imports/{ACROSS_ID}")]);
     // What stays stays.
-    assert!(root.join(seg("phone", "144000_300")).join("audio.flac").is_file());
-    assert!(root.join(seg("laptop", "120000_300")).join("audio.flac").is_file());
-    assert!(root.join(seg("agent-memory-claude", "143000_300")).join("memory.md").is_file());
+    assert!(
+        root.join(seg("phone", "144000_300"))
+            .join("audio.flac")
+            .is_file()
+    );
+    assert!(
+        root.join(seg("laptop", "120000_300"))
+            .join("audio.flac")
+            .is_file()
+    );
+    assert!(
+        root.join(seg("agent-memory-claude", "143000_300"))
+            .join("memory.md")
+            .is_file()
+    );
     // Recover every member: everything comes back as it was, the earlier item
     // stays in the trash.
     for member in &members {
@@ -244,28 +306,67 @@ fn a_stretch_is_one_thing_in_the_trash_recovered_and_erased_whole() {
         })
         .unwrap();
     }
-    assert!(solstone_core_trash::stretch_members(root, &outcome.stretch.id).unwrap().is_empty());
-    assert!(root.join(seg("laptop", "152500_600")).join("screen.webm").is_file());
+    assert!(
+        solstone_core_trash::stretch_members(root, &outcome.stretch.id)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        root.join(seg("laptop", "152500_600"))
+            .join("screen.webm")
+            .is_file()
+    );
     assert!(root.join(format!("imports/{INSIDE_ID}/talk.m4a")).is_file());
-    assert!(root.join(seg("import.apple_health", "140000_3600")).join("body.jsonl").is_file());
+    assert!(
+        root.join(seg("import.apple_health", "140000_3600"))
+            .join("body.jsonl")
+            .is_file()
+    );
     assert!(solstone_core_trash::item(root, &earlier).unwrap().is_some());
     // Delete it again and erase it: nothing of it is left.
-    let again = trash(root, at("2026-08-01T14:00"), at("2026-08-01T15:30"), web(), true)
-        .unwrap()
-        .unwrap();
+    let again = trash(
+        root,
+        at("2026-08-01T14:00"),
+        at("2026-08-01T15:30"),
+        web(),
+        true,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(again.erased, again.moved);
-    assert!(solstone_core_trash::stretch_members(root, &again.stretch.id).unwrap().is_empty());
+    assert!(
+        solstone_core_trash::stretch_members(root, &again.stretch.id)
+            .unwrap()
+            .is_empty()
+    );
     assert!(!root.join(format!("imports/{INSIDE_ID}")).exists());
-    assert!(!root.join(seg("laptop", "140000_300")).join("audio.flac").exists());
+    assert!(
+        !root
+            .join(seg("laptop", "140000_300"))
+            .join("audio.flac")
+            .exists()
+    );
 }
 
 #[test]
 fn a_stretch_across_midnight_takes_both_days() {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    write(root, "chronicle/20260801/laptop/235800_600/audio.flac", b"a");
-    write(root, "chronicle/20260802/laptop/000500_300/audio.flac", b"a");
-    write(root, "chronicle/20260802/laptop/010000_300/audio.flac", b"a");
+    write(
+        root,
+        "chronicle/20260801/laptop/235800_600/audio.flac",
+        b"a",
+    );
+    write(
+        root,
+        "chronicle/20260802/laptop/000500_300/audio.flac",
+        b"a",
+    );
+    write(
+        root,
+        "chronicle/20260802/laptop/010000_300/audio.flac",
+        b"a",
+    );
     let plan = plan(root, at("2026-08-01T23:59"), at("2026-08-02T00:30")).unwrap();
     assert_eq!(
         taken(&plan),
@@ -284,8 +385,16 @@ fn a_stretch_across_midnight_takes_both_days() {
 fn an_instant_is_in_a_stretch_only_when_it_falls_inside() {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    write(root, "chronicle/20260801/import.image/140000_0/photo.jpg", b"p");
-    write(root, "chronicle/20260801/import.image/150000_0/photo.jpg", b"p");
+    write(
+        root,
+        "chronicle/20260801/import.image/140000_0/photo.jpg",
+        b"p",
+    );
+    write(
+        root,
+        "chronicle/20260801/import.image/150000_0/photo.jpg",
+        b"p",
+    );
     let plan = plan(root, at("2026-08-01T14:00"), at("2026-08-01T15:00")).unwrap();
     assert_eq!(
         taken(&plan),
@@ -299,7 +408,11 @@ fn an_instant_is_in_a_stretch_only_when_it_falls_inside() {
 fn a_stretch_covering_the_day_takes_its_body_totals() {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    write(root, "chronicle/20260801/import.apple_health/000000_86400/body.jsonl", b"{}\n");
+    write(
+        root,
+        "chronicle/20260801/import.apple_health/000000_86400/body.jsonl",
+        b"{}\n",
+    );
     let plan = plan(root, at("2026-08-01T00:00"), at("2026-08-02T00:00")).unwrap();
     assert_eq!(plan.segments.len(), 1);
     assert!(plan.left_out.is_empty());
@@ -328,7 +441,11 @@ fn a_running_import_is_left_out() {
     )
     .unwrap();
     let plan = plan(root, at("2026-08-01T14:00"), at("2026-08-01T15:30")).unwrap();
-    assert!(plan.left_out.iter().any(|left| left.why == Why::ImportRunning
-        && left.stream == "import.audio"
-        && left.key == "141000_300"));
+    assert!(
+        plan.left_out
+            .iter()
+            .any(|left| left.why == Why::ImportRunning
+                && left.stream == "import.audio"
+                && left.key == "141000_300")
+    );
 }

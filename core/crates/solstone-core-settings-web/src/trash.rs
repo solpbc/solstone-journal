@@ -69,7 +69,10 @@ pub async fn list(journal_root: PathBuf) -> Response {
             match &item.stretch {
                 None => stopped_rows.push(stopped_view(&journal_root, item, &items)),
                 Some(stretch) if shown_stretches.contains(&stretch.id) => {}
-                Some(stretch) => match stopped_stretches.iter_mut().find(|(id, _)| *id == stretch.id) {
+                Some(stretch) => match stopped_stretches
+                    .iter_mut()
+                    .find(|(id, _)| *id == stretch.id)
+                {
                     Some((_, members)) => members.push(item),
                     None => stopped_stretches.push((stretch.id.clone(), vec![item])),
                 },
@@ -121,10 +124,16 @@ fn stretch_view(
     let Some(first) = members.first() else {
         return Value::Null;
     };
-    let parts: Vec<&solstone_core_trash::Stretch> =
-        members.iter().filter_map(|item| item.stretch.as_ref()).collect();
+    let parts: Vec<&solstone_core_trash::Stretch> = members
+        .iter()
+        .filter_map(|item| item.stretch.as_ref())
+        .collect();
     let id = parts.first().map(|stretch| stretch.id.clone());
-    let from = parts.iter().map(|part| part.from.as_str()).filter(|at| !at.is_empty()).min();
+    let from = parts
+        .iter()
+        .map(|part| part.from.as_str())
+        .filter(|at| !at.is_empty())
+        .min();
     let to = parts.iter().map(|part| part.to.as_str()).max();
     let kinds: std::collections::BTreeSet<&str> = parts
         .iter()
@@ -696,15 +705,27 @@ fn erase_one(
 ) -> Result<Vec<String>, TrashError> {
     match stretch_of(root, id) {
         Some(stretch) => {
-            match solstone_core_trash::erase_stretch(root, &stretch, action, page_surface(None), operation) {
+            match solstone_core_trash::erase_stretch(
+                root,
+                &stretch,
+                action,
+                page_surface(None),
+                operation,
+            ) {
                 Ok(items) => Ok(items.into_iter().map(|item| item.id).collect()),
                 // Erased already with the rest of it, under this act.
                 Err(TrashError::NotInTrash) => Ok(vec![id.to_owned()]),
                 Err(error) => Err(error),
             }
         }
-        None => erased(solstone_core_trash::erase_in(root, id, action, page_surface(None), operation))
-            .map(|()| vec![id.to_owned()]),
+        None => erased(solstone_core_trash::erase_in(
+            root,
+            id,
+            action,
+            page_surface(None),
+            operation,
+        ))
+        .map(|()| vec![id.to_owned()]),
     }
 }
 
@@ -901,7 +922,11 @@ mod tests {
     /// 9:00 and 9:05 segments.
     fn trash_stretch(root: &Path) -> String {
         fs::create_dir_all(root.join("chronicle/20260731/field/090500_300")).unwrap();
-        fs::write(root.join("chronicle/20260731/field/090500_300/audio.flac"), b"raw").unwrap();
+        fs::write(
+            root.join("chronicle/20260731/field/090500_300/audio.flac"),
+            b"raw",
+        )
+        .unwrap();
         let at = |value| solstone_core_import::stretch_trash::parse_wall(value).unwrap();
         solstone_core_import::stretch_trash::trash(
             root,
@@ -946,7 +971,10 @@ mod tests {
         )
         .await;
         assert_eq!(answer["failed"], json!([]), "{answer}");
-        assert!(root.join("chronicle/20260731/field/090500_300/audio.flac").is_file());
+        assert!(
+            root.join("chronicle/20260731/field/090500_300/audio.flac")
+                .is_file()
+        );
         assert!(solstone_core_trash::item(root, &earlier).unwrap().is_some());
         let again = trash_stretch(root);
         let (_, answer) = call(
@@ -957,7 +985,11 @@ mod tests {
         )
         .await;
         assert_eq!(answer["failed"], json!([]), "{answer}");
-        assert!(solstone_core_trash::stretch_members(root, &again).unwrap().is_empty());
+        assert!(
+            solstone_core_trash::stretch_members(root, &again)
+                .unwrap()
+                .is_empty()
+        );
         assert!(solstone_core_trash::item(root, &earlier).unwrap().is_some());
     }
 

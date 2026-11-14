@@ -31,7 +31,9 @@ struct StretchBody {
     erase: bool,
 }
 
-fn read_body(body: &Bytes) -> Result<(chrono::NaiveDateTime, chrono::NaiveDateTime, bool), Response> {
+fn read_body(
+    body: &Bytes,
+) -> Result<(chrono::NaiveDateTime, chrono::NaiveDateTime, bool), Response> {
     let unreadable = || {
         legacy_error_response(
             "invalid_request",
@@ -107,10 +109,8 @@ pub(crate) async fn delete_stretch(
             .and_then(|value| value.to_str().ok()),
     );
     let root = state.journal_root.clone();
-    match tokio::task::spawn_blocking(move || {
-        stretch_trash::trash(&root, from, to, surface, erase)
-    })
-    .await
+    match tokio::task::spawn_blocking(move || stretch_trash::trash(&root, from, to, surface, erase))
+        .await
     {
         Ok(Ok(Ok(outcome))) => Json(json!({
             "success": true,

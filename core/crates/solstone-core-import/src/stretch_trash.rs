@@ -169,8 +169,18 @@ pub fn plan(journal: &Path, from: NaiveDateTime, to: NaiveDateTime) -> Result<Pl
     let (mut lo, mut hi) = (from, to);
     loop {
         let mut plan = plan_once(journal, lo, hi);
-        let taken_lo = plan.segments.iter().map(|found| found.start).min().unwrap_or(lo);
-        let taken_hi = plan.segments.iter().map(|found| found.end).max().unwrap_or(hi);
+        let taken_lo = plan
+            .segments
+            .iter()
+            .map(|found| found.start)
+            .min()
+            .unwrap_or(lo);
+        let taken_hi = plan
+            .segments
+            .iter()
+            .map(|found| found.end)
+            .max()
+            .unwrap_or(hi);
         let (next_lo, next_hi) = (lo.min(taken_lo), hi.max(taken_hi));
         if (next_lo, next_hi) == (lo, hi) {
             plan.asked_from = wall(from);
@@ -256,7 +266,11 @@ fn plan_once(journal: &Path, from: NaiveDateTime, to: NaiveDateTime) -> Plan {
     segments.sort_by(|left, right| {
         (left.start, &left.stream, &left.key).cmp(&(right.start, &right.stream, &right.key))
     });
-    let shown_from = segments.iter().map(|found| found.start).min().unwrap_or(from);
+    let shown_from = segments
+        .iter()
+        .map(|found| found.start)
+        .min()
+        .unwrap_or(from);
     let shown_to = segments.iter().map(|found| found.end).max().unwrap_or(to);
     let kinds: BTreeSet<&'static str> = segments
         .iter()
@@ -372,7 +386,12 @@ fn span(day: &str, key: &str) -> Option<(NaiveDateTime, NaiveDateTime)> {
 
 /// Whether a segment spanning `start`..`end` overlaps the stretch: any time in
 /// common, or, for an instant, the instant inside it.
-fn overlaps(start: NaiveDateTime, end: NaiveDateTime, from: NaiveDateTime, to: NaiveDateTime) -> bool {
+fn overlaps(
+    start: NaiveDateTime,
+    end: NaiveDateTime,
+    from: NaiveDateTime,
+    to: NaiveDateTime,
+) -> bool {
     if start == end {
         from <= start && start < to
     } else {

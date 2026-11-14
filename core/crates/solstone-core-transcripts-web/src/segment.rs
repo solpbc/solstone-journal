@@ -85,15 +85,25 @@ fn in_trash(root: &Path, day: &str, stream: &str, key: &str) -> Option<Value> {
         .find_map(|id| solstone_core_trash::item(root, &id).ok().flatten())?;
     // Only a segment that left whole: its originals alone in the trash leave
     // the segment itself in the journal.
-    if !matches!(holder.unit, solstone_core_removals::Unit::Segment { .. } | solstone_core_removals::Unit::Import { .. }) {
+    if !matches!(
+        holder.unit,
+        solstone_core_removals::Unit::Segment { .. } | solstone_core_removals::Unit::Import { .. }
+    ) {
         return None;
     }
     let mut trash = serde_json::json!({"id": holder.id, "erase_at": holder.erase_at});
     if let Some(stretch) = holder.stretch {
         // The whole stretch's bounds: what all of it, waiting now, spans.
         let members = solstone_core_trash::stretch_members(root, &stretch.id).unwrap_or_default();
-        let parts: Vec<_> = members.iter().filter_map(|item| item.stretch.as_ref()).collect();
-        let from = parts.iter().map(|part| part.from.as_str()).filter(|at| !at.is_empty()).min();
+        let parts: Vec<_> = members
+            .iter()
+            .filter_map(|item| item.stretch.as_ref())
+            .collect();
+        let from = parts
+            .iter()
+            .map(|part| part.from.as_str())
+            .filter(|at| !at.is_empty())
+            .min();
         let to = parts.iter().map(|part| part.to.as_str()).max();
         trash["stretch"] = serde_json::json!({"id": stretch.id, "from": from, "to": to});
     }
