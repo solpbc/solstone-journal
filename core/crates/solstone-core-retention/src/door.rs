@@ -691,7 +691,7 @@ pub fn clear_beside_tombstone(journal: &Path, target: &Target, cid: &str) -> Res
     if !ours {
         return Ok(0);
     }
-    let mut cleared = 0;
+    let mut cleared: usize = 0;
     for entry in std::fs::read_dir(&path).map_err(|error| error.to_string())? {
         let entry = entry.map_err(|error| error.to_string())?;
         let name = entry.file_name();
@@ -711,7 +711,7 @@ pub fn clear_beside_tombstone(journal: &Path, target: &Target, cid: &str) -> Res
             std::fs::remove_file(&place)
         };
         match gone {
-            Ok(()) => cleared += 1,
+            Ok(()) => cleared = cleared.saturating_add(1),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(format!("{}: {error}", place.display())),
         }

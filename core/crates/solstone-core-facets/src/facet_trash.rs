@@ -241,12 +241,12 @@ impl Kind for Facets<'_> {
                 .iter()
                 .filter_map(|path| path.strip_prefix("facets/"))
             {
-                if !facet.contains('/') {
-                    if let Err(error) = crate::prune_removed_detections(journal, facet) {
-                        log::warn!(
-                            "trash: {facet}'s names weren't checked for removed recordings: {error}"
-                        );
-                    }
+                if !facet.contains('/')
+                    && let Err(error) = crate::prune_removed_detections(journal, facet)
+                {
+                    log::warn!(
+                        "trash: {facet}'s names weren't checked for removed recordings: {error}"
+                    );
                 }
             }
             // What names the facet comes back with it: search reads every
