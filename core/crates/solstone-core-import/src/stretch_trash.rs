@@ -472,6 +472,8 @@ fn in_flight(journal: &Path, day: &str, stream: &str, name: &str, place: &Path) 
 pub struct Outcome {
     /// The stretch, as its items carry it.
     pub stretch: Stretch,
+    /// When its items are erased.
+    pub erase_at: Option<String>,
     /// The owner's local day its items are erased on, `YYYYMMDD`.
     pub erase_day: Option<String>,
     /// Things it moved into the trash (an import taken whole is one).
@@ -573,6 +575,10 @@ pub fn trash(
             plan.stretch(),
         )
     })?;
+    let erase_at = results.iter().find_map(|result| match result {
+        SetResult::Moved { item, .. } => Some(item.erase_at.clone()),
+        SetResult::Refused(_) => None,
+    });
     let erase_day = results.iter().find_map(|result| match result {
         SetResult::Moved { item, .. } => item
             .erase_at()
@@ -581,6 +587,7 @@ pub fn trash(
     });
     let mut outcome = Outcome {
         stretch,
+        erase_at,
         erase_day,
         moved: 0,
         erased: 0,

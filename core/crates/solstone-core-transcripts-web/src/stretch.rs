@@ -115,6 +115,7 @@ pub(crate) async fn delete_stretch(
         Ok(Ok(Ok(outcome))) => Json(json!({
             "success": true,
             "stretch": outcome.stretch,
+            "erase_at": outcome.erase_at,
             "moved": outcome.moved,
             "erased": erase && outcome.erased == outcome.moved,
             "imports_taken": outcome.imports_taken,
