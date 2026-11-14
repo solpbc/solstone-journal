@@ -59,12 +59,12 @@ function settle() {
 
 function renderEmptyStateHTML(workspace, copy) {
   const start = workspace.indexOf('function emptyStateHTML() {');
-  const end = workspace.indexOf('\nfunction clientStatsHTML', start);
+  const end = workspace.indexOf('function clientStatsHTML', start);
   assert.notStrictEqual(start, -1);
   assert.notStrictEqual(end, -1);
   const context = vm.createContext({
-    window: { createViewReady: () => () => {},
-      LinkCopy: copy,
+    linkCopy: copy,
+    window: {
       NetworkRender: { resolve: (values, key) => values[key] || '' },
       SurfaceState: {
         empty: ({ heading, desc, action }) => `${heading}|${desc}|${action}`,
@@ -83,7 +83,8 @@ function localNetworkEnvironment(workspace, copy) {
   assert.notStrictEqual(end, -1);
   const nodes = new Map();
   const context = vm.createContext({
-    window: { createViewReady: () => () => {}, LinkCopy: copy },
+    linkCopy: copy,
+    window: {},
     document: { getElementById(id) {
       if (!nodes.has(id)) nodes.set(id, { hidden: false, textContent: '' });
       return nodes.get(id);
@@ -831,7 +832,8 @@ async function main() {
       const section = { hidden: true, querySelector: () => disclosure };
       const context = vm.createContext({
         document: { getElementById: (id) => ({ 'link-identity-header': section, 'link-identity-id-value': idValue })[id] || null },
-        window: { createViewReady: () => () => {}, apiJson: async () => body },
+        ctx: { read: async () => body },
+        window: {},
         validMarkSpec: () => false,
         applyIdentityToAll() {},
       });
@@ -1131,13 +1133,15 @@ async function main() {
   await testCase('unpair asks with the unpair copy and removes nothing when declined', async () => {
     const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/network_copy.json'), 'utf8'));
     const start = workspace.indexOf('function clientNameFor(button) {');
-    const end = workspace.indexOf('\nfunction initClients', start);
+    const end = workspace.indexOf('function landOnDevices', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
     const asked = [];
     const fetched = [];
     const context = vm.createContext({
-      window: { createViewReady: () => () => {}, LinkCopy: copy },
+      linkCopy: copy,
+      ctx: { disposed: false },
+      window: {},
       confirm: (message) => { asked.push(message); return false; },
       fetch: async (url) => { fetched.push(url); return response({}); },
     });
@@ -1154,12 +1158,12 @@ async function main() {
 
   await testCase('G3-208: only a never-delivered row offers forget, and it asks in place', async () => {
     const start = workspace.indexOf('const CHECK_IN_NOTE =');
-    const end = workspace.indexOf('\nfunction renderClients', start);
+    const end = workspace.indexOf('function renderClients', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
     globalThis.relativeTime = () => '2 months';
     const context = vm.createContext({
-      window: { createViewReady: () => () => {}, NetworkRender: require(activeAsset), JournalFormat: { timestamp: () => 'Sep 1, 11:52 PM', day: () => 'Jul 2' } },
+      window: { NetworkRender: require(activeAsset), JournalFormat: { timestamp: () => 'Sep 1, 11:52 PM', day: () => 'Jul 2' } },
       clientsList: { addEventListener() {} },
       escapeHtml: (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
     });
@@ -1756,7 +1760,7 @@ async function main() {
     });
     const deviceAddressesRow = { hidden: true };
     const start = workspace.indexOf('function renderDeviceAddresses(');
-    const end = workspace.indexOf('\n  function setHomeCandidateRadiosDisabled', start);
+    const end = workspace.indexOf('function setHomeCandidateRadiosDisabled', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
     const context = vm.createContext({
@@ -1809,11 +1813,12 @@ async function main() {
     };
 
     const start = workspace.indexOf('function renderHomeAddress(');
-    const end = workspace.indexOf('\n  function renderReach', start);
+    const end = workspace.indexOf('function renderReach', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
     const context = vm.createContext({
-      window: { createViewReady: () => () => {}, LinkCopy: copy },
+      linkCopy: copy,
+      window: {},
       document: { activeElement: null },
       ...elements,
     });
@@ -1850,7 +1855,7 @@ async function main() {
     assert.ok(workspace.includes('data-solstone-outside'));
 
     const start = workspace.indexOf('async function startPrivateLinkSetup() {');
-    const end = workspace.indexOf('\n  async function disablePrivateLink() {', start);
+    const end = workspace.indexOf('async function disablePrivateLink() {', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
 
@@ -1885,6 +1890,8 @@ async function main() {
     const navigator = { userAgent: 'Mozilla/5.0 (X11; Linux x86_64)' };
     const context = vm.createContext({
       window,
+      linkCopy: {},
+      ctx: { disposed: false },
       document: {
         getElementById: () => ({ setAttribute() {}, disabled: false }),
         querySelectorAll: () => [],
@@ -1911,6 +1918,8 @@ async function main() {
     assert.strictEqual(opened.length, 0, 'capable host does not call window.open');
     assert.strictEqual(location.assigned, 'https://services.example/consent', 'assigned consent portal URL');
   });
+
+  cases += await require(path.join(__dirname, 'network_contract_dom.js'))(manifestDir);
 
   console.log(`DOM CASES: ${cases} passed`);
 }
