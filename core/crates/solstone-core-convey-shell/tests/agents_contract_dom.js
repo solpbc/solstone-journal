@@ -320,6 +320,9 @@ class Element extends Target {
   set outerHTML(html) { const holder = new Element(this.ownerDocument, "div"); parseInto(this.ownerDocument, holder, html); const parent = this.parentNode; if (!parent) return; const at = parent.childNodes.indexOf(this); parent.removeChild(this); holder.childNodes.forEach((n) => { n.parentNode = parent; }); parent.childNodes.splice(at, 0, ...holder.childNodes); }
   focus() {
     if (!this.isConnected || !this.checkVisibility()) return;
+    // As in a browser, only a focusable element takes focus: a control, a link, or one with a tabindex.
+    const focusable = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY'].includes(this.tagName) || (this.tagName === 'A' && this.hasAttribute('href')) || this.hasAttribute('tabindex');
+    if (!focusable) return;
     // The shell's modal layer: outside an open dialog the page is inert,
     // its ancestors excepted, until the layer reconciles.
     const dialog = this.ownerDocument.inertDialog;
@@ -395,7 +398,9 @@ function makeDocument(location) {
   Object.defineProperty(doc, 'activeElement', {
     get() {
       if (!focused || focused === doc.body) return doc.body;
-      if (!focused.isConnected || !focused.checkVisibility() || focused.disabled) return doc.body;
+      // A browser holds no node it has taken out of the page.
+      if (!focused.isConnected) { focused = doc.body; return doc.body; }
+      if (!focused.checkVisibility() || focused.disabled) return doc.body;
       return focused;
     },
     set(node) { focused = node; },
@@ -701,6 +706,7 @@ function makePage(env, address = '/app/agents/', { answers } = {}) {
   vm.runInContext(fs.readFileSync(path.join(shell, 'store.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'views.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'router.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(shell, 'focus.js'), 'utf8'), context);
   // The page's router is on, as it is once a contract view has mounted: it owns the history's ids.
   window.solRouter.start('agents');
   page.context = context;
@@ -794,7 +800,9 @@ module.exports = async function agentsContractCases(manifestDir) {
     p.clock.advance(20000);
     await settle();
     assert.ok(p.reads('/app/agents/api/state').length === before + 2, `the poll re-read the state twice (${p.reads('/app/agents/api/state').length - before})`);
+    // One press at a time: a press while its read is out is ignored (busy).
     p.press(p.find('button', 'check again'));
+    await settle();
     p.press(p.find('button', 'check again'));
     await settle();
     assert.ok(p.reads('/app/agents/api/state').length === before + 4, 'each "check again" asks of its own');
@@ -1151,6 +1159,440 @@ module.exports = async function agentsContractCases(manifestDir) {
     await settle();
     assert.ok(q.q('[role="dialog"]') === null, 'the back closed the dialog');
     assert.ok(focusOn(q) === 'MAIN#main-content', `focus is on the workspace (${focusOn(q)})`);
+  });
+
+  // ---- focus that stays where the owner is (each press by the keyboard: focus, then the press)
+
+  const DOOR_OFF = { enabled: false, listening: false, address: 'http://127.0.0.1:7659/mcp' };
+  const DOOR_ON = { enabled: true, listening: true, address: 'http://127.0.0.1:7659/mcp' };
+  const LAN_OFF = { enabled: false, listening: false, port: 7660, fingerprint: 'AA:BB', addresses: [{ url: 'https://192.168.4.47:7660/mcp', listening: false }] };
+  const LAN_ON = { ...LAN_OFF, enabled: true, listening: true, addresses: [{ url: 'https://192.168.4.47:7660/mcp', listening: true }] };
+  const ME_ON = { enabled: true, status: 'on', owner_state: { address: 'abcd1234.solstone.me', status: 'on' } };
+  const BYO = { hostname: 'journal.example.test', enabled: false, account_uri: 'https://acme.example.test/acct/1', caa_record: '0 issue "example.test"',
+    dns_verdict: 'unchecked', socket_listening: false, certificate_active: false, socket_path: '/tmp/test.sock', next_action: 'publish_caa',
+    relay: { address: '203.0.113.24', port: 22, state: 'connected' } };
+  const SECOND = { ...MEMORY, segment: '090000_1', content: 'a second note', created_at: '2026-11-01T09:00:00Z' };
+
+  // A journal whose state answers what its writes did.
+  function living(start, writes = {}) {
+    const box = { st: agentsState(start), memories: [MEMORY, SECOND] };
+    const answers = journal(Object.assign({
+      'GET /app/agents/api/state': () => box.st,
+      [`GET /app/agents/api/memories/${SOURCE}`]: () => ({ memories: box.memories, next: null, complete: true }),
+      'GET /app/agents/api/byo/relay/commands': { setup: 'echo setup', remove: 'echo remove' },
+    }, Object.fromEntries(Object.entries(writes).map(([key, fn]) => [key, (u, opts) => fn(box, u, opts)]))));
+    return { box, answers };
+  }
+  function where(p) {
+    const a = p.doc.activeElement;
+    if (!a || a === p.doc.body) return 'BODY';
+    const named = [...a.attrs.keys()].filter((k) => k.startsWith('data-') || k === 'id' || k === 'aria-label');
+    return `${a.tagName}${named.map((k) => `[${k}=${a.getAttribute(k)}]`).join('')} "${a.textContent.trim().slice(0, 40)}"`;
+  }
+  async function keyPress(p, node) {
+    assert.ok(node, 'the control to press is drawn');
+    node.focus();
+    assert.ok(p.doc.activeElement === node, `the press starts on its control (${where(p)})`);
+    p.press(node);
+    await settle();
+  }
+  function escape(p) {
+    const event = p.doc.dispatch(p.doc.activeElement, { type: 'keydown', key: 'Escape' });
+    return settle().then(() => event);
+  }
+  const lands = (p, node, what) => assert.ok(node && p.doc.activeElement === node, `${what} (focus on ${where(p)})`);
+  const notBusy = (node, what) => assert.ok(node && !node.hasAttribute('aria-busy') && !node.hasAttribute('aria-disabled'), `${what} isn't busy`);
+  // The harness's matcher splits on spaces, so a spaced label is found by hand.
+  const sw = (p, label) => p.qa('[role="switch"]').find((node) => node.getAttribute('aria-label') === label) || null;
+  const row = (p, key) => p.q(`.ag-row[data-connection="${key}"]`);
+  const goTo = async (p, key) => { await keyPress(p, row(p, key)); };
+
+  await test('a switch\'s write: focus stays on the switch, drawn again with its new state', async () => {
+    const { answers } = living({ local_door: DOOR_OFF, lan_door: LAN_OFF }, {
+      'PUT /app/agents/api/local-door': (box) => { box.st = { ...box.st, local_door: DOOR_ON }; return {}; },
+      'PUT /app/agents/api/lan-door': (box) => { box.st = { ...box.st, lan_door: LAN_ON }; return {}; },
+    });
+    const p = await boot(env, '/app/agents/', { answers });
+    const own = sw(p, 'agents on this device');
+    await keyPress(p, own);
+    assert.ok(own.isConnected === false, 'the switch was drawn again');
+    lands(p, sw(p, 'agents on this device'), 'this device on: the same switch');
+    assert.ok(p.doc.activeElement.getAttribute('aria-checked') === 'true', 'now on');
+    await keyPress(p, sw(p, 'agents on your network'));
+    lands(p, sw(p, 'agents on your network'), 'your network on: the same switch');
+    assert.ok(p.doc.activeElement.getAttribute('aria-checked') === 'true', 'now on');
+  });
+
+  await test('a control whose write is out is busy, never disabled, ignores presses, stays busy through a redraw, and clears on its answer', async () => {
+    const { answers } = living({ local_door: DOOR_OFF }, { 'PUT /app/agents/api/local-door': (box) => { box.st = { ...box.st, local_door: DOOR_ON }; return {}; } });
+    const p = await boot(env, '/app/agents/', { answers });
+    p.holds.push((call) => call.method === 'PUT');
+    const own = sw(p, 'agents on this device');
+    await keyPress(p, own);
+    assert.ok(own.getAttribute('aria-busy') === 'true' && own.getAttribute('aria-disabled') === 'true' && !own.hasAttribute('disabled'), 'busy, not disabled');
+    lands(p, own, 'focus stays on it while the write is out');
+    p.press(own);
+    await settle();
+    assert.ok(p.writes().length === 1, `a press while busy writes nothing (${p.writes().length})`);
+    // The 20 s poll draws the page again while the write is out.
+    p.clock.advance(20000);
+    await settle();
+    const redrawn = sw(p, 'agents on this device');
+    assert.ok(redrawn !== own && redrawn.getAttribute('aria-busy') === 'true', 'drawn busy again by the redraw');
+    lands(p, redrawn, 'and focus is still on it');
+    p.holds.length = 0;
+    p.calls.filter((c) => c.method === 'PUT' && !c.settled).forEach((c) => c.answer(answers(c.url, { method: 'PUT' })));
+    await settle();
+    notBusy(sw(p, 'agents on this device'), 'once answered, the switch');
+    lands(p, sw(p, 'agents on this device'), 'focus on the switch');
+  });
+
+  await test('a draw moves nothing when focus wasn\'t in the view: the first draw, and a poll with focus on the page', async () => {
+    const down = { enabled: true, listening: false, reason: 'not_running', address: 'http://127.0.0.1:7659/mcp' };
+    const p = await boot(env, '/app/agents/', { answers: living({ local_door: down }).answers });
+    assert.ok(where(p) === 'BODY', `a full load's first draw leaves focus where it was (${where(p)})`);
+    p.clock.advance(20000);
+    await settle();
+    assert.ok(where(p) === 'BODY', `so does a poll's (${where(p)})`);
+  });
+
+  await test('a draw that opens a dialog leaves focus to the modal layer', async () => {
+    const p = await boot(env);
+    await keyPress(p, p.q('.sh [data-action="connect"]'));
+    assert.ok(p.q('[role="dialog"]'), 'the dialog is open');
+    // The layer puts focus in a dialog it hasn't seen; the view moves nothing itself.
+    assert.ok(where(p) === 'BODY', `the view moved nothing (${where(p)})`);
+  });
+
+  await test('a write that fails leaves focus on the control that sent it, no longer busy', async () => {
+    const p = await boot(env, '/app/agents/', { answers: living({ local_door: DOOR_OFF }).answers });
+    p.statuses.push([(call) => call.method === 'PUT', 503]);
+    const own = sw(p, 'agents on this device');
+    await keyPress(p, own);
+    lands(p, own, 'the switch');
+    notBusy(own, 'the switch');
+    assert.ok(p.notices.length === 1, 'and the error is said');
+  });
+
+  await test('turning a door off from its dialog lands on the switch that opened it', async () => {
+    const { answers } = living({ local_door: DOOR_ON, lan_door: LAN_ON }, {
+      'PUT /app/agents/api/local-door': (box) => { box.st = { ...box.st, local_door: DOOR_OFF }; return {}; },
+      'PUT /app/agents/api/lan-door': (box) => { box.st = { ...box.st, lan_door: LAN_OFF }; return {}; },
+    });
+    const p = await boot(env, '/app/agents/', { answers });
+    await keyPress(p, sw(p, 'agents on this device'));
+    await keyPress(p, p.q('[role="dialog"] [data-action="door-off"]'));
+    assert.ok(p.q('[role="dialog"]') === null, 'the dialog is gone');
+    lands(p, sw(p, 'agents on this device'), 'this device off: its switch');
+    await keyPress(p, sw(p, 'agents on your network'));
+    await keyPress(p, p.q('[role="dialog"] [data-action="lan-door-off"]'));
+    lands(p, sw(p, 'agents on your network'), 'your network off: its switch');
+  });
+
+  await test('a dialog\'s close, by its button or Escape, puts focus back on what opened it', async () => {
+    const p = await boot(env);
+    const opener = () => p.q('.sh [data-action="connect"]');
+    await keyPress(p, opener());
+    p.q('[role="dialog"] [data-close-modal]').focus();
+    await keyPress(p, p.q('[role="dialog"] button[data-close-modal]'));
+    lands(p, opener(), 'connect, close: "connect an agent"');
+    await keyPress(p, opener());
+    p.q('[role="dialog"] button[data-close-modal]').focus();
+    await escape(p);
+    assert.ok(p.q('[role="dialog"]') === null, 'Escape closed it');
+    lands(p, opener(), 'connect, Escape: "connect an agent"');
+    await keyPress(p, sw(p, 'agents on this device'));
+    await keyPress(p, p.find('[role="dialog"] button', 'keep it on'));
+    lands(p, sw(p, 'agents on this device'), 'turn off this device, keep it on: the switch');
+    await goTo(p, 'oauth:g1');
+    const del = () => p.q(`[data-memory-delete="20261101/agent-memory-${SOURCE}/120000_1"]`);
+    await keyPress(p, del());
+    lands(p, p.q('[role="dialog"] [data-memory-confirm]'), 'the delete dialog opens on "move to trash"');
+    await keyPress(p, p.find('[role="dialog"] button', 'cancel'));
+    lands(p, del(), 'delete a memory, cancel: its "delete"');
+    await keyPress(p, del());
+    await escape(p);
+    lands(p, del(), 'delete a memory, Escape: its "delete"');
+  });
+
+  await test('set up solstone.me lands on its next step, and turning it off on its switch', async () => {
+    const { answers } = living({ local_door: DOOR_ON }, { 'PUT /app/agents/api/capability': (box) => { box.st = { ...box.st, enabled: false, status: 'off', owner_state: { address: 'abcd1234.solstone.me', status: 'off' } }; return {}; } });
+    const p = await boot(env, '/app/agents/', { answers });
+    await keyPress(p, p.q('[data-lane="me"]'));
+    await keyPress(p, p.q('button[data-action="turn-on"]'));
+    lands(p, p.q('a[data-solstone-outside]'), 'set up: "continue to approve"');
+    const q = await boot(env, '/app/agents/', { answers: living({ local_door: DOOR_ON, ...ME_ON }, { 'PUT /app/agents/api/capability': (box) => { box.st = { ...box.st, enabled: false, status: 'off' }; return {}; } }).answers });
+    await keyPress(q, q.q('[data-lane="me"]'));
+    await keyPress(q, sw(q, 'solstone.me'));
+    await keyPress(q, q.q('[role="dialog"] [data-action="turn-off"]'));
+    lands(q, sw(q, 'solstone.me'), 'turn off: the solstone.me switch');
+    assert.ok(q.doc.activeElement.getAttribute('aria-checked') === 'false', 'now off');
+  });
+
+  await test('your own domain: each check keeps its button, turning on lands on "turn off", remove on what to do next, replace on the DNS step', async () => {
+    const { box, answers } = living({ local_door: DOOR_ON, byo: BYO }, {
+      'POST /app/agents/api/byo/relay/check': () => ({ code: 'relay_ok' }),
+      'POST /app/agents/api/byo/dns-check': () => ({ verdict: 'admitted', addresses: ['203.0.113.24'], diagnostics: [] }),
+      'PUT /app/agents/api/byo': (b, _u, opts) => { b.st = { ...b.st, byo: { ...b.st.byo, enabled: JSON.parse(opts.body).enabled } }; return {}; },
+      'DELETE /app/agents/api/byo': (b) => { b.st = { ...b.st, byo: { hostname: null } }; return {}; },
+      'POST /app/agents/api/byo/account/replace': (b) => { b.st = { ...b.st, byo: { ...b.st.byo, next_action: 'publish_caa' } }; return {}; },
+    });
+    const p = await boot(env, '/app/agents/', { answers });
+    await keyPress(p, p.q('[data-lane="byo"]'));
+    for (const action of ['byo-relay-check', 'byo-dns-check']) {
+      const button = p.q(`[data-action="${action}"]`);
+      await keyPress(p, button);
+      assert.ok(!button.isConnected, `${action} was drawn again`);
+      lands(p, p.q(`[data-action="${action}"]`), `${action}: the same button`);
+    }
+    await keyPress(p, p.q('[data-action="byo-on"]'));
+    lands(p, p.q('[data-action="byo-off"]'), 'turn it on: "turn off"');
+    await keyPress(p, p.q('[data-action="byo-off"]'));
+    lands(p, p.q('[data-action="byo-on"]'), 'turn off: "turn it on"');
+    // A fresh page on a journal that lost its registration.
+    box.st = { ...box.st, byo: { ...BYO, next_action: 'account_key_lost' } };
+    const q = await boot(env, '/app/agents/', { answers });
+    await keyPress(q, q.q('[data-lane="byo"]'));
+    await keyPress(q, q.q('[data-action="byo-replace"]'));
+    assert.ok(q.q('[data-action="byo-replace"]') === null, 'the key-lost notice is gone');
+    lands(q, q.q('[data-byo-step="dns"]'), 'replace: the DNS records step');
+    await keyPress(q, q.q('[data-action="byo-remove"]'));
+    assert.ok(q.q('[data-action="byo-remove"]') === null, 'the address is gone');
+    lands(q, q.q('[data-byo-removed]'), 'remove: what to do next');
+  });
+
+  await test('pause lands on resume and resume on pause, the same agent\'s other half', async () => {
+    const { answers } = living({}, { 'PUT /app/agents/api/connections/oauth/g1/pause': (box, _u, opts) => {
+      const paused = JSON.parse(opts.body).paused;
+      box.st = { ...box.st, connections: box.st.connections.map((c) => (c.id === 'g1' ? { ...c, paused: paused ? { by: 'owner', since: '2026-11-14T12:00:00Z' } : null } : c)) };
+      return {};
+    } });
+    const p = await boot(env, '/app/agents/', { answers });
+    await goTo(p, 'oauth:g1');
+    await keyPress(p, p.q('[data-pause="oauth:g1"][data-paused-to="true"]'));
+    assert.ok(p.q('[data-paused-to="true"]') === null, 'the pause section is gone');
+    lands(p, p.q('.paused-card [data-pause="oauth:g1"]'), 'pause: "resume"');
+    await keyPress(p, p.q('.paused-card [data-pause="oauth:g1"]'));
+    assert.ok(p.q('.paused-card') === null, 'the paused card is gone');
+    lands(p, p.q('[data-pause="oauth:g1"][data-paused-to="true"]'), 'resume: "pause"');
+  });
+
+  await test('saving what an agent may see, and renaming a key, land on that agent\'s row', async () => {
+    const { answers } = living({}, { 'PATCH /app/agents/api/connections/bearer/k1': (box) => {
+      box.st = { ...box.st, connections: box.st.connections.map((c) => (c.id === 'k1' ? { ...c, name: 'renamed' } : c)) };
+      return {};
+    } });
+    const p = await boot(env, '/app/agents/', { answers });
+    await goTo(p, 'oauth:g1');
+    await keyPress(p, p.q('[data-save-permission="oauth:g1"]'));
+    lands(p, row(p, 'oauth:g1'), 'save: its row');
+    await goTo(p, 'bearer:k1');
+    p.promptAnswer = 'renamed';
+    await keyPress(p, p.q('[data-rename="k1"]'));
+    lands(p, row(p, 'bearer:k1'), 'rename: its row');
+    assert.ok(p.doc.activeElement.textContent.includes('renamed'), 'with its new name');
+  });
+
+  await test('a disconnect or revoke lands on the next agent, the previous when it was last, and the heading when none are left', async () => {
+    const gone = (box, id) => { box.st = { ...box.st, connections: box.st.connections.filter((c) => c.id !== id) }; return {}; };
+    const { answers } = living({}, {
+      'DELETE /app/agents/api/connections/oauth/g1': (b) => gone(b, 'g1'),
+      'DELETE /app/agents/api/connections/oauth/g2': (b) => gone(b, 'g2'),
+      'DELETE /app/agents/api/connections/bearer/k1': (b) => gone(b, 'k1'),
+    });
+    const p = await boot(env, '/app/agents/', { answers });
+    await goTo(p, 'oauth:g1');
+    await keyPress(p, p.q('[data-revoke="oauth:g1"]'));
+    assert.ok(row(p, 'oauth:g1') === null, 'its row is gone');
+    lands(p, row(p, 'oauth:g2'), 'disconnect: the next agent');
+    await goTo(p, 'bearer:k1');
+    await keyPress(p, p.q('[data-revoke="bearer:k1"]'));
+    lands(p, row(p, 'oauth:g2'), 'revoke the last: the previous agent');
+    await goTo(p, 'oauth:g2');
+    await keyPress(p, p.q('[data-revoke="oauth:g2"]'));
+    assert.ok(p.qa('.list .ag-row[data-connection]').length === 0, 'no agent is left');
+    lands(p, p.q('[data-agents-heading]'), 'the last one: "your agents"');
+  });
+
+  await test('a cancelled confirm or prompt, or an empty one, writes nothing and clears busy at once; the same name writes as before and clears on its answer', async () => {
+    const p = await boot(env, '/app/agents/', { answers: living({ byo: { ...BYO, next_action: 'account_key_lost' } }).answers });
+    p.confirmAnswer = false;
+    await goTo(p, 'oauth:g1');
+    const revoke = p.q('[data-revoke="oauth:g1"]');
+    await keyPress(p, revoke);
+    assert.ok(p.writes().length === 0, 'a cancelled disconnect writes nothing');
+    notBusy(revoke, 'disconnect, cancelled,');
+    lands(p, revoke, 'and focus stays on it');
+    await keyPress(p, p.q('[data-route="home"]'));
+    await keyPress(p, p.q('[data-lane="byo"]'));
+    for (const action of ['byo-remove', 'byo-replace']) {
+      const button = p.q(`[data-action="${action}"]`);
+      await keyPress(p, button);
+      assert.ok(p.writes().length === 0, `a cancelled ${action} writes nothing`);
+      notBusy(button, `${action}, cancelled,`);
+      lands(p, button, 'and focus stays on it');
+    }
+    await goTo(p, 'bearer:k1');
+    for (const answer of [null, '']) {
+      p.promptAnswer = answer;
+      const rename = p.q('[data-rename="k1"]');
+      await keyPress(p, rename);
+      assert.ok(p.writes().length === 0, `a rename answered ${JSON.stringify(answer)} writes nothing`);
+      notBusy(rename, `rename, answered ${JSON.stringify(answer)},`);
+      lands(p, rename, 'and focus stays on it');
+    }
+    p.promptAnswer = 'Script';
+    p.holds.push((call) => call.method === 'PATCH');
+    const rename = p.q('[data-rename="k1"]');
+    await keyPress(p, rename);
+    assert.ok(p.writes().length === 1 && rename.getAttribute('aria-busy') === 'true', 'the same name writes, as before, and is busy while it does');
+    p.holds.length = 0;
+    p.calls.filter((c) => c.method === 'PATCH').forEach((c) => c.answer({}));
+    await settle();
+    notBusy(row(p, 'bearer:k1'), 'answered, its row');
+    lands(p, row(p, 'bearer:k1'), 'focus on the key\'s row');
+  });
+
+  await test('a deleted memory lands on the next one\'s "delete", the previous when it was last, then the line that none are left; a failed one on its own "delete"', async () => {
+    const at = (m) => `20261101/agent-memory-${SOURCE}/${m.segment}`;
+    const { box, answers } = living({}, {});
+    const take = (u) => { const seg = u.pathname.split('/').pop(); box.memories = box.memories.filter((m) => m.segment !== decodeURIComponent(seg)); return { trash: { id: 'trash-1', erase_at: '2026-11-21T12:00:00Z' } }; };
+    const served = journal();
+    const all = (u, opts) => (String(opts?.method).toUpperCase() === 'DELETE' && u.pathname.startsWith('/app/transcripts/api/segment/') ? take(u) : answers(u.href, opts));
+    const p = await boot(env, '/app/agents/', { answers: (url, opts) => all(new URL(url, ORIGIN), opts) });
+    assert.ok(served);
+    await goTo(p, 'oauth:g1');
+    p.statuses.push([(call) => call.method === 'DELETE', 409]);
+    await keyPress(p, p.q(`[data-memory-delete="${at(MEMORY)}"]`));
+    await keyPress(p, p.q('[role="dialog"] [data-memory-confirm]'));
+    lands(p, p.q(`[data-memory-delete="${at(MEMORY)}"]`), 'a refused delete: its own "delete"');
+    p.statuses.length = 0;
+    await keyPress(p, p.q(`[data-memory-delete="${at(MEMORY)}"]`));
+    await keyPress(p, p.q('[role="dialog"] [data-memory-confirm]'));
+    assert.ok(p.q(`[data-memory-delete="${at(MEMORY)}"]`) === null, 'the memory is gone');
+    lands(p, p.q(`[data-memory-delete="${at(SECOND)}"]`), 'delete: the next memory\'s "delete"');
+    await keyPress(p, p.q(`[data-memory-delete="${at(SECOND)}"]`));
+    await keyPress(p, p.q('[role="dialog"] [data-memory-erase-step]'));
+    await keyPress(p, p.q('[role="dialog"] [data-memory-erase]'));
+    assert.ok(p.qa('[data-memory-delete]').length === 0, 'none are left');
+    lands(p, p.q('[data-memories-none]'), 'erase the last: the line that says none are left');
+  });
+
+  await test('a dismissed replay notice lands on the next one, then "your agents"', async () => {
+    const two = [{ id: 'n1', name: 'Claude', door: 'this device', dismissed: false }, { id: 'n2', name: 'Codex', door: 'this device', dismissed: false }];
+    const { answers } = living({ replay_notices: two }, {
+      'POST /app/agents/api/replay-notices/n1/dismiss': (b) => { b.st = { ...b.st, replay_notices: b.st.replay_notices.filter((n) => n.id !== 'n1') }; return {}; },
+      'POST /app/agents/api/replay-notices/n2/dismiss': (b) => { b.st = { ...b.st, replay_notices: b.st.replay_notices.filter((n) => n.id !== 'n2') }; return {}; },
+    });
+    const p = await boot(env, '/app/agents/', { answers });
+    await keyPress(p, p.q('[data-action="dismiss-replay"][data-notice="n1"]'));
+    lands(p, p.q('[data-action="dismiss-replay"][data-notice="n2"]'), 'the next notice\'s "dismiss"');
+    await keyPress(p, p.q('[data-action="dismiss-replay"][data-notice="n2"]'));
+    lands(p, p.q('[data-agents-heading]'), 'the last: "your agents"');
+  });
+
+  await test('moving between agents\' own pages: forward to the page\'s heading, back to what opened it', async () => {
+    const p = await boot(env);
+    await keyPress(p, p.q('[data-lane="me"]'));
+    lands(p, p.q('[data-lane="me"]'), 'a lane choice: the same choice');
+    await goTo(p, 'oauth:g1');
+    lands(p, p.q('h1'), 'an agent\'s page: its heading');
+    assert.ok(p.doc.activeElement.textContent.startsWith('Claude'), 'named for the agent');
+    await keyPress(p, p.q('[data-route="home"]'));
+    lands(p, row(p, 'oauth:g1'), 'back to agents: its row');
+    await keyPress(p, p.q('[data-route="activity"]'));
+    lands(p, p.q('h1'), 'recent activity: its heading');
+    await keyPress(p, p.q('[data-route="home"]'));
+    lands(p, p.q('a[data-route="activity"]'), 'back from activity: "recent activity"');
+  });
+
+  await test('a redraw by a poll keeps focus where it was, and leaves focus outside agents alone', async () => {
+    const down = { enabled: true, listening: false, reason: 'not_running', address: 'http://127.0.0.1:7659/mcp' };
+    const p = await boot(env, '/app/agents/', { answers: living({ local_door: down }).answers });
+    const own = sw(p, 'agents on this device');
+    own.focus();
+    const reads = p.reads('/app/agents/api/state').length;
+    p.clock.advance(20000);
+    await settle();
+    assert.ok(p.reads('/app/agents/api/state').length === reads + 1 && !own.isConnected, 'the poll read and drew again');
+    lands(p, sw(p, 'agents on this device'), 'the 20 s re-read: the same switch');
+  });
+
+  await test('a redraw leaves focus outside agents alone: on the rail, or on a shell notice', async () => {
+    const down = { enabled: true, listening: false, reason: 'not_running', address: 'http://127.0.0.1:7659/mcp' };
+    const p = await boot(env, '/app/agents/', { answers: living({ local_door: down }).answers });
+    const reads = p.reads('/app/agents/api/state').length;
+    const rail = p.q('#app-rail a');
+    rail.focus();
+    p.clock.advance(20000);
+    await settle();
+    lands(p, rail, 'focus on the rail stays there');
+    parseInto(p.doc, p.doc.body, '<section id="notices"><button id="notice-recover">recover</button></section>');
+    const notice = p.byId('notice-recover');
+    notice.focus();
+    p.clock.advance(20000);
+    await settle();
+    lands(p, notice, 'focus on a shell notice stays there');
+    assert.ok(p.reads('/app/agents/api/state').length === reads + 2, 'both polls read and drew');
+  });
+
+  await test('the enable poll\'s redraw keeps focus on its link', async () => {
+    let op = { phase: 'waiting', portal_url: 'https://services.example/consent' };
+    const { answers } = living({ local_door: DOOR_ON }, { 'GET /app/agents/api/enable': () => ({ operation: op }) });
+    const p = await boot(env, '/app/agents/', { answers });
+    await keyPress(p, p.q('[data-lane="me"]'));
+    const link = p.q('a[data-solstone-outside]');
+    link.focus();
+    op = { phase: 'needs_subscription', guidance: 'not yet', subscribe_url: 'https://services.example/portal' };
+    p.clock.advance(20000);
+    await settle();
+    assert.ok(!link.isConnected, 'the lane was drawn again');
+    lands(p, p.q('a[data-solstone-outside]'), 'the same kind of link');
+  });
+
+  await test('a control a redraw takes away inside a lane lands on the lane\'s choice', async () => {
+    let op = { phase: 'waiting', portal_url: 'https://services.example/consent' };
+    const { box, answers } = living({ local_door: DOOR_ON }, { 'GET /app/agents/api/enable': () => ({ operation: op }) });
+    const p = await boot(env, '/app/agents/', { answers });
+    await keyPress(p, p.q('[data-lane="me"]'));
+    p.q('a[data-solstone-outside]').focus();
+    // The portal approved it: the next poll finds it on and turning on, with no link left.
+    op = { phase: 'enabled' };
+    box.st = { ...box.st, enabled: true, status: 'starting', owner_state: { address: 'abcd1234.solstone.me', status: 'starting' } };
+    p.clock.advance(20000);
+    await settle();
+    assert.ok(p.q('a[data-solstone-outside]') === null, 'the link is gone');
+    lands(p, p.q('[data-lane="me"]'), 'the lane\'s choice, solstone.me');
+  });
+
+  await test('the request dialog\'s #memories link lands on the memory it names', async () => {
+    const p = await boot(env);
+    await keyPress(p, p.q('[data-route="activity"]'));
+    await keyPress(p, p.q('[data-activity-index="0"]'));
+    const link = p.q(`[role="dialog"] a[href="/app/agents/${MEMORY_HASH}"]`);
+    await keyPress(p, link);
+    // The browser's fragment navigation follows the press: a new entry, popstate, then hashchange.
+    p.window.history.pushState(null, '', MEMORY_HASH);
+    p.window.fire({ type: 'popstate', state: null });
+    p.window.fire({ type: 'hashchange' });
+    await settle();
+    assert.ok(p.q('[role="dialog"]') === null, 'the dialog is gone');
+    lands(p, p.q('.mem.here'), 'the memory');
+  });
+
+  await test('kept: making a code stays on "make a new code", and an agent connecting lands on the dialog\'s heading', async () => {
+    let seen = { now: '2026-11-14T12:00:00Z', today: '20261114', pairing: { generation: 1, locked: false, door: 'local' }, connections: [] };
+    const { answers } = living({ local_door: DOOR_ON }, { 'GET /app/agents/api/pairing': () => seen });
+    const p = await boot(env, '/app/agents/', { answers });
+    await keyPress(p, p.q('.sh [data-action="connect"]'));
+    await keyPress(p, p.find('[role="dialog"] button', 'make a pairing code'));
+    lands(p, p.q('[role="dialog"] [data-action="new-code"]'), 'make a code: "make a new code"');
+    seen = { ...seen, pairing: null, connections: [{ ...CLAUDE, key: 'oauth:new', id: 'new', name: 'New agent', created_at: '2026-11-14T12:01:00Z', paired_at: '2026-11-14T12:01:00Z' }] };
+    p.clock.advance(2000);
+    await settle();
+    assert.ok(p.q('[data-connect-phase="connected"]'), 'the agent connected');
+    lands(p, p.q('[role="dialog"] h2'), 'the dialog\'s heading');
+    assert.ok(p.doc.activeElement.textContent.includes('is connected'), 'which says so');
   });
 
   return cases;
