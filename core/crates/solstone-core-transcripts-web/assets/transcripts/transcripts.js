@@ -5273,6 +5273,7 @@
         // J8 in the design system's screenshots copy file: a screenshot's
         // segment holds its screenshot, not audio or frames.
         screenshot: 'screenshot',
+        photo: 'photo',
       },
       buttons: {
         eraseNow: 'erase now',
@@ -5311,13 +5312,33 @@
 
     // What a delete takes from each segment, so the confirm states its reach:
     // a screenshot's segment holds its screenshot and what was made from it.
+    // Where the page knows a segment's kinds it lists only what it holds, and a
+    // photo's is its photo; otherwise audio, screen frames and a transcript.
+    function segmentKinds(seg) {
+      if (isScreenshotsStream(seg.stream)) return { screenshot: true };
+      const types = Array.isArray(seg.types) ? seg.types : null;
+      if (!types) return null;
+      const audio = types.includes('audio');
+      const screen = types.includes('screen');
+      if (isPhotoSegment(seg)) return { photo: true };
+      if (!audio && !screen) return null;
+      return { audio, screen, transcript: true };
+    }
+
+    function isPhotoSegment(seg) {
+      const types = Array.isArray(seg.types) ? seg.types : [];
+      return types.includes('image') && !['audio', 'screen', 'markdown', 'browser'].some((kind) => types.includes(kind));
+    }
+
     function segmentParts(segs, holdsLoc) {
-      const shots = segs.some((seg) => isScreenshotsStream(seg.stream));
-      const others = segs.some((seg) => !isScreenshotsStream(seg.stream));
+      const kinds = segs.map((seg) => segmentKinds(seg) || { audio: true, screen: true, transcript: true });
+      const any = (kind) => kinds.some((held) => held[kind]);
       return [
-        ...(others ? ['audio', 'screen'] : []),
-        ...(shots ? ['screenshot'] : []),
-        ...(others ? ['transcript'] : []),
+        ...(any('audio') ? ['audio'] : []),
+        ...(any('screen') ? ['screen'] : []),
+        ...(any('photo') ? ['photo'] : []),
+        ...(any('screenshot') ? ['screenshot'] : []),
+        ...(any('transcript') ? ['transcript'] : []),
         'analysis',
         ...(holdsLoc ? ['location'] : []),
       ];
@@ -5438,7 +5459,7 @@
       const streamName = deleteDialogElement('strong', null, humanizeStreamName(seg.stream));
       streamName.setAttribute('title', seg.stream);
       const dayName = deleteDialogElement('strong', null, window.JournalFormat.day(day).toLowerCase());
-      const timeName = deleteDialogElement('strong', null, isLocRow || isScreenshotsStream(seg.stream) ? seg.start : `${seg.start} - ${seg.end}`);
+      const timeName = deleteDialogElement('strong', null, isLocRow || isScreenshotsStream(seg.stream) || isPhotoSegment(seg) ? seg.start : `${seg.start} - ${seg.end}`);
       meta.append(streamName, deleteDialogElement('span', null, ' · '), dayName, deleteDialogElement('span', null, ' · '), timeName);
 
       const parts = isLocRow ? ['location'] : segmentParts([seg], holdsLoc);

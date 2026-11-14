@@ -609,12 +609,15 @@ fn erase_as(
     finish_erase(journal, &item)?;
     erase_linked_within(journal, &item);
     for other in needing {
-        if let Err(error) = finish_erase(journal, &other) {
-            log::warn!(
+        match finish_erase(journal, &other) {
+            // What was released from it goes with it too, as when it is
+            // erased on its own.
+            Ok(()) => erase_linked_within(journal, &other),
+            Err(error) => log::warn!(
                 "trash item {}: not erased with {}: {error}",
                 other.id,
                 item.id
-            );
+            ),
         }
     }
     Ok(())
@@ -1348,8 +1351,16 @@ fn sweep_set(journal: &Path, kinds: &[&dyn Kind], mut set: Set, swept: &mut Swep
 /// Runs at start and on the maintenance schedule.
 pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
     let mut swept = Swept::default();
+    // Soonest due first, so an item erased with one it needed is met after.
     let items = match all_items(journal) {
-        Ok(items) => items,
+        Ok(mut items) => {
+            items.sort_by(|left, right| {
+                left.erase_at
+                    .cmp(&right.erase_at)
+                    .then(left.id.cmp(&right.id))
+            });
+            items
+        }
         Err(error) => {
             swept.failed.push(error.to_string());
             return swept;

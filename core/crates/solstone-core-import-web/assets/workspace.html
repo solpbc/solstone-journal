@@ -1622,9 +1622,11 @@ function importOneListLines(preview, kind) {
       }
     }
   }
-  const originals = Number(preview.originals) || 0;
-  if (originals === 1) lines.push(L.originalOne);
-  else if (originals > 1) lines.push(importDeleteFill(L.originalMany, { n: originals }));
+  // The files it was given and keeps in its record; its segments' own audio
+  // goes under the segment count.
+  const kept = Number(preview.kept ?? preview.originals) || 0;
+  if (kept === 1) lines.push(L.originalOne);
+  else if (kept > 1) lines.push(importDeleteFill(L.originalMany, { n: kept }));
   lines.push(L.row);
   return lines;
 }

@@ -270,3 +270,35 @@ fn a_segment_no_import_made_is_unchanged() {
     assert!(item.needs.is_empty());
     recover(root.path(), &item.id).unwrap();
 }
+
+#[test]
+fn a_recover_a_stop_left_part_way_is_finished_even_with_its_import_in_the_trash() {
+    let root = journal(&[FIRST, LAST]);
+    let (first, _) = delete(root.path(), FIRST);
+    delete(root.path(), LAST);
+    // A recover of the first stopped after it was marked, before anything moved.
+    let mut stopped = solstone_core_trash::item(root.path(), &first.id)
+        .unwrap()
+        .unwrap();
+    stopped.state = solstone_core_trash::State::Attaching;
+    stopped.pending = Some(solstone_core_trash::Pending {
+        action: Action::Recover,
+        surface: surface(),
+        at: chrono::Utc::now().to_rfc3339(),
+        operation: None,
+    });
+    let record = root
+        .path()
+        .join(solstone_core_trash::TRASH_DIR)
+        .join(&first.id)
+        .join("item.json");
+    fs::write(&record, serde_json::to_vec(&stopped).unwrap()).unwrap();
+    let swept = crate::trash_kinds::sweep(root.path(), chrono::Utc::now());
+    assert_eq!(swept.failed, Vec::<String>::new());
+    assert!(
+        solstone_core_trash::item(root.path(), &first.id)
+            .unwrap()
+            .is_none()
+    );
+    assert!(root.path().join(FIRST).join("audio.flac").is_file());
+}

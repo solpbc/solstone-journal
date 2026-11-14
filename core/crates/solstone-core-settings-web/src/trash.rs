@@ -26,8 +26,8 @@ pub async fn list(journal_root: PathBuf) -> Response {
         Ok::<_, String>(json!({
             "erase_after_days": solstone_core_trash::erase_after_days(&journal_root),
             "unfinished": unfinished,
-            "items": items.iter().map(|item| view(&journal_root, item)).collect::<Vec<_>>(),
-            "stopped": stopped.iter().map(|item| stopped_view(&journal_root, item)).collect::<Vec<_>>(),
+            "items": items.iter().map(|item| view(&journal_root, item, &items)).collect::<Vec<_>>(),
+            "stopped": stopped.iter().map(|item| stopped_view(&journal_root, item, &items)).collect::<Vec<_>>(),
         }))
     })
     .await
@@ -42,8 +42,9 @@ fn unreadable(detail: String) -> Response {
     crate::storage::read_failed("trash_unreadable", "your trash couldn't be read.", detail)
 }
 
-/// One item as the page shows it: what it is, never what it holds.
-fn view(journal_root: &Path, item: &Item) -> Value {
+/// One item as the page shows it: what it is, never what it holds. `listed` is
+/// everything in the trash, read once for the page.
+fn view(journal_root: &Path, item: &Item, listed: &[Item]) -> Value {
     let place = item
         .paths
         .first()
@@ -68,7 +69,9 @@ fn view(journal_root: &Path, item: &Item) -> Value {
             Some(stream.clone()),
             segment.clone(),
         ),
-        (Unit::Import { source, id }, _) => return import_view(journal_root, item, source, id),
+        (Unit::Import { source, id }, _) => {
+            return import_view(journal_root, item, source, id, listed);
+        }
         (Unit::Workout { source, day, .. }, _) => {
             return workout_view(journal_root, item, source, day.as_deref());
         }
@@ -99,7 +102,7 @@ fn view(journal_root: &Path, item: &Item) -> Value {
         "surface": item.surface,
         "replaces": replaces(journal_root, item),
     });
-    if let Some(import) = needed_import(journal_root, item) {
+    if let Some(import) = needed_import(journal_root, item, listed) {
         shown["import"] = import;
     }
     shown
@@ -107,16 +110,16 @@ fn view(journal_root: &Path, item: &Item) -> Value {
 
 /// The import a segment needs to come back, and where it stands: `live` in
 /// the journal, `trashed` waiting in the trash (recover it first), or `gone`.
-fn needed_import(journal_root: &Path, item: &Item) -> Option<Value> {
+fn needed_import(journal_root: &Path, item: &Item, listed: &[Item]) -> Option<Value> {
     let record = item
         .needs
         .iter()
         .find(|need| need.starts_with("imports/"))?;
     let id = record.strip_prefix("imports/")?;
-    let holder = solstone_core_trash::list(journal_root)
-        .ok()?
-        .into_iter()
-        .find(|other| other.id != item.id && other.paths.iter().any(|path| path == record));
+    let holder = listed
+        .iter()
+        .find(|other| other.id != item.id && other.paths.iter().any(|path| path == record))
+        .cloned();
     let (state, label) = match holder {
         Some(holder) => ("trashed", holder.label),
         None if journal_root.join(record).is_dir() => (
@@ -129,8 +132,8 @@ fn needed_import(journal_root: &Path, item: &Item) -> Option<Value> {
 }
 
 /// An item stopped part way: what it is, and which way it was going.
-fn stopped_view(journal_root: &Path, item: &Item) -> Value {
-    let mut shown = view(journal_root, item);
+fn stopped_view(journal_root: &Path, item: &Item, listed: &[Item]) -> Value {
+    let mut shown = view(journal_root, item, listed);
     if let Value::Object(fields) = &mut shown {
         let state = match item.state {
             solstone_core_trash::State::Detaching => "detaching",
@@ -342,7 +345,8 @@ fn workout_view(journal_root: &Path, item: &Item, source: &str, day: Option<&str
 
 /// An import as the page shows it: its source, its import, and how much of
 /// the journal it took with it.
-fn import_view(journal_root: &Path, item: &Item, source: &str, id: &str) -> Value {
+fn import_view(journal_root: &Path, item: &Item, source: &str, id: &str, listed: &[Item]) -> Value {
+    let record = format!("imports/{id}");
     let segments: Vec<(String, String, String)> = item
         .paths
         .iter()
@@ -375,7 +379,10 @@ fn import_view(journal_root: &Path, item: &Item, source: &str, id: &str) -> Valu
         "surface": item.surface,
         "replaces": replaces(journal_root, item),
         // Its segments deleted earlier, still in the trash: erasing it erases them.
-        "takes": solstone_core_trash::needing(journal_root, item).map_or(0, |items| items.len()),
+        "takes": listed
+            .iter()
+            .filter(|other| other.id != item.id && other.needs.contains(&record))
+            .count(),
     })
 }
 
@@ -483,9 +490,24 @@ pub async fn erase(journal_root: PathBuf, body: Bytes) -> Response {
     };
     let ids = erase_order(&journal_root, selection.ids);
     run(journal_root, ids, |root, id, operation| {
-        solstone_core_trash::erase_in(root, id, Action::Erase, page_surface(None), operation)
+        erased(solstone_core_trash::erase_in(
+            root,
+            id,
+            Action::Erase,
+            page_surface(None),
+            operation,
+        ))
     })
     .await
+}
+
+/// An item that is no longer in the trash when its erase comes was erased
+/// with one it needed or that held it: what erase asked for.
+fn erased(result: Result<(), TrashError>) -> Result<(), TrashError> {
+    match result {
+        Err(TrashError::NotInTrash) => Ok(()),
+        result => result,
+    }
 }
 
 /// Erased together, what needs another item goes first: erasing an import
@@ -517,7 +539,13 @@ pub async fn empty(journal_root: PathBuf) -> Response {
         Err(error) => return unreadable(error.to_string()),
     };
     run(journal_root, ids, |root, id, operation| {
-        solstone_core_trash::erase_in(root, id, Action::EmptyTrash, page_surface(None), operation)
+        erased(solstone_core_trash::erase_in(
+            root,
+            id,
+            Action::EmptyTrash,
+            page_surface(None),
+            operation,
+        ))
     })
     .await
 }

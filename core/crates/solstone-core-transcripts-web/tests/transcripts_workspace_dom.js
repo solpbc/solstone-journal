@@ -2069,7 +2069,7 @@ test('deep link with deferred location list opens row on release, history transi
   assert.strictEqual(h.doc.querySelectorAll('.tr-zoom-pill.tr-active').length, 0);
 });
 
-test('delete dialog li counts: audio 4, screen-only 4, holds_location 5, location row 1, survives reject', async () => {
+test('delete dialog li counts: a segment lists what it holds: audio 3, screen-only 3, holds_location 4, location row 1, survives reject', async () => {
   const locSegments = [
     { key: '090000_60', stream: 'phone', start: '09:00' },
   ];
@@ -2084,25 +2084,25 @@ test('delete dialog li counts: audio 4, screen-only 4, holds_location 5, locatio
     { locationSegments: locSegments }
   );
 
-  // 1. Audio timeline row: 4
+  // 1. Audio timeline row: audio, transcript, analysis
   getZoomPills(h.doc)[0].dispatchEvent({ type: 'click' });
   await h.releasePendingSegmentGets('analyzed', { data_state: { audio: 'analyzed' } });
   h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
-  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
+  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 3);
   h.doc.querySelector('#trDeleteSegmentModalClose').dispatchEvent({ type: 'click' });
 
-  // 2. Screen-only timeline row: 4
+  // 2. Screen-only timeline row: screen frames, transcript, analysis
   getZoomPills(h.doc)[1].dispatchEvent({ type: 'click' });
   await h.releasePendingSegmentGets('absent', { data_state: { screen: 'analyzed' } });
   h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
-  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
+  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 3);
   h.doc.querySelector('#trDeleteSegmentModalClose').dispatchEvent({ type: 'click' });
 
-  // 3. Timeline row with holds_location: 5
+  // 3. Timeline row with holds_location: and location
   getZoomPills(h.doc)[0].dispatchEvent({ type: 'click' });
   await h.releasePendingSegmentGets('analyzed', { holds_location: true, data_state: { audio: 'analyzed' } });
   h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
-  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 5);
+  assert.strictEqual(h.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
   h.doc.querySelector('#trDeleteSegmentModalClose').dispatchEvent({ type: 'click' });
 
   // 4. Location row: 1 li before resolve and after reject
@@ -2617,7 +2617,7 @@ test('delete dialog: a neutral first step with three buttons, and erase now swap
   assert.strictEqual(text('.tr-delete-lead'), TRASH_COPY.erase.lead);
   assert.strictEqual(text('.tr-delete-stays'), TRASH_COPY.erase.stays);
   assert.strictEqual(env.doc.querySelector('#trDeleteSegmentModalBody .tr-delete-segment-size'), null, 'no size line on the erase step');
-  assert.strictEqual(env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
+  assert.strictEqual(env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 3, 'an audio segment: audio, transcript, analysis');
 
   // Back returns to the first step with focus on erase now; nothing was deleted.
   $('trDeleteSegmentModalBack').dispatchEvent({ type: 'click' });
@@ -3298,7 +3298,7 @@ test('select mode: the set dialog lists five segments then how many more, and mo
   assert.strictEqual(text('.tr-delete-reach'), C.moveReach);
   assert.strictEqual(text('.tr-delete-lead'), C.moveLead);
   assert.strictEqual(text('.tr-delete-stays'), C.moveStays);
-  assert.strictEqual(env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
+  assert.strictEqual(env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 3, 'audio segments: audio, transcript, analysis');
   assert.strictEqual(env.doc.querySelector('#trDeleteSegmentModalBody .tr-delete-segment-size'), null, 'no size unless every size is known');
   $('trDeleteSegmentModalErase').dispatchEvent({ type: 'click' });
   assert.strictEqual($('trDeleteSegmentModalTitle').textContent, pickFill(C.eraseTitle, { n: 7 }));
@@ -3717,4 +3717,17 @@ test('select mode: the set dialog names the import it takes and the file another
     C.setWaiting.oneOne,
     pickFill(C.setStays.label, { label: 'standup.m4a' }),
   ]);
+});
+
+test('delete dialog: a photo\'s segment lists its photo, not audio or screen, and shows its start alone', async () => {
+  const env = await createEnvironment(undefined, 'analyzed', false, [
+    { key: '114500_1', stream: 'import.image', start: '11:45', end: '11:45', types: ['image'], data_state: { audio: 'analyzed' } },
+  ], { postResponse: () => ({ status: 200, body: { imports: [] } }) });
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {});
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  const listed = env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').map((li) => li.textContent);
+  assert.deepStrictEqual(listed, [TRASH_COPY.parts.photo, TRASH_COPY.parts.analysis]);
+  const time = env.doc.querySelectorAll('.tr-delete-segment-meta strong')[2];
+  assert.strictEqual(time.textContent, '11:45');
 });

@@ -85,6 +85,7 @@ fn preview_of(root: &Path, id: &str, things: &ImportThings) -> Value {
         "segments": things.segments.len(),
         "days": days.map(|(first, last)| json!([first, last])),
         "originals": kept_originals(root, things),
+        "kept": solstone_core_import::import_trash::kept_uploads(root, things),
         "shared": things.shared.len(),
         "bytes": bytes,
         "deletes_here": deletes_here(&things.source),
