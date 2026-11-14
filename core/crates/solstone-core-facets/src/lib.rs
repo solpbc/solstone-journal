@@ -130,7 +130,9 @@ pub use store::{
     delete_created_entity_if_unreferenced_with_hook, delete_journal_entity_with_hook,
     reset_undone_operation_for_test, test_hooks, unblock_journal_entity_with_hook,
 };
-pub use store::{reconcile_faceprints, reconcile_faceprints_for_activity};
+pub use store::{
+    reconcile_faceprints, reconcile_faceprints_for_activity, reconcile_faceprints_for_segments,
+};
 pub use store::{strava_lines_may_be_folded, superseded_record_ids};
 pub use trust_lock::{
     FacetTrustLock, FacetTrustLockError, hold_facet_trust_lock, hold_facet_trust_lock_raw_for_test,

@@ -400,11 +400,32 @@ pub fn reconcile_faceprints_for_activity(
 /// The maintenance scheduler calls this after an interrupted derived write. The
 /// same trust lock as participation writers prevents an old assignment winning.
 pub fn reconcile_faceprints(root: &Path) -> Result<usize, String> {
+    reconcile_faceprints_selected(root, None)
+}
+
+/// Replay just meetings touched by a bounded history batch. Coordinates are
+/// (day, stream, segment), and authoritative records are read under their lock.
+pub fn reconcile_faceprints_for_segments(
+    root: &Path,
+    segments: &[(String, String, String)],
+) -> Result<usize, String> {
+    if segments.is_empty() {
+        return Ok(0);
+    }
+    reconcile_faceprints_selected(root, Some(segments))
+}
+
+fn reconcile_faceprints_selected(
+    root: &Path,
+    selected: Option<&[(String, String, String)]>,
+) -> Result<usize, String> {
     if !solstone_core_entity::faceprints::enabled(root)? {
         return Ok(0);
     }
     let _trust = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
     let entities = solstone_core_entity::live_journal_entities(root).map_err(|e| e.to_string())?;
+    let mut holders =
+        solstone_core_entity::faceprints::accumulation::face_holders(root, &entities)?;
     let mut live = std::collections::BTreeSet::new();
     let mut added = 0;
     for name in super::map::list_declared_facet_names(root).map_err(|e| e.to_string())? {
@@ -426,6 +447,9 @@ pub fn reconcile_faceprints(root: &Path) -> Result<usize, String> {
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .ok_or("invalid activity day")?;
+            if selected.is_some_and(|ss| !ss.iter().any(|(d, _, _)| d == day_name)) {
+                continue;
+            }
             let _lock = hold_lock(&day.path, LockOptions::default()).map_err(|e| e.to_string())?;
             let records = read_day_lines(&day.path).map_err(|e| e.to_string())?;
             if !records.kept.is_empty() {
@@ -436,13 +460,36 @@ pub fn reconcile_faceprints(root: &Path) -> Result<usize, String> {
                     serde_json::to_string(&[name, day_name, id(&row)])
                         .map_err(|e| e.to_string())?,
                 );
+                if selected.is_some_and(|ss| {
+                    !ss.iter().any(|(d, stream, seg)| {
+                        d == day_name
+                            && row
+                                .get("stream")
+                                .and_then(Value::as_str)
+                                .is_none_or(|s| s == stream)
+                            && row
+                                .get("segments")
+                                .and_then(Value::as_array)
+                                .is_some_and(|segs| {
+                                    segs.iter().any(|s| s.as_str() == Some(seg.as_str()))
+                                })
+                    })
+                }) {
+                    continue;
+                }
+                let relevant = solstone_core_entity::faceprints::accumulation::relevant_entities(
+                    &row, &entities, &holders,
+                );
                 added += solstone_core_entity::faceprints::accumulation::reconcile_activity_with_entities(
-                    root, name, day_name, &row, &entities,
+                    root, name, day_name, &row, &relevant,
                 )?;
+                holders.extend(relevant.into_iter().map(|(folder, _)| folder));
             }
         }
     }
-    solstone_core_entity::faceprints::remove_orphan_activities(root, &live)?;
+    if selected.is_none() {
+        solstone_core_entity::faceprints::remove_orphan_activities(root, &live)?;
+    }
     Ok(added)
 }
 

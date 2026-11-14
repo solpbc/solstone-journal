@@ -29,10 +29,16 @@ pub struct RoutineDescriptor {
     pub max_runtime: Option<&'static str>,
 }
 
-const ROUTINES: [RoutineDescriptor; 15] = [
+const ROUTINES: [RoutineDescriptor; 16] = [
+    RoutineDescriptor {
+        id: "faces:backfill",
+        description: "refresh photo suggestions from meetings, including past meetings.",
+        cadence: Cadence::Hourly,
+        max_runtime: Some("40m"),
+    },
     RoutineDescriptor {
         id: "faces:reconcile",
-        description: "reconcile private face evidence with current meeting participation.",
+        description: "refresh photo suggestions from meetings, including past meetings.",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
     },
@@ -134,8 +140,9 @@ pub fn routine(id: &str) -> Option<&'static RoutineDescriptor> {
 
 #[cfg(test)]
 fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
-    const EXPECTED: [(&str, Cadence, Option<&str>); 15] = [
+    const EXPECTED: [(&str, Cadence, Option<&str>); 16] = [
         ("faces:reconcile", Cadence::Daily, Some("10m")),
+        ("faces:backfill", Cadence::Hourly, Some("40m")),
         ("speakers:discover-voices", Cadence::Daily, Some("10m")),
         (
             "speakers:candidate-pair-suggestions",

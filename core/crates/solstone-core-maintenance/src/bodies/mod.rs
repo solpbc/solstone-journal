@@ -6,3 +6,6 @@ pub mod health;
 pub mod retention;
 pub(crate) mod speakers;
 pub mod trash;
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod faces;

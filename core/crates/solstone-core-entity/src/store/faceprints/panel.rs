@@ -3,7 +3,7 @@
 
 //! Thresholds calibrated on an owner-consented evaluation of real meeting recordings.
 use super::{Face, FaceKey, FacesState, Source};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub const NEIGHBOUR: f32 = 0.40;
@@ -18,7 +18,7 @@ pub const MIN_LOOKS: usize = 3;
 pub const SUGGESTED_LOOKS: usize = 5;
 pub const PANEL_SIZE: usize = 6;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CrossEntity {
     pub contested: bool,
     pub exclusivity_drop: bool,
@@ -145,6 +145,21 @@ pub fn panel(
     owner: Option<&[f32]>,
     cross: Option<CrossEntity>,
 ) -> Panel {
+    let kept = kept_evidence(faces, state, principal, owner);
+    let mut distinct = looks(&kept);
+    let look_count = distinct.len();
+    let cross = cross.unwrap_or_default();
+    let photo = state.decision.photo.as_ref();
+    finish_panel(state, cross, photo, &mut distinct, look_count)
+}
+
+/// Shared by the panel and the daily cross-person pass, before look collapse.
+pub fn kept_evidence<'a>(
+    faces: &'a [Face],
+    state: &FacesState,
+    principal: bool,
+    owner: Option<&[f32]>,
+) -> Vec<&'a Face> {
     let anchor = state
         .decision
         .photo
@@ -168,7 +183,7 @@ pub fn panel(
         }
     });
     let kept = consensus(&pool, anchor, if principal { None } else { owner });
-    let kept = if kept
+    if kept
         .iter()
         .filter(|f| f.metadata.source == Source::Anchored)
         .count()
@@ -177,11 +192,16 @@ pub fn panel(
         vec![]
     } else {
         kept
-    };
-    let mut distinct = looks(&kept);
-    let look_count = distinct.len();
-    let cross = cross.unwrap_or_default();
-    let photo = state.decision.photo.as_ref();
+    }
+}
+
+fn finish_panel(
+    state: &FacesState,
+    cross: CrossEntity,
+    photo: Option<&super::ChosenPhoto>,
+    distinct: &mut Vec<&Face>,
+    look_count: usize,
+) -> Panel {
     let result_state = if photo.is_some() {
         State::Confirmed
     } else if state.decision.dismissed_at.is_some()
@@ -212,12 +232,12 @@ pub fn panel(
     distinct.sort_by(|a, b| b.metadata.quality.total_cmp(&a.metadata.quality));
     let mut selected: Vec<&Face> = vec![];
     let mut segments = BTreeSet::new();
-    for f in &distinct {
+    for f in distinct.iter() {
         if selected.len() < PANEL_SIZE && segments.insert(segment(f)) {
             selected.push(f);
         }
     }
-    for f in &distinct {
+    for f in distinct.iter() {
         if selected.len() == PANEL_SIZE {
             break;
         }

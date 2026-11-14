@@ -61,6 +61,8 @@ fn main() -> ExitCode {
             eprintln!("{}", describe_deferred_message(reason.as_deref()));
             ExitCode::from(EXIT_PROVIDER_BLOCKED)
         }
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        Err(CliError::FaceExit(code)) => ExitCode::from(code),
         Err(CliError::Internal(message)) => {
             eprintln!("{message}");
             ExitCode::FAILURE
@@ -69,6 +71,16 @@ fn main() -> ExitCode {
 }
 
 fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
+    let arguments: Vec<_> = arguments.into_iter().collect();
+    if arguments
+        .first()
+        .is_some_and(|a| a == solstone_core_segment::face_backfill::OPTION)
+    {
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        return run_face_backfill(&arguments[1..]);
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        return Err(usage("face backfill is available on desktop journals only"));
+    }
     match parse_arguments(arguments)? {
         Command::Version => {
             let version = ffmpeg_next::codec::version();
@@ -161,6 +173,60 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn run_face_backfill(args: &[OsString]) -> Result<(), CliError> {
+    use solstone_core_describe::faces;
+    use solstone_core_segment::{face_backfill, output_attempt::OutputClaims};
+    if args.len() != 3 {
+        return Err(usage("face backfill requires JOURNAL RAW SECONDS"));
+    }
+    let seconds = args[2]
+        .to_str()
+        .and_then(|s| s.parse::<u64>().ok())
+        .filter(|n| *n > 0 && *n <= face_backfill::MAX_SECONDS)
+        .ok_or_else(|| usage("face backfill budget is outside the allowed range"))?;
+    let journal = Path::new(&args[0]);
+    let raw = Path::new(&args[1]);
+    let screen = raw.with_extension("jsonl");
+    let start = std::time::Instant::now();
+    let stop = || {
+        start.elapsed() >= std::time::Duration::from_secs(seconds)
+            || !faces::enabled(journal).unwrap_or(false)
+            || solstone_core_system::work_inventory::newer_work_pending(journal).unwrap_or(true)
+            || face_backfill::priority_requested(journal).unwrap_or(true)
+    };
+    if stop() {
+        return Err(CliError::FaceExit(face_backfill::YIELDED as u8));
+    }
+    let claim = match OutputClaims::acquire(
+        [screen.clone()],
+        solstone_core_journal_io::LockOptions {
+            timeout: std::time::Duration::ZERO,
+            ..Default::default()
+        },
+    ) {
+        Ok(c) => c,
+        Err(_) => return Err(CliError::FaceExit(face_backfill::YIELDED as u8)),
+    };
+    let supported = faces::recording_supported(raw).map_err(CliError::Internal)?;
+    drop(claim);
+    if !supported {
+        return Err(CliError::FaceExit(face_backfill::UNSUPPORTED as u8));
+    }
+    let lease = match face_backfill::backfill_lease(journal) {
+        Ok(lease) => lease,
+        Err(solstone_core_journal_io::LockError::Timeout(_)) => {
+            return Err(CliError::FaceExit(face_backfill::YIELDED as u8));
+        }
+        Err(error) => return Err(CliError::Internal(error.to_string())),
+    };
+    match faces::run_segment_with_lease(journal, raw, &screen, &stop, lease) {
+        Ok(_) => Ok(()),
+        Err(_) if stop() => Err(CliError::FaceExit(face_backfill::YIELDED as u8)),
+        Err(e) => Err(CliError::Internal(e)),
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
     Version,
@@ -190,6 +256,8 @@ enum CliError {
     Decode(String),
     Blocked(Option<String>),
     Internal(String),
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    FaceExit(u8),
 }
 
 fn describe_deferred_message(reason: Option<&str>) -> String {

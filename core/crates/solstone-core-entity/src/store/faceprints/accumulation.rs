@@ -87,6 +87,48 @@ pub fn participant_entity(
         .flatten()
 }
 
+/// Restrict filesystem work to current participants, the principal and people
+/// who already hold face material. The authoritative identity census still
+/// resolves collisions and aliases; unrelated identities cannot join a meeting.
+pub fn relevant_entities(
+    record: &Map<String, Value>,
+    directories: &[(String, crate::JournalEntity)],
+    holders: &BTreeSet<String>,
+) -> Vec<(String, crate::JournalEntity)> {
+    let ids: BTreeSet<_> = record
+        .get("participation")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|p| p.get("entity_id").and_then(Value::as_str))
+        .collect();
+    directories
+        .iter()
+        .filter(|(folder, e)| {
+            e.is_principal() || ids.contains(e.id.as_str()) || holders.contains(folder)
+        })
+        .cloned()
+        .collect()
+}
+
+pub fn face_holders(
+    journal: &Path,
+    directories: &[(String, crate::JournalEntity)],
+) -> Result<BTreeSet<String>> {
+    let mut holders = BTreeSet::new();
+    for (folder, _) in directories {
+        let dir = solstone_core_journal_io::contained_path(journal, &format!("entities/{folder}"))
+            .map_err(|e| e.to_string())?;
+        for name in [ARCHIVE, STATE] {
+            if solstone_core_journal_io::path_lexists(&dir.join(name)).map_err(|e| e.to_string())? {
+                holders.insert(folder.clone());
+                break;
+            }
+        }
+    }
+    Ok(holders)
+}
+
 pub fn reconcile_activity(
     journal: &Path,
     facet: &str,
@@ -98,7 +140,9 @@ pub fn reconcile_activity(
     }
     let _trust = crate::hold_entity_trust_lock(journal).map_err(|e| e.to_string())?;
     let directories = crate::live_journal_entities(journal).map_err(|e| e.to_string())?;
-    reconcile_activity_with_entities(journal, facet, day, record, &directories)
+    let holders = face_holders(journal, &directories)?;
+    let relevant = relevant_entities(record, &directories, &holders);
+    reconcile_activity_with_entities(journal, facet, day, record, &relevant)
 }
 
 /// A batch resolves identities once while holding entity trust for the batch.
@@ -381,6 +425,12 @@ pub fn clear(journal: &Path, surface: solstone_core_removals::Surface) -> Result
     );
     removal.commit(solstone_core_removals::Unit::Faces, |io| -> Result<usize> {
         let mut count = 0;
+        let derived = super::cross::path(journal)?;
+        if solstone_core_journal_io::path_lexists(&derived).map_err(|e| e.to_string())? {
+            remove_path(journal, io, &derived)?;
+            count += 1;
+        }
+        super::cross::clear_candidates(journal)?;
         for (_, day) in solstone_core_journal_io::day_dirs(journal).map_err(|e| e.to_string())? {
             for segment in
                 iter_segments(journal, PathOrDay::Directory(&day)).map_err(|e| e.to_string())?
@@ -422,6 +472,7 @@ pub fn clear(journal: &Path, surface: solstone_core_removals::Surface) -> Result
             .remove_files(|relative| {
                 let components: Vec<_> = relative.split('/').collect();
                 match components.as_slice() {
+                    ["entities", name] => *name == super::cross::FILE,
                     ["entities", _, name] => entity_face_or_stage(name),
                     ["chronicle", ..] => components.iter().any(|s| face_sidecar_name(s)),
                     _ => false,

@@ -34,6 +34,20 @@ fn open_input(path: &Path) -> Result<ffmpeg::format::context::Input, ffmpeg::Err
     ffmpeg::format::input_with_dictionary(path, options)
 }
 
+pub(crate) fn recording_supported(path: &Path) -> Result<bool, ffmpeg::Error> {
+    if is_still(path) {
+        return Ok(true);
+    }
+    ffmpeg::init()?;
+    let input = open_input(path)?;
+    let stream = input
+        .streams()
+        .best(ffmpeg::media::Type::Video)
+        .ok_or(ffmpeg::Error::StreamNotFound)?;
+    let context = ffmpeg::codec::context::Context::from_parameters(stream.parameters())?;
+    Ok(ffmpeg::decoder::find(context.id()).is_some())
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RgbFrame {
     pub(crate) width: u32,

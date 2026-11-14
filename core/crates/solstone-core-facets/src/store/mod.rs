@@ -50,8 +50,8 @@ pub use activity_records::{
     hold_activity_enrichment, is_body_record, is_retired_plan, list_activity_day_stems,
     load_activity_records, load_activity_records_readable, parse_activity_records_strict,
     read_activity_records_readable, read_activity_records_strict, reconcile_faceprints,
-    reconcile_faceprints_for_activity, refresh_body_account, remove_activity_edit,
-    set_activity_hidden, set_activity_hidden_checked, update_activity_record,
+    reconcile_faceprints_for_activity, reconcile_faceprints_for_segments, refresh_body_account,
+    remove_activity_edit, set_activity_hidden, set_activity_hidden_checked, update_activity_record,
     update_activity_record_checked, update_activity_record_with,
 };
 pub use awareness::{

@@ -114,6 +114,19 @@ fn run_routine(
             exit_code: 1,
         };
     };
+    let _speaker_priority = if id.starts_with("speakers:")
+        && solstone_core_entity::faceprints::enabled(journal).unwrap_or(false)
+    {
+        match solstone_core_segment::face_backfill::speaker_priority_lease(journal, id) {
+            Ok(lease) => lease,
+            Err(error) => {
+                log::warn!("face history priority unavailable: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
     if matches!(
         id.as_str(),
         "backup:run" | "backup:prune" | "backup:verify" | "backup:offload"
@@ -129,18 +142,43 @@ fn run_routine(
             },
         };
     }
-    if id == "faces:reconcile" {
+    if matches!(id.as_str(), "faces:reconcile" | "faces:backfill") {
         if !forwarded.is_empty() {
             return usage_error(RUN_USAGE, "unexpected face reconciliation arguments");
         }
-        return match solstone_core_facets::reconcile_faceprints(journal) {
-            Ok(added) => success(format!("{{\"added\":{added}}}\n")),
-            Err(error) => CliRun {
-                stdout: String::new(),
-                stderr: format!("face reconciliation: {error}\n"),
-                exit_code: 1,
-            },
-        };
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        return success("{}\n".into());
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            let daily = id == "faces:reconcile";
+            #[cfg(windows)]
+            let result = crate::bodies::faces::run_with_generation(
+                journal,
+                daily,
+                services.discovery_generation,
+            );
+            #[cfg(not(windows))]
+            let result = if daily {
+                crate::bodies::faces::reconcile(journal)
+            } else {
+                crate::bodies::faces::backfill(journal)
+            };
+            return match result {
+                Ok(stats) => CliRun {
+                    stdout: format!(
+                        "{}\n",
+                        serde_json::to_string(&stats).expect("face statistics serialize")
+                    ),
+                    stderr: String::new(),
+                    exit_code: i32::from(stats.failed > 0 || stats.recovery_failed),
+                },
+                Err(error) => CliRun {
+                    stdout: String::new(),
+                    stderr: format!("face reconciliation: {error}\n"),
+                    exit_code: 1,
+                },
+            };
+        }
     }
     if id == "speakers:discover-voices" {
         #[cfg(windows)]

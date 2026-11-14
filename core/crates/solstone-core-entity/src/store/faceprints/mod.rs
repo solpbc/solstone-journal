@@ -5,6 +5,7 @@
 
 pub mod accumulation;
 mod codec;
+pub mod cross;
 pub mod panel;
 mod storage;
 pub use storage::*;

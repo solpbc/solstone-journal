@@ -375,7 +375,13 @@ fn run_prepared(
     let segment = output.parent().unwrap_or_else(|| Path::new(""));
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let mut faces = if crate::faces::enabled(options.journal).map_err(RunError::Internal)? {
-        Some(crate::faces::FacePass::new(options.video))
+        match crate::faces::FacePass::try_new(options.journal, options.video) {
+            Ok(pass) => Some(pass),
+            Err(error) => {
+                log::warn!("optional face pass deferred: {error}");
+                None
+            }
+        }
     } else {
         None
     };

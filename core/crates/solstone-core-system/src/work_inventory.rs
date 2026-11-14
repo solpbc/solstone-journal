@@ -131,6 +131,13 @@ pub struct WorkInventory {
     pub owner_asks: Option<OwnerAskProgress>,
 }
 
+/// Admission hint for historical local work. Never establishes completion.
+pub fn newer_work_pending(journal: &Path) -> Result<bool, String> {
+    Ok(read(journal)?
+        .filter(|v| v.current_at(chrono::Utc::now().timestamp_millis()))
+        .is_some_and(|v| v.bands[..3].iter().any(|b| b.eligible > 0)))
+}
+
 /// How long a snapshot stays current past its pass or its promised next one.
 pub const CURRENT_FOR_MS: i64 = 180_000;
 
