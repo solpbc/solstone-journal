@@ -32,7 +32,8 @@ use crate::onnx_windows::{
     FIRERED_VAD_FILENAME, FIRERED_VAD_SHA256, FIRERED_VAD_SIZE_BYTES, ONNX_RUNTIME_COMMIT,
     ONNX_RUNTIME_REPOSITORY, ONNX_WINDOWS_REDUCED_OPS_CONFIG_SHA256,
     ONNX_WINDOWS_REDUCED_OPS_CONFIG_SIZE_BYTES, PYANNOTE_FILENAME, PYANNOTE_SHA256,
-    PYANNOTE_SIZE_BYTES, WESPEAKER_FILENAME, WESPEAKER_SHA256, WESPEAKER_SIZE_BYTES,
+    PYANNOTE_SIZE_BYTES, SFACE_FILENAME, SFACE_SHA256, SFACE_SIZE_BYTES, WESPEAKER_FILENAME,
+    WESPEAKER_SHA256, WESPEAKER_SIZE_BYTES, YUNET_FILENAME, YUNET_SHA256, YUNET_SIZE_BYTES,
 };
 use crate::provenance::Provenance;
 
@@ -1027,6 +1028,8 @@ fn read_models(repo_root: &Path) -> Result<Vec<InputIdentityEntry>, OnnxWindowsS
             FIRERED_VAD_SHA256,
         ),
         (WESPEAKER_FILENAME, WESPEAKER_SIZE_BYTES, WESPEAKER_SHA256),
+        (YUNET_FILENAME, YUNET_SIZE_BYTES, YUNET_SHA256),
+        (SFACE_FILENAME, SFACE_SIZE_BYTES, SFACE_SHA256),
     ] {
         let bytes = fs::read(repo_root.join("core/models/assets").join(name))?;
         if bytes.len() as u64 != size || sha256_hex(&bytes) != sha256 {
@@ -1056,6 +1059,14 @@ fn require_models(models: &[InputIdentityEntry]) -> Result<(), OnnxWindowsSource
         (
             format!("models/{WESPEAKER_FILENAME}"),
             (WESPEAKER_SIZE_BYTES, WESPEAKER_SHA256),
+        ),
+        (
+            format!("models/{YUNET_FILENAME}"),
+            (YUNET_SIZE_BYTES, YUNET_SHA256),
+        ),
+        (
+            format!("models/{SFACE_FILENAME}"),
+            (SFACE_SIZE_BYTES, SFACE_SHA256),
         ),
     ]);
     let actual = models
