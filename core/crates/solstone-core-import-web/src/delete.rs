@@ -217,12 +217,14 @@ pub(crate) async fn delete(
             return Ok(None);
         }
         let index = RetentionIndex::new(&root);
-        let item = match Imports::new(&index).trash(&root, &id, Action::ImportDelete, surface) {
-            Ok(item) => item,
-            Err(TrashError::Unfinished(item_id)) => solstone_core_trash::item(&root, &item_id)?
-                .ok_or(TrashError::Unfinished(item_id))?,
-            Err(error) => return Err(error),
-        };
+        let made = solstone_core_import::made_from::MadeFromIt::new();
+        let item =
+            match Imports::new(&index, &made).trash(&root, &id, Action::ImportDelete, surface) {
+                Ok(item) => item,
+                Err(TrashError::Unfinished(item_id)) => solstone_core_trash::item(&root, &item_id)?
+                    .ok_or(TrashError::Unfinished(item_id))?,
+                Err(error) => return Err(error),
+            };
         let erased = request.erase
             && match solstone_core_trash::erase(&root, &item.id, Action::ImportDelete, surface) {
                 Ok(()) => true,
@@ -231,14 +233,16 @@ pub(crate) async fn delete(
                     false
                 }
             };
-        Ok(Some((item, erased)))
+        // Its holds are released: search may wait for its writer now.
+        Ok(Some((item, erased, made.refresh_search(&root))))
     })
     .await;
     match outcome {
-        Ok(Ok(Some((item, erased)))) => json_response(
-            StatusCode::OK,
-            moved(&item.id, &item.erase_at, request.erase, erased),
-        ),
+        Ok(Ok(Some((item, erased, search)))) => {
+            let mut body = moved(&item.id, &item.erase_at, request.erase, erased);
+            body["search"] = json!(search);
+            json_response(StatusCode::OK, body)
+        }
         Ok(Ok(None)) => elsewhere(),
         Ok(Err(error_value)) => trash_error(&error_value),
         Err(_) => failed("the delete task stopped"),
@@ -321,17 +325,21 @@ pub(crate) async fn delete_set(
             }
         }
         let mut done = Vec::new();
+        let mut search = None;
         if !chosen.is_empty() {
-            let results = solstone_core_import::trash_kinds::with_kinds(&root, |kinds| {
-                solstone_core_trash::detach_set(
-                    &root,
-                    kinds,
-                    chosen,
-                    Action::ImportDelete,
-                    surface,
-                    request.erase,
-                )
-            })?;
+            let (results, now) =
+                solstone_core_import::trash_kinds::with_kinds_search(&root, |kinds| {
+                    solstone_core_trash::detach_set(
+                        &root,
+                        kinds,
+                        chosen,
+                        Action::ImportDelete,
+                        surface,
+                        request.erase,
+                    )
+                });
+            let results = results?;
+            search = Some(now);
             for (id, result) in order.into_iter().zip(results) {
                 match result {
                     SetResult::Moved { item, erased } => done.push(json!({
@@ -348,7 +356,7 @@ pub(crate) async fn delete_set(
                 }
             }
         }
-        Ok::<_, TrashError>(json!({"done": done, "failed": failed}))
+        Ok::<_, TrashError>(json!({"done": done, "failed": failed, "search": search}))
     })
     .await;
     match outcome {

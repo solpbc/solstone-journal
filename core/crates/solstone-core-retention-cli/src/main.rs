@@ -382,9 +382,10 @@ fn run_remove_segments(args: &Args) -> ExitCode {
         }
     }
     let index = RetentionIndex::new(&journal);
-    let recordings = solstone_core_retention::recording_trash::Recordings::new(&index);
-    let segments = solstone_core_import::segment_trash::ImportSegments::new(&index);
-    let imports = solstone_core_import::import_trash::Imports::new(&index);
+    let made = solstone_core_import::made_from::MadeFromIt::new();
+    let recordings = solstone_core_retention::recording_trash::Recordings::new(&index, &made);
+    let segments = solstone_core_import::segment_trash::ImportSegments::new(&index, &made);
+    let imports = solstone_core_import::import_trash::Imports::new(&index, &made);
     let chosen: Vec<solstone_core_trash::Chosen> = targets
         .iter()
         .map(|target| solstone_core_trash::Chosen {
@@ -454,12 +455,16 @@ fn run_remove_segments(args: &Args) -> ExitCode {
     } else {
         EXIT_REFUSED
     };
+    // Every move has returned and released its holds.
+    let search = made.refresh_search(&journal);
     emit(
         serde_json::json!({
             "ok": code == EXIT_OK,
             "verb": "remove-segments",
             "trashed": trashed,
             "refused": refused,
+            "search": search,
+            "not_remade": made.skipped(),
         }),
         code,
     )

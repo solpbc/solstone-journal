@@ -715,6 +715,199 @@ fn append_segment(entry: &mut Map<String, Value>, segment: &str) {
     }
 }
 
+pub use solstone_core_segment::{segment_live, stream_segment_dir as segment_dir};
+
+/// Fields a talent writes onto an activity record from every segment it read.
+/// When a segment leaves, they no longer hold for what remains, so they are
+/// dropped until the record's talents run again.
+pub const TALENT_WRITTEN_FIELDS: [&str; 6] = [
+    "title",
+    "story",
+    "relations",
+    "participation",
+    "participation_confidence",
+    "participation_partial_input",
+];
+
+/// What [`rederive`] made of a record.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Rederived {
+    /// Every segment it names is in the journal, or it isn't the journal's to
+    /// re-make (body data, a record naming no stream, the owner's own record
+    /// with nothing left): leave it as it is.
+    Unchanged,
+    /// Re-made from the segments still in the journal.
+    Changed(Map<String, Value>),
+    /// Nothing it was made from is left.
+    Removed,
+}
+
+/// Re-make an activity record from the segments it names that are still in
+/// the journal, with no model, as the state machine builds one: a segment
+/// continues the record when its Sense names the record's facet above `low`
+/// with the record's activity type; the description and level come from the
+/// last such segment and the entities from all of them. What talents wrote
+/// from every segment is dropped (see [`TALENT_WRITTEN_FIELDS`]); identity,
+/// placement, the owner's edits and any field the owner holds are kept.
+///
+/// A record the owner made keeps its words and loses only the gone segments.
+/// Body data is never touched here: its own trash owns it.
+pub fn rederive(journal: &Path, day: &str, record: &Map<String, Value>) -> Rederived {
+    rederive_with(journal, day, record, false)
+}
+
+/// [`rederive`], re-making the record even when every segment it names is in
+/// the journal (`force`): a recover gives a narrowed record its segments back,
+/// and what was derived from fewer of them must be made again.
+pub fn rederive_with(
+    journal: &Path,
+    day: &str,
+    record: &Map<String, Value>,
+    force: bool,
+) -> Rederived {
+    use solstone_core_format::content::{activity_field_held, is_body_record, is_strava_reading};
+    if is_body_record(record) || is_strava_reading(record) {
+        return Rederived::Unchanged;
+    }
+    let Some(stream) = record.get("stream").and_then(Value::as_str) else {
+        return Rederived::Unchanged;
+    };
+    let segments = record
+        .get("segments")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let live = segments
+        .iter()
+        .filter(|key| segment_live(journal, day, stream, key))
+        .cloned()
+        .collect::<Vec<_>>();
+    if live.len() == segments.len() && !force {
+        return Rederived::Unchanged;
+    }
+    let mut next = record.clone();
+    next.insert("segments".to_owned(), json!(live));
+    if record.get("source").and_then(Value::as_str) == Some("user") {
+        return if live.is_empty() || live.len() == segments.len() {
+            Rederived::Unchanged
+        } else {
+            Rederived::Changed(next)
+        };
+    }
+    let facet = record
+        .get("facet")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let activity = record
+        .get("activity")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    // The owner said what kind of activity it is: no segment's Sense decides.
+    let type_held = activity_field_held(record, "activity");
+    // Sense names facets as they were when it ran; a facet merged or renamed
+    // since is the record's under its live name.
+    let declarations =
+        solstone_core_indexer_store::classification::FacetDeclarationSet::from_journal(journal)
+            .ok();
+    let is_record_facet = |name: &str| {
+        name == facet
+            || declarations
+                .as_ref()
+                .and_then(|facets| facets.live_name_for_reference(name))
+                .is_some_and(|live| live == facet)
+    };
+    let mut last: Option<(String, String)> = None;
+    let mut unread = false;
+    let mut names = Vec::<String>::new();
+    let mut seen = BTreeSet::<String>::new();
+    for key in &live {
+        let dir = segment_dir(journal, day, stream, key);
+        let sense = match solstone_core_journal_io::durability::read_json_durable::<Value>(
+            solstone_core_journal_io::durability::ArtifactId::SegmentSense,
+            &dir.join("talents").join("sense.json"),
+        ) {
+            Ok(solstone_core_journal_io::durability::DurableRead::Present(sense)) => sense,
+            _ => {
+                unread = true;
+                continue;
+            }
+        };
+        if sense.get("density").and_then(Value::as_str) == Some("idle")
+            || (!type_held && sense.get("content_type").and_then(Value::as_str) != Some(activity))
+        {
+            continue;
+        }
+        let Some(entry) = sense
+            .get("facets")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_object)
+            .find(|entry| {
+                entry
+                    .get("facet")
+                    .and_then(Value::as_str)
+                    .is_some_and(is_record_facet)
+                    && entry.get("level").and_then(Value::as_str) != Some("low")
+            })
+        else {
+            continue;
+        };
+        let summary = sense
+            .get("activity_summary")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let description = normalize_activity_description(
+            entry
+                .get("activity")
+                .and_then(Value::as_str)
+                .unwrap_or(summary),
+        );
+        let level = match entry.get("level").and_then(Value::as_str) {
+            Some(level @ ("high" | "medium")) => level,
+            _ => "medium",
+        };
+        last = Some((description, level.to_owned()));
+        for name in sense
+            .get("entities")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry.get("name").and_then(Value::as_str))
+        {
+            if seen.insert(name.trim().to_lowercase()) {
+                names.push(name.to_owned());
+            }
+        }
+    }
+    for field in TALENT_WRITTEN_FIELDS {
+        if !activity_field_held(record, field) {
+            next.remove(field);
+        }
+    }
+    let Some((description, level)) = last else {
+        // A Sense it couldn't read might have continued it: it stays, with
+        // only what its talents wrote dropped, never removed on a failed read.
+        return if unread && !live.is_empty() {
+            Rederived::Changed(next)
+        } else {
+            Rederived::Removed
+        };
+    };
+    if !activity_field_held(record, "description") {
+        next.insert("description".to_owned(), json!(description));
+    }
+    next.insert("level_avg".to_owned(), json!(level_value(&level)));
+    next.insert("active_entities".to_owned(), json!(names));
+    Rederived::Changed(next)
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;

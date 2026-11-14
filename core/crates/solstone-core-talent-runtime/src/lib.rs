@@ -5465,3 +5465,18 @@ mod tests {
         assert_eq!(saved, "surviving output text");
     }
 }
+
+/// Where a story's plan carries the segments its run read.
+pub(crate) const READ_SEGMENTS: &str = "_read_segments";
+
+/// Whether an activity record's segments are no longer the ones a talent run
+/// read (`read`): a recording it covered went to the trash, or came back,
+/// while it ran. Its output then describes something the record no longer is,
+/// so it isn't applied; the trash has asked for the activity to be run again.
+/// A run that says nothing of what it read is applied as before.
+pub(crate) fn segments_changed(
+    record: &serde_json::Map<String, serde_json::Value>,
+    read: Option<&serde_json::Value>,
+) -> bool {
+    read.is_some_and(|read| record.get("segments") != Some(read))
+}

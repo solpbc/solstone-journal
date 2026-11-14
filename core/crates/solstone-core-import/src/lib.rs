@@ -25,6 +25,7 @@ pub mod force_notice;
 pub mod granola;
 pub mod heartbeat;
 pub mod import_trash;
+pub mod made_from;
 pub mod metadata;
 pub mod oura_connect;
 pub mod oura_fetched;

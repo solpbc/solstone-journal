@@ -888,6 +888,40 @@ fn append_activity_record_with_check(
     })
 }
 
+/// Re-make a day's records in place under facet trust and the day file's lock,
+/// as the journal's own output rather than an owner edit: no history entry is
+/// written. `remake` gets the rows as they are and returns what to write (or
+/// `None` to write nothing). A day with no file is left alone.
+///
+/// # Errors
+///
+/// The store's errors for the file, or the trust lock.
+pub fn remake_activity_day<T>(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    remake: impl FnOnce(&[ActivityRecord]) -> (Option<Vec<ActivityRecord>>, T),
+) -> Result<Option<T>, ActivityRecordStoreError> {
+    let _guard = crate::hold_facet_trust_lock(root).map_err(|error| {
+        ActivityRecordStoreError::Identity(super::declaration::FacetIdentityError::Failed(
+            error.to_string(),
+        ))
+    })?;
+    let facet_id = admit_activity_destination(root, facet)?;
+    let result = locked_modify_day_records(root, facet, day, false, &facet_id, |rows| {
+        let (next, result) = remake(&rows);
+        match next {
+            Some(next) => Ok((next.into_iter().map(normalize).collect(), result)),
+            None => Ok((rows, result)),
+        }
+    });
+    match result {
+        Ok(result) => Ok(Some(result)),
+        Err(ActivityRecordStoreError::MissingDayFile { .. }) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // These fields are the public record-mutation contract.
 pub fn update_activity_record(
     root: &Path,

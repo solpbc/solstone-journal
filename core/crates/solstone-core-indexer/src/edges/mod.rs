@@ -268,7 +268,14 @@ pub fn extract_file_edges(
     let mut warnings = Vec::new();
     let rows = match kind {
         EdgeSourceKind::Activity => {
-            let entries = read_jsonl_objects(path)?;
+            let mut entries = read_jsonl_objects(path)?;
+            // A record naming a recording that went to the trash keeps no
+            // connections, as its row keeps no search entry.
+            if let Some(journal) = path.ancestors().nth(4) {
+                entries.retain(|entry| {
+                    !solstone_core_segment::record_names_gone_segment(journal, &context.day, entry)
+                });
+            }
             activity::extract_activity_edges(&entries, &context)?
         }
         EdgeSourceKind::Observation => {

@@ -9,6 +9,7 @@
 //! - `drain` (todo, once per bounded batch)
 //! - `scan_journal` (scan)
 //! - `rescan_file` (rescan-file)
+//! - `refresh_now` (refresh-now): an owner's trash change, bounded, after its own holds are released
 //! - `reset_index` (reset)
 //! - the last-resort recovery of a damaged index (index-recover)
 //! - `prune_by_paths` (prune-paths)

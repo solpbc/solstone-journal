@@ -373,9 +373,18 @@ fn load_digest_activities(
                 let mut has_unusable_id = false;
                 // Thinking's reading of a Strava workout is body data: no
                 // briefing reads it, as its day's evidence doesn't count it.
+                // A record naming a recording that went to the trash is being
+                // made again from what remains: until it is, nothing of it.
                 for record in records
                     .into_iter()
                     .filter(|record| !solstone_core_format::content::is_strava_reading(record))
+                    .filter(|record| {
+                        !solstone_core_segment::record_names_gone_segment(
+                            &context.journal,
+                            day,
+                            record,
+                        )
+                    })
                 {
                     let id = match record
                         .get("id")
@@ -682,6 +691,23 @@ fn generated_stamp(home: &HomeContext) -> String {
 }
 
 fn read_pulse(home: &HomeContext, day: &str, gaps: &mut Vec<String>) -> String {
+    // A pulse is never made again: on a day that lost a recording to the
+    // trash, or the day after it, it may still say what that recording held.
+    let before = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+        .ok()
+        .map(|date| {
+            (date - chrono::Duration::days(1))
+                .format("%Y%m%d")
+                .to_string()
+        });
+    if solstone_core_segment::day_has_tombstone(&home.journal_root, day)
+        || before.is_some_and(|before| {
+            solstone_core_segment::day_has_tombstone(&home.journal_root, &before)
+        })
+    {
+        gaps.push("the latest pulse".into());
+        return String::new();
+    }
     let Some(record) = read_latest(home, day, "pulse", 0) else {
         gaps.push("the latest pulse".into());
         return String::new();

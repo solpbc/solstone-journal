@@ -442,7 +442,8 @@ fn a_recover_waits_for_its_recording_and_refuses_once_it_is_gone() {
     let originals = solstone_core_trash::list(&bed.0).unwrap().remove(0);
 
     let index = crate::notify::NoIndex;
-    let recordings = crate::recording_trash::Recordings::new(&index);
+    let recordings =
+        crate::recording_trash::Recordings::new(&index, &crate::made_from::NothingMade);
     let target = Target {
         day: DAY.into(),
         stream: STREAM.into(),

@@ -90,6 +90,7 @@ fn delete(root: &Path, path: &str) -> (Item, Option<String>) {
     trash_segment(
         root,
         &NoIndex,
+        &solstone_core_retention::made_from::NothingMade,
         unit(path),
         path.to_owned(),
         Action::SegmentDelete,

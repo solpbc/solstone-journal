@@ -313,16 +313,29 @@ impl AskPass {
                 briefings.insert(ask.day.clone(), briefing);
             }
             let briefing = &briefings[&ask.day];
-            if ask.thaw && !ask.thaw_done && !held && !briefing.owed {
+            // A delete's ask keeps a capped briefing pending: the old one stays
+            // out of search until a run on new evidence makes one.
+            let capped_trash = ask.from_trash() && briefing.capped;
+            if ask.thaw && !ask.thaw_done && !held && !briefing.owed && !capped_trash {
                 let capped = briefing.capped;
-                self.apply(journal, id, |current| {
-                    (current.thaw && !current.thaw_done).then(|| {
-                        let mut next = current.clone();
-                        next.thaw_done = true;
-                        next.thaw_capped = capped;
-                        Some(next)
-                    })
+                let read_at = ask.created_at_ms;
+                let ended = self.apply(journal, id, |current| {
+                    // A later change merged into the ask reopened it: not this.
+                    (current.thaw && !current.thaw_done && current.created_at_ms == read_at).then(
+                        || {
+                            let mut next = current.clone();
+                            next.thaw_done = true;
+                            next.thaw_capped = capped;
+                            Some(next)
+                        },
+                    )
                 });
+                if ended && ask.from_trash() {
+                    requeue(
+                        journal,
+                        &format!("chronicle/{}/talents/morning_briefing.json", ask.day),
+                    );
+                }
             }
         }
         let settled = |ask: &OwnerAsk, days: &BTreeMap<String, DayAsk>| {
@@ -368,16 +381,23 @@ impl AskPass {
                 .max()
                 .expect("a week has an ask");
             let start = sunday.format("%Y%m%d").to_string();
-            let owed = match week_page(journal, &start, reference) {
+            let trash = members.iter().any(|id| self.asks[id].from_trash());
+            let owed = match week_page(journal, &start, reference, trash) {
                 Page::Ended(reason) => {
                     for id in &members {
-                        self.apply(journal, id, |current| {
-                            current.week.ended.is_none().then(|| {
-                                let mut next = current.clone();
-                                next.week.ended = Some(reason.to_owned());
-                                Some(next)
-                            })
+                        let read_at = self.asks[id].created_at_ms;
+                        let ended = self.apply(journal, id, |current| {
+                            (current.week.ended.is_none() && current.created_at_ms == read_at).then(
+                                || {
+                                    let mut next = current.clone();
+                                    next.week.ended = Some(reason.to_owned());
+                                    Some(next)
+                                },
+                            )
                         });
+                        if ended && self.asks.get(id).is_some_and(OwnerAsk::from_trash) {
+                            requeue(journal, &format!("reflections/weekly/{start}.md"));
+                        }
                     }
                     false
                 }
@@ -385,14 +405,21 @@ impl AskPass {
                     let mut owed = false;
                     for id in &members {
                         let read = self.asks[id].week.clone();
+                        let from_trash = self.asks[id].from_trash();
                         let due = read
                             .counted_at_ms
-                            .is_none_or(|at| now_ms - at >= WEEK_ATTEMPT_SPACING_MS);
+                            .is_none_or(|at| now_ms - at >= week_spacing(&read, from_trash));
                         if !due {
                             owed = true;
                             continue;
                         }
-                        let exhausted = read.attempts >= WEEK_ATTEMPTS;
+                        // An attempt counts only when the lane can make the page.
+                        if !policy.permits(WorkBand::Waiting) {
+                            owed = true;
+                            continue;
+                        }
+                        // A delete's ask never gives up: it backs off instead.
+                        let exhausted = !from_trash && read.attempts >= WEEK_ATTEMPTS;
                         self.apply(journal, id, |current| {
                             (current.week == read).then(|| {
                                 let mut next = current.clone();
@@ -523,6 +550,27 @@ impl AskPass {
     }
 }
 
+/// How long after one counted week page attempt the next may count: an hour,
+/// and for a delete's ask, which never gives up, doubling up to a day.
+fn week_spacing(step: &solstone_core_system::owner_ask::WeekStep, from_trash: bool) -> i64 {
+    if !from_trash {
+        return WEEK_ATTEMPT_SPACING_MS;
+    }
+    let doublings = step.attempts.saturating_sub(1).min(5);
+    (WEEK_ATTEMPT_SPACING_MS << doublings).min(24 * WEEK_ATTEMPT_SPACING_MS)
+}
+
+/// Queue a file a delete's ask kept out of search, now that it no longer does:
+/// a file indexed while hidden is otherwise not read again until it changes.
+fn requeue(journal: &Path, rel: &str) {
+    let path = journal.join(rel);
+    if path.exists()
+        && let Err(error) = solstone_core_indexer_store::todo::enqueue_path(journal, &path)
+    {
+        log::warn!("owner ask: search update for {rel} could not be queued: {error}");
+    }
+}
+
 /// The Sunday that starts the week holding `day`.
 fn week_start(day: &str) -> Result<NaiveDate, String> {
     let day = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|error| error.to_string())?;
@@ -588,11 +636,15 @@ enum Page {
 /// Whether the week's page, starting `start`, must be made again after
 /// `reference`. A page that cannot be shown or trusted is not re-made by an
 /// ask; one whose content is malformed is.
-fn week_page(journal: &Path, start: &str, reference: i64) -> Page {
+///
+/// For a delete's ask (`trash`), a page that is there but can't be judged is
+/// made again rather than left: it may still hold what was deleted.
+fn week_page(journal: &Path, start: &str, reference: i64, trash: bool) -> Page {
     use solstone_core_home::weekly::WeekJudgment;
     match solstone_core_home::weekly::judge_page(journal, start) {
-        Err(_) => Page::Ended("page_unreadable"),
         Ok(WeekJudgment::Absent) => Page::Ended("page_absent"),
+        Err(_) | Ok(WeekJudgment::CantShow | WeekJudgment::Untrusted) if trash => Page::Owed,
+        Err(_) => Page::Ended("page_unreadable"),
         Ok(WeekJudgment::CantShow) => Page::Ended("page_unshowable"),
         Ok(WeekJudgment::Untrusted) => Page::Ended("page_untrusted"),
         Ok(WeekJudgment::CouldntCheck) => Page::Owed,

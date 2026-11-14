@@ -119,6 +119,11 @@ pub(crate) fn apply_result_cancellable(
     else {
         return Err("activity no longer exists".to_owned());
     };
+    if crate::segments_changed(&stored, activity.get("segments")) {
+        // Made from segments the record no longer names: not applied, and
+        // nothing failed (see `crate::segments_changed`).
+        return Ok(());
+    }
     // Read as it stands under the write lock, so a correction made while the
     // talent ran still counts. A recording that played through only part of
     // this activity's time leaves the people of the rest as they were.

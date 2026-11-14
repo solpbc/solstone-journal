@@ -5252,6 +5252,7 @@ dependencies = [
  "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-speaker-resolve",
+ "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-transcripts",
  "solstone-core-trash",

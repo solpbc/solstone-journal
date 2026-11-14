@@ -876,7 +876,7 @@ mod tests {
 
     fn trash_segment(root: &Path, key: &str) -> String {
         let index = RetentionIndex::new(root);
-        Recordings::new(&index)
+        Recordings::new(&index, &solstone_core_retention::made_from::NothingMade)
             .trash(
                 root,
                 &Target {
@@ -1032,6 +1032,7 @@ mod tests {
             let (item, _) = solstone_core_import::segment_trash::trash_segment(
                 root,
                 &index,
+                &solstone_core_retention::made_from::NothingMade,
                 Unit::Segment {
                     day: "20260731".into(),
                     stream: "import.audio".into(),

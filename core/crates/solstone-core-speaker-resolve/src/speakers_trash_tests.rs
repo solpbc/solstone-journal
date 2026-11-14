@@ -170,7 +170,7 @@ fn item_id(wiped: &Wiped) -> String {
 
 fn recover(root: &Path, id: &str) -> Result<Item, TrashError> {
     let speakers = Speakers::new(&NoIndex);
-    let recordings = Recordings::new(&NoIndex);
+    let recordings = Recordings::new(&NoIndex, &solstone_core_retention::made_from::NothingMade);
     let people = StandIn(Unit::Entity);
     let imports = StandIn(Unit::Import {
         source: "ics".to_owned(),
@@ -248,7 +248,7 @@ fn trash_person(root: &Path) -> Item {
 }
 
 fn trash_recording(root: &Path) -> Item {
-    Recordings::new(&NoIndex)
+    Recordings::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
         .trash(
             root,
             &Target {

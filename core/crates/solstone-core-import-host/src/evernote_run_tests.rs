@@ -324,7 +324,7 @@ fn kept_notes(root: &Path) -> Vec<PathBuf> {
 }
 
 fn trash_note(root: &Path, day: &str, stream: &str) -> solstone_core_trash::Item {
-    Recordings::new(&NoIndex)
+    Recordings::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
         .trash(
             root,
             &Target {
@@ -362,9 +362,12 @@ fn erased_evernote_import_takes_kept_text_and_same_file_returns() {
     );
     let kept = kept_notes(root.path());
     assert_eq!(kept.len(), 1);
-    let item = solstone_core_import::import_trash::Imports::new(&NoIndex)
-        .trash(root.path(), &id, Action::ImportDelete, surface())
-        .unwrap();
+    let item = solstone_core_import::import_trash::Imports::new(
+        &NoIndex,
+        &solstone_core_retention::made_from::NothingMade,
+    )
+    .trash(root.path(), &id, Action::ImportDelete, surface())
+    .unwrap();
     assert!(kept.iter().all(|path| !path.exists()));
     assert!(
         item.paths
@@ -520,7 +523,10 @@ fn shared_evernote_segment_keeps_its_record_until_the_last_import_leaves() {
     );
     let kept = kept_notes(root.path());
     assert_eq!(kept.len(), 1);
-    let imports = solstone_core_import::import_trash::Imports::new(&NoIndex);
+    let imports = solstone_core_import::import_trash::Imports::new(
+        &NoIndex,
+        &solstone_core_retention::made_from::NothingMade,
+    );
     let one = imports
         .trash(root.path(), &first, Action::ImportDelete, surface())
         .unwrap();
@@ -571,9 +577,12 @@ fn an_unreadable_evernote_record_refuses_before_anything_moves() {
     );
     fs::write(&kept_notes(root.path())[0], b"broken json").unwrap();
     assert!(
-        solstone_core_import::import_trash::Imports::new(&NoIndex)
-            .trash(root.path(), &id, Action::ImportDelete, surface())
-            .is_err()
+        solstone_core_import::import_trash::Imports::new(
+            &NoIndex,
+            &solstone_core_retention::made_from::NothingMade
+        )
+        .trash(root.path(), &id, Action::ImportDelete, surface())
+        .is_err()
     );
     assert!(root.path().join("imports").join(id).is_dir());
     assert!(
