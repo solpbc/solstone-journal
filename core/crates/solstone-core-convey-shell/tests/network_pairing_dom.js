@@ -5,6 +5,8 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+// network.js takes the shared focus helpers from the page, as the fragment loads them first.
+require(path.join(__dirname, '../assets/static/focus.js'));
 
 let cases = 0;
 
@@ -500,6 +502,7 @@ function createEnvironment(manifestDir, options = {}) {
   const modalSource = fs.readFileSync(path.join(manifestDir, 'assets/static/modal_layer.js'), 'utf8');
   const networkSource = fs.readFileSync(path.join(manifestDir, 'assets/network/network.js'), 'utf8');
   vm.runInContext(modalSource, context, { filename: 'modal_layer.js' });
+  vm.runInContext(fs.readFileSync(path.join(manifestDir, 'assets/static/focus.js'), 'utf8'), context, { filename: 'focus.js' });
   vm.runInContext(networkSource, context, { filename: 'network.js' });
   const repairs = [];
   const disables = [];
