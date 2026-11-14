@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- fixed catch-up on older days slowing to a crawl when one past day had a review step that could not finish on its own. that day is now set aside, and the rest keep going.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.

@@ -200,6 +200,58 @@ fn read_coverage(
     }
 }
 
+/// The owed units the day's own run would leave as they are, asking no model.
+/// Running the day for them alone ends it incomplete, and that failure reads
+/// as thinking not being answered, so discovery sets them aside until new
+/// evidence or an owner's retry opens them.
+fn left_by_run(
+    journal: &Path,
+    day: &str,
+    coverage: &daily_coverage::DailyCoverage,
+) -> Result<BTreeSet<solstone_core_journal_io::DailyUnitIdentity>, String> {
+    let today = daily_coverage::local_day(journal, chrono::Utc::now());
+    let mut left = BTreeSet::new();
+    for unit in &coverage.units {
+        if !unit.state.is_owed()
+            || !matches!(
+                unit.owed_by.as_deref(),
+                Some("conflict" | "unconfirmed_write")
+            )
+        {
+            continue;
+        }
+        let Some(record) =
+            solstone_core_journal_io::load_daily_unit_record(journal, &unit.identity)
+                .map_err(|error| format!("{day}: {error}"))?
+        else {
+            continue;
+        };
+        if daily_coverage::left_by_automatic_run(
+            &record,
+            &unit.evidence_revision,
+            &unit.contract_digest,
+            &today,
+            journal,
+        ) {
+            left.insert(unit.identity.clone());
+        }
+    }
+    Ok(left)
+}
+
+/// Whether the day's own run has owed daily work it can take on.
+fn runnable_owed(
+    journal: &Path,
+    day: &str,
+    coverage: &daily_coverage::DailyCoverage,
+) -> Result<bool, String> {
+    let left = left_by_run(journal, day, coverage)?;
+    Ok(coverage
+        .units
+        .iter()
+        .any(|unit| unit.state.is_owed() && !left.contains(&unit.identity)))
+}
+
 fn observe_daily_retry(
     journal: &Path,
     unit: &Unit,
@@ -1320,6 +1372,7 @@ fn inspect_day(
         // the range. Ordinary prerequisites remain work owed.
         let permanently_blocked =
             !segments_thought && work.history.owed == 0 && work.history.set_aside > 0;
+        let left = left_by_run(journal, day, &coverage)?;
         for covered in &coverage.units {
             let unit = Unit::Daily {
                 day: day.into(),
@@ -1332,7 +1385,10 @@ fn inspect_day(
                 .iter()
                 .find(|hold| hold.retry_unit.as_ref() == Some(&id));
             if covered.state.is_owed() || hold.is_some() {
-                if permanently_blocked || permanently_held_daily.contains(&id) {
+                if permanently_blocked
+                    || permanently_held_daily.contains(&id)
+                    || left.contains(&covered.identity)
+                {
                     work.history.set_aside += 1;
                     work.history.daily_units_set_aside += u64::from(p.band >= WorkBand::Completing);
                 } else if p.band != WorkBand::Remake {
@@ -1347,6 +1403,7 @@ fn inspect_day(
                 journal,
                 day,
                 &coverage,
+                &left,
                 segments_thought && !closing,
                 prerequisites_ready,
                 intent,
@@ -1420,6 +1477,7 @@ fn queue_daily(
     journal: &Path,
     day: &str,
     coverage: &daily_coverage::DailyCoverage,
+    left: &BTreeSet<solstone_core_journal_io::DailyUnitIdentity>,
     segments_thought: bool,
     prerequisites_ready: bool,
     intent: Option<&OwnerIntent>,
@@ -1457,6 +1515,13 @@ fn queue_daily(
         return Err("daily coverage is unreadable".into());
     }
     if owed == 0 {
+        return Ok(false);
+    }
+    // Only units the run can take on are work: one it would leave as it is
+    // stays owed, and waits for new evidence or the owner's retry.
+    let owed = owed - left.len() as u64;
+    if owed == 0 {
+        held(report, day, None, p.band, "awaits_owner");
         return Ok(false);
     }
     if ask.holds {
@@ -1653,7 +1718,9 @@ fn still_owed(
     {
         return Ok(false);
     }
-    Ok(read_coverage(journal, day, roots)?.state.is_owed()
+    let coverage = read_coverage(journal, day, roots)?;
+    Ok(coverage.state.is_owed()
+        && runnable_owed(journal, day, &coverage)?
         && solstone_core_system_health::day_unpublished_segments(journal, day)?.is_some())
 }
 
@@ -5218,6 +5285,90 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A day whose only owed output is a conflict its run would decline asks no
+    /// model, so it is not run: running it fails, and three such failures read
+    /// as thinking unanswered and pause all discovered work. It waits, held as
+    /// awaiting the owner, until the conflict opens again: on new evidence,
+    /// or a conflict still open to its retry.
+    #[test]
+    fn a_day_owing_only_a_declined_conflict_is_not_run() {
+        let root = fixture("local");
+        let journal = root.path();
+        let day = "19990101";
+        let daily = "supervisor-work-19990101-daily";
+        thought_without_receipt(journal, day, &["130000_600"]);
+        let coverage = daily_coverage::read_daily_coverage(journal, day).unwrap();
+        let made: Vec<_> = coverage
+            .units
+            .iter()
+            .filter(|unit| !unit.evidence_revision.is_empty() && !unit.contract_digest.is_empty())
+            .cloned()
+            .collect();
+        assert!(!made.is_empty());
+        let (conflicted, rest) = made.split_first().unwrap();
+        for unit in rest {
+            let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+                unit.identity.clone(),
+                &unit.evidence_revision,
+                &unit.contract_digest,
+            );
+            record.status = solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput;
+            record.accepted = Some(solstone_core_journal_io::AcceptedDailyResult {
+                evidence_revision: unit.evidence_revision.clone(),
+                contract_digest: unit.contract_digest.clone(),
+                status: solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
+                packet_digest: Some("a".repeat(64)),
+                generated_result: Some(serde_json::json!({"response":"[]","output":"[]"})),
+                receipts: Vec::new(),
+                committed_at_ms: 1,
+            });
+            solstone_core_journal_io::save_daily_unit_record(journal, &record).unwrap();
+        }
+        let conflict = |evidence: &str, failures: u32| {
+            let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+                conflicted.identity.clone(),
+                evidence,
+                &conflicted.contract_digest,
+            );
+            record.status = solstone_core_journal_io::DailyUnitStatus::Conflicting;
+            record.reason_code = Some("daily_owner_conflict".into());
+            record.owner_conflict_kind = Some("promotion_owner_state".into());
+            record.failure_count = failures;
+            solstone_core_journal_io::save_daily_unit_record(journal, &record).unwrap();
+        };
+        let pass = || {
+            let queue = queue(journal);
+            reconcile(journal, &queue, &AtomicBool::new(false)).unwrap();
+            let inventory = solstone_core_system::work_inventory::read(journal)
+                .unwrap()
+                .unwrap();
+            let awaits = inventory
+                .holds
+                .iter()
+                .any(|hold| hold.day == day && hold.reason == "awaits_owner");
+            let queued = queue.contains_reference(daily);
+            queue.shutdown();
+            (queued, awaits)
+        };
+        let candidate = super::task(
+            day,
+            None,
+            priority(day, None, chrono::Utc::now().date_naive(), None),
+            None,
+        );
+        // Spent under the evidence it conflicted on: declined, so not run.
+        conflict(&conflicted.evidence_revision, 2);
+        assert_eq!(pass(), (false, true));
+        assert!(!still_owed(journal, &candidate, None, &|| Ok(())).unwrap());
+        // Still open to its retry: run.
+        conflict(&conflicted.evidence_revision, 1);
+        assert_eq!(pass(), (true, false));
+        // Spent, but under evidence that has since changed: run afresh.
+        conflict(&"0".repeat(64), 2);
+        assert_eq!(pass(), (true, false));
+        assert!(still_owed(journal, &candidate, None, &|| Ok(())).unwrap());
     }
 
     /// The history walk re-senses an older day whose outputs were already made.
