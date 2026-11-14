@@ -15,9 +15,9 @@ use solstone_core_home::weekly::{
 };
 
 use super::ToolError;
-use crate::dispatch::{DispatchPrincipal, available_facets, codec};
+use crate::dispatch::{DispatchPrincipal, available_facets};
 use crate::permissions::ConnectionReadSnapshot;
-use crate::references::{ActivityReference, ReferenceTarget};
+use crate::references::ActivityReference;
 use crate::segment_links::{LinkSubject, LiveTranscriptPages, issue_segment_links};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,7 +167,6 @@ fn project_sunday(
     let gate = crate::body_source::window_gate(journal, snapshot);
     // A body record or Strava line this connection would read with the body
     // permission, so the week says it needs it.
-    let holds_body = crate::body_source::holds_body(snapshot);
     let mut body_withheld = false;
     let mut body = Vec::new();
     // The windows body faces were composed from, for the audit.
@@ -235,28 +234,17 @@ fn project_sunday(
                 .and_then(|faces| faces.get(&day_str))
                 .map_or(&[][..], Vec::as_slice);
 
-            let superseded =
-                solstone_core_facets::superseded_record_ids(journal, f_dir, &day_str, &rows);
+            // The same test every read of one of these records makes again.
+            let judged =
+                crate::may_see::ActivityDay::new(journal, snapshot, f_dir, &day_str, &rows);
             for (row, rec_id) in rows.into_iter().zip(line_identities) {
-                if row.get("hidden").and_then(Value::as_bool).unwrap_or(false)
-                    || solstone_core_facets::is_retired_plan(&row)
-                    || row
-                        .get("id")
-                        .and_then(Value::as_str)
-                        .is_some_and(|id| superseded.contains(id))
-                {
-                    continue;
-                }
-                if crate::body_source::strava_line_hidden(journal, snapshot, &day_str, &row) {
-                    body_withheld = body_withheld
-                        || crate::body_source::strava_line_needs_body(
-                            journal, snapshot, &day_str, &row,
-                        );
-                    continue;
-                }
-                if solstone_core_facets::is_body_record(&row) && !holds_body {
-                    body_withheld = true;
-                    continue;
+                match judged.shows(&row) {
+                    crate::may_see::Shown::Yes => {}
+                    crate::may_see::Shown::No => continue,
+                    crate::may_see::Shown::NeedsBody => {
+                        body_withheld = true;
+                        continue;
+                    }
                 }
                 if solstone_core_facets::is_body_record(&row) {
                     let id = row.get("id").and_then(Value::as_str);
@@ -389,21 +377,20 @@ fn project_sunday(
     let mut checker = LiveTranscriptPages::new(std::sync::Arc::clone(&possible_names));
     for group in ranked {
         let rep = group.representative;
-        let reference = codec()
-            .mint(
-                principal.connection,
-                snapshot.generation,
-                ReferenceTarget::Activity(ActivityReference {
-                    facet_id: rep.facet_id.clone(),
-                    facet_dir: rep.facet_dir.clone(),
-                    day: rep.day.clone(),
-                    record_identity: rep.record_identity.clone(),
-                    file_digest: rep.file_digest.clone(),
-                    unit_index: None,
-                    source_binding: None,
-                }),
-            )
-            .map_err(|_| ToolError::ReferenceNotFound)?;
+        let reference = crate::dispatch::activity_reference(
+            principal,
+            snapshot,
+            ActivityReference {
+                facet_id: rep.facet_id.clone(),
+                facet_dir: rep.facet_dir.clone(),
+                day: rep.day.clone(),
+                record_identity: rep.record_identity.clone(),
+                file_digest: rep.file_digest.clone(),
+                unit_index: None,
+                source_binding: None,
+            },
+        )
+        .map_err(|_| ToolError::ReferenceNotFound)?;
 
         let (start, end, duration) =
             crate::tools::activities::activity_times_and_duration(&rep.record);
@@ -548,12 +535,7 @@ fn project_sunday(
     body.sort_by(|left, right| (&left.0, &left.1).cmp(&(&right.0, &right.1)));
     let mut body_items = Vec::new();
     for (day, _, target, facet_title, face) in body {
-        let reference = codec()
-            .mint(
-                principal.connection,
-                snapshot.generation,
-                ReferenceTarget::Activity(target),
-            )
+        let reference = crate::dispatch::activity_reference(principal, snapshot, target)
             .map_err(|_| ToolError::ReferenceNotFound)?;
         body_items.push(crate::tools::activities::body_activity(
             &face,

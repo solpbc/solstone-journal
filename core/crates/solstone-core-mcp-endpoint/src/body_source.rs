@@ -305,6 +305,14 @@ pub(crate) fn holds_only_moved(window: &Path) -> bool {
     std::fs::read_to_string(window.join(BODY_RECORDS_FILE)).is_ok_and(|text| only_moved_rows(&text))
 }
 
+/// A body window's place on its source's grid, from its key. A key off the
+/// grid is no window any list shows.
+pub(crate) fn grid_clock(name: &str) -> Option<solstone_core_transcripts::SegmentClock> {
+    let length = solstone_core_format::content::body_records::grid_length(name)?;
+    let (clock, _) = name.split_once('_')?;
+    segment_clock(&format!("{clock}_{length}"))
+}
+
 /// The body windows this connection reads: none without the body permission.
 fn readable_windows(
     journal_root: &Path,
@@ -350,12 +358,7 @@ fn windows_in_scope(
             continue;
         }
         let name = identity.name.to_owned();
-        let grid = solstone_core_format::content::body_records::grid_length(&name);
-        let grid_key = grid.and_then(|length| {
-            name.split_once('_')
-                .map(|(clock, _)| format!("{clock}_{length}"))
-        });
-        let Some(clock) = grid_key.as_deref().and_then(segment_clock) else {
+        let Some(clock) = grid_clock(&name) else {
             continue;
         };
         let probe = segment_assignment_probe_path(day, stream, &name);
@@ -994,15 +997,20 @@ pub(crate) fn list_source(
             unreadable += 1;
             continue;
         };
-        let reference = mint(ReferenceTarget::Segment(SegmentReference {
-            day: day.to_owned(),
-            stream: (*stream).to_owned(),
-            segment: window.name.clone(),
-            version: page.version.fingerprint(),
-            source_index: None,
-            byte_offset: None,
-            statement_ordinal: None,
-        }))?;
+        let reference = crate::dispatch::segment_reference(
+            journal_root,
+            principal,
+            snapshot,
+            SegmentReference {
+                day: day.to_owned(),
+                stream: (*stream).to_owned(),
+                segment: window.name.clone(),
+                version: page.version.fingerprint(),
+                source_index: None,
+                byte_offset: None,
+                statement_ordinal: None,
+            },
+        )?;
         targets.push(format!("{day}/{stream}/{}", window.name));
         listed.push(json!({
             "title": format!("Body records — {day}"),
@@ -1102,6 +1110,10 @@ pub(crate) fn read_source_span(
     reference: SourceSpanReference,
 ) -> Result<Prepared, DispatchError> {
     let not_found = || DispatchError::Tool(ToolError::ReferenceNotFound);
+    // Only a body source has a span of its own, as only one is listed with one.
+    if !BODY_RECORD_STREAMS.contains(&reference.stream.as_str()) {
+        return Err(not_found());
+    }
     let position = request
         .cursor
         .as_deref()
