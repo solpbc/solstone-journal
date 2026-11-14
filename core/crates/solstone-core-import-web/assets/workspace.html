@@ -692,6 +692,11 @@
 #importDeleteModal .btn-secondary:hover { background: var(--hairline); }
 #importDeleteModal .btn-danger { background: var(--danger); color: var(--ink-on-danger); border: 0; }
 #importDeleteModal .btn-danger:hover { background: color-mix(in srgb, var(--danger) 78%, var(--surface-dark)); }
+/* On a phone the app dock stays above dialogs, so the card stops above it. */
+@media (max-width: 700px) {
+  #importDeleteModal { padding-bottom: calc(24px + var(--app-dock-height, 0px)); }
+  #importDeleteModal .modal-content { max-height: calc(100vh - 48px - var(--app-dock-height, 0px)); }
+}
 @media (max-width: 480px) {
   #importDeleteModal .trash-dlg-foot button { min-height: 44px; padding-left: 12px; padding-right: 12px; white-space: nowrap; }
 }
