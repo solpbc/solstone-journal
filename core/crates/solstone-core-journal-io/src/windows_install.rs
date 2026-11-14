@@ -76,7 +76,7 @@ pub enum WindowsInstallPrimitive {
 }
 
 /// Trace returned by the feature-gated Windows install_file test seam.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 #[derive(Debug)]
 pub struct WindowsInstallTrace {
     /// Every checkpoint reached, in order.
@@ -121,7 +121,7 @@ thread_local! {
 }
 
 /// Run one operation with injected install faults and a complete trace.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 pub fn run_with_windows_install_faults<T>(
     faults: impl IntoIterator<Item = (WindowsInstallPrimitive, usize, i32)>,
     op: impl FnOnce() -> T,
@@ -132,7 +132,7 @@ pub fn run_with_windows_install_faults<T>(
 }
 
 /// Run one operation with a deterministic install barrier and a complete trace.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 pub fn run_with_windows_install_barrier<T>(
     primitive: WindowsInstallPrimitive,
     ordinal: usize,
@@ -148,7 +148,7 @@ pub fn run_with_windows_install_barrier<T>(
 }
 
 /// Run one operation with injected faults, one barrier, and a complete trace.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 pub fn run_with_windows_install_faults_and_barrier<T>(
     faults: impl IntoIterator<Item = (WindowsInstallPrimitive, usize, i32)>,
     primitive: WindowsInstallPrimitive,
@@ -164,7 +164,7 @@ pub fn run_with_windows_install_faults_and_barrier<T>(
     (result, finish_trace())
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 fn start_trace(
     faults: impl IntoIterator<Item = (WindowsInstallPrimitive, usize, i32)>,
     barriers: impl IntoIterator<Item = (WindowsInstallPrimitive, usize, Box<dyn FnOnce()>)>,
@@ -198,7 +198,7 @@ fn start_trace(
     });
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 fn finish_trace() -> WindowsInstallTrace {
     let state = WINDOWS_INSTALL_TRACE.with(|trace| {
         trace

@@ -5,7 +5,9 @@
 
 use std::io;
 
-use super::handle::{JobHandle, RawWindowsHandle};
+use super::handle::JobHandle;
+#[cfg(any(test, all(windows, feature = "test-hooks")))]
+use super::handle::RawWindowsHandle;
 
 /// Limits that must be fully installed on a Job before a helper's first
 /// instruction. A bounded helper gets one hard CPU share plus equal process
@@ -41,8 +43,7 @@ pub(super) struct JobAccounting {
 }
 
 /// The limit state read back from an existing Job for a native receipt.
-#[cfg(any(test, all(windows, feature = "test-hooks")))]
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg(all(windows, feature = "test-hooks"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct JobResourceLimitReceipt {
     pub(super) cpu_rate_per_10_000: u32,
@@ -52,6 +53,7 @@ pub(super) struct JobResourceLimitReceipt {
     pub(super) cpu_hard_cap_enforced: bool,
 }
 
+#[cfg(any(test, all(windows, feature = "test-hooks")))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum JobMembership {
     Member,
@@ -68,15 +70,15 @@ pub(super) trait WindowsJobApi {
         job: &JobHandle,
         limits: JobResourceLimits,
     ) -> io::Result<()>;
-    #[cfg(any(test, all(windows, feature = "test-hooks")))]
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg(all(windows, feature = "test-hooks"))]
     fn resource_limits(&self, job: &JobHandle) -> io::Result<JobResourceLimitReceipt>;
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg(all(windows, feature = "test-hooks"))]
     fn kill_on_close_enabled(&self, job: &JobHandle) -> io::Result<bool>;
     fn terminate(&self, job: &JobHandle, exit_code: u32) -> io::Result<()>;
     fn accounting(&self, job: &JobHandle) -> io::Result<JobAccounting>;
     /// Process IDs currently assigned to the Job.
     fn member_process_ids(&self, job: &JobHandle) -> io::Result<Vec<u32>>;
+    #[cfg(any(test, all(windows, feature = "test-hooks")))]
     fn observe_member(
         &self,
         process: RawWindowsHandle,
@@ -209,7 +211,7 @@ impl WindowsJobApi for SystemWindowsJobApi {
         Ok(())
     }
 
-    #[cfg(any(test, all(windows, feature = "test-hooks")))]
+    #[cfg(feature = "test-hooks")]
     fn resource_limits(&self, job: &JobHandle) -> io::Result<JobResourceLimitReceipt> {
         use std::mem::size_of;
 
@@ -283,6 +285,7 @@ impl WindowsJobApi for SystemWindowsJobApi {
         Ok(())
     }
 
+    #[cfg(feature = "test-hooks")]
     fn kill_on_close_enabled(&self, job: &JobHandle) -> io::Result<bool> {
         use std::mem::size_of;
         use std::ptr::null_mut;
@@ -387,6 +390,7 @@ impl WindowsJobApi for SystemWindowsJobApi {
         }
     }
 
+    #[cfg(any(test, feature = "test-hooks"))]
     fn observe_member(
         &self,
         process: RawWindowsHandle,
@@ -414,10 +418,11 @@ mod tests {
     use std::cell::{Cell, RefCell};
     use std::io;
 
+    #[cfg(all(windows, feature = "test-hooks"))]
+    use super::JobResourceLimitReceipt;
     use super::{
-        JobAccounting, JobHandle, JobMembership, JobResourceLimitReceipt, JobResourceLimits,
-        RawWindowsHandle, WindowsJobApi, create_kill_on_close_job,
-        create_kill_on_close_job_with_limits,
+        JobAccounting, JobHandle, JobMembership, JobResourceLimits, RawWindowsHandle,
+        WindowsJobApi, create_kill_on_close_job, create_kill_on_close_job_with_limits,
     };
 
     struct FakeJobApi {
@@ -446,6 +451,7 @@ mod tests {
             Ok(())
         }
 
+        #[cfg(all(windows, feature = "test-hooks"))]
         fn resource_limits(&self, _job: &JobHandle) -> io::Result<JobResourceLimitReceipt> {
             Ok(JobResourceLimitReceipt {
                 cpu_rate_per_10_000: 0,
@@ -456,6 +462,7 @@ mod tests {
             })
         }
 
+        #[cfg(all(windows, feature = "test-hooks"))]
         fn kill_on_close_enabled(&self, _job: &JobHandle) -> io::Result<bool> {
             Ok(self.enabled.get())
         }

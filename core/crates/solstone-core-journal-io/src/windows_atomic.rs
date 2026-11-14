@@ -779,7 +779,7 @@ thread_local! {
 static WINDOWS_TERMINAL_MOVE_RECEIPT_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// Run `op` while recording requested publication backoffs without sleeping.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 pub fn run_with_windows_detailed_atomic_backoffs<T>(op: impl FnOnce() -> T) -> (T, Vec<Duration>) {
     WINDOWS_PUBLICATION_BACKOFFS.with(|backoffs| {
         assert!(
@@ -888,7 +888,7 @@ pub fn run_with_windows_detailed_atomic_barrier<T>(
 }
 
 /// Run `op` with injected Windows detailed-publication faults and one barrier callback.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 pub fn run_with_windows_detailed_atomic_faults_and_barrier<T>(
     faults: impl IntoIterator<Item = (&'static str, usize, i32)>,
     step: &'static str,
@@ -930,7 +930,7 @@ pub fn run_with_windows_detailed_atomic_faults_and_barrier<T>(
 }
 
 /// Run `op` with injected faults and two deterministic barrier callbacks.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 #[allow(clippy::too_many_arguments)] // test hook: each barrier is a (step, ordinal, callback) triple
 pub fn run_with_windows_detailed_atomic_faults_and_two_barriers<T>(
     faults: impl IntoIterator<Item = (&'static str, usize, i32)>,

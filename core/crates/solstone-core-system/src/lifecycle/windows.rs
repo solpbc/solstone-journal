@@ -552,7 +552,7 @@ fn remove_lifecycle_artifact(
 
 #[cfg(windows)]
 mod platform {
-    #[cfg(all(windows, any(test, feature = "test-hooks")))]
+    #[cfg(all(windows, feature = "test-hooks"))]
     use std::cell::{Cell, RefCell};
     use std::ffi::OsStr;
     #[cfg(all(windows, feature = "test-hooks"))]
@@ -595,7 +595,7 @@ mod platform {
         static WINDOWS_LIFECYCLE_CHECKPOINT_ACTIVE: Cell<bool> = const { Cell::new(false) };
     }
 
-    #[cfg(all(windows, any(test, feature = "test-hooks")))]
+    #[cfg(all(windows, feature = "test-hooks"))]
     thread_local! {
         static WINDOWS_LIFECYCLE_DELETION_ATTEMPTS: RefCell<Option<usize>> =
             const { RefCell::new(None) };
@@ -621,10 +621,10 @@ mod platform {
         }
     }
 
-    #[cfg(all(windows, any(test, feature = "test-hooks")))]
+    #[cfg(all(windows, feature = "test-hooks"))]
     struct WindowsLifecycleDeletionAttemptWitnessCleanup;
 
-    #[cfg(all(windows, any(test, feature = "test-hooks")))]
+    #[cfg(all(windows, feature = "test-hooks"))]
     impl Drop for WindowsLifecycleDeletionAttemptWitnessCleanup {
         fn drop(&mut self) {
             WINDOWS_LIFECYCLE_DELETION_ATTEMPTS.with(|attempts| {
@@ -673,7 +673,7 @@ mod platform {
         (result, consumed)
     }
 
-    #[cfg(all(windows, any(test, feature = "test-hooks")))]
+    #[cfg(all(windows, feature = "test-hooks"))]
     pub fn run_with_windows_lifecycle_deletion_attempt_witness<T>(
         operation: impl FnOnce() -> T,
     ) -> (T, usize) {
@@ -751,7 +751,7 @@ mod platform {
         }
     }
 
-    #[cfg(all(windows, any(test, feature = "test-hooks")))]
+    #[cfg(all(windows, feature = "test-hooks"))]
     fn record_windows_lifecycle_deletion_attempt() {
         WINDOWS_LIFECYCLE_DELETION_ATTEMPTS.with(|attempts| {
             if let Some(attempts) = attempts.borrow_mut().as_mut() {
@@ -1055,7 +1055,7 @@ mod platform {
                     "retained entry changed before deletion",
                 ));
             }
-            #[cfg(all(windows, any(test, feature = "test-hooks")))]
+            #[cfg(all(windows, feature = "test-hooks"))]
             record_windows_lifecycle_deletion_attempt();
             #[cfg(all(windows, feature = "test-hooks"))]
             if take_windows_lifecycle_deletion_failure() {

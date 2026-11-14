@@ -239,6 +239,8 @@ pub(crate) fn pipe_name_from_utf16(
     Ok(pipe_name)
 }
 
+// The wire server is its only caller outside tests.
+#[cfg(any(test, feature = "wire"))]
 pub(crate) fn server_greeting(challenge: [u8; PIPE_CHALLENGE_LEN]) -> [u8; PIPE_HANDSHAKE_LEN] {
     let mut greeting = [0_u8; PIPE_HANDSHAKE_LEN];
     greeting[..4].copy_from_slice(&PIPE_MAGIC);
@@ -268,6 +270,8 @@ pub(crate) fn client_proof(
     Ok(proof)
 }
 
+// The wire server is its only caller outside tests.
+#[cfg(any(test, feature = "wire"))]
 pub(crate) fn verify_client_proof(
     secret: &[u8; PIPE_CHALLENGE_LEN],
     greeting: &[u8; PIPE_HANDSHAKE_LEN],
@@ -324,7 +328,7 @@ pub(crate) fn read_secret(socket_path: &Path) -> io::Result<[u8; PIPE_CHALLENGE_
     })
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "wire"))]
 pub(crate) fn create_or_read_secret(socket_path: &Path) -> io::Result<[u8; PIPE_CHALLENGE_LEN]> {
     use std::fs::OpenOptions;
     use std::io::Write;

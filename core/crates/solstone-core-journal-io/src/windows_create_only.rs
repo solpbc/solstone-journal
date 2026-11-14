@@ -84,7 +84,7 @@ pub enum WindowsCreateOnlyPrimitive {
 }
 
 /// Trace returned by the feature-gated Windows create-only test seam.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 #[derive(Debug)]
 pub struct WindowsCreateOnlyTrace {
     /// Every checkpoint reached, in order.
@@ -129,7 +129,7 @@ thread_local! {
 }
 
 /// Run one operation with injected create-only faults and a complete trace.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 pub fn run_with_windows_create_only_faults<T>(
     faults: impl IntoIterator<Item = (WindowsCreateOnlyPrimitive, usize, i32)>,
     op: impl FnOnce() -> T,
@@ -140,7 +140,7 @@ pub fn run_with_windows_create_only_faults<T>(
 }
 
 /// Run one operation with a deterministic create-only barrier and a complete trace.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 pub fn run_with_windows_create_only_barrier<T>(
     primitive: WindowsCreateOnlyPrimitive,
     ordinal: usize,
@@ -156,7 +156,7 @@ pub fn run_with_windows_create_only_barrier<T>(
 }
 
 /// Run one operation with injected faults, one barrier, and a complete trace.
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 pub fn run_with_windows_create_only_faults_and_barrier<T>(
     faults: impl IntoIterator<Item = (WindowsCreateOnlyPrimitive, usize, i32)>,
     primitive: WindowsCreateOnlyPrimitive,
@@ -172,7 +172,7 @@ pub fn run_with_windows_create_only_faults_and_barrier<T>(
     (result, finish_trace())
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 fn start_trace(
     faults: impl IntoIterator<Item = (WindowsCreateOnlyPrimitive, usize, i32)>,
     barriers: impl IntoIterator<Item = (WindowsCreateOnlyPrimitive, usize, Box<dyn FnOnce()>)>,
@@ -206,7 +206,7 @@ fn start_trace(
     });
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 fn finish_trace() -> WindowsCreateOnlyTrace {
     let state = WINDOWS_CREATE_ONLY_TRACE.with(|trace| {
         trace
