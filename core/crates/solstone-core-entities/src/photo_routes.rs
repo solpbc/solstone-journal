@@ -103,7 +103,7 @@ async fn image(
             let mut response = media_response(
                 StatusCode::OK,
                 "image/jpeg",
-                Path::new("photo.jpg"),
+                Path::new(fp::PHOTO),
                 body,
                 None,
             );
