@@ -108,6 +108,7 @@ pub enum ArtifactId {
     TaskQueueHolds,
     WorkIntent,
     OwnerAsks,
+    NameAnswersApplied,
     FacetHiddenNames,
     WorkInventory,
     IndexTodo,
@@ -148,6 +149,13 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::Wipeable,
         parser: ParserKind::WholeJson,
         rationale: "search work hints; the daily scan repairs a lost list from source files",
+    },
+    DurableArtifact {
+        id: ArtifactId::NameAnswersApplied,
+        path: "health/name-answers-applied.json",
+        class: DurabilityClass::Wipeable,
+        parser: ParserKind::WholeJson,
+        rationale: "which of the owner's answers about names past activities already follow; losing it costs one more pass over the facets that hold an answer, which changes nothing a second time",
     },
     // MustBeValid
     DurableArtifact {
