@@ -4102,7 +4102,10 @@ fn require_missing(path: &Path) -> Result<(), String> {
 }
 
 fn create_private_dir_exclusive(path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
     let mut builder = DirBuilder::new();
+    #[cfg(not(unix))]
+    let builder = DirBuilder::new();
     #[cfg(unix)]
     builder.mode(0o700);
     builder.create(path)?;

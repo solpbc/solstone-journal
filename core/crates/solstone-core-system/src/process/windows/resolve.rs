@@ -15,6 +15,8 @@ const EXE_SUFFIX: &[u16] = &[b'.' as u16, b'e' as u16, b'x' as u16, b'e' as u16]
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub(super) enum WindowsProbeError {
+    // Only the test fakes fail a probe; the system probe is infallible.
+    #[cfg(test)]
     #[error("Windows candidate probe failed: {0}")]
     Probe(String),
 }
@@ -23,6 +25,8 @@ pub(super) type WindowsProbeResult<T> = Result<T, WindowsProbeError>;
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub(super) enum WindowsDirectoryError {
+    // Only the test fakes fail a lookup; the system lookup reports `Ok(None)`.
+    #[cfg(test)]
     #[error("Windows executable directory lookup failed: {0}")]
     Lookup(String),
 }

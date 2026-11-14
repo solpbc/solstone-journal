@@ -141,7 +141,9 @@ pub enum TextImportError {
     StreamMarker {
         path: PathBuf,
         day: String,
-        source: AtomicWriteError,
+        // Boxed so the error stays small on Windows, where `PathBuf` is wider (clippy
+        // `result_large_err`).
+        source: Box<AtomicWriteError>,
     },
     RawCopy {
         path: PathBuf,
@@ -192,7 +194,7 @@ impl Error for TextImportError {
             Self::SourceRead { source, .. } => Some(source),
             Self::SegmentDeconflict(source) => Some(source),
             Self::Write { source, .. } => Some(source),
-            Self::StreamMarker { source, .. } => Some(source),
+            Self::StreamMarker { source, .. } => Some(&**source),
             Self::RawCopy { source, .. } => Some(source),
             Self::Stopped => None,
             Self::LocalTimeMissing { .. }
@@ -485,7 +487,7 @@ fn import(
                 TextImportError::StreamMarker {
                     path: health_marker_path(journal_root, &tile_day, HealthMarkerKind::Stream),
                     day: tile_day,
-                    source,
+                    source: Box::new(source),
                 },
             ));
         }

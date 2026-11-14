@@ -369,6 +369,7 @@ pub(crate) fn cancel_worker(state: CortexState, receiver: mpsc::Receiver<(String
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use chrono::TimeZone;
     use std::fs;
     #[cfg(unix)]
@@ -377,6 +378,7 @@ mod tests {
 
     use super::*;
 
+    #[cfg(unix)]
     use crate::renewal::{BrainAdapter, RenewalBrain, RenewalHandle, write_valid_test_journal};
     use crate::storage::CortexStore;
     use tempfile::tempdir;
@@ -391,6 +393,7 @@ mod tests {
         fs::set_permissions(&native, permissions).unwrap();
     }
 
+    #[cfg(unix)]
     fn captured_command(
         executable_dir: &Path,
         request: &Map<String, Value>,

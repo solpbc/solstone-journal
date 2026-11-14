@@ -266,7 +266,7 @@ impl RootActivityCarrier {
             Err(error) => Err(ActivityCarrierPreparationFailure {
                 error,
                 receipt,
-                owner,
+                owner: Box::new(owner),
             }),
         }
     }
@@ -320,7 +320,8 @@ impl RootActivityCarrier {
 pub struct ActivityCarrierPreparationFailure {
     error: io::Error,
     receipt: ActivityCarrierPreparationReceipt,
-    owner: CarrierOwner,
+    // Boxed so the failure stays small as a `Result` error (paths are wider on Windows).
+    owner: Box<CarrierOwner>,
 }
 
 impl ActivityCarrierPreparationFailure {
@@ -383,7 +384,7 @@ impl RootTeardownCarrier {
             Err(error) => Err(TeardownCarrierPreparationFailure {
                 error,
                 receipt,
-                owner,
+                owner: Box::new(owner),
             }),
         }
     }
@@ -515,7 +516,8 @@ impl RootTeardownCarrier {
 pub struct TeardownCarrierPreparationFailure {
     error: io::Error,
     receipt: ActivityCarrierPreparationReceipt,
-    owner: CarrierOwner,
+    // Boxed so the failure stays small as a `Result` error (paths are wider on Windows).
+    owner: Box<CarrierOwner>,
 }
 
 impl TeardownCarrierPreparationFailure {

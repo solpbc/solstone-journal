@@ -14,28 +14,36 @@
 //! cooldown and launch spacing still apply.
 
 use std::path::Path;
+#[cfg(any(not(windows), test))]
 use std::sync::Mutex;
+#[cfg(any(not(windows), test))]
 use std::time::Instant;
 
+#[cfg(any(not(windows), test))]
 use chrono::{DateTime, Utc};
 use serde_json::Value;
+#[cfg(any(not(windows), test))]
 use solstone_core_local::install::status::InstallStatus;
 #[cfg(not(windows))]
-use solstone_core_local::install::{lease, status};
-use solstone_core_local::install::{manifest, pins};
+use solstone_core_local::install::{lease, manifest, pins, status};
 
-use super::local_follow::{
-    FollowDecision, FollowMemory, LocalInstallerLauncher, install_follow_tail,
-};
+use super::local_follow::LocalInstallerLauncher;
+#[cfg(any(not(windows), test))]
+use super::local_follow::{FollowDecision, FollowMemory, install_follow_tail};
 
+// Windows takes Parakeet from its installed package, so the pin follow below
+// runs only off Windows (and in this file's tests).
+#[cfg(any(not(windows), test))]
 const PIN_MOVE_REASONS: [&str; 2] = ["manifest_missing", "manifest_pin_mismatch"];
 
+#[cfg(any(not(windows), test))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ParakeetFollowDecision {
     Launch,
     Hold(String),
 }
 
+#[cfg(any(not(windows), test))]
 pub(crate) struct ParakeetFollowInput<'a> {
     pub cpu_proof: &'a Value,
     pub vulkan_proof: &'a Value,
@@ -48,14 +56,21 @@ pub(crate) struct ParakeetFollowInput<'a> {
 }
 
 pub(crate) struct ParakeetFollow {
+    #[cfg(any(not(windows), test))]
     launcher: LocalInstallerLauncher,
+    #[cfg(any(not(windows), test))]
     memory: Mutex<FollowMemory>,
 }
 
 impl ParakeetFollow {
     pub(crate) fn new(launcher: LocalInstallerLauncher) -> Self {
+        // The Windows package carries Parakeet; this installer is never launched there.
+        #[cfg(all(windows, not(test)))]
+        let _ = launcher;
         Self {
+            #[cfg(any(not(windows), test))]
             launcher,
+            #[cfg(any(not(windows), test))]
             memory: Mutex::new(FollowMemory::default()),
         }
     }
@@ -84,6 +99,7 @@ impl ParakeetFollow {
         )
     }
 
+    #[cfg(any(not(windows), test))]
     pub(crate) fn observe_at(
         &self,
         journal: &Path,
@@ -122,10 +138,12 @@ impl ParakeetFollow {
     }
 }
 
+#[cfg(any(not(windows), test))]
 fn proof_is_ready(proof: &Value) -> bool {
     proof.get("status").and_then(Value::as_str) == Some("ready")
 }
 
+#[cfg(any(not(windows), test))]
 fn decide(
     input: &ParakeetFollowInput<'_>,
     launch_backoff_elapsed: bool,

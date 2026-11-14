@@ -687,8 +687,8 @@ pub fn merge_journal_archive(
     let _lock = hold_lock(&protected, options.lock_options).map_err(|error| match error {
         LockError::Timeout(_) => ImportSourcesError::LockBusy {
             protected_path: protected.clone(),
-            sidecar_path,
-            owner_metadata_path: owner_path.clone(),
+            sidecar_path: Box::new(sidecar_path),
+            owner_metadata_path: Box::new(owner_path.clone()),
             owner: read_owner_metadata(&owner_path),
             remedy: format!(
                 "wait for the holder or inspect/remove only verified-stale owner metadata at {}",

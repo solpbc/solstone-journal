@@ -2068,6 +2068,7 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     use solstone_core_generate::{encode_one_shot_request, encode_one_shot_response};
 
+    #[cfg(unix)]
     #[cfg(all(test, feature = "full-tests"))]
     use super::OneShotKeyValidator;
     use super::{

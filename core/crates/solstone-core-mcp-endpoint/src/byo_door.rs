@@ -154,7 +154,10 @@ mod tcp_ingress {
     use tokio::net::TcpListener;
 
     pub(super) type Listener = TcpListener;
-    pub(super) type Bound = ();
+    /// Nothing to release: the listener closes when its accept task ends. A
+    /// unit struct rather than `()` so callers pass it like the Unix inode.
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) struct Bound;
 
     pub(super) fn address(_journal_root: &Path) -> String {
         format!("127.0.0.1:{MCP_BYO_INGRESS_PORT}")
@@ -168,7 +171,7 @@ mod tcp_ingress {
             IpAddr::V4(Ipv4Addr::LOCALHOST),
             MCP_BYO_INGRESS_PORT,
         )
-        .map(|listener| (listener, ()))
+        .map(|listener| (listener, Bound))
         .map_err(|error| match error.kind() {
             std::io::ErrorKind::AddrInUse | std::io::ErrorKind::PermissionDenied => {
                 Some(ByoSocketBlocker::PortInUse)
@@ -244,9 +247,18 @@ impl ByoBoundResources {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RelayTestState {
     ManualForwarding,
-    #[cfg_attr(not(feature = "full-tests"), allow(dead_code))]
+    // The relay states are set only by `full_tests`, which shares its cfg.
+    #[cfg(all(
+        feature = "full-tests",
+        unix,
+        not(any(target_os = "ios", target_os = "android"))
+    ))]
     RelayConfiguredNotConnected,
-    #[cfg_attr(not(feature = "full-tests"), allow(dead_code))]
+    #[cfg(all(
+        feature = "full-tests",
+        unix,
+        not(any(target_os = "ios", target_os = "android"))
+    ))]
     RelayConnected,
 }
 
@@ -316,8 +328,12 @@ impl ByoServiceRuntime {
         })
     }
 
-    #[cfg(test)]
-    #[cfg_attr(not(feature = "full-tests"), allow(dead_code))]
+    #[cfg(all(
+        test,
+        feature = "full-tests",
+        unix,
+        not(any(target_os = "ios", target_os = "android"))
+    ))]
     pub(crate) fn set_relay_test_state(&mut self, state: RelayTestState) {
         self.relay_test_state = state;
     }
@@ -326,7 +342,17 @@ impl ByoServiceRuntime {
         #[cfg(test)]
         match self.relay_test_state {
             RelayTestState::ManualForwarding => true,
+            #[cfg(all(
+                feature = "full-tests",
+                unix,
+                not(any(target_os = "ios", target_os = "android"))
+            ))]
             RelayTestState::RelayConfiguredNotConnected => false,
+            #[cfg(all(
+                feature = "full-tests",
+                unix,
+                not(any(target_os = "ios", target_os = "android"))
+            ))]
             RelayTestState::RelayConnected => true,
         }
         #[cfg(not(test))]
@@ -2083,7 +2109,7 @@ mod windows_full_tests {
         register_account(&byo_dir);
         set_dns(DnsVerdictCode::Admitted);
 
-        let (listener, ()) = ingress::bind(&byo_dir, &journal).expect("ingress binds");
+        let (listener, ingress::Bound) = ingress::bind(&byo_dir, &journal).expect("ingress binds");
         // The listener does not set SO_EXCLUSIVEADDRUSE. Windows refuses a
         // SO_REUSEADDR bind on the exact address. It admits one on the
         // wildcard, but connections to 127.0.0.1, the only address the

@@ -11,7 +11,9 @@ use crate::process::{ProcessBirth, ProcessInstance};
 use super::handle::{JobHandle, MemberProcessHandle, PrimaryThreadHandle, RootProcessHandle};
 #[cfg(windows)]
 use super::identity::{WindowsFileTime, filetime_value};
-use super::job::{JobMembership, WindowsJobApi};
+#[cfg(any(test, all(windows, feature = "test-hooks")))]
+use super::job::JobMembership;
+use super::job::WindowsJobApi;
 #[cfg(windows)]
 use super::job::{JobResourceLimits, SystemWindowsJobApi, create_kill_on_close_job_with_limits};
 #[cfg(windows)]
@@ -243,6 +245,7 @@ impl WindowsJobProcess {
             .ok_or_else(|| io::Error::other("Job handle is unavailable"))
     }
 
+    #[cfg(any(test, all(windows, feature = "test-hooks")))]
     pub(super) fn observe_member_with(
         &self,
         jobs: &impl WindowsJobApi,
@@ -386,7 +389,7 @@ impl WindowsJobProcess {
         }
     }
 
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "test-hooks"))]
     pub(super) fn observe_member(&self) -> io::Result<JobMembership> {
         self.observe_member_with(&SystemWindowsJobApi)
     }
@@ -401,7 +404,7 @@ impl WindowsJobProcess {
         self.wait_with(&SystemWindowsProcessControlApi)
     }
 
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "test-hooks"))]
     pub(super) fn hard_stop(&mut self) -> io::Result<i32> {
         self.hard_stop_with(
             &SystemWindowsJobApi,
@@ -676,7 +679,8 @@ pub(super) enum NativeLaunchError {
     BeforeCreate(io::Error),
     AfterCreate {
         source: io::Error,
-        owner: UnfinalizedWindowsJob,
+        // Boxed so `Result<_, NativeLaunchError>` stays small.
+        owner: Box<UnfinalizedWindowsJob>,
     },
 }
 #[cfg(windows)]
@@ -792,7 +796,7 @@ impl SystemWindowsCreateProcessApi {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "test-hooks"))]
 fn prepare_launch_spec(
     command: &[String],
     environment_overrides: &std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
@@ -974,13 +978,13 @@ pub(super) fn launch_windows_native_job_process(
     if let Err(source) = child_end_cleanup {
         return Err(NativeLaunchError::AfterCreate {
             source,
-            owner: UnfinalizedWindowsJob {
+            owner: Box::new(UnfinalizedWindowsJob {
                 job,
                 created,
                 _pipes: Some(pipes),
                 _forwarding_stdio: Vec::new(),
                 hard_stop_issued: false,
-            },
+            }),
         });
     }
     let finalized = match finalize_created_process(
@@ -1007,13 +1011,13 @@ pub(super) fn launch_windows_native_job_process(
         Err(failed) => {
             return Err(NativeLaunchError::AfterCreate {
                 source: failed.error,
-                owner: UnfinalizedWindowsJob {
+                owner: Box::new(UnfinalizedWindowsJob {
                     job,
                     created: failed.created,
                     _pipes: Some(pipes),
                     _forwarding_stdio: Vec::new(),
                     hard_stop_issued: false,
-                },
+                }),
             });
         }
     };
@@ -1149,13 +1153,13 @@ pub(super) fn launch_windows_forwarder(
         Err(source) => {
             return Err(NativeLaunchError::AfterCreate {
                 source,
-                owner: UnfinalizedWindowsJob {
+                owner: Box::new(UnfinalizedWindowsJob {
                     job,
                     created,
                     _pipes: None,
                     _forwarding_stdio: handles.into(),
                     hard_stop_issued: false,
-                },
+                }),
             });
         }
     };
@@ -1723,9 +1727,9 @@ mod tests {
         JobHandle, MemberProcessHandle, PipeEndHandle, PrimaryThreadHandle, RawWindowsHandle,
         RootProcessHandle,
     };
-    use super::super::job::{
-        JobAccounting, JobMembership, JobResourceLimitReceipt, JobResourceLimits, WindowsJobApi,
-    };
+    #[cfg(all(windows, feature = "test-hooks"))]
+    use super::super::job::JobResourceLimitReceipt;
+    use super::super::job::{JobAccounting, JobMembership, JobResourceLimits, WindowsJobApi};
     use super::super::pipes::{PipedStdio, WindowsPipeApi};
     use super::{
         CreatedWindowsProcess, JOB_HARD_STOP_TIMEOUT, ProcessWait, WindowsJobProcess,
@@ -1786,6 +1790,7 @@ mod tests {
             Ok(())
         }
 
+        #[cfg(all(windows, feature = "test-hooks"))]
         fn resource_limits(&self, _job: &JobHandle) -> io::Result<JobResourceLimitReceipt> {
             Ok(JobResourceLimitReceipt {
                 cpu_rate_per_10_000: 0,
@@ -1796,6 +1801,7 @@ mod tests {
             })
         }
 
+        #[cfg(all(windows, feature = "test-hooks"))]
         fn kill_on_close_enabled(&self, _job: &JobHandle) -> io::Result<bool> {
             Ok(true)
         }

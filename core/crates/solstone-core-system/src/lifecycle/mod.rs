@@ -655,7 +655,7 @@ impl SupervisorLifecycle {
         #[cfg(windows)]
         {
             let mut store = windows::filesystem_store(&self._journal_root);
-            return windows::tick_with_store(
+            windows::tick_with_store(
                 &mut store,
                 windows::WindowsTickContext {
                     journal: &self.journal,
@@ -670,7 +670,7 @@ impl SupervisorLifecycle {
                 previous,
                 now,
                 monotonic_now,
-            );
+            )
         }
         #[cfg(unix)]
         {
@@ -791,12 +791,12 @@ impl SupervisorLifecycle {
                 &self.identity,
                 sync_conflict,
             );
-            return ShutdownOutcome {
+            ShutdownOutcome {
                 report: shutdown::shutdown(driver, regime),
                 readiness,
                 self_heartbeat,
                 identity,
-            };
+            }
         }
         #[cfg(unix)]
         {
@@ -1017,6 +1017,43 @@ pub fn supervisor_liveness_with_process_instance_for_test(
     supervisor_liveness_with_process_instance(journal, observe)
 }
 
+/// Best-effort systemd readiness notification.
+pub fn sd_notify(state_value: &str) {
+    let Ok(address) = std::env::var("NOTIFY_SOCKET") else {
+        return;
+    };
+    sd_notify_to(&address, state_value);
+}
+
+/// Send `state_value` to a systemd notify socket address (`@abstract` or a
+/// filesystem path). Missing or unusable sockets are ignored.
+pub fn sd_notify_to(address: &str, state_value: &str) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::net::UnixDatagram;
+        let result = (|| -> std::io::Result<()> {
+            let socket = UnixDatagram::unbound()?;
+            #[cfg(target_os = "linux")]
+            if let Some(name) = address.strip_prefix('@') {
+                use std::os::linux::net::SocketAddrExt;
+                let target = std::os::unix::net::SocketAddr::from_abstract_name(name)?;
+                socket.send_to_addr(state_value.as_bytes(), &target)?;
+                return Ok(());
+            }
+            socket.send_to(state_value.as_bytes(), address)?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            eprintln!("sd_notify failed: {error}");
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = address;
+        let _ = state_value;
+    }
+}
+
 #[cfg(test)]
 mod tests_windows_liveness {
     use std::fs;
@@ -1121,43 +1158,6 @@ mod tests_windows_liveness {
             }),
             SupervisorLiveness::Unverifiable
         );
-    }
-}
-
-/// Best-effort systemd readiness notification.
-pub fn sd_notify(state_value: &str) {
-    let Ok(address) = std::env::var("NOTIFY_SOCKET") else {
-        return;
-    };
-    sd_notify_to(&address, state_value);
-}
-
-/// Send `state_value` to a systemd notify socket address (`@abstract` or a
-/// filesystem path). Missing or unusable sockets are ignored.
-pub fn sd_notify_to(address: &str, state_value: &str) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::net::UnixDatagram;
-        let result = (|| -> std::io::Result<()> {
-            let socket = UnixDatagram::unbound()?;
-            #[cfg(target_os = "linux")]
-            if let Some(name) = address.strip_prefix('@') {
-                use std::os::linux::net::SocketAddrExt;
-                let target = std::os::unix::net::SocketAddr::from_abstract_name(name)?;
-                socket.send_to_addr(state_value.as_bytes(), &target)?;
-                return Ok(());
-            }
-            socket.send_to(state_value.as_bytes(), address)?;
-            Ok(())
-        })();
-        if let Err(error) = result {
-            eprintln!("sd_notify failed: {error}");
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = address;
-        let _ = state_value;
     }
 }
 

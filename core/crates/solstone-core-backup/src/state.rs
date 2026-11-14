@@ -1094,9 +1094,11 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::fs;
+    #[cfg(unix)]
+    use std::sync::atomic::AtomicUsize;
     use std::sync::{
         Arc, Barrier,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, Ordering},
         mpsc,
     };
     use std::thread;

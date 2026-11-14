@@ -75,11 +75,11 @@ impl Drop for ServiceCapture {
 }
 
 fn diagnostic_write(target: &Option<Arc<Mutex<File>>>, message: &str) {
-    if let Some(target) = target {
-        if let Ok(mut output) = target.lock() {
-            // Original stderr only. This synchronous write is not cancellable.
-            let _ = writeln!(output, "{message}");
-        }
+    if let Some(target) = target
+        && let Ok(mut output) = target.lock()
+    {
+        // Original stderr only. This synchronous write is not cancellable.
+        let _ = writeln!(output, "{message}");
     }
 }
 
@@ -369,6 +369,7 @@ pub(crate) fn run_installed(journal: &Path, run: impl FnOnce() -> ExitCode) -> E
 // Invoked only in a fresh native receipt process: stdout slots and panic hook
 // are process-global and may not be mutated by concurrent test threads.
 #[cfg(feature = "test-hooks")]
+#[allow(dead_code)] // Its one caller is tests/windows_service_capture.rs, which includes this file by #[path].
 pub(crate) fn native_control(journal: &Path, mode: &str) -> Result<i32, String> {
     match mode {
         "normal" | "startup-refusal" | "panic" => {

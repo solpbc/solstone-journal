@@ -232,6 +232,9 @@ fn setup_fixture() -> Fixture {
     #[cfg(unix)]
     std::os::unix::fs::symlink(&symlink_target, link_segment.join("audio.jsonl"))
         .expect("create candidate symlink");
+    // Windows keeps the segment directory but has no symlink to plant in it.
+    #[cfg(not(unix))]
+    let _ = link_segment;
 
     let array_segment = segment(journal, &day, Some("alpha"), "091200_300");
     write_sidecar(&array_segment, "array_screen", "mp4", json!([]), 1);

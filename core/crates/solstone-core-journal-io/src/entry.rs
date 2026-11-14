@@ -240,6 +240,10 @@ mod windows_tests {
     use crate::test_support::TempDir;
 
     #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "tests of the removal primitives themselves"
+    )]
     fn a_contained_directory_syncs_on_windows() {
         let temporary = TempDir::new();
         fs::create_dir_all(

@@ -13,7 +13,7 @@ links = "solstone_convey_assets_transcripts_web"
 build = "build.rs"
 
 [features]
-full-tests = []
+full-tests = ["solstone-core-callosum/full-tests"]
 test-hooks = []
 
 # The restore test parks a fold after its identity read. That barrier is not

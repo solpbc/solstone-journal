@@ -129,7 +129,7 @@ thread_local! {
 }
 
 /// Run `barrier` between publication's two fingerprint reads.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn set_publication_location_barrier(barrier: Option<Box<dyn FnMut()>>) {
     PUBLICATION_LOCATION_BARRIER.with(|slot| *slot.borrow_mut() = barrier);
 }

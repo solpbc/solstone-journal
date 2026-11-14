@@ -673,7 +673,12 @@ mod owned_hold_tests {
     }
 }
 
-#[cfg(any(target_os = "android", test))]
+// Test users: `tests` (unix) and `windows_tests` (windows + full-tests).
+#[cfg(any(
+    target_os = "android",
+    all(test, unix),
+    all(test, windows, feature = "full-tests")
+))]
 pub(crate) fn restore_target_quiescent(journal: &Path) -> bool {
     target_held_for_restore(journal)
         && lock_map(&target_flights().0)

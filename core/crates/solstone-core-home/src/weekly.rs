@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::{self, ErrorKind};
+use std::io::ErrorKind;
 use std::path::Path;
 
 use chrono::{Datelike, Duration, NaiveDate};
@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use solstone_core_format::content::week_left_out::{LeftOut, read_left_out};
 use solstone_core_journal_io::observation::FlatDirectoryEntry;
 use solstone_core_journal_io::read_relative_file_bounded;
-use solstone_core_journal_io::{FlatDirectoryError, JournalEntryKind, JournalRoot};
+use solstone_core_journal_io::{JournalEntryKind, JournalRoot};
 
 use crate::context::HomeContext;
 
@@ -106,7 +106,9 @@ pub(crate) fn weekly_dir_entries(journal: &Path) -> WeeklyDirResult {
     #[cfg(unix)]
     {
         use solstone_core_journal_io::FlatDirectory;
+        use solstone_core_journal_io::FlatDirectoryError;
         use solstone_core_journal_io::list_flat_directory;
+        use std::io;
 
         let flat = match FlatDirectory::open(&root, Path::new("reflections/weekly")) {
             Ok(dir) => dir,

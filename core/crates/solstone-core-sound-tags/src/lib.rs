@@ -22,11 +22,13 @@ use serde_json::{Map, Value, json};
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_local::install::capability_status::CapabilityStatus;
 use solstone_core_local::install::ced_readiness::{
-    CedVerdict, evaluate_ced_readiness, evaluate_ced_readiness_in_package_with_probe,
-    fresh_model_check, fresh_model_check_in_package, probe_ced_engine,
+    CedVerdict, evaluate_ced_readiness_in_package_with_probe, fresh_model_check,
+    fresh_model_check_in_package, probe_ced_engine,
 };
 use solstone_core_local::install::ced_runtime::{CED_ANALYZE_TIMEOUT, CedAnalyzeProgram};
 
+#[cfg(not(windows))]
+use solstone_core_local::install::ced_readiness::evaluate_ced_readiness;
 #[cfg(not(windows))]
 use solstone_core_local::install::ced_runtime::invoke_ced_analyze;
 

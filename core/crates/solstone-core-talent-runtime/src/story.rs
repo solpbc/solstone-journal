@@ -807,9 +807,9 @@ fn error(prepared: &PreparedTalent, detail: &str) -> StageError {
 mod tests {
     use super::*;
     use crate::ExecutionContext;
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, unix, feature = "full-tests"))]
     use crate::contract::{CommitDisposition, STORY};
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, unix, feature = "full-tests"))]
     use crate::generate_and_write;
     use std::fs;
 

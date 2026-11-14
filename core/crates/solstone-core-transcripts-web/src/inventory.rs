@@ -837,6 +837,7 @@ fn read_marker_identity(
 /// An empty marker is the older writers' shape: the next bump replaces it like any
 /// other, so its day needs no tree on every read. This parses the text itself because
 /// `read_health_marker` sets a malformed file aside, and a read writes nothing.
+#[cfg(any(unix, test))]
 fn marker_text_is_malformed(content: &str) -> bool {
     !content.is_empty()
         && serde_json::from_str::<solstone_core_journal_io::HealthMarker>(content).is_err()

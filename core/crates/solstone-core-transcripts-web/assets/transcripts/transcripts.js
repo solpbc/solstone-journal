@@ -5645,8 +5645,13 @@
 
     async function confirmDeleteSegment(erase = false) {
       if (stretchDialog) {
-        const asked = { from: stretchDialog.from, to: stretchDialog.to, shown: stretchDialog.plan };
-        if (!asked.shown || asked.shown.empty) return;
+        // Only what the dialog shows now is ever sent: the bounds its answer
+        // was read for, and only while the fields still say them.
+        const dialog = stretchDialog;
+        const shownFor = dialog.planFor;
+        if (dialog.state !== 'ready' || !dialog.plan || dialog.plan.empty || !shownFor
+          || shownFor.from !== dialog.from || shownFor.to !== dialog.to) return;
+        const asked = { from: shownFor.from, to: shownFor.to, shown: dialog.plan };
         closeDeleteSegmentModal(false);
         if (stretchButton) stretchButton.dataset.focusOnShow = '1';
         await performStretchDelete(asked, erase);
@@ -5821,6 +5826,7 @@
         from: minutesWall(day, range.start),
         to: minutesWall(day, range.end),
         plan: null,
+        planFor: null,
         state: 'checking',
         error: null,
         timer: null,
@@ -5851,6 +5857,7 @@
       }
       dialog.state = 'checking';
       const asked = ++dialog.asked;
+      const bounds = { from: dialog.from, to: dialog.to };
       renderStretchStep('move');
       fetch('/app/transcripts/api/stretch/preview', {
         method: 'POST',
@@ -5867,6 +5874,7 @@
             else dialog.state = 'failed';
           } else {
             dialog.plan = answer;
+            dialog.planFor = bounds;
             dialog.state = 'ready';
           }
           renderStretchStep(deleteSegmentModalBody.dataset.step || 'move');
@@ -5944,9 +5952,21 @@
         if (journalZone && browserZone && journalZone !== browserZone) {
           nodes.push(deleteDialogElement('p', 'tr-delete-stays', stretchFill(STRETCH_COPY.zone, { zone: journalZone })));
         }
+        // A change makes what the dialog shows no longer what it would take:
+        // the answer it showed, and any answer still on its way, are dropped,
+        // and neither act is offered until the new bounds have been read.
         const onChange = () => {
           dialog.from = from.input.value;
           dialog.to = to.input.value;
+          dialog.asked += 1;
+          dialog.plan = null;
+          dialog.planFor = null;
+          dialog.state = 'checking';
+          deleteSegmentModalConfirm.disabled = true;
+          deleteSegmentModalErase.disabled = true;
+          deleteSegmentModalEraseConfirm.disabled = true;
+          while (fields.nextSibling) fields.nextSibling.remove();
+          deleteSegmentModalBody.append(deleteDialogElement('p', 'tr-stretch-checking', STRETCH_COPY.checking));
           clearTimeout(dialog.timer);
           dialog.timer = setTimeout(previewStretch, 400);
         };

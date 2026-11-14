@@ -66,7 +66,9 @@ fn query_argv(argv: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
 }
 
 use std::fmt;
-use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(any(all(unix, not(target_os = "ios")), windows))]
 use std::time::Duration;

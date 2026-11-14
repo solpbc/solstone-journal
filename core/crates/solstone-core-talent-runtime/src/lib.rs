@@ -523,7 +523,7 @@ pub fn run_worker(_args: &[String], journal: &Path) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-#[cfg(all(test, feature = "full-tests"))]
+#[cfg(all(test, unix, feature = "full-tests"))]
 fn configure_generate_client(client: OneShotClient) -> OneShotClient {
     client.with_prefix_arguments(["generate".into()])
 }
@@ -3522,7 +3522,7 @@ mod tests {
         assert!(runtime_paths_from_executable_dir(&bin).is_err());
     }
 
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, unix, feature = "full-tests"))]
     fn stub_invocations(stub: &std::path::Path) -> usize {
         let count_path = stub.parent().unwrap().join(format!(
             "{}.count",

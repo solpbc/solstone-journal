@@ -249,11 +249,11 @@ impl PdfWorker for SystemPdfWorker {
         #[cfg(windows)]
         {
             let _ = request;
-            return Err(WorkerFailure::Process {
+            Err(WorkerFailure::Process {
                 exit_code: Some(1),
                 error: "Windows PDF worker requires the bounded package owner".to_owned(),
                 detail: None,
-            });
+            })
         }
         #[cfg(not(windows))]
         {

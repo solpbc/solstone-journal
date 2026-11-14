@@ -25,6 +25,7 @@ const COLON: u16 = b':' as u16;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub(super) enum WindowsLaunchPrepError {
+    #[cfg(any(test, all(windows, feature = "test-hooks")))]
     #[error("managed launch command is empty")]
     EmptyCommand,
     #[error("Windows launch input contains an interior NUL")]
@@ -57,10 +58,12 @@ impl WideNulConst {
         self.units.as_ptr()
     }
 
+    #[cfg(any(test, all(windows, feature = "test-hooks")))]
     pub(super) fn units_len(&self) -> usize {
         self.units.len()
     }
 
+    #[cfg(any(test, all(windows, feature = "test-hooks")))]
     pub(super) fn units(&self) -> &[u16] {
         &self.units
     }
@@ -85,10 +88,12 @@ impl WideNulMut {
         self.units.as_mut_ptr()
     }
 
+    #[cfg(test)]
     pub(super) fn units_len(&self) -> usize {
         self.units.len()
     }
 
+    #[cfg(any(test, all(windows, feature = "test-hooks")))]
     pub(super) fn units(&self) -> &[u16] {
         &self.units
     }
@@ -114,11 +119,7 @@ impl WideEnvironmentBlock {
         self.units.as_ptr()
     }
 
-    #[cfg(windows)]
-    pub(super) fn units_len(&self) -> usize {
-        self.units.len()
-    }
-
+    #[cfg(any(test, all(windows, feature = "test-hooks")))]
     pub(super) fn units(&self) -> &[u16] {
         &self.units
     }
@@ -138,6 +139,7 @@ impl WindowsLaunchSpec {
         &self.application_name
     }
 
+    #[cfg(any(test, all(windows, feature = "test-hooks")))]
     pub(super) fn command_line(&self) -> &WideNulMut {
         &self.command_line
     }
@@ -185,6 +187,7 @@ pub(super) struct WindowsLaunchAdapters<'a> {
 ///
 /// Derived from the preparation portion of Rust 1.97.1's Windows `Command::spawn` flow in
 /// `std/sys/process/windows.rs`; this orchestration has no single std symbol.
+#[cfg(any(test, all(windows, feature = "test-hooks")))]
 pub(super) fn prepare_windows_launch_spec<F: WindowsFullPathName>(
     command: &[String],
     environment_overrides: &BTreeMap<OsString, OsString>,
@@ -269,6 +272,7 @@ fn is_windows_absolute_path(path: &[u16]) -> bool {
     ) || matches!(path, [BACKSLASH | SLASH, BACKSLASH | SLASH, _, ..])
 }
 
+#[cfg(any(test, all(windows, feature = "test-hooks")))]
 fn string_to_wide(value: &str) -> Result<Vec<u16>, WindowsLaunchPrepError> {
     let units = value.encode_utf16().collect::<Vec<_>>();
     if units.contains(&NUL) {

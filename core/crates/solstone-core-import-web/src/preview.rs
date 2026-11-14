@@ -1124,6 +1124,7 @@ mod tests {
     /// `plan_using` on a script the test just wrote. Under parallel tests a
     /// sibling's fork can still hold the script's write handle when it is run
     /// (`Text file busy`), so only that is tried again, briefly.
+    #[cfg(any(unix, feature = "full-tests"))]
     async fn plan_written(
         program: &Path,
         path: &Path,

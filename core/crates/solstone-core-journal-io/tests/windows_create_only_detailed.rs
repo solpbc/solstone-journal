@@ -96,7 +96,7 @@ fn detailed_exclusive_publication_confirmed_success() {
     assert_no_stage_residue(temporary.path());
 
     let reader_path = temporary.path().join("reader.bin");
-    let mut reader = &PAYLOAD[..];
+    let mut reader = PAYLOAD;
     let published =
         write_reader_exclusive_detailed(&reader_path, &mut reader, AtomicWriteOptions::default())
             .unwrap();

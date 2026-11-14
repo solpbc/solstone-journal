@@ -22,9 +22,11 @@ use solstone_core_generate::{
 };
 use solstone_core_import::QueueFileOutcome;
 use solstone_core_import::{CreatedSegment, PublicationOperations, observe_source_immutability};
+#[cfg(unix)]
+use solstone_core_import_sources::document::SystemPdfWorker;
 use solstone_core_import_sources::document::{
     DocumentImportRequest, DocumentModelClient, DocumentPreviewRequest, PdfCommand, PdfMetadata,
-    PdfPage, PdfPayload, PdfWorker, PdfWorkerRequest, SystemPdfWorker, WorkerFailure, import,
+    PdfPage, PdfPayload, PdfWorker, PdfWorkerRequest, WorkerFailure, import,
     prepare_document_import, preview, preview_size,
 };
 use solstone_core_segment::{StreamAdvance, UnboundStreamAdvanceError, advance_unbound_stream};

@@ -113,10 +113,12 @@ pub enum ImportSourcesError {
         detail: String,
         mutation: MergeMutationState,
     },
+    // The two secondary paths are boxed so the error stays small on Windows, where
+    // `PathBuf` is wider (clippy `result_large_err`).
     LockBusy {
         protected_path: PathBuf,
-        sidecar_path: PathBuf,
-        owner_metadata_path: PathBuf,
+        sidecar_path: Box<PathBuf>,
+        owner_metadata_path: Box<PathBuf>,
         owner: Option<String>,
         remedy: String,
     },
