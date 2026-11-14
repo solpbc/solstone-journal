@@ -5,7 +5,9 @@
 // Node: the real modal layer, error handler, report flow and diagnostic
 // console, with the error box and the console taken from the real shell page,
 // in a stand-in page with capture and bubble, focus events, inert, the
-// browser's focus fixup and a frame queue the cases flush by hand.
+// browser's focus fixup and a frame queue the cases flush by hand. With the
+// shell's notices loaded too (the real app.js), a fake clock and the pointer,
+// the cases also check that a notice's countdown waits under a dialog.
 // Every compare is of plain values, ids or tag names: never an element.
 
 const assert = require('assert');
@@ -107,7 +109,15 @@ class Element extends Target {
     };
     const doc2 = doc;
     this.style = new Proxy({}, {
-      set(target, key, value) { target[key] = String(value); doc2.mutated(); return true; },
+      set(target, key, value) { target[key] = String(value); doc2.mutated(self, 'attributes', 'style'); return true; },
+    });
+  }
+  get dataset() {
+    const self = this;
+    const attr = (k) => 'data-' + String(k).replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+    return new Proxy({}, {
+      get(_t, k) { return typeof k === 'string' ? (self.getAttribute(attr(k)) ?? undefined) : undefined; },
+      set(_t, k, v) { self.setAttribute(attr(k), v); return true; },
     });
   }
   get children() { return this.childNodes.filter((n) => n.nodeType === 1); }
@@ -134,10 +144,10 @@ class Element extends Target {
   set hidden(v) { if (v) this.setAttribute('hidden', ''); else this.removeAttribute('hidden'); }
   get inert() { return this.hasAttribute('inert'); }
   set inert(v) { if (v) this.setAttribute('inert', ''); else this.removeAttribute('inert'); }
-  setAttribute(k, v) { this.attrs.set(k, String(v)); this.ownerDocument.mutated(); }
+  setAttribute(k, v) { this.attrs.set(k, String(v)); this.ownerDocument.mutated(this, 'attributes', k); }
   getAttribute(k) { return this.attrs.has(k) ? this.attrs.get(k) : null; }
   hasAttribute(k) { return this.attrs.has(k); }
-  removeAttribute(k) { this.attrs.delete(k); this.ownerDocument.mutated(); }
+  removeAttribute(k) { this.attrs.delete(k); this.ownerDocument.mutated(this, 'attributes', k); }
   get textContent() { return this.childNodes.map((n) => n.textContent).join(''); }
   set textContent(v) { this.replaceChildren(); if (String(v ?? '')) this.append(String(v)); }
   set innerHTML(html) { this.replaceChildren(); parseInto(this.ownerDocument, this, String(html ?? '')); }
@@ -151,7 +161,11 @@ class Element extends Target {
     for (let at = node; at; at = at.parentNode) if (at === this) return true;
     return false;
   }
-  matches(selector) { return matches(this, selector); }
+  matches(selector) {
+    if (selector === ':hover') return Boolean(this.ownerDocument.hovered && this.contains(this.ownerDocument.hovered));
+    if (selector === ':focus-within') return this.contains(this.ownerDocument.activeElement);
+    return matches(this, selector);
+  }
   closest(selector) {
     for (let at = this; at && at.nodeType === 1; at = at.parentNode) if (matches(at, selector)) return at;
     return null;
@@ -179,14 +193,14 @@ class Element extends Target {
       if (typeof node === 'string') node = new TextNode(node);
       this.childNodes.push(this.adopt(node));
     }
-    this.ownerDocument.mutated();
+    this.ownerDocument.mutated(this, 'childList');
   }
   appendChild(node) { this.append(node); return node; }
   removeChild(node) {
     const i = this.childNodes.indexOf(node);
     if (i >= 0) this.childNodes.splice(i, 1);
     node.parentNode = null;
-    this.ownerDocument.mutated();
+    this.ownerDocument.mutated(this, 'childList');
     return node;
   }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
@@ -205,9 +219,12 @@ class Element extends Target {
   // refuses focus, and a move of focus fires focusin.
   focus() {
     if (!this.shown() || this.disabled || this.inInert()) return;
-    if (this.ownerDocument.focused === this) return;
-    this.ownerDocument.focused = this;
-    this.ownerDocument.dispatch(this, { type: 'focusin', bubbles: true });
+    const doc = this.ownerDocument;
+    if (doc.focused === this) return;
+    const was = doc.focused;
+    doc.focused = this;
+    if (was && was !== doc.body && was.isConnected) doc.dispatch(was, { type: 'focusout', bubbles: true, relatedTarget: this });
+    doc.dispatch(this, { type: 'focusin', bubbles: true });
   }
   // A pointer press, as in Chromium: it focuses the nearest focusable
   // ancestor, or else the page, then clicks.
@@ -270,7 +287,25 @@ function makePage(options = {}) {
   const frames = [];
   const observers = [];
   doc.readyState = 'complete';
-  doc.mutated = () => observers.forEach((o) => { if (o.on) o.callback([]); });
+  // As in a browser, observers hear a change at the next microtask: after
+  // the task or frame callback that made it, not inside it.
+  // Each observer hears only what it asked for: its target, or below it with
+  // subtree; child lists, or attributes through its filter.
+  doc.mutated = (node, kind, name) => observers.forEach((o) => {
+    if (!o.on || !node) return;
+    const { target, options: opts } = o;
+    if (node !== target && !(opts.subtree && target.contains(node))) return;
+    if (kind === 'childList' ? !opts.childList
+      : !(opts.attributes && (!opts.attributeFilter || opts.attributeFilter.includes(name)))) return;
+    o.pending = true;
+  });
+  const deliver = () => {
+    for (let i = 0; i < 10; i += 1) {
+      const due = observers.filter((o) => o.on && o.pending);
+      if (!due.length) return;
+      due.forEach((o) => { o.pending = false; o.callback([]); });
+    }
+  };
   doc.createElement = (tag) => new Element(doc, tag);
   doc.documentElement = new Element(doc, 'html');
   doc.body = new Element(doc, 'body');
@@ -351,6 +386,11 @@ function makePage(options = {}) {
     '<button id="view-first" type="button">first</button>',
     '<button id="view-save" type="button">save</button>',
     '</div>',
+    options.notices ? [
+      '<div id="confirm-dialog" class="modal" role="dialog" aria-modal="true">',
+      '<button id="confirm-yes" type="button">delete</button>',
+      '</div>',
+    ].join('') : '',
     '</main>',
     shellPart('<aside id="diagnostic-console"', '</aside>'),
     '<div class="notification-center" id="notification-center">',
@@ -359,13 +399,27 @@ function makePage(options = {}) {
     shellPart('<div id="errorModal"', '</div>\n</div>'),
   ].join('');
 
+  // A clock the cases move by hand, for the notices' countdowns.
+  const clock = { now: 0, next: 1, timers: new Map() };
+  const later = (fn, ms, every) => {
+    const id = clock.next++;
+    clock.timers.set(id, { fn, at: clock.now + Math.max(0, Number(ms) || 0), every: every ? Math.max(1, Number(ms) || 0) : 0 });
+    return id;
+  };
+  const cancel = (id) => { clock.timers.delete(id); };
+  const timing = options.notices
+    ? { setTimeout: (fn, ms) => later(fn, ms, false), clearTimeout: cancel, setInterval: (fn, ms) => later(fn, ms, true), clearInterval: cancel }
+    : { setTimeout, clearTimeout, setInterval, clearInterval };
+  win.localStorage = { getItem() { return null; }, setItem() {}, removeItem() {} };
+  win.navigator = { userAgent: 'node' };
+
   const context = vm.createContext({
     window: win,
     document: doc,
     Element,
     MutationObserver: class {
       constructor(callback) { this.callback = () => callback([]); this.on = false; observers.push(this); }
-      observe() { this.on = true; }
+      observe(target, options) { this.on = true; this.target = target; this.options = options || {}; }
       disconnect() { this.on = false; }
     },
     requestAnimationFrame: win.requestAnimationFrame,
@@ -373,13 +427,15 @@ function makePage(options = {}) {
     CustomEvent: win.CustomEvent,
     URLSearchParams,
     URL,
-    setTimeout,
-    clearTimeout,
+    ...timing,
+    navigator: win.navigator,
     fetch: win.fetch,
     console: win.console,
   });
   context.globalThis = context;
-  const files = ['modal_layer.js', 'error-handler.js', 'report-error.js'];
+  // The notices are in the boot file, the layer in the rest that loads after.
+  const files = options.notices ? ['convey_icons.js', 'app.js'] : [];
+  files.push('modal_layer.js', 'error-handler.js', 'report-error.js');
   if (options.console) files.push('diagnostic-console.js');
   for (const file of files) {
     vm.runInContext(fs.readFileSync(path.join(staticDir, file), 'utf8'), context, { filename: file });
@@ -387,7 +443,8 @@ function makePage(options = {}) {
   // The real page reconciles on the frame after a change; so does this one,
   // when a case calls frame().
   const frame = () => {
-    for (let i = 0; i < 5 && frames.length; i += 1) frames.splice(0).forEach((fn) => fn());
+    deliver();
+    for (let i = 0; i < 5 && frames.length; i += 1) frames.splice(0).forEach((fn) => { fn(); deliver(); });
   };
   frame();
   const page = {
@@ -410,6 +467,35 @@ function makePage(options = {}) {
       return doc.querySelector('.report-error-modal');
     },
     errorOpen() { return page.el('errorModal').style.display === 'block'; },
+    // Move the clock, running what falls due, in order.
+    tick(ms) {
+      deliver();
+      const end = clock.now + ms;
+      for (;;) {
+        let due = null;
+        clock.timers.forEach((t, id) => { if (t.at <= end && (!due || t.at < due.t.at)) due = { id, t }; });
+        if (!due) break;
+        clock.now = due.t.at;
+        if (due.t.every) due.t.at += due.t.every;
+        else clock.timers.delete(due.id);
+        due.t.fn();
+        deliver();
+      }
+      clock.now = end;
+    },
+    observers: () => observers.length,
+    notices: () => win.AppServices.notifications,
+    card: (id) => doc.querySelector(`.notification-card[data-id="${id}"]`),
+    // The pointer: over an element, or off it. mouseenter and mouseleave
+    // don't bubble.
+    hover(el) {
+      const was = doc.hovered;
+      doc.hovered = el;
+      if (was && !(el && was.contains(el))) doc.dispatch(was, { type: 'mouseleave', bubbles: false });
+      if (el) doc.dispatch(el, { type: 'mouseenter', bubbles: false });
+    },
+    showDialog(id) { page.el(id).style.display = 'block'; },
+    hideDialog(id) { page.el(id).style.display = 'none'; },
   };
   return page;
 }
@@ -674,6 +760,309 @@ async function main() {
       assert.ok(at.hasAttribute && at.hasAttribute('data-diagnostic-send'), `focus back on send, not ${at.id || at.tagName}`);
     });
   }
+
+  // ---- a notice's countdown waits while a dialog is open
+
+  const LIFE = 10000;
+  const receipt = (p, extra = {}) => p.notices().show(Object.assign({
+    app: 'entities', icon: 'trash-2', title: 'deleted', message: 'one entity',
+    autoDismiss: LIFE, buttons: [{ label: 'recover', onClick() {} }],
+  }, extra));
+  const up = (p, id) => p.notices()._stack.some((n) => n.id === id);
+  const barPaused = (p, id) => {
+    const bar = p.card(id) && p.card(id).querySelector('.notification-countdown');
+    return Boolean(bar && bar.style.animationPlayState === 'paused');
+  };
+  // A view's dialog as a view opens one: shown, then its first control focused.
+  const openView = (p) => { p.showDialog('view-dialog'); p.el('view-first').focus(); };
+
+  await test("a receipt up when a view's dialog opens waits under it, drawn paused, and starts when it closes", async () => {
+    const p = makePage({ notices: true });
+    const id = receipt(p);
+    p.tick(2000);
+    openView(p);
+    p.frame();
+    p.tick(LIFE * 2);
+    assert.ok(up(p, id), 'still up after twice its life under the dialog');
+    assert.ok(barPaused(p, id), 'its bar is drawn paused');
+    p.hideDialog('view-dialog');
+    p.frame();
+    p.tick(LIFE - 100);
+    assert.ok(up(p, id), 'it starts again with its whole life');
+    p.tick(200);
+    assert.ok(!up(p, id), 'then it goes');
+  });
+
+  await test('under two stacked dialogs it starts only when the last one closes', async () => {
+    const p = makePage({ notices: true });
+    const id = receipt(p);
+    openView(p);
+    p.frame();
+    await p.openReport();
+    p.frame();
+    p.tick(LIFE * 2);
+    p.key('Escape');
+    assert.ok(!p.doc.querySelector('.report-error-modal'), 'the review is closed');
+    p.frame();
+    p.tick(LIFE * 2);
+    assert.ok(up(p, id), "still waiting: the view's dialog is open");
+    p.hideDialog('view-dialog');
+    p.frame();
+    p.tick(LIFE + 100);
+    assert.ok(!up(p, id), 'started when the last one closed, then gone');
+  });
+
+  for (const [when, open] of [
+    ["before the layer's frame (a dialog that focuses itself)", (p) => { openView(p); }],
+    ["at the layer's frame (the layer moves focus in)", (p) => { p.showDialog('view-dialog'); p.frame(); }],
+  ]) {
+    await test(`a focused receipt that a dialog's opening sends focusout ${when} waits`, async () => {
+      const p = makePage({ notices: true });
+      const id = receipt(p);
+      p.card(id).focus();
+      p.tick(LIFE * 2);
+      assert.ok(up(p, id), 'focus pauses it, as today');
+      open(p);
+      assert.ok(!p.card(id).matches(':focus-within'), 'the opening took focus out of the card');
+      p.frame();
+      p.tick(LIFE * 2);
+      assert.ok(up(p, id), 'still up under the dialog');
+      assert.ok(barPaused(p, id), 'drawn paused');
+      p.hideDialog('view-dialog');
+      p.frame();
+      assert.ok(p.card(id).matches(':focus-within'), 'the close gives focus back to the card');
+      p.tick(LIFE * 2);
+      assert.ok(up(p, id), 'paused while focus is in it, as today');
+      p.el('make-report').focus();
+      p.tick(LIFE + 100);
+      assert.ok(!up(p, id), 'its focusout starts it');
+    });
+  }
+
+  await test("a hovered receipt that a dialog's opening sends mouseleave waits, and starts on close", async () => {
+    const p = makePage({ notices: true });
+    const id = receipt(p);
+    p.hover(p.card(id));
+    p.tick(LIFE * 2);
+    assert.ok(up(p, id), 'the pointer pauses it, as today');
+    openView(p);
+    p.frame();
+    p.hover(null); // the scrim lands under the pointer
+    p.tick(LIFE * 2);
+    assert.ok(up(p, id), 'still up under the dialog');
+    p.hideDialog('view-dialog');
+    p.frame();
+    p.tick(LIFE + 100);
+    assert.ok(!up(p, id), 'it started when the dialog closed');
+  });
+
+  await test('a receipt with the pointer back on it when the dialog closes stays paused until the pointer leaves', async () => {
+    const p = makePage({ notices: true });
+    const id = receipt(p);
+    p.hover(p.card(id));
+    openView(p);
+    p.frame();
+    p.hover(null);
+    p.tick(LIFE * 2);
+    p.doc.hovered = p.card(id); // the pointer is over it as the scrim goes
+    p.hideDialog('view-dialog');
+    p.frame();
+    p.tick(LIFE * 2);
+    assert.ok(up(p, id), 'paused while the pointer is on it');
+    p.hover(null);
+    p.tick(LIFE + 100);
+    assert.ok(!up(p, id), 'its mouseleave starts it');
+  });
+
+  await test('a receipt with focus given back into it when the review closes stays paused until focus leaves', async () => {
+    const p = makePage({ notices: true });
+    const id = receipt(p);
+    const recover = p.card(id).querySelector('.notification-action');
+    recover.focus();
+    await p.openReport();
+    p.frame();
+    p.tick(LIFE * 2);
+    p.key('Escape');
+    p.frame();
+    assert.ok(p.doc.activeElement === recover, 'focus is back on recover');
+    p.tick(LIFE * 2);
+    assert.ok(up(p, id), 'paused while focus is in it');
+    p.el('make-report').focus();
+    p.tick(LIFE + 100);
+    assert.ok(!up(p, id), 'its focusout starts it');
+  });
+
+  await test('a receipt that arrives while a dialog is open waits, and starts when it closes', async () => {
+    const p = makePage({ notices: true });
+    openView(p);
+    p.frame();
+    const id = receipt(p);
+    p.tick(LIFE * 2);
+    assert.ok(up(p, id), 'still up');
+    assert.ok(barPaused(p, id), 'drawn paused');
+    p.hideDialog('view-dialog');
+    p.frame();
+    p.tick(LIFE - 100);
+    assert.ok(up(p, id), 'with its whole life');
+    p.tick(200);
+    assert.ok(!up(p, id), 'then gone');
+  });
+
+  await test("a receipt shown after its confirm hides, before the layer's frame, starts at the frame with its whole life", async () => {
+    const p = makePage({ notices: true });
+    p.showDialog('confirm-dialog');
+    p.el('confirm-yes').focus();
+    p.frame();
+    p.hideDialog('confirm-dialog');
+    const id = receipt(p);
+    p.frame();
+    p.tick(LIFE - 100);
+    assert.ok(up(p, id), 'not cut short');
+    p.tick(200);
+    assert.ok(!up(p, id), 'and not left waiting');
+  });
+
+  await test("a receipt shown after its confirm hides, over a view's dialog still open, waits for that one", async () => {
+    const p = makePage({ notices: true });
+    openView(p);
+    p.frame();
+    p.showDialog('confirm-dialog');
+    p.el('confirm-yes').focus();
+    p.frame();
+    p.hideDialog('confirm-dialog');
+    const id = receipt(p);
+    p.frame();
+    p.tick(LIFE * 2);
+    assert.ok(up(p, id), "waiting: the view's dialog is still open");
+    p.hideDialog('view-dialog');
+    p.frame();
+    p.tick(LIFE + 100);
+    assert.ok(!up(p, id), 'started when it closed');
+  });
+
+  await test('a receipt updated by its key while it waits keeps waiting, and starts on close', async () => {
+    const p = makePage({ notices: true });
+    openView(p);
+    p.frame();
+    const id = receipt(p, { key: 'delete-1' });
+    p.tick(3000);
+    assert.ok(receipt(p, { key: 'delete-1', message: 'two entities' }) === id, 'the same notice, updated');
+    p.tick(LIFE * 2);
+    assert.ok(up(p, id), 'still waiting');
+    p.hideDialog('view-dialog');
+    p.frame();
+    p.tick(LIFE + 100);
+    assert.ok(!up(p, id), 'started on close');
+  });
+
+  await test("other changes to <body>'s classes neither hold nor restart a countdown", async () => {
+    const p = makePage({ notices: true });
+    const id = receipt(p);
+    p.tick(5000);
+    p.doc.body.classList.add('presenting');
+    p.doc.body.classList.remove('presenting');
+    p.tick(5100);
+    assert.ok(!up(p, id), 'gone on time: not held, not restarted');
+    openView(p);
+    p.frame();
+    const held = receipt(p);
+    p.doc.body.classList.add('presenting');
+    p.doc.body.classList.remove('presenting');
+    p.tick(LIFE * 2);
+    assert.ok(up(p, held), 'still waiting under the dialog');
+  });
+
+  await test('the notices watch <body> with one observer for the life of the page', async () => {
+    const p = makePage({ notices: true });
+    const before = p.observers();
+    for (let i = 0; i < 5; i += 1) {
+      const id = receipt(p);
+      openView(p);
+      p.frame();
+      p.hideDialog('view-dialog');
+      p.frame();
+      p.notices().dismiss(id);
+    }
+    assert.ok(p.observers() === before + 1, `observers ${before} → ${p.observers()}, expected one more`);
+  });
+
+  // Nothing else moves.
+
+  await test('with no dialog, a receipt goes at the end of its life', async () => {
+    const p = makePage({ notices: true });
+    const id = receipt(p);
+    p.tick(LIFE - 100);
+    assert.ok(up(p, id), 'up before');
+    p.tick(200);
+    assert.ok(!up(p, id), 'gone after');
+  });
+
+  await test('with no dialog, hover and focus pause it and their end starts its whole life again', async () => {
+    const p = makePage({ notices: true });
+    const id = receipt(p);
+    p.tick(5000);
+    p.hover(p.card(id));
+    p.tick(LIFE * 2);
+    p.hover(null);
+    p.tick(LIFE - 100);
+    assert.ok(up(p, id), 'a whole life after the pointer left');
+    p.card(id).focus();
+    p.tick(LIFE * 2);
+    p.el('make-report').focus();
+    p.tick(LIFE - 100);
+    assert.ok(up(p, id), 'a whole life after focus left');
+    p.tick(200);
+    assert.ok(!up(p, id), 'then gone');
+  });
+
+  await test('a notice dismissed while a dialog is open is gone, with no timer left behind', async () => {
+    const p = makePage({ notices: true });
+    const id = receipt(p);
+    openView(p);
+    p.frame();
+    p.notices().dismiss(id);
+    assert.ok(!up(p, id), 'gone');
+    p.hideDialog('view-dialog');
+    p.frame();
+    assert.ok(Object.keys(p.notices()._dismissTimers).length === 0, 'no timer');
+    assert.ok(p.notices().count() === 0, 'nothing came back');
+  });
+
+  await test('a key update or update() leaves a running countdown as it was', async () => {
+    const p = makePage({ notices: true });
+    const id = receipt(p, { key: 'k' });
+    p.tick(5000);
+    receipt(p, { key: 'k', message: 'again' });
+    p.notices().update(id, { title: 'deleted, again' });
+    p.tick(5100);
+    assert.ok(!up(p, id), 'gone at its first deadline');
+  });
+
+  await test('a key update that newly sets autoDismiss starts no countdown, with or without a dialog', async () => {
+    const p = makePage({ notices: true });
+    const id = p.notices().show({ app: 'entities', title: 'deleting', key: 'k2' });
+    p.notices().show({ app: 'entities', title: 'deleted', key: 'k2', autoDismiss: 3000 });
+    p.tick(LIFE);
+    assert.ok(up(p, id), 'no countdown');
+    openView(p);
+    p.frame();
+    p.hideDialog('view-dialog');
+    p.frame();
+    p.tick(LIFE);
+    assert.ok(up(p, id), 'still none after a dialog');
+  });
+
+  await test('a waiting receipt whose autoDismiss a key update cleared does not start on close', async () => {
+    const p = makePage({ notices: true });
+    openView(p);
+    p.frame();
+    const id = receipt(p, { key: 'k3' });
+    p.notices().show({ app: 'entities', title: 'deleting', key: 'k3' });
+    p.hideDialog('view-dialog');
+    p.frame();
+    p.tick(LIFE * 2);
+    assert.ok(up(p, id), 'it stays, as a notice with no autoDismiss does');
+  });
 
   if (failed.length) {
     failed.forEach((line) => console.error(`FAIL ${line}`));
