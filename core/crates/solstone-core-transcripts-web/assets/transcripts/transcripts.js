@@ -5236,8 +5236,10 @@
         eraseReach: "they leave your journal now and can't be recovered.",
         moveLead: "this moves each segment's own:",
         eraseLead: "this erases each segment's own:",
-        moveStays: "activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose. detected entities drop them too, and any voice samples from them leave your known voices. the entities you're tending stay, and what your journal wrote about them may still mention them.",
-        eraseStays: "activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose. detected entities drop them too, and any voice samples from them leave your known voices. the entities you're tending aren't erased, and what your journal wrote about them may still mention them.",
+        moveStays: "activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.",
+        moveFound: "detected entities drop them too, and any voice samples from them leave your known voices. the entities you're tending stay, and what your journal wrote about them may still mention them.",
+        eraseStays: "activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.",
+        eraseFound: "detected entities drop them too, and any voice samples from them leave your known voices. the entities you're tending aren't erased, and what your journal wrote about them may still mention them.",
         size: 'current raw media size: {size}',
       },
       notes: {
@@ -5275,7 +5277,8 @@
         title: 'delete segment?',
         reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
         lead: "this moves the segment's own:",
-        stays: "activities made from it drop it now, and the write-ups of its day and week leave search. your journal then writes those again from what's left, with the thinking you chose. detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending stay, and what your journal wrote about them may still mention it.",
+        stays: "activities made from it drop it now, and the write-ups of its day and week leave search. your journal then writes those again from what's left, with the thinking you chose.",
+        found: "detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending stay, and what your journal wrote about them may still mention it.",
         size: 'current raw media size: {size}',
       },
       // A segment from an import: its last takes the import and the file it
@@ -5350,7 +5353,8 @@
         title: 'erase this segment now?',
         reach: "it leaves your journal now and can't be recovered.",
         lead: "this erases the segment's own:",
-        stays: "activities made from it drop it now, and the write-ups of its day and week leave search. your journal then writes those again from what's left, with the thinking you chose. detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending aren't erased, and what your journal wrote about them may still mention it.",
+        stays: "activities made from it drop it now, and the write-ups of its day and week leave search. your journal then writes those again from what's left, with the thinking you chose.",
+        found: "detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending aren't erased, and what your journal wrote about them may still mention it.",
       },
       parts: {
         audio: 'audio',
@@ -5565,6 +5569,7 @@
         deleteDialogElement('p', 'tr-delete-lead', copy.lead),
         list,
         deleteDialogElement('p', 'tr-delete-stays', copy.stays),
+        deleteDialogElement('p', 'tr-delete-found', copy.found),
       );
       const totalBytes = (ownData?.media_sizes?.audio || 0) + (ownData?.media_sizes?.screen || 0);
       if (!erasing && !isLocRow && totalBytes > 0) {
@@ -6549,6 +6554,7 @@
         deleteDialogElement('p', 'tr-delete-lead', erasing ? copy.eraseLead : copy.moveLead),
         list,
         deleteDialogElement('p', 'tr-delete-stays', erasing ? copy.eraseStays : copy.moveStays),
+        deleteDialogElement('p', 'tr-delete-found', erasing ? copy.eraseFound : copy.moveFound),
       );
       const sizes = segs.map(knownSegmentBytes);
       const total = sizes.every((bytes) => bytes !== null) ? sizes.reduce((sum, bytes) => sum + bytes, 0) : 0;
