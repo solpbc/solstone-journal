@@ -403,12 +403,49 @@
     window.logError(error, { kind: 'unhandled-rejection' });
   });
 
+  // A dialog of the shell's closes by giving focus back: the layer returns it
+  // to the dialog under it, or to what had focus before it opened, and if
+  // neither is left it goes to the workspace rather than the page.
+  function settleFocus(restore) {
+    const layer = window.ConveyModalLayer;
+    if (layer && typeof layer.reconcile === 'function') layer.reconcile({ restore });
+    const focused = document.activeElement;
+    if (!focused || focused === document.body || !focused.isConnected) {
+      document.getElementById('main-content')?.focus();
+    }
+  }
+
+  function isOpen(errorModal) {
+    return errorModal.style.display === 'block';
+  }
+
+  // Another dialog marked active by the modal layer is on top of this one.
+  function isTop(dialog) {
+    if (dialog.hasAttribute('data-convey-active-dialog')) return true;
+    return !document.querySelector('[data-convey-active-dialog]');
+  }
+
+  function closeErrorModal(errorModal, restore = true) {
+    if (!isOpen(errorModal)) return;
+    errorModal.style.display = 'none';
+    settleFocus(restore);
+  }
+
   window.showError = (text) => {
     const errorModal = document.getElementById('errorModal');
     const errorMessage = document.getElementById('errorMessage');
     if (errorModal && errorMessage) {
       errorMessage.textContent = text;
+      // Last in <body> is the top dialog, so one opened over another is on top.
+      if (errorModal.nextElementSibling && errorModal.parentElement === document.body) {
+        document.body.appendChild(errorModal);
+      }
       errorModal.style.display = 'block';
+      // The layer makes it the top dialog now, rather than at the next frame:
+      // over another dialog the box was inert with the rest of the page. It
+      // takes focus to its close button, or keeps it when it already has it.
+      const layer = window.ConveyModalLayer;
+      if (layer && typeof layer.reconcile === 'function') layer.reconcile();
     }
   };
 
@@ -419,13 +456,28 @@
       return;
     }
     closeButton.onclick = () => {
-      errorModal.style.display = 'none';
+      closeErrorModal(errorModal);
     };
 
     window.addEventListener('click', (e) => {
       if (e.target === errorModal) {
-        errorModal.style.display = 'none';
+        closeErrorModal(errorModal);
       }
+    });
+
+    // One Escape closes the top dialog only: the shell's two dialogs both
+    // listen on the document, so the one that closes stops the other too.
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !isOpen(errorModal) || !isTop(errorModal)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      closeErrorModal(errorModal);
+    }, true);
+
+    // A back with the box open closes it, as a view's dialog closes on one;
+    // the move places focus.
+    window.addEventListener('popstate', () => {
+      closeErrorModal(errorModal, false);
     });
   }
 

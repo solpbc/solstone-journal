@@ -1,0 +1,656 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+// The shell's two dialogs, the report review and the error box, under plain
+// Node: the real modal layer, error handler, report flow and diagnostic
+// console, with the error box and the console taken from the real shell page,
+// in a stand-in page with capture and bubble, focus events, inert, the
+// browser's focus fixup and a frame queue the cases flush by hand.
+// Every compare is of plain values, ids or tag names: never an element.
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const crateDir = path.resolve(__dirname, '..');
+const staticDir = path.join(crateDir, 'assets', 'static');
+const VOID_TAGS = new Set(['br', 'hr', 'img', 'input', 'link', 'meta']);
+
+// ---- a small document
+
+class Target {
+  constructor() { this.listeners = new Map(); }
+  addEventListener(type, fn, options) {
+    const capture = typeof options === 'boolean' ? options : !!options?.capture;
+    const list = this.listeners.get(type) || [];
+    if (!list.some((l) => l.fn === fn && l.capture === capture)) list.push({ fn, capture, once: !!options?.once });
+    this.listeners.set(type, list);
+  }
+  removeEventListener(type, fn, options) {
+    const capture = typeof options === 'boolean' ? options : !!options?.capture;
+    const list = this.listeners.get(type) || [];
+    this.listeners.set(type, list.filter((l) => !(l.fn === fn && l.capture === capture)));
+  }
+  // One phase's listeners on this node; false once propagation is stopped.
+  invoke(event, capture) {
+    event.currentTarget = this;
+    for (const entry of [...(this.listeners.get(event.type) || [])]) {
+      if (entry.capture !== capture) continue;
+      if (entry.once) this.removeEventListener(event.type, entry.fn, entry.capture);
+      entry.fn.call(this, event);
+      if (event.immediateStopped) break;
+    }
+    if (!capture) {
+      const handler = this['on' + event.type];
+      if (typeof handler === 'function') handler.call(this, event);
+    }
+    return !event.stopped;
+  }
+}
+
+class TextNode {
+  constructor(text) { this.nodeType = 3; this.data = String(text); this.parentNode = null; }
+  get textContent() { return this.data; }
+}
+
+function simpleMatch(el, part) {
+  const re = /([a-zA-Z][a-zA-Z0-9-]*)|#([\w-]+)|\.([\w-]+)|\[([\w-]+)(?:=["']?([^\]"']*)["']?)?\]/g;
+  let m;
+  let any = false;
+  while ((m = re.exec(part))) {
+    any = true;
+    if (m[1] && el.tagName !== m[1].toUpperCase()) return false;
+    if (m[2] && el.getAttribute('id') !== m[2]) return false;
+    if (m[3] && !el.classList.contains(m[3])) return false;
+    if (m[4]) {
+      if (!el.hasAttribute(m[4])) return false;
+      if (m[5] !== undefined && el.getAttribute(m[4]) !== m[5]) return false;
+    }
+  }
+  return any;
+}
+
+function matches(el, selector) {
+  return selector.split(',').some((one) => {
+    const parts = one.trim().split(/\s+/);
+    if (!simpleMatch(el, parts[parts.length - 1])) return false;
+    let at = el.parentNode;
+    for (let i = parts.length - 2; i >= 0; i -= 1) {
+      while (at && !(at.nodeType === 1 && simpleMatch(at, parts[i]))) at = at.parentNode;
+      if (!at) return false;
+      at = at.parentNode;
+    }
+    return true;
+  });
+}
+
+class Element extends Target {
+  constructor(doc, tagName) {
+    super();
+    this.ownerDocument = doc;
+    this.nodeType = 1;
+    this.tagName = tagName.toUpperCase();
+    this.attrs = new Map();
+    this.childNodes = [];
+    this.parentNode = null;
+    this.value = '';
+    this.disabled = false;
+    this.style = {};
+    const self = this;
+    this.classList = {
+      list: () => (self.getAttribute('class') || '').split(/\s+/).filter(Boolean),
+      add(...cs) { const l = this.list(); cs.forEach((c) => { if (!l.includes(c)) l.push(c); }); self.setAttribute('class', l.join(' ')); },
+      remove(...cs) { self.setAttribute('class', this.list().filter((x) => !cs.includes(x)).join(' ')); },
+      contains(c) { return this.list().includes(c); },
+      toggle(c, on) { const want = on === undefined ? !this.contains(c) : !!on; if (want) this.add(c); else this.remove(c); return want; },
+    };
+    const doc2 = doc;
+    this.style = new Proxy({}, {
+      set(target, key, value) { target[key] = String(value); doc2.mutated(); return true; },
+    });
+  }
+  get children() { return this.childNodes.filter((n) => n.nodeType === 1); }
+  get parentElement() { return this.parentNode && this.parentNode.nodeType === 1 ? this.parentNode : null; }
+  get nextElementSibling() {
+    const siblings = this.parentNode ? this.parentNode.children : [];
+    return siblings[siblings.indexOf(this) + 1] || null;
+  }
+  get id() { return this.getAttribute('id') || ''; }
+  set id(v) { this.setAttribute('id', v); }
+  get className() { return this.getAttribute('class') || ''; }
+  set className(v) { this.setAttribute('class', v); }
+  get type() { return this.getAttribute('type') || ''; }
+  set type(v) { this.setAttribute('type', v); }
+  get href() { return this.getAttribute('href') || ''; }
+  set href(v) { this.setAttribute('href', v); }
+  get target() { return this.getAttribute('target') || ''; }
+  set target(v) { this.setAttribute('target', v); }
+  get rel() { return this.getAttribute('rel') || ''; }
+  set rel(v) { this.setAttribute('rel', v); }
+  get maxLength() { return Number(this.getAttribute('maxlength') || -1); }
+  set maxLength(v) { this.setAttribute('maxlength', String(v)); }
+  get hidden() { return this.hasAttribute('hidden'); }
+  set hidden(v) { if (v) this.setAttribute('hidden', ''); else this.removeAttribute('hidden'); }
+  get inert() { return this.hasAttribute('inert'); }
+  set inert(v) { if (v) this.setAttribute('inert', ''); else this.removeAttribute('inert'); }
+  setAttribute(k, v) { this.attrs.set(k, String(v)); this.ownerDocument.mutated(); }
+  getAttribute(k) { return this.attrs.has(k) ? this.attrs.get(k) : null; }
+  hasAttribute(k) { return this.attrs.has(k); }
+  removeAttribute(k) { this.attrs.delete(k); this.ownerDocument.mutated(); }
+  get textContent() { return this.childNodes.map((n) => n.textContent).join(''); }
+  set textContent(v) { this.replaceChildren(); if (String(v ?? '')) this.append(String(v)); }
+  set innerHTML(html) { this.replaceChildren(); parseInto(this.ownerDocument, this, String(html ?? '')); }
+  get innerHTML() { return this.textContent; }
+  get isConnected() {
+    let at = this;
+    while (at.parentNode) at = at.parentNode;
+    return at === this.ownerDocument.documentElement;
+  }
+  contains(node) {
+    for (let at = node; at; at = at.parentNode) if (at === this) return true;
+    return false;
+  }
+  matches(selector) { return matches(this, selector); }
+  closest(selector) {
+    for (let at = this; at && at.nodeType === 1; at = at.parentNode) if (matches(at, selector)) return at;
+    return null;
+  }
+  // Shown: connected, and no ancestor hidden or not displayed.
+  shown() {
+    if (!this.isConnected) return false;
+    for (let at = this; at && at.nodeType === 1; at = at.parentNode) {
+      if (at.hasAttribute('hidden') || this.ownerDocument.displayOf(at) === 'none') return false;
+    }
+    return true;
+  }
+  inInert() {
+    for (let at = this; at && at.nodeType === 1; at = at.parentNode) if (at.hasAttribute('inert')) return true;
+    return false;
+  }
+  adopt(node) {
+    if (node.parentNode) node.parentNode.removeChild(node);
+    node.parentNode = this;
+    return node;
+  }
+  append(...nodes) {
+    for (let node of nodes) {
+      if (node === null || node === undefined) continue;
+      if (typeof node === 'string') node = new TextNode(node);
+      this.childNodes.push(this.adopt(node));
+    }
+    this.ownerDocument.mutated();
+  }
+  appendChild(node) { this.append(node); return node; }
+  removeChild(node) {
+    const i = this.childNodes.indexOf(node);
+    if (i >= 0) this.childNodes.splice(i, 1);
+    node.parentNode = null;
+    this.ownerDocument.mutated();
+    return node;
+  }
+  remove() { if (this.parentNode) this.parentNode.removeChild(this); }
+  replaceChildren(...nodes) {
+    [...this.childNodes].forEach((n) => this.removeChild(n));
+    this.append(...nodes);
+  }
+  querySelectorAll(selector) {
+    const out = [];
+    const walk = (el) => el.children.forEach((c) => { if (matches(c, selector)) out.push(c); walk(c); });
+    walk(this);
+    return out;
+  }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+  // As a browser: an element that isn't shown, is turned off or is inert
+  // refuses focus, and a move of focus fires focusin.
+  focus() {
+    if (!this.shown() || this.disabled || this.inInert()) return;
+    if (this.ownerDocument.focused === this) return;
+    this.ownerDocument.focused = this;
+    this.ownerDocument.dispatch(this, { type: 'focusin', bubbles: true });
+  }
+  // A pointer press, as in Chromium: it focuses the nearest focusable
+  // ancestor, or else the page, then clicks.
+  click() {
+    const doc = this.ownerDocument;
+    const focusable = this.closest('button, a, textarea, input, select, [tabindex]');
+    if (focusable) focusable.focus();
+    else doc.focused = doc.body;
+    return doc.dispatch(this, { type: 'click', bubbles: true, button: 0 });
+  }
+}
+
+const ENTITIES = { '&times;': '×', '&nbsp;': ' ' };
+function decode(text) {
+  return text.replace(/&[a-z]+;/g, (e) => ENTITIES[e] || e)
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+}
+
+function parseInto(doc, parent, html) {
+  const stack = [parent];
+  const re = /<!--[\s\S]*?-->|<\/([a-zA-Z0-9]+)\s*>|<([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^\s=>]+(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?)*)\s*\/?>|([^<]+)/g;
+  let m;
+  while ((m = re.exec(html))) {
+    const top = stack[stack.length - 1];
+    if (m[0].startsWith('<!--')) continue;
+    if (m[1]) {
+      const tag = m[1].toUpperCase();
+      while (stack.length > 1 && stack.pop().tagName !== tag) { /* close */ }
+      continue;
+    }
+    if (m[2]) {
+      const el = doc.createElement(m[2]);
+      const attrRe = /([^\s=>]+)(?:=("[^"]*"|'[^']*'|[^\s>]+))?/g;
+      let a;
+      while ((a = attrRe.exec(m[3] || ''))) {
+        let v = a[2] === undefined ? '' : a[2];
+        if (/^["']/.test(v)) v = v.slice(1, -1);
+        el.setAttribute(a[1], decode(v));
+      }
+      top.append(el);
+      if (!VOID_TAGS.has(m[2].toLowerCase())) stack.push(el);
+      continue;
+    }
+    if (m[4] && m[4].trim()) top.append(decode(m[4]));
+  }
+}
+
+// The shell page's own markup for a part, by its opening tag.
+function shellPart(open, close) {
+  const html = fs.readFileSync(path.join(staticDir, 'shell.html'), 'utf8');
+  const start = html.indexOf(open);
+  assert.ok(start >= 0, `shell.html has ${open}`);
+  const end = html.indexOf(close, start);
+  return html.slice(start, end + close.length);
+}
+
+function makePage() {
+  const win = new Target();
+  const doc = new Target();
+  const frames = [];
+  const observers = [];
+  doc.readyState = 'complete';
+  doc.mutated = () => observers.forEach((o) => { if (o.on) o.callback([]); });
+  doc.createElement = (tag) => new Element(doc, tag);
+  doc.documentElement = new Element(doc, 'html');
+  doc.body = new Element(doc, 'body');
+  doc.documentElement.append(doc.body);
+  // The page's own stylesheet, as far as these cases need it: a .modal is
+  // not displayed until its inline style shows it.
+  doc.displayOf = (el) => {
+    if (el.style.display) return el.style.display;
+    if (el.classList.contains('modal')) return 'none';
+    return 'block';
+  };
+  // The browser's focus fixup: focus on something taken out, hidden or
+  // made inert reads as the page itself.
+  doc.focused = doc.body;
+  Object.defineProperty(doc, 'activeElement', {
+    get() {
+      const f = doc.focused;
+      if (!f || f === doc.body || !f.shown() || f.inInert() || f.disabled) return doc.body;
+      return f;
+    },
+  });
+  doc.getElementById = (id) => doc.documentElement.querySelector('#' + id);
+  doc.querySelector = (s) => doc.documentElement.querySelector(s);
+  doc.querySelectorAll = (s) => doc.documentElement.querySelectorAll(s);
+  // Capture from the window down, the target, then bubble back up.
+  doc.dispatch = (target, init) => {
+    const event = Object.assign({
+      target,
+      bubbles: false,
+      defaultPrevented: false,
+      stopped: false,
+      immediateStopped: false,
+      preventDefault() { this.defaultPrevented = true; },
+      stopPropagation() { this.stopped = true; },
+      stopImmediatePropagation() { this.stopped = true; this.immediateStopped = true; },
+    }, init);
+    const chain = [];
+    for (let at = target; at; at = at.parentNode) chain.push(at);
+    if (target !== doc && target !== win) chain.push(doc);
+    chain.push(win);
+    const down = chain.slice().reverse();
+    for (const node of down.slice(0, -1)) if (!node.invoke(event, true)) return event;
+    if (!target.invoke(event, true)) return event;
+    if (!target.invoke(event, false)) return event;
+    if (!event.bubbles) return event;
+    for (const node of chain.slice(1)) if (!node.invoke(event, false)) return event;
+    return event;
+  };
+  doc.dispatchEvent = (event) => { doc.dispatch(doc, event); return !event.defaultPrevented; };
+  win.dispatchEvent = (event) => { doc.dispatch(win, event); return !event.defaultPrevented; };
+  win.document = doc;
+  win.window = win;
+  win.requestAnimationFrame = (fn) => { frames.push(fn); return frames.length; };
+  win.getComputedStyle = (el) => ({
+    display: doc.displayOf(el),
+    position: el.classList.contains('modal') ? 'fixed' : 'static',
+  });
+  win.whenShellReady = (fn) => fn({});
+  win.sessionStorage = { getItem() { return null; }, setItem() {}, removeItem() {} };
+  win.location = { pathname: '/app/support/', href: 'http://journal.test/app/support/', origin: 'http://journal.test' };
+  win.CustomEvent = class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } };
+  win.fetch = async (url) => {
+    assert.ok(String(url) === '/app/support/api/context', `unexpected fetch ${url}`);
+    return { ok: true, json: async () => ({ version: '2.0.0', os: 'linux', os_version: '6', about: '' }) };
+  };
+  win.console = { error() {}, debug() {}, warn() {}, log() {} };
+
+  // The page: the rail, a workspace with its controls, a notice, the console
+  // and the error box from the shell page, in the shell page's order.
+  doc.body.innerHTML = [
+    '<nav id="app-rail"><a id="rail-home" href="/app/home/">home</a></nav>',
+    '<main id="main-content" class="workspace" tabindex="-1">',
+    '<h1 id="support-title" tabindex="-1">support</h1>',
+    '<button id="make-report" type="button">make a report</button>',
+    '<button id="unpair" type="button">unpair</button>',
+    '<button id="view-open" type="button">open</button>',
+    '<div id="view-dialog" class="modal" role="dialog" aria-modal="true">',
+    '<button id="view-first" type="button">first</button>',
+    '<button id="view-save" type="button">save</button>',
+    '</div>',
+    '</main>',
+    shellPart('<aside id="diagnostic-console"', '</aside>'),
+    '<div class="notification-center" id="notification-center">',
+    '<button id="recover" type="button">recover</button>',
+    '</div>',
+    shellPart('<div id="errorModal"', '</div>\n</div>'),
+  ].join('');
+
+  const context = vm.createContext({
+    window: win,
+    document: doc,
+    Element,
+    MutationObserver: class {
+      constructor(callback) { this.callback = () => callback([]); this.on = false; observers.push(this); }
+      observe() { this.on = true; }
+      disconnect() { this.on = false; }
+    },
+    requestAnimationFrame: win.requestAnimationFrame,
+    getComputedStyle: win.getComputedStyle,
+    CustomEvent: win.CustomEvent,
+    URLSearchParams,
+    URL,
+    setTimeout,
+    clearTimeout,
+    fetch: win.fetch,
+    console: win.console,
+  });
+  context.globalThis = context;
+  const files = ['modal_layer.js', 'error-handler.js', 'report-error.js'];
+  for (const file of files) {
+    vm.runInContext(fs.readFileSync(path.join(staticDir, file), 'utf8'), context, { filename: file });
+  }
+  // The real page reconciles on the frame after a change; so does this one,
+  // when a case calls frame().
+  const frame = () => {
+    for (let i = 0; i < 5 && frames.length; i += 1) frames.splice(0).forEach((fn) => fn());
+  };
+  frame();
+  const page = {
+    win,
+    doc,
+    frame,
+    el: (id) => doc.getElementById(id),
+    focusId() {
+      const a = doc.activeElement;
+      return a === doc.body ? 'BODY' : (a.id || a.tagName);
+    },
+    key(key) {
+      const target = doc.activeElement;
+      return doc.dispatch(target, { type: 'keydown', key, bubbles: true });
+    },
+    back() { doc.dispatch(win, { type: 'popstate' }); },
+    async openReport() {
+      win.convey.reportError({ source: 'support-page' });
+      await settle();
+      return doc.querySelector('.report-error-modal');
+    },
+    errorOpen() { return page.el('errorModal').style.display === 'block'; },
+  };
+  return page;
+}
+
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+let cases = 0;
+const failed = [];
+async function test(name, fn) {
+  try {
+    await fn();
+    cases += 1;
+  } catch (error) {
+    failed.push(`${name}: ${error.message}`);
+  }
+}
+
+function focusIs(page, id, what) {
+  const at = page.focusId();
+  assert.ok(at === id, `${what}: focus on ${at}, expected ${id}`);
+}
+
+async function main() {
+  // ---- the report review
+
+  for (const [how, close] of [
+    ['cancel', (p, modal) => modal.querySelector('.report-error-actions button').click()],
+    ['Escape', (p) => p.key('Escape')],
+    ['a click on its backdrop', (p, modal) => modal.click()],
+  ]) {
+    await test(`the review closed by ${how} gives focus back to what opened it`, async () => {
+      const p = makePage();
+      p.el('make-report').focus();
+      const modal = await p.openReport();
+      p.frame();
+      focusIs(p, 'report-error-recent', 'open');
+      assert.ok(p.el('main-content').hasAttribute('inert'), 'the page is inert while it is open');
+      assert.ok(modal.hasAttribute('data-convey-active-dialog'), 'the review is the active dialog');
+      close(p, modal);
+      assert.ok(!p.doc.querySelector('.report-error-modal'), 'the review is gone');
+      focusIs(p, 'make-report', 'closed');
+      assert.ok(!p.el('main-content').hasAttribute('inert'), 'the page is not inert after');
+      p.frame();
+      focusIs(p, 'make-report', 'after the next frame');
+    });
+  }
+
+  await test('the review closed when what opened it is gone puts focus on <main>', async () => {
+    const p = makePage();
+    p.el('make-report').focus();
+    const modal = await p.openReport();
+    p.frame();
+    p.el('make-report').remove();
+    modal.querySelector('.report-error-actions button').click();
+    focusIs(p, 'main-content', 'closed');
+  });
+
+  await test('the review opened from a notice gives focus back to the notice, which still works', async () => {
+    const p = makePage();
+    let recovered = 0;
+    p.el('recover').addEventListener('click', () => { recovered += 1; });
+    p.el('recover').focus();
+    await p.openReport();
+    p.frame();
+    assert.ok(p.el('notification-center').hasAttribute('inert'), 'the notice is inert under the review');
+    p.key('Escape');
+    focusIs(p, 'recover', 'closed');
+    p.el('recover').click();
+    assert.ok(recovered === 1, 'recover still takes a press');
+  });
+
+  // ---- the error box
+
+  await test('the error box is a named modal dialog that takes focus and keeps the page inert', async () => {
+    const p = makePage();
+    const box = p.el('errorModal');
+    assert.ok(box.getAttribute('role') === 'dialog' && box.getAttribute('aria-modal') === 'true', 'modal dialog markup');
+    assert.ok(box.getAttribute('aria-labelledby') === 'errorMessage', 'named by its message');
+    p.el('unpair').focus();
+    p.win.showError("couldn't unpair that device.");
+    assert.ok(p.doc.activeElement.classList.contains('close'), 'focus on its close button');
+    p.frame();
+    assert.ok(p.el('main-content').hasAttribute('inert'), 'the page is inert while it is open');
+    p.el('unpair').focus();
+    p.frame();
+    assert.ok(p.doc.activeElement.classList.contains('close'), 'focus stays in the box');
+  });
+
+  for (const [how, close] of [
+    ['its close button', (p) => p.el('errorModal').querySelector('.close').click()],
+    ['Escape', (p) => p.key('Escape')],
+    ['a click on its backdrop', (p) => p.el('errorModal').click()],
+  ]) {
+    await test(`the error box closed by ${how} gives focus back to where it was`, async () => {
+      const p = makePage();
+      p.el('unpair').focus();
+      p.win.showError("couldn't unpair that device.");
+      p.frame();
+      close(p);
+      assert.ok(!p.errorOpen(), 'the box is closed');
+      focusIs(p, 'unpair', 'closed');
+      p.frame();
+      focusIs(p, 'unpair', 'after the next frame');
+    });
+  }
+
+  await test('the error box closed when what had focus is gone puts focus on <main>', async () => {
+    const p = makePage();
+    p.el('unpair').focus();
+    p.win.showError('x');
+    p.frame();
+    p.el('unpair').remove();
+    p.el('errorModal').querySelector('.close').click();
+    focusIs(p, 'main-content', 'closed');
+  });
+
+  await test('a second showError replaces the text and keeps focus in the box', async () => {
+    const p = makePage();
+    p.el('unpair').focus();
+    p.win.showError('first');
+    p.frame();
+    p.win.showError('second');
+    p.frame();
+    assert.ok(p.el('errorMessage').textContent === 'second', 'the text is replaced');
+    assert.ok(p.doc.activeElement.classList.contains('close'), 'focus stays on its close button');
+    p.key('Escape');
+    focusIs(p, 'unpair', 'one close returns');
+  });
+
+  // ---- one over the other
+
+  await test('the error over the review closes back into the review, where focus was', async () => {
+    const p = makePage();
+    p.el('make-report').focus();
+    const modal = await p.openReport();
+    p.frame();
+    modal.querySelector('.report-error-actions button').focus();
+    p.win.showError('x');
+    assert.ok(p.doc.activeElement.classList.contains('close'), 'the error takes focus at once');
+    p.frame();
+    assert.ok(p.el('errorModal').hasAttribute('data-convey-active-dialog'), 'the error is on top');
+    assert.ok(modal.hasAttribute('inert'), 'the review is inert under it');
+    p.key('Escape');
+    assert.ok(p.doc.querySelector('.report-error-modal'), 'one Escape leaves the review open');
+    assert.ok(p.doc.activeElement.textContent === 'cancel', 'focus is back on cancel in the review');
+    assert.ok(!modal.hasAttribute('inert'), 'the review is live again');
+    p.frame();
+    assert.ok(p.doc.activeElement.textContent === 'cancel', 'and stays there after the frame');
+    p.key('Escape');
+    focusIs(p, 'make-report', 'the second Escape closes the review');
+  });
+
+  await test('the review over the error closes back into the error', async () => {
+    const p = makePage();
+    p.el('unpair').focus();
+    p.win.showError('x');
+    p.frame();
+    const modal = await p.openReport();
+    focusIs(p, 'report-error-recent', 'the review takes focus at once');
+    p.frame();
+    focusIs(p, 'report-error-recent', 'and keeps it');
+    assert.ok(modal.hasAttribute('data-convey-active-dialog'), 'the review is on top');
+    p.key('Escape');
+    assert.ok(!p.doc.querySelector('.report-error-modal'), 'Escape closes the review on top');
+    assert.ok(p.errorOpen(), 'the error box under it is still open');
+    assert.ok(p.doc.activeElement.classList.contains('close'), 'focus back on its close button');
+    p.el('errorModal').querySelector('.close').click();
+    focusIs(p, 'unpair', 'then back to where it was');
+  });
+
+  // ---- a back with either open
+
+  await test('a back closes the review, and focus goes to <main> for the move, not to the opener', async () => {
+    const p = makePage();
+    p.el('make-report').focus();
+    await p.openReport();
+    p.frame();
+    let openerFocused = 0;
+    p.el('make-report').addEventListener('focusin', () => { openerFocused += 1; });
+    p.back();
+    assert.ok(!p.doc.querySelector('.report-error-modal'), 'the review is gone');
+    focusIs(p, 'main-content', 'after the back');
+    p.frame();
+    focusIs(p, 'main-content', 'after the frame');
+    assert.ok(openerFocused === 0, 'the opener never took focus');
+  });
+
+  await test('a back closes the error box, and focus goes to <main> for the move', async () => {
+    const p = makePage();
+    p.el('unpair').focus();
+    p.win.showError('x');
+    p.frame();
+    p.back();
+    assert.ok(!p.errorOpen(), 'the box is closed');
+    focusIs(p, 'main-content', 'after the back');
+  });
+
+  // ---- a view's own dialog is as it was
+
+  await test("a view's single dialog: its own focus move and its opener's return are unchanged", async () => {
+    const p = makePage();
+    const dialog = p.el('view-dialog');
+    p.el('view-open').focus();
+    dialog.style.display = 'block';
+    p.el('view-save').focus();
+    focusIs(p, 'view-save', 'the view moved focus into its dialog before the frame');
+    p.frame();
+    focusIs(p, 'view-save', 'the layer keeps it there');
+    p.el('view-first').focus();
+    p.el('view-save').focus();
+    dialog.style.display = 'none';
+    p.frame();
+    focusIs(p, 'view-open', 'closing returns to its opener');
+    dialog.style.display = 'block';
+    p.frame();
+    focusIs(p, 'view-first', 'opened afresh, it starts at its first control');
+  });
+
+  await test("the error over a view's dialog closes back to the control that had focus in it", async () => {
+    const p = makePage();
+    const dialog = p.el('view-dialog');
+    p.el('view-open').focus();
+    dialog.style.display = 'block';
+    p.frame();
+    p.el('view-save').focus();
+    p.win.showError('x');
+    p.frame();
+    assert.ok(p.el('errorModal').hasAttribute('data-convey-active-dialog'), 'the error is on top');
+    p.key('Escape');
+    assert.ok(dialog.style.display === 'block', "one Escape leaves the view's dialog open");
+    focusIs(p, 'view-save', "back on save in the view's dialog");
+  });
+
+  if (failed.length) {
+    failed.forEach((line) => console.error(`FAIL ${line}`));
+    console.error(`DOM CASES: ${cases} passed, ${failed.length} failed`);
+    process.exit(1);
+  }
+  console.log(`DOM CASES: ${cases} passed`);
+}
+
+main().catch((error) => {
+  console.error(error && error.stack ? error.stack.split('\n').slice(0, 6).join('\n') : String(error));
+  process.exit(1);
+});
