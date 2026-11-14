@@ -622,12 +622,26 @@ pub enum Rejudged {
 /// The roles Participation gave each name, read from run logs still on disk:
 /// the newest run for each activity. ⚠ Logs are pruned (30 days by default),
 /// so this only helps a record written before it kept [`SAID`].
-#[derive(Debug, Default)]
-pub struct LoggedOutputs(BTreeMap<(String, String, String), (String, Vec<Value>)>);
+/// By (facet, day, activity): the run it came from, and its list.
+type LoggedRuns = BTreeMap<(String, String, String), (String, Vec<Value>)>;
+
+#[derive(Debug)]
+pub struct LoggedOutputs {
+    journal: std::path::PathBuf,
+    /// Read the first time a record needs one, and not at all if none does.
+    runs: std::cell::OnceCell<LoggedRuns>,
+}
 
 impl LoggedOutputs {
     pub fn read(journal: &std::path::Path) -> Self {
-        let mut outputs = Self::default();
+        Self {
+            journal: journal.to_owned(),
+            runs: std::cell::OnceCell::new(),
+        }
+    }
+
+    fn runs(journal: &std::path::Path) -> LoggedRuns {
+        let mut outputs = BTreeMap::new();
         let Ok(entries) = fs::read_dir(journal.join("talents/participation")) else {
             return outputs;
         };
@@ -680,18 +694,18 @@ impl LoggedOutputs {
             let key = (facet.to_owned(), day.to_owned(), id.to_owned());
             // A run's id is when it began, so the greater id is the later run.
             if outputs
-                .0
                 .get(&key)
                 .is_none_or(|(known, _)| known.as_str() < stem)
             {
-                outputs.0.insert(key, (stem.to_owned(), said));
+                outputs.insert(key, (stem.to_owned(), said));
             }
         }
         outputs
     }
 
     fn of(&self, facet: &str, day: &str, record_id: &str) -> Option<&[Value]> {
-        self.0
+        self.runs
+            .get_or_init(|| Self::runs(&self.journal))
             .get(&(facet.to_owned(), day.to_owned(), record_id.to_owned()))
             .map(|(_, said)| said.as_slice())
     }
@@ -820,7 +834,8 @@ pub fn judge_again(
     let attendable = segments
         .iter()
         .any(|segment| meeting_detected(journal, day, segment, stream))
-        && stored.get("playback") != Some(&Value::Bool(true));
+        && !(stored.get("playback") == Some(&Value::Bool(true))
+            && solstone_core_facets::stretch::correction_segments(&stored, "playback").is_none());
     let said = stored
         .get(SAID)
         .and_then(Value::as_array)
@@ -836,16 +851,41 @@ pub fn judge_again(
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_owned();
-        let mut entity_id = solstone_core_entity::resolve_activity_name(
-            journal,
-            &listed_name,
-            &detected,
-            facet,
-            json!({"lane":"talent.participation","facet":facet,"day":day,"record_id":record_id,"field":"participation.name"}),
-            90.0,
-        )
-        .map_err(|error| error.to_string())?
-        .or_else(|| known_person(&people, &listed_name));
+        let role = entry
+            .get("role")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let linked = entry
+            .get("entity_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        // A link is moved only when it came from the name: the entry is
+        // listed under the asked-about name, and it is linked to no one, to a
+        // bare name the day detected, or to someone an answer named. ⛔ A link
+        // to anyone else came from a voice (a match, or the owner's own
+        // assignment) and is never rederived from a name. Nor is a `heard`
+        // entry, which says whose voice it was.
+        let from_the_name = same_asked_name(&listed_name, name)
+            && role != "heard"
+            && linked.as_deref().is_none_or(|id| {
+                entities.contains(&id)
+                    || !people.iter().any(|person| person.id.as_deref() == Some(id))
+            });
+        let mut entity_id = if from_the_name {
+            solstone_core_entity::resolve_activity_name(
+                journal,
+                &listed_name,
+                &detected,
+                facet,
+                json!({"lane":"talent.participation","facet":facet,"day":day,"record_id":record_id,"field":"participation.name"}),
+                90.0,
+            )
+            .map_err(|error| error.to_string())?
+            .or_else(|| known_person(&people, &listed_name))
+        } else {
+            linked.clone()
+        };
         // The owner is never listed, so a name that is now theirs keeps the
         // entry it has.
         if owner.id.is_some() && entity_id == owner.id {
@@ -857,50 +897,52 @@ pub fn judge_again(
                 &solstone_core_entity_matching::normalize_resolution_query(&listed_name),
             )
         });
-        let role = entry
-            .get("role")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
         let by_voice = matches!(
             entry.get("source").and_then(Value::as_str),
             Some("voice" | "speaker_label")
         );
-        let moved = entity_id.as_deref() != entry.get("entity_id").and_then(Value::as_str);
+        // Taken off someone an answer named: what bore that person out says
+        // nothing of who the name is now.
+        let taken_back =
+            entity_id != linked && linked.as_deref().is_some_and(|id| entities.contains(&id));
         // Only the two roles the attendance check moves between, and only
         // for an entry the talent itself called an attendee by voice.
-        let role = if said_attending && by_voice && matches!(role, "attendee" | "mentioned") {
-            if entity_id.is_none()
-                && let Some(id) = only_person_answering(&spoken.heard, &listed_name)
-            {
-                entity_id = Some(id.to_owned());
-            }
-            let borne_out = attendable
-                && spoken.corroborates(
-                    journal,
-                    &people,
-                    facet,
-                    day,
-                    record_id,
-                    &listed_name,
-                    entity_id.as_deref(),
-                )?;
-            if borne_out {
-                "attendee"
-            } else if moved {
-                // Who the name is has changed, and nothing shows the new
-                // person there.
-                "mentioned"
+        let role =
+            if said_attending && by_voice && matches!(role.as_str(), "attendee" | "mentioned") {
+                if from_the_name
+                    && entity_id.is_none()
+                    && let Some(id) = only_person_answering(&spoken.heard, &listed_name)
+                {
+                    entity_id = Some(id.to_owned());
+                }
+                let borne_out = attendable
+                    && spoken.corroborates(
+                        journal,
+                        &people,
+                        facet,
+                        day,
+                        record_id,
+                        &listed_name,
+                        entity_id.as_deref(),
+                    )?;
+                if borne_out {
+                    "attendee".to_owned()
+                } else if taken_back {
+                    "mentioned".to_owned()
+                } else {
+                    // An answer never lowers an attendee: the owner said who the
+                    // name is, not that they weren't there.
+                    role
+                }
             } else {
                 role
-            }
-            .to_owned()
-        } else {
-            role.to_owned()
-        };
-        entry.insert(
-            "entity_id".to_owned(),
-            entity_id.map_or(Value::Null, Value::String),
-        );
+            };
+        if entity_id != linked {
+            entry.insert(
+                "entity_id".to_owned(),
+                entity_id.map_or(Value::Null, Value::String),
+            );
+        }
         entry.insert("role".to_owned(), Value::String(role));
     }
     if &judged == listed {
@@ -2017,6 +2059,72 @@ mod tests {
             Value::Array(record["participation"].as_array().unwrap()[1..].to_vec()),
             others
         );
+    }
+
+    /// Links that came from a voice, not from the name: a person heard in a
+    /// conversation, and a numbered voice the owner said was someone. An
+    /// answer about the name must not move either.
+    #[test]
+    fn an_answer_never_moves_a_link_that_came_from_a_voice() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        let root = root.path();
+        heard_ada(root);
+        write_entity(root, "other", "Ada Byron", "Person");
+        let by_voice = json!([
+            {"name":"Ada","role":"heard","source":"voice","entity_id":"other"},
+            {"name":"Ada","role":"attendee","source":"speaker_label","entity_id":"other"},
+        ]);
+        rewrite_record(root, |record| {
+            record.insert("participation".to_owned(), by_voice.clone());
+            record.insert(
+                SAID.to_owned(),
+                json!([{"name":"Speaker 2","role":"attendee","source":"speaker_label"}]),
+            );
+        });
+        answer_ada(root, "person");
+        let before = stored_record(root);
+
+        assert_eq!(
+            judge_again(
+                root,
+                FACET,
+                DAY,
+                "activity",
+                "ada",
+                &["person"],
+                &LoggedOutputs::read(root)
+            )
+            .unwrap(),
+            Rejudged::Same
+        );
+        assert_eq!(stored_record(root), before);
+    }
+
+    /// "I'm Ada" kept an unlinked Ada attending. Once the owner says which
+    /// Ada, the introduction no longer tells two Adas apart, and the answer
+    /// must not be what lowers her.
+    #[test]
+    fn an_answer_never_lowers_someone_who_was_attending() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        let root = root.path();
+        heard_ada(root);
+        write_entity(root, "other", "Ada Byron", "Person");
+        write_json(
+            &root.join(format!("chronicle/{DAY}/{SEGMENT}/talents/speakers.json")),
+            json!([]),
+        );
+        rewrite_record(root, |record| {
+            record.insert(
+                "participation".to_owned(),
+                json!([{"name":"Ada","role":"attendee","source":"voice","entity_id":null}]),
+            );
+        });
+        answer_ada(root, "person");
+
+        assert_eq!(judged(root), Rejudged::Changed);
+        let entry = stored_record(root)["participation"][0].clone();
+        assert_eq!(entry["entity_id"], "person");
+        assert_eq!(entry["role"], "attendee");
     }
 
     #[test]

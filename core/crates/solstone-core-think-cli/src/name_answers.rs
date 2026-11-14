@@ -18,7 +18,6 @@
 //!
 //! ⛔ An activity whose people the owner edited is never touched.
 
-use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -159,14 +158,20 @@ pub fn pass(
         ..Outcome::default()
     };
     // Run logs are read only if some record needs one.
-    let logs = OnceCell::new();
+    let logs = LoggedOutputs::read(journal);
+    let mut now_applied = applied.clone();
     for (facet, names) in &mut changed {
         for day in activity_days(journal, facet) {
             let records =
                 match solstone_core_facets::load_activity_records(journal, facet, &day, true) {
                     Ok(records) => records,
+                    // A day that can't be read now holds activities no one
+                    // judged, so every answer in the facet is tried again.
                     Err(error) => {
-                        log::warn!("name answers: {facet} {day} unreadable: {error}");
+                        log::warn!(
+                            "name answers: {facet} {day} unreadable, will try again: {error}"
+                        );
+                        names.values_mut().for_each(|asked| asked.failed = true);
                         continue;
                     }
                 };
@@ -177,7 +182,7 @@ pub fn pass(
                 ) else {
                     continue;
                 };
-                for (name, asked) in names.iter_mut().filter(|(_, asked)| !asked.failed) {
+                for (name, asked) in names.iter_mut() {
                     let entities = asked
                         .entities
                         .iter()
@@ -191,61 +196,56 @@ pub fn pass(
                     }
                     checkpoint()?;
                     outcome.judged += 1;
-                    match judge_again(
-                        journal,
-                        facet,
-                        &day,
-                        record_id,
-                        name,
-                        &entities,
-                        logs.get_or_init(|| LoggedOutputs::read(journal)),
-                    ) {
+                    match judge_again(journal, facet, &day, record_id, name, &entities, &logs) {
                         Ok(Rejudged::Changed) => outcome.changed += 1,
                         Ok(_) => {}
                         // A facet that is muted or a lock that is busy now
-                        // may not be later. The answer is tried again on the
-                        // next pass, from the start, and no further here.
+                        // may not be later. The rest are still judged, and
+                        // the answer is tried again on the next pass. Said
+                        // once for each name, not once for each activity.
                         Err(error) => {
-                            log::warn!(
-                                "name answers: {facet} {day} {record_id} not judged, will try again: {error}"
-                            );
+                            if !asked.failed {
+                                log::warn!(
+                                    "name answers: {facet} {day} {record_id} not judged, will try again: {error}"
+                                );
+                            }
                             asked.failed = true;
                         }
                     }
                 }
             }
         }
-    }
-    // What is recorded as applied: the standing answers, except that a
-    // question whose activities could not all be judged stays as it was.
-    let waiting = changed
-        .values()
-        .flat_map(|names| names.values())
-        .filter(|asked| asked.failed)
-        .flat_map(|asked| asked.questions.iter().cloned())
-        .collect::<BTreeSet<_>>();
-    outcome.waiting = waiting.len();
-    let mut now_applied = answers;
-    for id in &waiting {
-        match applied.get(id) {
-            Some(before) => now_applied.insert(id.clone(), before.clone()),
-            None => now_applied.remove(id),
-        };
-    }
-    if now_applied != applied {
-        let path = path(journal);
-        std::fs::create_dir_all(path.parent().expect("health parent"))
+        // Recorded facet by facet, so a pass that is cut short keeps what it
+        // finished. A question whose activities could not all be judged
+        // stays as it was.
+        let before = now_applied.clone();
+        for asked in names.values() {
+            if asked.failed {
+                outcome.waiting += asked.questions.len();
+                continue;
+            }
+            for id in &asked.questions {
+                match answers.get(id) {
+                    Some(answer) => now_applied.insert(id.clone(), answer.clone()),
+                    None => now_applied.remove(id),
+                };
+            }
+        }
+        if now_applied != before {
+            let path = path(journal);
+            std::fs::create_dir_all(path.parent().expect("health parent"))
+                .map_err(|error| error.to_string())?;
+            solstone_core_journal_io::write_json_checked(
+                path,
+                &Applied {
+                    version: VERSION,
+                    answers: now_applied.clone(),
+                },
+                solstone_core_journal_io::JsonWriteOptions::default(),
+                checkpoint,
+            )
             .map_err(|error| error.to_string())?;
-        solstone_core_journal_io::write_json_checked(
-            path,
-            &Applied {
-                version: VERSION,
-                answers: now_applied,
-            },
-            solstone_core_journal_io::JsonWriteOptions::default(),
-            checkpoint,
-        )
-        .map_err(|error| error.to_string())?;
+        }
     }
     log::info!(
         "name answers: {} changed, {} activities judged again, {} changed, {} waiting",
