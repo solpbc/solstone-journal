@@ -257,12 +257,15 @@ pub fn upsert_detection_segment(
     Ok(DetectionUpsertReport { wrote })
 }
 
-/// The recording whose detection wrote a row's `description`.
+/// The recording whose detection wrote a row's `description`, or
+/// [`DESCRIBED_BY_OWNER`].
 pub const DESCRIBED_BY: &str = "described_by";
+/// A description the owner wrote, which no recording's delete takes.
+pub const DESCRIBED_BY_OWNER: &str = "owner";
 
 /// Whether the recording at chronicle-relative `origin` was removed by the
-/// owner: its place holds a removal's tombstone, or one under way. A place
-/// that was never there isn't a removal.
+/// owner: its place is there and isn't a live recording. A place that isn't
+/// there isn't a removal.
 fn segment_removed(journal_root: &Path, origin: &str) -> bool {
     let Ok(dir) =
         solstone_core_journal_io::contained_path(journal_root, &format!("chronicle/{origin}"))
@@ -339,7 +342,9 @@ pub fn narrow_detections(
             let described_by_left = object
                 .get(DESCRIBED_BY)
                 .and_then(Value::as_str)
-                .is_some_and(|by| left.iter().any(|origin| origin == by));
+                .is_some_and(|by| {
+                    by == DESCRIBED_BY_OWNER || left.iter().any(|origin| origin == by)
+                });
             if !described_by_left {
                 object.insert("description".to_owned(), Value::String(String::new()));
                 object.remove(DESCRIBED_BY);
@@ -443,7 +448,9 @@ pub fn restore_detections(
             // A description comes back with the recording that wrote it; one
             // with no writer recorded, only when all its recordings do.
             let described_here = match back.get(DESCRIBED_BY).and_then(Value::as_str) {
-                Some(by) => back_origins.iter().any(|origin| origin == by),
+                Some(by) => {
+                    by == DESCRIBED_BY_OWNER || back_origins.iter().any(|origin| origin == by)
+                }
                 None => back_origins.len() == row_origins(back).len(),
             };
             let Some(row) = found else {
@@ -537,7 +544,10 @@ pub fn update_detected_entity(
             Value::String(description.to_owned()),
         );
         // The owner's words now: no recording's delete takes them.
-        object.remove(DESCRIBED_BY);
+        object.insert(
+            DESCRIBED_BY.to_owned(),
+            Value::String(DESCRIBED_BY_OWNER.to_owned()),
+        );
         updated = Some(row.clone());
         Ok(())
     })?;

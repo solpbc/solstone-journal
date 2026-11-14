@@ -1049,17 +1049,10 @@ pub fn stream_segment_dir(
     }
 }
 
-/// Whether a segment is in the journal: its folder is there, and neither the
-/// tombstone a removal left nor a removal part-way through. Unreadable counts
-/// as there, so a segment is never taken for gone on a failed read.
-///
-/// A record names segments by key, and a folder's name can carry more than
-/// its key (`093000_300_summary`), so a key with no folder of its own name is
-/// looked for among the stream's folders by the key read out of each name.
 /// Whether the owner removed the recording `key` on `day` in `stream`: its
-/// place is there and holds a removal's tombstone, or one under way. A place
-/// that isn't there was never a recording, so it isn't a removal; one a
-/// recording arrived at again is live.
+/// place is there and isn't a live recording (a tombstone, or a removal of it
+/// part-way through). A place that isn't there isn't a removal, and one a
+/// recording arrived at again is live. Found by key, as [`segment_live`].
 pub fn segment_removed(journal: &std::path::Path, day: &str, stream: &str, key: &str) -> bool {
     let removed = |dir: &std::path::Path| {
         dir.is_dir()
@@ -1087,6 +1080,13 @@ pub fn segment_removed(journal: &std::path::Path, day: &str, stream: &str, key: 
     })
 }
 
+/// Whether a segment is in the journal: its folder is there, and neither the
+/// tombstone a removal left nor a removal part-way through. Unreadable counts
+/// as there, so a segment is never taken for gone on a failed read.
+///
+/// A record names segments by key, and a folder's name can carry more than
+/// its key (`093000_300_summary`), so a key with no folder of its own name is
+/// looked for among the stream's folders by the key read out of each name.
 pub fn segment_live(journal: &std::path::Path, day: &str, stream: &str, key: &str) -> bool {
     let live = |dir: &std::path::Path| {
         dir.is_dir()

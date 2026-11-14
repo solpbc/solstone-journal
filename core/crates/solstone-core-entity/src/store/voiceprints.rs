@@ -554,10 +554,20 @@ fn voiceprints_of(
     let entities = super::journal_entities::live_journal_entities(journal_root)
         .map_err(|error| VoiceprintOperationError::Lifecycle(EntityLifecycleError::Store(error)))?;
     for (_, entity) in entities {
-        let Some(archive) = try_load_entity_voiceprints_file(journal_root, &entity.id)? else {
+        // Each person on their own: one whose voices can't be read keeps
+        // them, and is named; the rest still go.
+        let archive = match try_load_entity_voiceprints_file(journal_root, &entity.id) {
+            Ok(Some(archive)) => archive,
+            Ok(None) => continue,
+            Err(error) => {
+                log::warn!("voices of {} left as they are: {error}", entity.id);
+                continue;
+            }
+        };
+        let Ok(metadata) = parse_metadata_values(&archive.metadata) else {
+            log::warn!("voices of {} left as they are: unreadable rows", entity.id);
             continue;
         };
-        let metadata = parse_metadata_values(&archive.metadata)?;
         let mut removals = Vec::new();
         for (embedding, row) in archive
             .embeddings
@@ -584,7 +594,10 @@ fn voiceprints_of(
             .encoder
             .clone()
             .unwrap_or_else(unresolved_encoder);
-        remove_voiceprints_by_key(journal_root, &entity.id, &removals, &encoder)?;
+        if let Err(error) = remove_voiceprints_by_key(journal_root, &entity.id, &removals, &encoder)
+        {
+            log::warn!("voices of {} left as they are: {error}", entity.id);
+        }
     }
     Ok(taken)
 }

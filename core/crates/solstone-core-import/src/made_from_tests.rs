@@ -495,3 +495,68 @@ fn erasing_a_recording_takes_a_late_runs_outputs_and_the_old_words_of_a_correcti
         "{refused:?}"
     );
 }
+
+#[test]
+fn a_recover_brings_back_only_its_own_and_the_owners_words_stay() {
+    let root = journal();
+    let rows = [
+        json!({"id": "dee", "type": "Person", "name": "Dee", "description": "my own note",
+            "described_by": "owner", "segments": [origin(A), origin(B)], "updated_at": 1}),
+        json!({"id": "fay", "type": "Person", "name": "Fay", "description": "said it last",
+            "described_by": origin(D), "segments": [origin(A), origin(B), origin(D)], "updated_at": 1}),
+    ];
+    let text: String = rows.iter().map(|row| format!("{row}\n")).collect();
+    write(
+        root.path(),
+        &format!("facets/work/entities/{DAY}.jsonl"),
+        text.as_bytes(),
+    );
+    solstone_core_entity::save_entity_identity(
+        root.path(),
+        "bob",
+        &json!({"id": "bob", "name": "bob", "type": "Person"}),
+        None,
+    )
+    .unwrap();
+    let encoder = solstone_core_entity::EncoderIdentity {
+        id: "unresolved".into(),
+        sha256: "0".repeat(64),
+        width: 256,
+    };
+
+    let made = MadeFromIt::new();
+    let b = delete(root.path(), B, &made);
+    let by_name = |name: &str| {
+        detections(root.path())
+            .into_iter()
+            .find(|row| row["name"] == json!(name))
+            .unwrap()
+    };
+    assert_eq!(by_name("Dee")["description"], "my own note");
+    assert_eq!(by_name("Dee")["segments"], json!([origin(A)]));
+
+    // A voice heard in it, saved by a run that read it before it left, isn't.
+    let saved =
+        solstone_core_entity::save_voiceprints_batch(root.path(), "bob", &[voice(B, 9)], &encoder)
+            .unwrap();
+    assert_eq!(saved, 0);
+    assert!(voice_keys(root.path(), "bob").is_empty());
+
+    let _d = delete(root.path(), D, &made);
+    assert_eq!(by_name("Fay")["segments"], json!([origin(A)]));
+    crate::trash_kinds::with_kinds(root.path(), |kinds| {
+        solstone_core_trash::attach(root.path(), kinds, &b.id, Action::Recover, surface())
+    })
+    .unwrap();
+    let fay = by_name("Fay");
+    assert_eq!(
+        fay["segments"],
+        json!([origin(A), origin(B)]),
+        "D is still in the trash"
+    );
+    assert_eq!(
+        fay["description"], "",
+        "D wrote it, and D is still in the trash"
+    );
+    assert_eq!(by_name("Dee")["description"], "my own note");
+}

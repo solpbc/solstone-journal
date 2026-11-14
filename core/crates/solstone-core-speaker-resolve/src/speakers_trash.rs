@@ -470,8 +470,11 @@ impl Kind for Speakers<'_> {
         .map_err(|error| format!("search was not updated: {}", error.reason))?;
         if change == Change::Attached {
             // Voices drawn from recordings removed while it waited go.
-            solstone_core_entity::prune_removed_recording_voiceprints(journal, None)
-                .map_err(|error| format!("the voices weren't checked: {error}"))?;
+            if let Err(error) =
+                solstone_core_entity::prune_removed_recording_voiceprints(journal, None)
+            {
+                log::warn!("trash: voices weren't checked for removed recordings: {error}");
+            }
         }
         Ok(())
     }

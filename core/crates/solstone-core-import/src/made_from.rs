@@ -421,16 +421,25 @@ impl MadeFromIt {
         }
         let facets = solstone_core_facets::list_facet_directories(journal)
             .map_err(|error| error.to_string())?;
+        // Each facet's day on its own: one that can't be changed is named,
+        // and the rest still are.
+        let mut failed = Vec::new();
         for (day, gone) in origins {
             for facet in &facets {
-                let before = solstone_core_facets::narrow_detections(journal, facet, day, gone)
-                    .map_err(|error| format!("detections of {facet} on {day}: {error}"))?;
-                if !before.is_empty() {
-                    self.touch(journal, format!("facets/{facet}/entities/{day}.jsonl"));
+                match solstone_core_facets::narrow_detections(journal, facet, day, gone) {
+                    Ok(before) if !before.is_empty() => {
+                        self.touch(journal, format!("facets/{facet}/entities/{day}.jsonl"));
+                    }
+                    Ok(_) => {}
+                    Err(error) => failed.push(format!("{day}/{facet}: {error}")),
                 }
             }
         }
-        Ok(())
+        if failed.is_empty() {
+            Ok(())
+        } else {
+            Err(failed.join(", "))
+        }
     }
 
     /// The voices drawn from the recordings leave every voiceprint, kept once
@@ -465,23 +474,29 @@ impl MadeFromIt {
         };
         let kept: Vec<KeptDetections> = serde_json::from_slice(&bytes)
             .map_err(|error| format!("what it found is unreadable: {error}"))?;
-        // A facet deleted since has nowhere to take its names.
-        let facets = solstone_core_facets::list_declared_facet_names(journal)
+        // The facets taking read; one gone since has nowhere to take its names.
+        let facets = solstone_core_facets::list_facet_directories(journal)
             .map_err(|error| error.to_string())?;
+        let mut failed = Vec::new();
         for found in kept.iter().filter(|found| facets.contains(&found.facet)) {
-            solstone_core_facets::restore_detections(
+            match solstone_core_facets::restore_detections(
                 journal,
                 &found.facet,
                 &found.day,
                 &found.rows,
-            )
-            .map_err(|error| format!("detections of {} on {}: {error}", found.facet, found.day))?;
-            self.touch(
-                journal,
-                format!("facets/{}/entities/{}.jsonl", found.facet, found.day),
-            );
+            ) {
+                Ok(()) => self.touch(
+                    journal,
+                    format!("facets/{}/entities/{}.jsonl", found.facet, found.day),
+                ),
+                Err(error) => failed.push(format!("{}/{}: {error}", found.day, found.facet)),
+            }
         }
-        Ok(())
+        if failed.is_empty() {
+            Ok(())
+        } else {
+            Err(failed.join(", "))
+        }
     }
 
     /// The voices kept with the item go back to the people still here.
@@ -532,16 +547,22 @@ impl MadeFromIt {
 /// now erased. What the edit set stays, so the correction stays; its undo
 /// then says it can't be undone. Whether anything changed.
 fn drop_old_words(record: &mut Map<String, Value>, before: chrono::DateTime<chrono::Utc>) -> bool {
+    // The owner's own record holds no model words.
+    if record.get("source").and_then(Value::as_str) == Some("user") {
+        return false;
+    }
     let Some(Value::Array(edits)) = record.get_mut("edits") else {
         return false;
     };
     let mut changed = false;
     for edit in edits.iter_mut().filter_map(Value::as_object_mut) {
-        let earlier = edit
+        // Only an edit known to be after the delete keeps them; a time that
+        // can't be read counts as before, the safe side for an erase.
+        let earlier = !edit
             .get("timestamp")
             .and_then(Value::as_str)
             .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
-            .is_some_and(|at| at.with_timezone(&chrono::Utc) < before);
+            .is_some_and(|at| at.with_timezone(&chrono::Utc) > before);
         if earlier && edit.remove(solstone_core_facets::EDIT_BEFORE).is_some() {
             changed = true;
         }
@@ -621,6 +642,14 @@ impl MadeFrom for MadeFromIt {
         }
         let origins = origins_by_day(&segments);
         let voices = voice_recordings(&days);
+        // Voice discovery's groups point into the voices that moved: they're
+        // found again from what's there, as after a wipe.
+        if let Err(error) = solstone_core_speaker_resolve::discovery_scan::clear_discovery_cache(
+            journal,
+            &|| Ok(()),
+        ) {
+            log::warn!("trash: voice groups weren't cleared: {error}");
+        }
         // The recording's own entries leave (or come back) with the same
         // refresh, not only when the queued drain reaches them.
         for target in &segments {

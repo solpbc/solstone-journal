@@ -345,8 +345,13 @@ impl Kind for Entities<'_> {
             Change::Attached => {
                 solstone_core_entity::faceprints::prune_unavailable_segments(journal, &id)?;
                 // Voices drawn from recordings removed while it waited go too.
-                solstone_core_entity::prune_removed_recording_voiceprints(journal, Some(&id))
-                    .map_err(|error| format!("its voices weren't checked: {error}"))?;
+                if let Err(error) =
+                    solstone_core_entity::prune_removed_recording_voiceprints(journal, Some(&id))
+                {
+                    log::warn!(
+                        "trash: {id}'s voices weren't checked for removed recordings: {error}"
+                    );
+                }
                 self.index
                     .paths_returned(files)
                     .map_err(|error| format!("search was not updated: {}", error.reason))?;
