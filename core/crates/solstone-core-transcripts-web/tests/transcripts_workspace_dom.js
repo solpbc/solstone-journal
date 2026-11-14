@@ -2446,6 +2446,141 @@ test('audio archive placement parts switch audio source and seek relative to par
   assert.strictEqual(legacyAudioElement.currentTime, 30);
 });
 
+const MOMENT_CHUNKS = [
+  { type: 'audio', time: '11:45:10', timestamp: 10000, markdown: 'first line' },
+  { type: 'audio', time: '11:47:30', timestamp: 150000, markdown: 'second line' },
+  { type: 'audio', time: '11:48:00', timestamp: 180000, markdown: 'third line' },
+];
+const MOMENT_AUDIO = '/app/transcripts/api/serve_file/20200115/room/114500_300/audio.opus';
+
+async function openAtMoment(moment) {
+  // Scrolling a line into view does nothing while its pane is hidden, so
+  // record whether the pane was showing when each line was scrolled to.
+  const scrolled = [];
+  const mockScroll = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function scrollIntoView() {
+    let pane = this;
+    while (pane && !pane.classList.contains('tr-tab-pane')) pane = pane.parentElement;
+    scrolled.push({ clock: MOMENT_CHUNKS[this.dataset.idx]?.time, shown: !!pane && pane.classList.contains('active') });
+  };
+  try {
+    return { ...(await loadAtMoment(moment)), scrolled };
+  } finally {
+    Element.prototype.scrollIntoView = mockScroll;
+  }
+}
+
+async function loadAtMoment(moment) {
+  const env = await createEnvironment(
+    `https://journal.example/app/transcripts/20200115?stream=room#114500_300/transcript${moment}`
+  );
+  await env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+  const audio = env.doc.querySelector('audio[data-role="segment-audio"]');
+  const entries = env.doc.querySelectorAll('.tr-entry-audio');
+  const cued = entries.map((entry) => entry.classList.contains('tr-entry-active'));
+  return { env, audio, entries, cued };
+}
+
+test('a linked moment cues its line without playing and stays in the address', async () => {
+  // The second a line starts on.
+  let page = await openAtMoment('/114730');
+  assert.deepStrictEqual(page.cued, [false, true, false]);
+  assert.strictEqual(page.audio.currentTime, 140);
+  assert.ok(!page.audio._playing, 'a link never starts playback');
+  assert.deepStrictEqual(page.scrolled, [{ clock: '11:47:30', shown: true }]);
+  // Showing the tab rewrites the address, and the moment is still in it.
+  assert.strictEqual(page.env.window.location.hash, '#114500_300/transcript/114730');
+  assert.strictEqual(page.env.history.length, 1);
+
+  // A second inside a line cues the line being said then.
+  page = await openAtMoment('/114759');
+  assert.deepStrictEqual(page.cued, [false, true, false]);
+  assert.strictEqual(page.audio.currentTime, 140);
+
+  // Before the first line, or not a moment: the recording opens as it always did.
+  for (const moment of ['/114500', '/1147', '/11473x', '']) {
+    page = await openAtMoment(moment);
+    assert.deepStrictEqual(page.cued, [false, false, false], moment);
+    assert.strictEqual(page.audio.currentTime, 0, moment);
+    assert.ok(!page.audio._playing, moment);
+  }
+
+  // Playing from a line still plays.
+  page = await openAtMoment('/114730');
+  page.entries[2].dispatchEvent({ type: 'click' });
+  assert.strictEqual(page.audio.currentTime, 170);
+  assert.ok(page.audio._playing);
+});
+
+test('a linked moment survives the duration fix-up, and another moment cues again', async () => {
+  const page = await openAtMoment('/114730');
+  // A file whose length isn't known yet: the page seeks to its end to learn
+  // it, then returns to the cue and not to the start.
+  page.audio.dispatchEvent({ type: 'loadedmetadata' });
+  assert.strictEqual(page.audio.currentTime, 1e7);
+  page.audio.duration = 300;
+  page.audio.dispatchEvent({ type: 'durationchange' });
+  assert.strictEqual(page.audio.currentTime, 140);
+
+  // Another second of the recording already open.
+  page.env.window.location.hash = '#114500_300/transcript/114800';
+  setTimeout(() => page.env.window.dispatchEvent({ type: 'hashchange' }), 0);
+  await page.env.flushHashchanges();
+  await page.env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+  const entries = page.env.doc.querySelectorAll('.tr-entry-audio');
+  assert.deepStrictEqual(
+    entries.map((entry) => entry.classList.contains('tr-entry-active')),
+    [false, false, true]
+  );
+  const audio = page.env.doc.querySelector('audio[data-role="segment-audio"]');
+  assert.strictEqual(audio.currentTime, 170);
+  assert.ok(!audio._playing);
+  assert.strictEqual(page.env.window.location.hash, '#114500_300/transcript/114800');
+});
+
+test('choosing another recording leaves the linked moment behind, and going back cues it again', async () => {
+  const page = await openAtMoment('/114730');
+  const { env } = page;
+  // The owner picks another recording, then this one again: a plain address.
+  const pills = getZoomPills(env.doc);
+  pills[1].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+  assert.strictEqual(env.window.location.hash, '#115500_300/transcript');
+  pills[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+  assert.strictEqual(env.window.location.hash, '#114500_300/transcript');
+  assert.deepStrictEqual(
+    env.doc.querySelectorAll('.tr-entry-audio').map((entry) => entry.classList.contains('tr-entry-active')),
+    [false, false, false]
+  );
+
+  // Back to the linked address from the other recording: its line is cued again.
+  pills[1].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+  env.window.location.hash = '#114500_300/transcript/114730';
+  setTimeout(() => env.window.dispatchEvent({ type: 'hashchange' }), 0);
+  await env.flushHashchanges();
+  await env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+  assert.deepStrictEqual(
+    env.doc.querySelectorAll('.tr-entry-audio').map((entry) => entry.classList.contains('tr-entry-active')),
+    [false, true, false]
+  );
+  assert.strictEqual(env.window.location.hash, '#114500_300/transcript/114730');
+});
+
+test('back and forward between recordings cue a linked moment each time it is reached', async () => {
+  const { env } = await openAtMoment('/114730');
+  const go = async (hash) => {
+    env.window.location.hash = hash;
+    setTimeout(() => env.window.dispatchEvent({ type: 'hashchange' }), 0);
+    await env.flushHashchanges();
+    await env.releasePendingSegmentGets('analyzed', { audio_file: MOMENT_AUDIO, chunks: MOMENT_CHUNKS });
+    return env.doc.querySelectorAll('.tr-entry-audio').map((entry) => entry.classList.contains('tr-entry-active'));
+  };
+  assert.deepStrictEqual(await go('#115500_300/transcript'), [false, false, false]);
+  assert.deepStrictEqual(await go('#114500_300/transcript/114730'), [false, true, false]);
+});
+
 test('provenance labels reach every transcripts site and the stream name stays one hover away', async () => {
   const format = seededJournalFormat(
     { room: 'LABEL-A · audio', desk: 'LABEL-B', phone: 'LABEL-C', watch: 'LABEL-D' },

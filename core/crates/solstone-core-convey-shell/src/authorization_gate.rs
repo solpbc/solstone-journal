@@ -417,6 +417,15 @@ mod tests {
         );
     }
 
+    /// A journal link is a pointer, never a credential: its route answers
+    /// only a caller the gate has already let through.
+    #[test]
+    fn a_journal_link_route_is_never_exempt() {
+        for path in ["/app/open/AQ", "/app/open/AQ~100212", "/app/open/"] {
+            assert!(!super::is_exempt(path), "{path}");
+        }
+    }
+
     #[tokio::test]
     async fn pairing_peer_falls_through_the_authorization_gate() {
         let temporary = tempfile::TempDir::new_in("/var/tmp").expect("temporary root");

@@ -179,6 +179,7 @@ pub mod session;
 pub mod session_gate;
 mod setup_host;
 pub use setup_host::PackagedSpeechSetup;
+pub mod open_link;
 #[cfg(test)]
 mod shell_bundle_tests;
 pub mod source_link;
@@ -1914,6 +1915,7 @@ fn router_with_roots(
             journal_root.clone(),
             Arc::new(source_link::FilesystemReads),
         ))
+        .merge(open_link::open_link_router(journal_root.clone()))
         .layer(Extension(shell))
         .layer(Extension(route_journal_root))
         .layer(Extension(agents_consent_cancel))

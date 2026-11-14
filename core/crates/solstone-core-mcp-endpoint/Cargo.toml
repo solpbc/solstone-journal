@@ -49,6 +49,7 @@ rusqlite.workspace = true
 russh.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-journal-link.workspace = true
 solstone-core-format.workspace = true
 solstone-core-home.workspace = true
 solstone-core-memory-original.workspace = true

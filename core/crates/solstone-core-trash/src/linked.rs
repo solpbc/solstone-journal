@@ -123,6 +123,7 @@ pub fn detach_linked(
         label: None,
         operation,
         linked: true,
+        stretch: None,
     };
     let hold = kind.hold(journal, &item).map_err(TrashError::Held)?;
     hold.check().map_err(TrashError::Held)?;

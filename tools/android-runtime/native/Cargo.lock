@@ -46,6 +46,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "aes-siv"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f60ec3717e40f849d065676ef76a0fbd76ed6c300b18cc70a9a3bde80d7c8e8"
+dependencies = [
+ "aead",
+ "aes",
+ "cipher 0.5.2",
+ "cmac",
+ "ctr",
+ "dbl",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -816,6 +831,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmac"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac78aa94ce13e432b332a4d1bf2eff167d3a2520188ee05b337180a42fd2e62e"
+dependencies = [
+ "cipher 0.5.2",
+ "dbl",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "cmov"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1195,6 +1221,15 @@ name = "data-encoding"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
+
+[[package]]
+name = "dbl"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0d7a944e61df464668c5f51f56cc667396a8821434273112948ea0b66e405d7"
+dependencies = [
+ "hybrid-array",
+]
 
 [[package]]
 name = "defmt"
@@ -5396,6 +5431,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-journal-link",
  "solstone-core-local",
  "solstone-core-local-endpoint",
  "solstone-core-map-web",
@@ -6200,6 +6236,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-journal-link"
+version = "2.0.78"
+dependencies = [
+ "aes-siv",
+ "base64 0.22.1",
+ "ring",
+ "solstone-core-journal-io",
+]
+
+[[package]]
 name = "solstone-core-journal-stats-cli"
 version = "2.0.78"
 dependencies = [
@@ -6389,6 +6435,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-journal-link",
  "solstone-core-location",
  "solstone-core-mcp-audit",
  "solstone-core-memory-original",
@@ -7590,7 +7637,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.52.0",

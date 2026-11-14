@@ -465,6 +465,81 @@ fn run_remove_segments(args: &Args) -> ExitCode {
     )
 }
 
+/// Move a stretch of time to the trash as one thing: every segment recorded
+/// between `--from` and `--to`, the owner's local wall times. `--dry-run true`
+/// prints what it would take and leave, and moves nothing. ⛔ Never erases: a
+/// delete from the command line always goes to the trash.
+fn run_remove_stretch(args: &Args) -> ExitCode {
+    use solstone_core_import::stretch_trash;
+    let journal = match args.required("--journal") {
+        Ok(value) => PathBuf::from(value),
+        Err(error) => return fail(&error),
+    };
+    let bound = |flag: &str| {
+        args.required(flag).and_then(|value| {
+            stretch_trash::parse_wall(value)
+                .ok_or_else(|| format!("{flag} must be YYYY-MM-DDTHH:MM, your local time"))
+        })
+    };
+    let (from, to) = match (bound("--from"), bound("--to")) {
+        (Ok(from), Ok(to)) => (from, to),
+        (Err(error), _) | (_, Err(error)) => return fail(&error),
+    };
+    let refused = |why: stretch_trash::Refused| {
+        emit(
+            serde_json::json!({"ok": false, "verb": "remove-stretch", "error": why}),
+            EXIT_USAGE,
+        )
+    };
+    if args.has("--dry-run") {
+        return match stretch_trash::plan(&journal, from, to) {
+            Ok(plan) => emit(
+                serde_json::json!({
+                    "ok": true,
+                    "verb": "remove-stretch",
+                    "dry_run": true,
+                    "from": plan.from,
+                    "to": plan.to,
+                    "kinds": plan.kinds,
+                    "takes": plan.segments,
+                    "left_out": plan.left_out,
+                    "imports": plan.imports,
+                }),
+                EXIT_OK,
+            ),
+            Err(why) => refused(why),
+        };
+    }
+    match stretch_trash::trash(&journal, from, to, surface(args), false) {
+        Ok(Ok(outcome)) => {
+            let code = if outcome.refused.is_empty() {
+                EXIT_OK
+            } else {
+                EXIT_REFUSED
+            };
+            emit(
+                serde_json::json!({
+                    "ok": code == EXIT_OK,
+                    "verb": "remove-stretch",
+                    "stretch": outcome.stretch,
+                    "erase_day": outcome.erase_day,
+                    "moved": outcome.moved,
+                    "imports_taken": outcome.imports_taken,
+                    "refused": outcome.refused,
+                    "left_out": outcome.left_out,
+                    "imports": outcome.imports,
+                }),
+                code,
+            )
+        }
+        Ok(Err(why)) => refused(why),
+        Err(error) => emit(
+            serde_json::json!({"ok": false, "verb": "remove-stretch", "error": error.to_string()}),
+            EXIT_REFUSED,
+        ),
+    }
+}
+
 fn run_recover(args: &Args) -> ExitCode {
     let journal = match args.required("--journal") {
         Ok(value) => PathBuf::from(value),
@@ -1435,6 +1510,8 @@ const USAGE: &str = "\
 solstone-retention — the retention executor
 
   remove-segments --journal P --segment DAY/STREAM/DIR [--segment ...]  (moves them to the trash)
+  remove-stretch  --journal P --from YYYY-MM-DDTHH:MM --to YYYY-MM-DDTHH:MM [--dry-run true]
+                  (moves everything in the journal from then to the trash, as one thing; local times)
   release-raw     --journal P --at ISO --segment DAY/STREAM/DIR [--segment ...]
   recover         --journal P --at ISO --did ID [--reason owner|policy] [--surface home]
   sweep           --journal P --today YYYY-MM-DD --now ISO [--policy JSON] [--force true]
@@ -1470,6 +1547,7 @@ fn main() -> ExitCode {
     };
     match verb.as_str() {
         "remove-segments" => run_remove_segments(&args),
+        "remove-stretch" => run_remove_stretch(&args),
         "release-raw" => run_release_raw(&args),
         "recover" => run_recover(&args),
         "sweep" => run_sweep(&args),
