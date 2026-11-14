@@ -947,13 +947,13 @@ impl Kind for Imports<'_> {
                 if let Unit::Import { source, id } = &item.unit {
                     crate::body_trash::remove_run_folder(journal, id, source)?;
                 }
-                // A workout's people and gear lines go once it has left, as its
-                // delete always did: they're read again if it comes back. The hold
-                // has Strava's lock.
+                // A workout's people and gear lines leave with it, kept with the
+                // item so a recover puts them back. Kept once, before they go, so
+                // a re-run after a stop keeps the first copy. The hold has
+                // Strava's lock.
                 let workouts = crate::body_trash::workouts_held(journal, &item.id, &item.paths);
                 if !workouts.is_empty() {
-                    crate::strava_names::remove_strava_names_held(journal, &workouts)
-                        .map_err(|error| error.to_string())?;
+                    keep_strava_names(journal, &item.id, &workouts)?;
                 }
                 changed.extend(
                     item.paths
@@ -987,6 +987,7 @@ impl Kind for Imports<'_> {
                     }
                 }
                 restore_pending_tiles(journal, item)?;
+                put_back_strava_names(journal, &item.id)?;
                 let returned: Vec<String> = files
                     .iter()
                     .filter(|file| crate::body_trash::split_of(file).is_none())
@@ -1008,6 +1009,44 @@ impl Kind for Imports<'_> {
         self.made
             .recordings_changed(journal, item, change, &targets_of(item))
     }
+}
+
+/// What the trash keeps of a Strava item's people and gear lines.
+const KEPT_STRAVA_NAMES: &str = "strava-names.json";
+
+/// Keep the lines of `workouts` with item `id` (once), then take them out.
+fn keep_strava_names(journal: &Path, id: &str, workouts: &BTreeSet<String>) -> Result<(), String> {
+    if solstone_core_trash::kept(journal, id, KEPT_STRAVA_NAMES)
+        .map_err(|error| error.to_string())?
+        .is_none()
+    {
+        let lines = crate::strava_names::read_strava_names(journal)
+            .map_err(|error| error.to_string())?;
+        let kept: Vec<_> = workouts
+            .iter()
+            .filter_map(|workout| lines.get(workout).cloned())
+            .collect();
+        let bytes = serde_json::to_vec(&kept).map_err(|error| error.to_string())?;
+        solstone_core_trash::keep(journal, id, KEPT_STRAVA_NAMES, &bytes)
+            .map_err(|error| format!("its people and gear weren't kept: {error}"))?;
+    }
+    crate::strava_names::take_strava_names_held(journal, workouts)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+/// Put back the lines kept with item `id`, if any.
+fn put_back_strava_names(journal: &Path, id: &str) -> Result<(), String> {
+    let Some(bytes) =
+        solstone_core_trash::kept(journal, id, KEPT_STRAVA_NAMES).map_err(|error| error.to_string())?
+    else {
+        return Ok(());
+    };
+    let kept: Vec<crate::strava_names::StravaNamesLine> = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("its kept people and gear are unreadable: {error}"))?;
+    crate::strava_names::put_back_strava_names_held(journal, &kept)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -1705,7 +1744,7 @@ mod tests {
         write(
             root,
             "imports/.strava-owner-words.jsonl",
-            b"{\"activity_id\":\"7\",\"names\":[]}\n{\"activity_id\":\"8\",\"names\":[]}\n",
+            b"{\"activity_id\":\"7\",\"day\":\"20261001\",\"entities\":[{\"name\":\"Ann\",\"type\":\"Person\"}]}\n{\"activity_id\":\"8\",\"day\":\"20261002\",\"entities\":[]}\n",
         );
 
         let things = import_things(root, "20261001_090000").unwrap();
@@ -1723,6 +1762,31 @@ mod tests {
         assert_eq!(item.paths, vec![first.clone(), second.clone()]);
         assert!(matches!(&item.unit, Unit::Workout { day: Some(day), .. } if day == "20261001"));
         assert!(root.join(&later).join("workout.json").is_file());
+        // Its people and gear leave with it, and come back with it.
+        let names = |root: &Path| {
+            crate::strava_names::read_strava_names(root)
+                .unwrap()
+                .into_keys()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(root), vec!["8".to_owned()]);
+        let imports = Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade);
+        solstone_core_trash::attach(root, &[&imports], &item.id, Action::Recover, surface())
+            .unwrap();
+        assert_eq!(names(root), vec!["7".to_owned(), "8".to_owned()]);
+        assert_eq!(
+            crate::strava_names::read_strava_names(root).unwrap()["7"].entities[0].name,
+            "Ann"
+        );
+        imports
+            .trash_workout(
+                root,
+                "7",
+                Action::WorkoutDelete,
+                Surface::Web { page: Page::Body },
+            )
+            .unwrap();
+        assert_eq!(names(root), vec!["8".to_owned()]);
         // An import of Strava running holds it.
         let held = crate::body_trash::hold_source_lock(root, "strava").unwrap();
         let refused = Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
