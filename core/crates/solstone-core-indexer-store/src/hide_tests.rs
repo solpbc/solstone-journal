@@ -1237,3 +1237,97 @@ fn what_thinking_once_wrote_under_a_hidden_days_workout_leaves_search() {
         ["20260303/import.strava/080000_300/talents/activity.md"]
     );
 }
+
+/// A recording of `laptop` on 2026-03-04, in the journal or gone to the trash.
+fn recording(journal: &Journal, key: &str, trashed: bool) {
+    let dir = format!("chronicle/20260304/laptop/{key}");
+    if trashed {
+        journal.write(&format!("{dir}/tombstone.json"), "{}");
+    } else {
+        journal.write(&format!("{dir}/audio.flac"), "x");
+    }
+}
+
+fn over(id: &str, title: &str, segments: &[&str]) -> Value {
+    json!({"id": id, "title": title, "created_at": 1772658000000_i64,
+        "stream": "laptop", "segments": segments})
+}
+
+#[test]
+fn an_activity_naming_a_recording_that_went_to_the_trash_leaves_search_with_its_outputs() {
+    let journal = Journal::new("made-from");
+    recording(&journal, "090000_300", false);
+    recording(&journal, "090500_300", true);
+    journal.lines(
+        ACTIVITIES,
+        &[
+            over("a", "alphaneedle", &["090000_300"]),
+            over("b", "bravoneedle", &["090000_300", "090500_300"]),
+            over("c", "charlieneedle", &["090000_300"]),
+        ],
+    );
+    let story = "facets/work/activities/20260304/b/story.md";
+    journal.write(story, "# Story\n\nbravostory was told.\n");
+    let report = journal.scan(true);
+    assert_eq!(report.failed, 0, "{report:?}");
+    assert!(journal.search("bravoneedle").is_empty());
+    assert!(journal.search("bravostory").is_empty());
+    assert_eq!(journal.search("charlieneedle"), [(ACTIVITIES.to_owned(), 2)]);
+
+    // Made again from what remains, it is back at its own position.
+    journal.lines(
+        ACTIVITIES,
+        &[
+            over("a", "alphaneedle", &["090000_300"]),
+            over("b", "bravoneedle", &["090000_300"]),
+            over("c", "charlieneedle", &["090000_300"]),
+        ],
+    );
+    journal.rescan(ACTIVITIES);
+    assert_eq!(journal.search("bravoneedle"), [(ACTIVITIES.to_owned(), 1)]);
+}
+
+#[test]
+fn a_days_briefing_and_its_weeks_page_are_out_while_the_journal_makes_them_again() {
+    use crate::hide::{FileHide, HideCache};
+    let journal = Journal::new("made-again");
+    let briefing = "20260304/talents/morning_briefing.json";
+    let week = "reflections/weekly/20260301.md";
+    let decide = |rel: &str| HideCache::default().decide(journal.path(), rel);
+    assert!(matches!(decide(briefing), FileHide::Index));
+    assert!(matches!(decide(week), FileHide::Index));
+    let ask = |thaw_done: bool, week_ended: Value| {
+        json!({"version": 1, "asks": {"a": {"day": "20260304", "cause": "trash:op",
+            "thaw": true, "thaw_done": thaw_done, "week": {"ended": week_ended}}}})
+    };
+    journal.json("health/owner-asks.json", ask(false, Value::Null));
+    assert!(matches!(decide(briefing), FileHide::Skip));
+    assert!(matches!(decide(week), FileHide::Skip));
+    // Another day's briefing, and another week's page, are not.
+    assert!(matches!(decide("20260310/talents/morning_briefing.json"), FileHide::Index));
+    assert!(matches!(decide("reflections/weekly/20260308.md"), FileHide::Index));
+    // The briefing is back once a current one is made; the page once its week is.
+    journal.json("health/owner-asks.json", ask(true, Value::Null));
+    assert!(matches!(decide(briefing), FileHide::Index));
+    assert!(matches!(decide(week), FileHide::Skip));
+    journal.json("health/owner-asks.json", ask(true, json!("built")));
+    assert!(matches!(decide(week), FileHide::Index));
+    // A store that can't be read keeps them out and is tried again.
+    journal.write("health/owner-asks.json", "{");
+    assert!(matches!(decide(briefing), FileHide::Undecidable(_)));
+    assert!(matches!(decide(week), FileHide::Undecidable(_)));
+}
+
+#[test]
+fn a_pulse_is_out_on_a_day_or_the_day_after_a_recording_went_to_the_trash() {
+    use crate::hide::{FileHide, HideCache};
+    let journal = Journal::new("pulse");
+    let decide = |rel: &str| HideCache::default().decide(journal.path(), rel);
+    recording(&journal, "090000_300", false);
+    assert!(matches!(decide("20260304/talents/pulse.jsonl"), FileHide::Index));
+    recording(&journal, "090500_300", true);
+    assert!(matches!(decide("20260304/talents/pulse.jsonl"), FileHide::Skip));
+    assert!(matches!(decide("20260305/talents/pulse.jsonl"), FileHide::Skip));
+    assert!(matches!(decide("20260306/talents/pulse.jsonl"), FileHide::Index));
+    assert!(matches!(decide("20260303/talents/pulse.jsonl"), FileHide::Index));
+}

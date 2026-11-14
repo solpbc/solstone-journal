@@ -441,3 +441,7 @@ impl MadeFrom for MadeFromIt {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "made_from_tests.rs"]
+mod tests;

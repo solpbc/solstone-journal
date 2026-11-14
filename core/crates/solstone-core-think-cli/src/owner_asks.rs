@@ -702,3 +702,23 @@ pub(crate) fn week_still_owed(journal: &Path, saturday: &str) -> Result<bool, St
         ask.week.ended.is_none() && week_start(&ask.day).is_ok_and(|start| start == sunday)
     }))
 }
+
+#[cfg(test)]
+mod week_spacing_tests {
+    use solstone_core_system::owner_ask::WeekStep;
+
+    use super::{WEEK_ATTEMPT_SPACING_MS, week_spacing};
+
+    #[test]
+    fn a_deletes_week_page_backs_off_to_a_day_and_a_corrections_stays_hourly() {
+        let step = |attempts| WeekStep {
+            attempts,
+            ..WeekStep::default()
+        };
+        assert_eq!(week_spacing(&step(5), false), WEEK_ATTEMPT_SPACING_MS);
+        assert_eq!(week_spacing(&step(1), true), WEEK_ATTEMPT_SPACING_MS);
+        assert_eq!(week_spacing(&step(2), true), 2 * WEEK_ATTEMPT_SPACING_MS);
+        assert_eq!(week_spacing(&step(4), true), 8 * WEEK_ATTEMPT_SPACING_MS);
+        assert_eq!(week_spacing(&step(40), true), 24 * WEEK_ATTEMPT_SPACING_MS);
+    }
+}

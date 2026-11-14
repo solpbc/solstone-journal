@@ -1468,4 +1468,152 @@ mod tests {
         assert_eq!(level_value("medium"), 0.5);
         assert_eq!(level_value("low"), 0.25);
     }
+
+    mod rederive {
+        use std::fs;
+        use std::path::Path;
+
+        use serde_json::{Map, Value, json};
+
+        use super::super::{Rederived, rederive, rederive_with};
+
+        const DAY: &str = "20261110";
+
+        fn segment(root: &Path, key: &str, sense: Option<Value>) {
+            let dir = root.join("chronicle").join(DAY).join("laptop").join(key);
+            fs::create_dir_all(dir.join("talents")).unwrap();
+            fs::write(dir.join("audio.flac"), b"x").unwrap();
+            match sense {
+                Some(sense) => fs::write(
+                    dir.join("talents/sense.json"),
+                    serde_json::to_vec(&sense).unwrap(),
+                )
+                .unwrap(),
+                None => fs::write(dir.join("talents/sense.json"), b"{").unwrap(),
+            }
+        }
+
+        fn sense(said: &str, who: &str) -> Value {
+            json!({"density": "active", "content_type": "meeting", "activity_summary": said,
+                "facets": [{"facet": "work", "level": "high", "activity": said}],
+                "entities": [{"name": who}]})
+        }
+
+        /// The trash took it: its folder is the tombstone the removal left.
+        fn trashed(root: &Path, key: &str) {
+            let dir = root.join("chronicle").join(DAY).join("laptop").join(key);
+            fs::remove_dir_all(&dir).unwrap();
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("tombstone.json"), b"{}").unwrap();
+        }
+
+        fn record(segments: &[&str]) -> Map<String, Value> {
+            json!({"id": "meeting_090000_300", "facet": "work", "activity": "meeting",
+                "stream": "laptop", "segments": segments,
+                "title": "the secret plan", "description": "the secret plan",
+                "level_avg": 1.0, "active_entities": ["Ann", "Bob", "Cat"],
+                "story": {"body": "they spoke of the secret plan"},
+                "relations": [{"from": "Bob", "to": "Ann", "kind": "other", "note": "secret"}],
+                "participation": [{"name": "Bob"}], "participation_confidence": 0.9,
+                "created_at": 1})
+            .as_object()
+            .unwrap()
+            .clone()
+        }
+
+        fn journal() -> tempfile::TempDir {
+            let root = tempfile::tempdir().unwrap();
+            segment(root.path(), "090000_300", Some(sense("planning the launch", "Ann")));
+            segment(root.path(), "090500_300", Some(sense("the secret plan", "Bob")));
+            segment(root.path(), "091000_300", Some(sense("reviewing the launch", "Cat")));
+            root
+        }
+
+        const ALL: [&str; 3] = ["090000_300", "090500_300", "091000_300"];
+
+        #[test]
+        fn a_record_whose_segments_are_all_there_is_left_as_it_is() {
+            let root = journal();
+            assert_eq!(rederive(root.path(), DAY, &record(&ALL)), Rederived::Unchanged);
+        }
+
+        #[test]
+        fn a_record_is_made_again_from_what_remains_with_none_of_the_gone_words() {
+            let root = journal();
+            trashed(root.path(), "090500_300");
+            let Rederived::Changed(next) = rederive(root.path(), DAY, &record(&ALL)) else {
+                panic!("re-made");
+            };
+            assert_eq!(next["segments"], json!(["090000_300", "091000_300"]));
+            assert_eq!(next["description"], json!("reviewing the launch"));
+            assert_eq!(next["active_entities"], json!(["Ann", "Cat"]));
+            for field in ["title", "story", "relations", "participation", "participation_confidence"] {
+                assert!(!next.contains_key(field), "{field} stays");
+            }
+            assert!(!serde_json::to_string(&next).unwrap().contains("secret"));
+            assert!(!serde_json::to_string(&next).unwrap().contains("Bob"));
+            // Identity and placement stay.
+            assert_eq!(next["id"], json!("meeting_090000_300"));
+            assert_eq!(next["created_at"], json!(1));
+        }
+
+        #[test]
+        fn a_record_with_nothing_left_goes() {
+            let root = journal();
+            trashed(root.path(), "090500_300");
+            assert_eq!(
+                rederive(root.path(), DAY, &record(&["090500_300"])),
+                Rederived::Removed
+            );
+        }
+
+        #[test]
+        fn an_unreadable_sense_never_removes_a_record() {
+            let root = journal();
+            segment(root.path(), "091000_300", None);
+            trashed(root.path(), "090500_300");
+            let Rederived::Changed(next) =
+                rederive(root.path(), DAY, &record(&["090500_300", "091000_300"]))
+            else {
+                panic!("kept");
+            };
+            assert_eq!(next["segments"], json!(["091000_300"]));
+            assert!(!next.contains_key("story"));
+        }
+
+        #[test]
+        fn the_owners_own_record_keeps_its_words() {
+            let root = journal();
+            trashed(root.path(), "090500_300");
+            let mut mine = record(&ALL);
+            mine.insert("source".into(), json!("user"));
+            let Rederived::Changed(next) = rederive(root.path(), DAY, &mine) else {
+                panic!("narrowed");
+            };
+            assert_eq!(next["segments"], json!(["090000_300", "091000_300"]));
+            assert_eq!(next["title"], json!("the secret plan"));
+            assert_eq!(rederive(root.path(), DAY, &record(&["090000_300"])), Rederived::Unchanged);
+        }
+
+        #[test]
+        fn a_key_is_found_in_a_folder_whose_name_carries_more() {
+            let root = journal();
+            let base = root.path().join("chronicle").join(DAY).join("laptop");
+            fs::rename(base.join("091000_300"), base.join("091000_300_summary")).unwrap();
+            assert_eq!(rederive(root.path(), DAY, &record(&ALL)), Rederived::Unchanged);
+        }
+
+        #[test]
+        fn a_recover_makes_a_narrowed_record_again_from_all_of_it() {
+            let root = journal();
+            let mut narrowed = record(&ALL);
+            narrowed.insert("description".into(), json!("reviewing the launch"));
+            let Rederived::Changed(next) = rederive_with(root.path(), DAY, &narrowed, true) else {
+                panic!("re-made");
+            };
+            assert_eq!(next["active_entities"], json!(["Ann", "Bob", "Cat"]));
+            assert_eq!(next["description"], json!("reviewing the launch"));
+            assert!(!next.contains_key("story"));
+        }
+    }
 }

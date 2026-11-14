@@ -5480,3 +5480,23 @@ pub(crate) fn segments_changed(
 ) -> bool {
     read.is_some_and(|read| record.get("segments") != Some(read))
 }
+
+#[cfg(test)]
+mod segments_changed_tests {
+    use serde_json::json;
+
+    #[test]
+    fn a_run_over_segments_the_record_no_longer_names_is_not_applied() {
+        let record = json!({"segments": ["090000_300", "091000_300"]});
+        let record = record.as_object().unwrap();
+        assert!(super::segments_changed(
+            record,
+            Some(&json!(["090000_300", "090500_300", "091000_300"]))
+        ));
+        assert!(!super::segments_changed(
+            record,
+            Some(&json!(["090000_300", "091000_300"]))
+        ));
+        assert!(!super::segments_changed(record, None));
+    }
+}

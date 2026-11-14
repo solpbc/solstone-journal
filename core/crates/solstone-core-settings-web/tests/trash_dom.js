@@ -184,8 +184,10 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 
   // Confirm wording follows count and kind.
   const K = (act, items) => { const copy = api.trashConfirmCopy(act, items); return { title: copy.title, paragraphs: Array.from(copy.paragraphs) }; };
-  assert.deepStrictEqual(K('erase', [seg('a')]).paragraphs, [C.bodyOne, C.staysOne]);
-  assert.deepStrictEqual(K('erase', [seg('a'), seg('c')]).paragraphs, [C.bodyMany, C.staysMany]);
+  // A segment's erase changes nothing more of what was made from it (that was
+  // made again at its delete); a memory's line is its own.
+  assert.deepStrictEqual(K('erase', [seg('a')]).paragraphs, [C.bodyOne, C.madeOne]);
+  assert.deepStrictEqual(K('erase', [seg('a'), seg('c')]).paragraphs, [C.bodyMany, C.madeMany]);
   assert.deepStrictEqual(K('erase', [mem('b')]).paragraphs, [C.bodyOne, C.staysOne, C.agentOne]);
   assert.strictEqual(K('empty', [seg('a')]).title, C.confirmEmpty);
   // An import or a workout in the selection: summaries and entities.

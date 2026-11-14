@@ -611,6 +611,52 @@ mod tests {
     }
 
     #[test]
+    fn a_trash_ask_is_one_per_operation_and_day_and_reopens_for_another_item() {
+        let root = tempfile::tempdir().unwrap();
+        let day = "20261003";
+        let first =
+            record_for_trash(root.path(), day, "op", "item-a", &[asked("work", "a")], 10).unwrap();
+        assert!(first.from_trash() && first.thaw);
+        // The same item again (a stopped change the sweep finishes): nothing new.
+        let again =
+            record_for_trash(root.path(), day, "op", "item-a", &[asked("work", "a")], 20).unwrap();
+        assert_eq!(again, first);
+        // What the pass made of it so far.
+        update(root.path(), &first.id, |current| {
+            let mut next = current.clone();
+            next.to_seed.clear();
+            next.seeded.insert(asked("work", "a"));
+            next.thaw_done = true;
+            next.week.ended = Some(WEEK_BUILT.into());
+            Some(Some(next))
+        })
+        .unwrap();
+        // Another item of the operation changed the day again: asked anew.
+        let reopened =
+            record_for_trash(root.path(), day, "op", "item-b", &[asked("work", "b")], 30).unwrap();
+        assert_eq!(reopened.id, first.id);
+        assert_eq!(reopened.created_at_ms, 30);
+        assert!(!reopened.thaw_done && reopened.week.ended.is_none());
+        assert_eq!(
+            reopened.to_seed,
+            BTreeSet::from([asked("work", "a"), asked("work", "b")])
+        );
+        assert_eq!(read(root.path()).unwrap().len(), 1);
+        // Another operation, or another day, is its own ask.
+        record_for_trash(root.path(), day, "op2", "item-c", &[], 40).unwrap();
+        record_for_trash(root.path(), "20261004", "op", "item-b", &[], 40).unwrap();
+        assert_eq!(read(root.path()).unwrap().len(), 3);
+        let pending = trash_pending(root.path()).unwrap();
+        assert_eq!(
+            pending.briefings,
+            BTreeSet::from([day.to_owned(), "20261004".to_owned()])
+        );
+        // A correction's ask is not the trash's.
+        record(root.path(), "20261005", &[asked("work", "a")], true, 1).unwrap();
+        assert!(!trash_pending(root.path()).unwrap().briefings.contains("20261005"));
+    }
+
+    #[test]
     fn refusals_write_nothing() {
         let root = tempfile::tempdir().unwrap();
         for day in ["2026010", "20261301", "2026-01-01", ""] {
