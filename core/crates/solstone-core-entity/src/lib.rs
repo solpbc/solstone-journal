@@ -15,7 +15,7 @@ mod trust_lock;
 pub use ambiguity::ambiguity_id;
 pub use archive_dedupe::{archive_dedupe_akas, archive_dedupe_emails, archive_dedupe_observations};
 pub use resolution::{
-    EntityResolution, EntityResolutionEntity, EntityResolutionError, EntityResolutionOutcome,
+    EntityResolution, answered_or_survivor, EntityResolutionEntity, EntityResolutionError, EntityResolutionOutcome,
     ResolutionCandidate, record_entity_resolution, record_entity_resolution_checked,
     record_entity_resolution_from_name_evidence, resolve_activity_name,
 };

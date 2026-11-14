@@ -920,3 +920,22 @@ fn a_link_file_that_leads_nowhere_reads_as_unreadable_not_as_a_broken_facet() {
     }
     fs::remove_file(outside).unwrap();
 }
+
+#[test]
+fn a_fold_without_judgment_leaves_two_different_descriptions_both() {
+    let journal = Journal::new();
+    journal.link("ada", json!({"entity_id": "ada", "description": "mathematician"}));
+    journal.link("ada_2", json!({"entity_id": "ada", "description": "met at the conference"}));
+    let before = journal.tree();
+    assert!(matches!(
+        journal.dirs().settle_without_judgment("ada", &mut no_hook()),
+        Err(LinkFolderError::Conflict { .. })
+    ));
+    assert_eq!(journal.tree(), before);
+
+    // A blank on one side is no judgment: it folds.
+    journal.link("ada_2", json!({"entity_id": "ada", "description": ""}));
+    journal.dirs().settle_without_judgment("ada", &mut no_hook()).unwrap();
+    assert_eq!(journal.folders(), vec!["ada".to_owned()]);
+    assert_eq!(journal.read_link("ada")["description"], "mathematician");
+}

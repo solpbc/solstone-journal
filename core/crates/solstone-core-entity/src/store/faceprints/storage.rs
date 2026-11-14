@@ -583,6 +583,18 @@ pub(crate) fn merge(journal: &Path, source: &str, target: &str) -> Result<()> {
     sb.decision
         .rejections
         .extend(sa.decision.rejections.into_iter().filter(|(_, v)| *v));
+    // "None of these" carries over: the looks either side dismissed stay
+    // dismissed, and the survivor's own time stands. A photo ends it, as
+    // choosing one does.
+    if sb.decision.dismissed_at.is_none() {
+        sb.decision.dismissed_at = sa.decision.dismissed_at;
+    }
+    sb.decision
+        .dismissed_looks
+        .extend(sa.decision.dismissed_looks);
+    if sb.decision.photo.is_some() {
+        sb.decision.dismissed_at = None;
+    }
     sb.last = None; // a merge is permanent; old undo cannot restore pre-merge state.
     if sb != FacesState::default() {
         save_state(&dir, &binding, &sb)?;

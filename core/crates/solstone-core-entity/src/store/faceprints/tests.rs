@@ -495,4 +495,39 @@ mod disk {
         assert!(s.decision.photo.is_some());
         assert_eq!(confirmed_photo(root, "target").unwrap(), Some(vec![7, 8]));
     }
+    #[test]
+    fn merge_keeps_none_of_these_from_either_side() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        entity(root, "source");
+        entity(root, "target");
+        save(root, "source", vec![face(0)]);
+        save(root, "target", vec![face(1)]);
+        let mut dismissed = FacesState::default();
+        dismissed.decision.dismissed_at = Some("2026-11-01T00:00:00Z".into());
+        dismissed.decision.dismissed_looks = vec![face(0).embedding];
+        publish(
+            &root.join("entities").join("source"),
+            STATE,
+            &serde_json::to_vec(&dismissed).unwrap(),
+        )
+        .unwrap();
+        let voice = crate::EncoderIdentity {
+            id: "test".into(),
+            sha256: "0".repeat(64),
+            width: 256,
+        };
+        crate::commit_entity_merge(
+            root,
+            "source",
+            "target",
+            crate::EntityMergeOptions::default(),
+            &voice,
+        )
+        .unwrap();
+        let (_, s) = load(root, "target").unwrap();
+        assert_eq!(s.decision.dismissed_at.as_deref(), Some("2026-11-01T00:00:00Z"));
+        assert_eq!(s.decision.dismissed_looks, vec![face(0).embedding]);
+        assert!(s.decision.photo.is_none());
+    }
 }
