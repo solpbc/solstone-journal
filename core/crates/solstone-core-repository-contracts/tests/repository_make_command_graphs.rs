@@ -86,7 +86,7 @@ fn make_ci_never_executes_forbidden_interpreters() {
     assert_gate_never_executes_forbidden_interpreters(
         "ci",
         &[
-            "run", "metadata", "fmt", "run", "clippy", "clippy", "clippy", "test", "test",
+            "run", "metadata", "fmt", "run", "run", "clippy", "clippy", "clippy", "test", "test",
             // Standalone lockfiles with routine gates run in their own lanes.
             "fmt", "clippy", "test", "fmt", "clippy", "test",
         ],
