@@ -15,9 +15,7 @@ use axum::{
 };
 use chrono::Utc;
 use serde_json::{Map, Value, json};
-use solstone_core_entity::{
-    EntityResolutionEntity, EntityResolutionOutcome, record_entity_resolution,
-};
+use solstone_core_entity::EntityResolutionEntity;
 use solstone_core_facets::{
     ActivityRecord, AppendOutcome, activity_value_or_empty, activity_value_string,
     read_detected_entities,
@@ -926,8 +924,7 @@ fn resolve_participation(
     raw.and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(|entry| {
         let mut entry = entry.as_object().cloned().unwrap_or_default();
         let query = string(&entry, "name");
-        let resolution = record_entity_resolution(root, &query, &entities, json!({"kind":"facet","facet":facet}), json!({"lane":"apps.activities.create","facet":facet,"day":day,"record_id":record_id,"field":"participation.name"}), 90.0, false).map_err(|error| error.to_string())?;
-        let entity_id = if resolution.outcome == EntityResolutionOutcome::Resolved { resolution.entity_index.and_then(|index| entities.get(index)).and_then(|entity| entity.id.clone()).map(Value::String).unwrap_or(Value::Null) } else { Value::Null };
+        let entity_id = solstone_core_entity::resolve_activity_name(root, &query, &entities, facet, json!({"lane":"apps.activities.create","facet":facet,"day":day,"record_id":record_id,"field":"participation.name"}), 90.0).map_err(|error| error.to_string())?.map_or(Value::Null, Value::String);
         entry.insert("entity_id".to_owned(), entity_id);
         Ok(Value::Object(entry))
     }).collect::<Result<Vec<_>, String>>()

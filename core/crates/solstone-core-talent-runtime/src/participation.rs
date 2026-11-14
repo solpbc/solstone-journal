@@ -153,17 +153,16 @@ pub(crate) fn apply_result_cancellable(
             resolved.push(entry);
             continue;
         }
-        let result = solstone_core_entity::record_entity_resolution(
+        let mut entity_id = solstone_core_entity::resolve_activity_name(
             journal,
             name,
             &entities,
-            json!({"kind":"facet","facet":facet}),
+            facet,
             origin("participation.name"),
             90.0,
-            false,
         )
-        .map_err(|error| error.to_string())?;
-        let mut entity_id = resolved_id(&result, &entities);
+        .map_err(|error| error.to_string())?
+        .map_or(Value::Null, Value::String);
         if entity_id.is_null()
             && let Some(id) = known_person(&people, name)
         {
@@ -1457,6 +1456,45 @@ mod tests {
 
         assert_eq!(entry["entity_id"], "alex-stone");
         assert_eq!(entry["role"], "mentioned");
+    }
+
+    /// The case an owner meets in their first weeks: a meeting hears "Ada",
+    /// the journal asks whether that is Ada Lovelace, and the owner says yes.
+    #[test]
+    fn an_owners_answer_puts_the_heard_name_on_the_person_and_keeps_them_attending() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(root.path(), json!({"labels":[]}), json!(["Ada"]));
+        // The day's text named only "Ada", so that is all it detected.
+        fs::write(
+            root.path()
+                .join(format!("facets/{FACET}/entities/{DAY}.jsonl")),
+            format!("{}\n", json!({"id":"ada","name":"Ada","type":"Person"})),
+        )
+        .expect("detected entities");
+        let heard = json!({"name":"Ada","role":"attendee","source":"voice"});
+
+        let before = apply(root.path(), heard.clone());
+        assert_eq!(before["entity_id"], "ada");
+        assert_eq!(before["role"], "mentioned");
+
+        solstone_core_entity::record_ambiguity_choice(
+            root.path(),
+            &solstone_core_entity::AmbiguityChoiceRequest {
+                scope: json!({"kind":"facet","facet":FACET}),
+                query: "Ada".to_owned(),
+                entity_id: "person".to_owned(),
+                origin: None,
+            },
+            &[solstone_core_entity::AmbiguityChoiceEntity {
+                id: "person".to_owned(),
+                blocked: false,
+            }],
+        )
+        .expect("the journal asked, so the owner can answer");
+
+        let after = apply(root.path(), heard);
+        assert_eq!(after["entity_id"], "person");
+        assert_eq!(after["role"], "attendee");
     }
 
     #[test]

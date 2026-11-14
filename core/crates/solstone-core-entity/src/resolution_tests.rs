@@ -15,7 +15,7 @@ use crate::resolution::collect_low_confidence_candidates;
 use crate::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, EntityResolutionEntity, EntityResolutionError,
     EntityResolutionOutcome, record_ambiguity_choice, record_entity_resolution,
-    record_entity_resolution_from_name_evidence,
+    record_entity_resolution_from_name_evidence, resolve_activity_name,
 };
 
 static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
@@ -99,6 +99,134 @@ fn resolved_choices_fail_loudly_when_absent_or_blocked() {
         Err(EntityResolutionError::ResolvedChoiceEntityBlocked { entity_id, .. })
             if entity_id == "sarah_lee"
     ));
+}
+
+fn write_person(root: &Path, id: &str, name: &str, blocked: bool) {
+    let folder = root.join("entities").join(id);
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(
+        folder.join("entity.json"),
+        json!({"id":id,"name":name,"type":"Person","blocked":blocked,
+            "created_at":"2026-11-11T23:40:53.628529Z"})
+        .to_string(),
+    )
+    .unwrap();
+}
+
+fn answer_in_facet(root: &Path, facet: &str, query: &str, people: &[EntityResolutionEntity]) {
+    let scope = json!({"kind":"facet","facet":facet});
+    let asked = resolve(root, query, people, scope.clone(), origin("speaker"), false).unwrap();
+    assert_eq!(asked.outcome, EntityResolutionOutcome::Ambiguous);
+    let chosen = people[0].id.clone().unwrap();
+    record_ambiguity_choice(
+        root,
+        &AmbiguityChoiceRequest {
+            scope,
+            query: query.to_owned(),
+            entity_id: chosen.clone(),
+            origin: None,
+        },
+        &[AmbiguityChoiceEntity {
+            id: chosen,
+            blocked: false,
+        }],
+    )
+    .unwrap();
+}
+
+/// The journal asks "is Benvolio Benvolio Montague?" from a named speaker, and
+/// the owner says yes. A later activity that names "Benvolio" on a day whose
+/// text detected only the bare name must still be written, under the person.
+#[test]
+fn an_answered_name_in_an_activity_is_the_person_the_owner_chose() {
+    let journal = TempDir::new();
+    let root = journal.path();
+    write_person(root, "benvolio_montague", "Benvolio Montague", false);
+    let people = [entity(
+        Some("benvolio_montague"),
+        "Benvolio Montague",
+        false,
+    )];
+    answer_in_facet(root, "work", "Benvolio", &people);
+    let detected = [entity(Some("benvolio"), "Benvolio", false)];
+
+    // What every activity writer did before: the whole write failed.
+    assert!(matches!(
+        resolve(
+            root,
+            "Benvolio",
+            &detected,
+            json!({"kind":"facet","facet":"work"}),
+            origin("participation"),
+            false,
+        ),
+        Err(EntityResolutionError::ResolvedChoiceEntityAbsent { .. })
+    ));
+    for detected in [&detected[..], &[]] {
+        assert_eq!(
+            resolve_activity_name(
+                root,
+                "Benvolio",
+                detected,
+                "work",
+                origin("participation"),
+                90.0
+            )
+            .unwrap()
+            .as_deref(),
+            Some("benvolio_montague")
+        );
+    }
+    // The answer was given in one facet, and holds only there.
+    assert_eq!(
+        resolve_activity_name(
+            root,
+            "Benvolio",
+            &detected,
+            "home",
+            origin("participation"),
+            90.0
+        )
+        .unwrap()
+        .as_deref(),
+        Some("benvolio")
+    );
+    // A name nobody answered for resolves as it always did.
+    assert_eq!(
+        resolve_activity_name(root, "Rosaline", &detected, "work", origin("other"), 90.0).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn an_answer_naming_someone_gone_or_hidden_links_the_name_to_no_one() {
+    for hidden in [false, true] {
+        let journal = TempDir::new();
+        let root = journal.path();
+        let people = [entity(
+            Some("benvolio_montague"),
+            "Benvolio Montague",
+            false,
+        )];
+        answer_in_facet(root, "work", "Benvolio", &people);
+        if hidden {
+            write_person(root, "benvolio_montague", "Benvolio Montague", true);
+        }
+        let detected = [entity(Some("benvolio"), "Benvolio", false)];
+        assert_eq!(
+            resolve_activity_name(
+                root,
+                "Benvolio",
+                &detected,
+                "work",
+                origin("participation"),
+                90.0
+            )
+            .unwrap(),
+            None,
+            "hidden={hidden}"
+        );
+    }
 }
 
 #[test]

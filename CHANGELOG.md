@@ -10,13 +10,21 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- your journal keeps the screenshots the solstone app takes in, each at the minute you took it. a journal from before 2.0.75 doesn't keep them, so the app says your screenshots are waiting for a journal update.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
+### Changed
+
+- the agents page now works like home, transcripts and search: moving between it and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+
 ### Fixed
 
+- on windows, your journal no longer fails to start when another program, such as a backup tool, has some of your journal's setup files open to read them.
+- fixed a problem after you answered whether a name in your journal was one of your people. later activities that named them could be left with no list of who was there, or no story. your answer now holds on days that never mention their full name.
+- fixed catch-up on older days slowing to a crawl when one past day had a review step that could not finish on its own. that day is now set aside, and the rest keep going. where a fresh try can clear it, the "try again" button on the health page now retries just that step.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.

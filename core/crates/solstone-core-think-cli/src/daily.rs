@@ -426,21 +426,18 @@ fn queue_daily(
                 result.capped_units.insert(unit);
                 return Ok(());
             }
+            // Work discovery reads the same rule, so it never runs a day for
+            // a unit this leaves.
             if !reprepare
-                && record.evidence_revision == evidence_rev
-                && record.contract_digest == contract_dig
-            {
-                match solstone_core_system::daily_coverage::conflict_recovery(
+                && solstone_core_system::daily_coverage::conflict_declined(
                     record,
+                    &evidence_rev,
+                    &contract_dig,
                     &today,
                     &context.journal,
-                ) {
-                    solstone_core_system::daily_coverage::ConflictRecovery::StaleDeferred
-                    | solstone_core_system::daily_coverage::ConflictRecovery::Exhausted => {
-                        return Ok(());
-                    }
-                    solstone_core_system::daily_coverage::ConflictRecovery::Open => {}
-                }
+                )
+            {
+                return Ok(());
             }
         }
     }
