@@ -31,6 +31,7 @@ struct StretchBody {
     erase: bool,
 }
 
+#[allow(clippy::result_large_err)]
 fn read_body(
     body: &Bytes,
 ) -> Result<(chrono::NaiveDateTime, chrono::NaiveDateTime, bool), Response> {
