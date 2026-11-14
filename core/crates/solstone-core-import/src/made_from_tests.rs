@@ -59,7 +59,9 @@ fn journal() -> TempDir {
     write(
         root_path,
         "facets/work/facet.json",
-        json!({"id": FACET_ID, "title": "work"}).to_string().as_bytes(),
+        json!({"id": FACET_ID, "title": "work"})
+            .to_string()
+            .as_bytes(),
     );
     for (key, said, who) in [
         (A, "planning the launch", "Ann"),
@@ -157,11 +159,15 @@ fn a_deleted_recordings_activities_are_made_again_from_what_remains_and_asked_fo
     // activity still there.
     let asks = solstone_core_system::owner_ask::read(root.path()).unwrap();
     assert_eq!(asks.len(), 2);
-    assert!(asks.values().all(|ask| ask.day == DAY && ask.thaw && ask.from_trash()));
-    assert!(asks.values().any(|ask| ask
-        .to_seed
-        .iter()
-        .any(|asked| asked.activity == "meeting_090000_300")));
+    assert!(
+        asks.values()
+            .all(|ask| ask.day == DAY && ask.thaw && ask.from_trash())
+    );
+    assert!(asks.values().any(|ask| {
+        ask.to_seed
+            .iter()
+            .any(|asked| asked.activity == "meeting_090000_300")
+    }));
 
     // A stop part way: the sweep runs the step again for the same item. The
     // copy kept for recover is the first one, and nothing is asked twice.
@@ -185,7 +191,12 @@ fn a_deleted_recordings_activities_are_made_again_from_what_remains_and_asked_fo
             .unwrap(),
         kept
     );
-    assert_eq!(solstone_core_system::owner_ask::read(root.path()).unwrap().len(), 2);
+    assert_eq!(
+        solstone_core_system::owner_ask::read(root.path())
+            .unwrap()
+            .len(),
+        2
+    );
     assert!(String::from_utf8(kept).unwrap().contains("kestrel"));
 
     // Recover puts each back with its recording, made again from all of it.
@@ -212,7 +223,11 @@ fn a_deleted_recordings_activities_are_made_again_from_what_remains_and_asked_fo
 fn a_memory_or_body_data_asks_for_nothing() {
     let root = journal();
     let made = MadeFromIt::new();
-    write(root.path(), "chronicle/20261110/import.apple_health/090000_3600/body.json", b"{}");
+    write(
+        root.path(),
+        "chronicle/20261110/import.apple_health/090000_3600/body.json",
+        b"{}",
+    );
     let item = solstone_core_trash::Item {
         schema: 1,
         id: "x".into(),
@@ -247,6 +262,10 @@ fn a_memory_or_body_data_asks_for_nothing() {
         }],
     )
     .unwrap();
-    assert!(solstone_core_system::owner_ask::read(root.path()).unwrap().is_empty());
+    assert!(
+        solstone_core_system::owner_ask::read(root.path())
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(records(root.path()).len(), 2);
 }

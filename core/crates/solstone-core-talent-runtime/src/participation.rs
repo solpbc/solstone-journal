@@ -2152,7 +2152,10 @@ mod tests {
                 fs::write(
                     root.path()
                         .join(format!("facets/{FACET}/activities/{DAY}.jsonl")),
-                    format!("{}\n", json!({"id":"activity","segments":[SEGMENT, "101000_300"]})),
+                    format!(
+                        "{}\n",
+                        json!({"id":"activity","segments":[SEGMENT, "101000_300"]})
+                    ),
                 )
                 .unwrap();
                 let rows = apply_for_activity(

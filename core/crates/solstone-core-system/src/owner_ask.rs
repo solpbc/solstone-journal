@@ -653,7 +653,12 @@ mod tests {
         );
         // A correction's ask is not the trash's.
         record(root.path(), "20261005", &[asked("work", "a")], true, 1).unwrap();
-        assert!(!trash_pending(root.path()).unwrap().briefings.contains("20261005"));
+        assert!(
+            !trash_pending(root.path())
+                .unwrap()
+                .briefings
+                .contains("20261005")
+        );
     }
 
     #[test]

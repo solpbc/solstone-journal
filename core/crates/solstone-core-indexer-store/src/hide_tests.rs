@@ -1272,7 +1272,10 @@ fn an_activity_naming_a_recording_that_went_to_the_trash_leaves_search_with_its_
     assert_eq!(report.failed, 0, "{report:?}");
     assert!(journal.search("bravoneedle").is_empty());
     assert!(journal.search("bravostory").is_empty());
-    assert_eq!(journal.search("charlieneedle"), [(ACTIVITIES.to_owned(), 2)]);
+    assert_eq!(
+        journal.search("charlieneedle"),
+        [(ACTIVITIES.to_owned(), 2)]
+    );
 
     // Made again from what remains, it is back at its own position.
     journal.lines(
@@ -1304,8 +1307,14 @@ fn a_days_briefing_and_its_weeks_page_are_out_while_the_journal_makes_them_again
     assert!(matches!(decide(briefing), FileHide::Skip));
     assert!(matches!(decide(week), FileHide::Skip));
     // Another day's briefing, and another week's page, are not.
-    assert!(matches!(decide("20260310/talents/morning_briefing.json"), FileHide::Index));
-    assert!(matches!(decide("reflections/weekly/20260308.md"), FileHide::Index));
+    assert!(matches!(
+        decide("20260310/talents/morning_briefing.json"),
+        FileHide::Index
+    ));
+    assert!(matches!(
+        decide("reflections/weekly/20260308.md"),
+        FileHide::Index
+    ));
     // The briefing is back once a current one is made; the page once its week is.
     journal.json("health/owner-asks.json", ask(true, Value::Null));
     assert!(matches!(decide(briefing), FileHide::Index));
@@ -1324,10 +1333,25 @@ fn a_pulse_is_out_on_a_day_or_the_day_after_a_recording_went_to_the_trash() {
     let journal = Journal::new("pulse");
     let decide = |rel: &str| HideCache::default().decide(journal.path(), rel);
     recording(&journal, "090000_300", false);
-    assert!(matches!(decide("20260304/talents/pulse.jsonl"), FileHide::Index));
+    assert!(matches!(
+        decide("20260304/talents/pulse.jsonl"),
+        FileHide::Index
+    ));
     recording(&journal, "090500_300", true);
-    assert!(matches!(decide("20260304/talents/pulse.jsonl"), FileHide::Skip));
-    assert!(matches!(decide("20260305/talents/pulse.jsonl"), FileHide::Skip));
-    assert!(matches!(decide("20260306/talents/pulse.jsonl"), FileHide::Index));
-    assert!(matches!(decide("20260303/talents/pulse.jsonl"), FileHide::Index));
+    assert!(matches!(
+        decide("20260304/talents/pulse.jsonl"),
+        FileHide::Skip
+    ));
+    assert!(matches!(
+        decide("20260305/talents/pulse.jsonl"),
+        FileHide::Skip
+    ));
+    assert!(matches!(
+        decide("20260306/talents/pulse.jsonl"),
+        FileHide::Index
+    ));
+    assert!(matches!(
+        decide("20260303/talents/pulse.jsonl"),
+        FileHide::Index
+    ));
 }

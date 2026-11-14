@@ -380,8 +380,11 @@ impl MadeFrom for MadeFromIt {
         // The recording's own entries leave (or come back) with the same
         // refresh, not only when the queued drain reaches them.
         for target in &segments {
-            let segment =
-                solstone_core_retention::layout::segment_rel(&target.day, &target.stream, &target.dir);
+            let segment = solstone_core_retention::layout::segment_rel(
+                &target.day,
+                &target.stream,
+                &target.dir,
+            );
             self.touch(journal, segment);
         }
         let operation = operation(item, change);

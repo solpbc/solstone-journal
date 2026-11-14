@@ -869,10 +869,11 @@ pub fn rederive_with(
                 .and_then(Value::as_str)
                 .unwrap_or(summary),
         );
-        let level = match entry.get("level").and_then(Value::as_str) {
-            Some(level @ ("high" | "medium")) => level,
-            _ => "medium",
-        };
+        let level = entry
+            .get("level")
+            .and_then(Value::as_str)
+            .filter(|level| *level == "high")
+            .unwrap_or("medium");
         last = Some((description, level.to_owned()));
         for name in sense
             .get("entities")
@@ -1523,9 +1524,21 @@ mod tests {
 
         fn journal() -> tempfile::TempDir {
             let root = tempfile::tempdir().unwrap();
-            segment(root.path(), "090000_300", Some(sense("planning the launch", "Ann")));
-            segment(root.path(), "090500_300", Some(sense("the secret plan", "Bob")));
-            segment(root.path(), "091000_300", Some(sense("reviewing the launch", "Cat")));
+            segment(
+                root.path(),
+                "090000_300",
+                Some(sense("planning the launch", "Ann")),
+            );
+            segment(
+                root.path(),
+                "090500_300",
+                Some(sense("the secret plan", "Bob")),
+            );
+            segment(
+                root.path(),
+                "091000_300",
+                Some(sense("reviewing the launch", "Cat")),
+            );
             root
         }
 
@@ -1534,7 +1547,10 @@ mod tests {
         #[test]
         fn a_record_whose_segments_are_all_there_is_left_as_it_is() {
             let root = journal();
-            assert_eq!(rederive(root.path(), DAY, &record(&ALL)), Rederived::Unchanged);
+            assert_eq!(
+                rederive(root.path(), DAY, &record(&ALL)),
+                Rederived::Unchanged
+            );
         }
 
         #[test]
@@ -1547,7 +1563,13 @@ mod tests {
             assert_eq!(next["segments"], json!(["090000_300", "091000_300"]));
             assert_eq!(next["description"], json!("reviewing the launch"));
             assert_eq!(next["active_entities"], json!(["Ann", "Cat"]));
-            for field in ["title", "story", "relations", "participation", "participation_confidence"] {
+            for field in [
+                "title",
+                "story",
+                "relations",
+                "participation",
+                "participation_confidence",
+            ] {
                 assert!(!next.contains_key(field), "{field} stays");
             }
             assert!(!serde_json::to_string(&next).unwrap().contains("secret"));
@@ -1592,7 +1614,10 @@ mod tests {
             };
             assert_eq!(next["segments"], json!(["090000_300", "091000_300"]));
             assert_eq!(next["title"], json!("the secret plan"));
-            assert_eq!(rederive(root.path(), DAY, &record(&["090000_300"])), Rederived::Unchanged);
+            assert_eq!(
+                rederive(root.path(), DAY, &record(&["090000_300"])),
+                Rederived::Unchanged
+            );
         }
 
         #[test]
@@ -1600,7 +1625,10 @@ mod tests {
             let root = journal();
             let base = root.path().join("chronicle").join(DAY).join("laptop");
             fs::rename(base.join("091000_300"), base.join("091000_300_summary")).unwrap();
-            assert_eq!(rederive(root.path(), DAY, &record(&ALL)), Rederived::Unchanged);
+            assert_eq!(
+                rederive(root.path(), DAY, &record(&ALL)),
+                Rederived::Unchanged
+            );
         }
 
         #[test]
