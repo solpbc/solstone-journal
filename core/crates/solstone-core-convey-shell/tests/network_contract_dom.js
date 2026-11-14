@@ -65,11 +65,16 @@ class TextNode {
 }
 
 function simpleMatch(el, part) {
-  const re = /([a-zA-Z][a-zA-Z0-9-]*)|#([\w-]+)|\.([\w-]+)|\[([\w-]+)(?:=["']?([^\]"']*)["']?)?\]/g;
+  const re = /:nth-child\((\d+)\)|([a-zA-Z][a-zA-Z0-9-]*)|#([\w-]+)|\.([\w-]+)|\[([\w-]+)(?:=["']?([^\]"']*)["']?)?\]/g;
   let m;
   let any = false;
   while ((m = re.exec(part))) {
     any = true;
+    if (m[1]) {
+      if (!el.parentNode || el.parentNode.children.indexOf(el) + 1 !== Number(m[1])) return false;
+      continue;
+    }
+    m.splice(1, 1);
     if (m[1] && el.tagName !== m[1].toUpperCase()) return false;
     if (m[2] && el.getAttribute('id') !== m[2]) return false;
     if (m[3] && !el.classList.contains(m[3])) return false;
@@ -83,10 +88,17 @@ function simpleMatch(el, part) {
 
 function matches(el, selector) {
   return selector.split(',').some((one) => {
-    const parts = one.trim().split(/\s+/);
+    const parts = one.trim().replace(/\s*>\s*/g, ' > ').split(/\s+/);
     if (!simpleMatch(el, parts[parts.length - 1])) return false;
     let at = el.parentNode;
     for (let i = parts.length - 2; i >= 0; i -= 1) {
+      // `a > b`: the parent itself must match.
+      if (parts[i] === '>') {
+        i -= 1;
+        if (!(at && at.nodeType === 1 && simpleMatch(at, parts[i]))) return false;
+        at = at.parentNode;
+        continue;
+      }
       while (at && !(at.nodeType === 1 && simpleMatch(at, parts[i]))) at = at.parentNode;
       if (!at) return false;
       at = at.parentNode;
@@ -142,6 +154,7 @@ class Element extends Target {
   }
   get style() { if (!this._style) this._style = makeStyle(this); return this._style; }
   get children() { return this.childNodes.filter((n) => n.nodeType === 1); }
+  get parentElement() { return this.parentNode && this.parentNode.nodeType === 1 ? this.parentNode : null; }
   get firstElementChild() { return this.children[0] || null; }
   get options() { return this.querySelectorAll('option'); }
   add(option) { this.append(option); }
@@ -189,10 +202,15 @@ class Element extends Target {
     for (let at = this; at && at.nodeType === 1; at = at.parentNode) if (matches(at, selector)) return at;
     return null;
   }
+  get open() { return this.hasAttribute('open'); }
+  set open(v) { this.toggleAttribute('open', !!v); }
   checkVisibility() {
     if (!this.isConnected) return false;
     for (let at = this; at && at.nodeType === 1; at = at.parentNode) {
       if (at.hasAttribute('hidden') || at.style.display === 'none') return false;
+      // A closed disclosure shows only its summary.
+      const parent = at.parentNode;
+      if (parent && parent.tagName === 'DETAILS' && !parent.hasAttribute('open') && at.tagName !== 'SUMMARY') return false;
     }
     return true;
   }
@@ -278,7 +296,15 @@ class Element extends Target {
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   getBoundingClientRect() { return { left: 0, top: 0, width: 0, height: 0 }; }
   scrollIntoView() { this.ownerDocument.scrolledTo = this.id || this.tagName; }
-  getClientRects() { return this.checkVisibility() ? [{ width: 1, height: 1 }] : []; }
+  // As in Chromium: content in a closed <details> still has boxes, while
+  // checkVisibility() says it isn't shown.
+  getClientRects() {
+    if (!this.isConnected) return [];
+    for (let at = this; at && at.nodeType === 1; at = at.parentNode) {
+      if (at.hasAttribute('hidden') || at.style.display === 'none') return [];
+    }
+    return [{ width: 1, height: 1 }];
+  }
   set outerHTML(html) { const holder = new Element(this.ownerDocument, "div"); parseInto(this.ownerDocument, holder, html); const parent = this.parentNode; if (!parent) return; const at = parent.childNodes.indexOf(this); parent.removeChild(this); holder.childNodes.forEach((n) => { n.parentNode = parent; }); parent.childNodes.splice(at, 0, ...holder.childNodes); }
   focus() {
     if (!this.isConnected || !this.checkVisibility()) return;
@@ -351,7 +377,17 @@ function makeDocument(location) {
   doc.documentElement = new Element(doc, 'html');
   doc.body = new Element(doc, 'body');
   doc.documentElement.append(doc.body);
-  doc.activeElement = doc.body;
+  // The browser's focus fixup: focus on something hidden, taken out or turned
+  // off reads as the page itself.
+  let focused = doc.body;
+  Object.defineProperty(doc, 'activeElement', {
+    get() {
+      if (!focused || focused === doc.body) return doc.body;
+      if (!focused.isConnected || !focused.checkVisibility() || focused.disabled) return doc.body;
+      return focused;
+    },
+    set(node) { focused = node; },
+  });
   doc.getElementById = (id) => doc.documentElement.querySelector('#' + id);
   doc.querySelector = (s) => doc.documentElement.querySelector(s);
   doc.querySelectorAll = (s) => doc.documentElement.querySelectorAll(s);
