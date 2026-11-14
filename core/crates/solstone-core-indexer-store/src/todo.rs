@@ -826,6 +826,41 @@ fn process(
     }
 }
 
+/// How long an owner's trash change waits for the index writer before it
+/// leaves its paths to the queued drain.
+pub const REFRESH_NOW_WAIT: Duration = Duration::from_secs(3);
+
+/// Bring search up to date for `paths` now, after an owner's trash change has
+/// queued them and released its own holds: take the writer lease for at most
+/// `wait`, then reconcile each path as the drain would, with this writer's
+/// hide decisions. The hints stay queued, so a path this can't reach (the
+/// lease busy, an error) is still done by the drain, and one it did is a
+/// no-op there. Returns how many paths were reconciled.
+///
+/// # Errors
+///
+/// `WriterBusy` when the lease wasn't free within `wait`, or the first error
+/// a path met.
+pub fn refresh_now(journal: &Path, paths: &[String], wait: Duration) -> Result<usize, StoreError> {
+    if paths.is_empty() {
+        return Ok(0);
+    }
+    let admission = crate::writer_admission::IndexAdmission::acquire_bounded(
+        journal,
+        "refresh-now",
+        wait,
+        &|| Ok(()),
+    )?;
+    let mut hides = crate::hide::HideCache::default();
+    let mut done = 0;
+    for path in paths {
+        let rel = path.strip_prefix("chronicle/").unwrap_or(path);
+        crate::scan::reconcile_path_admitted(journal, rel, &admission, &|| Ok(()), &mut hides)?;
+        done += 1;
+    }
+    Ok(done)
+}
+
 /// Test fixtures that save through production seams can explicitly converge.
 #[cfg(any(test, feature = "test-fixtures"))]
 pub fn drain_now(journal: &Path) -> Result<DrainReport, StoreError> {

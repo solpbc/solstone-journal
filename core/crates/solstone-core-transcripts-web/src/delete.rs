@@ -93,6 +93,7 @@ pub(crate) async fn delete_segment(
             erase_at,
             erased,
             import,
+            search,
         })) => {
             let mut answer = match (erase, erased) {
                 (true, true) => json!({"success": true, "deleted": key, "erased": true}),
@@ -114,6 +115,7 @@ pub(crate) async fn delete_segment(
             if let Some(import) = import {
                 answer["import"] = json!(import);
             }
+            answer["search"] = json!(search);
             Json(answer).into_response()
         }
         Ok(Err(error)) => trash_error(&error),
@@ -354,6 +356,8 @@ struct Trashed {
     erased: bool,
     /// The import the segment was the last of, which went whole.
     import: Option<String>,
+    /// Whether search is up to date for what was made from it, or queued.
+    search: solstone_core_import::made_from::SearchNow,
 }
 
 fn trash_recording(
@@ -384,6 +388,7 @@ fn trash_recording(
         )
     };
     let index = RetentionIndex::new(root);
+    let made = solstone_core_import::made_from::MadeFromIt::new();
     let target = Target {
         day,
         stream,
@@ -392,13 +397,14 @@ fn trash_recording(
     // A memory is a recording alone; a segment can be the last of an import,
     // which then goes whole.
     let moved = if page == Page::Agents {
-        Recordings::new(&index)
+        Recordings::new(&index, &made)
             .trash(root, &target, unit, action, surface)
             .map(|item| (item, None))
     } else {
         solstone_core_import::segment_trash::trash_segment(
             root,
             &index,
+            &made,
             unit,
             solstone_core_retention::layout::segment_rel(&target.day, &target.stream, &target.dir),
             action,
@@ -419,6 +425,7 @@ fn trash_recording(
                 erase_at,
                 erased: false,
                 import: None,
+                search: made.refresh_search(root),
             });
         }
         Err(error) => return Err(error),
@@ -437,6 +444,8 @@ fn trash_recording(
         erase_at: item.erase_at,
         erased,
         import,
+        // Its holds are released: search may wait for its writer now.
+        search: made.refresh_search(root),
     })
 }
 

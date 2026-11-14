@@ -61,6 +61,7 @@ pub mod eligibility;
 pub mod grouped;
 pub mod layout;
 pub mod logs;
+pub mod made_from;
 pub mod mark_mutation;
 pub mod marks;
 pub mod notify;

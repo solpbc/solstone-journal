@@ -715,6 +715,200 @@ fn append_segment(entry: &mut Map<String, Value>, segment: &str) {
     }
 }
 
+pub use solstone_core_segment::{segment_live, stream_segment_dir as segment_dir};
+
+/// Fields a talent writes onto an activity record from every segment it read.
+/// When a segment leaves, they no longer hold for what remains, so they are
+/// dropped until the record's talents run again.
+pub const TALENT_WRITTEN_FIELDS: [&str; 6] = [
+    "title",
+    "story",
+    "relations",
+    "participation",
+    "participation_confidence",
+    "participation_partial_input",
+];
+
+/// What [`rederive`] made of a record.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Rederived {
+    /// Every segment it names is in the journal, or it isn't the journal's to
+    /// re-make (body data, a record naming no stream, the owner's own record
+    /// with nothing left): leave it as it is.
+    Unchanged,
+    /// Re-made from the segments still in the journal.
+    Changed(Map<String, Value>),
+    /// Nothing it was made from is left.
+    Removed,
+}
+
+/// Re-make an activity record from the segments it names that are still in
+/// the journal, with no model, as the state machine builds one: a segment
+/// continues the record when its Sense names the record's facet above `low`
+/// with the record's activity type; the description and level come from the
+/// last such segment and the entities from all of them. What talents wrote
+/// from every segment is dropped (see [`TALENT_WRITTEN_FIELDS`]); identity,
+/// placement, the owner's edits and any field the owner holds are kept.
+///
+/// A record the owner made keeps its words and loses only the gone segments.
+/// Body data is never touched here: its own trash owns it.
+pub fn rederive(journal: &Path, day: &str, record: &Map<String, Value>) -> Rederived {
+    rederive_with(journal, day, record, false)
+}
+
+/// [`rederive`], re-making the record even when every segment it names is in
+/// the journal (`force`): a recover gives a narrowed record its segments back,
+/// and what was derived from fewer of them must be made again.
+pub fn rederive_with(
+    journal: &Path,
+    day: &str,
+    record: &Map<String, Value>,
+    force: bool,
+) -> Rederived {
+    use solstone_core_format::content::{activity_field_held, is_body_record, is_strava_reading};
+    if is_body_record(record) || is_strava_reading(record) {
+        return Rederived::Unchanged;
+    }
+    let Some(stream) = record.get("stream").and_then(Value::as_str) else {
+        return Rederived::Unchanged;
+    };
+    let segments = record
+        .get("segments")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let live = segments
+        .iter()
+        .filter(|key| segment_live(journal, day, stream, key))
+        .cloned()
+        .collect::<Vec<_>>();
+    if live.len() == segments.len() && !force {
+        return Rederived::Unchanged;
+    }
+    let mut next = record.clone();
+    next.insert("segments".to_owned(), json!(live));
+    if record.get("source").and_then(Value::as_str) == Some("user") {
+        return if live.is_empty() || live.len() == segments.len() {
+            Rederived::Unchanged
+        } else {
+            Rederived::Changed(next)
+        };
+    }
+    let facet = record
+        .get("facet")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let activity = record
+        .get("activity")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    // The owner said what kind of activity it is: no segment's Sense decides.
+    let type_held = activity_field_held(record, "activity");
+    // Sense names facets as they were when it ran; a facet merged or renamed
+    // since is the record's under its live name.
+    let declarations =
+        solstone_core_indexer_store::classification::FacetDeclarationSet::from_journal(journal)
+            .ok();
+    let is_record_facet = |name: &str| {
+        name == facet
+            || declarations
+                .as_ref()
+                .and_then(|facets| facets.live_name_for_reference(name))
+                .is_some_and(|live| live == facet)
+    };
+    let mut last: Option<(String, String)> = None;
+    let mut unread = false;
+    let mut names = Vec::<String>::new();
+    let mut seen = BTreeSet::<String>::new();
+    for key in &live {
+        let dir = segment_dir(journal, day, stream, key);
+        let sense = match solstone_core_journal_io::durability::read_json_durable::<Value>(
+            solstone_core_journal_io::durability::ArtifactId::SegmentSense,
+            &dir.join("talents").join("sense.json"),
+        ) {
+            Ok(solstone_core_journal_io::durability::DurableRead::Present(sense)) => sense,
+            _ => {
+                unread = true;
+                continue;
+            }
+        };
+        if sense.get("density").and_then(Value::as_str) == Some("idle")
+            || (!type_held && sense.get("content_type").and_then(Value::as_str) != Some(activity))
+        {
+            continue;
+        }
+        let Some(entry) = sense
+            .get("facets")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_object)
+            .find(|entry| {
+                entry
+                    .get("facet")
+                    .and_then(Value::as_str)
+                    .is_some_and(is_record_facet)
+                    && entry.get("level").and_then(Value::as_str) != Some("low")
+            })
+        else {
+            continue;
+        };
+        let summary = sense
+            .get("activity_summary")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let description = normalize_activity_description(
+            entry
+                .get("activity")
+                .and_then(Value::as_str)
+                .unwrap_or(summary),
+        );
+        let level = entry
+            .get("level")
+            .and_then(Value::as_str)
+            .filter(|level| *level == "high")
+            .unwrap_or("medium");
+        last = Some((description, level.to_owned()));
+        for name in sense
+            .get("entities")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry.get("name").and_then(Value::as_str))
+        {
+            if seen.insert(name.trim().to_lowercase()) {
+                names.push(name.to_owned());
+            }
+        }
+    }
+    for field in TALENT_WRITTEN_FIELDS {
+        if !activity_field_held(record, field) {
+            next.remove(field);
+        }
+    }
+    let Some((description, level)) = last else {
+        // A Sense it couldn't read might have continued it: it stays, with
+        // only what its talents wrote dropped, never removed on a failed read.
+        return if unread && !live.is_empty() {
+            Rederived::Changed(next)
+        } else {
+            Rederived::Removed
+        };
+    };
+    if !activity_field_held(record, "description") {
+        next.insert("description".to_owned(), json!(description));
+    }
+    next.insert("level_avg".to_owned(), json!(level_value(&level)));
+    next.insert("active_entities".to_owned(), json!(names));
+    Rederived::Changed(next)
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -1274,5 +1468,180 @@ mod tests {
         assert_eq!(level_value("high"), 1.0);
         assert_eq!(level_value("medium"), 0.5);
         assert_eq!(level_value("low"), 0.25);
+    }
+
+    mod rederive {
+        use std::fs;
+        use std::path::Path;
+
+        use serde_json::{Map, Value, json};
+
+        use super::super::{Rederived, rederive, rederive_with};
+
+        const DAY: &str = "20261110";
+
+        fn segment(root: &Path, key: &str, sense: Option<Value>) {
+            let dir = root.join("chronicle").join(DAY).join("laptop").join(key);
+            fs::create_dir_all(dir.join("talents")).unwrap();
+            fs::write(dir.join("audio.flac"), b"x").unwrap();
+            match sense {
+                Some(sense) => fs::write(
+                    dir.join("talents/sense.json"),
+                    serde_json::to_vec(&sense).unwrap(),
+                )
+                .unwrap(),
+                None => fs::write(dir.join("talents/sense.json"), b"{").unwrap(),
+            }
+        }
+
+        fn sense(said: &str, who: &str) -> Value {
+            json!({"density": "active", "content_type": "meeting", "activity_summary": said,
+                "facets": [{"facet": "work", "level": "high", "activity": said}],
+                "entities": [{"name": who}]})
+        }
+
+        /// The trash took it: its folder is the tombstone the removal left.
+        fn trashed(root: &Path, key: &str) {
+            let dir = root.join("chronicle").join(DAY).join("laptop").join(key);
+            fs::remove_dir_all(&dir).unwrap();
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("tombstone.json"), b"{}").unwrap();
+        }
+
+        fn record(segments: &[&str]) -> Map<String, Value> {
+            json!({"id": "meeting_090000_300", "facet": "work", "activity": "meeting",
+                "stream": "laptop", "segments": segments,
+                "title": "the secret plan", "description": "the secret plan",
+                "level_avg": 1.0, "active_entities": ["Ann", "Bob", "Cat"],
+                "story": {"body": "they spoke of the secret plan"},
+                "relations": [{"from": "Bob", "to": "Ann", "kind": "other", "note": "secret"}],
+                "participation": [{"name": "Bob"}], "participation_confidence": 0.9,
+                "created_at": 1})
+            .as_object()
+            .unwrap()
+            .clone()
+        }
+
+        fn journal() -> tempfile::TempDir {
+            let root = tempfile::tempdir().unwrap();
+            segment(
+                root.path(),
+                "090000_300",
+                Some(sense("planning the launch", "Ann")),
+            );
+            segment(
+                root.path(),
+                "090500_300",
+                Some(sense("the secret plan", "Bob")),
+            );
+            segment(
+                root.path(),
+                "091000_300",
+                Some(sense("reviewing the launch", "Cat")),
+            );
+            root
+        }
+
+        const ALL: [&str; 3] = ["090000_300", "090500_300", "091000_300"];
+
+        #[test]
+        fn a_record_whose_segments_are_all_there_is_left_as_it_is() {
+            let root = journal();
+            assert_eq!(
+                rederive(root.path(), DAY, &record(&ALL)),
+                Rederived::Unchanged
+            );
+        }
+
+        #[test]
+        fn a_record_is_made_again_from_what_remains_with_none_of_the_gone_words() {
+            let root = journal();
+            trashed(root.path(), "090500_300");
+            let Rederived::Changed(next) = rederive(root.path(), DAY, &record(&ALL)) else {
+                panic!("re-made");
+            };
+            assert_eq!(next["segments"], json!(["090000_300", "091000_300"]));
+            assert_eq!(next["description"], json!("reviewing the launch"));
+            assert_eq!(next["active_entities"], json!(["Ann", "Cat"]));
+            for field in [
+                "title",
+                "story",
+                "relations",
+                "participation",
+                "participation_confidence",
+            ] {
+                assert!(!next.contains_key(field), "{field} stays");
+            }
+            assert!(!serde_json::to_string(&next).unwrap().contains("secret"));
+            assert!(!serde_json::to_string(&next).unwrap().contains("Bob"));
+            // Identity and placement stay.
+            assert_eq!(next["id"], json!("meeting_090000_300"));
+            assert_eq!(next["created_at"], json!(1));
+        }
+
+        #[test]
+        fn a_record_with_nothing_left_goes() {
+            let root = journal();
+            trashed(root.path(), "090500_300");
+            assert_eq!(
+                rederive(root.path(), DAY, &record(&["090500_300"])),
+                Rederived::Removed
+            );
+        }
+
+        #[test]
+        fn an_unreadable_sense_never_removes_a_record() {
+            let root = journal();
+            segment(root.path(), "091000_300", None);
+            trashed(root.path(), "090500_300");
+            let Rederived::Changed(next) =
+                rederive(root.path(), DAY, &record(&["090500_300", "091000_300"]))
+            else {
+                panic!("kept");
+            };
+            assert_eq!(next["segments"], json!(["091000_300"]));
+            assert!(!next.contains_key("story"));
+        }
+
+        #[test]
+        fn the_owners_own_record_keeps_its_words() {
+            let root = journal();
+            trashed(root.path(), "090500_300");
+            let mut mine = record(&ALL);
+            mine.insert("source".into(), json!("user"));
+            let Rederived::Changed(next) = rederive(root.path(), DAY, &mine) else {
+                panic!("narrowed");
+            };
+            assert_eq!(next["segments"], json!(["090000_300", "091000_300"]));
+            assert_eq!(next["title"], json!("the secret plan"));
+            assert_eq!(
+                rederive(root.path(), DAY, &record(&["090000_300"])),
+                Rederived::Unchanged
+            );
+        }
+
+        #[test]
+        fn a_key_is_found_in_a_folder_whose_name_carries_more() {
+            let root = journal();
+            let base = root.path().join("chronicle").join(DAY).join("laptop");
+            fs::rename(base.join("091000_300"), base.join("091000_300_summary")).unwrap();
+            assert_eq!(
+                rederive(root.path(), DAY, &record(&ALL)),
+                Rederived::Unchanged
+            );
+        }
+
+        #[test]
+        fn a_recover_makes_a_narrowed_record_again_from_all_of_it() {
+            let root = journal();
+            let mut narrowed = record(&ALL);
+            narrowed.insert("description".into(), json!("reviewing the launch"));
+            let Rederived::Changed(next) = rederive_with(root.path(), DAY, &narrowed, true) else {
+                panic!("re-made");
+            };
+            assert_eq!(next["active_entities"], json!(["Ann", "Bob", "Cat"]));
+            assert_eq!(next["description"], json!("reviewing the launch"));
+            assert!(!next.contains_key("story"));
+        }
     }
 }

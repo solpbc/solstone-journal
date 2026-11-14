@@ -5236,8 +5236,8 @@
         eraseReach: "they leave your journal now and can't be recovered.",
         moveLead: "this moves each segment's own:",
         eraseLead: "this erases each segment's own:",
-        moveStays: 'summaries made from them elsewhere in your journal stay where they are and may still mention them.',
-        eraseStays: "summaries made from them elsewhere in your journal aren't erased and may still mention them.",
+        moveStays: "activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose. entities found in them stay and may still mention them.",
+        eraseStays: "activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose. entities found in them aren't erased and may still mention them.",
         size: 'current raw media size: {size}',
       },
       notes: {
@@ -5275,7 +5275,7 @@
         title: 'delete segment?',
         reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
         lead: "this moves the segment's own:",
-        stays: 'summaries made from it elsewhere in your journal stay where they are and may still mention it.',
+        stays: "activities made from it drop it now, and the write-ups of its day and week leave search. your journal then writes those again from what's left, with the thinking you chose. entities found in it stay and may still mention it.",
         size: 'current raw media size: {size}',
       },
       // A segment from an import: its last takes the import and the file it
@@ -5350,7 +5350,7 @@
         title: 'erase this segment now?',
         reach: "it leaves your journal now and can't be recovered.",
         lead: "this erases the segment's own:",
-        stays: "summaries made from it elsewhere in your journal aren't erased and may still mention it.",
+        stays: "activities made from it drop it now, and the write-ups of its day and week leave search. your journal then writes those again from what's left, with the thinking you chose. entities found in it aren't erased and may still mention it.",
       },
       parts: {
         audio: 'audio',
@@ -5693,13 +5693,17 @@
         title: 'delete a stretch of time?',
         bounds: 'this moves everything in your journal from {from} to {to}.',
         reach: "it all leaves your journal now and waits in the trash as one thing, then it's erased. you can recover it until then.",
-        made: 'activities, summaries and entities made from it, which may still mention it',
+        madeChanges: "activities made from it drop it now, and the write-ups of its days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.",
+        made: 'entities found in it, which may still mention it',
+        madeBody: 'activities, summaries and entities made from it, which may still mention it',
       },
       erase: {
         title: 'erase this stretch of time now?',
         bounds: 'this erases everything in your journal from {from} to {to}.',
         reach: "it all leaves your journal now and can't be recovered.",
-        made: "activities, summaries and entities made from it, which aren't erased and may still mention it",
+        madeChanges: "activities made from it drop it now, and the write-ups of its days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.",
+        made: "entities found in it, which aren't erased and may still mention it",
+        madeBody: "activities, summaries and entities made from it, which aren't erased and may still mention it",
       },
       kinds: 'that\'s {kinds}.',
       kindWords: {
@@ -5899,12 +5903,19 @@
       return { wrap, input };
     }
 
+    // What was made from the stretch is made again only when it holds more
+    // than body data: a briefing never reads body data, so nothing is asked.
+    function stretchRemakes(plan) {
+      return (plan?.kinds || []).some((kind) => kind !== 'body');
+    }
+
     function stretchStaysList(plan, step) {
       const copy = STRETCH_COPY;
       const whys = new Set((plan?.left_out || []).map((left) => left.why));
       const items = STRETCH_WHY_ORDER.filter((why) => whys.has(why)).map((why) => copy.stays[why]);
       if (plan?.in_trash) items.push(copy.stays.in_trash);
-      items.push(copy.stays.memories, copy[step].made);
+      // A stretch of body data alone remakes nothing: it keeps today's line.
+      items.push(copy.stays.memories, stretchRemakes(plan) ? copy[step].made : copy[step].madeBody);
       const list = deleteDialogElement('ul', 'tr-delete-segment-list');
       items.forEach((text) => list.append(deleteDialogElement('li', null, text)));
       const nodes = [deleteDialogElement('p', 'tr-delete-lead', copy.staysLead), list];
@@ -6000,6 +6011,9 @@
         if (kinds) nodes.push(deleteDialogElement('p', 'tr-delete-lead', kinds));
         dialogImports = Array.isArray(plan.imports) ? plan.imports : [];
         nodes.push(...importLines([{}, {}], step));
+        if (stretchRemakes(plan)) {
+          nodes.push(deleteDialogElement('p', 'tr-delete-stays tr-stretch-made', copy.madeChanges));
+        }
         nodes.push(...stretchStaysList(plan, step));
       }
       if (erasing) deleteSegmentModalBody.replaceChildren(...nodes);

@@ -21,6 +21,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- deleting one or several segments, an import or a stretch of time now changes what your journal made from it. activities made from it drop it at once, and the write-ups of its days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose, however long ago the day was. recovering it from the trash writes them again with it. entities found in it stay and may still mention it. deleting body data works as before.
 - the agents page now works like home, transcripts and search: moving between it and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 
 ### Fixed

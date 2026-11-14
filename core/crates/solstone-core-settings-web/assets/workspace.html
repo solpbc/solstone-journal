@@ -8079,8 +8079,8 @@ const TRASH_COPY = {
   staysMany: "summaries made from them elsewhere in your journal aren't erased and may still mention them.",
   agentOne: 'anything an agent already read stays with it.',
   agentMany: 'anything an agent already read stays with them.',
-  madeOne: "activities, summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.",
-  madeMany: "activities, summaries and entities made from them elsewhere in your journal aren't erased and may still mention them.",
+  madeOne: "erasing it doesn't change what was made from it elsewhere in your journal, and some of that may still mention it.",
+  madeMany: "erasing them doesn't change what was made from them elsewhere in your journal, and some of that may still mention them.",
   mentionsOne: "anything elsewhere in your journal that mentions it isn't erased.",
   mentionsMany: "anything elsewhere in your journal that mentions them isn't erased.",
   sortedOne: 'segments sorted into it stay in your journal.',
@@ -8603,12 +8603,13 @@ function trashConfirmCopy(act, items) {
     }
   }
   // What stays: anything that mentions an entity or a facet, and a facet's
-  // segments; what an import or a workout made elsewhere includes entities;
-  // a segment's or a memory's summaries. Nothing elsewhere mentions the
+  // segments; what a segment, an import, a workout or a stretch made elsewhere
+  // isn't changed by its erase (it was made again at the delete); a memory's
+  // summaries. Nothing elsewhere mentions the
   // voices wipe or a merge's files. Originals take their own line: their
   // segment isn't erased with them.
   const named = items.some(item => item.kind === 'entity' || item.kind === 'facet');
-  const made = items.some(item => item.kind === 'import' || item.kind === 'workout' || item.kind === 'stretch');
+  const made = items.some(item => item.kind === 'segment' || item.kind === 'import' || item.kind === 'workout' || item.kind === 'stretch');
   const quiet = items.every(item => item.kind === 'speakers' || item.kind === 'facet_file' || item.kind === 'originals');
   if (named) {
     paragraphs.push(one ? TRASH_COPY.mentionsOne : TRASH_COPY.mentionsMany);

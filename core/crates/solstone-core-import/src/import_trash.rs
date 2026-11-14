@@ -605,14 +605,19 @@ fn restore_pending_tiles(journal: &Path, item: &Item) -> Result<(), String> {
 /// The trash's kind for imports.
 pub struct Imports<'a> {
     index: &'a dyn IndexNotify,
+    made: &'a dyn solstone_core_retention::made_from::MadeFrom,
     /// What `current_paths` just read, for the `refs` the engine asks next.
     read: std::cell::RefCell<Option<(String, ImportThings)>>,
 }
 
 impl<'a> Imports<'a> {
-    pub fn new(index: &'a dyn IndexNotify) -> Self {
+    pub fn new(
+        index: &'a dyn IndexNotify,
+        made: &'a dyn solstone_core_retention::made_from::MadeFrom,
+    ) -> Self {
         Self {
             index,
+            made,
             read: std::cell::RefCell::new(None),
         }
     }
@@ -1000,7 +1005,8 @@ impl Kind for Imports<'_> {
             solstone_core_journal_io::bump_stream_marker(journal, &day)
                 .map_err(|error| format!("the day was not queued for follow-up: {error}"))?;
         }
-        Ok(())
+        self.made
+            .recordings_changed(journal, item, change, &targets_of(item))
     }
 }
 
@@ -1111,7 +1117,7 @@ mod tests {
     }
 
     fn trash(root: &Path) -> Item {
-        Imports::new(&NoIndex)
+        Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
             .trash(root, ID, Action::ImportDelete, surface())
             .unwrap()
     }
@@ -1121,7 +1127,7 @@ mod tests {
         let temp = journal();
         let root = temp.path();
         let mut item = trash(root);
-        let kind = Imports::new(&NoIndex);
+        let kind = Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade);
         solstone_core_trash::attach(root, &[&kind], &item.id, Action::Recover, surface()).unwrap();
         item.state = solstone_core_trash::State::Detaching;
         let other_root = root.to_path_buf();
@@ -1294,7 +1300,7 @@ mod tests {
     }
 
     fn trash_other(root: &Path) -> Item {
-        Imports::new(&NoIndex)
+        Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
             .trash(root, OTHER, Action::ImportDelete, surface())
             .unwrap()
     }
@@ -1354,7 +1360,7 @@ mod tests {
         let root = journal();
         let now = 1_700_000_000_000;
         crate::admit_running_attempt(root.path(), ID, now, None).unwrap();
-        let error = Imports::new(&NoIndex)
+        let error = Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
             .trash(root.path(), ID, Action::ImportDelete, surface())
             .unwrap_err();
         assert_eq!(failure_key(&error), "importing");
@@ -1585,7 +1591,7 @@ mod tests {
         assert_eq!(a.files, vec![format!("{both}/body.{APPLE_A}.jsonl")]);
         assert_eq!(a.refs(), vec![both.clone()]);
 
-        let a_item = Imports::new(&NoIndex)
+        let a_item = Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
             .trash(root, APPLE_A, Action::ImportDelete, surface())
             .unwrap();
         assert!(root.join(&only_a).join("tombstone.json").is_file());
@@ -1604,11 +1610,14 @@ mod tests {
         // B now holds the hour alone and takes it whole, with only its rows.
         let b = import_things(root, APPLE_B).unwrap();
         assert_eq!(b.segments, vec![both.clone(), only_b.clone()], "{b:?}");
-        let b_item = Imports::new(&NoIndex)
+        let b_item = Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
             .trash(root, APPLE_B, Action::ImportDelete, surface())
             .unwrap();
         // A can't come back while B holds the hour they shared.
-        let kinds: [&dyn Kind; 1] = [&Imports::new(&NoIndex)];
+        let kinds: [&dyn Kind; 1] = [&Imports::new(
+            &NoIndex,
+            &solstone_core_retention::made_from::NothingMade,
+        )];
         let refused =
             solstone_core_trash::attach(root, &kinds, &a_item.id, Action::Recover, surface());
         assert!(
@@ -1649,7 +1658,7 @@ mod tests {
             "import.apple_health",
             &root.join(&both)
         ));
-        let item = Imports::new(&NoIndex)
+        let item = Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
             .trash(root, APPLE_A, Action::ImportDelete, surface())
             .unwrap();
         assert_eq!(
@@ -1703,7 +1712,7 @@ mod tests {
         assert_eq!(things.segments, vec![first.clone(), second.clone()]);
         assert_eq!(things.workouts.len(), 1);
 
-        let item = Imports::new(&NoIndex)
+        let item = Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
             .trash_workout(
                 root,
                 "7",
@@ -1716,12 +1725,13 @@ mod tests {
         assert!(root.join(&later).join("workout.json").is_file());
         // An import of Strava running holds it.
         let held = crate::body_trash::hold_source_lock(root, "strava").unwrap();
-        let refused = Imports::new(&NoIndex).trash_workout(
-            root,
-            "8",
-            Action::WorkoutDelete,
-            Surface::Web { page: Page::Body },
-        );
+        let refused = Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
+            .trash_workout(
+                root,
+                "8",
+                Action::WorkoutDelete,
+                Surface::Web { page: Page::Body },
+            );
         assert!(
             matches!(&refused, Err(TrashError::Held(reason)) if reason == SOURCE_IMPORTING),
             "{refused:?}"
@@ -1759,7 +1769,8 @@ mod tests {
         stopped_item(root, "apple_health");
         assert!(crate::body_trash::source_trash_moving(root, "apple_health"));
         assert!(!crate::body_trash::source_trash_moving(root, "oura"));
-        let refused = Imports::new(&NoIndex).trash(root, APPLE_A, Action::ImportDelete, surface());
+        let refused = Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
+            .trash(root, APPLE_A, Action::ImportDelete, surface());
         assert!(
             matches!(&refused, Err(error) if failure_key(error) == "busy"),
             "{refused:?}"
@@ -1809,12 +1820,13 @@ mod tests {
             "chronicle/20261002/import.strava/000000_1800/workout.json",
             b"{cut sh",
         );
-        let refused = Imports::new(&NoIndex).trash_workout(
-            root,
-            "7",
-            Action::WorkoutDelete,
-            Surface::Web { page: Page::Body },
-        );
+        let refused = Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
+            .trash_workout(
+                root,
+                "7",
+                Action::WorkoutDelete,
+                Surface::Web { page: Page::Body },
+            );
         assert!(
             matches!(&refused, Err(TrashError::Held(reason)) if reason == WORKOUT_UNREADABLE),
             "{refused:?}"
@@ -1834,7 +1846,8 @@ mod tests {
         window(root, "060000_3600", &[("a1", APPLE_A)]);
         apple_import(root, APPLE_A, &["060000_3600"]);
         write(root, "imports/.apple_health-run/state.json", b"{cut");
-        let refused = Imports::new(&NoIndex).trash(root, APPLE_A, Action::ImportDelete, surface());
+        let refused = Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
+            .trash(root, APPLE_A, Action::ImportDelete, surface());
         assert!(
             matches!(&refused, Err(TrashError::Held(reason)) if reason == PART_UNREADABLE),
             "{refused:?}"
@@ -1878,7 +1891,7 @@ mod tests {
             );
         }
         // No record yet: the delete starts it from what's here, then adds its own.
-        Imports::new(&NoIndex)
+        Imports::new(&NoIndex, &solstone_core_retention::made_from::NothingMade)
             .trash(root, APPLE_A, Action::ImportDelete, surface())
             .unwrap();
         let fetched = crate::oura_fetched::Fetched::load(root).unwrap();

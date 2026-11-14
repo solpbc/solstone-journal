@@ -176,6 +176,7 @@ fn trash_earlier(root: &Path, rel: &str) -> String {
     let (item, _) = segment_trash::trash_segment(
         root,
         &solstone_core_retention::NoIndex,
+        &solstone_core_retention::made_from::NothingMade,
         Unit::Segment {
             day: parts[1].into(),
             stream: parts[2].into(),

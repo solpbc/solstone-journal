@@ -447,6 +447,19 @@ pub fn commit(
         .and_then(|item| item.get("id"))
         .and_then(Value::as_str)
         .ok_or_else(|| error(prepared, "story is missing activity record id"))?;
+    // What it read, so a story written over segments that changed while it
+    // ran is never applied (see `crate::segments_changed`).
+    let mut value = value;
+    if let (Some(object), Some(read)) = (
+        value.as_object_mut(),
+        prepared
+            .config
+            .get("activity")
+            .and_then(Value::as_object)
+            .and_then(|item| item.get("segments")),
+    ) {
+        object.insert(crate::READ_SEGMENTS.into(), read.clone());
+    }
     // Python returns "" after the mutation; CommittedNoOutput is explicit.
     Ok(CommitPlan::Write(crate::writers::WriteIntent::Story {
         destination_id: required(prepared, "destination_id")?.to_owned(),
@@ -498,6 +511,12 @@ pub(crate) fn apply_story_cancellable(
     else {
         return Err("activity no longer exists".to_owned());
     };
+    if crate::segments_changed(&record, value.get(crate::READ_SEGMENTS)) {
+        // Made from segments the record no longer names (one went to the
+        // trash while it ran): not applied, and nothing failed. The record is
+        // asked to be written again from what it holds now.
+        return Ok(());
+    }
     let entities = crate::detected_resolution_entities(root, facet, day)?;
     let owner = crate::JournalOwner::load(root)?;
     // In a spoken conversation, "you" rests on the owner's recognized voice.

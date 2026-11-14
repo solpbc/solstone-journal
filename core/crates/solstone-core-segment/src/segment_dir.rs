@@ -1032,3 +1032,108 @@ fn path_present(path: &Path) -> Result<bool, SegmentError> {
         }),
     }
 }
+
+/// A segment folder of `stream` on `day`: the default stream's sit directly in
+/// the day.
+pub fn stream_segment_dir(
+    journal: &std::path::Path,
+    day: &str,
+    stream: &str,
+    key: &str,
+) -> std::path::PathBuf {
+    let day_dir = journal.join("chronicle").join(day);
+    if stream == solstone_core_journal_io::paths::DEFAULT_STREAM {
+        day_dir.join(key)
+    } else {
+        day_dir.join(stream).join(key)
+    }
+}
+
+/// Whether a segment is in the journal: its folder is there, and neither the
+/// tombstone a removal left nor a removal part-way through. Unreadable counts
+/// as there, so a segment is never taken for gone on a failed read.
+///
+/// A record names segments by key, and a folder's name can carry more than
+/// its key (`093000_300_summary`), so a key with no folder of its own name is
+/// looked for among the stream's folders by the key read out of each name.
+pub fn segment_live(journal: &std::path::Path, day: &str, stream: &str, key: &str) -> bool {
+    let live = |dir: &std::path::Path| {
+        dir.is_dir()
+            && !matches!(
+                owner_deletion_state(dir),
+                Ok(state) if state != OwnerDeletionState::Live
+            )
+    };
+    let dir = stream_segment_dir(journal, day, stream, key);
+    if dir.exists() {
+        return live(&dir);
+    }
+    let Some(parent) = dir.parent() else {
+        return false;
+    };
+    let entries = match std::fs::read_dir(parent) {
+        Ok(entries) => entries,
+        Err(error) => return error.kind() != std::io::ErrorKind::NotFound,
+    };
+    entries.flatten().any(|entry| {
+        entry
+            .file_name()
+            .to_str()
+            .and_then(solstone_core_format::segment::segment_key)
+            .is_some_and(|found| found == key)
+            && live(&entry.path())
+    })
+}
+
+/// Whether `day` holds a tombstone a removal left, in any stream: something
+/// recorded then went to the trash. Unreadable counts as yes.
+pub fn day_has_tombstone(journal: &std::path::Path, day: &str) -> bool {
+    let day_dir = journal.join("chronicle").join(day);
+    let marked = |dir: &std::path::Path| dir.join(TOMBSTONE_NAME).is_file();
+    let Ok(entries) = std::fs::read_dir(&day_dir) else {
+        return day_dir.exists();
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if marked(&path) {
+            return true;
+        }
+        let Ok(inner) = std::fs::read_dir(&path) else {
+            continue;
+        };
+        if inner.flatten().any(|segment| marked(&segment.path())) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether an activity record names a segment that is no longer in the
+/// journal: what it says was made, in part, from a recording that went to the
+/// trash. A body record is its body data's own to decide, and a record naming
+/// no stream (an older layout) is never matched.
+pub fn record_names_gone_segment(
+    journal: &std::path::Path,
+    day: &str,
+    record: &serde_json::Map<String, serde_json::Value>,
+) -> bool {
+    use serde_json::Value;
+    if solstone_core_format::content::is_body_record(record)
+        || solstone_core_format::content::is_strava_reading(record)
+    {
+        return false;
+    }
+    let Some(stream) = record.get("stream").and_then(Value::as_str) else {
+        return false;
+    };
+    record
+        .get("segments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .any(|key| !segment_live(journal, day, stream, key))
+}

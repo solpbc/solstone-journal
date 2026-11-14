@@ -857,6 +857,9 @@ mod tests {
                             || path == Path::new("backup-activity.lock")
                             || path == Path::new("health/daily-location-admission.lock")
                             || path == Path::new("health/locks/entity-trust.lock")
+                            // The day is asked to be made again from what remains.
+                            || path == Path::new("health/owner-asks.json")
+                            || path.to_string_lossy().starts_with("health/owner-asks.")
                             || path.starts_with(solstone_core_removals::RECORD_DIR),
                         "unexpected journal mutation: {}",
                         path.display()
@@ -898,7 +901,10 @@ mod tests {
             delete(root.path(), "").await;
             let id = trash_items(root.path())[0].id.clone();
             let index = solstone_core_indexer_store::RetentionIndex::new(root.path());
-            let recordings = solstone_core_retention::recording_trash::Recordings::new(&index);
+            let recordings = solstone_core_retention::recording_trash::Recordings::new(
+                &index,
+                &solstone_core_retention::made_from::NothingMade,
+            );
             solstone_core_trash::attach(
                 root.path(),
                 &[&recordings],
@@ -937,7 +943,10 @@ mod tests {
             fs::write(&record, serde_json::to_vec(&item).unwrap()).unwrap();
             assert!(trash_items(root.path()).is_empty());
             let index = solstone_core_indexer_store::RetentionIndex::new(root.path());
-            let recordings = solstone_core_retention::recording_trash::Recordings::new(&index);
+            let recordings = solstone_core_retention::recording_trash::Recordings::new(
+                &index,
+                &solstone_core_retention::made_from::NothingMade,
+            );
             let swept = solstone_core_trash::sweep(root.path(), &[&recordings], chrono::Utc::now());
             assert_eq!(swept.failed, Vec::<String>::new());
             assert_eq!(names(&root.path().join(SEGMENT)), vec!["tombstone.json"]);
@@ -978,7 +987,10 @@ mod tests {
             });
             fs::write(held.join("item.json"), serde_json::to_vec(&item).unwrap()).unwrap();
             let index = solstone_core_indexer_store::RetentionIndex::new(root.path());
-            let recordings = solstone_core_retention::recording_trash::Recordings::new(&index);
+            let recordings = solstone_core_retention::recording_trash::Recordings::new(
+                &index,
+                &solstone_core_retention::made_from::NothingMade,
+            );
             let swept = solstone_core_trash::sweep(root.path(), &[&recordings], chrono::Utc::now());
             assert_eq!(swept.failed, Vec::<String>::new());
             let after = snapshot(root.path());

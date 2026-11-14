@@ -17,14 +17,29 @@ use solstone_core_speaker_resolve::speakers_trash::Speakers;
 use solstone_core_trash::{Kind, Swept};
 
 use crate::import_trash::Imports;
+use crate::made_from::{MadeFromIt, SearchNow};
 use crate::segment_trash::ImportSegments;
 
-/// Run `act` with every kind of thing the trash holds.
+/// Run `act` with every kind of thing the trash holds, then bring search up
+/// to date for what was made from any recording it moved.
 pub fn with_kinds<T>(journal: &Path, act: impl FnOnce(&[&dyn Kind]) -> T) -> T {
+    with_kinds_search(journal, act).0
+}
+
+/// [`with_kinds`], also saying whether search is up to date for what was made
+/// from the recordings it moved, or queued.
+pub fn with_kinds_search<T>(journal: &Path, act: impl FnOnce(&[&dyn Kind]) -> T) -> (T, SearchNow) {
+    let made = MadeFromIt::new();
+    let result = with_made(journal, &made, act);
+    // The trash's holds are released: search may wait for its writer now.
+    (result, made.refresh_search(journal))
+}
+
+fn with_made<T>(journal: &Path, made: &MadeFromIt, act: impl FnOnce(&[&dyn Kind]) -> T) -> T {
     let index = RetentionIndex::new(journal);
-    let segments = ImportSegments::new(&index);
-    let recordings = Recordings::new(&index);
-    let imports = Imports::new(&index);
+    let segments = ImportSegments::new(&index, made);
+    let recordings = Recordings::new(&index, made);
+    let imports = Imports::new(&index, made);
     let speakers = Speakers::new(&index);
     let facets = Facets::new(&index);
     let drops = FacetDrops::new(&index);

@@ -5465,3 +5465,38 @@ mod tests {
         assert_eq!(saved, "surviving output text");
     }
 }
+
+/// Where a story's plan carries the segments its run read.
+pub(crate) const READ_SEGMENTS: &str = "_read_segments";
+
+/// Whether an activity record's segments are no longer the ones a talent run
+/// read (`read`): a recording it covered went to the trash, or came back,
+/// while it ran. Its output then describes something the record no longer is,
+/// so it isn't applied; the trash has asked for the activity to be run again.
+/// A run that says nothing of what it read is applied as before.
+pub(crate) fn segments_changed(
+    record: &serde_json::Map<String, serde_json::Value>,
+    read: Option<&serde_json::Value>,
+) -> bool {
+    read.is_some_and(|read| record.get("segments") != Some(read))
+}
+
+#[cfg(test)]
+mod segments_changed_tests {
+    use serde_json::json;
+
+    #[test]
+    fn a_run_over_segments_the_record_no_longer_names_is_not_applied() {
+        let record = json!({"segments": ["090000_300", "091000_300"]});
+        let record = record.as_object().unwrap();
+        assert!(super::segments_changed(
+            record,
+            Some(&json!(["090000_300", "090500_300", "091000_300"]))
+        ));
+        assert!(!super::segments_changed(
+            record,
+            Some(&json!(["090000_300", "091000_300"]))
+        ));
+        assert!(!super::segments_changed(record, None));
+    }
+}

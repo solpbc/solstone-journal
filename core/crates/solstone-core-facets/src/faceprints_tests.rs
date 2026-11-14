@@ -316,7 +316,10 @@ fn restoring_a_person_after_recording_deletion_prunes_inference_while_disabled()
     let person = entities
         .trash(root, "a", Action::EntityDelete, Surface::Cli)
         .unwrap();
-    let recordings = solstone_core_retention::recording_trash::Recordings::new(&index);
+    let recordings = solstone_core_retention::recording_trash::Recordings::new(
+        &index,
+        &solstone_core_retention::made_from::NothingMade,
+    );
     recordings
         .trash(
             root,
@@ -376,7 +379,10 @@ fn clearing_scrubs_trashed_people_and_recordings_before_recovery() {
     let person = entities
         .trash(root, "a", Action::EntityDelete, Surface::Cli)
         .unwrap();
-    let recordings = solstone_core_retention::recording_trash::Recordings::new(&index);
+    let recordings = solstone_core_retention::recording_trash::Recordings::new(
+        &index,
+        &solstone_core_retention::made_from::NothingMade,
+    );
     let recording = recordings
         .trash(
             root,
@@ -505,6 +511,7 @@ fn unresolved_merge_recovery_refuses_recording_deletion_before_any_source_moves(
     fs::write(recovery.join("state.json"), b"invalid").unwrap();
     let recordings = solstone_core_retention::recording_trash::Recordings::new(
         &solstone_core_retention::notify::NoIndex,
+        &solstone_core_retention::made_from::NothingMade,
     );
     assert!(
         recordings

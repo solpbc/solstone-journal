@@ -2599,6 +2599,16 @@ pub(crate) fn append_own_activity(
         return Ok(OwnAppend::Skipped);
     }
     let journal = &context.journal;
+    // A run's activity can hold a segment that went to the trash while it was
+    // open: it is published from the segments still in the journal, or not at
+    // all. With every segment there it is published as it is.
+    match solstone_core_system::activity_state::rederive(journal, day, record) {
+        solstone_core_system::activity_state::Rederived::Unchanged => {}
+        solstone_core_system::activity_state::Rederived::Changed(next) => *record = next,
+        solstone_core_system::activity_state::Rederived::Removed => {
+            return Ok(OwnAppend::Skipped);
+        }
+    }
     let outcome = append_activity_record_checked(journal, facet, day, record.clone(), || {
         context.checkpoint()
     })?;

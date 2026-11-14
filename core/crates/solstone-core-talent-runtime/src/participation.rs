@@ -119,6 +119,11 @@ pub(crate) fn apply_result_cancellable(
     else {
         return Err("activity no longer exists".to_owned());
     };
+    if crate::segments_changed(&stored, activity.get("segments")) {
+        // Made from segments the record no longer names: not applied, and
+        // nothing failed (see `crate::segments_changed`).
+        return Ok(());
+    }
     // Read as it stands under the write lock, so a correction made while the
     // talent ran still counts. A recording that played through only part of
     // this activity's time leaves the people of the rest as they were.
@@ -2907,6 +2912,16 @@ mod tests {
                 pad_speech(&second.join("audio.jsonl"), padding);
                 let mut act = activity();
                 act.insert("segments".into(), json!([SEGMENT, "101000_300"]));
+                // The stored record names the segments the run read.
+                fs::write(
+                    root.path()
+                        .join(format!("facets/{FACET}/activities/{DAY}.jsonl")),
+                    format!(
+                        "{}\n",
+                        json!({"id":"activity","segments":[SEGMENT, "101000_300"]})
+                    ),
+                )
+                .unwrap();
                 let rows = apply_for_activity(
                     root.path(),
                     &act,

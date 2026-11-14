@@ -26,6 +26,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use solstone_core_removals::{Action, Surface, Unit};
+use solstone_core_retention::made_from::MadeFrom;
 use solstone_core_retention::notify::IndexNotify;
 use solstone_core_retention::recording_trash::Recordings;
 use solstone_core_trash::{Change, Chosen, Hold, Item, Kind, TrashError};
@@ -238,6 +239,7 @@ pub fn choose(journal: &Path, segments: Vec<Chosen>) -> Vec<Choice> {
 pub fn trash_segment(
     journal: &Path,
     index: &dyn IndexNotify,
+    made: &dyn MadeFrom,
     unit: Unit,
     path: String,
     action: Action,
@@ -255,12 +257,12 @@ pub fn trash_segment(
         return Err(TrashError::Missing("recording".into()));
     };
     match (&choice.import, &choice.chosen.unit) {
-        (Some(id), _) => import_trash::Imports::new(index)
+        (Some(id), _) => import_trash::Imports::new(index, made)
             .trash(journal, id, action, surface)
             .map(|item| (item, choice.import.clone())),
         (None, unit) => solstone_core_trash::detach(
             journal,
-            &ImportSegments::new(index),
+            &ImportSegments::new(index, made),
             unit.clone(),
             action,
             surface,
@@ -278,9 +280,9 @@ pub struct ImportSegments<'a> {
 }
 
 impl<'a> ImportSegments<'a> {
-    pub fn new(index: &'a dyn IndexNotify) -> Self {
+    pub fn new(index: &'a dyn IndexNotify, made: &'a dyn MadeFrom) -> Self {
         Self {
-            recordings: Recordings::new(index),
+            recordings: Recordings::new(index, made),
             listing: RefCell::new(None),
         }
     }

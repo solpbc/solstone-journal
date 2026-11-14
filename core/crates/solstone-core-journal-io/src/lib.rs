@@ -62,6 +62,7 @@ pub mod socket_endpoint;
 #[cfg(any(unix, windows))]
 pub mod staged;
 pub mod strict_segment;
+pub mod trash_asks;
 pub mod whole_journal_restore;
 #[cfg(windows)]
 mod windows_disk_space;

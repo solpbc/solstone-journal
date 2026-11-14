@@ -69,9 +69,29 @@ pub struct OwnerAsk {
     pub dropped: BTreeMap<String, u64>,
     #[serde(default)]
     pub week: WeekStep,
+    /// Why the journal asked rather than the owner correcting something:
+    /// `trash:<operation>` when recordings on the day went to the trash or
+    /// came back. Such an ask merges per cause and day, keeps what was made
+    /// from the day out of search while it is pending, and never gives up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cause: Option<String>,
+    /// The trash items whose change this ask carries, so a re-run of one
+    /// item's change adds nothing while another item's change asks again.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub items: BTreeSet<String>,
 }
 
+/// The cause prefix of an ask the trash files.
+pub use solstone_core_journal_io::trash_asks::TRASH_CAUSE;
+
 impl OwnerAsk {
+    /// The trash filed this ask: something on its day left or came back.
+    pub fn from_trash(&self) -> bool {
+        self.cause
+            .as_deref()
+            .is_some_and(|cause| cause.starts_with(TRASH_CAUSE))
+    }
+
     /// Every step this ask asked for has finished.
     pub fn finished(&self) -> bool {
         self.to_seed.is_empty() && (!self.thaw || self.thaw_done) && self.week.ended.is_some()
@@ -252,6 +272,8 @@ pub fn record(
         thaw_capped: false,
         dropped: BTreeMap::new(),
         week: WeekStep::default(),
+        cause: None,
+        items: BTreeSet::new(),
     };
     let saved = ask.clone();
     mutate(journal, |asks| {
@@ -260,6 +282,80 @@ pub fn record(
     })?;
     Ok(ask)
 }
+
+/// Ask the journal to make `day` again because trash item `item`, part of
+/// `operation`, changed recordings on it: run `activities` again, let the
+/// day's briefing regenerate however old it is, and re-make its week's page.
+///
+/// One ask per operation and day. The same item asking again (a stopped
+/// change finished by the sweep) only adds activities not yet asked; another
+/// item of the operation reopens the ask from now, since the day changed
+/// again after whatever the ask may already have made.
+pub fn record_for_trash(
+    journal: &Path,
+    day: &str,
+    operation: &str,
+    item: &str,
+    activities: &[AskedActivity],
+    now_ms: i64,
+) -> Result<OwnerAsk, AskError> {
+    if !valid_day(day) {
+        return Err(AskError::InvalidDay);
+    }
+    if activities.iter().any(|asked| !valid_activity(day, asked)) {
+        return Err(AskError::InvalidActivity);
+    }
+    let cause = format!("{TRASH_CAUSE}{operation}");
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random).map_err(|error| AskError::Write(error.to_string()))?;
+    let fresh_id: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
+    mutate(journal, |asks| {
+        let existing = asks
+            .values()
+            .find(|ask| ask.day == day && ask.cause.as_deref() == Some(cause.as_str()))
+            .map(|ask| ask.id.clone());
+        let Some(id) = existing else {
+            let ask = OwnerAsk {
+                id: fresh_id.clone(),
+                day: day.to_owned(),
+                created_at_ms: now_ms,
+                to_seed: activities.iter().cloned().collect(),
+                seeded: BTreeSet::new(),
+                thaw: true,
+                thaw_done: false,
+                thaw_capped: false,
+                dropped: BTreeMap::new(),
+                week: WeekStep::default(),
+                cause: Some(cause.clone()),
+                items: BTreeSet::from([item.to_owned()]),
+            };
+            asks.insert(fresh_id.clone(), ask.clone());
+            return Ok((ask, true));
+        };
+        let current = asks[&id].clone();
+        let mut next = current.clone();
+        for asked in activities {
+            if !next.seeded.contains(asked) {
+                next.to_seed.insert(asked.clone());
+            }
+        }
+        if next.items.insert(item.to_owned()) {
+            next.created_at_ms = next.created_at_ms.max(now_ms);
+            next.thaw = true;
+            next.thaw_done = false;
+            next.thaw_capped = false;
+            next.week = WeekStep::default();
+            for asked in std::mem::take(&mut next.seeded) {
+                next.to_seed.insert(asked);
+            }
+        }
+        let changed = next != current;
+        asks.insert(id, next.clone());
+        Ok((next, changed))
+    })
+}
+
+pub use solstone_core_journal_io::trash_asks::{TrashPending, trash_pending};
 
 /// The one call an owner correction makes once it has committed: record the
 /// ask, then wake work discovery. A wakeup that cannot be sent is not an
@@ -281,7 +377,8 @@ pub fn think_again(
     Ok(ask)
 }
 
-fn wake(journal: &Path, day: &str) {
+/// Wake work discovery for `day`. Best effort: the next pass finds the ask.
+pub fn wake(journal: &Path, day: &str) {
     let envelope = solstone_core_callosum::CallosumEnvelope::supervisor_drain(day);
     let Ok(mut line) = serde_json::to_string(&envelope) else {
         return;
@@ -511,6 +608,57 @@ mod tests {
         })
         .unwrap();
         assert!(!thawed(root.path(), "20260101"));
+    }
+
+    #[test]
+    fn a_trash_ask_is_one_per_operation_and_day_and_reopens_for_another_item() {
+        let root = tempfile::tempdir().unwrap();
+        let day = "20261003";
+        let first =
+            record_for_trash(root.path(), day, "op", "item-a", &[asked("work", "a")], 10).unwrap();
+        assert!(first.from_trash() && first.thaw);
+        // The same item again (a stopped change the sweep finishes): nothing new.
+        let again =
+            record_for_trash(root.path(), day, "op", "item-a", &[asked("work", "a")], 20).unwrap();
+        assert_eq!(again, first);
+        // What the pass made of it so far.
+        update(root.path(), &first.id, |current| {
+            let mut next = current.clone();
+            next.to_seed.clear();
+            next.seeded.insert(asked("work", "a"));
+            next.thaw_done = true;
+            next.week.ended = Some(WEEK_BUILT.into());
+            Some(Some(next))
+        })
+        .unwrap();
+        // Another item of the operation changed the day again: asked anew.
+        let reopened =
+            record_for_trash(root.path(), day, "op", "item-b", &[asked("work", "b")], 30).unwrap();
+        assert_eq!(reopened.id, first.id);
+        assert_eq!(reopened.created_at_ms, 30);
+        assert!(!reopened.thaw_done && reopened.week.ended.is_none());
+        assert_eq!(
+            reopened.to_seed,
+            BTreeSet::from([asked("work", "a"), asked("work", "b")])
+        );
+        assert_eq!(read(root.path()).unwrap().len(), 1);
+        // Another operation, or another day, is its own ask.
+        record_for_trash(root.path(), day, "op2", "item-c", &[], 40).unwrap();
+        record_for_trash(root.path(), "20261004", "op", "item-b", &[], 40).unwrap();
+        assert_eq!(read(root.path()).unwrap().len(), 3);
+        let pending = trash_pending(root.path()).unwrap();
+        assert_eq!(
+            pending.briefings,
+            BTreeSet::from([day.to_owned(), "20261004".to_owned()])
+        );
+        // A correction's ask is not the trash's.
+        record(root.path(), "20261005", &[asked("work", "a")], true, 1).unwrap();
+        assert!(
+            !trash_pending(root.path())
+                .unwrap()
+                .briefings
+                .contains("20261005")
+        );
     }
 
     #[test]

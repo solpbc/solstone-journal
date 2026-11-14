@@ -76,7 +76,9 @@ pub(crate) async fn delete_workout(
     let root = state.journal_root.clone();
     let outcome = tokio::task::spawn_blocking(move || {
         let index = RetentionIndex::new(&root);
-        let item = match Imports::new(&index).trash_workout(
+        // A workout is body data: nothing this reaches is made from it.
+        let made = solstone_core_retention::made_from::NothingMade;
+        let item = match Imports::new(&index, &made).trash_workout(
             &root,
             &activity_id,
             Action::WorkoutDelete,

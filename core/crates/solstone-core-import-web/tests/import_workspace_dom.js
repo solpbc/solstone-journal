@@ -4392,6 +4392,12 @@ async function runImportDeleteDialog() {
   assert.strictEqual(deleteDocument.activeElement, h.byId.importDeleteModalBack);
   assert.strictEqual(body.all('import-delete-size').length, 0);
   assert.strictEqual(body.all('import-delete-stays')[0].textContent, C.erase.stays);
+  // Body data remakes nothing: its import keeps the line made for it.
+  assert.strictEqual(
+    h.api.importOneBody('move', { id: 'b', kind: 'apple_health' }, null)
+      .find(node => node.className === 'import-delete-stays').textContent,
+    C.move.staysBody,
+  );
   h.byId.importDeleteModalBack.listeners.click[0]();
   assert.strictEqual(deleteDocument.activeElement, h.byId.importDeleteModalErase, 'back returns focus to erase now');
   h.byId.importDeleteModalErase.listeners.click[0]();

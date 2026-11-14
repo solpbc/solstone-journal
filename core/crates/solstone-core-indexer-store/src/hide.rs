@@ -11,6 +11,13 @@
 //! the file that says it can't be read, the file is indexed with nothing and
 //! tried again on the next scan.
 //!
+//! What was made from a recording that went to the trash is decided here too:
+//! an activity row naming a segment no longer in the journal, and that
+//! activity's outputs, are out; a day's briefing and its week's page are out
+//! while the journal is making them again for a delete; and a day's pulse,
+//! which no one makes again, is out when that day or the day before holds a
+//! recording that went to the trash.
+//!
 //! One [`HideCache`] serves one scan pass, one scan turn, one drain batch or
 //! one rescan, so each facet's hides and each day's hidden activities are read
 //! once for all the files that need them.
@@ -31,6 +38,7 @@ use solstone_core_format::content::week_left_out::{
     LEFT_OUT_RELATIVE_PATH, LeftOut, WeekPageKeys, read_left_out, read_week_page_keys,
 };
 use solstone_core_format::content::{Family, IndexChunk, indexed, is_hidden_activity};
+use solstone_core_journal_io::trash_asks::{TrashPending, trash_pending};
 
 /// The day's body document, as search names it.
 const BODY_DOCUMENT: &str = "body.md";
@@ -43,10 +51,15 @@ pub(crate) enum FileHide {
     Index,
     /// The detected rows whose names the facet doesn't hide.
     DetectedNames(Rc<HiddenKeys>),
-    /// Every entry but a body record's or a Strava workout's: the file's
-    /// day of body data is hidden, or which days are can't be read, which
-    /// says why the file is tried again.
-    BodyEntriesOut(Option<String>),
+    /// An activity day file's rows, but not those naming a segment that is
+    /// no longer in the journal, nor, when `body_out` (the day of body data is
+    /// hidden, or which days are can't be read), a body record's or a Strava
+    /// workout's; `retry` says why the file is tried again, when it must be.
+    ActivityRows {
+        body_out: bool,
+        retry: Option<String>,
+        gone: Rc<HashSet<String>>,
+    },
     /// Nothing: the whole file is hidden.
     Skip,
     /// Nothing for now: what is hidden can't be read. Says which store.
@@ -67,10 +80,15 @@ impl FileHide {
                 .and_then(|source| source.get("name"))
                 .and_then(Value::as_str)
                 .is_some_and(|name| keys.is_hidden(name)),
-            Self::BodyEntriesOut(_) => !chunk.source.as_ref().is_some_and(|source| {
-                source.get("source").and_then(Value::as_str) == Some("body")
-                    || source.get("stream").and_then(Value::as_str) == Some(STRAVA_STREAM)
-            }),
+            Self::ActivityRows { body_out, gone, .. } => {
+                !(*body_out && is_body_chunk(chunk))
+                    && !chunk
+                        .source
+                        .as_ref()
+                        .and_then(|source| source.get("id"))
+                        .and_then(Value::as_str)
+                        .is_some_and(|id| gone.contains(id))
+            }
             Self::Skip | Self::Undecidable(_) => false,
         }
     }
@@ -78,7 +96,7 @@ impl FileHide {
     /// Why the file must be indexed again on the next scan, when it must.
     pub(crate) fn retry(&self) -> Option<&str> {
         match self {
-            Self::BodyEntriesOut(retry) => retry.as_deref(),
+            Self::ActivityRows { retry, .. } => retry.as_deref(),
             _ => None,
         }
     }
@@ -93,6 +111,8 @@ struct DayRows {
     damaged: bool,
     /// The file couldn't be read at all.
     unreadable: Option<String>,
+    /// Rows naming a segment that is no longer in the journal.
+    gone: Rc<HashSet<String>>,
 }
 
 /// The hides read so far in one pass.
@@ -103,6 +123,8 @@ pub(crate) struct HideCache {
     days: HashMap<(String, String), Rc<DayRows>>,
     left_out: Option<LeftOut>,
     hidden_days: Option<HiddenDays>,
+    trash_asks: Option<Result<TrashPending, String>>,
+    tombstoned: HashMap<String, bool>,
 }
 
 impl HideCache {
@@ -123,17 +145,29 @@ impl HideCache {
                     Err(error) => FileHide::Undecidable(error),
                 }
             }
-            ["facets", _, "activities", file] => match file.strip_suffix(".jsonl") {
-                Some(day) if is_day(day) => match self.body_day(journal, day) {
-                    FileHide::Index => FileHide::Index,
-                    FileHide::Undecidable(cause) => FileHide::BodyEntriesOut(Some(cause)),
-                    _ => FileHide::BodyEntriesOut(None),
-                },
+            ["facets", facet, "activities", file] => match file.strip_suffix(".jsonl") {
+                Some(day) if is_day(day) => {
+                    let (body_out, retry) = match self.body_day(journal, day) {
+                        FileHide::Index => (false, None),
+                        FileHide::Undecidable(cause) => (true, Some(cause)),
+                        _ => (true, None),
+                    };
+                    let gone = Rc::clone(&self.day_rows(journal, facet, day).gone);
+                    if !body_out && gone.is_empty() {
+                        FileHide::Index
+                    } else {
+                        FileHide::ActivityRows {
+                            body_out,
+                            retry,
+                            gone,
+                        }
+                    }
+                }
                 _ => FileHide::Index,
             },
             ["facets", facet, "activities", day, id, file] if file.ends_with(".md") => {
                 let rows = self.day_rows(journal, facet, day);
-                if rows.hidden.contains(*id) {
+                if rows.hidden.contains(*id) || rows.gone.contains(*id) {
                     FileHide::Skip
                 } else if rows.visible.contains(*id) {
                     FileHide::Index
@@ -155,6 +189,23 @@ impl HideCache {
                 self.body_day(journal, day)
             }
             [day, BODY_DOCUMENT] if is_day(day) => self.body_day(journal, day),
+            [day, "talents", "morning_briefing.json"] if is_day(day) => {
+                match self.trash_asks(journal) {
+                    Ok(pending) if pending.briefings.contains(*day) => FileHide::Skip,
+                    Ok(_) => FileHide::Index,
+                    Err(error) => FileHide::Undecidable(error),
+                }
+            }
+            [day, "talents", "pulse.jsonl"] if is_day(day) => {
+                let before = previous_day(day);
+                if self.tombstoned(journal, day)
+                    || before.is_some_and(|before| self.tombstoned(journal, &before))
+                {
+                    FileHide::Skip
+                } else {
+                    FileHide::Index
+                }
+            }
             ["reflections", "weekly", file] => match file.strip_suffix(".md") {
                 Some(start) => self.week_page(journal, start),
                 None => FileHide::Index,
@@ -211,7 +262,32 @@ impl HideCache {
         }
     }
 
+    /// The trash's pending asks, read once a pass.
+    fn trash_asks(&mut self, journal: &Path) -> Result<&TrashPending, String> {
+        self.trash_asks
+            .get_or_insert_with(|| {
+                trash_pending(journal).map_err(|error| {
+                    format!("can't tell what the journal is making again: {error}")
+                })
+            })
+            .as_ref()
+            .map_err(String::clone)
+    }
+
+    /// Whether `day` holds a recording that went to the trash.
+    fn tombstoned(&mut self, journal: &Path, day: &str) -> bool {
+        *self
+            .tombstoned
+            .entry(day.to_owned())
+            .or_insert_with(|| solstone_core_segment::day_has_tombstone(journal, day))
+    }
+
     fn week_page(&mut self, journal: &Path, start: &str) -> FileHide {
+        match self.trash_asks(journal) {
+            Ok(pending) if pending.weeks.contains(start) => return FileHide::Skip,
+            Ok(_) => {}
+            Err(error) => return FileHide::Undecidable(error),
+        }
         let left_out = self.left_out.get_or_insert_with(|| read_left_out(journal));
         let keys = match left_out {
             LeftOut::None => return FileHide::Index,
@@ -231,6 +307,24 @@ impl HideCache {
             )),
         }
     }
+}
+
+/// A body record's or a Strava workout's entry.
+fn is_body_chunk(chunk: &IndexChunk) -> bool {
+    chunk.source.as_ref().is_some_and(|source| {
+        source.get("source").and_then(Value::as_str) == Some("body")
+            || source.get("stream").and_then(Value::as_str) == Some(STRAVA_STREAM)
+    })
+}
+
+/// The day before `day` (`YYYYMMDD`).
+fn previous_day(day: &str) -> Option<String> {
+    let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    Some(
+        (date - chrono::Duration::days(1))
+            .format("%Y%m%d")
+            .to_string(),
+    )
 }
 
 /// A stream that holds body windows or Strava workouts.
@@ -276,6 +370,7 @@ fn read_day_rows(journal: &Path, facet: &str, day: &str) -> DayRows {
         }
     };
     let mut rows = DayRows::default();
+    let mut gone = HashSet::new();
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
         let Ok(Value::Object(record)) = serde_json::from_str::<Value>(line) else {
             rows.damaged = true;
@@ -284,11 +379,15 @@ fn read_day_rows(journal: &Path, facet: &str, day: &str) -> DayRows {
         let Some(id) = record.get("id").and_then(Value::as_str) else {
             continue;
         };
+        if solstone_core_segment::record_names_gone_segment(journal, day, &record) {
+            gone.insert(id.to_owned());
+        }
         if is_hidden_activity(&record) {
             rows.hidden.insert(id.to_owned());
         } else {
             rows.visible.insert(id.to_owned());
         }
     }
+    rows.gone = Rc::new(gone);
     rows
 }

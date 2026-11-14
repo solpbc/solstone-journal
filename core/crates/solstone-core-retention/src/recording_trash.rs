@@ -15,8 +15,8 @@
 //! - **The search index**, told about every file that left or came back.
 //! - **The day's stream marker**, which queues the day's follow-up processing
 //!   (location rebuilds from what remains).
-//!
-//! What was made from the recording elsewhere is not reached.
+//! - **What was made from it**, through the [`MadeFrom`] the kind was built
+//!   with (a recording, not an agent's memory: nothing is made from a memory).
 
 use std::path::Path;
 
@@ -24,17 +24,19 @@ use solstone_core_removals::{Action, Surface, Unit};
 use solstone_core_trash::{Change, Hold, Item, Kind, TrashError};
 
 use crate::door::SegmentHold;
+use crate::made_from::MadeFrom;
 use crate::notify::IndexNotify;
 use crate::receipt::{RemovedPath, Target};
 
 /// The trash's kind for recordings.
 pub struct Recordings<'a> {
     index: &'a dyn IndexNotify,
+    made: &'a dyn MadeFrom,
 }
 
 impl<'a> Recordings<'a> {
-    pub fn new(index: &'a dyn IndexNotify) -> Self {
-        Self { index }
+    pub fn new(index: &'a dyn IndexNotify, made: &'a dyn MadeFrom) -> Self {
+        Self { index, made }
     }
 
     /// Move one recording to the trash, as the owner's `action` from `surface`.
@@ -148,7 +150,12 @@ impl Kind for Recordings<'_> {
         .map_err(|error| format!("search was not updated: {}", error.reason))?;
         solstone_core_journal_io::bump_stream_marker(journal, &target.day)
             .map(|_| ())
-            .map_err(|error| format!("the day was not queued for follow-up: {error}"))
+            .map_err(|error| format!("the day was not queued for follow-up: {error}"))?;
+        if matches!(item.unit, Unit::Segment { .. }) {
+            self.made
+                .recordings_changed(journal, item, change, std::slice::from_ref(&target))?;
+        }
+        Ok(())
     }
 }
 
