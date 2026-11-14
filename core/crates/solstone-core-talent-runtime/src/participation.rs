@@ -2148,6 +2148,13 @@ mod tests {
                 pad_speech(&second.join("audio.jsonl"), padding);
                 let mut act = activity();
                 act.insert("segments".into(), json!([SEGMENT, "101000_300"]));
+                // The stored record names the segments the run read.
+                fs::write(
+                    root.path()
+                        .join(format!("facets/{FACET}/activities/{DAY}.jsonl")),
+                    format!("{}\n", json!({"id":"activity","segments":[SEGMENT, "101000_300"]})),
+                )
+                .unwrap();
                 let rows = apply_for_activity(
                     root.path(),
                     &act,

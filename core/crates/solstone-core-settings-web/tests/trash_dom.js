@@ -374,7 +374,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     // The erase confirm adds what stays when an originals item is picked.
     assert.deepStrictEqual(K('erase', [orig('a')]).paragraphs, [C.bodyOne, C.originalsStaysOne]);
     assert.deepStrictEqual(K('erase', [orig('a'), orig('b')]).paragraphs, [C.bodyMany, C.originalsStaysMany]);
-    assert.deepStrictEqual(K('erase', [orig('a'), seg('b')]).paragraphs, [C.bodyMany, C.staysMany, C.originalsStaysMany], 'after the line the other kinds take');
+    assert.deepStrictEqual(K('erase', [orig('a'), seg('b')]).paragraphs, [C.bodyMany, C.madeMany, C.originalsStaysMany], 'after the line the other kinds take');
     assert.deepStrictEqual(K('erase', [orig('a'), ent('b')]).paragraphs, [C.bodyMany, C.mentionsMany, C.originalsStaysMany]);
   }
 
@@ -460,7 +460,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.deepStrictEqual(K('erase', [ent('a'), imp('b')]).paragraphs, [C.bodyMany, C.mentionsMany], 'an entity or facet picked takes the mentions line');
   assert.deepStrictEqual(K('erase', [wipe('a')]).paragraphs, [C.bodyOne], 'the wipe alone adds none');
   assert.deepStrictEqual(K('erase', [wipe('a'), merge('b', 'live', 'w')]).paragraphs, [C.bodyMany], "nor with a merge's files");
-  assert.deepStrictEqual(K('erase', [wipe('a'), seg('b')]).paragraphs, [C.bodyMany, C.staysMany]);
+  assert.deepStrictEqual(K('erase', [wipe('a'), seg('b')]).paragraphs, [C.bodyMany, C.madeMany]);
   assert.deepStrictEqual(K('empty', [ent('a'), seg('b')]).paragraphs.slice(1), [C.mentionsMany]);
 
   // Results: what the answer says, checked against the reloaded list.

@@ -857,6 +857,9 @@ mod tests {
                             || path == Path::new("backup-activity.lock")
                             || path == Path::new("health/daily-location-admission.lock")
                             || path == Path::new("health/locks/entity-trust.lock")
+                            // The day is asked to be made again from what remains.
+                            || path == Path::new("health/owner-asks.json")
+                            || path.to_string_lossy().starts_with("health/owner-asks.")
                             || path.starts_with(solstone_core_removals::RECORD_DIR),
                         "unexpected journal mutation: {}",
                         path.display()
