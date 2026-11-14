@@ -15862,3 +15862,193 @@ fn a_span_read_pages_only_on_what_the_connection_reads() {
         "{text}"
     );
 }
+
+#[test]
+fn entity_photos_follow_state_and_the_source_activity_facet() {
+    use solstone_core_entity::faceprints as fp;
+    let journal = fixture();
+    let root = journal.path();
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["entities".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    fs::create_dir_all(root.join("config")).unwrap();
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"faces":{"enabled":true}}"#,
+    )
+    .unwrap();
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new(&mut jpeg)
+        .encode_image(&image::RgbImage::from_pixel(
+            256,
+            400,
+            image::Rgb([20, 40, 60]),
+        ))
+        .unwrap();
+    let encoder = fp::Encoder {
+        id: "synthetic".into(),
+        sha256: "0".repeat(64),
+        width: 128,
+    };
+    let faces: Vec<_> = (0..5)
+        .map(|i| {
+            let mut embedding = vec![0.; 128];
+            embedding[0] = 0.8;
+            embedding[i + 1] = 0.6;
+            let key = fp::FaceKey {
+                day: DAY.into(),
+                stream: STREAM.into(),
+                stream_layout: "named".into(),
+                segment_key: format!("{i:06}_300"),
+                source_name: "screen.webm".into(),
+                frame_id: i as u64,
+                face_idx: 0,
+            };
+            let crop = format!(
+                "{}-crops/{i}-0-test.jpg",
+                fp::accumulation::source_prefix("screen.webm")
+            );
+            let path = fp::crop_path(root, &key, &crop).unwrap();
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, &jpeg).unwrap();
+            fp::Face {
+                embedding,
+                metadata: fp::Metadata {
+                    schema_version: 1,
+                    key,
+                    activities: BTreeSet::new(),
+                    source: fp::Source::Anchored,
+                    label_text: None,
+                    quality: i as f32 / 10.,
+                    det_score: 1.,
+                    face_w: 100.,
+                    category: "meeting".into(),
+                    crop: Some(crop),
+                    added_at: "now".into(),
+                    rejected: false,
+                },
+            }
+        })
+        .collect();
+    let coordinate = json!(["alpha", DAY, "test-meeting"]).to_string();
+    let seed = |faces: Vec<fp::Face>| {
+        fp::reconcile(
+            root,
+            &coordinate,
+            &encoder,
+            &std::collections::BTreeMap::from([("entity-primary".into(), faces)]),
+        )
+        .unwrap();
+    };
+    let listed = dispatch_output(&journal, "list_entities", json!({}));
+    let reference = listed.value["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            let (_, id) = resolve_entity_reference(root, row["reference"].as_str().unwrap());
+            id == "entity-primary"
+        })
+        .unwrap()["reference"]
+        .clone();
+    let get = || dispatch_output(&journal, "get_entity", json!({"reference":reference}));
+    for (count, state) in [(0, "none"), (3, "possible"), (5, "suggested")] {
+        seed(faces[..count].to_vec());
+        let output = get();
+        assert_eq!(output.value["photo"]["state"], state);
+        assert_eq!(output.image.is_some(), count == 5);
+        let rendered =
+            crate::jsonrpc::image_tool_result(output.value.clone(), None, output.image.as_deref());
+        if count == 5 {
+            assert_eq!(rendered["content"][1]["type"], "image");
+            assert_eq!(rendered["structuredContent"], output.value);
+            let image = image::load_from_memory(output.image.as_ref().unwrap()).unwrap();
+            assert!(image.width() <= 256 && image.height() <= 256);
+        } else {
+            assert_eq!(rendered["structuredContent"], output.value);
+        }
+    }
+    fp::choose(root, "entity-primary", &faces[4].metadata.key).unwrap();
+    let output = get();
+    assert_eq!(output.value["photo"]["state"], "confirmed");
+    assert!(output.image.is_some());
+    assert!(
+        dispatch_output(&journal, "list_entities", json!({})).value["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["has_photo"] == true)
+    );
+    // The same entity linked from another granted facet must not expose alpha's photo.
+    fs::create_dir_all(root.join("facets/beta/entities/primary")).unwrap();
+    fs::write(
+        root.join("facets/beta/entities/primary/entity.json"),
+        r#"{"entity_id":"entity-primary"}"#,
+    )
+    .unwrap();
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["entities".into()],
+                scope: ReadScope::Facets {
+                    ids: vec![FACET_B.into()],
+                },
+            },
+        )
+        .unwrap();
+    let listed = dispatch_output(&journal, "list_entities", json!({"facet":FACET_B}));
+    let row = listed.value["entities"]
+        .as_array()
+        .unwrap()
+        .first()
+        .unwrap();
+    assert_eq!(row["has_photo"], false);
+    let output = dispatch_output(
+        &journal,
+        "get_entity",
+        json!({"reference":row["reference"]}),
+    );
+    assert_eq!(output.value["photo"]["state"], "confirmed");
+    assert!(output.image.is_none());
+    fp::dismiss(root, "entity-primary").unwrap();
+    assert_eq!(
+        dispatch_output(
+            &journal,
+            "get_entity",
+            json!({"reference":row["reference"]})
+        )
+        .value["photo"]["state"],
+        "dismissed"
+    );
+    assert!(
+        dispatch_output(
+            &journal,
+            "get_entity",
+            json!({"reference":row["reference"]})
+        )
+        .image
+        .is_none()
+    );
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"faces":{"enabled":false}}"#,
+    )
+    .unwrap();
+    let output = dispatch_output(
+        &journal,
+        "get_entity",
+        json!({"reference":row["reference"]}),
+    );
+    assert!(output.value.get("photo").is_none());
+    assert!(output.image.is_none());
+    let rendered = crate::jsonrpc::image_tool_result(output.value.clone(), None, None);
+    assert_eq!(rendered["structuredContent"], output.value);
+    assert!(!output.value.to_string().contains("embedding"));
+}

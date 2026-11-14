@@ -276,6 +276,27 @@ pub(crate) fn literal_tool_result(value: Value, empty_note: Option<&str>) -> Val
     result
 }
 
+/// Keep the structured entity and its text copy, with image content beside
+/// them. Structured-content clients retain image blocks independently of text.
+pub(crate) fn image_tool_result(
+    value: Value,
+    empty_note: Option<&str>,
+    jpeg: Option<&[u8]>,
+) -> Value {
+    let mut result = literal_tool_result(value, empty_note);
+    if let Some(jpeg) = jpeg {
+        use base64::Engine;
+        result["content"]
+            .as_array_mut()
+            .expect("content array")
+            .push(json!({
+                "type": "image", "mimeType": "image/jpeg",
+                "data": base64::engine::general_purpose::STANDARD.encode(jpeg),
+            }));
+    }
+    result
+}
+
 fn classify_tool_call(request: &JsonRpcRequest) -> Result<McpMethod, JsonRpcFailure> {
     let Some(Value::Object(params)) = request.params.as_ref() else {
         return Err(Box::new(JsonRpcResponse::invalid_params(
@@ -466,6 +487,23 @@ mod tests {
             rendered["structuredContent"]
                 .get("drop_before_release")
                 .is_none()
+        );
+    }
+}
+
+#[cfg(test)]
+mod image_tests {
+    #[test]
+    fn text_results_keep_structured_content_and_mixed_results_keep_the_image_visible() {
+        let value = serde_json::json!({"photo":{"state":"confirmed"}});
+        let text = super::image_tool_result(value.clone(), None, None);
+        assert_eq!(text["structuredContent"], value);
+        let mixed = super::image_tool_result(value, None, Some(b"test"));
+        assert!(mixed.get("structuredContent").is_some());
+        assert_eq!(mixed["content"][0]["type"], "text");
+        assert_eq!(
+            mixed["content"][1],
+            serde_json::json!({"type":"image","mimeType":"image/jpeg","data":"dGVzdA=="})
         );
     }
 }

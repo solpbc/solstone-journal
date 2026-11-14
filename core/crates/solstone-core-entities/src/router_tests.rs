@@ -2516,6 +2516,7 @@ async fn journal_summary_carries_card_fields_without_facet_descriptions() {
         "name",
         "type",
         "type_bucket",
+        "has_photo",
         "is_principal",
         "blocked",
         "total_observation_count",
@@ -2748,6 +2749,7 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
         "aka",
         "is_principal",
         "blocked",
+        "has_photo",
         "facets",
         "total_observation_count",
         "last_active_ts",
@@ -2988,7 +2990,9 @@ async fn journal_entity_detail_uses_the_shared_assembled_record() {
     .await;
     assert_eq!(status, 200);
     assert!(detail.get("entity").is_some());
-    assert_eq!(detail["entity"], *journal_record(records, "ada_lovelace"));
+    let mut expected = journal_record(records, "ada_lovelace").clone();
+    expected["photo_state"] = json!("none");
+    assert_eq!(detail["entity"], expected);
     for entity_dir in ["dir_alpha", "dup_a", "dup_b"] {
         assert_eq!(
             call(
