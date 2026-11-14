@@ -224,6 +224,32 @@ mod disk {
         update_backfill(root, backfill).unwrap();
         assert!(!path(root).unwrap().exists());
     }
+    #[cfg(unix)]
+    #[test]
+    fn clear_accepts_a_journal_alias_with_canonical_derived_paths() {
+        let t = tempfile::tempdir().unwrap();
+        let actual = t.path().join("actual");
+        let alias = t.path().join("alias");
+        std::fs::create_dir_all(actual.join("config")).unwrap();
+        std::os::unix::fs::symlink(&actual, &alias).unwrap();
+        std::fs::write(
+            actual.join("config").join("journal.json"),
+            json!({"faces":{"enabled":true}}).to_string(),
+        )
+        .unwrap();
+        update_backfill(&alias, Backfill::default()).unwrap();
+        let derived = path(&alias).unwrap();
+        assert!(!derived.starts_with(&alias));
+        assert!(derived.exists());
+        std::fs::write(
+            actual.join("config").join("journal.json"),
+            json!({"faces":{"enabled":false}}).to_string(),
+        )
+        .unwrap();
+        super::super::super::accumulation::clear(&alias, solstone_core_removals::Surface::Cli)
+            .unwrap();
+        assert!(!derived.exists());
+    }
 }
 
 fn observation(index: usize, facet: &str, day: &str) -> Face {

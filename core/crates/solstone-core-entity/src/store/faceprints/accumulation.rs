@@ -496,8 +496,12 @@ fn entity_face_or_stage(name: &str) -> bool {
         || solstone_core_journal_io::is_publication_candidate_name(std::ffi::OsStr::new(name))
 }
 fn remove_path(journal: &Path, io: &solstone_core_removals::RemovalIo<'_>, p: &Path) -> Result<()> {
+    // Contained paths are canonical, including Windows' verbatim prefix. The
+    // caller's journal and directory listings may still use their lexical form.
+    let root = solstone_core_journal_io::realpath_non_strict(journal).map_err(|e| e.to_string())?;
+    let p = solstone_core_journal_io::realpath_non_strict(p).map_err(|e| e.to_string())?;
     let rel = p
-        .strip_prefix(journal)
+        .strip_prefix(&root)
         .map_err(|e| e.to_string())?
         .to_string_lossy()
         .replace('\\', "/");
