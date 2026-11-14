@@ -178,7 +178,7 @@
     </div>
   </section>
 
-  <div id="link-private-link-operation" class="link-private-link-operation" role="status" aria-live="polite" hidden>
+  <div id="link-private-link-operation" class="link-private-link-operation" role="status" aria-live="polite" tabindex="-1" hidden>
     <p id="link-private-link-operation-headline"></p>
     <p id="link-private-link-operation-detail"></p>
     <a id="link-private-link-operation-link" data-solstone-outside href="" target="_blank" rel="noopener noreferrer" hidden></a>
@@ -206,7 +206,7 @@
   <div id="link-pairing-dialog" class="modal" role="dialog" aria-modal="true" aria-labelledby="link-pairing-dialog-title" hidden>
     <div class="modal-content link-pairing-content">
       <button type="button" class="modal-close" data-pairing-action="close" aria-label="close">&times;</button>
-      <h3 id="link-pairing-dialog-title" data-copy="MODAL_TITLE"></h3>
+      <h3 id="link-pairing-dialog-title" data-copy="MODAL_TITLE" tabindex="-1"></h3>
       <div id="link-pairing-starting" role="status" aria-busy="true">
         <span class="surface-state-spinner" aria-hidden="true"></span>
       </div>
@@ -263,7 +263,7 @@ systemctl --user start solstone-linux</code></div>
         <div class="modal-actions"><button type="button" class="modal-primary-btn" data-pairing-action="regenerate" data-copy="EXPIRED_BUTTON"></button></div>
       </div>
       <div id="link-pairing-unavailable" hidden>
-        <p data-copy="PAIR_START_FAIL_BODY"></p>
+        <p data-copy="PAIR_START_FAIL_BODY" tabindex="-1"></p>
         <div class="modal-actions">
           <button type="button" class="modal-primary-btn" data-pairing-action="regenerate" data-copy="CHECK_AGAIN_LABEL"></button>
           <button type="button" class="modal-primary-btn" data-pairing-action="local-network-open" data-copy="LOCAL_NETWORK_OPEN_CTA" hidden></button>
@@ -276,7 +276,7 @@ systemctl --user start solstone-linux</code></div>
         <div class="modal-actions"><button type="button" class="modal-primary-btn" data-pairing-action="regenerate" data-copy="WINDOW_CLOSED_BUTTON"></button></div>
       </div>
       <div id="link-pairing-complete" hidden>
-        <h3 id="link-pairing-success-heading" data-copy="SUCCESS_HEADING"></h3>
+        <h3 id="link-pairing-success-heading" data-copy="SUCCESS_HEADING" tabindex="-1"></h3>
         <section class="link-identity">
           <p class="link-identity-title" data-copy="IDENTITY_HEADER_LABEL"></p>
           <div id="link-pairing-success-mark" class="link-identity-mark"></div>
@@ -668,6 +668,18 @@ systemctl --user start solstone-linux</code></div>
 #link-pairing-dialog .link-pairing-content {
   max-width: 560px;
 }
+/* A control whose write is out: still focusable, dimmed, ignoring presses.
+   0.8 keeps its text at 3:1 or more on paper, light and dark. */
+.link-dashboard button[aria-disabled="true"],
+.link-dashboard input[aria-disabled="true"] {
+  opacity: 0.8;
+  cursor: progress;
+}
+.client-card:focus-visible,
+.link-private-link-operation:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
 .link-pairing-steps {
   padding-left: 1.4em;
   line-height: 1.55;
@@ -1012,6 +1024,18 @@ systemctl --user start solstone-linux</code></div>
 
 
     const toast = document.getElementById('link-toast');
+    // A control whose write is out stays focusable and ignores presses
+    // (network.js); after a redraw, focus that was on a control goes back to
+    // it, or to what took its place.
+    const setBusy = (el, busy) => window.NetworkRender.setBusy(el, busy);
+    const isBusy = (el) => window.NetworkRender.isBusy(el);
+    const isShown = (el) => window.NetworkRender.isShown(el);
+    const refocus = (held, ...targets) => window.NetworkRender.refocus(document, held, targets);
+    // Focus on a control the owner pressed, still on the page.
+    const pressed = () => {
+      const active = document.activeElement;
+      return active && active !== workspaceRoot && workspaceRoot.contains(active) && isShown(active) ? active : null;
+    };
 
     function showToast(msg) {
       toast.textContent = msg;
@@ -1236,10 +1260,12 @@ systemctl --user start solstone-linux</code></div>
       deviceAddressesRow.hidden = rendered === 0;
     }
 
-    function setHomeCandidateRadiosDisabled(disabled) {
+    // The address whose write is out, while the choices are busy.
+    let homeCandidatePending = null;
+    function setHomeCandidateRadiosBusy(busy) {
       if (!homeCandidatesList) return;
       homeCandidatesList.querySelectorAll('input[type="radio"]').forEach((radio) => {
-        radio.disabled = disabled;
+        setBusy(radio, busy);
       });
     }
 
@@ -1253,7 +1279,9 @@ systemctl --user start solstone-linux</code></div>
     }
 
     async function selectHomeCandidate(address) {
-      setHomeCandidateRadiosDisabled(true);
+      if (homeCandidatePending !== null) return;
+      homeCandidatePending = address;
+      setHomeCandidateRadiosBusy(true);
       try {
         const refreshed = await submitHostAddress(address);
         if (!refreshed) {
@@ -1265,11 +1293,25 @@ systemctl --user start solstone-linux</code></div>
         restoreHomeCandidatesFromStatus();
         window.logError?.(err, { context: 'link: home candidate select failed' });
       } finally {
-        setHomeCandidateRadiosDisabled(false);
+        homeCandidatePending = null;
+        setHomeCandidateRadiosBusy(false);
       }
     }
 
+    // The choices are rebuilt on every status read: one with focus gets it
+    // back by its address, else the chosen one, else the first.
     function renderHomeCandidates(data) {
+      const active = document.activeElement;
+      const held = !!homeCandidatesList && homeCandidatesList.contains(active);
+      const heldValue = held ? active.value : null;
+      drawHomeCandidates(data);
+      if (!held) return;
+      const radios = [...homeCandidatesList.querySelectorAll('input[type="radio"]')];
+      refocus(true, radios.find((radio) => radio.value === heldValue), radios.find((radio) => radio.checked),
+        radios[0], hostAddressOverride?.querySelector('summary'));
+    }
+
+    function drawHomeCandidates(data) {
       if (!homeCandidatesPicker || !homeCandidatesList || !homeCandidatesProblem) return;
       homeCandidatesList.textContent = '';
       homeCandidatesProblem.textContent = '';
@@ -1302,8 +1344,17 @@ systemctl --user start solstone-linux</code></div>
         radio.name = 'link-home-candidate';
         radio.value = address;
         radio.checked = Boolean(candidate.selected);
+        if (homeCandidatePending !== null) setBusy(radio, true);
         radio.addEventListener('change', () => {
-          if (radio.checked) selectHomeCandidate(address);
+          if (!radio.checked) return;
+          // An arrow key while a choice is being saved: the pending one stays chosen.
+          if (homeCandidatePending !== null) {
+            const pending = [...homeCandidatesList.querySelectorAll('input[type="radio"]')]
+              .find((other) => other.value === homeCandidatePending);
+            if (pending) pending.checked = true;
+            return;
+          }
+          selectHomeCandidate(address);
         });
         const code = document.createElement('code');
         code.textContent = address;
@@ -1411,28 +1462,28 @@ systemctl --user start solstone-linux</code></div>
     }
 
     async function applyHostAddressOverride() {
-      if (!hostAddressInput || !hostAddressApply) return;
-      hostAddressApply.disabled = true;
+      if (!hostAddressInput || !hostAddressApply || isBusy(hostAddressApply)) return;
+      setBusy(hostAddressApply, true);
       try {
         await submitHostAddress(hostAddressInput.value);
       } catch (err) {
         setHostAddressError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
         window.logError?.(err, { context: 'link: host address override failed' });
       } finally {
-        hostAddressApply.disabled = false;
+        setBusy(hostAddressApply, false);
       }
     }
 
     async function clearHostAddressOverride() {
-      if (!hostAddressClear) return;
-      hostAddressClear.disabled = true;
+      if (!hostAddressClear || isBusy(hostAddressClear)) return;
+      setBusy(hostAddressClear, true);
       try {
         await submitHostAddress(null);
       } catch (err) {
         setHostAddressError(err?.rawDetail || window.SurfaceState.serverMessageFrom(err) || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.");
         window.logError?.(err, { context: 'link: host address clear failed' });
       } finally {
-        hostAddressClear.disabled = false;
+        setBusy(hostAddressClear, false);
       }
     }
 
@@ -1470,10 +1521,7 @@ systemctl --user start solstone-linux</code></div>
     function setPrivateLinkButtonsBusy(busy) {
       [privateLinkSetup, privateLinkEnroll, ...document.querySelectorAll('.link-private-link-disable'), privateLinkOperationRetry]
         .filter(Boolean)
-        .forEach((button) => {
-          button.disabled = busy;
-          button.setAttribute('aria-busy', String(busy));
-        });
+        .forEach((button) => setBusy(button, busy));
     }
 
     function setPrivateLinkOperation(headline, detail = '', options = {}) {
@@ -1556,10 +1604,11 @@ systemctl --user start solstone-linux</code></div>
       }
     }
 
-    async function pollPrivateLinkUntilTerminal() {
+    async function pollPrivateLinkUntilTerminal(afterEach = () => {}) {
       const deadline = Date.now() + PRIVATE_LINK_POLL_TIMEOUT_MS;
       while (Date.now() < deadline && !ctx.disposed) {
         const status = await fetchPrivateLinkStatus();
+        afterEach();
         const phase = status?.operation?.phase;
         if (PRIVATE_LINK_TERMINAL_PHASES.has(phase)) {
           return status;
@@ -1574,7 +1623,15 @@ systemctl --user start solstone-linux</code></div>
       return null;
     }
 
+    // The button can go as soon as the operation starts, and the whole body
+    // once the private link is on: focus then goes to the status line, which
+    // says what happened.
+    function keepPrivateLinkFocus(from) {
+      return () => { if (!ctx.disposed) refocus(!!from, from, privateLinkOperation, segHosted); };
+    }
+
     async function startPrivateLinkSetup() {
+      const keep = keepPrivateLinkFocus(pressed());
       setPrivateLinkButtonsBusy(true);
       setPrivateLinkOperation(linkCopy.PRIVATE_LINK_SETTING_UP || 'setting up your private network…');
       try {
@@ -1586,7 +1643,8 @@ systemctl --user start solstone-linux</code></div>
           window.solstoneOutside.openDelayed(consentUrl);
         }
         renderPrivateLinkStatus({ operation: start?.operation || null });
-        await pollPrivateLinkUntilTerminal();
+        keep();
+        await pollPrivateLinkUntilTerminal(keep);
         await refreshStatus();
       } catch (err) {
         setPrivateLinkOperation(
@@ -1597,10 +1655,12 @@ systemctl --user start solstone-linux</code></div>
         window.logError?.(err, { context: 'link: private link setup failed' });
       } finally {
         setPrivateLinkButtonsBusy(false);
+        keep();
       }
     }
 
     async function disablePrivateLink() {
+      const keep = keepPrivateLinkFocus(pressed());
       setPrivateLinkButtonsBusy(true);
       try {
         const result = await window.apiJson('/app/network/private-link/disable', { method: 'POST' });
@@ -1626,6 +1686,7 @@ systemctl --user start solstone-linux</code></div>
         window.logError?.(err, { context: 'link: private link disable failed' });
       } finally {
         setPrivateLinkButtonsBusy(false);
+        keep();
       }
     }
 
@@ -1644,22 +1705,25 @@ systemctl --user start solstone-linux</code></div>
       refreshStatus();
       refreshPrivateLinkStatus();
     });
-    document.getElementById('link-local-network-toggle')?.addEventListener('click', () => {
+    document.getElementById('link-local-network-toggle')?.addEventListener('click', (event) => {
+      if (isBusy(event.currentTarget)) return;
       if (!localNetworkCanChange || localNetworkOpen === null) return;
       if (localNetworkOpen && !confirm(linkCopy.LOCAL_NETWORK_CLOSE_CONFIRM)) return;
       setLocalNetwork(!localNetworkOpen);
     });
     segByo?.addEventListener('click', () => selectReachMode('byo'));
     segHosted?.addEventListener('click', () => selectReachMode('hosted'));
-    privateLinkSetup?.addEventListener('click', startPrivateLinkSetup);
-    privateLinkEnroll?.addEventListener('click', startPrivateLinkSetup);
+    privateLinkSetup?.addEventListener('click', () => { if (!isBusy(privateLinkSetup)) startPrivateLinkSetup(); });
+    privateLinkEnroll?.addEventListener('click', () => { if (!isBusy(privateLinkEnroll)) startPrivateLinkSetup(); });
     document.querySelectorAll('.link-private-link-disable').forEach((btn) => {
       btn.addEventListener('click', () => {
+        if (isBusy(btn)) return;
         if (!confirm(localNetworkClosed ? linkCopy.PRIVATE_LINK_DISABLE_CONFIRM_CLOSED : linkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
         disablePrivateLink();
       });
     });
     privateLinkOperationRetry?.addEventListener('click', () => {
+      if (isBusy(privateLinkOperationRetry)) return;
       if (privateLinkRetryAction) privateLinkRetryAction();
     });
 
@@ -1764,7 +1828,10 @@ systemctl --user start solstone-linux</code></div>
       if (!localNetworkCanChange) return;
       const toggle = document.getElementById('link-local-network-toggle');
       const error = document.getElementById('link-local-network-error');
-      if (toggle) toggle.disabled = true;
+      // An open can hide the whole block (where Windows doesn't ask): focus
+      // then goes to "your own", whose description now says it's open.
+      const held = !!toggle && pressed() === toggle;
+      setBusy(toggle, true);
       if (error) error.hidden = true;
       try {
         const response = await fetch(`/app/network/local-network/${open ? 'open' : 'close'}`, {
@@ -1783,7 +1850,8 @@ systemctl --user start solstone-linux</code></div>
         if (error) error.hidden = false;
         return false;
       } finally {
-        if (toggle) toggle.disabled = false;
+        setBusy(toggle, false);
+        if (!ctx.disposed) refocus(held, toggle, segByo);
       }
     }
 
@@ -2072,7 +2140,7 @@ systemctl --user start solstone-linux</code></div>
       const pairedDay = render.dayKeyFor(client.paired_at);
       const pairedLabel = pairedDay ? `paired ${window.JournalFormat.day(pairedDay)}` : '';
       return `
-        <div class="client-card ${client.failing ? 'stale' : 'neutral'}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}">
+        <div class="client-card ${client.failing ? 'stale' : 'neutral'}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}" tabindex="-1">
           <div class="client-header">
             <span class="client-name">${escapeHtml(displayName)}</span>
             <span class="client-status ${render.deliveryChipClass(client)}">${escapeHtml(deliveryLabel)}</span>
@@ -2108,7 +2176,9 @@ systemctl --user start solstone-linux</code></div>
       return html || emptyStateHTML();
     }
 
-    async function loadClients() {
+    // `focusFrom` names a card whose focused control a write has already
+    // taken away (forget hides its confirm before the redraw).
+    async function loadClients({ focusFrom = null } = {}) {
       const epoch = ++clientsEpoch;
       try {
         // Each call asks again, as a poll and a redraw after a write want.
@@ -2128,12 +2198,17 @@ systemctl --user start solstone-linux</code></div>
         // Rebuild on every poll so grouped headers stay aligned with server ordering.
         const activeEl = document.activeElement;
         let focusSelector = null;
+        const heldInList = !!activeEl && clientsList.contains(activeEl);
+        let heldCid = focusFrom;
+        const order = [...clientsList.querySelectorAll('.client-card')].map((card) => card.dataset.cid);
         const labelSelection = activeEl?.matches('[data-label-action="input"]')
           ? [activeEl.selectionStart, activeEl.selectionEnd, activeEl.selectionDirection] : null;
         if (activeEl && clientsList.contains(activeEl)) {
           const card = activeEl.closest('.client-card');
+          if (activeEl.dataset.pairingAction) focusSelector = `[data-pairing-action="${CSS.escape(activeEl.dataset.pairingAction)}"]`;
           if (card) {
             const cid = card.getAttribute('data-cid');
+            heldCid = cid;
             if (activeEl.dataset.labelAction) focusSelector = `.client-card[data-cid="${CSS.escape(cid)}"] [data-label-action="${activeEl.dataset.labelAction}"]`;
             const buttons = [...card.querySelectorAll('button')];
             const btnIndex = buttons.indexOf(activeEl);
@@ -2160,12 +2235,24 @@ systemctl --user start solstone-linux</code></div>
         });
         clientsList.scrollTop = scrollTop;
 
+        let restored = false;
         if (focusSelector) {
           const target = clientsList.querySelector(focusSelector);
-          if (target) {
+          if (target && isShown(target)) {
             target.focus();
+            restored = true;
             if (labelSelection && target.setSelectionRange) target.setSelectionRange(...labelSelection);
           }
+        }
+        // The control is gone with its card: the next card takes focus where
+        // it was, else the one before, else a collapsed group, else the
+        // list's heading.
+        if (!restored && (heldInList || heldCid)) {
+          const at = order.indexOf(heldCid);
+          const near = at < 0 ? order : [heldCid, ...order.slice(at + 1), ...order.slice(0, at).reverse()];
+          const cards = near.map((cid) => clientsList.querySelector(`.client-card[data-cid="${CSS.escape(cid)}"]`));
+          refocus(true, ...cards, ...clientsList.querySelectorAll('.client-group-collapsed > summary'),
+            document.getElementById('devices'));
         }
       } catch (err) {
         if (epoch !== clientsEpoch) return;
@@ -2196,8 +2283,8 @@ systemctl --user start solstone-linux</code></div>
     async function forgetDevice(row) {
       const cid = row.dataset.forgetCid;
       const confirmBtn = row.querySelector('[data-forget-action="confirm"]');
-      if (!cid || !confirmBtn || confirmBtn.disabled) return;
-      confirmBtn.disabled = true;
+      if (!cid || !confirmBtn || isBusy(confirmBtn)) return;
+      setBusy(confirmBtn, true);
       showForgetStatus(row, 'forgetting…');
       try {
         const response = await fetch(`/app/network/api/devices/${encodeURIComponent(cid)}/forget`, {
@@ -2213,15 +2300,16 @@ systemctl --user start solstone-linux</code></div>
             detail = '';
           }
           showForgetStatus(row, detail || 'that device couldn\'t be forgotten. ' + window.CONVEY_COPY.RELOAD_HINT);
-          confirmBtn.disabled = false;
+          setBusy(confirmBtn, false);
           return;
         }
+        const held = row.contains(document.activeElement);
         setForgetAsking(row, false);
-        loadClients();
+        loadClients({ focusFrom: held ? cid : null });
       } catch (err) {
         if (ctx.disposed) return;
         showForgetStatus(row, 'that device couldn\'t be forgotten. your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT);
-        confirmBtn.disabled = false;
+        setBusy(confirmBtn, false);
       }
     }
 

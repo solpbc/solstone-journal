@@ -1024,5 +1024,331 @@ module.exports = async function networkContractCases(manifestDir) {
     assert.ok(back.liveObservers() === 0, 'a back watches nothing');
   });
 
+  // ---- focus after network's own writes, polls and the pairing dialog
+
+  // A press from the keyboard: focus, then the press. Answers whether the
+  // control had focus first, so a case counts only a real press.
+  function keyPress(p, node) {
+    node.focus();
+    assert.ok(p.doc.activeElement === node, `the control takes focus first (focus is on ${focusOn(p)})`);
+    p.press(node);
+  }
+  function lastCall(p, method, url) {
+    return p.calls.filter((c) => c.method === method && c.url.startsWith(url)).pop();
+  }
+  function busy(node) {
+    return node.getAttribute('aria-disabled') === 'true' && node.getAttribute('aria-busy') === 'true' && node.disabled === false;
+  }
+  const TWO = (selected) => ({
+    posture: 'direct', reachability: 'online', device_addresses: [], vpn: null, home_address: selected,
+    home_candidates: ['192.168.1.5:7657', '10.0.0.5:7657'].map((address) => ({ address, selected: address === selected })),
+  });
+  function radios(p) { return p.byId('link-home-candidates-list').querySelectorAll('input'); }
+
+  await test('host address "apply" and "clear" keep focus while the write is out, after it, and when it fails', async () => {
+    for (const which of ['apply', 'clear']) {
+      const p = await boot(env);
+      p.byId('link-host-address-override').open = true;
+      p.holds.push((call) => call.url === '/app/network/host-address');
+      const button = p.byId(`link-host-address-${which}`);
+      keyPress(p, button);
+      await settle();
+      assert.ok(busy(button), `${which} is busy, not disabled, while the write is out`);
+      assert.ok(focusOn(p) === `BUTTON#link-host-address-${which}`, `${which}: focus stays while the write is out (on ${focusOn(p)})`);
+      p.press(button);
+      assert.ok(p.writes().length === 1, `${which}: a press while busy sends nothing`);
+      lastCall(p, 'POST', '/app/network/host-address').answer({});
+      await settle();
+      assert.ok(focusOn(p) === `BUTTON#link-host-address-${which}` && !busy(button), `${which}: focus stays after the redraw (on ${focusOn(p)})`);
+      p.holds.length = 0;
+      p.statuses.push([(call) => call.url === '/app/network/host-address', 500]);
+      keyPress(p, button);
+      await settle();
+      assert.ok(focusOn(p) === `BUTTON#link-host-address-${which}`, `${which}: a failed write leaves focus on the control (on ${focusOn(p)})`);
+      assert.ok(p.byId('link-host-address-error').hidden === false, `${which}: and its error is shown`);
+    }
+  });
+
+  await test('a home address choice by arrow keeps focus while saving, ignores another, and lands on the same address after the rebuild', async () => {
+    for (const fails of [false, true]) {
+      let chosen = '192.168.1.5:7657';
+      const answers = journal(copy, {
+        'GET /app/network/api/status': () => TWO(chosen),
+        'POST /app/network/host-address': (_u, opts) => { if (!fails) chosen = JSON.parse(opts.body).home_address; return {}; },
+      });
+      const p = await boot(env, '/app/network/', { answers });
+      if (fails) p.statuses.push([(call) => call.url === '/app/network/host-address', 500]);
+      p.holds.push((call) => call.url === '/app/network/host-address');
+      const [first, second] = radios(p);
+      first.focus();
+      assert.ok(p.doc.activeElement === first, 'the first choice has focus');
+      // ArrowDown: the browser moves focus to the next choice and checks it.
+      first.checked = false; second.checked = true; second.focus();
+      p.doc.dispatch(second, { type: 'change' });
+      await settle();
+      assert.ok(busy(second) && busy(first), 'the choices are busy, not disabled');
+      assert.ok(p.doc.activeElement === second, `focus stays on the pressed choice while saving (on ${focusOn(p)})`);
+      second.checked = false; first.checked = true; first.focus();
+      p.doc.dispatch(first, { type: 'change' });
+      assert.ok(second.checked === true && p.writes().length === 1, 'another choice while saving puts the pending one back and sends nothing');
+      second.focus();
+      const write = lastCall(p, 'POST', '/app/network/host-address');
+      if (fails) write.answer({ detail: 'refused' }, 500); else { answers(write.url, { method: 'POST', body: JSON.stringify({ home_address: '10.0.0.5:7657' }) }); write.answer({}); }
+      await settle();
+      const active = p.doc.activeElement;
+      assert.ok(active.tagName === 'INPUT' && active.value === '10.0.0.5:7657', `${fails ? 'failed' : 'saved'}: focus on the rebuilt choice for the same address (on ${focusOn(p)})`);
+      assert.ok(active !== second, 'the choices were rebuilt');
+      assert.ok(!busy(active), 'and nothing is busy after');
+    }
+  });
+
+  await test('the 15 s status poll keeps a focused home address choice, and leaves focus outside network alone', async () => {
+    const answers = journal(copy, { 'GET /app/network/api/status': () => TWO('192.168.1.5:7657') });
+    const p = await boot(env, '/app/network/', { answers });
+    const [, second] = radios(p);
+    second.focus();
+    p.clock.advance(15000);
+    await settle();
+    const active = p.doc.activeElement;
+    assert.ok(active.tagName === 'INPUT' && active.value === '10.0.0.5:7657' && active !== second, `the rebuilt choice for the same address (on ${focusOn(p)})`);
+    const rail = p.q('#app-rail a');
+    rail.focus();
+    p.clock.advance(30000);
+    await settle();
+    assert.ok(p.doc.activeElement === rail, `a poll leaves focus on the rail (on ${focusOn(p)})`);
+  });
+
+  await test('private link "set up": busy keeps focus, then the status line when the button goes, the button when it fails', async () => {
+    for (const fails of [false, true]) {
+      let on = false;
+      const answers = journal(copy, {
+        'GET /app/network/api/status': () => (on ? { posture: 'spl', reachability: 'online', device_addresses: [], vpn: null } : { posture: 'direct', reachability: 'online', device_addresses: [], vpn: null, home_candidates: [] }),
+        'GET /app/network/api/private-link': () => (on ? { state: 'enabled', operation: { phase: 'enabled' } } : { state: 'not_enabled' }),
+      });
+      const p = await boot(env, '/app/network/', { answers });
+      p.press(p.byId('link-seg-hosted'));
+      p.holds.push((call) => call.url === '/app/network/private-link/enable');
+      const setup = p.byId('link-private-link-setup');
+      keyPress(p, setup);
+      await settle();
+      assert.ok(busy(setup) && focusOn(p) === 'BUTTON#link-private-link-setup', `busy and focused while out (on ${focusOn(p)})`);
+      p.press(setup);
+      assert.ok(p.writes().length === 1, 'a press while busy sends nothing');
+      const write = lastCall(p, 'POST', '/app/network/private-link/enable');
+      if (fails) write.answer({ detail: 'refused' }, 500);
+      else { on = true; write.answer({ operation: { phase: 'enabled' } }); }
+      await settle();
+      p.clock.advance(1000);
+      await settle();
+      if (fails) {
+        assert.ok(focusOn(p) === 'BUTTON#link-private-link-setup', `a failure leaves focus on "set up" (on ${focusOn(p)})`);
+        assert.ok(p.byId('link-private-link-operation').hidden === false, 'with the status line saying why');
+      } else {
+        assert.ok(p.byId('link-mode-hosted-setup').hidden === true, 'the setup body is gone once the private link is on');
+        assert.ok(focusOn(p) === 'DIV#link-private-link-operation', `focus on the status line (on ${focusOn(p)})`);
+      }
+    }
+  });
+
+  await test('private link "turn off": busy keeps focus, then the status line when the body goes, the button when it fails', async () => {
+    for (const fails of [false, true]) {
+      let on = true;
+      const answers = journal(copy, {
+        'GET /app/network/api/status': () => (on ? { posture: 'spl', reachability: 'online', device_addresses: [], vpn: null } : { posture: 'direct', reachability: 'online', device_addresses: [], vpn: null, home_candidates: [] }),
+        'GET /app/network/api/private-link': () => (on ? { state: 'enabled' } : { state: 'not_enabled' }),
+      });
+      const p = await boot(env, '/app/network/', { answers });
+      p.holds.push((call) => call.url === '/app/network/private-link/disable');
+      const off = p.byId('link-private-link-disable');
+      keyPress(p, off);
+      await settle();
+      assert.ok(busy(off) && focusOn(p) === 'BUTTON#link-private-link-disable', `busy and focused while out (on ${focusOn(p)})`);
+      const write = lastCall(p, 'POST', '/app/network/private-link/disable');
+      if (fails) write.answer({ detail: 'refused' }, 500);
+      else { on = false; write.answer({ status: { state: 'not_enabled' } }); }
+      await settle();
+      if (fails) assert.ok(focusOn(p) === 'BUTTON#link-private-link-disable', `a failure leaves focus on "turn off" (on ${focusOn(p)})`);
+      else {
+        assert.ok(p.byId('link-mode-hosted-active').hidden === true, 'the private link body is gone');
+        assert.ok(focusOn(p) === 'DIV#link-private-link-operation', `focus on the status line (on ${focusOn(p)})`);
+      }
+    }
+  });
+
+  await test('"open to devices on your network": the toggle keeps focus, "your own" takes it when the block goes, and a failure stays', async () => {
+    const closed = { open: false, can_change: true, windows_asks: false, listening_on: 'this_pc', agents_on_network: false };
+    for (const outcome of ['hidden', 'windows', 'fails']) {
+      const local = outcome === 'windows' ? Object.assign({}, closed, { windows_asks: true }) : closed;
+      const answers = journal(copy, { 'GET /app/network/api/local-network': local });
+      const p = await boot(env, '/app/network/', { answers });
+      p.holds.push((call) => call.url === '/app/network/local-network/open');
+      const toggle = p.byId('link-local-network-toggle');
+      keyPress(p, toggle);
+      await settle();
+      assert.ok(busy(toggle) && focusOn(p) === 'BUTTON#link-local-network-toggle', `${outcome}: busy and focused while out (on ${focusOn(p)})`);
+      p.press(toggle);
+      assert.ok(p.writes().length === 1, 'a press while busy sends nothing');
+      const write = lastCall(p, 'POST', '/app/network/local-network/open');
+      if (outcome === 'fails') write.answer({ detail: 'refused' }, 500);
+      else write.answer({ open: true, can_change: true, windows_asks: outcome === 'windows', listening_on: 'local_network', agents_on_network: false });
+      await settle();
+      const want = outcome === 'hidden' ? 'BUTTON#link-seg-byo' : 'BUTTON#link-local-network-toggle';
+      assert.ok(focusOn(p) === want, `${outcome}: focus on ${want} (on ${focusOn(p)})`);
+      if (outcome === 'hidden') assert.ok(p.byId('link-local-network').hidden === true, 'the block is gone');
+      if (outcome === 'fails') assert.ok(p.byId('link-local-network-error').hidden === false, 'the error is shown');
+    }
+  });
+
+  const SECOND = Object.assign({}, DELIVERED, { cid: 'sha256:second', display_label: 'pixel' });
+  async function listPage(list) {
+    const state = { clients: list };
+    const answers = journal(copy, {
+      'GET /app/network/api/clients': () => ({ clients: state.clients }),
+      'DELETE': undefined,
+    });
+    const p = await boot(env, '/app/network/', { answers });
+    p.state = state;
+    return p;
+  }
+  function openDetails(p, key) { p.q(`details[data-client-details="${key}"]`).open = true; }
+
+  await test('a card\'s "unpair" lands on the next card, else a collapsed group, else the devices heading; a failure keeps the button', async () => {
+    const runs = [
+      { list: [DELIVERED, SECOND, NEVER], gone: DELIVERED.cid, want: 'next card' },
+      { list: [DELIVERED, NEVER], gone: DELIVERED.cid, want: 'SUMMARY' },
+      { list: [DELIVERED], gone: DELIVERED.cid, want: 'H2#devices' },
+      { list: [SECOND, DELIVERED], gone: DELIVERED.cid, want: 'previous card' },
+      // The next card sits in the closed "nothing added yet" group: not shown, so the one before.
+      { list: [SECOND, DELIVERED, NEVER], gone: DELIVERED.cid, want: 'previous card' },
+    ];
+    for (const run of runs) {
+      const p = await listPage(run.list);
+      openDetails(p, run.gone);
+      const button = p.q(`.client-card[data-cid="${run.gone}"] [data-network-action="unpair"]`);
+      p.state.clients = run.list.filter((c) => c.cid !== run.gone);
+      keyPress(p, button);
+      await settle();
+      const active = p.doc.activeElement;
+      if (run.want.endsWith('card')) {
+        assert.ok(active.classList?.contains('client-card') && active.dataset.cid === SECOND.cid, `${run.want}: focus on the card for pixel (on ${focusOn(p)} ${active.dataset?.cid || ''})`);
+      } else {
+        assert.ok(focusOn(p) === run.want, `focus on ${run.want} (on ${focusOn(p)})`);
+      }
+    }
+    const p = await listPage([DELIVERED, SECOND]);
+    p.statuses.push([(call) => call.method === 'DELETE', 500]);
+    openDetails(p, DELIVERED.cid);
+    const button = p.q(`.client-card[data-cid="${DELIVERED.cid}"] [data-network-action="unpair"]`);
+    keyPress(p, button);
+    await settle();
+    assert.ok(p.shown.length === 1, 'a failed unpair shows the shell\'s error');
+    assert.ok(p.doc.activeElement === button, `and focus stays on unpair (on ${focusOn(p)})`);
+  });
+
+  await test('"forget" keeps focus while out, lands on the nearest card after, and keeps the confirm when it fails', async () => {
+    for (const fails of [false, true]) {
+      const p = await listPage([DELIVERED, NEVER]);
+      openDetails(p, 'group-never');
+      p.press(p.q(`.client-forget[data-forget-cid="${NEVER.cid}"] [data-forget-action="ask"]`));
+      p.holds.push((call) => /\/forget$/.test(call.url));
+      const confirmBtn = p.q(`.client-forget[data-forget-cid="${NEVER.cid}"] [data-forget-action="confirm"]`);
+      if (!fails) p.state.clients = [DELIVERED];
+      keyPress(p, confirmBtn);
+      await settle();
+      assert.ok(busy(confirmBtn) && p.doc.activeElement === confirmBtn, `busy and focused while out (on ${focusOn(p)})`);
+      p.press(confirmBtn);
+      assert.ok(p.writes().length === 1, 'a press while busy sends nothing');
+      const write = lastCall(p, 'POST', '/app/network/api/devices/');
+      if (fails) write.answer({ detail: 'that device has added material' }, 409); else write.answer({});
+      await settle();
+      const active = p.doc.activeElement;
+      if (fails) {
+        assert.ok(active === confirmBtn && !busy(confirmBtn), `a refusal keeps focus on the confirm (on ${focusOn(p)})`);
+        assert.ok(p.q(`.client-forget[data-forget-cid="${NEVER.cid}"] .client-forget-status`).hidden === false, 'with its status');
+      } else {
+        assert.ok(active.classList?.contains('client-card') && active.dataset.cid === DELIVERED.cid, `focus on the nearest card (on ${focusOn(p)})`);
+      }
+    }
+  });
+
+  await test('the clients poll keeps a focused card, and (kept) a card\'s details and forget', async () => {
+    const p = await listPage([DELIVERED, SECOND, NEVER]);
+    const reFocus = (selector) => { const node = p.q(selector); node.focus(); return node; };
+    for (const selector of [`.client-card[data-cid="${SECOND.cid}"]`, `details[data-client-details="${SECOND.cid}"] > summary`]) {
+      const before = reFocus(selector);
+      p.clock.advance(30000);
+      await settle();
+      const after = p.q(selector);
+      assert.ok(after !== before && p.doc.activeElement === after, `the poll keeps ${selector} (on ${focusOn(p)})`);
+    }
+    openDetails(p, 'group-never');
+    const ask = reFocus(`.client-forget[data-forget-cid="${NEVER.cid}"] [data-forget-action="ask"]`);
+    p.clock.advance(30000);
+    await settle();
+    assert.ok(p.doc.activeElement !== ask && p.doc.activeElement.dataset.forgetAction === 'ask', `the poll keeps forget (on ${focusOn(p)})`);
+  });
+
+  async function dialogPage(nonce) {
+    const answers = journal(copy, { 'GET /app/network/api/pair/nonce-status': nonce || { present: true, used: false } });
+    const p = await boot(env, '/app/network/', { answers });
+    p.press(p.q('[data-pairing-action="open"]'));
+    await settle();
+    return p;
+  }
+
+  await test('"check pairing" keeps focus while out, then the outcome\'s own landing', async () => {
+    const runs = [
+      [{ present: true, used: false }, 200, 'BUTTON#link-pairing-check'],
+      [{ present: true, used: true, device: { cid: 'sha256:new', display_label: 'pixel' } }, 200, 'H3#link-pairing-success-heading'],
+      [{ present: false, used: false }, 200, 'window closed'],
+      [{ detail: 'nope' }, 500, 'unavailable'],
+    ];
+    for (const [body, status, want] of runs) {
+      const p = await dialogPage();
+      p.holds.push((call) => call.url.startsWith('/app/network/api/pair/nonce-status'));
+      const check = p.byId('link-pairing-check');
+      keyPress(p, check);
+      await settle();
+      assert.ok(busy(check) && p.doc.activeElement === check, `busy and focused while out (on ${focusOn(p)})`);
+      p.press(check);
+      assert.ok(p.reads('/app/network/api/pair/nonce-status').length === 1, 'a press while busy asks nothing');
+      lastCall(p, 'GET', '/app/network/api/pair/nonce-status').answer(body, status);
+      await settle();
+      const active = p.doc.activeElement;
+      if (want === 'window closed') assert.ok(p.byId('link-pairing-window-closed').contains(active) && active.tagName === 'BUTTON', `the window-closed block's button (on ${focusOn(p)})`);
+      else if (want === 'unavailable') assert.ok(active.tagName === 'P' && p.byId('link-pairing-unavailable').contains(active), `the unavailable block's message (on ${focusOn(p)})`);
+      else assert.ok(focusOn(p) === want, `${want} (on ${focusOn(p)})`);
+    }
+  });
+
+  await test('the code expiring and a new code keep focus in the dialog: its button, then the title', async () => {
+    const p = await dialogPage();
+    const copyBtn = p.q('[data-pairing-action="copy"]');
+    copyBtn.focus();
+    p.clock.advance(125000);
+    await settle();
+    const expired = p.byId('link-pairing-expired').querySelector('button');
+    assert.ok(p.doc.activeElement === expired, `expiry: focus on "show a new one" (on ${focusOn(p)})`);
+    p.press(expired);
+    await settle();
+    assert.ok(focusOn(p) === 'H3#link-pairing-dialog-title', `a new code: focus on the title (on ${focusOn(p)})`);
+    assert.ok(p.byId('link-pairing-material').hidden === false, 'and the new code is shown');
+  });
+
+  await test('kept: closing the dialog by ×, "done" and Escape still goes back to "pair a device"', async () => {
+    for (const how of ['x', 'done', 'escape']) {
+      const p = await dialogPage();
+      const opener = p.q('[data-pairing-action="open"]');
+      const inside = how === 'x' ? p.q('#link-pairing-dialog .modal-close') : p.q('#link-pairing-material [data-pairing-action="close"]');
+      inside.focus();
+      if (how === 'escape') p.doc.dispatch(p.doc.body, { type: 'keydown', key: 'Escape' });
+      else p.press(inside);
+      p.clock.advance(16);
+      await settle();
+      assert.ok(p.byId('link-pairing-dialog').hidden === true, `${how}: the dialog is closed`);
+      assert.ok(p.doc.activeElement === opener, `${how}: focus back on "pair a device" (on ${focusOn(p)})`);
+    }
+  });
+
   return cases;
 };
