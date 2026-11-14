@@ -22,8 +22,9 @@
 //! counts as open too, whatever is saved;
 //! a watcher rebinds the door when either changes.
 //!
-//! These routes sit on the loopback listener alone. Opening the network raises
-//! a prompt on this computer's screen, so a paired device cannot ask for it.
+//! Status is readable from paired devices too. The writes sit on the loopback
+//! listener alone: opening the network raises a prompt on this computer's
+//! screen, so a paired device cannot ask for it.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -208,6 +209,16 @@ pub(crate) fn save(
     .map(|transaction| transaction.value)
 }
 
+/// Read-only routes shared by the owner listener and the paired-device door.
+/// The door installs these before its authorization and pairing-confinement gates.
+pub(crate) fn status_routes() -> Router {
+    let mut router = Router::new();
+    for prefix in NETWORK_ROUTE_PREFIXES {
+        router = router.route(&format!("{prefix}/api/local-network"), get(door_status));
+    }
+    router
+}
+
 /// Loopback-only routes, on both network prefixes.
 pub(crate) fn routes(door: Arc<DoorLifecycle>) -> Router {
     let mut router = Router::new();
@@ -218,6 +229,21 @@ pub(crate) fn routes(door: Arc<DoorLifecycle>) -> Router {
             .route(&format!("{prefix}/local-network/close"), post(close));
     }
     router.layer(Extension(door))
+}
+
+async fn door_status(Extension(door): Extension<std::sync::Weak<DoorLifecycle>>) -> Response {
+    match door.upgrade() {
+        Some(door) => {
+            let mut body = status_body(&door, None).await;
+            body["can_change"] = Value::Bool(false);
+            Json(body).into_response()
+        }
+        None => refusal(
+            "service_unavailable",
+            "the journal is stopping.",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+    }
 }
 
 async fn status(Extension(door): Extension<Arc<DoorLifecycle>>) -> Response {
@@ -295,6 +321,7 @@ async fn status_body(door: &DoorLifecycle, changed: Option<bool>) -> Value {
     };
     let mut body = json!({
         "open": state.open,
+        "can_change": true,
         "source": state.source.as_wire(),
         "listening_on": listening_on,
         "port": bound.map(|address| address.port()),

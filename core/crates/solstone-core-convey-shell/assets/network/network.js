@@ -353,7 +353,7 @@
           ? 'PAIR_LOCAL_NETWORK_CLOSED_BODY'
           : 'PAIR_LOCAL_NETWORK_CLOSED_WITHOUT_LOCAL_BODY';
         showRegen = false;
-        showLocalNetwork = true;
+        showLocalNetwork = options.canChangeLocalNetwork?.() === true;
         showRepair = true;
         repairCopyKey = 'MODE_HOSTED_SETUP_CTA';
       } else if (status === 504) {
@@ -617,7 +617,7 @@
         selectType('computer');
         regenerate();
       } else if (action === 'local-network-open') {
-        if (typeof options.onLocalNetworkOpen !== 'function') return;
+        if (options.canChangeLocalNetwork?.() !== true || typeof options.onLocalNetworkOpen !== 'function') return;
         Promise.resolve(options.onLocalNetworkOpen()).then((opened) => {
           if (opened) {
             regenerate();

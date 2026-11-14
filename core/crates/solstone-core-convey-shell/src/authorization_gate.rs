@@ -88,7 +88,7 @@ pub struct DoorRouter(Router);
 impl DoorRouter {
     /// Keep the non-confining library test surface explicit at the type boundary.
     pub fn unconfined(router: Router) -> Self {
-        Self(router)
+        Self(router.merge(crate::local_network::status_routes()))
     }
 
     /// Deliberately unwrap a door router for a non-door surface or direct router test.
@@ -153,6 +153,7 @@ fn authorized_router_with_router_inner(
     // surface, including routes from merged sub-routers.
     DoorRouter(
         router
+            .merge(crate::local_network::status_routes())
             .route_layer(middleware::from_fn_with_state(
                 AuthorizationGateState {
                     authorization,

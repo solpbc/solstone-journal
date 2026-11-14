@@ -520,6 +520,7 @@ function createEnvironment(manifestDir, options = {}) {
     onDeviceRemoved: () => removedDevices.push(true),
     windowsAsks: () => options.windowsAsks === true,
     canPairThisComputer: () => options.canPairThisComputer !== false,
+    canChangeLocalNetwork: () => options.canChangeLocalNetwork !== false,
     deviceType: options.deviceType,
     now: () => clock,
     ...(options.ceremony || {}),
@@ -586,7 +587,7 @@ async function main() {
   await testCase('a retained Windows Block rule replaces the open-network claim and clears after recovery', async () => {
     const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/network_copy.json'), 'utf8'));
     const env = localNetworkEnvironment(workspace, copy);
-    const status = { open: true, listening_on: 'local_network', windows_asks: true, windows_firewall_blocked: true };
+    const status = { open: true, can_change: true, listening_on: 'local_network', windows_asks: true, windows_firewall_blocked: true };
     env.render(status);
     assert.strictEqual(env.nodes.get('link-local-network-state').textContent, copy.LOCAL_NETWORK_FIREWALL_BLOCKED);
     assert.strictEqual(env.nodes.get('link-local-network-note').textContent, copy.LOCAL_NETWORK_FIREWALL_BLOCKED_NOTE);

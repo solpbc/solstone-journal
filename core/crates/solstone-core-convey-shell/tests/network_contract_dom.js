@@ -454,12 +454,12 @@ function journal(copy, overrides = {}) {
       case 'GET /app/network/api/state': return { posture: 'direct', link_copy: copy };
       case 'GET /app/network/api/status': return { posture: 'direct', reachability: 'online', device_addresses: [], vpn: null, home_address: '192.168.1.5:7657', home_candidates: [] };
       case 'GET /app/network/api/private-link': return { state: 'not_enabled' };
-      case 'GET /app/network/api/local-network': return { open: true, windows_asks: false, listening_on: 'local_network', agents_on_network: false };
+      case 'GET /app/network/api/local-network': return { open: true, can_change: true, windows_asks: false, listening_on: 'local_network', agents_on_network: false };
       case 'GET /app/network/api/identity': return { availability: 'none' };
       case 'GET /app/network/api/clients': return { clients: [DELIVERED, NEVER] };
       case 'GET /app/network/api/pair/nonce-status': return { present: true, used: false };
       case 'POST /app/network/pair-start': return material();
-      case 'POST /app/network/local-network/open': return { open: true, windows_asks: false, listening_on: 'local_network' };
+      case 'POST /app/network/local-network/open': return { open: true, can_change: true, windows_asks: false, listening_on: 'local_network' };
       case 'POST /app/network/private-link/enable': return { operation: { phase: 'waiting', portal_url: 'https://services.example/consent' } };
       default: break;
     }
@@ -845,8 +845,29 @@ module.exports = async function networkContractCases(manifestDir) {
     assert.ok(p.byId('link-pairing-link-value') === null, 'no pairing link is left in the page');
   });
 
+  await test('a paired view reads the closed network without offering local-only changes', async () => {
+    const answers = journal(copy, {
+      'GET /app/network/api/local-network': {
+        open: false, can_change: false, windows_asks: true, listening_on: 'this_pc',
+        host_capabilities: { same_computer_pairing: true },
+      },
+      'POST /app/network/pair-start': () => { throw apiError(409, { reason_code: 'local_network_closed' }); },
+    });
+    const p = await boot(env, '/app/network/', { answers });
+    assert.ok(p.byId('link-local-network').hidden, 'local-only controls stay hidden');
+    assert.ok(p.errors.length === 0, 'the status read is not a diagnostic error');
+    p.press(p.byId('link-local-network-toggle'));
+    await settle();
+    assert.ok(p.writes().length === 0, 'a hidden control cannot change the network');
+    p.press(p.q('[data-pairing-action="open"]'));
+    await settle();
+    assert.ok(p.q('[data-pairing-action="local-network-open"]').hidden, 'pairing offers no local-network write');
+    assert.ok(p.q('[data-pairing-action="this-computer"]').hidden, 'pairing offers no same-computer link remotely');
+    p.leave();
+  });
+
   await test('writes in flight when the owner leaves finish, and their answers draw, open and ask nothing', async () => {
-    const answers = journal(copy, { 'GET /app/network/api/local-network': { open: false, windows_asks: false, listening_on: 'this_pc' } });
+    const answers = journal(copy, { 'GET /app/network/api/local-network': { open: false, can_change: true, windows_asks: false, listening_on: 'this_pc' } });
     const p = await boot(env, '/app/network/', { answers });
     p.holds.push((call) => call.method !== 'GET');
     // unpair, forget, the local network and the private link, each pressed

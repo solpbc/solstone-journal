@@ -964,6 +964,7 @@ systemctl --user start solstone-linux</code></div>
     // While the door is on this computer alone, "your own" lines that promise
     // devices connect straight to it would be false.
     let localNetworkClosed = false;
+    let localNetworkCanChange = false;
     let localNetworkWindowsAsks = false;
     let sameComputerPairing = false;
     const segByo = document.getElementById('link-seg-byo');
@@ -1644,7 +1645,7 @@ systemctl --user start solstone-linux</code></div>
       refreshPrivateLinkStatus();
     });
     document.getElementById('link-local-network-toggle')?.addEventListener('click', () => {
-      if (localNetworkOpen === null) return;
+      if (!localNetworkCanChange || localNetworkOpen === null) return;
       if (localNetworkOpen && !confirm(linkCopy.LOCAL_NETWORK_CLOSE_CONFIRM)) return;
       setLocalNetwork(!localNetworkOpen);
     });
@@ -1708,11 +1709,12 @@ systemctl --user start solstone-linux</code></div>
       const block = document.getElementById('link-local-network');
       if (!block) return;
       const applies = !!data && (data.windows_asks === true || data.open === false);
-      block.hidden = !applies;
+      localNetworkCanChange = data?.can_change === true;
+      block.hidden = !applies || !localNetworkCanChange;
       const wasClosed = localNetworkClosed;
       localNetworkClosed = applies && data.listening_on === 'this_pc';
       localNetworkWindowsAsks = !!data && data.windows_asks === true;
-      sameComputerPairing = data?.host_capabilities?.same_computer_pairing === true;
+      sameComputerPairing = localNetworkCanChange && data?.host_capabilities?.same_computer_pairing === true;
       applyLocalNetworkToReach();
       if (wasClosed !== localNetworkClosed) refreshStatus();
       if (!applies) return;
@@ -1759,6 +1761,7 @@ systemctl --user start solstone-linux</code></div>
     }
 
     async function setLocalNetwork(open) {
+      if (!localNetworkCanChange) return;
       const toggle = document.getElementById('link-local-network-toggle');
       const error = document.getElementById('link-local-network-error');
       if (toggle) toggle.disabled = true;
@@ -1835,6 +1838,7 @@ systemctl --user start solstone-linux</code></div>
         onPrivateLinkRepair: startPrivateLinkSetup,
         onLocalNetworkOpen: () => setLocalNetwork(true),
         windowsAsks: () => localNetworkWindowsAsks,
+        canChangeLocalNetwork: () => localNetworkCanChange,
         canPairThisComputer: () => sameComputerPairing,
         onDeviceRemoved: () => loadClients(),
         onPrivateLinkDisable: () => {
