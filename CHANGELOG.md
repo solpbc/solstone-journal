@@ -74,6 +74,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on linux, `solstone update --check` shows its `platform:` line again if you installed the journal as an `.rpm` package, or added the solstone app as a `.deb` or `.rpm` package. before, that line was missing, though updates were still offered.
 - on the network page, focus now stays where you were after you change a setting, or unpair or forget a device, and when the page refreshes itself: on the same button or choice if it's still there, otherwise on what took its place, such as the next device or the line that says what happened. in the "pair a device" box, it also stays when you check a pairing, when a code runs out or when you ask for a new one. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 - the "pair a device" box now fits your window, and its buttons stay in view while the rest scrolls.
+- on every page, closing the "review this report" box or an error message now puts focus back where you were: on the button that opened it, in the box underneath if one is still open, or at the start of the page if that button is gone. an error message now takes focus when it appears, and escape closes it. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 
 ## [2.0.78] - 2026-11-13
 
