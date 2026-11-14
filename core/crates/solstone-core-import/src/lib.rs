@@ -38,6 +38,7 @@ pub mod snapshot;
 pub mod staging;
 pub mod strava_names;
 pub mod strava_refile;
+pub mod stretch_trash;
 pub mod stream_name;
 pub mod sync_audio;
 pub mod sync_plaud;

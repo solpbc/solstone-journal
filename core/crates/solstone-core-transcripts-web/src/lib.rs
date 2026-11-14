@@ -34,6 +34,7 @@ mod segment_speakers;
 mod serve_file;
 mod shell;
 mod strava_delete;
+mod stretch;
 
 #[cfg(test)]
 mod corpus;
@@ -143,6 +144,14 @@ fn router_with_dependencies(
         .route(
             "/app/transcripts/api/segments/imports",
             axum::routing::post(delete::preview_imports),
+        )
+        .route(
+            "/app/transcripts/api/stretch/preview",
+            axum::routing::post(stretch::preview_stretch),
+        )
+        .route(
+            "/app/transcripts/api/stretch/delete",
+            axum::routing::post(stretch::delete_stretch),
         )
         .route(
             "/app/transcripts/api/strava/workout/{activity_id}",

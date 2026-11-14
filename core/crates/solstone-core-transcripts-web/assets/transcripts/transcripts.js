@@ -383,13 +383,13 @@
     const deleteSegmentModalConfirm = document.getElementById('trDeleteSegmentModalConfirm');
     const deleteSegmentModalBack = document.getElementById('trDeleteSegmentModalBack');
     const deleteSegmentModalEraseConfirm = document.getElementById('trDeleteSegmentModalEraseConfirm');
-    // The "pick a stretch of the day" invitation is for a day that has loaded.
+    // The "pick a time of day" invitation is for a day that has loaded.
     // While the day is read the panel says so; on a slow link the invitation
     // read as an empty day.
     const dayInvitationHtml = window.SurfaceState.empty({
       icon: window.ConveyIcons.svg('clock'),
       heading: 'your day at a glance',
-      desc: 'pick a stretch of the day on the left, then a block in detail to read it'
+      desc: 'pick part of the day on the left, then a block in detail to read it'
     });
 
     function emptyIconForModality(modality) {
@@ -2090,6 +2090,11 @@
             return;
           }
           panel.classList.remove('loading');
+          if (data && data.trash && !data.media) {
+            panel.innerHTML = segmentInTrashHtml(data.trash);
+            panel.querySelector('[data-open-trash]')?.addEventListener('click', goToSettingsTrash);
+            return;
+          }
           renderLoadedSegmentData(data, requestedTabId);
           if (!isLocationOnlySegment(data)) {
             const analyzing = currentAnalyzingModalities(data.data_state || {});
@@ -4582,6 +4587,7 @@
     // Load combined transcript data
     function loadDayData() {
       dayLoad = 'pending';
+      syncStretchButton();
       if (!selectedSegment) {
         panel.innerHTML = window.SurfaceState.loading({ text: 'loading this day…', busy: false });
       }
@@ -4714,6 +4720,7 @@
         // Store segments and update zoom
         allSegments = data.segments || [];
         dayLoad = 'ready';
+        syncStretchButton();
         if (allSegments.length && !selectedSegment) {
           panel.innerHTML = dayInvitationHtml;
         }
@@ -4735,6 +4742,7 @@
       .catch(err => {
         console.error('transcripts: day data load did not complete:', err);
         dayLoad = 'error';
+        syncStretchButton();
         zoomSegments.innerHTML = '';
         segmentPicker.innerHTML = '<option value="">choose a segment</option>';
         segmentPicker.disabled = true;
@@ -5489,7 +5497,8 @@
     let deleteDialogSegs = null;
 
     function renderDeleteStep(step) {
-      if (deleteDialogSegs.length === 1) renderDeleteSegmentStep(deleteDialogSegs[0], step);
+      if (stretchDialog) renderStretchStep(step);
+      else if (deleteDialogSegs.length === 1) renderDeleteSegmentStep(deleteDialogSegs[0], step);
       else renderDeleteSetStep(deleteDialogSegs, step);
     }
 
@@ -5525,13 +5534,13 @@
     }
 
     function showEraseSegmentStep() {
-      if (!deleteDialogSegs || deleteSegmentModal.style.display === 'none') return;
+      if ((!deleteDialogSegs && !stretchDialog) || deleteSegmentModal.style.display === 'none') return;
       renderDeleteStep('erase');
       deleteSegmentModalBack.focus();
     }
 
     function backFromEraseSegmentStep() {
-      if (!deleteDialogSegs || deleteSegmentModal.style.display === 'none') return;
+      if ((!deleteDialogSegs && !stretchDialog) || deleteSegmentModal.style.display === 'none') return;
       renderDeleteStep('move');
       deleteSegmentModalErase.focus();
     }
@@ -5542,6 +5551,10 @@
       deleteSegmentModal.style.display = 'none';
       deleteSegmentModalBody.replaceChildren();
       deleteDialogSegs = null;
+      if (stretchDialog) clearTimeout(stretchDialog.timer);
+      stretchDialog = null;
+      deleteSegmentModalConfirm.disabled = false;
+      deleteSegmentModalErase.disabled = false;
       document.body.style.overflow = deleteModalPrevOverflow;
       deleteModalPrevOverflow = '';
       if (restoreFocus && deleteModalReturnFocus && document.contains(deleteModalReturnFocus)) {
@@ -5551,6 +5564,14 @@
     }
 
     async function confirmDeleteSegment(erase = false) {
+      if (stretchDialog) {
+        const asked = { from: stretchDialog.from, to: stretchDialog.to, shown: stretchDialog.plan };
+        if (!asked.shown || asked.shown.empty) return;
+        closeDeleteSegmentModal(false);
+        await performStretchDelete(asked, erase);
+        stretchButton?.focus();
+        return;
+      }
       const segs = deleteDialogSegs;
       if (!segs) return;
 
@@ -5569,6 +5590,452 @@
     deleteSegmentModalErase.addEventListener('click', () => showEraseSegmentStep());
     deleteSegmentModalBack.addEventListener('click', () => backFromEraseSegmentStep());
     deleteSegmentModalEraseConfirm.addEventListener('click', () => confirmEraseSegment());
+
+    // ── deleting a stretch of time ──────────────────────────────────────────
+    // A from and a to, in the journal's wall time; everything in the journal
+    // from then moves to the trash as one thing. The journal answers what it
+    // would take, and the dialog shows only that answer's bounds and kinds,
+    // never a count.
+    const STRETCH_COPY = {
+      button: 'delete a stretch of time',
+      buttonLabel: 'delete a stretch of time, starting {day}',
+      from: 'from',
+      to: 'to',
+      zone: "times are in your journal's time zone, {zone}.",
+      checking: "checking what's in your journal from then…",
+      move: {
+        title: 'delete a stretch of time?',
+        bounds: 'this moves everything in your journal from {from} to {to}.',
+        reach: "it all leaves your journal now and waits in the trash as one thing, then it's erased. you can recover it until then.",
+        made: 'activities, summaries and entities made from it, which may still mention it',
+      },
+      erase: {
+        title: 'erase this stretch of time now?',
+        bounds: 'this erases everything in your journal from {from} to {to}.',
+        reach: "it all leaves your journal now and can't be recovered.",
+        made: "activities, summaries and entities made from it, which aren't erased and may still mention it",
+      },
+      kinds: 'that\'s {kinds}.',
+      kindWords: {
+        audio: 'audio',
+        screen: 'screen',
+        location: 'location',
+        body: 'body data',
+        imported: 'things you imported',
+        other: 'other things in your journal',
+      },
+      staysLead: 'these stay in your journal:',
+      stays: {
+        arriving: 'anything still arriving from a device',
+        processing: 'anything your journal is still working on',
+        import_running: "anything from an import that's still running",
+        whole_day: "whole-day body data, like a day's sleep score or readiness score, for a day this doesn't fully cover",
+        in_trash: "anything from then that's already in the trash, which keeps its own date",
+        memories: 'memories your agents saved about that time',
+      },
+      inFlight: "to move those, delete this stretch again once they're done.",
+      emptyNone: 'your journal has nothing from that time.',
+      emptyLeft: 'nothing from that time can go to the trash.',
+      backwards: 'the end has to be after the start.',
+      tooLong: 'choose 31 days or less.',
+      failed: "couldn't check what's in your journal from then.",
+      retry: 'try again',
+      receipt: {
+        moved: { title: 'moved {bounds} to the trash', message: 'it erases {date} unless you recover it.' },
+        partMoved: { title: 'moved {bounds} to the trash', message: "some of it couldn't be moved and is still in your journal. delete this stretch again to move the rest." },
+        erased: { title: 'erased {bounds} from your journal' },
+        recovered: { title: '{bounds} recovered', message: "it's back in your journal." },
+        recoverBlocked: { title: "couldn't recover that", message: "part of it comes from an import that's in the trash. recover that first." },
+        recoverFinishing: { title: "couldn't recover that yet", message: "it's still moving into the trash. try again from there once it's done." },
+        empty: { title: 'nothing was moved', message: 'nothing from that time could go to the trash.' },
+      },
+      inTrash: {
+        heading: 'this segment is in the trash',
+        stretch: 'it went with everything from {bounds}, and it comes back only with all of it. it erases {date} unless you recover it.',
+        alone: 'it erases {date} unless you recover it.',
+      },
+    };
+    const STRETCH_KIND_ORDER = ['audio', 'screen', 'location', 'body', 'imported', 'other'];
+    const STRETCH_WHY_ORDER = ['arriving', 'processing', 'import_running', 'whole_day'];
+    const STRETCH_MAX_DAYS = 31;
+
+    let stretchDialog = null;
+    const stretchButton = document.getElementById('trStretchBtn');
+
+    function stretchFill(template, values = {}) {
+      return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
+    }
+
+    // A wall time `YYYY-MM-DDTHH:MM[:SS]` as a Date on the browser's clock that
+    // reads the same digits, for formatting only.
+    function stretchWall(value) {
+      const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value || '');
+      if (!match) return null;
+      const [, y, mo, d, h, mi] = match.map(Number);
+      return { date: new Date(y, mo - 1, d, h, mi), day: `${match[1]}${match[2]}${match[3]}` };
+    }
+
+    const stretchTimeFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+
+    function stretchTime(at) {
+      return stretchTimeFormat.format(at.date).toLowerCase();
+    }
+
+    function stretchDayWord(at) {
+      return window.JournalFormat.day(at.day).toLowerCase();
+    }
+
+    // `sat nov 7, 2:05 – 3:35 pm`, or across days `sat nov 7, 11:00 pm – sun nov 8, 1:10 am`.
+    function stretchBounds(from, to) {
+      const a = stretchWall(from);
+      const b = stretchWall(to);
+      if (!a || !b) return '';
+      if (a.day === b.day) {
+        const range = typeof stretchTimeFormat.formatRange === 'function'
+          ? stretchTimeFormat.formatRange(a.date, b.date).toLowerCase()
+          : `${stretchTime(a)} – ${stretchTime(b)}`;
+        return `${stretchDayWord(a)}, ${range}`;
+      }
+      return `${stretchDayWord(a)}, ${stretchTime(a)} – ${stretchDayWord(b)}, ${stretchTime(b)}`;
+    }
+
+    // The bounds sentence's halves: `{day}, {t1}` and `{t2}` on the same day.
+    function stretchFromTo(from, to) {
+      const a = stretchWall(from);
+      const b = stretchWall(to);
+      if (!a || !b) return { from: '', to: '' };
+      return {
+        from: `${stretchDayWord(a)}, ${stretchTime(a)}`,
+        to: a.day === b.day ? stretchTime(b) : `${stretchDayWord(b)}, ${stretchTime(b)}`,
+      };
+    }
+
+    function stretchKindsText(kinds) {
+      const words = STRETCH_KIND_ORDER.filter((kind) => kinds.includes(kind)).map((kind) => STRETCH_COPY.kindWords[kind]);
+      if (!words.length) return '';
+      const list = words.length === 1 ? words[0] : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
+      return stretchFill(STRETCH_COPY.kinds, { kinds: list });
+    }
+
+    function minutesWall(dayKey, minutes) {
+      const clamped = Math.max(0, Math.min(minutes, 24 * 60 - 1));
+      const hh = String(Math.floor(clamped / 60)).padStart(2, '0');
+      const mm = String(clamped % 60).padStart(2, '0');
+      return `${dayKey.slice(0, 4)}-${dayKey.slice(4, 6)}-${dayKey.slice(6, 8)}T${hh}:${mm}`;
+    }
+
+    // What the fields say is wrong, before asking the journal.
+    function stretchFieldError(from, to) {
+      const a = stretchWall(from);
+      const b = stretchWall(to);
+      if (!a || !b) return null;
+      if (b.date <= a.date) return STRETCH_COPY.backwards;
+      if (b.date - a.date > STRETCH_MAX_DAYS * 86400000) return STRETCH_COPY.tooLong;
+      return null;
+    }
+
+    function showStretchDialog() {
+      readOriginalsInTrash();
+      stretchDialog = {
+        from: minutesWall(day, range.start),
+        to: minutesWall(day, range.end),
+        plan: null,
+        state: 'checking',
+        error: null,
+        timer: null,
+        asked: 0,
+      };
+      deleteDialogSegs = null;
+      renderStretchStep('move');
+      deleteModalReturnFocus = stretchButton || document.activeElement;
+      deleteModalPrevOverflow = document.body.style.overflow;
+      deleteSegmentModal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+      deleteSegmentModalBody.querySelector('#trStretchFrom')?.focus();
+      previewStretch();
+    }
+
+    // Ask the journal what the fields would take; an answer for fields that
+    // have changed since is dropped.
+    function previewStretch() {
+      const dialog = stretchDialog;
+      if (!dialog) return;
+      const error = stretchFieldError(dialog.from, dialog.to);
+      dialog.error = error;
+      dialog.plan = null;
+      if (error || !stretchWall(dialog.from) || !stretchWall(dialog.to)) {
+        dialog.state = error ? 'invalid' : 'checking';
+        renderStretchStep('move');
+        return;
+      }
+      dialog.state = 'checking';
+      const asked = ++dialog.asked;
+      renderStretchStep('move');
+      fetch('/app/transcripts/api/stretch/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ from: dialog.from, to: dialog.to }),
+      })
+        .then(async (response) => {
+          const answer = await response.json().catch(() => null);
+          if (stretchDialog !== dialog || dialog.asked !== asked) return;
+          if (!response.ok) {
+            const code = answer?.reason_code;
+            if (code === 'stretch_backwards') { dialog.error = STRETCH_COPY.backwards; dialog.state = 'invalid'; }
+            else if (code === 'stretch_too_long') { dialog.error = STRETCH_COPY.tooLong; dialog.state = 'invalid'; }
+            else dialog.state = 'failed';
+          } else {
+            dialog.plan = answer;
+            dialog.state = 'ready';
+          }
+          renderStretchStep(deleteSegmentModalBody.dataset.step || 'move');
+        })
+        .catch(() => {
+          if (stretchDialog !== dialog || dialog.asked !== asked) return;
+          dialog.state = 'failed';
+          renderStretchStep('move');
+        });
+    }
+
+    function stretchField(id, label, value) {
+      const wrap = deleteDialogElement('label', 'tr-stretch-field');
+      wrap.htmlFor = id;
+      wrap.append(deleteDialogElement('span', null, label));
+      const input = document.createElement('input');
+      input.type = 'datetime-local';
+      input.step = '60';
+      input.id = id;
+      input.value = value;
+      wrap.append(input);
+      return { wrap, input };
+    }
+
+    function stretchStaysList(plan, step) {
+      const copy = STRETCH_COPY;
+      const whys = new Set((plan?.left_out || []).map((left) => left.why));
+      const items = STRETCH_WHY_ORDER.filter((why) => whys.has(why)).map((why) => copy.stays[why]);
+      if (plan?.in_trash) items.push(copy.stays.in_trash);
+      items.push(copy.stays.memories, copy[step].made);
+      const list = deleteDialogElement('ul', 'tr-delete-segment-list');
+      items.forEach((text) => list.append(deleteDialogElement('li', null, text)));
+      const nodes = [deleteDialogElement('p', 'tr-delete-lead', copy.staysLead), list];
+      if (['arriving', 'processing', 'import_running'].some((why) => whys.has(why))) {
+        nodes.push(deleteDialogElement('p', 'tr-delete-stays', copy.inFlight));
+      }
+      return nodes;
+    }
+
+    function renderStretchStep(step) {
+      const dialog = stretchDialog;
+      if (!dialog) return;
+      const copy = STRETCH_COPY[step];
+      const erasing = step === 'erase';
+      const plan = dialog.state === 'ready' ? dialog.plan : null;
+      deleteSegmentModalTitle.textContent = copy.title;
+      deleteSegmentModalHeader.classList.toggle('danger', erasing);
+      deleteSegmentModalBody.className = erasing ? 'delete-warning' : 'trash-dlg-note';
+      deleteSegmentModalBody.dataset.step = step;
+      deleteSegmentModalMoveFoot.hidden = erasing;
+      deleteSegmentModalEraseFoot.hidden = !erasing;
+      const actionable = Boolean(plan && !plan.empty);
+      deleteSegmentModalConfirm.disabled = !actionable;
+      deleteSegmentModalErase.disabled = !actionable;
+      deleteSegmentModalEraseConfirm.disabled = !actionable;
+
+      const nodes = [];
+      if (!erasing) {
+        // The fields keep what the owner typed, and focus, across a re-render.
+        const focused = document.activeElement?.id;
+        const fields = deleteDialogElement('div', 'tr-stretch-fields');
+        const from = stretchField('trStretchFrom', STRETCH_COPY.from, dialog.from);
+        const to = stretchField('trStretchTo', STRETCH_COPY.to, dialog.to);
+        fields.append(from.wrap, to.wrap);
+        nodes.push(fields);
+        if (dialog.error) {
+          const err = deleteDialogElement('p', 'tr-stretch-err', dialog.error);
+          err.id = 'trStretchErr';
+          to.input.setAttribute('aria-invalid', 'true');
+          to.input.setAttribute('aria-describedby', 'trStretchErr');
+          nodes.push(err);
+        }
+        const journalZone = window.JournalClock?.zone?.();
+        const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (journalZone && browserZone && journalZone !== browserZone) {
+          nodes.push(deleteDialogElement('p', 'tr-delete-stays', stretchFill(STRETCH_COPY.zone, { zone: journalZone })));
+        }
+        const onChange = () => {
+          dialog.from = from.input.value;
+          dialog.to = to.input.value;
+          clearTimeout(dialog.timer);
+          dialog.timer = setTimeout(previewStretch, 400);
+        };
+        from.input.addEventListener('input', onChange);
+        to.input.addEventListener('input', onChange);
+        deleteSegmentModalBody.replaceChildren(...nodes);
+        if (focused === 'trStretchFrom') from.input.focus();
+        if (focused === 'trStretchTo') to.input.focus();
+        nodes.length = 0;
+      }
+      if (dialog.state === 'checking') {
+        nodes.push(deleteDialogElement('p', 'tr-stretch-checking', STRETCH_COPY.checking));
+      } else if (dialog.state === 'failed') {
+        const line = deleteDialogElement('p', 'tr-stretch-checking');
+        const retry = deleteDialogElement('button', 'tr-stretch-retry', STRETCH_COPY.retry);
+        retry.type = 'button';
+        retry.addEventListener('click', previewStretch);
+        line.append(deleteDialogElement('span', null, `${STRETCH_COPY.failed} `), retry);
+        nodes.push(line);
+      } else if (plan && plan.empty) {
+        const left = (plan.left_out || []).length > 0;
+        nodes.push(deleteDialogElement('p', 'tr-delete-reach', left ? STRETCH_COPY.emptyLeft : STRETCH_COPY.emptyNone));
+        if (left) nodes.push(...stretchStaysList(plan, step));
+      } else if (plan) {
+        const halves = stretchFromTo(plan.from, plan.to);
+        nodes.push(
+          deleteDialogElement('p', 'tr-stretch-bounds', stretchFill(copy.bounds, halves)),
+          deleteDialogElement('p', 'tr-delete-reach', copy.reach),
+        );
+        const kinds = stretchKindsText(plan.kinds || []);
+        if (kinds) nodes.push(deleteDialogElement('p', 'tr-delete-lead', kinds));
+        dialogImports = Array.isArray(plan.imports) ? plan.imports : [];
+        nodes.push(...importLines([{}, {}], step));
+        nodes.push(...stretchStaysList(plan, step));
+      }
+      if (erasing) deleteSegmentModalBody.replaceChildren(...nodes);
+      else deleteSegmentModalBody.append(...nodes);
+    }
+
+    function stretchReceipt(kind, fill = {}, buttons = []) {
+      const copy = STRETCH_COPY.receipt[kind];
+      const settled = kind === 'moved' || kind === 'recovered' || kind === 'erased';
+      const notice = {
+        app: 'transcripts',
+        icon: settled ? (kind === 'recovered' ? 'undo-2' : 'trash-2') : 'triangle-alert',
+        title: stretchFill(copy.title, fill),
+        dismissible: true,
+        buttons,
+      };
+      if (copy.message && (kind !== 'moved' || fill.date)) notice.message = stretchFill(copy.message, fill);
+      if (settled) notice.autoDismiss = 10000;
+      window.AppServices.notifications.show(notice);
+    }
+
+    // The receipt's recover is the trash page's recover of the stretch, whole.
+    function stretchRecoverClick(stretch, bounds) {
+      return async function () {
+        let response;
+        try {
+          response = await fetch('/app/settings/api/trash/recover', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: [stretch.id], page: 'transcripts' }),
+          });
+        } catch (_) {
+          trashReceipt('noAnswerRecover');
+          return;
+        }
+        const answer = await response.json().catch(() => null);
+        const failed = Array.isArray(answer?.failed) ? answer.failed : [];
+        if (!response.ok || !answer) {
+          trashReceipt('recoverFailed', {}, [openTrashButton()]);
+          return;
+        }
+        if (failed.length) {
+          if (failed.some((row) => row.reason === 'import_in_trash')) stretchReceipt('recoverBlocked', {}, [openTrashButton()]);
+          else if (failed.some((row) => row.reason === 'stretch_finishing')) stretchReceipt('recoverFinishing', {}, [openTrashButton()]);
+          else trashReceipt('recoverFailed', {}, [openTrashButton()]);
+          return;
+        }
+        stretchReceipt('recovered', { bounds });
+        reloadAfterStretch();
+      };
+    }
+
+    // The day's lists read again: what the stretch took has left them.
+    function reloadAfterStretch() {
+      if (selectedSegment) clearSegmentSelection();
+      loadDayData();
+      loadLocationData();
+      refreshSegmentIndicators();
+    }
+
+    // Send what the owner typed: the journal plans again at confirm, and the
+    // receipt shows what it took.
+    async function performStretchDelete(asked, erase) {
+      let response;
+      try {
+        response = await fetch('/app/transcripts/api/stretch/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from: asked.from, to: asked.to, erase }),
+        });
+      } catch (_) {
+        trashReceipt(erase ? 'noAnswerErase' : 'noAnswerMove');
+        return;
+      }
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        const code = data?.reason_code;
+        if (code === 'stretch_empty') stretchReceipt('empty');
+        else trashReceipt(erase ? 'eraseRefused' : 'moveRefused');
+        return;
+      }
+      if (!data || data.success !== true || !data.stretch) {
+        trashReceipt(erase ? 'noAnswerErase' : 'noAnswerMove');
+        return;
+      }
+      const bounds = stretchBounds(data.stretch.from, data.stretch.to);
+      reloadAfterStretch();
+      if (erase && data.erased === true) {
+        stretchReceipt('erased', { bounds });
+        return;
+      }
+      if (erase) {
+        trashReceipt('eraseFailed', {}, [openTrashButton()]);
+        return;
+      }
+      const refused = Array.isArray(data.refused) && data.refused.length > 0;
+      stretchReceipt(refused ? 'partMoved' : 'moved', { bounds, date: trashEraseDate(data.erase_at) }, [
+        { label: TRASH_COPY.buttons.recover, onClick: stretchRecoverClick(data.stretch, bounds) },
+        openTrashButton(),
+      ]);
+    }
+
+    // A segment the page was opened at that waits in the trash.
+    function segmentInTrashHtml(trash) {
+      const date = trashEraseDate(trash.erase_at);
+      const desc = trash.stretch
+        ? stretchFill(STRETCH_COPY.inTrash.stretch, { bounds: stretchBounds(trash.stretch.from, trash.stretch.to), date })
+        : stretchFill(STRETCH_COPY.inTrash.alone, { date });
+      const html = window.SurfaceState.empty({
+        icon: window.ConveyIcons.svg('trash-2'),
+        heading: STRETCH_COPY.inTrash.heading,
+        desc,
+      });
+      return `${html}<p class="tr-stretch-trash-action"><button type="button" class="btn-secondary" data-open-trash>${TRASH_COPY.buttons.openTrash}</button></p>`;
+    }
+
+    if (stretchButton) {
+      const label = stretchButton.querySelector('[data-stretch-label]');
+      if (label) label.textContent = STRETCH_COPY.button;
+      stretchButton.dataset.labelTemplate = STRETCH_COPY.buttonLabel;
+      const icon = stretchButton.querySelector('[data-stretch-icon]');
+      if (icon && window.ConveyIcons) icon.innerHTML = window.ConveyIcons.svg('trash-2');
+      stretchButton.addEventListener('click', showStretchDialog);
+      syncStretchButton();
+    }
+
+    // Shown once the day has loaded, on a day with anything listed.
+    // Called from the day's load, which can run before this block does, so it
+    // reads nothing declared here.
+    function syncStretchButton() {
+      const button = document.getElementById('trStretchBtn');
+      if (!button) return;
+      const shown = dayLoad === 'ready' && (allSegments.length > 0 || locationSegments.length > 0);
+      button.hidden = !shown;
+      const label = button.dataset.labelTemplate;
+      if (label) button.setAttribute('aria-label', label.split('{day}').join(window.JournalFormat.day(day).toLowerCase()));
+    }
 
     function sortSegmentsByKey() {
       allSegments.sort((a, b) => a.key.localeCompare(b.key));
@@ -5784,7 +6251,7 @@
       refreshUnselectedLocation(window.SurfaceState.empty({
         icon: window.ConveyIcons.svg('clock'),
         heading: 'your day at a glance',
-        desc: 'pick a stretch of the day on the left, then a block in detail to read it'
+        desc: 'pick part of the day on the left, then a block in detail to read it'
       }));
 
       // Clear active state in zoom view

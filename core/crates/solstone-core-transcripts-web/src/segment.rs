@@ -61,12 +61,43 @@ pub(crate) async fn segment_content(
     let journal_root = state.journal_root.clone();
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsSegment,
-        move || match prepare_segment(&journal_root, &day, &stream, &key, now) {
-            Ok(value) => Json(value).into_response(),
-            Err(response) => response,
+        move || match (
+            in_trash(&journal_root, &day, &stream, &key),
+            prepare_segment(&journal_root, &day, &stream, &key, now),
+        ) {
+            // In the trash: what waits there, not an empty segment.
+            (Some(trash), _) => Json(serde_json::json!({ "trash": trash })).into_response(),
+            (None, Ok(value)) => Json(value).into_response(),
+            (None, Err(response)) => response,
         },
     )
     .await
+}
+
+/// Where a segment that left for the trash waits: its item, its erase date,
+/// and the stretch of time it went with, if it did. A segment in a stretch is
+/// recovered or erased only with the stretch.
+fn in_trash(root: &Path, day: &str, stream: &str, key: &str) -> Option<Value> {
+    let rel = solstone_core_retention::layout::segment_rel(day, stream, key);
+    let holder = solstone_core_trash::holders(root, &rel, "")
+        .ok()?
+        .into_iter()
+        .find_map(|id| solstone_core_trash::item(root, &id).ok().flatten())?;
+    // Only a segment that left whole: its originals alone in the trash leave
+    // the segment itself in the journal.
+    if !matches!(holder.unit, solstone_core_removals::Unit::Segment { .. } | solstone_core_removals::Unit::Import { .. }) {
+        return None;
+    }
+    let mut trash = serde_json::json!({"id": holder.id, "erase_at": holder.erase_at});
+    if let Some(stretch) = holder.stretch {
+        // The whole stretch's bounds: what all of it, waiting now, spans.
+        let members = solstone_core_trash::stretch_members(root, &stretch.id).unwrap_or_default();
+        let parts: Vec<_> = members.iter().filter_map(|item| item.stretch.as_ref()).collect();
+        let from = parts.iter().map(|part| part.from.as_str()).filter(|at| !at.is_empty()).min();
+        let to = parts.iter().map(|part| part.to.as_str()).max();
+        trash["stretch"] = serde_json::json!({"id": stretch.id, "from": from, "to": to});
+    }
+    Some(trash)
 }
 
 #[allow(clippy::result_large_err)]
