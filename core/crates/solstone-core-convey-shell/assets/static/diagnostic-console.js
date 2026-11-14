@@ -496,6 +496,8 @@
         && target
         && !root.contains(target)
         && !target.closest('#status-pane-console-link')
+        // A dialog opened over the console, its report review, is not outside it.
+        && !target.closest('[role="dialog"][aria-modal="true"]')
       ) {
         closeDrawer();
       }

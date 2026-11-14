@@ -94,6 +94,10 @@ name = "sources_dom"
 path = "tests/sources_dom.rs"
 
 [[test]]
+name = "shell_dialogs_dom"
+path = "tests/shell_dialogs_dom.rs"
+
+[[test]]
 name = "network_corpus"
 path = "tests/network_corpus.rs"
 
