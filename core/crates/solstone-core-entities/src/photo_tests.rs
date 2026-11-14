@@ -313,7 +313,12 @@ async fn photos_routes_distinguish_unknown_entity_key_stale_undo_and_busy_clear(
         404
     );
     switch(root, false);
-    let segment = root.join(fp::segment_relative(&faces[1].metadata.key).unwrap());
+    let key = &faces[1].metadata.key;
+    let segment = root
+        .join("chronicle")
+        .join(&key.day)
+        .join(&key.stream)
+        .join(&key.segment_key);
     fs::write(segment.join("screen.jsonl"), b"{}\n").unwrap();
     let held =
         solstone_core_segment::output_attempt::OutputClaims::discover(&segment, Default::default())
