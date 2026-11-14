@@ -1542,6 +1542,7 @@ ci-under-poison:
 	@$(MAKE) check-standalone-lockfiles
 	@$(MAKE) check-rust-fmt
 	@$(MAKE) check-rust-ci-topology
+	@$(SOLSTONE_DISTRIBUTION) check-build-features
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-unit
 	@$(MAKE) check-rust-screen-ocr-helper
