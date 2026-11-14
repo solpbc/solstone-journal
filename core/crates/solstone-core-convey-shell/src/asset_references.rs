@@ -319,6 +319,7 @@ fn every_view_declares_the_shared_code_it_uses() {
             &["data-date-nav", "DateNav."],
             &["/static/date-nav.js", "/static/date-nav.css"],
         ),
+        (&["SolFocus"], &["/static/focus.js"]),
         (
             &["DayGrid."],
             &[

@@ -323,6 +323,7 @@ if (!isReverse) {
 
   vm.runInContext(dateFormatSrc, ctx, { filename: 'date_format.js' });
   vm.runInContext(dateNavSrc, ctx, { filename: 'date-nav.js' });
+  vm.runInContext(fs.readFileSync(path.join(crateDir, 'assets', 'static', 'focus.js'), 'utf8'), ctx, { filename: 'focus.js' });
   vm.runInContext(networkSrc, ctx, { filename: 'network.js' });
 
   const Format = ctx.window.JournalFormat;

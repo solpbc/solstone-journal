@@ -1,6 +1,7 @@
 <!-- first-read: /app/network/ -> /app/network/api/state /app/network/api/clients -->
 <!-- view-contract -->
 <script src="/static/pairing-qr.js"></script>
+<script src="/static/focus.js"></script>
 <script src="/app/network/static/network.js"></script>
 
 <main id="link-workspace-root" class="link-dashboard" tabindex="-1" data-arrival-focus="main">
@@ -1046,12 +1047,12 @@ systemctl --user start solstone-linux</code></div>
 
     const toast = document.getElementById('link-toast');
     // A control whose write is out stays focusable and ignores presses
-    // (network.js); after a redraw, focus that was on a control goes back to
+    // (focus.js); after a redraw, focus that was on a control goes back to
     // it, or to what took its place.
-    const setBusy = (el, busy) => window.NetworkRender.setBusy(el, busy);
-    const isBusy = (el) => window.NetworkRender.isBusy(el);
-    const isShown = (el) => window.NetworkRender.isShown(el);
-    const refocus = (held, ...targets) => window.NetworkRender.refocus(document, held, targets);
+    const setBusy = (el, busy) => window.SolFocus.setBusy(el, busy);
+    const isBusy = (el) => window.SolFocus.isBusy(el);
+    const isShown = (el) => window.SolFocus.isShown(el);
+    const refocus = (held, ...targets) => window.SolFocus.refocus(document, held, targets);
     // Focus on a control the owner pressed, still on the page.
     const pressed = () => {
       const active = document.activeElement;
