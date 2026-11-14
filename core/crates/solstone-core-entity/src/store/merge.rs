@@ -1363,12 +1363,14 @@ fn move_owner_voice(
     {
         return Ok(());
     }
-    std::fs::rename(&from, &to).map_err(|error| refused(&error))?;
-    if let Some(parent) = to.parent()
-        && let Ok(dir) = std::fs::File::open(parent)
-    {
-        let _ = dir.sync_all();
-    }
+    solstone_core_journal_io::rename_within(
+        journal,
+        &format!("entities/{source_dir}/{OWNER_VOICE}"),
+        &format!("entities/{target_dir}/{OWNER_VOICE}"),
+    )
+    .map_err(|error| refused(&error))?;
+    solstone_core_journal_io::sync_dir(journal, &format!("entities/{target_dir}"))
+        .map_err(|error| refused(&error))?;
     Ok(())
 }
 
