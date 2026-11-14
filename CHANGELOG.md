@@ -49,6 +49,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on the network page, focus now stays where you were after you change a setting, or unpair or forget a device, and when the page refreshes itself: on the same button or choice if it's still there, otherwise on what took its place, such as the next device or the line that says what happened. in the "pair a device" box, it also stays when you check a pairing, when a code runs out or when you ask for a new one. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 - the "pair a device" box now fits your window, and its buttons stay in view while the rest scrolls.
 - on every page, closing the "review this report" box or an error message now puts focus back where you were: on the button that opened it, in the box underneath if one is still open, or at the start of the page if that button is gone. an error message now takes focus when it appears, and escape closes it. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
+- on every page, a notice that goes away by itself, like the one with "recover" after a delete, now stays while a box is open over the page, and its countdown starts over when you close the box. before, it kept counting down behind the box.
 
 ## [2.0.79] - 2026-11-14
 
