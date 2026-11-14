@@ -397,6 +397,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "open_link",
+        include_str!("../../../solstone-core-convey-shell/src/open_link.rs"),
+    ),
+    (
+        "convey",
         "owner_notices",
         include_str!("../../../solstone-core-convey-shell/src/owner_notices.rs"),
     ),

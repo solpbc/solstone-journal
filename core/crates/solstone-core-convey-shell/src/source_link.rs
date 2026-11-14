@@ -734,7 +734,7 @@ fn resolve_run(
     }
 }
 
-fn encode_path_component(val: &str) -> String {
+pub(crate) fn encode_path_component(val: &str) -> String {
     let mut encoded = String::new();
     for b in val.bytes() {
         if b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-') {
@@ -746,11 +746,11 @@ fn encode_path_component(val: &str) -> String {
     encoded
 }
 
-fn is_safe_location(loc: &str) -> bool {
+pub(crate) fn is_safe_location(loc: &str) -> bool {
     loc.starts_with('/') && !loc.starts_with("//") && !loc.starts_with("/\\")
 }
 
-fn redirect_response(location: &str) -> Response {
+pub(crate) fn redirect_response(location: &str) -> Response {
     Response::builder()
         .status(StatusCode::FOUND)
         .header(header::LOCATION, location)

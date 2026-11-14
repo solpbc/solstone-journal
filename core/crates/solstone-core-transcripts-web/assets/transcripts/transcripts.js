@@ -1907,10 +1907,31 @@
       });
     }
 
+    // A link to one second of a recording: `#<key>/<tab>/<HHMMSS>`, the clock
+    // its line shows. The moment stays in the address while that recording is
+    // open, and its line is cued once, without playing.
+    let linkedMoment = null;
+
+    function hashLocation() {
+      const [segKey, tab, moment] = window.location.hash.slice(1).split('/', 3);
+      return { segKey, tab, moment: /^\d{6}$/.test(moment || '') ? moment : null };
+    }
+
+    function linkMoment(seg, clock) {
+      linkedMoment = clock ? { key: seg.key, stream: seg.stream, clock, cued: false } : null;
+    }
+
+    function momentFor(seg) {
+      return linkedMoment && linkedMoment.key === seg.key && linkedMoment.stream === seg.stream
+        ? linkedMoment
+        : null;
+    }
+
     function segmentLocation(seg, tab) {
       const url = new URL(window.location.href);
       url.searchParams.set('stream', seg.stream);
-      url.hash = `${seg.key}/${tab}`;
+      const moment = momentFor(seg);
+      url.hash = moment ? `${seg.key}/${tab}/${moment.clock}` : `${seg.key}/${tab}`;
       return url.pathname + url.search + url.hash;
     }
 
@@ -1942,10 +1963,12 @@
       // Choosing a segment opens another page. Choosing the same one again refines this page.
       if (updateHash) {
         const tab = activeTab || 'transcript';
-        const url = segmentLocation(seg, tab);
         const samePair = previous
           && previous.key === seg.key
           && previous.stream === seg.stream;
+        // Choosing another recording leaves the linked moment behind.
+        if (!samePair) linkedMoment = null;
+        const url = segmentLocation(seg, tab);
         if (samePair) ctx.history.replace(url);
         else ctx.history.push(url);
       }
@@ -2027,10 +2050,12 @@
 
       if (updateHash) {
         const tab = activeTab || 'transcript';
-        const url = segmentLocation(seg, tab);
         const samePair = previous
           && previous.key === seg.key
           && previous.stream === seg.stream;
+        // Choosing another recording leaves the linked moment behind.
+        if (!samePair) linkedMoment = null;
+        const url = segmentLocation(seg, tab);
         if (samePair) ctx.history.replace(url);
         else ctx.history.push(url);
       }
@@ -2334,6 +2359,11 @@
 
       pane.classList.add('active');
       collapseLongPreBlocks(pane);
+      // A link's moment was cued while this pane was still hidden.
+      if (linkedMoment?.reveal?.pane === pane) {
+        linkedMoment.reveal.entry.scrollIntoView({ block: 'center' });
+        linkedMoment.reveal = null;
+      }
       // A cached pane is not re-rendered, so restore the count it reported.
       updateSegmentEntryCount(tabEntryCounts[tabId] ?? null);
       activeTab = tabId;
@@ -3727,6 +3757,8 @@
 
       // Get audio element reference
       const paneAudioEl = targetEl.querySelector('audio[data-role="segment-audio"]');
+      // Where a link's moment set the player, until the owner plays something.
+      let cueSeconds = null;
       if (paneAudioEl) {
         paneAudioEl.addEventListener('loadedmetadata', () => {
           if (Number.isFinite(paneAudioEl.duration) && paneAudioEl.duration > 0) {
@@ -3737,7 +3769,8 @@
             if (!Number.isFinite(paneAudioEl.duration) || paneAudioEl.duration === 0) {
               return;
             }
-            paneAudioEl.currentTime = 0;
+            // Back to the start, or to the moment a link cued meanwhile.
+            paneAudioEl.currentTime = cueSeconds ?? 0;
             paneAudioEl.removeEventListener('durationchange', handleDurationChange);
           };
 
@@ -3746,29 +3779,35 @@
         }, { once: true });
       }
 
+      // Set the player to an entry's line: played on a click, only cued for a
+      // link's moment.
+      const seekToEntry = (entry, play) => {
+        if (!paneAudioEl) return;
+        const audioUrl = entry.dataset.audioUrl;
+        const audioOrigin = entry.dataset.audioOrigin;
+        const timestamp = parseInt(entry.dataset.timestamp, 10);
+        let offsetSec;
+        if (audioUrl && audioOrigin !== undefined) {
+          offsetSec = Math.max(0, (timestamp - parseInt(audioOrigin, 10)) / 1000);
+          if (paneAudioEl.getAttribute('src') !== audioUrl && paneAudioEl.src !== audioUrl) {
+            paneAudioEl.src = audioUrl;
+          }
+        } else if (segmentData?.audio_file) {
+          const baseTimestamp = chunks[0]?.timestamp || timestamp;
+          offsetSec = Math.max(0, (timestamp - baseTimestamp) / 1000);
+        } else {
+          return;
+        }
+        paneAudioEl.currentTime = offsetSec;
+        cueSeconds = play ? null : offsetSec;
+        if (play) paneAudioEl.play();
+      };
+
       // Add click handlers for audio entries to seek
       targetEl.querySelectorAll('.tr-entry-audio').forEach(entry => {
         entry.addEventListener('click', e => {
           if (e.target.closest('[data-action="speaker-picker"]')) return;
-          if (!paneAudioEl) return;
-          const audioUrl = entry.dataset.audioUrl;
-          const audioOrigin = entry.dataset.audioOrigin;
-          if (audioUrl && audioOrigin !== undefined) {
-            const timestamp = parseInt(entry.dataset.timestamp, 10);
-            const origin = parseInt(audioOrigin, 10);
-            const offsetSec = Math.max(0, (timestamp - origin) / 1000);
-            if (paneAudioEl.getAttribute('src') !== audioUrl && paneAudioEl.src !== audioUrl) {
-              paneAudioEl.src = audioUrl;
-            }
-            paneAudioEl.currentTime = offsetSec;
-            paneAudioEl.play();
-          } else if (segmentData?.audio_file) {
-            const timestamp = parseInt(entry.dataset.timestamp, 10);
-            const baseTimestamp = chunks[0]?.timestamp || timestamp;
-            const offsetSec = (timestamp - baseTimestamp) / 1000;
-            paneAudioEl.currentTime = Math.max(0, offsetSec);
-            paneAudioEl.play();
-          }
+          seekToEntry(entry, true);
         });
       });
 
@@ -3784,9 +3823,9 @@
       });
 
       // Playback highlight: track current entry during audio playback
+      let activeEntry = null;
       if (paneAudioEl) {
         const baseTimestamp = chunks[0]?.timestamp || 0;
-        let activeEntry = null;
 
         paneAudioEl.addEventListener('timeupdate', () => {
           const currentSrc = paneAudioEl.getAttribute('src') || paneAudioEl.src || paneAudioEl.querySelector('source')?.getAttribute('src') || '';
@@ -3827,6 +3866,31 @@
             activeEntry = null;
           }
         });
+      }
+
+      // A link's moment: bring the line being said at that second into view,
+      // marked, with the player set there. Nothing plays until the owner asks.
+      // The match is on the clock each line shows, the one an agent reads; a
+      // re-transcribed recording cues the line that now holds that second.
+      const moment = selectedSegment && momentFor(selectedSegment);
+      if (moment && !moment.cued) {
+        let cue = null;
+        for (const entry of targetEl.querySelectorAll('.tr-entry-audio[data-timestamp]')) {
+          const clock = String(displayItems[entry.dataset.idx]?.time || '').replace(/:/g, '');
+          if (!/^\d{6}$/.test(clock)) continue;
+          if (clock > moment.clock) break;
+          cue = entry;
+        }
+        if (cue) {
+          moment.cued = true;
+          revealBoundedEntry(targetEl, cue);
+          activeEntry = cue;
+          cue.classList.add('tr-entry-active');
+          // This pane isn't showing yet: activateTab brings the line into
+          // view once it is.
+          moment.reveal = { pane: targetEl, entry: cue };
+          seekToEntry(cue, false);
+        }
       }
 
       // Add click handlers for enhanced screen and image entries to open modal
@@ -4722,11 +4786,11 @@
         refreshUnselectedLocation(null);
 
         // Check for hash fragment to auto-select segment
-        const rawHash = window.location.hash.slice(1);
-        const [segKey, tabIdFromHash] = rawHash.split('/', 2);
+        const { segKey, tab: tabIdFromHash, moment } = hashLocation();
         if (segKey) {
           const seg = linkedSegment(segKey);
           if (seg) {
+            linkMoment(seg, moment);
             // selectSegment recenters the detail zoom range when needed.
             selectSegment(seg, false, tabIdFromHash);
           }
@@ -4939,8 +5003,7 @@
       // of the same segment and tab is already that page. The activeTab == null guard
       // is what stops a stale in-flight record from swallowing a tab change after the tab is shown.
       function restoreHistoryLocation() {
-        const rawHash = window.location.hash.slice(1);
-        const [segKey, tabIdFromHash] = rawHash.split('/', 2);
+        const { segKey, tab: tabIdFromHash, moment } = hashLocation();
         if (!segKey) {
           resetSegmentSelection();
           return;
@@ -4960,6 +5023,16 @@
         const samePair = selectedSegment
           && selectedSegment.key === seg.key
           && selectedSegment.stream === seg.stream;
+        // Another moment of the recording already open is a place of its own:
+        // load it again so its line is cued.
+        // Coming back to a moment from another recording cues it again.
+        if ((momentFor(seg)?.clock || null) !== moment || (moment && !samePair)) {
+          linkMoment(seg, moment);
+          if (moment) {
+            selectSegment(seg, false, wantedTab);
+            return;
+          }
+        }
         const inFlightMatches = activeTab == null
           && inFlightSegmentRequest
           && inFlightSegmentRequest.key === seg.key
@@ -5753,6 +5826,7 @@
     function resetSegmentSelection() {
       stopAnalyzePoller();
       selectedSegment = null;
+      linkedMoment = null;
       segmentPicker.value = '';
       segmentData = null;
       currentVideoFiles = {};
