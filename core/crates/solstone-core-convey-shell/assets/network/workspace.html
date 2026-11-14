@@ -189,14 +189,6 @@
 
 
   <div class="workspace-content">
-    <div id="wsErrorContainer" class="ws-error-container" role="alert" style="display: none">
-      <div class="ws-error-message" id="wsErrorMessage"></div>
-      <div class="ws-error-actions">
-        <button type="button" class="ws-error-retry" id="wsErrorRetry" style="display: none" onclick="loadClients()">retry now</button>
-        <span class="ws-error-countdown" id="wsErrorCountdown"></span>
-        <button type="button" class="ws-error-dismiss" onclick="clearError()">dismiss</button>
-      </div>
-    </div>
     <section aria-label="devices">
       <h2 class="section-title" id="devices" tabindex="-1">devices</h2>
       <button type="button" class="modal-primary-btn" data-pairing-action="open" data-copy="DEVICE_PAIR_CTA"></button>
@@ -927,85 +919,11 @@ systemctl --user start solstone-linux</code></div>
   }
 }
 
-/* ── Error container ── */
-.ws-error-container {
-  display: none;
-  background: var(--warn-wash);
-  border-left: 4px solid var(--warn);
-  color: var(--warn-ink);
-  padding: 12px 16px;
-  margin-bottom: 1em;
-  border-radius: 4px;
-  position: relative;
-  font-size: 0.95em;
-  line-height: 1.4;
-}
-.ws-error-container[style*="display: flex"] {
-  display: flex !important;
-  flex-direction: column;
-  gap: 8px;
-}
-.ws-error-message {
-  flex: 1;
-}
-.ws-error-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.ws-error-retry {
-  background: var(--warn);
-  color: var(--ink-on-brand);
-  border: none;
-  border-radius: 4px;
-  padding: 8px 16px;
-  cursor: pointer;
-  font-size: 0.9em;
-  min-height: 44px;
-}
-.ws-error-retry:hover {
-  background: color-mix(in srgb, var(--warn) 82%, var(--surface-dark));
-}
-.ws-error-retry:focus-visible {
-  outline: 2px solid var(--warn);
-  outline-offset: 2px;
-}
-.ws-error-retry:active {
-  background: color-mix(in srgb, var(--warn) 70%, var(--surface-dark));
-}
-.ws-error-dismiss {
-  background: transparent;
-  border: 1px solid var(--warn);
-  color: var(--warn-ink);
-  border-radius: 4px;
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 0.9em;
-  min-height: 44px;
-}
-.ws-error-dismiss:hover {
-  background: color-mix(in srgb, var(--warn) 10%, transparent);
-}
-.ws-error-dismiss:focus-visible {
-  outline: 2px solid var(--warn);
-  outline-offset: 2px;
-}
-.ws-error-dismiss:active {
-  background: color-mix(in srgb, var(--warn) 15%, transparent);
-}
-.ws-error-countdown {
-  color: var(--warn-ink);
-  font-size: 0.85em;
-}
-
 /* ── Transitions: interactive elements ── */
 .client-actions button,
 .copy-btn,
 .modal-close,
-.modal-actions button,
-.ws-error-retry,
-.ws-error-dismiss {
+.modal-actions button {
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 .client-stat-note{display:block;margin-top:4px;color: var(--ink-faint);font-size:.82rem;line-height:1.35}
@@ -1938,15 +1856,6 @@ function escapeHtml(value) {
   return window.AppServices.escapeHtml(value);
 }
 
-// Error display state
-const wsErrorContainer = document.getElementById('wsErrorContainer');
-const wsErrorMessage = document.getElementById('wsErrorMessage');
-const wsErrorRetry = document.getElementById('wsErrorRetry');
-const wsErrorCountdown = document.getElementById('wsErrorCountdown');
-let errorAutoHideTimer = null;
-let countdownInterval = null;
-let lastPollTime = Date.now();
-
 function emptyStateHTML() {
   const copy = (key) => window.NetworkRender?.resolve(window.LinkCopy, key) || '';
   const empty = window.SurfaceState.empty({
@@ -1989,55 +1898,6 @@ function clientStatsHTML(client, deliveryGroup) {
     <div><dt>last journal segment</dt><dd>${segmentCell}</dd></div>
     ${failure ? `<div><dt>delivery detail</dt><dd>${escapeHtml(failure)}</dd></div>` : ''}
   </dl>`;
-}
-
-function showLocalError(message, opts = {}) {
-  wsErrorMessage.textContent = message;
-  wsErrorContainer.style.display = 'flex';
-  wsErrorRetry.style.display = opts.retry ? 'inline-block' : 'none';
-
-  // Clear any existing auto-hide timer
-  if (errorAutoHideTimer) clearTimeout(errorAutoHideTimer);
-
-  if (opts.retry) {
-    // For load errors: start countdown, no auto-hide (countdown stays until next load)
-    startCountdown();
-  } else {
-    // For action errors: auto-hide after 10 seconds, no countdown
-    if (countdownInterval) {
-      clearInterval(countdownInterval);
-      countdownInterval = null;
-    }
-    wsErrorCountdown.textContent = '';
-    errorAutoHideTimer = setTimeout(clearError, 10000);
-  }
-}
-
-function clearError() {
-  wsErrorContainer.style.display = 'none';
-  wsErrorMessage.textContent = '';
-  wsErrorCountdown.textContent = '';
-  wsErrorRetry.style.display = 'none';
-  if (errorAutoHideTimer) {
-    clearTimeout(errorAutoHideTimer);
-    errorAutoHideTimer = null;
-  }
-  if (countdownInterval) {
-    clearInterval(countdownInterval);
-    countdownInterval = null;
-  }
-}
-
-function startCountdown() {
-  if (countdownInterval) clearInterval(countdownInterval);
-  updateCountdownDisplay();
-  countdownInterval = setInterval(updateCountdownDisplay, 1000);
-}
-
-function updateCountdownDisplay() {
-  const elapsed = Math.floor((Date.now() - lastPollTime) / 1000);
-  const remaining = Math.max(0, 30 - elapsed);
-  wsErrorCountdown.textContent = remaining > 0 ? `retrying in ${remaining}s\u2026` : 'retrying\u2026';
 }
 
 function groupHeaderHTML(group, label) {
@@ -2226,8 +2086,6 @@ function renderClients(clients) {
 
 async function loadClients() {
   const epoch = ++clientsEpoch;
-  lastPollTime = Date.now();
-  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
   try {
     const payload = await window.apiJson('/app/network/api/clients');
     if (!payload || typeof payload !== 'object' || !Array.isArray(payload.clients)) {
@@ -2275,7 +2133,6 @@ async function loadClients() {
     clientsList.querySelectorAll('.client-forget').forEach(el => {
       setForgetAsking(el, openForgets.has(el.dataset.forgetCid));
     });
-    clearError();
     clientsList.scrollTop = scrollTop;
 
     if (focusSelector) {
@@ -2387,7 +2244,7 @@ async function unpairClient(cid, button) {
     loadClients();
   } catch (err) {
     const msg = 'that device couldn\'t be removed. your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT;
-    if (window.showError) { showError(msg); } else { showLocalError(msg); }
+    window.showError?.(msg);
   }
 }
 
