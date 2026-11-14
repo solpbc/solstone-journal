@@ -31,7 +31,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - connected agents now see what kind each activity was, such as a meeting or writing, and where it came from. a voice your journal has no name for is counted, and no longer listed as a person called Speaker 1.
 - an agent asking about a week by a day in the middle of it now gets that week. before, it got nothing unless it named the sunday.
 - connected agents now get a short name for each segment, activity, person and project, and it stays the same from one answer to the next, so an agent can keep one and come back to it later. before, each was a long code that changed on every answer and stopped working when your journal restarted or you changed what that agent may see. what each agent may see hasn't changed: your journal checks it every time an agent reads something by its name.
-- the sources page and the support page now work like home, transcripts and search: moving between them and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+- the sources, support and network pages now work like home, transcripts and search: moving between them and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 
 ### Fixed
 
@@ -41,6 +41,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - an activity whose pages, notes or summaries hold a heading the journal also uses, such as "Highlights" or "Note", now gets its list of people. before, the list was never made for it. on a long activity, a line shaped like a date and time range no longer cuts short what the list is made from. activities from before you update stay as they are.
 - "finish them" on home now says what finishing does: any original a stopped deletion hadn't deleted yet goes back in its segment. before, it said nothing was put back.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
+- the network page on a paired device now shows when your journal is closed to devices on your network.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.

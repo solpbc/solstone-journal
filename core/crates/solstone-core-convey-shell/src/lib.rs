@@ -725,7 +725,7 @@ async fn bind_embedded_router(
         receiver,
     );
     let service_root = journal_root.clone();
-    let door = Arc::new(door::DoorLifecycle::with_target_use(
+    let door = door::DoorLifecycle::with_target_use(
         door::DoorStartOptions {
             journal_root,
             port: address.port(),
@@ -744,7 +744,7 @@ async fn bind_embedded_router(
             relay_admissions,
         },
         backup_deps.target_use_owner(),
-    ));
+    );
     let pause_door = Arc::clone(&door);
     let resume_door = Arc::clone(&door);
     let pause_runtime = tokio::runtime::Handle::current();
@@ -996,7 +996,7 @@ pub async fn bind_with_authorization(
         options.journal_root.clone(),
         push_portal,
     ));
-    let door = Arc::new(door::DoorLifecycle::new(door::DoorStartOptions {
+    let door = door::DoorLifecycle::new(door::DoorStartOptions {
         journal_root: options.journal_root.clone(),
         port: options.door_port,
         network_ipv4: None,
@@ -1009,7 +1009,7 @@ pub async fn bind_with_authorization(
         handshake_authorization_read_ticks: options.handshake_authorization_read_ticks,
         authorization_sender,
         relay_admissions,
-    }));
+    });
     let loopback_router = options
         .router
         .clone()

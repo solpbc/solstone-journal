@@ -41,6 +41,9 @@
   let wasConnected = false;
   // The connect that last read a failed view again; at most once per connect.
   let rereadConnect = 0;
+  // How the view on the page arrived: 'push', 'pop' or 'replace' for an
+  // in-page move, null for the page's first view.
+  let arrivalMode = null;
   const scrolls = new Map();
   const fragments = new Map();
   const prefetched = new Set();
@@ -277,9 +280,12 @@
   // draws can be drawn again as its reads come in (home's are), and focus on
   // a heading that is taken out falls to the page. So a move focuses the
   // shipped heading, or else the workspace.
+  // A view whose first heading isn't its title (network's is "devices",
+  // partway down) marks its root `data-arrival-focus="main"`, and a move
+  // focuses the workspace.
   let placedHeading = null;
   function placed(target) {
-    placedHeading = target.querySelector('h1, h2');
+    placedHeading = target.querySelector('[data-arrival-focus="main"]') ? null : target.querySelector('h1, h2');
   }
 
   // A heading the view's markup ships hidden until its state is known (an
@@ -471,6 +477,7 @@
     try {
       early = window.__solEarlyRoute?.(window.location.href, { fragment: !held }) || null;
       mountedPath = window.location.pathname;
+      arrivalMode = mode;
       await window.mountWorkspaceFragment(app.workspace_url, {
         appName: name,
         fragmentText: held && typeof held.text === 'string' ? held.text : undefined,
@@ -536,6 +543,10 @@
   // scripts and styles go to the browser's cache under their hashed names.
   function prefetchView(name) {
     if (!active || !isPilot(name) || fragments.has(name)) return;
+    // A page that has learned the journal is another build loads the next
+    // page whole: this page's names for its code are the old build's, and
+    // asking for them would only be refused.
+    if (window.appEvents?.buildChanged?.()) return;
     const entry = entryTable()[name];
     const app = knownApp(name);
     if (!entry || !app) return;
@@ -651,6 +662,7 @@
     placed,
     keepFragment,
     isActive: () => active,
+    arrival: () => arrivalMode,
     // For tests and the leak check.
     held: () => ({
       scrolls: scrolls.size,
