@@ -62,13 +62,18 @@ struct Calls<'a> {
     function: String,
     allowed: bool,
     command_file: bool,
+    /// The trash's made-from step: an owner's delete brings search up to date
+    /// for what was made from a recording at once, through `refresh_now`
+    /// alone, after the trash has released its holds and with a short bound.
+    made_from: bool,
     violations: Vec<String>,
 }
 
 impl Calls<'_> {
     fn check(&mut self, name: &str, line: usize) {
         let original = self.aliases.get(name).map_or(name, String::as_str);
-        if !self.allowed && self.operations.contains(original) {
+        let refresh = self.made_from && original == "refresh_now";
+        if !self.allowed && !refresh && self.operations.contains(original) {
             self.violations
                 .push(format!("{}:{line}: {original}", self.function));
         }
@@ -210,6 +215,7 @@ fn scan_file(
         function: String::new(),
         allowed: store || mobile,
         command_file,
+        made_from: path.ends_with("solstone-core-import/src/made_from.rs"),
         violations: Vec::new(),
     };
     visitor.visit_file(&parsed);
@@ -382,6 +388,7 @@ fn the_writer_detector_sees_aliases_and_exempts_only_test_code() {
         function: String::new(),
         allowed: false,
         command_file: false,
+        made_from: false,
         violations: Vec::new(),
     };
     visitor.visit_file(&source);
