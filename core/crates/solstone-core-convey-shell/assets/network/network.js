@@ -336,7 +336,7 @@
       elements.successHeading.hidden = false;
       elements.successVerify.hidden = false;
       elements.remove.hidden = !ceremony.pairedDevice?.cid;
-      elements.remove.disabled = false;
+      setBusy(elements.remove, false);
       elements.removeResult.hidden = true;
       elements.removeResult.textContent = '';
     }
@@ -349,9 +349,10 @@
 
     async function removePairedDevice() {
       const cid = ceremony.pairedDevice?.cid;
-      if (!cid || elements.remove.disabled) return;
+      if (!cid || isBusy(elements.remove)) return;
       const generation = ceremony.generation;
-      elements.remove.disabled = true;
+      const held = documentRef.activeElement === elements.remove;
+      setBusy(elements.remove, true);
       let removed = false;
       try {
         const response = await fetchFn(`${prefix()}/api/clients/${encodeURIComponent(cid)}`, { method: 'DELETE' });
@@ -361,12 +362,14 @@
       }
       if (generation !== ceremony.generation || ceremony.state !== 'complete') return;
       elements.remove.hidden = removed;
-      elements.remove.disabled = false;
+      setBusy(elements.remove, false);
       // Unpaired: the heading and the note describe a device that can no longer reach it.
       elements.successHeading.hidden = removed;
       elements.successVerify.hidden = removed;
       elements.removeResult.textContent = copy(removed ? 'SUCCESS_REMOVED' : 'SUCCESS_REMOVE_FAIL');
       elements.removeResult.hidden = false;
+      // Unpaired, the button goes: the line saying so takes focus.
+      refocus(documentRef, held, [elements.remove, elements.removeResult, findById(documentRef, 'link-pairing-dialog-title')]);
       if (removed) options.onDeviceRemoved?.();
     }
 

@@ -1321,6 +1321,27 @@ module.exports = async function networkContractCases(manifestDir) {
     }
   });
 
+  await test('"unpair this device" after pairing keeps focus while out, then the result line; a failure keeps the button', async () => {
+    for (const fails of [false, true]) {
+      const p = await dialogPage({ present: true, used: true, device: { cid: 'sha256:new', display_label: 'pixel' } });
+      p.press(p.byId('link-pairing-check'));
+      await settle();
+      const remove = p.byId('link-pairing-remove');
+      assert.ok(remove.hidden === false, 'the success screen offers to unpair the new device');
+      p.holds.push((call) => call.method === 'DELETE');
+      keyPress(p, remove);
+      await settle();
+      assert.ok(busy(remove) && p.doc.activeElement === remove, `busy and focused while out (on ${focusOn(p)})`);
+      p.press(remove);
+      assert.ok(p.writes().filter((c) => c.method === 'DELETE').length === 1, 'a press while busy sends nothing');
+      lastCall(p, 'DELETE', '/app/network/api/clients/').answer(fails ? { error: 'refused' } : {}, fails ? 503 : 200);
+      await settle();
+      const want = fails ? 'BUTTON#link-pairing-remove' : 'P#link-pairing-remove-result';
+      assert.ok(focusOn(p) === want, `${fails ? 'failed' : 'unpaired'}: focus on ${want} (on ${focusOn(p)})`);
+      assert.ok(p.byId('link-pairing-remove-result').hidden === false && !busy(remove), 'the result is shown and nothing is busy');
+    }
+  });
+
   await test('the code expiring and a new code keep focus in the dialog: its button, then the title', async () => {
     const p = await dialogPage();
     const copyBtn = p.q('[data-pairing-action="copy"]');
