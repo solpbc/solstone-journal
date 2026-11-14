@@ -199,8 +199,10 @@ never `location.pathname`, and writes nothing once the address is another
 view's.
 A view may replace its own address
 with another address of the same view through `ctx.history.replace`, and the
-router follows. An address of another view is the router's, and `ctx.history`
-does not write it. A move starts the next view's declared
+router follows. A link to a hash on the view's own path is the browser's, and
+its entry has no place in the page's history yet; the view's replace gives it
+one, so a back to it keeps its scroll. An address of another view is the
+router's, and `ctx.history` does not write it. A move starts the next view's declared
 first reads at once, in a table of their own, adopted as the head's are. The
 swap runs in a view transition once those reads answer or 300 ms pass. Focus
 moves to the first heading in the view's own markup, or to `<main>` when the
