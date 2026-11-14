@@ -1159,7 +1159,6 @@
       } catch (_) {}
     }
     async function reload(quiet = false) {
-      if (ctx.disposed) return;
       if (!quiet || !state) view.innerHTML = '<p class="lead">loading agents…</p>';
       // The first load asks for the state and the memory summary together; the page draws once both answer.
       const summary = quiet ? null : loadMemorySummary(true);
@@ -1287,7 +1286,7 @@
         else if (action === 'sme-account-replace') { await api('/app/agents/api/solstone-me/account/replace', ownerOptions('POST')); await reload(true); }
         else if (action === 'dismiss-sme-replaced') { await api('/app/agents/api/solstone-me/account/notice/dismiss', ownerOptions('POST')); await reload(true); }
         else if (action === 'dismiss-replay') { await api('/app/agents/api/replay-notices/' + encodeURIComponent(target.dataset.notice) + '/dismiss', ownerOptions('POST')); await reload(true); }
-        else if (action === 'new-code') { if (connectWay && connectWays().some(([id]) => id === connectWay)) { const known = await pairedBefore(); const res = await api('/app/agents/api/pairing', jsonOptions('POST', againTarget ? {door: connectWay, agent: againTarget.agent} : {door: connectWay})); if (ctx.disposed) return; pairingCode = res; state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door}; stopWatch(); render(); startWatch(res, known); } }
+        else if (action === 'new-code') { if (connectWay && connectWays().some(([id]) => id === connectWay)) { const known = await pairedBefore(); const res = await api('/app/agents/api/pairing', jsonOptions('POST', againTarget ? {door: connectWay, agent: againTarget.agent} : {door: connectWay})); pairingCode = res; state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door}; stopWatch(); render(); startWatch(res, known); } }
         else if (action === 'filter-activity') { const filters = Object.fromEntries(Object.keys(activityFilters).map(key => [key, document.getElementById(`a-${key}`).value])); await applyActivityFilters(filters); }
         else if (target.dataset.savePermission) { const [kind,id] = target.dataset.savePermission.split(':'); const categories = [...document.querySelectorAll('input[name=category]:checked')].map(node => node.value); const scope = document.getElementById('scope').value; const facets = [...document.querySelectorAll('input[name=facet]:checked')].map(node => node.value); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`, jsonOptions('PUT', {categories, scope, facets})); route = {name:'home'}; await reload(true); }
         else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (confirm(`${kind === 'bearer' ? 'revoke this key?' : 'disconnect this agent?'} what it already read stays with it. its activity and its memories stay in your journal.`)) { await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); route = {name:'home'}; await reload(true); } }
@@ -1312,8 +1311,6 @@
     agentsHooks = {recoverMemory};
     ctx.onDispose(() => {
       if (agentsHooks?.recoverMemory === recoverMemory) agentsHooks = null;
-      stopWatch();
-      ctx.clearTimeout(enablePollTimer);
       // A dialog may have held the rest of the page inert.
       window.ConveyModalLayer?.reconcile?.();
     });
