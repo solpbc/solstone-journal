@@ -15,9 +15,10 @@ mod trust_lock;
 pub use ambiguity::ambiguity_id;
 pub use archive_dedupe::{archive_dedupe_akas, archive_dedupe_emails, archive_dedupe_observations};
 pub use resolution::{
-    EntityResolution, answered_or_survivor, EntityResolutionEntity, EntityResolutionError, EntityResolutionOutcome,
-    ResolutionCandidate, record_entity_resolution, record_entity_resolution_checked,
-    record_entity_resolution_from_name_evidence, resolve_activity_name,
+    EntityResolution, EntityResolutionEntity, EntityResolutionError, EntityResolutionOutcome,
+    ResolutionCandidate, answered_or_survivor, record_entity_resolution,
+    record_entity_resolution_checked, record_entity_resolution_from_name_evidence,
+    resolve_activity_name,
 };
 pub use review_owner::{ReviewOwnerConflictKind, ReviewOwnerError};
 pub use solstone_core_journal_io::FileLock;
@@ -47,10 +48,10 @@ pub use store::{
     PREFIX_CUTOFF, ParsedObservations, PreparedHistoryEvent, PreparedHistoryOutcome,
     PreparedIdentityChange, PreparedMergeProposals, PreparedObservationBatch,
     PreparedReconcileFailure, RETIRED_ENTITIES_FILE, REVIEW_SWEEP_RECEIPT_RELATIVE_PATH, Retired,
-    RetiredEntities, RetiredState, ReviewRestoreTarget, TYPO_FLOOR, VoiceprintArchive,
-    VoiceprintEnvelope, VoiceprintItem, VoiceprintKey, VoiceprintNpzError,
-    VoiceprintOperationError, VoiceprintRemoval, VoiceprintRemovalReport, VoiceprintSkipReasons,
-    accept_merge_candidate, add_observation, add_observation_for_entity,
+    RetiredEntities, RetiredState, ReviewRestoreTarget, TYPO_FLOOR, TakenVoiceprint,
+    VoiceprintArchive, VoiceprintEnvelope, VoiceprintItem, VoiceprintKey, VoiceprintNpzError,
+    VoiceprintOperationError, VoiceprintRecording, VoiceprintRemoval, VoiceprintRemovalReport,
+    VoiceprintSkipReasons, accept_merge_candidate, add_observation, add_observation_for_entity,
     adopt_configured_principal, ambiguity_group_revision, apply_ambiguity_review_policy,
     apply_merge_candidate_review_policy, apply_observation_change, apply_ops_to_parsed,
     becomes_journal_principal, classify_prepared_history, cmp_composite_then_key,
@@ -73,13 +74,14 @@ pub use store::{
     observe_entity_identity, owner_name_configured, parse_observation_content,
     parse_observation_file, parse_retired_entities, prepare_identity_changes,
     prepare_merge_proposals, preview_entity_merge, publish_identity_change,
-    publish_merge_proposals, read_ambiguities, read_entity_identity, read_identity_group_map,
-    read_identity_map, read_journal_principal, read_live_observations, read_merge_log,
-    read_named_identity_groups, read_prepared_history, read_retired_entities, read_visible_history,
-    reconcile_prepared_history, reconcile_prepared_history_reporting, record_ambiguity_choice,
-    record_ambiguity_group_choice, record_ambiguity_observation,
-    record_ambiguity_observation_checked, record_ambiguity_observations, record_deleted_entity,
-    record_merge_candidate, record_merge_candidate_checked, record_observation_ops_strict,
+    publish_merge_proposals, put_back_recording_voiceprints, read_ambiguities,
+    read_entity_identity, read_identity_group_map, read_identity_map, read_journal_principal,
+    read_live_observations, read_merge_log, read_named_identity_groups, read_prepared_history,
+    read_retired_entities, read_visible_history, reconcile_prepared_history,
+    reconcile_prepared_history_reporting, record_ambiguity_choice, record_ambiguity_group_choice,
+    record_ambiguity_observation, record_ambiguity_observation_checked,
+    record_ambiguity_observations, record_deleted_entity, record_merge_candidate,
+    record_merge_candidate_checked, record_observation_ops_strict, recording_voiceprints,
     recover_interrupted_entity_merge, refresh_identity_map_cache,
     remove_entity_ambiguity_references, remove_entity_ambiguity_references_keeping,
     remove_voiceprints_by_key, repair_entity_identities, rescope_facet_ambiguities,
@@ -89,9 +91,9 @@ pub use store::{
     rewrite_voiceprint_metadata, save_entity_identity, save_entity_identity_with_map,
     save_voiceprints_batch, save_voiceprints_batch_checked, scan_identity_census,
     serialize_observation_rows, standing_merge_for_suggestion, sweep_entity_review_policy,
-    try_load_entity_voiceprints_file, try_load_entity_voiceprints_in_dir, unblock_journal_entity,
-    unrecognized_entity_files, validate_review_object, voiceprint_key_from_metadata,
-    write_resolved_identity_map_cache,
+    take_recording_voiceprints, try_load_entity_voiceprints_file,
+    try_load_entity_voiceprints_in_dir, unblock_journal_entity, unrecognized_entity_files,
+    validate_review_object, voiceprint_key_from_metadata, write_resolved_identity_map_cache,
 };
 pub use trust_lock::{
     EntityTrustLock, EntityTrustLockError, FacetTrustLock, FacetTrustLockError,

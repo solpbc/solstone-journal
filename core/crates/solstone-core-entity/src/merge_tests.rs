@@ -2857,7 +2857,8 @@ fn merge_carries_the_owner_voice_the_earlier_created_at_and_fills_an_empty_array
     assert_eq!(identity.value()["roles"], json!(["friend"]));
     // An owner's answer that chose the one merged away now names the survivor.
     assert_eq!(
-        crate::answered_or_survivor(&journal, "source", |id| (id == "target").then(|| id.to_owned())),
+        crate::answered_or_survivor(&journal, "source", |id| (id == "target")
+            .then(|| id.to_owned())),
         Some("target".to_owned())
     );
     fs::remove_dir_all(journal).unwrap();

@@ -526,7 +526,10 @@ mod disk {
         )
         .unwrap();
         let (_, s) = load(root, "target").unwrap();
-        assert_eq!(s.decision.dismissed_at.as_deref(), Some("2026-11-01T00:00:00Z"));
+        assert_eq!(
+            s.decision.dismissed_at.as_deref(),
+            Some("2026-11-01T00:00:00Z")
+        );
         assert_eq!(s.decision.dismissed_looks, vec![face(0).embedding]);
         assert!(s.decision.photo.is_none());
     }

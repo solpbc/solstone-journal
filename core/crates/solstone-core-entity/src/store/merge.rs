@@ -1345,7 +1345,11 @@ const OWNER_VOICE: &str = "owner_centroid.npz";
 /// When the principal is the one merged away, its owner voice goes with it to
 /// the survivor, rather than with the folder. The survivor's own wins. Both
 /// folders are captured for rollback before any phase runs.
-fn move_owner_voice(journal: &Path, source_dir: &str, target_dir: &str) -> Result<(), EntityMergeError> {
+fn move_owner_voice(
+    journal: &Path,
+    source_dir: &str,
+    target_dir: &str,
+) -> Result<(), EntityMergeError> {
     if source_dir == target_dir {
         return Ok(());
     }

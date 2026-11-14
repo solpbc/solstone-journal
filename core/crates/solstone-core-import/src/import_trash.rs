@@ -1020,8 +1020,8 @@ fn keep_strava_names(journal: &Path, id: &str, workouts: &BTreeSet<String>) -> R
         .map_err(|error| error.to_string())?
         .is_none()
     {
-        let lines = crate::strava_names::read_strava_names(journal)
-            .map_err(|error| error.to_string())?;
+        let lines =
+            crate::strava_names::read_strava_names(journal).map_err(|error| error.to_string())?;
         let kept: Vec<_> = workouts
             .iter()
             .filter_map(|workout| lines.get(workout).cloned())
@@ -1037,8 +1037,8 @@ fn keep_strava_names(journal: &Path, id: &str, workouts: &BTreeSet<String>) -> R
 
 /// Put back the lines kept with item `id`, if any.
 fn put_back_strava_names(journal: &Path, id: &str) -> Result<(), String> {
-    let Some(bytes) =
-        solstone_core_trash::kept(journal, id, KEPT_STRAVA_NAMES).map_err(|error| error.to_string())?
+    let Some(bytes) = solstone_core_trash::kept(journal, id, KEPT_STRAVA_NAMES)
+        .map_err(|error| error.to_string())?
     else {
         return Ok(());
     };

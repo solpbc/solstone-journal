@@ -74,9 +74,9 @@ pub use declaration::{
     require_facet_write_identity, require_observed_facet_write_identity,
 };
 pub use detected_entities::{
-    DetectedEntityInput, DetectionUpsertReport, read_detected_entities,
-    read_detected_entities_strict, save_detected_entity, update_detected_entity,
-    upsert_detection_segment,
+    DESCRIBED_BY, DetectedEntityInput, DetectionUpsertReport, detections_naming, narrow_detections,
+    read_detected_entities, read_detected_entities_strict, restore_detections,
+    save_detected_entity, update_detected_entity, upsert_detection_segment,
 };
 pub use detected_entity_activity::{
     DetectedLinkRef, DetectedRecent, iter_detected_entity_names_since,

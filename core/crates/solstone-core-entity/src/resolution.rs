@@ -650,7 +650,9 @@ pub fn answered_or_survivor<T>(
         if let Some(found) = find(&current) {
             return Some(found);
         }
-        current = crate::merged_successor(journal_root, &current).ok().flatten()?;
+        current = crate::merged_successor(journal_root, &current)
+            .ok()
+            .flatten()?;
     }
     None
 }
