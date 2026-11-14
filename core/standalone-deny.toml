@@ -21,6 +21,9 @@ ignore = [
     { id = "RUSTSEC-2026-0511", reason = "hickory-proto 0.24.4 empty-non-terminal DNSSEC validation defect; DNSSEC features disabled, affected code not compiled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
     { id = "RUSTSEC-2026-0512", reason = "hickory-proto 0.24.4 unrelated-RRset DNSSEC validation defect; DNSSEC features disabled, affected code not compiled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
     { id = "RUSTSEC-2026-0514", reason = "hickory-resolver 0.24.4 bogus-answer acceptance with DNSSEC validation enabled; DNSSEC features disabled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
+    # 2026-11-14: RUSTSEC-2026-0530 and -0531, the same class (see deny.toml).
+    { id = "RUSTSEC-2026-0530", reason = "hickory-proto 0.24.4 parent-side NSEC at a zone cut accepted as nonexistence proof; DNSSEC features disabled, affected code not compiled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
+    { id = "RUSTSEC-2026-0531", reason = "hickory-proto 0.24.4 child-side NSEC/NSEC3 accepted as no-DS proof; DNSSEC features disabled, affected code not compiled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
     # 2026-10-26: paste 1.0.15 is a build-time macro dependency of pulp/gemm
     # in OCR and native inference. No patched release exists. Replacing that
     # transitive dependency requires an upstream change or a reviewed fork.
