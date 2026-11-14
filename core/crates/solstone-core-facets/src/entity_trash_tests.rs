@@ -229,10 +229,7 @@ fn recover(journal: &Journal, told: &Told, item: &str) -> Result<Item, TrashErro
 
 fn erase(journal: &Journal, item: &str) {
     let told = Told::default();
-    let (entities, facets) = (
-        Entities::new(&told),
-        crate::facet_trash::Facets::new(&told),
-    );
+    let (entities, facets) = (Entities::new(&told), crate::facet_trash::Facets::new(&told));
     solstone_core_trash::erase(
         journal.root(),
         &[&entities, &facets],
