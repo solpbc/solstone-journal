@@ -226,6 +226,14 @@
         <button type="button" data-action="view-key" data-copy="action_labels.view_key"></button>
       </div>
 
+      <details class="backup-disclose backup-rotate-key">
+        <summary data-copy="management.rotate_key_summary"></summary>
+        <p class="backup-warning" data-copy="management.rotate_key_caption"></p>
+        <div class="backup-panel-actions">
+          <button type="button" class="danger" data-action="rotate-key" data-copy="action_labels.rotate_key"></button>
+        </div>
+      </details>
+
       <section class="backup-older" id="older-backups" data-older-section hidden>
         <h2 data-copy="older.title"></h2>
         <p data-older-lead></p>
@@ -258,14 +266,6 @@
           </div>
         </div>
       </section>
-
-      <details class="backup-disclose backup-rotate-key">
-        <summary data-copy="management.rotate_key_summary"></summary>
-        <p class="backup-warning" data-copy="management.rotate_key_caption"></p>
-        <div class="backup-panel-actions">
-          <button type="button" class="danger" data-action="rotate-key" data-copy="action_labels.rotate_key"></button>
-        </div>
-      </details>
 
       <form data-retention-form class="backup-retention">
         <h2 data-copy="management.status_labels.retention"></h2>

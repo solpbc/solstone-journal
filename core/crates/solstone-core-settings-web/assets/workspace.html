@@ -2171,6 +2171,9 @@ button:focus:not(:focus-visible) {
 /* Trash: what waits before it's erased. One strip above the rows swaps in place. */
 .trash-backups-line { margin: .9em 0 0; color: var(--ink-soft); font-size: .9em; }
 .trash-backups-line[hidden] { display: none; }
+.trash-backups-link { color: var(--orange-text-aa); font-weight: 600; text-decoration: none; }
+.trash-backups-link:hover { text-decoration: underline; }
+.trash-backups-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 @media (max-width: 560px) { .trash-backups-link { display: inline-block; min-height: 44px; line-height: 44px; } }
 .trash-panel { margin-top: .5em; }
 .trash-panel .log-entries { max-height: none; overflow: visible; padding: 0; }
