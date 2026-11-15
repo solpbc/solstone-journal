@@ -314,6 +314,14 @@ pub trait Kind {
     fn narrowed(&self, unit: &Unit, _paths: &[String]) -> Unit {
         unit.clone()
     }
+
+    /// Before the item's files are unlinked by an erase: let go of what the
+    /// thing still leaves in the journal outside them. Runs again when a
+    /// stopped erase is finished, so it must be safe to repeat. A failure is
+    /// logged and never stops the item's own erase.
+    fn erasing(&self, _journal: &Path, _item: &Item) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// Why a trash step did not happen.
@@ -602,25 +610,42 @@ fn attach_as(
     Ok(item)
 }
 
-/// Erase one item now. Records [`Event::Erased`].
-pub fn erase(journal: &Path, id: &str, action: Action, surface: Surface) -> Result<(), TrashError> {
-    erase_as(journal, id, action, surface, None)
+/// Erase one item now. Records [`Event::Erased`]. `kinds` are the kinds of
+/// what it erases (it and what goes with it); one whose kind isn't given is
+/// left erasing, for the sweep to finish.
+pub fn erase(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    id: &str,
+    action: Action,
+    surface: Surface,
+) -> Result<(), TrashError> {
+    erase_as(journal, kinds, id, action, surface, None)
 }
 
 /// [`erase`] as one of several items an owner act erases together, recorded
 /// under that act's `operation`.
 pub fn erase_in(
     journal: &Path,
+    kinds: &[&dyn Kind],
     id: &str,
     action: Action,
     surface: Surface,
     operation: &OperationId,
 ) -> Result<(), TrashError> {
-    erase_as(journal, id, action, surface, Some(operation.to_string()))
+    erase_as(
+        journal,
+        kinds,
+        id,
+        action,
+        surface,
+        Some(operation.to_string()),
+    )
 }
 
 fn erase_as(
     journal: &Path,
+    kinds: &[&dyn Kind],
     id: &str,
     action: Action,
     surface: Surface,
@@ -649,13 +674,13 @@ fn erase_as(
     // Once it is marked erasing nothing else takes it, so the unlink, which
     // can take a while for a long recording, runs without the trash's lock.
     drop(lock);
-    finish_erase(journal, &item)?;
-    erase_linked_within(journal, &item);
+    finish_erase(journal, kinds, &item)?;
+    erase_linked_within(journal, kinds, &item);
     for other in needing {
-        match finish_erase(journal, &other) {
+        match finish_erase(journal, kinds, &other) {
             // What was released from it goes with it too, as when it is
             // erased on its own.
-            Ok(()) => erase_linked_within(journal, &other),
+            Ok(()) => erase_linked_within(journal, kinds, &other),
             Err(error) => log::warn!(
                 "trash item {}: not erased with {}: {error}",
                 other.id,
@@ -730,7 +755,7 @@ pub fn needing(journal: &Path, item: &Item) -> Result<Vec<Item>, TrashError> {
 /// it, under the same act: an owner who erases a recording has erased the
 /// originals released from it too. A stop before this leaves it on its own
 /// timer, and a recover of it refuses, its home being gone.
-fn erase_linked_within(journal: &Path, erased: &Item) {
+fn erase_linked_within(journal: &Path, kinds: &[&dyn Kind], erased: &Item) {
     let Ok(items) = all_items(journal) else {
         return;
     };
@@ -751,7 +776,7 @@ fn erase_linked_within(journal: &Path, erased: &Item) {
             .map_or((Action::Erase, timer_surface(), None), |pending| {
                 (pending.action, pending.surface, pending.operation)
             });
-        if let Err(error) = erase_as(journal, &other.id, action, surface, operation) {
+        if let Err(error) = erase_as(journal, kinds, &other.id, action, surface, operation) {
             log::warn!(
                 "trash item {}: not erased with {}: {error}",
                 other.id,
@@ -895,6 +920,7 @@ pub fn recover_stretch(
 /// the sweep. Refused while its set is still being moved in.
 pub fn erase_stretch(
     journal: &Path,
+    kinds: &[&dyn Kind],
     id: &str,
     action: Action,
     surface: Surface,
@@ -937,8 +963,8 @@ pub fn erase_stretch(
         (marked, needing)
     };
     for item in members.iter().chain(needing.iter()) {
-        match finish_erase(journal, item) {
-            Ok(()) => erase_linked_within(journal, item),
+        match finish_erase(journal, kinds, item) {
+            Ok(()) => erase_linked_within(journal, kinds, item),
             Err(error) => log::warn!(
                 "trash item {}: erase of its stretch left for the sweep: {error}",
                 item.id
@@ -1576,7 +1602,14 @@ fn settle(
     }
     match item.state {
         State::Trashed | State::Erasing => {
-            match erase_as(journal, &id, set.action, set.surface, set.operation.clone()) {
+            match erase_as(
+                journal,
+                kinds,
+                &id,
+                set.action,
+                set.surface,
+                set.operation.clone(),
+            ) {
                 Ok(()) => {
                     entry.settled = true;
                     (
@@ -1791,7 +1824,7 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                 let (action, surface) = pending
                     .map(|pending| (pending.action, pending.surface))
                     .unwrap_or((Action::Erase, timer_surface()));
-                erase(journal, &item.id, action, surface).map(|()| {
+                erase(journal, kinds, &item.id, action, surface).map(|()| {
                     swept.resumed += 1;
                 })
             }
@@ -1808,6 +1841,7 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                         if stretch_erased.insert(id.clone()) {
                             erase_stretch(
                                 journal,
+                                kinds,
                                 &id,
                                 Action::Erase,
                                 timer_surface(),
@@ -1827,10 +1861,11 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                 }
             }
             State::Trashed => match item.erase_at() {
-                Some(at) if at <= now => erase(journal, &item.id, Action::Erase, timer_surface())
-                    .map(|()| {
+                Some(at) if at <= now => {
+                    erase(journal, kinds, &item.id, Action::Erase, timer_surface()).map(|()| {
                         swept.erased += 1;
-                    }),
+                    })
+                }
                 Some(_) => {
                     swept.waiting += 1;
                     Ok(())
@@ -2036,7 +2071,16 @@ fn removal(
 }
 
 /// Unlink the item's files, record, and remove the item. Safe to run again.
-fn finish_erase(journal: &Path, item: &Item) -> Result<(), TrashError> {
+fn finish_erase(journal: &Path, kinds: &[&dyn Kind], item: &Item) -> Result<(), TrashError> {
+    // Its kind lets go of what it leaves outside its files first. No kind
+    // given: it stays erasing, and the sweep, which has every kind, finishes.
+    let kind = kind_for(kinds, &item.unit)?;
+    if let Err(error) = kind.erasing(journal, item) {
+        log::warn!(
+            "trash item {}: erased, but what it left wasn't: {error}",
+            item.id
+        );
+    }
     let pending = item.pending.clone().unwrap_or(Pending {
         action: Action::Erase,
         surface: timer_surface(),
@@ -2722,7 +2766,7 @@ mod tests {
         );
         assert!(kept(&root, &item.id, "other.json").unwrap().is_none());
         assert!(keep(&root, &item.id, "../escape", b"x").is_err());
-        erase(&root, &item.id, Action::Erase, web()).unwrap();
+        erase(&root, &[&kind], &item.id, Action::Erase, web()).unwrap();
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
     }
 
@@ -2897,7 +2941,7 @@ mod tests {
         let (_dir, root) = journal();
         let kind = Fake::default();
         let item = trash(&root, &kind);
-        erase(&root, &item.id, Action::Erase, web()).unwrap();
+        erase(&root, &[&kind], &item.id, Action::Erase, web()).unwrap();
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
         assert!(!root.join(SEGMENT).join("audio.flac").exists());
         assert!(matches!(
@@ -3528,7 +3572,15 @@ mod tests {
         let kind = Plain::default();
         let stretch = stretch_of_people(&root, &kind);
         let operation = OperationId::fresh(Utc::now());
-        let erased = erase_stretch(&root, &stretch.id, Action::Erase, web(), &operation).unwrap();
+        let erased = erase_stretch(
+            &root,
+            &[&kind],
+            &stretch.id,
+            Action::Erase,
+            web(),
+            &operation,
+        )
+        .unwrap();
         assert_eq!(erased.len(), 2);
         assert!(stretch_members(&root, &stretch.id).unwrap().is_empty());
         let found: Vec<_> = entries(&root)
@@ -3575,7 +3627,7 @@ mod tests {
         let op = OperationId::fresh(Utc::now());
         for refused in [
             recover_stretch(&root, &[&kind], operation, Action::Recover, web(), &op).map(|_| ()),
-            erase_stretch(&root, operation, Action::Erase, web(), &op).map(|_| ()),
+            erase_stretch(&root, &[&kind], operation, Action::Erase, web(), &op).map(|_| ()),
         ] {
             let Err(TrashError::Held(text)) = refused else {
                 panic!("not refused: {refused:?}");
@@ -3653,7 +3705,7 @@ mod tests {
 
         let erase = OperationId::fresh(Utc::now());
         for id in trash_people(&root) {
-            erase_in(&root, &id, Action::Erase, web(), &erase).unwrap();
+            erase_in(&root, &[&kind], &id, Action::Erase, web(), &erase).unwrap();
         }
         let erased: Vec<_> = entries(&root)
             .into_iter()
@@ -3674,7 +3726,7 @@ mod tests {
         assert!(!raw.contains("operation"));
         attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
         let again = trash(&root, &kind);
-        erase(&root, &again.id, Action::Erase, web()).unwrap();
+        erase(&root, &[&kind], &again.id, Action::Erase, web()).unwrap();
         assert_eq!(
             events(&root),
             vec![
@@ -3694,7 +3746,7 @@ mod tests {
         let kind = Fake::default();
         let item = trash(&root, &kind);
         assert_eq!(held_paths(&root).unwrap(), vec![SEGMENT.to_owned()]);
-        erase(&root, &item.id, Action::Erase, web()).unwrap();
+        erase(&root, &[&kind], &item.id, Action::Erase, web()).unwrap();
         assert!(held_paths(&root).unwrap().is_empty());
     }
 
@@ -4049,7 +4101,7 @@ mod tests {
             .join(FILES_DIR)
             .join(AUDIO);
         assert_eq!(fs::read(&held).unwrap(), b"sound");
-        erase(&root, &item.id, Action::Erase, web()).unwrap();
+        erase(&root, &[&kind], &item.id, Action::Erase, web()).unwrap();
         assert!(!held.exists());
         linked::NO_HARD_LINKS.with(|cell| cell.set(false));
     }
@@ -4136,7 +4188,7 @@ mod tests {
         // The fake's references leave a tombstone; the recording is still here.
         fs::remove_file(root.join(SEGMENT).join("tombstone.json")).unwrap();
         let recording = trash(&root, &kind);
-        erase(&root, &recording.id, Action::Erase, web()).unwrap();
+        erase(&root, &[&kind], &recording.id, Action::Erase, web()).unwrap();
         assert!(item(&root, &originals.id).unwrap().is_none());
         assert!(!root.join(TRASH_DIR).join(&originals.id).exists());
     }
@@ -4149,7 +4201,7 @@ mod tests {
         let linked = link(&root, &kind, &[AUDIO]);
         fs::remove_file(root.join(AUDIO)).unwrap();
         let item = finish_linked(&root, &kind, linked).unwrap().unwrap();
-        erase(&root, &item.id, Action::Erase, web()).unwrap();
+        erase(&root, &[&kind], &item.id, Action::Erase, web()).unwrap();
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
         assert!(!root.join(AUDIO).exists());
     }
@@ -4199,5 +4251,100 @@ mod tests {
                 let _ = std::fs::remove_dir_all(&self.0);
             }
         }
+    }
+
+    /// A kind that counts its erase hook, and can fail it.
+    #[derive(Default)]
+    struct Erasing {
+        hold: std::cell::Cell<u32>,
+        erased: std::cell::Cell<u32>,
+        fails: bool,
+    }
+
+    impl Kind for Erasing {
+        fn handles(&self, unit: &Unit) -> bool {
+            matches!(unit, Unit::Entity)
+        }
+        fn hold<'a>(&'a self, _: &Path, _: &Item) -> Result<Box<dyn Hold + 'a>, String> {
+            Ok(Box::new(Free(&self.hold)))
+        }
+        fn present(&self, journal: &Path, path: &str) -> bool {
+            journal.join(path).exists()
+        }
+        fn references(&self, _: &Path, _: &Item, _: Change, _: &[String]) -> Result<(), String> {
+            Ok(())
+        }
+        fn erasing(&self, _: &Path, _: &Item) -> Result<(), String> {
+            self.erased.set(self.erased.get() + 1);
+            if self.fails {
+                Err("broken".into())
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    fn trashed_person(root: &Path, kind: &dyn Kind) -> Item {
+        fs::create_dir_all(root.join("entities/alice")).unwrap();
+        fs::write(root.join("entities/alice/entity.json"), b"{}").unwrap();
+        detach(
+            root,
+            kind,
+            Unit::Entity,
+            Action::EntityDelete,
+            web(),
+            vec!["entities/alice".into()],
+        )
+        .unwrap()
+    }
+
+    /// Erase now and the timer both let the kind go of what it left first.
+    #[test]
+    fn every_erase_runs_its_kinds_erase_hook_once() {
+        let (_dir, root) = journal();
+        let kind = Erasing::default();
+        let item = trashed_person(&root, &kind);
+        erase(&root, &[&kind], &item.id, Action::Erase, web()).unwrap();
+        assert_eq!(kind.erased.get(), 1);
+        assert!(list(&root).unwrap().is_empty());
+
+        let item = trashed_person(&root, &kind);
+        let due = item.erase_at().unwrap() + Duration::hours(1);
+        sweep(&root, &[&kind], due);
+        assert_eq!(kind.erased.get(), 2);
+        assert!(list(&root).unwrap().is_empty());
+    }
+
+    /// An erase given no kind for the item leaves it erasing, its files kept,
+    /// and the sweep finishes it with the hook.
+    #[test]
+    fn an_erase_without_its_kind_is_left_for_the_sweep() {
+        let (_dir, root) = journal();
+        let kind = Erasing::default();
+        let item = trashed_person(&root, &kind);
+        let other = Fake::default();
+        assert!(erase(&root, &[&other], &item.id, Action::Erase, web()).is_err());
+        assert_eq!(
+            read_item(&root, &item.id).unwrap().unwrap().state,
+            State::Erasing
+        );
+        assert!(trash_root(&root).join(&item.id).join(FILES_DIR).exists());
+        sweep(&root, &[&kind], Utc::now());
+        assert_eq!(kind.erased.get(), 1);
+        assert!(read_item(&root, &item.id).unwrap().is_none());
+    }
+
+    /// A hook that fails never keeps the owner's erase from happening.
+    #[test]
+    fn a_failing_erase_hook_still_erases() {
+        let (_dir, root) = journal();
+        let kind = Erasing {
+            fails: true,
+            ..Erasing::default()
+        };
+        let item = trashed_person(&root, &kind);
+        erase(&root, &[&kind], &item.id, Action::Erase, web()).unwrap();
+        assert_eq!(kind.erased.get(), 1);
+        assert!(read_item(&root, &item.id).unwrap().is_none());
     }
 }

@@ -2828,3 +2828,38 @@ fn a_merge_whose_source_folders_cant_combine_is_refused_before_anything_changes(
     assert_eq!(facet_tree(&journal), before);
     fs::remove_dir_all(journal).unwrap();
 }
+
+#[test]
+fn merge_carries_the_owner_voice_the_earlier_created_at_and_fills_an_empty_array() {
+    let journal = voiceprint_journal();
+    save_entity_identity(
+        &journal,
+        "source",
+        &json!({"id":"source","name":"source","type":"Person","aka":[],"emails":[],"is_principal":true,"created_at":1000,"roles":["friend"]}),
+        None,
+    )
+    .unwrap();
+    save_entity_identity(
+        &journal,
+        "target",
+        &json!({"id":"target","name":"target","type":"Person","aka":[],"emails":[],"created_at":5000,"roles":[]}),
+        None,
+    )
+    .unwrap();
+    fs::write(journal.join("entities/source/owner_centroid.npz"), b"voice").unwrap();
+    commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    assert_eq!(
+        fs::read(journal.join("entities/target/owner_centroid.npz")).unwrap(),
+        b"voice"
+    );
+    let identity = read_entity_identity(&journal, "target").unwrap().unwrap();
+    assert_eq!(identity.value()["created_at"], 1000);
+    assert_eq!(identity.value()["roles"], json!(["friend"]));
+    // An owner's answer that chose the one merged away now names the survivor.
+    assert_eq!(
+        crate::answered_or_survivor(&journal, "source", |id| (id == "target")
+            .then(|| id.to_owned())),
+        Some("target".to_owned())
+    );
+    fs::remove_dir_all(journal).unwrap();
+}

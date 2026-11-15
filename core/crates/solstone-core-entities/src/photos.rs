@@ -116,13 +116,13 @@ fn context(journal: &Path, entity: &str) -> Result<Context, Error> {
         .as_ref()
         .map(|a| a.faces.as_slice())
         .unwrap_or_default();
-    // A journal-level cross-entity reader is supplied by the daily face routine.
+    let cross = fp::cross::for_entity(journal, &id)?;
     let panel = fp::panel::panel(
         faces,
         &state,
         principal_id == Some(id.as_str()),
         owner.as_deref(),
-        None,
+        Some(cross),
     );
     Ok(Context {
         id,

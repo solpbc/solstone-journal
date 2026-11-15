@@ -191,6 +191,12 @@ pub fn upsert_detection_segment(
     let mut wrote = 0;
 
     modify_detected_entities(journal_root, facet_dir, day, |rows| {
+        // A recording that went to the trash while its detection ran writes
+        // nothing: what it found left with it. Checked under the day's lock,
+        // which the trash's narrowing takes after the recording has moved.
+        if segment_removed(journal_root, segment) {
+            return Ok(());
+        }
         for row in rows.iter_mut() {
             let name = row.get("name").and_then(Value::as_str).unwrap_or_default();
             let key = normalize_resolution_query(name);
@@ -216,6 +222,7 @@ pub fn upsert_detection_segment(
                 "description".to_owned(),
                 Value::String(detection.description.clone()),
             );
+            object.insert(DESCRIBED_BY.to_owned(), Value::String(segment.to_owned()));
             object.insert(
                 "segments".to_owned(),
                 Value::Array(
@@ -238,6 +245,7 @@ pub fn upsert_detection_segment(
                 "type": detection.entity_type,
                 "name": detection.name,
                 "description": detection.description,
+                DESCRIBED_BY: segment,
                 "segments": [segment],
                 "updated_at": chrono::Utc::now().timestamp_millis(),
             }));
@@ -247,6 +255,245 @@ pub fn upsert_detection_segment(
     })?;
 
     Ok(DetectionUpsertReport { wrote })
+}
+
+/// The recording whose detection wrote a row's `description`, or
+/// [`DESCRIBED_BY_OWNER`].
+pub const DESCRIBED_BY: &str = "described_by";
+/// A description the owner wrote, which no recording's delete takes.
+pub const DESCRIBED_BY_OWNER: &str = "owner";
+
+/// Whether the recording at chronicle-relative `origin` was removed by the
+/// owner: its place is there and isn't a live recording. A place that isn't
+/// there isn't a removal.
+fn segment_removed(journal_root: &Path, origin: &str) -> bool {
+    let Ok(dir) =
+        solstone_core_journal_io::contained_path(journal_root, &format!("chronicle/{origin}"))
+    else {
+        return false;
+    };
+    dir.is_dir()
+        && matches!(
+            solstone_core_segment::owner_deletion_state(&dir),
+            Ok(state) if state != solstone_core_segment::OwnerDeletionState::Live
+        )
+}
+
+fn row_origins(row: &Value) -> Vec<String> {
+    row.get("segments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            item.as_str().or_else(|| {
+                item.as_object()
+                    .and_then(|object| object.get("segment"))
+                    .and_then(Value::as_str)
+            })
+        })
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Take the recordings `gone` (chronicle-relative origins) out of one facet
+/// and day's detections, for the trash: each row loses them, and a row left
+/// with none goes. A row that keeps other recordings loses its description
+/// too, unless a remaining one wrote it, since it may quote what left. Rows
+/// the owner added (no recordings) are never touched. Returns each changed
+/// row as it was, for a recover.
+pub fn narrow_detections(
+    journal_root: &Path,
+    facet_dir: &str,
+    day: &str,
+    gone: &std::collections::BTreeSet<String>,
+) -> Result<Vec<Value>, FacetEntityWriteError> {
+    let path = detected_path(journal_root, facet_dir, day)?;
+    if !path.is_file()
+        || !read_detected_entities(journal_root, facet_dir, day)?
+            .iter()
+            .any(|row| row_origins(row).iter().any(|origin| gone.contains(origin)))
+    {
+        return Ok(Vec::new());
+    }
+    let mut before = Vec::new();
+    let mut changed = false;
+    let path = write_detected_entities(journal_root, facet_dir, day, |rows| {
+        let mut next = Vec::with_capacity(rows.len());
+        for row in rows.drain(..) {
+            let origins = row_origins(&row);
+            if !origins.iter().any(|origin| gone.contains(origin)) {
+                next.push(row);
+                continue;
+            }
+            before.push(row.clone());
+            changed = true;
+            let left: Vec<String> = origins
+                .into_iter()
+                .filter(|origin| !gone.contains(origin))
+                .collect();
+            if left.is_empty() {
+                continue;
+            }
+            let mut row = row;
+            let object = row
+                .as_object_mut()
+                .expect("detected reader returns objects");
+            let described_by_left = object
+                .get(DESCRIBED_BY)
+                .and_then(Value::as_str)
+                .is_some_and(|by| {
+                    by == DESCRIBED_BY_OWNER || left.iter().any(|origin| origin == by)
+                });
+            if !described_by_left {
+                object.insert("description".to_owned(), Value::String(String::new()));
+                object.remove(DESCRIBED_BY);
+            }
+            object.insert(
+                "segments".to_owned(),
+                Value::Array(left.into_iter().map(Value::String).collect()),
+            );
+            next.push(row);
+        }
+        *rows = next;
+        Ok(())
+    })?;
+    if changed {
+        super::publication::publish_saved(journal_root, &path);
+    }
+    Ok(before)
+}
+
+/// Take the recordings the owner removed out of every day of `facet_dir`'s
+/// detections, as [`narrow_detections`] does: for a facet coming back from
+/// the trash, which a recording's delete couldn't reach while it waited.
+pub fn prune_removed_detections(
+    journal_root: &Path,
+    facet_dir: &str,
+) -> Result<usize, FacetEntityWriteError> {
+    let dir = solstone_core_journal_io::contained_path(
+        journal_root,
+        &format!("facets/{facet_dir}/entities"),
+    )
+    .map_err(|error| FacetEntityWriteError::FacetStore(error.into()))?;
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(0);
+    };
+    let mut pruned = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(day) = name
+            .to_str()
+            .and_then(|name| name.strip_suffix(".jsonl"))
+            .filter(|day| day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit()))
+        else {
+            continue;
+        };
+        let gone: std::collections::BTreeSet<String> =
+            read_detected_entities(journal_root, facet_dir, day)?
+                .iter()
+                .flat_map(row_origins)
+                .filter(|origin| segment_removed(journal_root, origin))
+                .collect();
+        if !gone.is_empty() {
+            pruned += narrow_detections(journal_root, facet_dir, day, &gone)?.len();
+        }
+    }
+    Ok(pruned)
+}
+
+/// One facet and day's detection rows naming any of `gone`, as they are.
+pub fn detections_naming(
+    journal_root: &Path,
+    facet_dir: &str,
+    day: &str,
+    gone: &std::collections::BTreeSet<String>,
+) -> Result<Vec<Value>, FacetEntityWriteError> {
+    Ok(read_detected_entities(journal_root, facet_dir, day)?
+        .into_iter()
+        .filter(|row| row_origins(row).iter().any(|origin| gone.contains(origin)))
+        .collect())
+}
+
+/// Put back what [`narrow_detections`] took, for a recover: each kept row's
+/// recordings join the row of the same name on the day, or the row comes
+/// back whole when there is none. What's on the day stands otherwise; an
+/// empty description takes the kept one.
+pub fn restore_detections(
+    journal_root: &Path,
+    facet_dir: &str,
+    day: &str,
+    kept: &[Value],
+) -> Result<(), FacetEntityWriteError> {
+    if kept.is_empty() {
+        return Ok(());
+    }
+    // Only the recordings in the journal now: a recover never brings back
+    // what another delete took.
+    let here = |origin: &String| !segment_removed(journal_root, origin);
+    modify_detected_entities(journal_root, facet_dir, day, |rows| {
+        for back in kept {
+            let back_origins: Vec<String> = row_origins(back).into_iter().filter(here).collect();
+            if back_origins.is_empty() {
+                continue;
+            }
+            let key = normalize_resolution_query(
+                back.get("name").and_then(Value::as_str).unwrap_or_default(),
+            );
+            let found = rows.iter_mut().find(|row| {
+                normalize_resolution_query(
+                    row.get("name").and_then(Value::as_str).unwrap_or_default(),
+                ) == key
+            });
+            // A description comes back with the recording that wrote it; one
+            // with no writer recorded, only when all its recordings do.
+            let described_here = match back.get(DESCRIBED_BY).and_then(Value::as_str) {
+                Some(by) => {
+                    by == DESCRIBED_BY_OWNER || back_origins.iter().any(|origin| origin == by)
+                }
+                None => back_origins.len() == row_origins(back).len(),
+            };
+            let Some(row) = found else {
+                let mut row = back.clone();
+                let object = row.as_object_mut().expect("kept rows are objects");
+                object.insert(
+                    "segments".to_owned(),
+                    Value::Array(back_origins.iter().cloned().map(Value::String).collect()),
+                );
+                if !described_here {
+                    object.insert("description".to_owned(), Value::String(String::new()));
+                    object.remove(DESCRIBED_BY);
+                }
+                rows.push(row);
+                continue;
+            };
+            let mut origins: std::collections::BTreeSet<String> =
+                row_origins(row).into_iter().collect();
+            origins.extend(back_origins.iter().cloned());
+            let object = row
+                .as_object_mut()
+                .expect("detected reader returns objects");
+            object.insert(
+                "segments".to_owned(),
+                Value::Array(origins.into_iter().map(Value::String).collect()),
+            );
+            let blank = object
+                .get("description")
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty);
+            if blank
+                && described_here
+                && let Some(description) = back.get("description")
+            {
+                object.insert("description".to_owned(), description.clone());
+                match back.get(DESCRIBED_BY) {
+                    Some(by) => object.insert(DESCRIBED_BY.to_owned(), by.clone()),
+                    None => object.remove(DESCRIBED_BY),
+                };
+            }
+        }
+        Ok(())
+    })
 }
 
 /// Save one detection, refusing a unified-normalized name duplicate.
@@ -291,9 +538,15 @@ pub fn update_detected_entity(
             .ok_or_else(|| FacetEntityWriteError::EntityNotFound {
                 entity_id: name.to_owned(),
             })?;
-        row.as_object_mut().expect("object rows").insert(
+        let object = row.as_object_mut().expect("object rows");
+        object.insert(
             "description".to_owned(),
             Value::String(description.to_owned()),
+        );
+        // The owner's words now: no recording's delete takes them.
+        object.insert(
+            DESCRIBED_BY.to_owned(),
+            Value::String(DESCRIBED_BY_OWNER.to_owned()),
         );
         updated = Some(row.clone());
         Ok(())

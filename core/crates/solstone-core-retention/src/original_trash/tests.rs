@@ -472,7 +472,7 @@ fn a_recover_waits_for_its_recording_and_refuses_once_it_is_gone() {
     );
 
     // Erasing the recording takes its originals with it.
-    solstone_core_trash::erase(&bed.0, &recording.id, Action::Erase, web()).unwrap();
+    solstone_core_trash::erase(&bed.0, &kinds, &recording.id, Action::Erase, web()).unwrap();
     assert!(
         solstone_core_trash::item(&bed.0, &originals.id)
             .unwrap()

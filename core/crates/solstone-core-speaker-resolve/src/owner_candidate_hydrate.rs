@@ -46,8 +46,27 @@ pub fn hydrate_owner_candidate_samples(
 ) -> Vec<Value> {
     samples
         .iter()
+        // A recording in the trash, or erased, is never shown as a sample.
+        .filter(|sample| !sample_removed(journal_root, sample))
         .map(|sample| hydrate_single_sample(journal_root, snapshot, sample))
         .collect()
+}
+
+/// Whether the owner removed the recording a sample names.
+pub fn sample_removed(journal_root: &Path, sample: &Value) -> bool {
+    let field = |key: &str| sample.get(key).and_then(Value::as_str).unwrap_or_default();
+    let stream = match field("stream") {
+        "" => "_default",
+        stream => stream,
+    };
+    !field("day").is_empty()
+        && !field("segment_key").is_empty()
+        && solstone_core_segment::segment_removed(
+            journal_root,
+            field("day"),
+            stream,
+            field("segment_key"),
+        )
 }
 
 #[derive(Debug, Clone, PartialEq)]

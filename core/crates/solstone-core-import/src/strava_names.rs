@@ -191,20 +191,44 @@ pub fn remove_strava_names(
     Ok(removed)
 }
 
-/// Remove the lines of `activity_ids`, for the trash, whose move holds the
-/// Strava lock for its whole length. Returns how many were removed.
-pub fn remove_strava_names_held(
+/// Take the lines of `activity_ids` out of the store, for the trash, whose
+/// move holds the Strava lock for its whole length. Returns the lines taken,
+/// so the trash can keep them for a recover.
+pub fn take_strava_names_held(
     journal: &Path,
     activity_ids: &BTreeSet<String>,
-) -> Result<usize, StravaNamesError> {
+) -> Result<Vec<StravaNamesLine>, StravaNamesError> {
     let mut lines = read_strava_names(journal)?;
-    let before = lines.len();
-    lines.retain(|id, _| !activity_ids.contains(id));
-    let removed = before - lines.len();
-    if removed > 0 {
+    let mut taken = Vec::new();
+    for id in activity_ids {
+        if let Some(line) = lines.remove(id) {
+            taken.push(line);
+        }
+    }
+    if !taken.is_empty() {
         save_lines(journal, &lines)?;
     }
-    Ok(removed)
+    Ok(taken)
+}
+
+/// Put `kept` lines back, for a recover that holds the Strava lock. A
+/// workout that already has a line keeps it. Returns how many went back.
+pub fn put_back_strava_names_held(
+    journal: &Path,
+    kept: &[StravaNamesLine],
+) -> Result<usize, StravaNamesError> {
+    let mut lines = read_strava_names(journal)?;
+    let mut put = 0;
+    for line in kept {
+        if !lines.contains_key(&line.activity_id) {
+            lines.insert(line.activity_id.clone(), line.clone());
+            put += 1;
+        }
+    }
+    if put > 0 {
+        save_lines(journal, &lines)?;
+    }
+    Ok(put)
 }
 
 /// Take the Strava lock, as Strava's import and its delete do.

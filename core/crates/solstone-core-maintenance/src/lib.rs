@@ -216,16 +216,25 @@ fn run_rendered_cli(args: &[String], journal: &Path) -> CliRun {
 
 /// Select only an actual discovery body; help and other maintenance verbs need no generation.
 #[cfg(windows)]
-pub fn is_discovery_run(args: &[String]) -> bool {
+pub fn needs_inference_generation(args: &[String], journal: &Path) -> bool {
     let args = strip_maintenance_global_flags(args);
     if maintenance_has_help(&args) {
         return false;
     }
-    let Some(rest) = args.strip_prefix(&["run".to_owned(), "speakers:discover-voices".to_owned()])
-    else {
+    let [run, id, rest @ ..] = args.as_slice() else {
         return false;
     };
-    rest.is_empty() || rest == ["--"]
+    if run != "run"
+        || !matches!(
+            id.as_str(),
+            "speakers:discover-voices" | "faces:backfill" | "faces:reconcile"
+        )
+    {
+        return false;
+    }
+    (rest.is_empty() || rest == ["--"])
+        && (id == "speakers:discover-voices"
+            || solstone_core_entity::faceprints::enabled(journal).unwrap_or(false))
 }
 
 /// The executable has acquired or authenticated and journal-validated this generation.

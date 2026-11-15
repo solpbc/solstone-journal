@@ -106,7 +106,10 @@ fn recover(root: &Path, id: &str) -> Result<Item, TrashError> {
 }
 
 fn erase(root: &Path, id: &str) {
-    solstone_core_trash::erase(root, id, Action::Erase, surface()).unwrap();
+    crate::trash_kinds::with_kinds(root, |kinds| {
+        solstone_core_trash::erase(root, kinds, id, Action::Erase, surface())
+    })
+    .unwrap();
 }
 
 fn code(error: &TrashError) -> String {

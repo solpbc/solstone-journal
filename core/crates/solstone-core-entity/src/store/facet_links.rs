@@ -619,6 +619,30 @@ impl LinkDirs {
         Ok((Some(entity_id.to_owned()), rows))
     }
 
+    /// [`settle`](Self::settle), refused when two of the folders hold
+    /// different values for one field: which to keep is the owner's call, so
+    /// nothing is written and both stay.
+    pub fn settle_without_judgment(
+        &self,
+        entity_id: &str,
+        before_write: BeforeWrite<'_>,
+    ) -> Result<(Option<String>, FoldRows), LinkFolderError> {
+        let own = self.folders_for(entity_id)?;
+        if own.is_empty() || (own.len() == 1 && own[0].dir == entity_id) {
+            return self.settle(entity_id, before_write);
+        }
+        let participants = self.entity_participants(entity_id, &[], LinkFieldPolicy::Merge)?;
+        let plan = self.plan(entity_id, Some(entity_id), &participants)?;
+        if plan.rows.fields_kept > 0 {
+            return Err(LinkFolderError::Conflict {
+                path: self.link_path(&own[0].dir)?,
+            });
+        }
+        let rows = plan.rows;
+        self.apply(plan, before_write)?;
+        Ok((Some(entity_id.to_owned()), rows))
+    }
+
     /// Bring folder `incoming_dir` of `incoming` in as `entity_id`'s link, in
     /// the folder named by its id, together with any folders here that link
     /// it. All-or-nothing as `settle` is. The incoming folder is left in place
@@ -1277,9 +1301,9 @@ pub fn repair_journal_links(
         for issue in check_journal_links(journal)? {
             let dirs = LinkDirs::for_facet(journal, &issue.facet);
             let attempt: Result<bool, LinkFolderError> = match &issue.kind {
-                LinkIssueKind::Duplicate | LinkIssueKind::Misnamed => {
-                    dirs.settle(&issue.entity_id, &mut |_| Ok(())).map(|_| true)
-                }
+                LinkIssueKind::Duplicate | LinkIssueKind::Misnamed => dirs
+                    .settle_without_judgment(&issue.entity_id, &mut |_| Ok(()))
+                    .map(|_| true),
                 LinkIssueKind::Merged { successor } => {
                     match super::retired::live_merge_successor(journal, successor) {
                         Some(live) => {

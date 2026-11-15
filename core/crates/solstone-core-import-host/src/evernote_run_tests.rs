@@ -374,7 +374,10 @@ fn erased_evernote_import_takes_kept_text_and_same_file_returns() {
             .iter()
             .any(|path| path.starts_with("config/evernote-imports/"))
     );
-    solstone_core_trash::erase(root.path(), &item.id, Action::Erase, surface()).unwrap();
+    solstone_core_import::trash_kinds::with_kinds(root.path(), |kinds| {
+        solstone_core_trash::erase(root.path(), kinds, &item.id, Action::Erase, surface())
+    })
+    .unwrap();
     assert!(kept_notes(root.path()).is_empty());
     assert!(solstone_core_trash::list(root.path()).unwrap().is_empty());
     let new_id = import_note(
@@ -437,7 +440,10 @@ fn erased_evernote_note_takes_kept_text_and_changed_export_returns() {
         .clone();
     let live_bytes = fs::read(&live_path).unwrap();
     let item = trash_note(root.path(), "20200101", "import.evernote");
-    solstone_core_trash::erase(root.path(), &item.id, Action::Erase, surface()).unwrap();
+    solstone_core_import::trash_kinds::with_kinds(root.path(), |kinds| {
+        solstone_core_trash::erase(root.path(), kinds, &item.id, Action::Erase, surface())
+    })
+    .unwrap();
     assert_eq!(kept_notes(root.path()), vec![live_path.clone()]);
     assert_eq!(fs::read(&live_path).unwrap(), live_bytes);
     // A single-note deletion leaves its import live, and Evernote places by fixed
@@ -461,7 +467,10 @@ fn erased_evernote_note_takes_kept_text_and_changed_export_returns() {
     );
     // Deleted again, for what follows.
     let item = trash_note(root.path(), "20200101", "import.evernote");
-    solstone_core_trash::erase(root.path(), &item.id, Action::Erase, surface()).unwrap();
+    solstone_core_import::trash_kinds::with_kinds(root.path(), |kinds| {
+        solstone_core_trash::erase(root.path(), kinds, &item.id, Action::Erase, surface())
+    })
+    .unwrap();
     let changed = note(
         "River",
         "20200101T120000Z",
@@ -530,7 +539,10 @@ fn shared_evernote_segment_keeps_its_record_until_the_last_import_leaves() {
     let one = imports
         .trash(root.path(), &first, Action::ImportDelete, surface())
         .unwrap();
-    solstone_core_trash::erase(root.path(), &one.id, Action::Erase, surface()).unwrap();
+    solstone_core_import::trash_kinds::with_kinds(root.path(), |kinds| {
+        solstone_core_trash::erase(root.path(), kinds, &one.id, Action::Erase, surface())
+    })
+    .unwrap();
     assert!(kept[0].exists());
     let two = imports
         .trash(root.path(), &second, Action::ImportDelete, surface())
@@ -556,7 +568,10 @@ fn another_stream_at_the_same_time_keeps_evernote_text_untouched() {
     fs::create_dir_all(&unrelated).unwrap();
     fs::write(unrelated.join("note_transcript.md"), "other source").unwrap();
     let item = trash_note(root.path(), "20200101", "phone");
-    solstone_core_trash::erase(root.path(), &item.id, Action::Erase, surface()).unwrap();
+    solstone_core_import::trash_kinds::with_kinds(root.path(), |kinds| {
+        solstone_core_trash::erase(root.path(), kinds, &item.id, Action::Erase, surface())
+    })
+    .unwrap();
     assert!(kept[0].exists());
     assert!(
         root.path()

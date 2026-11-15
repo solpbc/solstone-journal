@@ -160,7 +160,13 @@ impl<'a> Speakers<'a> {
         };
         let report = held_report(journal, &item);
         let erased = erase
-            && match solstone_core_trash::erase(journal, &item.id, Action::SpeakersWipe, surface) {
+            && match solstone_core_trash::erase(
+                journal,
+                &[self],
+                &item.id,
+                Action::SpeakersWipe,
+                surface,
+            ) {
                 Ok(()) => true,
                 Err(error) => {
                     log::warn!("trash item {}: erase now was refused: {error}", item.id);
@@ -461,7 +467,16 @@ impl Kind for Speakers<'_> {
             }
             Change::Attached => self.index.paths_returned(files),
         }
-        .map_err(|error| format!("search was not updated: {}", error.reason))
+        .map_err(|error| format!("search was not updated: {}", error.reason))?;
+        if change == Change::Attached {
+            // Voices drawn from recordings removed while it waited go.
+            if let Err(error) =
+                solstone_core_entity::prune_removed_recording_voiceprints(journal, None)
+            {
+                log::warn!("trash: voices weren't checked for removed recordings: {error}");
+            }
+        }
+        Ok(())
     }
 }
 

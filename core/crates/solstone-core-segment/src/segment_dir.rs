@@ -1049,6 +1049,37 @@ pub fn stream_segment_dir(
     }
 }
 
+/// Whether the owner removed the recording `key` on `day` in `stream`: its
+/// place is there and isn't a live recording (a tombstone, or a removal of it
+/// part-way through). A place that isn't there isn't a removal, and one a
+/// recording arrived at again is live. Found by key, as [`segment_live`].
+pub fn segment_removed(journal: &std::path::Path, day: &str, stream: &str, key: &str) -> bool {
+    let removed = |dir: &std::path::Path| {
+        dir.is_dir()
+            && matches!(
+                owner_deletion_state(dir),
+                Ok(state) if state != OwnerDeletionState::Live
+            )
+    };
+    let dir = stream_segment_dir(journal, day, stream, key);
+    if dir.exists() {
+        return removed(&dir);
+    }
+    let Some(parent) = dir.parent() else {
+        return false;
+    };
+    std::fs::read_dir(parent).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .and_then(solstone_core_format::segment::segment_key)
+                .is_some_and(|found| found == key)
+                && removed(&entry.path())
+        })
+    })
+}
+
 /// Whether a segment is in the journal: its folder is there, and neither the
 /// tombstone a removal left nor a removal part-way through. Unreadable counts
 /// as there, so a segment is never taken for gone on a failed read.

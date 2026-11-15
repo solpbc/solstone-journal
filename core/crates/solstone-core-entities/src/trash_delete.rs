@@ -111,7 +111,9 @@ fn moved(root: &Path, item: &Item, asked: bool, erased: bool) -> Value {
 
 /// Erase item `id` now, as the owner asked. A refusal leaves it in the trash.
 fn erase_now(root: &Path, id: &str, surface: Surface) -> bool {
-    match solstone_core_trash::erase(root, id, Action::EntityDelete, surface) {
+    let index = RetentionIndex::new(root);
+    let kind = Entities::new(&index);
+    match solstone_core_trash::erase(root, &[&kind], id, Action::EntityDelete, surface) {
         Ok(()) => true,
         Err(error) => {
             log::warn!("trash item {id}: erase now was refused: {error}");

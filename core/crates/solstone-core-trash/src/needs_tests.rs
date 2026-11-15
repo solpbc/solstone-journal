@@ -146,7 +146,7 @@ fn erasing_the_segment_first_leaves_the_import_and_its_upload() {
     let (_dir, root) = journal();
     let first = trash_first(&root);
     let import = trash_import(&root);
-    erase(&root, &first.id, Action::Erase, web()).unwrap();
+    erase(&root, &[&Needing], &first.id, Action::Erase, web()).unwrap();
     let held = held_file(&root, &import.id, &format!("{RECORD}/talk.m4a")).unwrap();
     assert_eq!(fs::read(held).unwrap(), b"upload");
     assert_eq!(list(&root).unwrap().len(), 1);
@@ -158,7 +158,7 @@ fn erasing_the_import_erases_the_segments_that_need_it() {
     let first = trash_first(&root);
     let import = trash_import(&root);
     assert_eq!(needing(&root, &import).unwrap().len(), 1);
-    erase(&root, &import.id, Action::Erase, web()).unwrap();
+    erase(&root, &[&Needing], &import.id, Action::Erase, web()).unwrap();
     assert!(list(&root).unwrap().is_empty());
     assert!(read_item(&root, &first.id).unwrap().is_none());
     let erased = solstone_core_removals::history(&root, 100)
@@ -208,7 +208,7 @@ fn erasing_beside_the_record_takes_nothing_that_needs_it() {
         vec![LAST.into()],
     )
     .unwrap();
-    erase(&root, &lone.id, Action::Erase, web()).unwrap();
+    erase(&root, &[&Needing], &lone.id, Action::Erase, web()).unwrap();
     assert!(read_item(&root, &first.id).unwrap().is_some());
 }
 
@@ -244,7 +244,7 @@ fn an_erase_now_stopped_part_way_leaves_what_needs_it_erasing_for_the_sweep() {
         .join("files")
         .join(RECORD);
     fs::set_permissions(&held, fs::Permissions::from_mode(0o500)).unwrap();
-    assert!(erase(&root, &import.id, Action::Erase, web()).is_err());
+    assert!(erase(&root, &[&Needing], &import.id, Action::Erase, web()).is_err());
     let waiting = read_item(&root, &first.id).unwrap().unwrap();
     assert_eq!(
         waiting.state,
@@ -278,7 +278,7 @@ fn erasing_the_import_erases_what_was_released_from_its_waiting_segment() {
     publish(&root, &originals).unwrap();
     trash_first(&root);
     let import = trash_import(&root);
-    erase(&root, &import.id, Action::Erase, web()).unwrap();
+    erase(&root, &[&Needing], &import.id, Action::Erase, web()).unwrap();
     assert!(read_item(&root, &originals.id).unwrap().is_none());
     assert!(list(&root).unwrap().is_empty());
 }

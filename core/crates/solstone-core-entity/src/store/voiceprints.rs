@@ -404,6 +404,26 @@ pub fn save_voiceprints_batch_checked(
     let _trust =
         crate::hold_entity_trust_lock(journal_root).map_err(EntityLifecycleError::TrustLock)?;
     checkpoint().map_err(VoiceprintOperationError::PublicationRefused)?;
+    // A voice drawn from a recording that went to the trash while it was read
+    // isn't saved: its voices left with it. Checked under the trust lock,
+    // which the trash holds while a recording moves.
+    let kept_items: Vec<VoiceprintItem>;
+    let new_items = if new_items
+        .iter()
+        .any(|item| recording_removed(journal_root, &item.metadata))
+    {
+        kept_items = new_items
+            .iter()
+            .filter(|item| !recording_removed(journal_root, &item.metadata))
+            .cloned()
+            .collect();
+        if kept_items.is_empty() {
+            return Ok(0);
+        }
+        &kept_items[..]
+    } else {
+        new_items
+    };
     let (_directory, path) = resolve_voiceprint_path(journal_root, entity_id, true)?;
     let parent = capture_voiceprint_parent(&path)?;
     let admitted = || {
@@ -460,6 +480,223 @@ where
         .collect::<Result<_, _>>()?;
     write_and_verify_voiceprints(&path, &archive, running_encoder, &|| Ok(()))?;
     Ok(updates)
+}
+
+/// One voiceprint row that left with a recording going to the trash, kept with
+/// it so a recover puts the row back exactly as it was.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TakenVoiceprint {
+    pub entity_id: String,
+    pub embedding: Vec<f32>,
+    pub metadata: Value,
+}
+
+/// A recording, as a voiceprint row names it: `(day, stream, segment key)`,
+/// the default stream as `_default`.
+pub type VoiceprintRecording = (String, String, String);
+
+fn row_recording(metadata: &Value) -> Option<VoiceprintRecording> {
+    let object = metadata.as_object()?;
+    let day = object.get("day")?.as_str()?.to_owned();
+    let key = object.get("segment_key")?.as_str()?.to_owned();
+    let stream = match object.get("stream").and_then(Value::as_str) {
+        Some(stream) if !stream.is_empty() => stream.to_owned(),
+        _ => "_default".to_owned(),
+    };
+    Some((day, stream, key))
+}
+
+/// Whether the owner removed the recording a row was drawn from.
+fn recording_removed(journal_root: &Path, metadata: &Value) -> bool {
+    row_recording(metadata).is_some_and(|(day, stream, key)| {
+        solstone_core_segment::segment_removed(journal_root, &day, &stream, &key)
+    })
+}
+
+/// The encoder every writer stamps while the running one isn't resolved.
+fn unresolved_encoder() -> EncoderIdentity {
+    EncoderIdentity {
+        id: "unresolved".to_owned(),
+        sha256: "0".repeat(64),
+        width: EMBEDDING_WIDTH,
+    }
+}
+
+/// Every live entity's voiceprint rows drawn from `recordings`, as they are.
+pub fn recording_voiceprints(
+    journal_root: &Path,
+    recordings: &std::collections::BTreeSet<VoiceprintRecording>,
+) -> Result<Vec<TakenVoiceprint>, VoiceprintOperationError> {
+    voiceprints_of(journal_root, recordings, false)
+}
+
+/// Take every live entity's voiceprint rows drawn from `recordings` out of
+/// its archive, for the trash, and return them. Under the entity trust lock
+/// (re-entrant for a trash hold that has it), then each archive's own.
+pub fn take_recording_voiceprints(
+    journal_root: &Path,
+    recordings: &std::collections::BTreeSet<VoiceprintRecording>,
+) -> Result<Vec<TakenVoiceprint>, VoiceprintOperationError> {
+    voiceprints_of(journal_root, recordings, true)
+}
+
+fn voiceprints_of(
+    journal_root: &Path,
+    recordings: &std::collections::BTreeSet<VoiceprintRecording>,
+    take: bool,
+) -> Result<Vec<TakenVoiceprint>, VoiceprintOperationError> {
+    let mut taken = Vec::new();
+    if recordings.is_empty() {
+        return Ok(taken);
+    }
+    let _trust =
+        crate::hold_entity_trust_lock(journal_root).map_err(EntityLifecycleError::TrustLock)?;
+    let entities = super::journal_entities::live_journal_entities(journal_root)
+        .map_err(|error| VoiceprintOperationError::Lifecycle(EntityLifecycleError::Store(error)))?;
+    for (_, entity) in entities {
+        // Each person on their own: one whose voices can't be read keeps
+        // them, and is named; the rest still go.
+        let archive = match try_load_entity_voiceprints_file(journal_root, &entity.id) {
+            Ok(Some(archive)) => archive,
+            Ok(None) => continue,
+            Err(error) => {
+                log::warn!("voices of {} left as they are: {error}", entity.id);
+                continue;
+            }
+        };
+        let Ok(metadata) = parse_metadata_values(&archive.metadata) else {
+            log::warn!("voices of {} left as they are: unreadable rows", entity.id);
+            continue;
+        };
+        let mut removals = Vec::new();
+        for (embedding, row) in archive
+            .embeddings
+            .chunks_exact(EMBEDDING_WIDTH)
+            .zip(metadata.iter())
+        {
+            if row_recording(row).is_some_and(|recording| recordings.contains(&recording)) {
+                taken.push(TakenVoiceprint {
+                    entity_id: entity.id.clone(),
+                    embedding: embedding.to_vec(),
+                    metadata: row.clone(),
+                });
+                removals.push(VoiceprintRemoval {
+                    key: row.clone(),
+                    expected_metadata: None,
+                });
+            }
+        }
+        if removals.is_empty() || !take {
+            continue;
+        }
+        let encoder = archive
+            .envelope
+            .encoder
+            .clone()
+            .unwrap_or_else(unresolved_encoder);
+        if let Err(error) = remove_voiceprints_by_key(journal_root, &entity.id, &removals, &encoder)
+        {
+            log::warn!("voices of {} left as they are: {error}", entity.id);
+        }
+    }
+    Ok(taken)
+}
+
+/// Remove the rows drawn from recordings the owner removed, from `entity`'s
+/// voiceprints or, with `None`, every live entity's: for a person or a
+/// speakers wipe coming back from the trash, which a recording's delete
+/// couldn't reach while it waited. Returns how many went.
+pub fn prune_removed_recording_voiceprints(
+    journal_root: &Path,
+    entity: Option<&str>,
+) -> Result<usize, VoiceprintOperationError> {
+    let _trust =
+        crate::hold_entity_trust_lock(journal_root).map_err(EntityLifecycleError::TrustLock)?;
+    let ids: Vec<String> = match entity {
+        Some(id) => vec![id.to_owned()],
+        None => super::journal_entities::live_journal_entities(journal_root)
+            .map_err(|error| {
+                VoiceprintOperationError::Lifecycle(EntityLifecycleError::Store(error))
+            })?
+            .into_iter()
+            .map(|(_, entity)| entity.id)
+            .collect(),
+    };
+    let mut pruned = 0;
+    for id in ids {
+        let Some(archive) = try_load_entity_voiceprints_file(journal_root, &id)? else {
+            continue;
+        };
+        let removals: Vec<VoiceprintRemoval> = parse_metadata_values(&archive.metadata)?
+            .into_iter()
+            .filter(|row| recording_removed(journal_root, row))
+            .map(|row| VoiceprintRemoval {
+                key: row,
+                expected_metadata: None,
+            })
+            .collect();
+        if removals.is_empty() {
+            continue;
+        }
+        let encoder = archive
+            .envelope
+            .encoder
+            .clone()
+            .unwrap_or_else(unresolved_encoder);
+        pruned += remove_voiceprints_by_key(journal_root, &id, &removals, &encoder)?.removed_count;
+    }
+    Ok(pruned)
+}
+
+/// Put back rows [`take_recording_voiceprints`] took, for a recover: each to
+/// its entity when it's live and the row's key isn't there. Returns how many
+/// went back, and how many had no live entity to go to.
+pub fn put_back_recording_voiceprints(
+    journal_root: &Path,
+    rows: &[TakenVoiceprint],
+) -> Result<(usize, usize), VoiceprintOperationError> {
+    let mut by_entity = std::collections::BTreeMap::<&str, Vec<&TakenVoiceprint>>::new();
+    for row in rows {
+        by_entity
+            .entry(row.entity_id.as_str())
+            .or_default()
+            .push(row);
+    }
+    let _trust =
+        crate::hold_entity_trust_lock(journal_root).map_err(EntityLifecycleError::TrustLock)?;
+    let live: HashSet<String> = super::journal_entities::live_journal_entities(journal_root)
+        .map_err(|error| VoiceprintOperationError::Lifecycle(EntityLifecycleError::Store(error)))?
+        .into_iter()
+        .map(|(_, entity)| entity.id)
+        .collect();
+    let (mut put, mut homeless) = (0, 0);
+    for (taken_by, rows) in by_entity {
+        // A person merged since takes them as their survivor.
+        let Some(entity_id) = crate::answered_or_survivor(journal_root, taken_by, |id| {
+            live.contains(id).then(|| id.to_owned())
+        }) else {
+            homeless += rows.len();
+            continue;
+        };
+        let entity_id = entity_id.as_str();
+        let existing = load_existing_voiceprint_keys(journal_root, entity_id);
+        let items: Vec<VoiceprintItem> = rows
+            .into_iter()
+            .filter(|row| {
+                voiceprint_key_from_metadata(&row.metadata)
+                    .is_ok_and(|key| !existing.contains(&key))
+            })
+            .map(|row| VoiceprintItem {
+                embedding: row.embedding.clone(),
+                metadata: row.metadata.clone(),
+            })
+            .collect();
+        let encoder = try_load_entity_voiceprints_file(journal_root, entity_id)?
+            .and_then(|archive| archive.envelope.encoder)
+            .unwrap_or_else(unresolved_encoder);
+        put += save_voiceprints_batch(journal_root, entity_id, &items, &encoder)?;
+    }
+    Ok((put, homeless))
 }
 
 /// Remove rows by exact Python-equality-compatible key and metadata match.

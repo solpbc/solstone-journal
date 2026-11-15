@@ -36,10 +36,24 @@ use solstone_core_trash::{Change, Item};
 /// they were when they left.
 const KEPT: &str = "made-from.json";
 
+/// What the trash keeps of the voices drawn from its recordings.
+const KEPT_VOICE: &str = "voice.json";
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Kept {
     version: u32,
     records: Vec<KeptRecord>,
+}
+
+/// What the trash keeps of the detections naming its recordings, in its own
+/// file: a detach an older build started kept `made-from.json` without them.
+const KEPT_DETECTIONS: &str = "detections.json";
+
+#[derive(Debug, Serialize, Deserialize)]
+struct KeptDetections {
+    day: String,
+    facet: String,
+    rows: Vec<Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -147,6 +161,31 @@ fn by_day(segments: &[Target]) -> BTreeMap<String, BTreeSet<(String, String)>> {
             .insert((target.stream.clone(), key));
     }
     days
+}
+
+/// The recordings, by day, as a detection names them: chronicle-relative.
+fn origins_by_day(segments: &[Target]) -> BTreeMap<String, BTreeSet<String>> {
+    let mut days = BTreeMap::<String, BTreeSet<String>>::new();
+    for target in segments {
+        let rel =
+            solstone_core_retention::layout::segment_rel(&target.day, &target.stream, &target.dir);
+        let origin = rel.strip_prefix("chronicle/").unwrap_or(&rel).to_owned();
+        days.entry(target.day.clone()).or_default().insert(origin);
+    }
+    days
+}
+
+/// The recordings as a voiceprint row names them.
+fn voice_recordings(
+    days: &BTreeMap<String, BTreeSet<(String, String)>>,
+) -> BTreeSet<solstone_core_entity::VoiceprintRecording> {
+    days.iter()
+        .flat_map(|(day, segments)| {
+            segments
+                .iter()
+                .map(|(stream, key)| (day.clone(), stream.clone(), key.clone()))
+        })
+        .collect()
 }
 
 /// Whether a record was made over one of `segments`.
@@ -336,6 +375,151 @@ impl MadeFromIt {
         kept
     }
 
+    /// Every facet's detections naming the recordings, as they are.
+    fn detections_over(
+        &self,
+        journal: &Path,
+        origins: &BTreeMap<String, BTreeSet<String>>,
+    ) -> Result<Vec<KeptDetections>, String> {
+        // Every facet folder search reads, declared or not.
+        let facets = solstone_core_facets::list_facet_directories(journal)
+            .map_err(|error| error.to_string())?;
+        let mut kept = Vec::new();
+        for (day, gone) in origins {
+            for facet in &facets {
+                let rows = solstone_core_facets::detections_naming(journal, facet, day, gone)
+                    .map_err(|error| format!("detections of {facet} on {day}: {error}"))?;
+                if !rows.is_empty() {
+                    kept.push(KeptDetections {
+                        day: day.clone(),
+                        facet: facet.clone(),
+                        rows,
+                    });
+                }
+            }
+        }
+        Ok(kept)
+    }
+
+    /// The names found in the recordings leave with them: kept once with the
+    /// item, then each facet's day of detections drops them, and search reads
+    /// the day again.
+    fn take_detections(
+        &self,
+        journal: &Path,
+        item: &Item,
+        origins: &BTreeMap<String, BTreeSet<String>>,
+    ) -> Result<(), String> {
+        if solstone_core_trash::kept(journal, &item.id, KEPT_DETECTIONS)
+            .map_err(|error| error.to_string())?
+            .is_none()
+        {
+            let found = self.detections_over(journal, origins)?;
+            let bytes = serde_json::to_vec(&found).map_err(|error| error.to_string())?;
+            solstone_core_trash::keep(journal, &item.id, KEPT_DETECTIONS, &bytes)
+                .map_err(|error| format!("what it found wasn't kept: {error}"))?;
+        }
+        let facets = solstone_core_facets::list_facet_directories(journal)
+            .map_err(|error| error.to_string())?;
+        // Each facet's day on its own: one that can't be changed is named,
+        // and the rest still are.
+        let mut failed = Vec::new();
+        for (day, gone) in origins {
+            for facet in &facets {
+                match solstone_core_facets::narrow_detections(journal, facet, day, gone) {
+                    Ok(before) if !before.is_empty() => {
+                        self.touch(journal, format!("facets/{facet}/entities/{day}.jsonl"));
+                    }
+                    Ok(_) => {}
+                    Err(error) => failed.push(format!("{day}/{facet}: {error}")),
+                }
+            }
+        }
+        if failed.is_empty() {
+            Ok(())
+        } else {
+            Err(failed.join(", "))
+        }
+    }
+
+    /// The voices drawn from the recordings leave every voiceprint, kept once
+    /// with the item first, so a stop part way keeps the first copy.
+    fn take_voices(
+        &self,
+        journal: &Path,
+        item: &Item,
+        recordings: &BTreeSet<solstone_core_entity::VoiceprintRecording>,
+    ) -> Result<(), String> {
+        if solstone_core_trash::kept(journal, &item.id, KEPT_VOICE)
+            .map_err(|error| error.to_string())?
+            .is_none()
+        {
+            let rows = solstone_core_entity::recording_voiceprints(journal, recordings)
+                .map_err(|error| format!("its voices weren't read: {error}"))?;
+            let bytes = serde_json::to_vec(&rows).map_err(|error| error.to_string())?;
+            solstone_core_trash::keep(journal, &item.id, KEPT_VOICE, &bytes)
+                .map_err(|error| format!("its voices weren't kept: {error}"))?;
+        }
+        solstone_core_entity::take_recording_voiceprints(journal, recordings)
+            .map(|_| ())
+            .map_err(|error| format!("its voices weren't taken out: {error}"))
+    }
+
+    /// What it found goes back, to the facets still here.
+    fn put_back_detections(&self, journal: &Path, item: &Item) -> Result<(), String> {
+        let Some(bytes) = solstone_core_trash::kept(journal, &item.id, KEPT_DETECTIONS)
+            .map_err(|error| error.to_string())?
+        else {
+            return Ok(());
+        };
+        let kept: Vec<KeptDetections> = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("what it found is unreadable: {error}"))?;
+        // The facets taking read; one gone since has nowhere to take its names.
+        let facets = solstone_core_facets::list_facet_directories(journal)
+            .map_err(|error| error.to_string())?;
+        let mut failed = Vec::new();
+        for found in kept.iter().filter(|found| facets.contains(&found.facet)) {
+            match solstone_core_facets::restore_detections(
+                journal,
+                &found.facet,
+                &found.day,
+                &found.rows,
+            ) {
+                Ok(()) => self.touch(
+                    journal,
+                    format!("facets/{}/entities/{}.jsonl", found.facet, found.day),
+                ),
+                Err(error) => failed.push(format!("{}/{}: {error}", found.day, found.facet)),
+            }
+        }
+        if failed.is_empty() {
+            Ok(())
+        } else {
+            Err(failed.join(", "))
+        }
+    }
+
+    /// The voices kept with the item go back to the people still here.
+    fn put_back_voices(&self, journal: &Path, item: &Item) -> Result<(), String> {
+        let Some(bytes) = solstone_core_trash::kept(journal, &item.id, KEPT_VOICE)
+            .map_err(|error| error.to_string())?
+        else {
+            return Ok(());
+        };
+        let rows: Vec<solstone_core_entity::TakenVoiceprint> = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("its kept voices are unreadable: {error}"))?;
+        let (_, homeless) = solstone_core_entity::put_back_recording_voiceprints(journal, &rows)
+            .map_err(|error| format!("its voices weren't put back: {error}"))?;
+        if homeless > 0 {
+            // A person deleted or merged away since: their voice from it goes
+            // with the item.
+            self.skipped
+                .borrow_mut()
+                .insert(format!("voices/{homeless}"));
+        }
+        Ok(())
+    }
+
     fn ask(
         &self,
         journal: &Path,
@@ -358,7 +542,86 @@ impl MadeFromIt {
     }
 }
 
+/// Drop, from every edit made before `before`, the values it records the
+/// fields held just before: they can hold what a model wrote from a recording
+/// now erased. What the edit set stays, so the correction stays; its undo
+/// then says it can't be undone. Whether anything changed.
+fn drop_old_words(record: &mut Map<String, Value>, before: chrono::DateTime<chrono::Utc>) -> bool {
+    // The owner's own record holds no model words.
+    if record.get("source").and_then(Value::as_str) == Some("user") {
+        return false;
+    }
+    let Some(Value::Array(edits)) = record.get_mut("edits") else {
+        return false;
+    };
+    let mut changed = false;
+    for edit in edits.iter_mut().filter_map(Value::as_object_mut) {
+        // Only an edit known to be after the delete keeps them; a time that
+        // can't be read counts as before, the safe side for an erase.
+        let earlier = !edit
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+            .is_some_and(|at| at.with_timezone(&chrono::Utc) > before);
+        if earlier && edit.remove(solstone_core_facets::EDIT_BEFORE).is_some() {
+            changed = true;
+        }
+    }
+    changed
+}
+
 impl MadeFrom for MadeFromIt {
+    fn recordings_erased(
+        &self,
+        journal: &Path,
+        item: &Item,
+        _segments: &[Target],
+    ) -> Result<(), String> {
+        let Some(before) = item.trashed_at() else {
+            return Ok(());
+        };
+        let Some(bytes) = solstone_core_trash::kept(journal, &item.id, KEPT)
+            .map_err(|error| error.to_string())?
+        else {
+            return Ok(());
+        };
+        let kept: Kept = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("what was kept is unreadable: {error}"))?;
+        let mut by_place = BTreeMap::<(String, String), BTreeSet<String>>::new();
+        for record in &kept.records {
+            by_place
+                .entry((record.day.clone(), record.facet.clone()))
+                .or_default()
+                .insert(record_id(&record.record).to_owned());
+        }
+        let mut failed = Vec::new();
+        for ((day, facet), ids) in by_place {
+            let result = solstone_core_facets::remake_activity_day(journal, &facet, &day, |rows| {
+                let mut next = rows.to_vec();
+                let mut changed = false;
+                for row in next.iter_mut().filter(|row| ids.contains(record_id(row))) {
+                    changed |= drop_old_words(row, before);
+                }
+                (changed.then_some(next), changed)
+            });
+            match result {
+                Ok(Some(true)) => {
+                    self.touch(journal, format!("facets/{facet}/activities/{day}.jsonl"))
+                }
+                Ok(_) => {}
+                Err(error) => failed.push(format!("{day}/{facet}: {error}")),
+            }
+        }
+        if failed.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "old words of activities stay: {}",
+                failed.join(", ")
+            ))
+        }
+    }
+
     fn recordings_changed(
         &self,
         journal: &Path,
@@ -376,6 +639,16 @@ impl MadeFrom for MadeFromIt {
         let days = by_day(&segments);
         if days.is_empty() {
             return Ok(());
+        }
+        let origins = origins_by_day(&segments);
+        let voices = voice_recordings(&days);
+        // Voice discovery's groups point into the voices that moved: they're
+        // found again from what's there, as after a wipe.
+        if let Err(error) = solstone_core_speaker_resolve::discovery_scan::clear_discovery_cache(
+            journal,
+            &|| Ok(()),
+        ) {
+            log::warn!("trash: voice groups weren't cleared: {error}");
         }
         // The recording's own entries leave (or come back) with the same
         // refresh, not only when the queued drain reaches them.
@@ -407,6 +680,17 @@ impl MadeFrom for MadeFromIt {
                     solstone_core_trash::keep(journal, &item.id, KEPT, &bytes)
                         .map_err(|error| format!("what was made from it wasn't kept: {error}"))?;
                 }
+                // Reported, never a failed change, as the ask: a damaged store
+                // would otherwise hold every delete part-way in. Nothing is
+                // taken that wasn't kept first.
+                if let Err(error) = self.take_detections(journal, item, &origins) {
+                    log::warn!("trash: what its recordings found stays: {error}");
+                    self.skipped.borrow_mut().insert("detections".to_owned());
+                }
+                if let Err(error) = self.take_voices(journal, item, &voices) {
+                    log::warn!("trash: the voices drawn from its recordings stay: {error}");
+                    self.skipped.borrow_mut().insert("voices".to_owned());
+                }
                 for record in self.records_over(journal, &days)? {
                     by_place
                         .entry((record.day, record.facet))
@@ -416,6 +700,14 @@ impl MadeFrom for MadeFromIt {
                 }
             }
             Change::Attached => {
+                if let Err(error) = self.put_back_voices(journal, item) {
+                    log::warn!("trash: the voices kept with it weren't put back: {error}");
+                    self.skipped.borrow_mut().insert("voices".to_owned());
+                }
+                if let Err(error) = self.put_back_detections(journal, item) {
+                    log::warn!("trash: what it found wasn't put back: {error}");
+                    self.skipped.borrow_mut().insert("detections".to_owned());
+                }
                 let kept = solstone_core_trash::kept(journal, &item.id, KEPT)
                     .map_err(|error| error.to_string())?;
                 if let Some(bytes) = kept {

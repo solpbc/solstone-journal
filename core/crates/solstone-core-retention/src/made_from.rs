@@ -27,6 +27,18 @@ pub trait MadeFrom {
         change: Change,
         segments: &[Target],
     ) -> Result<(), String>;
+
+    /// The item's recordings `segments` are being erased: let go of what was
+    /// made from them that still keeps their words. Runs again when a stopped
+    /// erase is finished, so it must be safe to repeat.
+    fn recordings_erased(
+        &self,
+        _journal: &Path,
+        _item: &Item,
+        _segments: &[Target],
+    ) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// For a test or a tool that moves recordings with nothing made from them.

@@ -269,3 +269,294 @@ fn a_memory_or_body_data_asks_for_nothing() {
     );
     assert_eq!(records(root.path()).len(), 2);
 }
+
+fn detections(root: &Path) -> Vec<Value> {
+    solstone_core_facets::read_detected_entities(root, "work", DAY).unwrap()
+}
+
+fn origin(key: &str) -> String {
+    format!("{DAY}/laptop/{key}")
+}
+
+fn voice(key: &str, sentence: u64) -> solstone_core_entity::VoiceprintItem {
+    solstone_core_entity::VoiceprintItem {
+        embedding: vec![0.0625; 256],
+        metadata: json!({"schema_version": 1, "stream_layout": "named", "day": DAY,
+            "segment_key": key, "source": "audio", "stream": "laptop",
+            "sentence_id": sentence, "added_at": 1, "last_seen_ts": 1}),
+    }
+}
+
+fn voice_keys(root: &Path, entity: &str) -> Vec<String> {
+    let Some(archive) = solstone_core_entity::load_entity_voiceprints_file(root, entity) else {
+        return Vec::new();
+    };
+    let mut keys: Vec<String> = archive
+        .metadata
+        .iter()
+        .map(|row| {
+            serde_json::from_str::<Value>(row).unwrap()["segment_key"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    keys.sort();
+    keys
+}
+
+#[test]
+fn what_a_recording_found_and_the_voices_drawn_from_it_leave_with_it_and_come_back() {
+    let root = journal();
+    let rows = [
+        json!({"id": "bob", "type": "Person", "name": "Bob", "description": "said the kestrel secret",
+            "described_by": origin(B), "segments": [origin(B)], "updated_at": 1}),
+        json!({"id": "ann", "type": "Person", "name": "Ann", "description": "heard the kestrel secret",
+            "described_by": origin(B), "segments": [origin(A), origin(B)], "updated_at": 1}),
+        json!({"id": "cat", "type": "Person", "name": "Cat", "description": "reviewed it",
+            "described_by": origin(C), "segments": [origin(B), origin(C)], "updated_at": 1}),
+        json!({"id": "eve", "type": "Person", "name": "Eve", "description": "added by the owner",
+            "updated_at": 1}),
+    ];
+    let text: String = rows.iter().map(|row| format!("{row}\n")).collect();
+    write(
+        root.path(),
+        &format!("facets/work/entities/{DAY}.jsonl"),
+        text.as_bytes(),
+    );
+    let encoder = solstone_core_entity::EncoderIdentity {
+        id: "unresolved".into(),
+        sha256: "0".repeat(64),
+        width: 256,
+    };
+    for id in ["bob", "ann"] {
+        solstone_core_entity::save_entity_identity(
+            root.path(),
+            id,
+            &json!({"id": id, "name": id, "type": "Person"}),
+            None,
+        )
+        .unwrap();
+    }
+    solstone_core_entity::save_voiceprints_batch(
+        root.path(),
+        "bob",
+        &[voice(A, 1), voice(B, 2)],
+        &encoder,
+    )
+    .unwrap();
+    solstone_core_entity::save_voiceprints_batch(root.path(), "ann", &[voice(B, 3)], &encoder)
+        .unwrap();
+
+    let made = MadeFromIt::new();
+    let b = delete(root.path(), B, &made);
+    assert!(made.skipped().is_empty(), "{:?}", made.skipped());
+
+    let after = detections(root.path());
+    let by_name =
+        |rows: &[Value], name: &str| rows.iter().find(|row| row["name"] == json!(name)).cloned();
+    assert!(
+        by_name(&after, "Bob").is_none(),
+        "found only in it: gone with it"
+    );
+    let ann = by_name(&after, "Ann").unwrap();
+    assert_eq!(ann["segments"], json!([origin(A)]));
+    assert_eq!(ann["description"], "", "it may quote what left");
+    let cat = by_name(&after, "Cat").unwrap();
+    assert_eq!(cat["segments"], json!([origin(C)]));
+    assert_eq!(
+        cat["description"], "reviewed it",
+        "a remaining recording wrote it"
+    );
+    assert_eq!(
+        by_name(&after, "Eve").unwrap()["description"],
+        "added by the owner"
+    );
+    assert_eq!(voice_keys(root.path(), "bob"), vec![A.to_owned()]);
+    assert!(voice_keys(root.path(), "ann").is_empty());
+
+    // A detection still running for it when it left writes nothing.
+    solstone_core_facets::upsert_detection_segment(
+        root.path(),
+        "work",
+        DAY,
+        &origin(B),
+        &[solstone_core_facets::DetectedEntityInput {
+            entity_type: "Person".into(),
+            name: "Bob".into(),
+            description: "the kestrel secret".into(),
+        }],
+    )
+    .unwrap();
+    assert!(by_name(&detections(root.path()), "Bob").is_none());
+
+    crate::trash_kinds::with_kinds(root.path(), |kinds| {
+        solstone_core_trash::attach(root.path(), kinds, &b.id, Action::Recover, surface())
+    })
+    .unwrap();
+    let back = detections(root.path());
+    assert_eq!(
+        by_name(&back, "Bob").unwrap()["segments"],
+        json!([origin(B)])
+    );
+    let ann = by_name(&back, "Ann").unwrap();
+    assert_eq!(ann["segments"], json!([origin(A), origin(B)]));
+    assert_eq!(ann["description"], "heard the kestrel secret");
+    assert_eq!(
+        by_name(&back, "Cat").unwrap()["segments"],
+        json!([origin(B), origin(C)])
+    );
+    assert_eq!(
+        voice_keys(root.path(), "bob"),
+        vec![A.to_owned(), B.to_owned()]
+    );
+    assert_eq!(voice_keys(root.path(), "ann"), vec![B.to_owned()]);
+}
+
+#[test]
+fn erasing_a_recording_takes_a_late_runs_outputs_and_the_old_words_of_a_correction() {
+    let root = journal();
+    // The owner corrected the title of the meeting over A B C, before B went.
+    let mut rows = records(root.path());
+    let meeting = rows
+        .iter_mut()
+        .find(|row| row["id"] == json!("meeting_090000_300"))
+        .unwrap();
+    meeting.insert("title".into(), json!("my own title"));
+    meeting.insert(
+        "edits".into(),
+        json!([{"timestamp": "2026-11-01T00:00:00Z", "actor": "owner:update",
+            "fields": ["title"], "note": "", "set": {"title": "my own title"},
+            "before": {"title": "the kestrel secret"}}]),
+    );
+    let text: String = rows
+        .iter()
+        .map(|row| format!("{}\n", Value::Object(row.clone())))
+        .collect();
+    write(
+        root.path(),
+        &format!("facets/work/activities/{DAY}.jsonl"),
+        text.as_bytes(),
+    );
+
+    let made = MadeFromIt::new();
+    let b = delete(root.path(), B, &made);
+    // A run going at the delete wrote into its place afterwards.
+    let place = root.path().join(format!("chronicle/{DAY}/laptop/{B}"));
+    write(
+        root.path(),
+        &format!("chronicle/{DAY}/laptop/{B}/talents/sense.json"),
+        b"the kestrel secret",
+    );
+    assert!(place.join("talents").exists());
+
+    crate::trash_kinds::with_kinds(root.path(), |kinds| {
+        solstone_core_trash::erase(root.path(), kinds, &b.id, Action::Erase, surface())
+    })
+    .unwrap();
+    let left: Vec<String> = fs::read_dir(&place)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| !name.ends_with(".lock"))
+        .collect();
+    assert_eq!(left, vec!["tombstone.json".to_owned()]);
+
+    let meeting = records(root.path())
+        .into_iter()
+        .find(|row| row["id"] == json!("meeting_090000_300"))
+        .unwrap();
+    assert_eq!(meeting["title"], "my own title", "the correction stays");
+    assert!(meeting["edits"][0].get("before").is_none());
+    assert!(
+        !fs::read_to_string(
+            root.path()
+                .join(format!("facets/work/activities/{DAY}.jsonl"))
+        )
+        .unwrap()
+        .contains("\"the kestrel secret\"")
+    );
+    let refused = solstone_core_facets::remove_activity_edit(
+        root.path(),
+        "work",
+        DAY,
+        "meeting_090000_300",
+        0,
+        "2026-11-01T00:00:00Z",
+        "owner:update",
+        "2026-11-20T00:00:00Z",
+    );
+    assert!(
+        matches!(
+            refused,
+            Err(solstone_core_facets::ActivityRecordStoreError::EditRefused(
+                solstone_core_facets::EditRefusal::NotRecorded
+            ))
+        ),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn a_recover_brings_back_only_its_own_and_the_owners_words_stay() {
+    let root = journal();
+    let rows = [
+        json!({"id": "dee", "type": "Person", "name": "Dee", "description": "my own note",
+            "described_by": "owner", "segments": [origin(A), origin(B)], "updated_at": 1}),
+        json!({"id": "fay", "type": "Person", "name": "Fay", "description": "said it last",
+            "described_by": origin(D), "segments": [origin(A), origin(B), origin(D)], "updated_at": 1}),
+    ];
+    let text: String = rows.iter().map(|row| format!("{row}\n")).collect();
+    write(
+        root.path(),
+        &format!("facets/work/entities/{DAY}.jsonl"),
+        text.as_bytes(),
+    );
+    solstone_core_entity::save_entity_identity(
+        root.path(),
+        "bob",
+        &json!({"id": "bob", "name": "bob", "type": "Person"}),
+        None,
+    )
+    .unwrap();
+    let encoder = solstone_core_entity::EncoderIdentity {
+        id: "unresolved".into(),
+        sha256: "0".repeat(64),
+        width: 256,
+    };
+
+    let made = MadeFromIt::new();
+    let b = delete(root.path(), B, &made);
+    let by_name = |name: &str| {
+        detections(root.path())
+            .into_iter()
+            .find(|row| row["name"] == json!(name))
+            .unwrap()
+    };
+    assert_eq!(by_name("Dee")["description"], "my own note");
+    assert_eq!(by_name("Dee")["segments"], json!([origin(A)]));
+
+    // A voice heard in it, saved by a run that read it before it left, isn't.
+    let saved =
+        solstone_core_entity::save_voiceprints_batch(root.path(), "bob", &[voice(B, 9)], &encoder)
+            .unwrap();
+    assert_eq!(saved, 0);
+    assert!(voice_keys(root.path(), "bob").is_empty());
+
+    let _d = delete(root.path(), D, &made);
+    assert_eq!(by_name("Fay")["segments"], json!([origin(A)]));
+    crate::trash_kinds::with_kinds(root.path(), |kinds| {
+        solstone_core_trash::attach(root.path(), kinds, &b.id, Action::Recover, surface())
+    })
+    .unwrap();
+    let fay = by_name("Fay");
+    assert_eq!(
+        fay["segments"],
+        json!([origin(A), origin(B)]),
+        "D is still in the trash"
+    );
+    assert_eq!(
+        fay["description"], "",
+        "D wrote it, and D is still in the trash"
+    );
+    assert_eq!(by_name("Dee")["description"], "my own note");
+}

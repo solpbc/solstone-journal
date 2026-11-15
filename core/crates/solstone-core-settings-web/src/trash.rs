@@ -703,10 +703,11 @@ fn erase_one(
     action: Action,
     operation: &OperationId,
 ) -> Result<Vec<String>, TrashError> {
-    match stretch_of(root, id) {
+    solstone_core_import::trash_kinds::with_kinds(root, |kinds| match stretch_of(root, id) {
         Some(stretch) => {
             match solstone_core_trash::erase_stretch(
                 root,
+                kinds,
                 &stretch,
                 action,
                 page_surface(None),
@@ -720,13 +721,14 @@ fn erase_one(
         }
         None => erased(solstone_core_trash::erase_in(
             root,
+            kinds,
             id,
             action,
             page_surface(None),
             operation,
         ))
         .map(|()| vec![id.to_owned()]),
-    }
+    })
 }
 
 /// An item that is no longer in the trash when its erase comes was erased

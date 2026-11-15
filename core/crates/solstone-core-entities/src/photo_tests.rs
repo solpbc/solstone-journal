@@ -387,3 +387,73 @@ async fn photos_routes_require_owner_access() {
         .unwrap();
     assert_ne!(response.status(), 200);
 }
+
+#[tokio::test]
+async fn photos_cross_rules_use_the_durable_id_for_every_read_surface() {
+    for flags in [
+        fp::panel::CrossEntity {
+            contested: true,
+            exclusivity_drop: false,
+        },
+        fp::panel::CrossEntity {
+            contested: false,
+            exclusivity_drop: true,
+        },
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let faces = seed(root);
+        // The owner's page uses a folder; derived rules use the durable id.
+        fs::rename(
+            root.join("entities/person"),
+            root.join("entities/person-folder"),
+        )
+        .unwrap();
+        for entity in ["person", "person-folder"] {
+            assert_eq!(
+                crate::photos::panel(root, entity).unwrap().state,
+                crate::photos::State::Suggested
+            );
+        }
+        let mut derived = fp::cross::Derived::default();
+        derived.rules.entities.insert("person".into(), flags);
+        write(
+            root,
+            &format!("entities/{}", fp::cross::FILE),
+            &serde_json::to_vec(&derived).unwrap(),
+        );
+        for entity in ["person", "person-folder"] {
+            let base = format!("/app/entities/api/journal/entity/{entity}");
+            let (status, _, bytes) = call(root, "GET", &format!("{base}/faces"), Value::Null).await;
+            assert_eq!(status, 200);
+            let panel: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(panel["state"], "none");
+            assert_eq!(panel["faces"], json!([]));
+            assert!(panel["default"].is_null());
+            assert_eq!(
+                call(root, "GET", &format!("{base}/photo"), Value::Null)
+                    .await
+                    .0,
+                404
+            );
+            assert_eq!(
+                call(
+                    root,
+                    "GET",
+                    &format!(
+                        "{base}/faces/crop/{}",
+                        crate::photos::encode_key(&faces[0].metadata.key)
+                    ),
+                    Value::Null
+                )
+                .await
+                .0,
+                404
+            );
+            // Connected tools use this same context and retain the facet boundary.
+            let photo = crate::photos::photo(root, entity, Some("work")).unwrap();
+            assert_eq!(photo.state, crate::photos::State::None);
+            assert!(photo.jpeg.is_none());
+        }
+    }
+}

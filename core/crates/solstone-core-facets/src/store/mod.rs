@@ -50,9 +50,9 @@ pub use activity_records::{
     hold_activity_enrichment, is_body_record, is_retired_plan, list_activity_day_stems,
     load_activity_records, load_activity_records_readable, parse_activity_records_strict,
     read_activity_records_readable, read_activity_records_strict, reconcile_faceprints,
-    reconcile_faceprints_for_activity, refresh_body_account, remake_activity_day,
-    remove_activity_edit, set_activity_hidden, set_activity_hidden_checked, update_activity_record,
-    update_activity_record_checked, update_activity_record_with,
+    reconcile_faceprints_for_activity, reconcile_faceprints_for_segments, refresh_body_account,
+    remake_activity_day, remove_activity_edit, set_activity_hidden, set_activity_hidden_checked,
+    update_activity_record, update_activity_record_checked, update_activity_record_with,
 };
 pub use awareness::{
     AwarenessStoreError, append_log, load_current, load_imports, read_log, record_import,
@@ -74,9 +74,9 @@ pub use declaration::{
     require_facet_write_identity, require_observed_facet_write_identity,
 };
 pub use detected_entities::{
-    DetectedEntityInput, DetectionUpsertReport, read_detected_entities,
-    read_detected_entities_strict, save_detected_entity, update_detected_entity,
-    upsert_detection_segment,
+    DESCRIBED_BY, DetectedEntityInput, DetectionUpsertReport, detections_naming, narrow_detections,
+    prune_removed_detections, read_detected_entities, read_detected_entities_strict,
+    restore_detections, save_detected_entity, update_detected_entity, upsert_detection_segment,
 };
 pub use detected_entity_activity::{
     DetectedLinkRef, DetectedRecent, iter_detected_entity_names_since,

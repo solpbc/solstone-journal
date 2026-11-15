@@ -159,7 +159,7 @@ fn a_facet_moves_whole_comes_back_exactly_and_is_erased() {
     let again = facets
         .trash(root, "work", Action::FacetDelete, Surface::Cli)
         .unwrap();
-    solstone_core_trash::erase(root, &again.id, Action::Erase, Surface::Cli).unwrap();
+    solstone_core_trash::erase(root, &[&facets], &again.id, Action::Erase, Surface::Cli).unwrap();
     assert!(!root.join("facets/work").exists());
     assert!(solstone_core_trash::list(root).unwrap().is_empty());
     assert_eq!(
@@ -211,7 +211,7 @@ fn a_facet_move_that_stopped_either_way_is_finished_by_the_sweep() {
     };
     search.fail.set(false);
     sweep(root, &facets);
-    solstone_core_trash::erase(root, &id, Action::Erase, Surface::Cli).unwrap();
+    solstone_core_trash::erase(root, &[&facets], &id, Action::Erase, Surface::Cli).unwrap();
     assert!(!root.join("facets/work").exists());
     assert_eq!(state(root, &id), None);
 }
@@ -490,10 +490,11 @@ fn the_facet_they_were_merged_into_erased_refuses_and_records_nothing() {
     let search = Search::default();
     let drops = FacetDrops::new(&search);
     let item = drop_item(root, &drops);
-    let home = Facets::new(&search)
+    let home_kind = Facets::new(&search);
+    let home = home_kind
         .trash(root, "home", Action::FacetDelete, Surface::Cli)
         .unwrap();
-    solstone_core_trash::erase(root, &home.id, Action::Erase, Surface::Cli).unwrap();
+    solstone_core_trash::erase(root, &[&home_kind], &home.id, Action::Erase, Surface::Cli).unwrap();
     let before = events(root).len();
 
     let error = recover(root, &drops, &item.id).unwrap_err();

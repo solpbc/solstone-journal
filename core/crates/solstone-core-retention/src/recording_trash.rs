@@ -116,6 +116,18 @@ impl Kind for Recordings<'_> {
         evernote_companions(journal, &item.paths)
     }
 
+    fn erasing(&self, journal: &Path, item: &Item) -> Result<(), String> {
+        let Some(target) = target_of(item) else {
+            return Ok(());
+        };
+        crate::door::clear_beside_tombstone(journal, &target, &item.id)?;
+        if matches!(item.unit, Unit::Segment { .. }) {
+            self.made
+                .recordings_erased(journal, item, std::slice::from_ref(&target))?;
+        }
+        Ok(())
+    }
+
     fn references(
         &self,
         journal: &Path,

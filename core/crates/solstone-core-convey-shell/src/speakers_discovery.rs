@@ -617,6 +617,15 @@ fn samples_by_segment(root: &Path, members: &[Member]) -> Vec<Value> {
 }
 
 fn cluster_sample(root: &Path, member: &Member, setting: Option<Option<String>>) -> Option<Value> {
+    // A recording in the trash, or erased, is never offered as a sample.
+    if solstone_core_segment::segment_removed(
+        root,
+        &member.day,
+        &member.stream,
+        &member.segment_key,
+    ) {
+        return None;
+    }
     let segment_dir = resolved_segment_dir(
         root,
         &member.day,

@@ -1406,8 +1406,10 @@ const IMPORT_DELETE_COPY = {
     reachMany: "they leave your journal now and wait in the trash, then they're erased. you can recover each one until then.",
     lead: "this moves the import's own:",
     ownMany: "this moves each import's own segments, any original file it kept, and its row in your import history.",
-    stays: "activities made from it drop it now, and the write-ups of its days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose. entities found in it stay and may still mention it.",
-    staysMany: "activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose. entities found in them stay and may still mention them.",
+    stays: "activities made from it drop it now, and the write-ups of its days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.",
+    found: "detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending stay, and what your journal wrote about them may still mention it.",
+    staysMany: "activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.",
+    foundMany: "detected entities drop them too, and any voice samples from them leave your known voices. the entities you're tending stay, and what your journal wrote about them may still mention them.",
     staysBody: 'activities, summaries and entities made from it elsewhere in your journal stay where they are and may still mention it.',
     staysBodyMany: 'activities, summaries and entities made from them elsewhere in your journal stay where they are and may still mention them.',
     sharedOne: 'on 1 day, some of what it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.',
@@ -1425,8 +1427,10 @@ const IMPORT_DELETE_COPY = {
     reachMany: "they leave your journal now and can't be recovered.",
     lead: "this erases the import's own:",
     ownMany: "this erases each import's own segments, any original file it kept, and its row in your import history.",
-    stays: "activities made from it drop it now, and the write-ups of its days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose. entities found in it aren't erased and may still mention it.",
-    staysMany: "activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose. entities found in them aren't erased and may still mention them.",
+    stays: "activities made from it drop it now, and the write-ups of its days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.",
+    found: "detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending aren't erased, and what your journal wrote about them may still mention it.",
+    staysMany: "activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.",
+    foundMany: "detected entities drop them too, and any voice samples from them leave your known voices. the entities you're tending aren't erased, and what your journal wrote about them may still mention them.",
     staysBody: "activities, summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.",
     staysBodyMany: "activities, summaries and entities made from them elsewhere in your journal aren't erased and may still mention them.",
     sharedOne: "on 1 day, some of what it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.",
@@ -1704,6 +1708,7 @@ function importOneBody(step, item, preview) {
   body.forEach(line => nodes.push(importDeleteEl('p', 'import-delete-shared', line)));
   // Body data remakes nothing: a briefing never reads it.
   nodes.push(importDeleteEl('p', 'import-delete-stays', importIsBody(kind) ? copy.staysBody : copy.stays));
+  if (!importIsBody(kind)) nodes.push(importDeleteEl('p', 'import-delete-found', copy.found));
   if (again) nodes.push(importDeleteEl('p', 'import-delete-again', again));
   if (importIsBody(kind)) nodes.push(importDeleteEl('p', 'import-delete-hide-day', IMPORT_DELETE_COPY.hideDay));
   const size = step === 'move' && preview ? importDeleteSize(preview.bytes) : '';
@@ -1743,6 +1748,7 @@ function importSetBody(step, items) {
   }
   const remakes = items.some(item => !importIsBody(item.kind));
   nodes.push(importDeleteEl('p', 'import-delete-stays', remakes ? copy.staysMany : copy.staysBodyMany));
+  if (remakes) nodes.push(importDeleteEl('p', 'import-delete-found', copy.foundMany));
   const kinds = [...new Set(items.map(item => item.kind))].filter(kind => IMPORT_DELETE_COPY.again[kind]);
   kinds.forEach(kind => nodes.push(importDeleteEl('p', 'import-delete-again', importDeleteFill(IMPORT_DELETE_COPY.again[kind], { verb: copy.verb }))));
   if (items.some(item => importIsBody(item.kind))) nodes.push(importDeleteEl('p', 'import-delete-hide-day', IMPORT_DELETE_COPY.hideDay));

@@ -438,10 +438,12 @@ fn record_entity_resolution_impl(
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_owned();
-        let Some(entity_index) = entities
-            .iter()
-            .position(|entity| entity.id.as_deref() == Some(entity_id.as_str()))
-        else {
+        // An answer naming someone merged away since names their survivor.
+        let Some(entity_index) = answered_or_survivor(journal_root, &entity_id, |id| {
+            entities
+                .iter()
+                .position(|entity| entity.id.as_deref() == Some(id))
+        }) else {
             return Err(EntityResolutionError::ResolvedChoiceEntityAbsent {
                 ambiguity_id,
                 entity_id,
@@ -634,4 +636,23 @@ fn no_match() -> EntityResolution {
         candidates: Vec::new(),
         ambiguity_id: None,
     }
+}
+
+/// Find the entity an owner's answer names, following the merges it went
+/// through since: an answer outlives a merge of the one it chose.
+pub fn answered_or_survivor<T>(
+    journal_root: &Path,
+    entity_id: &str,
+    find: impl Fn(&str) -> Option<T>,
+) -> Option<T> {
+    let mut current = entity_id.to_owned();
+    for _ in 0..16 {
+        if let Some(found) = find(&current) {
+            return Some(found);
+        }
+        current = crate::merged_successor(journal_root, &current)
+            .ok()
+            .flatten()?;
+    }
+    None
 }

@@ -308,6 +308,13 @@ pub(crate) fn commit_entity_merge_with_injector(
                 stats.voiceprints_added = result.added;
                 stats.voiceprints_skipped_duplicate = result.skipped_duplicate;
                 stats.voiceprints_target_total = result.target_total;
+            })
+            .and_then(|()| {
+                if plan.principal_transferred {
+                    move_owner_voice(journal, &source_dir, &target_dir)
+                } else {
+                    Ok(())
+                }
             }),
             "facets" => merge_facets(journal, source_id, target_id, Some(&mut rollback), injector)
                 .map(|result| {
@@ -1268,6 +1275,10 @@ fn plan_merge(
     if principal_transferred {
         object.insert("is_principal".to_owned(), Value::Bool(true));
     }
+    // The survivor has been known since the earlier of the two.
+    if let Some(created) = earlier_created(object.get("created_at"), source.get("created_at")) {
+        object.insert("created_at".to_owned(), created);
+    }
     let source_display_name = source
         .get("name")
         .and_then(Value::as_str)
@@ -1320,7 +1331,68 @@ fn values(value: &Value, field: &str) -> Vec<String> {
         .collect()
 }
 fn is_blank(value: Option<&Value>) -> bool {
-    value.is_none_or(|value| value.is_null() || value.as_str().is_some_and(str::is_empty))
+    value.is_none_or(|value| {
+        value.is_null()
+            || value.as_str().is_some_and(str::is_empty)
+            || value.as_array().is_some_and(Vec::is_empty)
+    })
+}
+
+/// The owner's voice, kept in the principal's folder (`owner_centroid.npz`,
+/// written by speaker resolution).
+const OWNER_VOICE: &str = "owner_centroid.npz";
+
+/// When the principal is the one merged away, its owner voice goes with it to
+/// the survivor, rather than with the folder. The survivor's own wins. Both
+/// folders are captured for rollback before any phase runs.
+fn move_owner_voice(
+    journal: &Path,
+    source_dir: &str,
+    target_dir: &str,
+) -> Result<(), EntityMergeError> {
+    if source_dir == target_dir {
+        return Ok(());
+    }
+    let refused = |error: &dyn std::fmt::Display| EntityMergeError::Refused(error.to_string());
+    let from = contained_path(journal, &format!("entities/{source_dir}/{OWNER_VOICE}"))
+        .map_err(|error| refused(&error))?;
+    let to = contained_path(journal, &format!("entities/{target_dir}/{OWNER_VOICE}"))
+        .map_err(|error| refused(&error))?;
+    if !solstone_core_journal_io::path_lexists(&from).map_err(|error| refused(&error))?
+        || solstone_core_journal_io::path_lexists(&to).map_err(|error| refused(&error))?
+    {
+        return Ok(());
+    }
+    solstone_core_journal_io::rename_within(
+        journal,
+        &format!("entities/{source_dir}/{OWNER_VOICE}"),
+        &format!("entities/{target_dir}/{OWNER_VOICE}"),
+    )
+    .map_err(|error| refused(&error))?;
+    solstone_core_journal_io::sync_dir(journal, &format!("entities/{target_dir}"))
+        .map_err(|error| refused(&error))?;
+    Ok(())
+}
+
+/// The earlier of two `created_at` values, when both are the same kind.
+fn earlier_created(target: Option<&Value>, source: Option<&Value>) -> Option<Value> {
+    match (target, source) {
+        (Some(Value::Number(t)), Some(Value::Number(s))) => match (t.as_i64(), s.as_i64()) {
+            (Some(t), Some(s)) if s < t => Some(Value::from(s)),
+            _ => None,
+        },
+        (Some(Value::String(t)), Some(Value::String(s))) => {
+            match (
+                chrono::DateTime::parse_from_rfc3339(t),
+                chrono::DateTime::parse_from_rfc3339(s),
+            ) {
+                (Ok(tt), Ok(ss)) if ss < tt => Some(Value::String(s.clone())),
+                _ => None,
+            }
+        }
+        (None | Some(Value::Null), Some(source)) if !source.is_null() => Some(source.clone()),
+        _ => None,
+    }
 }
 fn check_aka_cross_references(
     journal: &Path,

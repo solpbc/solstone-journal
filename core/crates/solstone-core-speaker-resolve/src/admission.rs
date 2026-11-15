@@ -53,11 +53,9 @@ pub fn saved_choice_excluded_by_admission(
     let Some(entity_id) = row.get("resolved_entity_id").and_then(Value::as_str) else {
         return Ok(false);
     };
-    let Some(entity) = entities
-        .iter()
-        .copied()
-        .find(|entity| entity.id == entity_id)
-    else {
+    let Some(entity) = solstone_core_entity::answered_or_survivor(journal_root, entity_id, |id| {
+        entities.iter().copied().find(|entity| entity.id == id)
+    }) else {
         return Ok(false);
     };
     Ok(!is_admissible_person(entity))

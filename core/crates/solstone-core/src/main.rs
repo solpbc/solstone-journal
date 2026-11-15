@@ -1391,31 +1391,32 @@ fn run_maintenance(
 ) -> ExitCode {
     run_owned_backup_command("maintenance", args, |arguments, journal| {
         #[cfg(windows)]
-        let _speakers_generation = if solstone_core_maintenance::is_discovery_run(arguments) {
-            match solstone_core_transcribe::enter_speakers_analyze_generation(
-                journal,
-                solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Maintenance,
-                admitted,
-            ) {
-                Ok(generation) => Some(generation),
-                Err(error) => {
-                    return OwnedBackupCommand::Maintenance(
-                        solstone_core_maintenance::CliOutcome::Rendered(
-                            solstone_core_maintenance::CliRun {
-                                stdout: String::new(),
-                                stderr: error
-                                    .message()
-                                    .map(|message| format!("{message}\n"))
-                                    .unwrap_or_default(),
-                                exit_code: error.exit_code(),
-                            },
-                        ),
-                    );
+        let _speakers_generation =
+            if solstone_core_maintenance::needs_inference_generation(arguments, journal) {
+                match solstone_core_transcribe::enter_speakers_analyze_generation(
+                    journal,
+                    solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Maintenance,
+                    admitted,
+                ) {
+                    Ok(generation) => Some(generation),
+                    Err(error) => {
+                        return OwnedBackupCommand::Maintenance(
+                            solstone_core_maintenance::CliOutcome::Rendered(
+                                solstone_core_maintenance::CliRun {
+                                    stdout: String::new(),
+                                    stderr: error
+                                        .message()
+                                        .map(|message| format!("{message}\n"))
+                                        .unwrap_or_default(),
+                                    exit_code: error.exit_code(),
+                                },
+                            ),
+                        );
+                    }
                 }
-            }
-        } else {
-            None
-        };
+            } else {
+                None
+            };
         #[cfg(windows)]
         if let Some(generation) = _speakers_generation {
             let run = solstone_core_maintenance::run_cli_with_discovery_generation(

@@ -431,7 +431,9 @@ fn trash_recording(
         Err(error) => return Err(error),
     };
     let erased = erase
-        && match solstone_core_trash::erase(root, &item.id, action, surface) {
+        && match solstone_core_import::trash_kinds::with_kinds(root, |kinds| {
+            solstone_core_trash::erase(root, kinds, &item.id, action, surface)
+        }) {
             Ok(()) => true,
             Err(error) => {
                 log::warn!("trash item {}: erase now was refused: {error}", item.id);
