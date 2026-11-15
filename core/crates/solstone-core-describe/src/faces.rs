@@ -227,16 +227,23 @@ pub struct PassStats {
     pub crops: usize,
 }
 
+/// Photos of people are on unless the owner turned them off: an absent switch
+/// is on, `false` is off, and any other stored value is off, so a corrupted
+/// value never turns face reading on.
 pub fn enabled(journal: &Path) -> PassResult<bool> {
     let config =
         solstone_core_journal_config::read_journal_config(journal).map_err(|e| e.to_string())?;
-    Ok(config
-        .config
-        .as_ref()
-        .and_then(|v| v.get("faces"))
-        .and_then(|v| v.get("enabled"))
-        .and_then(Value::as_bool)
-        == Some(true))
+    Ok(
+        match config
+            .config
+            .as_ref()
+            .and_then(|v| v.get("faces"))
+            .and_then(|v| v.get("enabled"))
+        {
+            None => true,
+            Some(value) => value == &Value::Bool(true),
+        },
+    )
 }
 
 /// File names are source-specific because one segment can hold several screens.
@@ -986,12 +993,12 @@ pub(crate) mod tests {
         let screen = raw.with_extension("jsonl");
         let original = b"independent existing transcript bytes\n";
         fs::write(&screen, original).unwrap();
+        // On unless the owner turned it off; a corrupted value reads as off.
         for value in [
-            json!({}),
-            json!({"faces":{}}),
             json!({"faces":{"enabled":false}}),
             json!({"faces":{"enabled":"true"}}),
             json!({"faces":{"enabled":1}}),
+            json!({"faces":{"enabled":null}}),
         ] {
             fs::write(&config, value.to_string()).unwrap();
             assert!(!enabled(journal.path()).unwrap());
@@ -1004,7 +1011,13 @@ pub(crate) mod tests {
             assert_eq!(fs::read(&screen).unwrap(), original);
             assert!(!sidecar_path(&raw).exists());
         }
-        fs::write(&config, br#"{"faces":{"enabled":true}}"#).unwrap();
-        assert!(enabled(journal.path()).unwrap());
+        for value in [
+            json!({}),
+            json!({"faces":{}}),
+            json!({"faces":{"enabled":true}}),
+        ] {
+            fs::write(&config, value.to_string()).unwrap();
+            assert!(enabled(journal.path()).unwrap(), "{value}");
+        }
     }
 }

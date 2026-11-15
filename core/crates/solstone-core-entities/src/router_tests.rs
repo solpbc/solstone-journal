@@ -8943,6 +8943,42 @@ async fn tidy_up_members_follow_the_id_rules() {
 }
 
 #[tokio::test]
+async fn tidy_up_duplicates_say_why_each_pair_was_suggested() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(j.path(), "facets/home/facet.json", json!({"title": "Home"}));
+    let candidates = [
+        r#"{"facet":"work","source_slug":"ana","target_slug":"anna","status":"open","evidence":{"basis":"meeting-face","detection_count":0}}"#,
+        r#"{"facet":"home","source_slug":"ana","target_slug":"anna","status":"open","evidence":{"detection_count":4}}"#,
+        r#"{"facet":"work","source_slug":"bo","target_slug":"bob","status":"open","evidence":{"detection_count":2}}"#,
+    ]
+    .join("\n")
+        + "\n";
+    write_raw(
+        j.path(),
+        "entities/review-candidates.jsonl",
+        candidates.as_bytes(),
+    );
+    let (status, full) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+    let items = full["duplicates"]["items"].as_array().unwrap();
+    let bases = |pair: [&str; 2]| {
+        items
+            .iter()
+            .find(|item| item["pair"] == json!(pair))
+            .map(|item| item["bases"].clone())
+            .unwrap()
+    };
+    // A face basis rides beside the name basis of the same pair in another
+    // facet; a row without a basis reads as the name-variant default.
+    assert_eq!(
+        bases(["ana", "anna"]),
+        json!(["name-variant", "meeting-face"])
+    );
+    assert_eq!(bases(["bo", "bob"]), json!(["name-variant"]));
+}
+
+#[tokio::test]
 async fn tidy_up_pages_both_groups() {
     let j = Journal::new();
     write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));

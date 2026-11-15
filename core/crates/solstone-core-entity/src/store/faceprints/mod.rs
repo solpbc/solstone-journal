@@ -38,7 +38,9 @@ impl std::fmt::Display for ActionError {
             Self::FacesOn => f.write_str("turn off face suggestions before clearing face data"),
             Self::UnknownKey => f.write_str("face is no longer available"),
             Self::NoEvidence => f.write_str("no face evidence"),
-            Self::StaleAction => f.write_str("that face action is no longer the last action"),
+            Self::StaleAction => {
+                f.write_str("that face changed or its action is no longer the last one")
+            }
             Self::BusySource(message) | Self::Other(message) => f.write_str(message),
         }
     }
@@ -179,15 +181,22 @@ impl Default for FacesState {
     }
 }
 
+/// Photos of people are on unless the owner turned them off: an absent switch
+/// is on, `false` is off, and any other stored value is off, so a corrupted
+/// value never turns face reading on.
 pub fn enabled(journal: &std::path::Path) -> Result<bool> {
     let config =
         solstone_core_journal_config::read_journal_config(journal).map_err(|e| e.to_string())?;
-    Ok(config
-        .config
-        .as_ref()
-        .and_then(|v| v.get("faces").and_then(|v| v.get("enabled")))
-        .and_then(serde_json::Value::as_bool)
-        == Some(true))
+    Ok(
+        match config
+            .config
+            .as_ref()
+            .and_then(|v| v.get("faces").and_then(|v| v.get("enabled")))
+        {
+            None => true,
+            Some(value) => value == &serde_json::Value::Bool(true),
+        },
+    )
 }
 
 pub(super) fn valid_embedding(e: &[f32]) -> bool {

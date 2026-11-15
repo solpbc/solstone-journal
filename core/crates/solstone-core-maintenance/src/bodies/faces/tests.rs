@@ -6,6 +6,13 @@ use serde_json::json;
 fn backfill_is_dark_and_bound_sidecars_invalidate_on_screen_change() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
+    // Photos of people are on by default; turned off, the catch-up touches nothing.
+    std::fs::create_dir_all(root.join("config")).unwrap();
+    std::fs::write(
+        root.join("config/journal.json"),
+        json!({"faces":{"enabled":false}}).to_string(),
+    )
+    .unwrap();
     assert_eq!(reconcile(root).unwrap().processed, 0);
     assert!(!root.join("entities").exists());
     let dir = root.join("chronicle").join("20260101").join("120000_300");

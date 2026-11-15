@@ -14,7 +14,8 @@ const vm = require('vm');
 
 const root = process.argv[2] || path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'assets/agents/workspace.html'), 'utf8');
-const script = html.slice(html.indexOf('<script>') + '<script>'.length, html.indexOf('</script>'));
+const scriptAt = html.indexOf('<script>') + '<script>'.length;
+const script = html.slice(scriptAt, html.indexOf('</script>', scriptAt));
 let cases = 0;
 
 // A copy table the page declares as a plain object literal, read from its source
@@ -218,6 +219,8 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
     window[window.solstoneJournalWebHost.javascriptCapability] = 1;
   }
   vm.runInContext(navJs, context, {filename: 'external-navigation.js'});
+  // The fragment loads the shared focus helpers before its own script.
+  vm.runInContext(fs.readFileSync(path.join(root, 'assets/static/focus.js'), 'utf8'), context, {filename: 'focus.js'});
   // The script only registers the view; the harness mounts it, as the page's view contract does,
   // with a context over this file's own clock and requests.
   let definition = null;

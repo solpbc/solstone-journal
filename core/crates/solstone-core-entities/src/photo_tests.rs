@@ -371,6 +371,60 @@ async fn photos_routes_distinguish_unknown_entity_key_stale_undo_and_busy_clear(
 }
 
 #[tokio::test]
+async fn choosing_a_face_whose_crop_is_gone_answers_not_found_so_the_page_refreshes() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let faces = seed(root);
+    let choose = |key: &fp::FaceKey| json!({"key": key});
+    // The crop file was removed after the page read the panel.
+    let gone = &faces[4].metadata;
+    fs::remove_file(fp::crop_path(root, &gone.key, gone.crop.as_deref().unwrap()).unwrap())
+        .unwrap();
+    let (status, _, bytes) = call(
+        root,
+        "POST",
+        &format!("{BASE}/faces/choose"),
+        choose(&gone.key),
+    )
+    .await;
+    assert_eq!(status, 404);
+    let refusal: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(refusal["reason_code"], "face_not_found");
+    // A face recorded without a crop is refused the same way.
+    let mut bare = faces[3].clone();
+    bare.metadata.key.frame_id = 99;
+    bare.metadata.crop = None;
+    fp::reconcile(
+        root,
+        &json!(["work", "20261101", "meeting"]).to_string(),
+        &fp::Encoder {
+            id: "synthetic".into(),
+            sha256: "0".repeat(64),
+            width: 128,
+        },
+        &BTreeMap::from([("person".into(), {
+            let mut all = faces.clone();
+            all.push(bare.clone());
+            all
+        })]),
+    )
+    .unwrap();
+    let (status, _, bytes) = call(
+        root,
+        "POST",
+        &format!("{BASE}/faces/choose"),
+        choose(&bare.metadata.key),
+    )
+    .await;
+    assert_eq!(status, 404);
+    let refusal: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(refusal["reason_code"], "face_not_found");
+    // Neither refusal chose anything.
+    let (_, headers, _) = call(root, "GET", &format!("{BASE}/photo"), Value::Null).await;
+    assert_eq!(headers["x-photo-state"], "suggested");
+}
+
+#[tokio::test]
 async fn photos_routes_require_owner_access() {
     let temp = tempfile::tempdir().unwrap();
     seed(temp.path());

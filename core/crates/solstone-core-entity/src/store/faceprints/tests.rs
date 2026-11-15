@@ -432,6 +432,13 @@ mod disk {
         rollback.checkpoint(root).unwrap();
         drop(rollback);
         assert!(crate::entity_merge_recovery_pending(root));
+        // Clearing needs photos of people off, and they are on by default.
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config/journal.json"),
+            br#"{"faces":{"enabled":false}}"#,
+        )
+        .unwrap();
         accumulation::clear(root, solstone_core_removals::Surface::Cli).unwrap();
         assert!(!crate::entity_merge_recovery_pending(root));
         crate::recover_interrupted_entity_merge(root).unwrap();

@@ -324,6 +324,8 @@ async function entityDeleteCases(workspace) {
       function groupedCount(n) { return String(n); }
       function formatDateShort() { return ''; }
       function formatMentionedDate() { return ''; }
+      // Photos of people are their own cases (entities_faces_dom.js).
+      function entityPhotoThumb() { return null; }
       function renderTidyBand() {}
       function renderIdsPanel() {}
       function renderDupsPanel() {}
@@ -1660,6 +1662,8 @@ async function main() {
   await detectedHideCases(workspace, entitiesCopy);
   // Entities on the view contract: the real fragment mounted in a page.
   cases += await require('./entities_contract_dom.js')(manifestDir);
+  // Photos of people: the person-page panel, list thumbnails and merge reasons.
+  cases += await require('./entities_faces_dom.js')(manifestDir);
 
   console.log(`DOM CASES: ${cases} passed`);
 }

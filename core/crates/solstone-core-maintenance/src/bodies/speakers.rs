@@ -516,11 +516,14 @@ mod tests {
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .filter(|path| before.get(*path) != after.get(*path))
-            // The pool catch-up keeps its own progress record and pool lock;
-            // neither is owner-voice state. The pool itself must not change.
+            // The pool catch-up keeps its own progress record and pool lock,
+            // and with photos of people on (the default) it announces its
+            // priority to face history through a lock; none of these is
+            // owner-voice state. The pool itself must not change.
             .filter(|path| {
                 !path.starts_with("awareness/speaker_candidates_backfill")
                     && path.as_str() != "awareness/speaker_candidates.json.lock"
+                    && path.as_str() != "health/face-priority-speakers-backfill-pool.lock"
             })
             .cloned()
             .collect::<Vec<_>>();

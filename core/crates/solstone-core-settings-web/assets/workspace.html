@@ -1855,6 +1855,44 @@ button:focus:not(:focus-visible) {
   background: var(--hairline);
 }
 
+#facesField .settings-field-note {
+  margin: 0.4em 0 0;
+  color: var(--ink-soft);
+  font-size: 0.9em;
+  line-height: 1.45;
+}
+
+.faces-more {
+  margin-top: 0.25em;
+  color: var(--ink-soft);
+  font-size: 0.9em;
+  line-height: 1.45;
+}
+
+.faces-more summary {
+  cursor: pointer;
+  padding: 0.6em 0;
+  color: var(--orange-text-aa);
+}
+
+.faces-more-list {
+  margin: 0 0 0.5em;
+  padding-left: 1.2em;
+}
+
+.faces-more-list li + li {
+  margin-top: 0.4em;
+}
+
+.faces-clear-row {
+  margin-top: 0.5em;
+}
+
+.faces-clear-row button,
+#facesClearResult button {
+  min-height: 44px;
+}
+
 .action-button-danger {
   background: var(--danger);
   color: var(--ink-on-danger);
@@ -2712,6 +2750,36 @@ button:focus:not(:focus-visible) {
         <small>about this many for each screen, in each 5 minute recording. more frames means more detail and more tokens.</small>
       </div>
 
+      <!-- Photos of people, from faces in meetings: on by default, desktop journals only. -->
+      <div class="settings-field" id="facesField" hidden>
+        <small id="facesStatus"></small>
+        <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
+          <label class="toggle-switch toggle-positive">
+            <input type="checkbox" id="facesEnabled" disabled aria-describedby="facesDescription">
+            <span class="slider"></span>
+          </label>
+          <label for="facesEnabled" class="toggle-label" style="cursor: pointer;">suggest photos of people</label>
+        </div>
+        <p class="settings-field-note" id="facesDescription">your journal looks for faces in your meeting recordings and suggests a photo for the people in them. you choose the photo, or none.</p>
+        <details class="faces-more" id="facesMore">
+          <summary>how this works</summary>
+          <ul class="faces-more-list">
+            <li>it runs on this computer, on frames from your meeting recordings.</li>
+            <li>the face details it uses to tell people apart stay in your journal. they're never sent to the agents you connect; only a photo is.</li>
+            <li>your past meeting recordings are read a little at a time, in the background, while they're still in your journal.</li>
+            <li>agents you connect to your journal can receive a person's photo, including a suggested one, marked as suggested. a connected agent that may see only some facets gets a photo only when it came from a meeting in one of them.</li>
+            <li>it matches a face to a person only when the face sits beside their name or alone in their video tile. a photo is theirs only once you choose it.</li>
+            <li>turning this off stops new reading.</li>
+          </ul>
+        </details>
+        <p class="settings-field-note" id="facesOnNote" style="display:none">to erase the face data your journal has found, turn this off first.</p>
+        <div class="faces-clear-row" id="facesClearRow" style="display:none">
+          <button type="button" class="btn-secondary" id="facesClearBtn">erase face data…</button>
+        </div>
+        <p class="settings-field-note" id="facesClearResult" role="status" style="display:none"></p>
+        <p class="settings-field-note" id="facesUnknown" style="display:none">couldn't confirm which choice is saved. reload the page to check.</p>
+      </div>
+
       <!-- Redaction Rules -->
       <details class="drawer" id="visionRedaction" open>
         <summary>
@@ -2746,6 +2814,7 @@ button:focus:not(:focus-visible) {
           <div id="visionCategoryGroups">loading…</div>
         </div>
       </details>
+
       </form>
     </section>
 
@@ -3008,6 +3077,32 @@ button:focus:not(:focus-visible) {
     </section>
   </div>
 
+  <!-- Settings-wide confirmations: outside the facet page, which is hidden on the index. -->
+  <div id="ownerVoiceConsentModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="ownerVoiceConsentHeading" aria-describedby="ownerVoiceConsentBody">
+    <div class="color-modal-content" style="max-width: 440px;">
+      <h3 id="ownerVoiceConsentHeading">turn on "leave out other voices"?</h3>
+      <p id="ownerVoiceConsentBody">from now on, after each recording is processed, your journal deletes its original audio for good. your words, when you said them and who was speaking are kept. some of your words may be missed, and those can't be brought back.</p>
+      <div style="display: flex; gap: 0.75em; justify-content: flex-end; margin-top: 1em;">
+        <button type="button" id="ownerVoiceConsentCancel">cancel</button>
+        <button type="button" class="save-color-btn" id="ownerVoiceConsentConfirm">turn on</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="facesClearModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="facesClearHeading" aria-describedby="facesClearBody">
+    <div class="color-modal-content" style="max-width: 480px;">
+      <h3 id="facesClearHeading">erase all face data?</h3>
+      <div id="facesClearBody">
+        <p>this erases every face your journal found in your meeting recordings, the photos you chose for people and your answers about faces, and the merge suggestions that came from faces, including any copies in the trash. it can't be undone.</p>
+        <p>your people, their names and your recordings stay. a backup made before now may still hold face data.</p>
+      </div>
+      <div style="display: flex; gap: 0.75em; justify-content: flex-end; margin-top: 1em;">
+        <button type="button" id="facesClearCancel">cancel</button>
+        <button type="button" class="action-button-danger" id="facesClearConfirm">erase face data</button>
+      </div>
+    </div>
+  </div>
+
   <section id="settings-facet-detail-view" class="facet-detail-page" hidden>
     <a class="facet-detail-back" href="/app/settings#facets"><span aria-hidden="true">‹</span> facets</a>
     <div class="facet-detail-heading-row">
@@ -3116,17 +3211,6 @@ button:focus:not(:focus-visible) {
       <button type="button" class="btn btn-secondary" id="facetDeleteBtn" hidden></button>
       <p class="facet-delete-note" id="facetDeleteNote" hidden></p>
     </section>
-
-    <div id="ownerVoiceConsentModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="ownerVoiceConsentHeading" aria-describedby="ownerVoiceConsentBody">
-      <div class="color-modal-content" style="max-width: 440px;">
-        <h3 id="ownerVoiceConsentHeading">turn on "leave out other voices"?</h3>
-        <p id="ownerVoiceConsentBody">from now on, after each recording is processed, your journal deletes its original audio for good. your words, when you said them and who was speaking are kept. some of your words may be missed, and those can't be brought back.</p>
-        <div style="display: flex; gap: 0.75em; justify-content: flex-end; margin-top: 1em;">
-          <button type="button" id="ownerVoiceConsentCancel">cancel</button>
-          <button type="button" class="save-color-btn" id="ownerVoiceConsentConfirm">turn on</button>
-        </div>
-      </div>
-    </div>
 
     <div id="customActivityModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="customActivityHeading">
       <div class="color-modal-content" style="max-width: 400px;">
@@ -3423,6 +3507,7 @@ setupModalAccessibility('colorPickerModal');
 setupModalAccessibility('iconPickerModal');
 setupModalAccessibility('customActivityModal');
 setupModalAccessibility('ownerVoiceConsentModal');
+setupModalAccessibility('facesClearModal');
 setupModalAccessibility('cleanupModal');
 setupModalAccessibility('trashConfirmModal');
 setupModalAccessibility('facetCreateModal');
@@ -3823,6 +3908,11 @@ async function loadConfig() {
     ownerVoice.known = true;
     renderOwnerVoice();
     loadOwnerVoiceStatus();
+    // On unless the owner turned it off; a journal that never set it is on.
+    facesSetting.stored = configData?.faces?.enabled !== false;
+    facesSetting.available = configData?.faces?.available !== false;
+    facesSetting.known = true;
+    renderFacesSetting();
   } catch (err) {
     transcribeProcessing.known = false;
     renderTranscribeProcessing();
@@ -5626,6 +5716,150 @@ document.getElementById('ownerVoiceConsentModal')?.addEventListener('keydown', (
 document.getElementById('ownerVoiceConsentConfirm')?.addEventListener('click', () => {
   document.getElementById('ownerVoiceConsentModal')._closeAccessible();
   saveOwnerVoice(true);
+});
+
+
+// ========== PHOTOS OF PEOPLE ==========
+// On by default, an ordinary switch; what it does is one tap down in the
+// field. A phone journal, where faces are never read, offers no switch at all.
+const facesSetting = {
+  stored: false,
+  known: false,
+  available: false,
+  busy: false,
+  clearing: false,
+  result: null,   // {text, retry}
+};
+
+function renderFacesSetting() {
+  const field = document.getElementById('facesField');
+  const toggle = document.getElementById('facesEnabled');
+  if (!field || !toggle) return;
+  field.hidden = facesSetting.known && !facesSetting.available;
+  const show = (id, visible) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = visible ? '' : 'none';
+  };
+  const on = facesSetting.known && facesSetting.stored;
+  toggle.checked = on;
+  toggle.disabled = facesSetting.busy || facesSetting.clearing || !facesSetting.known;
+  toggle.setAttribute('aria-disabled', toggle.disabled ? 'true' : 'false');
+  show('facesUnknown', !facesSetting.known);
+  show('facesOnNote', on);
+  show('facesClearRow', facesSetting.known && !on);
+  const clear = document.getElementById('facesClearBtn');
+  if (clear) clear.disabled = facesSetting.clearing || facesSetting.busy;
+  const result = document.getElementById('facesClearResult');
+  if (result) {
+    result.replaceChildren();
+    if (facesSetting.result) {
+      result.append(document.createTextNode(facesSetting.result.text));
+      if (facesSetting.result.retry) {
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'btn-secondary';
+        retry.style.marginLeft = '0.5em';
+        retry.textContent = 'try again';
+        retry.addEventListener('click', facesSetting.result.retry);
+        result.append(retry);
+      }
+    }
+  }
+  show('facesClearResult', Boolean(facesSetting.result));
+}
+
+async function saveFacesSetting(value) {
+  const toggle = document.getElementById('facesEnabled');
+  facesSetting.busy = true;
+  facesSetting.result = null;
+  renderFacesSetting();
+  try {
+    const body = { section: 'faces', data: { enabled: value } };
+    const response = await fetch('api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'not saved');
+    configData = result.config;
+    facesSetting.stored = result.config?.faces?.enabled !== false;
+    facesSetting.known = true;
+    showFieldStatus(toggle, 'saved');
+  } catch (err) {
+    // A write can land and still report an error: show what is stored, never a guess.
+    try {
+      const stored = await window.apiJson('api/config');
+      configData = stored;
+      facesSetting.stored = stored?.faces?.enabled !== false;
+      facesSetting.known = true;
+    } catch (readError) {
+      facesSetting.known = false;
+    }
+    showFieldStatus(toggle, 'error', err.message);
+  } finally {
+    facesSetting.busy = false;
+    renderFacesSetting();
+  }
+}
+
+// `removed` counts stored items, not people, so the owner hears only whether
+// anything was there to erase.
+function facesClearedText(removed) {
+  return Number(removed || 0) === 0 ? 'there was no face data to erase.' : 'face data erased.';
+}
+
+async function clearFaceData() {
+  facesSetting.clearing = true;
+  facesSetting.result = null;
+  renderFacesSetting();
+  try {
+    const result = await window.apiJson('/app/entities/api/journal/faces/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    facesSetting.result = { text: facesClearedText(result?.removed) };
+  } catch (err) {
+    const code = err?.reasonCode;
+    if (code === 'faces_busy') {
+      facesSetting.result = { text: 'your journal is using face data right now, so nothing was erased. try again in a minute.', retry: clearFaceData };
+    } else if (code === 'faces_enabled') {
+      facesSetting.result = { text: 'photo suggestions are on, so nothing was erased. turn them off first.' };
+      facesSetting.stored = true;
+    } else {
+      facesSetting.result = { text: "face data couldn't be erased.", retry: clearFaceData };
+    }
+  } finally {
+    facesSetting.clearing = false;
+    renderFacesSetting();
+  }
+}
+
+document.getElementById('facesEnabled')?.addEventListener('change', (event) => {
+  const toggle = event.target;
+  const wanted = toggle.checked;
+  // Nothing changes until the save returns.
+  toggle.checked = facesSetting.known && facesSetting.stored;
+  if (facesSetting.busy || !facesSetting.known || !facesSetting.available) {
+    renderFacesSetting();
+    return;
+  }
+  saveFacesSetting(wanted);
+});
+document.getElementById('facesClearBtn')?.addEventListener('click', (event) => {
+  const modal = document.getElementById('facesClearModal');
+  modal.style.display = 'block';
+  modal._openAccessible(event.currentTarget);
+});
+document.getElementById('facesClearCancel')?.addEventListener('click', () => {
+  document.getElementById('facesClearModal')._closeAccessible();
+});
+document.getElementById('facesClearModal')?.addEventListener('click', (event) => {
+  if (event.target === event.currentTarget) event.currentTarget._closeAccessible();
+});
+document.getElementById('facesClearConfirm')?.addEventListener('click', () => {
+  document.getElementById('facesClearModal')._closeAccessible();
+  clearFaceData();
 });
 
 // Backend key warning link

@@ -251,7 +251,13 @@ pub fn choose(journal: &Path, entity: &str, key: &FaceKey) -> ActionResult<Strin
         .as_ref()
         .and_then(|a| a.faces.iter().find(|f| &f.metadata.key == key))
         .ok_or(ActionError::UnknownKey)?;
-    let crop = face.metadata.crop.as_deref().ok_or("face has no crop")?;
+    // A face whose crop is gone can no longer be offered: the owner's page drops
+    // it on refresh, so it answers as an unknown face rather than a failure.
+    let crop = face
+        .metadata
+        .crop
+        .as_deref()
+        .ok_or(ActionError::UnknownKey)?;
     let path = crop_path(journal, key, crop)?;
     let segment = contained_path(journal, &segment_relative(key)?).map_err(err)?;
     let claims = solstone_core_segment::output_attempt::OutputClaims::discover(
@@ -261,7 +267,7 @@ pub fn choose(journal: &Path, entity: &str, key: &FaceKey) -> ActionResult<Strin
     .map_err(ActionError::source)?;
     let jpeg = optional(&path)?
         .filter(|bytes| !bytes.is_empty())
-        .ok_or("face crop is no longer available")?;
+        .ok_or(ActionError::UnknownKey)?;
     action(journal, entity, |state, archive| {
         claims.segment_identity(&segment).map_err(err)?;
         let current = archive
@@ -269,8 +275,9 @@ pub fn choose(journal: &Path, entity: &str, key: &FaceKey) -> ActionResult<Strin
             .iter()
             .find(|f| &f.metadata.key == key)
             .ok_or(ActionError::UnknownKey)?;
+        // The face changed after the owner's page read it: refresh, then choose.
         if current != face {
-            return Err("face evidence changed; refresh before choosing".into());
+            return Err(ActionError::StaleAction);
         }
         state.decision.photo = Some(ChosenPhoto {
             face: current.clone(),

@@ -72,6 +72,9 @@ fn merge_processing(target: &mut Map<String, Value>, patch: &Map<String, Value>)
 /// The write closure's refusal when voice-only transcription is turned on without consent.
 const OWNER_VOICE_CONSENT_REFUSAL: &str = "owner voice consent required";
 
+/// The face pass runs in describe on desktop journals only; a phone journal never offers it.
+pub(crate) const FACES_AVAILABLE: bool = !cfg!(any(target_os = "android", target_os = "ios"));
+
 /// Off, then the three budgets an owner can choose on the "your own model" lane.
 const BYO_THINKING_BUDGETS: [u64; 4] = [0, 8192, 16384, 32768];
 
@@ -131,6 +134,8 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             "owner_voice_only",
         ],
         "env" => &["PLAUD_ACCESS_TOKEN"],
+        // Photo suggestions for people, from faces in meetings.
+        "faces" => &["enabled"],
         "processing" => &[],
         // The "your own model" thinking budget: one value for the lane.
         "providers" => &["byo_thinking_budget"],
@@ -159,6 +164,16 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             if data.contains_key(key) && !data[key].is_boolean() {
                 return invalid_config_value(format!("transcribe.{key} must be a boolean"));
             }
+        }
+    }
+    if section == "faces"
+        && let Some(enabled) = data.get("enabled")
+    {
+        if !enabled.is_boolean() {
+            return invalid_config_value("faces.enabled must be a boolean");
+        }
+        if enabled == &Value::Bool(true) && !FACES_AVAILABLE {
+            return invalid_config_value("photo suggestions run only in a journal on a computer");
         }
     }
     if section == "providers"
@@ -410,11 +425,33 @@ pub fn project_public_config(mut config: Map<String, Value>) -> Result<Map<Strin
             project_transcribe(transcribe, false),
         );
     }
+    // An unset switch on a computer stays unset; a phone journal always says
+    // it can't run photo suggestions, so its page offers no switch.
+    if let Some(faces) = project_faces(config.get("faces"), FACES_AVAILABLE) {
+        config.insert("faces".to_owned(), faces);
+    }
     config.insert(
         "runtime_env".to_owned(),
         json!({"PLAUD_ACCESS_TOKEN": std::env::var_os("PLAUD_ACCESS_TOKEN").is_some_and(|value| !value.is_empty())}),
     );
     Ok(config)
+}
+
+/// The switch as every face reader takes it: on unless the owner turned it
+/// off, and any stored value other than `true` or `false` reads as off.
+/// `available` says whether this journal runs the face pass at all. A
+/// computer's journal that never set it projects nothing, and the page reads
+/// that absence as on.
+fn project_faces(faces: Option<&Value>, available: bool) -> Option<Value> {
+    if faces.is_none() && available {
+        return None;
+    }
+    let enabled = available
+        && match faces.and_then(|f| f.get("enabled")) {
+            None => true,
+            Some(value) => value == &Value::Bool(true),
+        };
+    Some(json!({"enabled": enabled, "available": available}))
 }
 
 /// A known backend this host cannot run. A mac has no parakeet.cpp server, so
@@ -794,6 +831,59 @@ mod tests {
         .await;
         assert_eq!(status, 200);
         assert_eq!(files_containing(root.path(), "owner_confirmed"), 1);
+    }
+
+    #[tokio::test]
+    async fn photo_suggestions_turn_off_and_on_as_an_ordinary_setting() {
+        let root = crate::test_support::phase_root("established");
+        let path = root.path().join("config/journal.json");
+        for value in [json!("false"), json!(0), serde_json::Value::Null] {
+            let before = std::fs::read(&path).unwrap();
+            let (status, _) = send(
+                root.path(),
+                "PUT",
+                json!({"section": "faces", "data": {"enabled": value}}),
+            )
+            .await;
+            assert_eq!(status, 400, "{value}");
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
+        for value in [false, true, false] {
+            let (status, response) = send(
+                root.path(),
+                "PUT",
+                json!({"section": "faces", "data": {"enabled": value}}),
+            )
+            .await;
+            assert_eq!(status, 200);
+            assert_eq!(response["config"]["faces"]["enabled"], value);
+            let stored: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(stored["faces"], json!({"enabled": value}));
+        }
+    }
+
+    #[test]
+    fn photo_suggestions_are_on_unless_turned_off_and_say_where_they_run() {
+        for (value, on) in [
+            (json!({"enabled": true}), true),
+            (json!({"enabled": false}), false),
+            (json!({"enabled": "true"}), false),
+            (json!({"enabled": 1}), false),
+            (json!({}), true),
+            (serde_json::Value::Null, true),
+        ] {
+            assert_eq!(
+                super::project_faces(Some(&value), true),
+                Some(json!({"enabled": on, "available": true})),
+                "{value}"
+            );
+        }
+        assert_eq!(super::project_faces(None, true), None);
+        assert_eq!(
+            super::project_faces(None, false),
+            Some(json!({"enabled": false, "available": false}))
+        );
     }
 
     #[test]
