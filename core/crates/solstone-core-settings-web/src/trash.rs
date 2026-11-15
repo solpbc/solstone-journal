@@ -88,6 +88,7 @@ pub async fn list(journal_root: PathBuf) -> Response {
         }
         Ok::<_, String>(json!({
             "erase_after_days": solstone_core_trash::erase_after_days(&journal_root),
+            "backups": backups_view(&journal_root),
             "unfinished": unfinished,
             "items": shown,
             "stopped": stopped_rows,
@@ -581,11 +582,45 @@ fn replaces(journal_root: &Path, item: &Item) -> bool {
     })
 }
 
+/// Whether this journal can also remove what the trash erases from its
+/// backups, and where that stands: backup set up (on, paused or unreachable),
+/// the owner's setting, and the backup half's state.
+pub fn backups_view(journal_root: &Path) -> Value {
+    let set_up = solstone_core_trash::backup_erase::backups_on(journal_root);
+    let status = solstone_core_offload::backup_erase::status(journal_root);
+    json!({
+        "set_up": set_up,
+        "paused": set_up && solstone_core_backup_runtime::backup_paused(journal_root),
+        "setting": solstone_core_trash::erase_from_backups(journal_root),
+        "state": status.state,
+        "reason": status.reason,
+        "pending": status.pending,
+        "staying": status.staying,
+        "next_try": status.next_try,
+        "operated": solstone_core_backup::get_backup_config(journal_root)
+            .ok()
+            .and_then(|config| config.get("mode").and_then(Value::as_str).map(|mode| mode == "operated"))
+            .unwrap_or(false),
+    })
+}
+
+/// Backup's state for the choice in an erase-now confirm, on every page.
+pub async fn backups(journal_root: PathBuf) -> Response {
+    match tokio::task::spawn_blocking(move || backups_view(&journal_root)).await {
+        Ok(view) => json_response(view),
+        Err(error) => unreadable(error.to_string()),
+    }
+}
+
 /// What a trash act was asked to do.
 #[derive(serde::Deserialize)]
 struct Selection {
     #[serde(default)]
     ids: Vec<String>,
+    /// Also remove what this erases from the backups. Only an owner's tick
+    /// sets it; missing means no.
+    #[serde(default)]
+    backups: bool,
     /// The page a recover came from, when not the trash page: the receipt on
     /// the transcripts, agents, import, body or entities page.
     #[serde(default)]
@@ -597,6 +632,7 @@ fn parse(body: &Bytes) -> Option<Selection> {
         return Some(Selection {
             ids: Vec::new(),
             page: None,
+            backups: false,
         });
     }
     serde_json::from_slice(body).ok()
@@ -690,8 +726,9 @@ pub async fn erase(journal_root: PathBuf, body: Bytes) -> Response {
         return unreadable_selection();
     };
     let ids = erase_order(&journal_root, selection.ids);
-    run(journal_root, ids, |root, id, operation| {
-        erase_one(root, id, Action::Erase, operation)
+    let backups = selection.backups;
+    run(journal_root, ids, move |root, id, operation| {
+        erase_one(root, id, Action::Erase, operation, backups)
     })
     .await
 }
@@ -702,16 +739,18 @@ fn erase_one(
     id: &str,
     action: Action,
     operation: &OperationId,
+    backups: bool,
 ) -> Result<Vec<String>, TrashError> {
     solstone_core_import::trash_kinds::with_kinds(root, |kinds| match stretch_of(root, id) {
         Some(stretch) => {
-            match solstone_core_trash::erase_stretch(
+            match solstone_core_trash::erase_stretch_with(
                 root,
                 kinds,
                 &stretch,
                 action,
                 page_surface(None),
                 operation,
+                backups,
             ) {
                 Ok(items) => Ok(items.into_iter().map(|item| item.id).collect()),
                 // Erased already with the rest of it, under this act.
@@ -719,13 +758,14 @@ fn erase_one(
                 Err(error) => Err(error),
             }
         }
-        None => erased(solstone_core_trash::erase_in(
+        None => erased(solstone_core_trash::erase_with(
             root,
             kinds,
             id,
             action,
             page_surface(None),
-            operation,
+            Some(operation),
+            backups,
         ))
         .map(|()| vec![id.to_owned()]),
     })
@@ -754,7 +794,11 @@ fn erase_order(journal_root: &Path, ids: Vec<String>) -> Vec<String> {
 }
 
 /// Erase everything in the trash.
-pub async fn empty(journal_root: PathBuf) -> Response {
+pub async fn empty(journal_root: PathBuf, body: Bytes) -> Response {
+    let Some(selection) = parse(&body) else {
+        return unreadable_selection();
+    };
+    let backups = selection.backups;
     let ids = match tokio::task::spawn_blocking({
         let root = journal_root.clone();
         move || solstone_core_trash::list(&root)
@@ -768,8 +812,8 @@ pub async fn empty(journal_root: PathBuf) -> Response {
         Ok(Err(error)) => return unreadable(error.to_string()),
         Err(error) => return unreadable(error.to_string()),
     };
-    run(journal_root, ids, |root, id, operation| {
-        erase_one(root, id, Action::EmptyTrash, operation)
+    run(journal_root, ids, move |root, id, operation| {
+        erase_one(root, id, Action::EmptyTrash, operation, backups)
     })
     .await
 }

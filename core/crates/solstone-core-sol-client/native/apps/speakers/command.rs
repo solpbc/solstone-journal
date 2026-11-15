@@ -952,6 +952,8 @@ pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
         &[
             FlagSpec::true_flag("--commit"),
             FlagSpec::true_flag("--erase"),
+            FlagSpec::true_flag("--from-backups"),
+            FlagSpec::true_flag("--not-from-backups"),
             FlagSpec::true_flag("--json"),
         ],
     ) {
@@ -963,6 +965,18 @@ pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
     if erase && !commit {
         return stderr("--erase needs --commit");
     }
+    let backups = if erase {
+        match crate::command::backups_choice(
+            ctx,
+            parsed.flag("--from-backups"),
+            parsed.flag("--not-from-backups"),
+        ) {
+            Ok(choice) => choice,
+            Err(error) => return stderr(error),
+        }
+    } else {
+        crate::command::BackupsChoice::default()
+    };
     let json_output = parsed.flag("--json");
     let mut out = String::new();
     if !commit && !json_output {
@@ -973,7 +987,7 @@ pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
         HttpMethod::Post,
         "/app/speakers/api/wipe",
         vec![],
-        Some(json!({"commit": commit, "erase": erase})),
+        Some(json!({"commit": commit, "erase": erase, "backups": backups.chosen})),
     ) {
         Ok(report) => report,
         Err(error) => return speaker_error_preserving_stdout(out, error),
@@ -983,6 +997,11 @@ pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
     }
     let erase_day = crate::command::erase_day_of(ctx, &report);
     render_wipe(&mut out, &report, erase_day.as_deref());
+    if report.get("erased").and_then(Value::as_bool) == Some(true)
+        && let Some(next) = crate::command::backups_next_line(backups)
+    {
+        emit(&mut out, next);
+    }
     CommandOutput::success(out)
 }
 

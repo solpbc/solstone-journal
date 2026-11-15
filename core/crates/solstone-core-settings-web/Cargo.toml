@@ -15,6 +15,9 @@ workspace = true
 [dependencies]
 solstone-core-removals.workspace = true
 solstone-core-trash.workspace = true
+solstone-core-offload.workspace = true
+solstone-core-backup.workspace = true
+solstone-core-backup-runtime.workspace = true
 log.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-import.workspace = true

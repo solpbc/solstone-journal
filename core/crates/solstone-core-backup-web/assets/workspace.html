@@ -17,6 +17,12 @@
     <span class="backup-op-error" data-operation-error></span>
   </div>
 
+  <div class="backup-operation" data-backup-erase-banner role="status" hidden>
+    <span class="backup-spinner" aria-hidden="true"></span>
+    <span data-backup-erase-phase></span>
+    <span class="backup-note" data-backup-erase-note></span>
+  </div>
+
   <div class="backup-restore-report" data-operation-restore-report hidden>
     <p class="backup-note" data-operation-restore-summary role="status" aria-live="polite" aria-atomic="true"></p>
     <details data-operation-restore-details hidden>
@@ -179,6 +185,7 @@
         <h2 data-copy="management.paused.title"></h2>
         <p data-copy="management.paused.body"></p>
         <p data-paused-hosted-note data-copy="management.paused.hosted_note" hidden></p>
+        <p class="backup-note" data-paused-erase-note hidden></p>
         <div class="backup-panel-actions">
           <button type="button" class="primary" data-action="resume" data-copy="action_labels.resume"></button>
         </div>

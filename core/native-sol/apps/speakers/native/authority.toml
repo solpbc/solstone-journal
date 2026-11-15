@@ -546,7 +546,7 @@ params = [
 [[entries]]
 path = ["speakers", "wipe"]
 kind = "command"
-help = "Move every speaker voice file in the journal to the trash.\n\nWithout --commit, prints a report of what would be moved. With\n--commit, moves segment-embedding NPZs, speaker labels/corrections,\nper-entity voiceprints, owner centroids, the owner-candidate snapshot\nand the candidate pool to the trash, where they can be recovered until\nthey are erased. --erase erases them at once instead."
+help = "Move every speaker voice file in the journal to the trash.\n\nWithout --commit, prints a report of what would be moved. With\n--commit, moves segment-embedding NPZs, speaker labels/corrections,\nper-entity voiceprints, owner centroids, the owner-candidate snapshot\nand the candidate pool to the trash, where they can be recovered until\nthey are erased. --erase erases them at once instead.\n\nWith --erase, --from-backups also removes them from your backups and\n--not-from-backups leaves them there. Without either, the trash\nsetting decides."
 operation_id = "speakers.wipe"
 entry_type = "http"
 method = "POST"
@@ -556,5 +556,7 @@ handler = "wipe"
 params = [
   { name = "commit", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--commit"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
   { name = "erase", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--erase"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+  { name = "from_backups", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--from-backups"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+  { name = "not_from_backups", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--not-from-backups"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
   { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
 ]

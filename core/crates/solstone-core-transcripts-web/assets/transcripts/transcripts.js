@@ -5585,6 +5585,27 @@
       if (stretchDialog) renderStretchStep(step);
       else if (deleteDialogSegs.length === 1) renderDeleteSegmentStep(deleteDialogSegs[0], step);
       else renderDeleteSetStep(deleteDialogSegs, step);
+      attachBackupChoice(step, stretchDialog ? 1 : deleteDialogSegs.length);
+    }
+
+    // The erase step offers to also remove it from the backups, while backup
+    // is set up. Each render starts again unticked-or-as-set.
+    let backupChoice = null;
+    let backupChoiceTurn = 0;
+    async function attachBackupChoice(step, count) {
+      const turn = ++backupChoiceTurn;
+      backupChoice = null;
+      if (step !== 'erase' || !window.BackupErase) return;
+      const row = await window.BackupErase.row(count);
+      if (!row || turn !== backupChoiceTurn) return;
+      backupChoice = row;
+      deleteSegmentModalBody.append(row);
+    }
+    function backupsChosen() {
+      return Boolean(window.BackupErase && window.BackupErase.chosen(backupChoice));
+    }
+    function backupsClause(count) {
+      return window.BackupErase ? window.BackupErase.receipt(backupChoice, count) : '';
     }
 
     // Segments whose original media waits in the trash, read when the dialog
@@ -6036,6 +6057,7 @@
         buttons,
       };
       if (copy.message && (kind !== 'moved' || fill.date)) notice.message = stretchFill(copy.message, fill);
+      if (fill.message) notice.message = fill.message;
       if (settled) notice.autoDismiss = 10000;
       window.AppServices.notifications.show(notice);
     }
@@ -6087,7 +6109,7 @@
         response = await fetch('/app/transcripts/api/stretch/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: asked.from, to: asked.to, erase }),
+          body: JSON.stringify({ from: asked.from, to: asked.to, erase, ...(erase ? { backups: backupsChosen() } : {}) }),
         });
       } catch (_) {
         trashReceipt(erase ? 'noAnswerErase' : 'noAnswerMove');
@@ -6107,7 +6129,7 @@
       const bounds = stretchBounds(data.stretch.from, data.stretch.to);
       reloadAfterStretch();
       if (erase && data.erased === true) {
-        stretchReceipt('erased', { bounds });
+        stretchReceipt('erased', { bounds, message: backupsClause(1) });
         return;
       }
       if (erase) {
@@ -6224,6 +6246,7 @@
         buttons,
       };
       if (copy.message && (kind !== 'moved' || fill.date)) notice.message = put(copy.message);
+      if (fill.message) notice.message = fill.message;
       // A refused or failed card stays until the owner dismisses it.
       if (settled) notice.autoDismiss = 10000;
       window.AppServices.notifications.show(notice);
@@ -6268,7 +6291,7 @@
       let response;
       try {
         response = await fetch(`/app/transcripts/api/segment/${day}/${seg.stream}/${seg.key}`, erase
-          ? { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ erase: true }) }
+          ? { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ erase: true, backups: backupsChosen() }) }
           : { method: 'DELETE' });
       } catch (_) {
         trashReceipt(erase ? 'noAnswerErase' : 'noAnswerMove');
@@ -6286,7 +6309,7 @@
 
       dropDeletedSegment(seg);
       if (data.erased === true) {
-        trashReceipt('erased');
+        trashReceipt('erased', { message: backupsClause(1) });
         return { kind: 'erased' };
       }
       if (data.erase_failed === true) {
@@ -6603,7 +6626,7 @@
         const response = await fetch('/app/transcripts/api/segments/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ segments: segs.map((seg) => ({ day: segDay, stream: seg.stream, key: seg.key })), ...(erase ? { erase: true } : {}) }),
+          body: JSON.stringify({ segments: segs.map((seg) => ({ day: segDay, stream: seg.stream, key: seg.key })), ...(erase ? { erase: true, backups: backupsChosen() } : {}) }),
         });
         answer = response.ok ? await response.json().catch(() => null) : null;
       } catch (_) {
@@ -6635,7 +6658,8 @@
       if (erase) {
         const erased = done.filter(({ entry }) => entry.erased === true).length;
         if (erased === n) {
-          setTrashReceipt(R.erased, { n }, [], { settled: true });
+          const clause = backupsClause(n);
+          setTrashReceipt(R.erased, { n }, [], clause ? { settled: true, message: clause } : { settled: true });
         } else if (erased) {
           setTrashReceipt(R.partErased, { done: erased, n }, [openTrash], { message: n - erased === 1 ? R.partErasedOne : R.partErasedMany });
         } else {

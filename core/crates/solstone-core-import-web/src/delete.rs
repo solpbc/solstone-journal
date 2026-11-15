@@ -32,6 +32,9 @@ struct DeleteBody {
     /// Erase it now rather than leave it in the trash.
     #[serde(default)]
     erase: bool,
+    /// And remove it from the backups too, as the owner chose with erase now.
+    #[serde(default)]
+    backups: bool,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -39,6 +42,8 @@ struct SetBody {
     ids: Vec<String>,
     #[serde(default)]
     erase: bool,
+    #[serde(default)]
+    backups: bool,
 }
 
 fn bad_body() -> Response {
@@ -227,7 +232,15 @@ pub(crate) async fn delete(
             };
         let erased = request.erase
             && match solstone_core_import::trash_kinds::with_kinds(&root, |kinds| {
-                solstone_core_trash::erase(&root, kinds, &item.id, Action::ImportDelete, surface)
+                solstone_core_trash::erase_with(
+                    &root,
+                    kinds,
+                    &item.id,
+                    Action::ImportDelete,
+                    surface,
+                    None,
+                    request.backups,
+                )
             }) {
                 Ok(()) => true,
                 Err(error) => {
@@ -331,13 +344,14 @@ pub(crate) async fn delete_set(
         if !chosen.is_empty() {
             let (results, now) =
                 solstone_core_import::trash_kinds::with_kinds_search(&root, |kinds| {
-                    solstone_core_trash::detach_set(
+                    solstone_core_trash::detach_set_with(
                         &root,
                         kinds,
                         chosen,
                         Action::ImportDelete,
                         surface,
                         request.erase,
+                        request.backups,
                     )
                 });
             let results = results?;

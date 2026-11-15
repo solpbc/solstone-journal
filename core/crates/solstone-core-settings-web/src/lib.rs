@@ -72,6 +72,7 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
     let trash_recover_root = journal_root.clone();
     let trash_erase_root = journal_root.clone();
     let trash_empty_root = journal_root.clone();
+    let trash_backups_root = journal_root.clone();
     let storage_put_root = journal_root.clone();
     let purge_root = journal_root.clone();
     let prune_logs_root = journal_root.clone();
@@ -204,7 +205,11 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         )
         .route(
             "/app/settings/api/trash/empty",
-            post(move || trash::empty(trash_empty_root.clone())),
+            post(move |body| trash::empty(trash_empty_root.clone(), body)),
+        )
+        .route(
+            "/app/settings/api/trash/backups",
+            get(move || trash::backups(trash_backups_root.clone())),
         )
         .route(
             "/app/settings/api/storage/config",

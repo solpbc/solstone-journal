@@ -140,7 +140,10 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         // The "your own model" thinking budget: one value for the lane.
         "providers" => &["byo_thinking_budget"],
         // Days before the trash erases what is put in it from now on.
-        "trash" => &[solstone_core_trash::ERASE_AFTER_DAYS_KEY],
+        "trash" => &[
+            solstone_core_trash::ERASE_AFTER_DAYS_KEY,
+            solstone_core_trash::ERASE_FROM_BACKUPS_KEY,
+        ],
         _ => return invalid_config_value(format!("Unknown section: {section}")),
     };
     if section == "transcribe" {
@@ -224,6 +227,13 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             solstone_core_trash::MIN_ERASE_AFTER_DAYS,
             solstone_core_trash::MAX_ERASE_AFTER_DAYS
         ));
+    }
+    if section == solstone_core_trash::SETTINGS_SECTION
+        && data
+            .get(solstone_core_trash::ERASE_FROM_BACKUPS_KEY)
+            .is_some_and(|value| !value.is_boolean())
+    {
+        return invalid_config_value("also removing erased things from backups is on or off");
     }
     let data_for_write = data.clone();
     let section_for_write = section.clone();

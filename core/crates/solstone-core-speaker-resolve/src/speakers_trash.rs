@@ -107,8 +107,19 @@ impl Wiped {
 /// Move every voice file to the trash, telling the journal's own search, and
 /// erase it at once when the owner asks.
 pub fn wipe(journal: &Path, surface: Surface, erase: bool) -> Result<Wiped, TrashError> {
+    wipe_with(journal, surface, erase, false)
+}
+
+/// [`wipe`], with the owner's choice, for an erase now, to also remove it from
+/// their backups.
+pub fn wipe_with(
+    journal: &Path,
+    surface: Surface,
+    erase: bool,
+    backups: bool,
+) -> Result<Wiped, TrashError> {
     let index = solstone_core_indexer_store::RetentionIndex::new(journal);
-    Speakers::new(&index).wipe(journal, surface, erase)
+    Speakers::new(&index).wipe_with(journal, surface, erase, backups)
 }
 
 impl<'a> Speakers<'a> {
@@ -119,6 +130,17 @@ impl<'a> Speakers<'a> {
     /// Move every voice file to the trash as one item, as the owner's wipe
     /// from `surface`, then erase it at once when `erase`.
     pub fn wipe(&self, journal: &Path, surface: Surface, erase: bool) -> Result<Wiped, TrashError> {
+        self.wipe_with(journal, surface, erase, false)
+    }
+
+    /// [`Self::wipe`], with the owner's choice to also remove it from their backups.
+    pub fn wipe_with(
+        &self,
+        journal: &Path,
+        surface: Surface,
+        erase: bool,
+        backups: bool,
+    ) -> Result<Wiped, TrashError> {
         let paths = wipe_paths(journal).map_err(|error| TrashError::Io(error.to_string()))?;
         if paths.is_empty() {
             return Ok(nothing());
@@ -160,12 +182,14 @@ impl<'a> Speakers<'a> {
         };
         let report = held_report(journal, &item);
         let erased = erase
-            && match solstone_core_trash::erase(
+            && match solstone_core_trash::erase_with(
                 journal,
                 &[self],
                 &item.id,
                 Action::SpeakersWipe,
                 surface,
+                None,
+                backups,
             ) {
                 Ok(()) => true,
                 Err(error) => {

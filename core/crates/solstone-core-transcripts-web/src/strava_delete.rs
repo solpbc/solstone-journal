@@ -28,6 +28,9 @@ struct DeleteBody {
     /// Erase it now rather than leave it in the trash.
     #[serde(default)]
     erase: bool,
+    /// And remove it from the backups too, as the owner chose with erase now.
+    #[serde(default)]
+    backups: bool,
 }
 
 fn valid_workout_id(id: &str) -> bool {
@@ -93,7 +96,15 @@ pub(crate) async fn delete_workout(
         };
         let erased = request.erase
             && match solstone_core_import::trash_kinds::with_kinds(&root, |kinds| {
-                solstone_core_trash::erase(&root, kinds, &item.id, Action::WorkoutDelete, surface)
+                solstone_core_trash::erase_with(
+                    &root,
+                    kinds,
+                    &item.id,
+                    Action::WorkoutDelete,
+                    surface,
+                    None,
+                    request.backups,
+                )
             }) {
                 Ok(()) => true,
                 Err(error) => {

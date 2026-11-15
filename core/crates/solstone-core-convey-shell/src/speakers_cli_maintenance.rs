@@ -81,17 +81,23 @@ pub async fn wipe(Extension(root): Extension<Arc<JournalRoot>>, request: Request
     let body = json_body(request).await.unwrap_or_else(|_| json!({}));
     let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
     let erase = body.get("erase").and_then(Value::as_bool).unwrap_or(false);
+    let backups = body
+        .get("backups")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let journal = root.0.clone();
     let outcome = tokio::task::spawn_blocking(move || {
         if commit {
-            solstone_core_speaker_resolve::speakers_trash::wipe(&journal, surface, erase)
-                .map(|wiped| wiped.to_json())
-                .map_err(|error| match error {
-                    solstone_core_speaker_resolve::speakers_trash::TrashError::Held(reason) => {
-                        (true, reason)
-                    }
-                    error => (false, error.to_string()),
-                })
+            solstone_core_speaker_resolve::speakers_trash::wipe_with(
+                &journal, surface, erase, backups,
+            )
+            .map(|wiped| wiped.to_json())
+            .map_err(|error| match error {
+                solstone_core_speaker_resolve::speakers_trash::TrashError::Held(reason) => {
+                    (true, reason)
+                }
+                error => (false, error.to_string()),
+            })
         } else {
             solstone_core_speaker_resolve::artifact_wipe::dry_run(&journal)
                 .map(|report| serde_json::to_value(report).unwrap_or_else(|_| json!({})))

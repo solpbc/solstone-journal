@@ -388,6 +388,12 @@ pub async fn delete(
         Some(Value::Bool(erase)) => *erase,
         Some(_) => return invalid_request_value("erase must be true or false"),
     };
+    // And remove it from the backups too, as the owner chose with erase now.
+    let backups = match data.get("backups") {
+        None => false,
+        Some(Value::Bool(backups)) => *backups,
+        Some(_) => return invalid_request_value("backups must be true or false"),
+    };
     if facet(&journal_root, &facet_name).is_none() {
         return delete_refused(StatusCode::NOT_FOUND, "gone");
     }
@@ -436,7 +442,15 @@ pub async fn delete(
         };
         let erased = erase
             && match solstone_core_import::trash_kinds::with_kinds(&root, |kinds| {
-                solstone_core_trash::erase(&root, kinds, &item.id, Action::FacetDelete, surface)
+                solstone_core_trash::erase_with(
+                    &root,
+                    kinds,
+                    &item.id,
+                    Action::FacetDelete,
+                    surface,
+                    None,
+                    backups,
+                )
             }) {
                 Ok(()) => true,
                 Err(error) => {

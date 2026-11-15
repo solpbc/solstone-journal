@@ -1441,6 +1441,7 @@ a.body-day-cell:focus-visible {
     const settled = kind === "moved" || kind === "recovered" || kind === "erased";
     const notice = { icon: settled ? (kind === "recovered" ? "undo-2" : "trash-2") : "triangle-alert", title: put(copy.title), dismissible: true, buttons };
     if (copy.message && (kind !== "moved" || fill.date)) notice.message = put(copy.message);
+    if (fill.message) notice.message = fill.message;
     // A refused or failed card stays until the owner dismisses it.
     if (settled) notice.autoDismiss = 10000;
     bodyToast(notice);
@@ -1469,13 +1470,13 @@ a.body-day-cell:focus-visible {
     });
   }
 
-  async function deleteWorkout(id, day, erase) {
+  async function deleteWorkout(id, day, erase, choice = { backups: false, clause: "" }) {
     let response;
     try {
       response = await window.fetch(`${STRAVA_API}/workout/${encodeURIComponent(id)}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(erase ? { erase: true } : {}),
+        body: JSON.stringify(erase ? { erase: true, backups: choice.backups } : {}),
       });
     } catch (_) {
       workoutReceipt(erase ? "noAnswerErase" : "noAnswerMove");
@@ -1491,7 +1492,7 @@ a.body-day-cell:focus-visible {
       return;
     }
     if (showing(day)) removeWorkoutRows(id);
-    if (answer.erased === true) { workoutReceipt("erased"); return; }
+    if (answer.erased === true) { workoutReceipt("erased", choice.clause ? { message: choice.clause } : {}); return; }
     if (answer.erase_failed === true) { workoutReceipt("eraseFailed", {}, [openTrashButton()]); return; }
     const trashId = answer.trash && answer.trash.id;
     workoutReceipt("moved", { date: trashEraseDate(answer.trash && answer.trash.erase_at) }, [
@@ -1711,6 +1712,8 @@ a.body-day-cell:focus-visible {
             : `<div class="body-trash-foot"><button type="button" class="body-trash-btn body-trash-danger" data-workout-erase-step>${escapeHtml(WORKOUT_COPY.buttons.eraseNow)}</button><span class="body-trash-right"><button type="button" class="body-trash-btn body-trash-secondary" data-workout-cancel>${escapeHtml(WORKOUT_COPY.buttons.cancel)}</button><button type="button" class="body-trash-btn body-trash-primary" data-workout-move>${escapeHtml(WORKOUT_COPY.buttons.moveToTrash)}</button></span></div>`,
         ]);
         node.querySelector(erasing ? "[data-workout-back]" : "[data-workout-move]")?.focus();
+        // The erase step offers to also remove it from the backups.
+        if (erasing && window.BackupErase) window.BackupErase.attach(node.querySelector("[data-workout-step]"), 1);
       };
       const close = (focus) => {
         const node = dialog;
@@ -1732,7 +1735,14 @@ a.body-day-cell:focus-visible {
         if (event.target.closest("[data-workout-erase-step]")) { step = "erase"; paint(); return; }
         if (event.target.closest("[data-workout-back]")) { step = "move"; paint(); return; }
         if (event.target.closest("[data-workout-move]")) { close(); deleteWorkout(id, day, false); return; }
-        if (event.target.closest("[data-workout-erase]")) { close(); deleteWorkout(id, day, true); }
+        if (event.target.closest("[data-workout-erase]")) {
+          const box = node.querySelector("[data-workout-step]");
+          const choice = window.BackupErase
+            ? { backups: window.BackupErase.chosenIn(box), clause: window.BackupErase.receiptIn(box, 1) }
+            : { backups: false, clause: "" };
+          close();
+          deleteWorkout(id, day, true, choice);
+        }
       };
       const onCancel = (event) => { event.preventDefault(); close(); };
       closeOpenDialog = close;

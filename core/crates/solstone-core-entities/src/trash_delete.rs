@@ -36,6 +36,9 @@ struct DeleteBody {
     /// Erase it now rather than leave it in the trash.
     #[serde(default)]
     erase: bool,
+    /// And remove it from the backups too, as the owner chose with erase now.
+    #[serde(default)]
+    backups: bool,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -43,6 +46,8 @@ struct SetBody {
     ids: Vec<String>,
     #[serde(default)]
     erase: bool,
+    #[serde(default)]
+    backups: bool,
 }
 
 fn surface_of(headers: &HeaderMap) -> Surface {
@@ -110,10 +115,18 @@ fn moved(root: &Path, item: &Item, asked: bool, erased: bool) -> Value {
 }
 
 /// Erase item `id` now, as the owner asked. A refusal leaves it in the trash.
-fn erase_now(root: &Path, id: &str, surface: Surface) -> bool {
+fn erase_now(root: &Path, id: &str, surface: Surface, backups: bool) -> bool {
     let index = RetentionIndex::new(root);
     let kind = Entities::new(&index);
-    match solstone_core_trash::erase(root, &[&kind], id, Action::EntityDelete, surface) {
+    match solstone_core_trash::erase_with(
+        root,
+        &[&kind],
+        id,
+        Action::EntityDelete,
+        surface,
+        None,
+        backups,
+    ) {
         Ok(()) => true,
         Err(error) => {
             log::warn!("trash item {id}: erase now was refused: {error}");
@@ -153,7 +166,7 @@ pub(crate) async fn delete_entity(
                     .ok_or(TrashError::Unfinished(item_id))?,
                 Err(error) => return Err(error),
             };
-        let erased = request.erase && erase_now(&root, &item.id, surface);
+        let erased = request.erase && erase_now(&root, &item.id, surface, request.backups);
         Ok(moved(&root, &item, request.erase, erased))
     })
     .await;
@@ -191,6 +204,7 @@ pub(crate) async fn delete_set(
     let surface = surface_of(&headers);
     let root = state.journal_root.clone();
     let erase = request.erase;
+    let backups = request.backups;
     let outcome = solstone_core_serving::seam::run_blocking(move || {
         let mut failed = Vec::new();
         let mut chosen = Vec::new();
@@ -209,13 +223,14 @@ pub(crate) async fn delete_set(
         if !chosen.is_empty() {
             let index = RetentionIndex::new(&root);
             let kind = Entities::new(&index);
-            let results = solstone_core_trash::detach_set(
+            let results = solstone_core_trash::detach_set_with(
                 &root,
                 &[&kind],
                 chosen,
                 Action::EntityDelete,
                 surface,
                 erase,
+                backups,
             )?;
             for (id, result) in order.into_iter().zip(results) {
                 match result {

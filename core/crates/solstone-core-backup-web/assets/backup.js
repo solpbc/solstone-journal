@@ -1137,6 +1137,51 @@
     setElementHidden('[data-action="backup-now"]', paused);
   }
 
+  // Removing erased things from the backups: while it runs it holds the
+  // backup's lock, so the page says a backup waits; while backup is paused,
+  // the paused panel says what waits. Read from the trash's own answer.
+  const BACKUP_ERASE_COPY = {
+    runningOne: 'removing 1 erased thing from your backups…',
+    running: 'removing {n} erased things from your backups…',
+    note: 'a backup waits until this finishes. you can leave this page.',
+    pausedOne: '1 erased thing waits to be removed from your backups until you resume.',
+    pausedMany: '{n} erased things wait to be removed from your backups until you resume.',
+  };
+  let backupErase = null;
+  let backupEraseReading = false;
+  async function readBackupErase() {
+    if (backupEraseReading) return;
+    backupEraseReading = true;
+    try {
+      backupErase = await window.apiJson('/app/settings/api/trash/backups');
+    } catch (_) {
+      backupErase = null;
+    } finally {
+      backupEraseReading = false;
+    }
+    renderBackupErase(false);
+  }
+  function renderBackupErase(read = true) {
+    if (read) readBackupErase();
+    const C = BACKUP_ERASE_COPY;
+    const n = backupErase && Number(backupErase.pending) || 0;
+    const banner = root.querySelector('[data-backup-erase-banner]');
+    const running = Boolean(backupErase && backupErase.state === 'running' && n > 0);
+    if (banner) {
+      banner.hidden = !running;
+      if (running) {
+        setText('[data-backup-erase-phase]', n === 1 ? C.runningOne : C.running.replace('{n}', n));
+        setText('[data-backup-erase-note]', C.note);
+      }
+    }
+    const note = root.querySelector('[data-paused-erase-note]');
+    if (note) {
+      const show = backupPaused() && n > 0;
+      note.hidden = !show;
+      if (show) note.textContent = n === 1 ? C.pausedOne : C.pausedMany.replace('{n}', n);
+    }
+  }
+
   function renderByoLocation() {
     const section = root.querySelector('[data-byo-location-section]');
     if (!section) return;
@@ -2005,6 +2050,7 @@
     renderHostedLocation();
     renderByoLocation();
     renderPaused();
+    renderBackupErase();
     renderOffload();
     applyCleanupFence();
     const heading = root.querySelector('h1[data-copy="intro.title"]') || document.querySelector('h1');

@@ -1862,6 +1862,15 @@ button:focus:not(:focus-visible) {
   line-height: 1.45;
 }
 
+.trash-backups-line { margin: .9em 0 0; color: var(--ink-soft); font-size: .9em; }
+.trash-backups-line[hidden] { display: none; }
+.trash-backups-line .trash-backups-stays { color: var(--warn-text, var(--ink)); }
+.trash-backups-link { color: var(--orange-text-aa); font-weight: 600; text-decoration: none; }
+.trash-backups-link:hover { text-decoration: underline; }
+.trash-backups-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.trash-backups-switch { flex: none; }
+.trash-backups-why summary { cursor: pointer; }
+@media (max-width: 560px) { .trash-backups-link { display: inline-flex; align-items: center; min-height: 44px; } .trash-backups-why summary { min-height: 44px; display: flex; align-items: center; } }
 .faces-more {
   margin-top: 0.25em;
   color: var(--ink-soft);
@@ -3037,6 +3046,7 @@ button:focus:not(:focus-visible) {
         </div>
         <div class="trash-result" id="trashResult" role="status" aria-live="polite" tabindex="-1" hidden></div>
         <div class="log-entries" id="trashList"><div class="log-empty">loading…</div></div>
+        <div class="trash-backups-line" id="trashBackupsLine" role="status" hidden></div>
       </div>
 
       <div class="settings-field trash-setting" id="trashSettingField">
@@ -3046,6 +3056,21 @@ button:focus:not(:focus-visible) {
           <input type="number" id="trashEraseAfterDays" min="1" max="30" step="1" disabled style="width: 7em; padding: 0.4em 0.6em; border: 1px solid var(--hairline-2); border-radius: 4px;">
           <span style="color: var(--ink-soft); font-size: 0.9em;">days</span>
         </div>
+      </div>
+
+      <div class="settings-field trash-setting" id="trashBackupsField" hidden>
+        <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
+          <label class="toggle-switch toggle-positive trash-backups-switch">
+            <input type="checkbox" id="trashBackupsSetting" aria-describedby="trashBackupsNote">
+            <span class="slider"></span>
+          </label>
+          <label for="trashBackupsSetting" class="toggle-label" id="trashBackupsSettingLabel" style="cursor: pointer;"></label>
+        </div>
+        <p class="settings-field-note" id="trashBackupsNote"></p>
+        <details class="faces-more" id="trashBackupsMore">
+          <summary id="trashBackupsMoreSummary"></summary>
+          <ul class="faces-more-list" id="trashBackupsMoreList"></ul>
+        </details>
       </div>
 
       <div id="removalHistory" class="removals-block">
@@ -3335,6 +3360,7 @@ button:focus:not(:focus-visible) {
   <div class="color-modal-content" style="max-width: 480px;">
     <h3 id="trashConfirmHeading"></h3>
     <div id="trashConfirmBody" class="trash-confirm-body"></div>
+    <div id="trashConfirmChoice"></div>
     <div class="trash-confirm-actions">
       <button type="button" class="btn-secondary" id="trashConfirmCancel"></button>
       <button type="button" class="cleanup-confirm-btn" id="trashConfirmErase"></button>
@@ -4951,7 +4977,15 @@ function renderFacetDeleteStep(step) {
   nodes.moveFoot.hidden = erasing;
   nodes.eraseFoot.hidden = !erasing;
   nodes.body.replaceChildren(...facetDeleteBody(step, facetDialog.title));
+  // The erase step offers to also remove it from the backups.
+  if (window.BackupErase) {
+    if (erasing) window.BackupErase.attach(nodes.body, 1);
+    else window.BackupErase.detach(nodes.body);
+  }
 }
+
+// What the owner chose in the erase step, read as they confirm.
+let facetEraseBackups = { chosen: false, clause: '' };
 
 function wireFacetDeleteDialog(nodes) {
   if (nodes.modal.dataset.wired) return;
@@ -4977,6 +5011,10 @@ function wireFacetDeleteDialog(nodes) {
   const act = erase => {
     if (!facetDialog) return;
     const { slug } = facetDialog;
+    const body = facetDialogNodes().body;
+    facetEraseBackups = erase && window.BackupErase
+      ? { chosen: window.BackupErase.chosenIn(body), clause: window.BackupErase.receiptIn(body, 1) }
+      : { chosen: false, clause: '' };
     closeFacetDeleteDialog(false);
     runFacetDelete(slug, erase);
   };
@@ -5026,7 +5064,7 @@ async function deleteOneFacet(slug, erase) {
     response = await fetch(`/app/settings/api/facet/${encodeURIComponent(slug)}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(erase ? { consent: true, erase: true } : { consent: true }),
+      body: JSON.stringify(erase ? { consent: true, erase: true, backups: facetEraseBackups.chosen } : { consent: true }),
     });
   } catch (_) {
     return { kind: 'noAnswer' };
@@ -5078,7 +5116,7 @@ function showFacetReceipt(outcome, erase) {
       return;
     }
     case 'erased':
-      facetReceipt(R.erased, {}, [], { settled: true });
+      facetReceipt(R.erased, {}, [], facetEraseBackups.clause ? { settled: true, message: facetEraseBackups.clause } : { settled: true });
       return;
     case 'eraseFailed':
       facetReceipt(R.eraseFailed, {}, [facetOpenTrashButton()]);
@@ -7991,6 +8029,13 @@ const REMOVAL_ACTION = {
   backup_off: 'deleted when you turned off backup',
   finish_stopped: 'finished deleting',
   stretch_delete: 'deleted',
+  backup_erase: 'removed from your backups',
+  backup_erase_shared: 'removed from your backups',
+  backup_erase_stays: 'removed from your backups, but copies stay in storage',
+};
+// A note a row carries after its words.
+const REMOVAL_ACTION_NOTE = {
+  backup_erase_shared: 'a part identical to something you kept stays, as part of what you kept.',
 };
 const REMOVAL_ACTION_FALLBACK = 'removed';
 const REMOVAL_ACTION_NAMES_PLACE = { backup_off: 'backup' };
@@ -8105,7 +8150,9 @@ function removalHow(entry) {
   const action = REMOVAL_ACTION[entry.action] || REMOVAL_ACTION_FALLBACK;
   const surface = removalSurfaceKey(entry);
   const place = REMOVAL_ACTION_NAMES_PLACE[entry.action] !== surface && REMOVAL_SURFACE[surface];
-  return place ? `${action} ${place}` : action;
+  const said = place ? `${action} ${place}` : action;
+  const note = REMOVAL_ACTION_NOTE[entry.action];
+  return note ? `${said} · ${note}` : said;
 }
 
 function removalGroups(entries) {
@@ -8267,6 +8314,45 @@ async function loadRemovalHistory() {
 // ========== TRASH ==========
 // What waits before it's erased, and the owner's recover, erase now and empty.
 const TRASH_COPY = {
+  backups: {
+    settingLabel: 'also remove erased things from your backups',
+    settingNoteOff: 'erase now shows the choice unticked each time. what the trash erases on its date stays in your backups.',
+    settingNoteOn: 'erase now starts ticked, and what the trash erases on its date is removed from your backups too.',
+    settingMore: 'how this works',
+    settingMoreLines: [
+      'each backup that holds it is rewritten without it, then the storage it took up is cleared, where your storage allows it. no backup is lost, and you can still restore your journal to any of them.',
+      'this covers every backup at the place your backup lives now, including backups kept from before you restored this journal, and media archives. a media archive keeps the media you still have.',
+      'erase always happens on time in your journal. if backup is paused or your storage can\'t be reached, your backups follow when they can.',
+      'if something you kept is identical to what you erased, such as a copy of the same file, that part stays, as part of what you kept.',
+      'it doesn\'t reach a place your backup lived before, copies your other devices made, or what was erased before your journal could do this.',
+    ],
+    waitingOne: '1 erased thing is waiting to be removed from your backups.',
+    waitingMany: '{n} erased things are waiting to be removed from your backups.',
+    waitPaused: 'backup is paused, so this happens once you resume it.',
+    backupLink: 'backup →',
+    waitOffline: "your journal can't reach your backup storage right now. it keeps trying.",
+    waitBusy: "this starts when the backup that's running now finishes.",
+    runningOne: 'removing 1 erased thing from your backups…',
+    running: 'removing {n} erased things from your backups…',
+    stopped: 'removing erased things from your backups stopped part way. your journal picks it up again on its own.',
+    failedOne: "couldn't remove 1 erased thing from your backups this time. your journal tries again {when}.",
+    failed: "couldn't remove {n} erased things from your backups this time. your journal tries again {when}.",
+    later: 'later',
+    staysOne: 'no backup can restore 1 erased thing, but copies of it stay in your bucket.',
+    staysMany: 'no backup can restore {n} erased things, but copies of them stay in your bucket.',
+    refusedOne: "no backup can restore 1 erased thing, but your storage didn't delete its copies.",
+    refusedMany: "no backup can restore {n} erased things, but your storage didn't delete their copies.",
+    unknownOne: "no backup can restore 1 erased thing. your journal couldn't confirm its copies are gone from your bucket.",
+    unknownMany: "no backup can restore {n} erased things. your journal couldn't confirm their copies are gone from your bucket.",
+    why: 'why, and what you can do',
+    own: {
+      versions: "your storage keeps earlier versions of deleted files, so the copies stay in your bucket until you delete those versions or your provider's own rules remove them.",
+      locks: "your bucket can lock files against deletion, so the copies stay there until any lock ends and you delete those versions or your provider's own rules remove them.",
+      hidden_files: "the key your journal uses for B2 can't delete files, so B2 hid the copies instead. they stay in your bucket until you delete them there or a lifecycle rule removes hidden files.",
+      refused: "your storage said no, or said yes and kept them. if the key your journal uses can't delete files, give it that permission. your journal tries again {when}.",
+      unknown: "check your bucket's versioning, lifecycle and lock settings to make sure the copies are gone.",
+    },
+  },
   loading: 'loading…',
   empty: 'the trash is empty.',
   error: "couldn't load your trash. reload the page to try again.",
@@ -8742,7 +8828,80 @@ function renderTrash(payload) {
     if (document.activeElement !== input) input.value = input.__lastKnownValue;
     input.disabled = false;
   }
+  renderTrashBackups(payload.backups);
   return true;
+}
+
+// The setting and the one line under the list: shown only while backup is
+// set up. The line says the worst of what is pending or stuck.
+function renderTrashBackups(backups) {
+  const B = TRASH_COPY.backups;
+  const field = document.getElementById('trashBackupsField');
+  const line = document.getElementById('trashBackupsLine');
+  const setUp = Boolean(backups && backups.set_up === true);
+  field.hidden = !setUp;
+  if (setUp) {
+    const box = document.getElementById('trashBackupsSetting');
+    box.checked = backups.setting === true;
+    document.getElementById('trashBackupsNote').textContent = box.checked ? B.settingNoteOn : B.settingNoteOff;
+  }
+  line.replaceChildren();
+  const sentence = trashBackupsSentence(backups);
+  line.hidden = !sentence;
+  if (sentence) line.append(...sentence);
+}
+
+function trashBackupsWhen(at) {
+  const B = TRASH_COPY.backups;
+  const instant = at ? new Date(at) : null;
+  if (!instant || Number.isNaN(instant.getTime())) return B.later;
+  return `at ${instant.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()}`;
+}
+
+function trashBackupsSentence(backups) {
+  if (!backups || backups.set_up !== true) return null;
+  const B = TRASH_COPY.backups;
+  const n = Number(backups.pending) || 0;
+  const staying = Number(backups.staying) || 0;
+  const fill = (one, many, count) => trashFill(count === 1 ? one : many, { n: count });
+  const text = (value) => document.createTextNode(value);
+  const why = (body) => {
+    const details = removalEl('details', 'trash-backups-why');
+    details.append(removalEl('summary', '', B.why), removalEl('p', '', body));
+    return details;
+  };
+  switch (backups.state) {
+    case 'stays': {
+      const count = staying || n || 1;
+      const reason = backups.reason;
+      if (reason === 'refused' || reason === 'residue') {
+        return [text(fill(B.refusedOne, B.refusedMany, count) + ' '), why(trashFill(B.own.refused, { when: trashBackupsWhen(backups.next_try) }))];
+      }
+      if (reason === 'unknown') return [text(fill(B.unknownOne, B.unknownMany, count) + ' '), why(B.own.unknown)];
+      if (B.own[reason]) return [text(fill(B.staysOne, B.staysMany, count) + ' '), why(B.own[reason])];
+      return [text(fill(B.unknownOne, B.unknownMany, count))];
+    }
+    case 'failed':
+      return [text(trashFill(n === 1 ? B.failedOne : B.failed, { n, when: trashBackupsWhen(backups.next_try) }))];
+    case 'stopped':
+      return [text(B.stopped)];
+    case 'running':
+      return [text(n === 1 ? B.runningOne : trashFill(B.running, { n }))];
+    case 'waiting': {
+      if (n === 0) return null;
+      const waiting = fill(B.waitingOne, B.waitingMany, n);
+      if (backups.reason === 'paused' || backups.paused === true) {
+        const link = removalEl('a', 'trash-backups-link', B.backupLink);
+        link.href = '/app/backup';
+        return [text(`${waiting} ${B.waitPaused} `), link];
+      }
+      if (backups.reason === 'offline') return [text(`${waiting} ${B.waitOffline}`)];
+      if (backups.reason === 'busy') return [text(`${waiting} ${B.waitBusy}`)];
+      return [text(waiting)];
+    }
+    default:
+      return n > 0 ? [text(fill(B.waitingOne, B.waitingMany, n))] : null;
+  }
 }
 
 async function loadTrash() {
@@ -8862,9 +9021,12 @@ function trashReplacesFacet(item) {
   return item.kind === 'facet' && item.replaces === true;
 }
 
-async function runTrashAct(act, chosen) {
+async function runTrashAct(act, chosen, choice = null) {
   const options = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
-  if (act !== 'empty') options.body = JSON.stringify({ ids: chosen.map(item => item.id) });
+  const backups = window.BackupErase ? window.BackupErase.chosen(choice) : false;
+  if (act === 'empty') options.body = JSON.stringify({ backups });
+  else if (act === 'erase') options.body = JSON.stringify({ ids: chosen.map(item => item.id), backups });
+  else options.body = JSON.stringify({ ids: chosen.map(item => item.id) });
   let answer = null;
   try {
     answer = await window.apiJson(`api/trash/${act}`, options);
@@ -8881,21 +9043,26 @@ async function runTrashAct(act, chosen) {
   const loaded = await loadTrash();
   const listed = loaded ? new Set(trashItems.map(item => item.id)) : null;
   const result = document.getElementById('trashResult');
-  result.textContent = trashResultLine(act, chosen, answer, listed);
+  const done = answer && Array.isArray(answer.done) ? answer.done.length : 0;
+  const clause = done && window.BackupErase ? window.BackupErase.receipt(choice, done) : '';
+  result.textContent = [trashResultLine(act, chosen, answer, listed), clause].filter(Boolean).join(' ');
   result.hidden = !result.textContent;
   const bar = document.getElementById('trashBar');
   (bar.hidden ? result : bar).focus();
   loadRemovalHistory();
 }
 
-function openTrashConfirm(act, items, trigger) {
+async function openTrashConfirm(act, items, trigger) {
   const copy = trashConfirmCopy(act, items);
   document.getElementById('trashConfirmHeading').textContent = copy.title;
   document.getElementById('trashConfirmBody').replaceChildren(...copy.paragraphs.map(text => removalEl('p', '', text)));
+  // The choice sits where the thing becomes unrecoverable: erase now and empty.
+  const choice = act !== 'replace' && window.BackupErase ? await window.BackupErase.row(items.length) : null;
+  document.getElementById('trashConfirmChoice').replaceChildren(...(choice ? [choice] : []));
   const confirm = document.getElementById('trashConfirmErase');
   confirm.textContent = copy.confirm;
   confirm.className = act === 'replace' ? 'trash-danger-outline' : 'cleanup-confirm-btn';
-  trashConfirmed = () => runTrashAct(act === 'replace' ? 'recover' : act, items);
+  trashConfirmed = () => runTrashAct(act === 'replace' ? 'recover' : act, items, choice);
   const modal = document.getElementById('trashConfirmModal');
   modal.style.display = 'block';
   modal._openAccessible(trigger);
@@ -8953,6 +9120,16 @@ function setupTrash() {
     if (event.target === byId('trashConfirmModal')) closeTrashConfirm();
   });
   byId('trashEraseAfterDays').addEventListener('change', (event) => saveTrashDays(event.currentTarget));
+  const B = TRASH_COPY.backups;
+  byId('trashBackupsSettingLabel').textContent = B.settingLabel;
+  byId('trashBackupsMoreSummary').textContent = B.settingMore;
+  byId('trashBackupsMoreList').replaceChildren(...B.settingMoreLines.map(text => removalEl('li', '', text)));
+  byId('trashBackupsSetting').addEventListener('change', (event) => {
+    const box = event.currentTarget;
+    byId('trashBackupsNote').textContent = box.checked ? B.settingNoteOn : B.settingNoteOff;
+    saveField(box, 'trash', 'erase_from_backups', box.checked);
+    if (window.BackupErase) window.BackupErase.forget();
+  });
 }
 // ========== END TRASH ==========
 

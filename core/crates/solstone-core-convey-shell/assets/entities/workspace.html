@@ -5611,7 +5611,15 @@ function renderEntityDeleteStep(step) {
   nodes.moveFoot.hidden = erasing;
   nodes.eraseFoot.hidden = !erasing;
   nodes.body.replaceChildren(...entityDialog.spec.body(step));
+  // The erase step offers to also remove it from the backups.
+  if (window.BackupErase) {
+    if (erasing) window.BackupErase.attach(nodes.body, entityDialog.spec.count || 1);
+    else window.BackupErase.detach(nodes.body);
+  }
 }
+
+// What the owner chose in the erase step, read as they confirm.
+let entityEraseBackups = { chosen: false, clause: '' };
 
 function wireEntityDeleteDialog(nodes) {
   if (nodes.modal.dataset.wired) return;
@@ -5639,6 +5647,10 @@ function wireEntityDeleteDialog(nodes) {
     const spec = entityDialog.spec;
     const opener = entityDialog.returnFocus;
     closeEntityDeleteDialog(false);
+    const body = entityDialogNodes().body;
+    entityEraseBackups = erase && window.BackupErase
+      ? { chosen: window.BackupErase.chosenIn(body), clause: window.BackupErase.receiptIn(body, spec.count || 1) }
+      : { chosen: false, clause: '' };
     holdFocus(true, spec.act(erase), () => opener);
   };
   nodes.confirm.addEventListener('click', () => act(false));
@@ -5732,7 +5744,7 @@ async function deleteOneEntity(item, erase) {
   let response;
   try {
     response = await fetch(`/app/entities/api/journal/entity/${encodeURIComponent(item.id)}`, erase
-      ? { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ erase: true }) }
+      ? { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ erase: true, backups: entityEraseBackups.chosen }) }
       : { method: 'DELETE' });
   } catch (_) {
     return { kind: 'noAnswer' };
@@ -5764,7 +5776,7 @@ function showEntityOneReceipt(outcome, erase, reload) {
       ], { settled: true, message: entityEraseDate(outcome.eraseAt) ? undefined : '' });
       return;
     case 'erased':
-      entityReceipt(R.erased, {}, [], { settled: true });
+      entityReceipt(R.erased, {}, [], entityEraseBackups.clause ? { settled: true, message: entityEraseBackups.clause } : { settled: true });
       return;
     case 'eraseFailed':
       entityReceipt(R.eraseFailed, {}, [entityOpenTrashButton()]);
@@ -6085,7 +6097,7 @@ function deleteChosenEntities() {
     openEntityDeleteDialog(entityOneSpec(chosen[0], erase => deleteOneFromEntityList(chosen[0], erase)));
     return;
   }
-  openEntityDeleteDialog(entitySetSpec(chosen, erase => deleteSetFromEntityList(chosen, erase)));
+  openEntityDeleteDialog({ ...entitySetSpec(chosen, erase => deleteSetFromEntityList(chosen, erase)), count: chosen.length });
 }
 
 async function deleteOneFromEntityList(item, erase) {
@@ -6108,7 +6120,7 @@ async function deleteSetFromEntityList(items, erase) {
     const response = await fetch('/app/entities/api/journal/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(erase ? { ids, erase: true } : { ids }),
+      body: JSON.stringify(erase ? { ids, erase: true, backups: entityEraseBackups.chosen } : { ids }),
     });
     answer = response.ok ? await response.json().catch(() => null) : null;
   } catch (_) {
@@ -6127,10 +6139,11 @@ async function deleteSetFromEntityList(items, erase) {
   const buttons = outcome.buttons.map(name => (name === 'recover'
     ? { label: ENTITY_DELETE_COPY.buttons.recover, onClick: entitiesRecoverClick(outcome.moved.map(entry => entry.trashId), ENTITY_DELETE_COPY) }
     : entityOpenTrashButton()));
+  const allErased = erase && outcome.settled && entityEraseBackups.clause;
   entityReceipt(outcome.receipt, outcome.fill, buttons, {
     settled: outcome.settled,
     icon: outcome.settled ? 'trash-2' : 'triangle-alert',
-    message: outcome.message,
+    message: allErased ? entityEraseBackups.clause : outcome.message,
   });
 }
 // ========== END ENTITY DELETE ==========

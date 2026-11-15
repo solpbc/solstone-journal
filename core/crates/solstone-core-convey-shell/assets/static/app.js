@@ -1704,3 +1704,120 @@ window.AppServices = {
   buildSolSourceHref,
   classifySolReference
 };
+
+// The owner's choice, in every confirm that erases now, to also remove what it
+// erases from their backups. Shown only while backup is set up on this journal
+// (on, paused or unreachable); unticked unless the trash setting ticks it.
+window.BackupErase = {
+  COPY: {
+    labelOne: 'also remove it from your backups',
+    labelMany: 'also remove them from your backups',
+    hintOne: "then restoring your journal from a backup can't bring it back. your backups stay, with everything else in them.",
+    hintMany: "then restoring your journal from a backup can't bring them back. your backups stay, with everything else in them.",
+    paused: 'backup is paused, so this happens once you resume it.',
+    nextOne: 'removing it from your backups next.',
+    nextMany: 'removing them from your backups next.',
+    pausedOne: 'removing it from your backups once you resume backup.',
+    pausedMany: 'removing them from your backups once you resume backup.',
+  },
+  _state: null,
+  _at: 0,
+  _seq: 0,
+
+  /** Backup's state for the choice: { set_up, paused, setting }, or null. */
+  async state() {
+    if (this._state && Date.now() - this._at < 15000) return this._state;
+    try {
+      this._state = await window.apiJson('/app/settings/api/trash/backups');
+      this._at = Date.now();
+    } catch (_) {
+      this._state = null;
+    }
+    return this._state;
+  },
+
+  /**
+   * The checkbox row for a confirm erasing `count` things, or null when backup
+   * isn't set up. Its starting value is the setting's.
+   */
+  async row(count) {
+    const state = await this.state();
+    if (!state || state.set_up !== true) return null;
+    const many = count !== 1;
+    const C = this.COPY;
+    const id = `backupEraseChoice${++this._seq}`;
+    const label = document.createElement('label');
+    label.className = 'backup-erase-choice';
+    label.htmlFor = id;
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.id = id;
+    box.checked = state.setting === true;
+    box.setAttribute('aria-describedby', `${id}Hint`);
+    const words = document.createElement('span');
+    const name = document.createElement('span');
+    name.className = 'backup-erase-choice-label';
+    name.textContent = many ? C.labelMany : C.labelOne;
+    const hint = document.createElement('small');
+    hint.className = 'backup-erase-choice-hint';
+    hint.id = `${id}Hint`;
+    hint.textContent = (many ? C.hintMany : C.hintOne) + (state.paused === true ? ` ${C.paused}` : '');
+    words.append(name, hint);
+    label.append(box, words);
+    label._backupErase = { box, paused: state.paused === true, many };
+    return label;
+  },
+
+  /** Whether a row from row() is ticked; false for no row. */
+  chosen(row) {
+    return Boolean(row && row._backupErase && row._backupErase.box.checked);
+  },
+
+  /** The receipt's clause when the choice was ticked, else ''. */
+  receipt(row, count) {
+    if (!this.chosen(row)) return '';
+    const C = this.COPY;
+    const many = count !== 1;
+    if (row._backupErase.paused) return many ? C.pausedMany : C.pausedOne;
+    return many ? C.nextMany : C.nextOne;
+  },
+
+  /**
+   * Put the row at the end of `container` for a confirm erasing `count`
+   * things, replacing any earlier one; nothing when backup isn't set up.
+   */
+  async attach(container, count) {
+    if (!container) return;
+    const turn = (container._backupEraseTurn || 0) + 1;
+    container._backupEraseTurn = turn;
+    if (container._backupEraseRow) container._backupEraseRow.remove();
+    container._backupEraseRow = null;
+    const row = await this.row(count);
+    if (!row || container._backupEraseTurn !== turn || !container.isConnected) return;
+    container._backupEraseRow = row;
+    container.append(row);
+  },
+
+  /** Forget the row `container` holds, when its step leaves erase. */
+  detach(container) {
+    if (!container) return;
+    container._backupEraseTurn = (container._backupEraseTurn || 0) + 1;
+    if (container._backupEraseRow) container._backupEraseRow.remove();
+    container._backupEraseRow = null;
+  },
+
+  /** Whether the row `container` holds is ticked. */
+  chosenIn(container) {
+    return this.chosen(container && container._backupEraseRow);
+  },
+
+  /** The receipt's clause for the row `container` holds, else ''. */
+  receiptIn(container, count) {
+    return this.receipt(container && container._backupEraseRow, count);
+  },
+
+  /** Forget the cached state, after a change to backup or the setting. */
+  forget() {
+    this._state = null;
+  },
+};

@@ -29,12 +29,15 @@ struct StretchBody {
     /// Erase it now rather than leave it in the trash.
     #[serde(default)]
     erase: bool,
+    /// And remove it from the backups too, as the owner chose with erase now.
+    #[serde(default)]
+    backups: bool,
 }
 
 #[allow(clippy::result_large_err)]
 fn read_body(
     body: &Bytes,
-) -> Result<(chrono::NaiveDateTime, chrono::NaiveDateTime, bool), Response> {
+) -> Result<(chrono::NaiveDateTime, chrono::NaiveDateTime, bool, bool), Response> {
     let unreadable = || {
         legacy_error_response(
             "invalid_request",
@@ -46,7 +49,7 @@ fn read_body(
     let request: StretchBody = serde_json::from_slice(body).map_err(|_| unreadable())?;
     let from = stretch_trash::parse_wall(&request.from).ok_or_else(unreadable)?;
     let to = stretch_trash::parse_wall(&request.to).ok_or_else(unreadable)?;
-    Ok((from, to, request.erase))
+    Ok((from, to, request.erase, request.backups))
 }
 
 fn refused(refused: Refused) -> Response {
@@ -70,7 +73,7 @@ fn stopped() -> Response {
 /// counted, the kinds of recording in it, what stays because it is still in
 /// flight, and what happens to each import. Reads only; counts no recordings.
 pub(crate) async fn preview_stretch(State(state): State<Arc<AppState>>, body: Bytes) -> Response {
-    let (from, to, _) = match read_body(&body) {
+    let (from, to, _, _) = match read_body(&body) {
         Ok(read) => read,
         Err(response) => return response,
     };
@@ -99,7 +102,7 @@ pub(crate) async fn delete_stretch(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let (from, to, erase) = match read_body(&body) {
+    let (from, to, erase, backups) = match read_body(&body) {
         Ok(read) => read,
         Err(response) => return response,
     };
@@ -110,8 +113,10 @@ pub(crate) async fn delete_stretch(
             .and_then(|value| value.to_str().ok()),
     );
     let root = state.journal_root.clone();
-    match tokio::task::spawn_blocking(move || stretch_trash::trash(&root, from, to, surface, erase))
-        .await
+    match tokio::task::spawn_blocking(move || {
+        stretch_trash::trash_with(&root, from, to, surface, erase, backups)
+    })
+    .await
     {
         Ok(Ok(Ok(outcome))) => Json(json!({
             "success": true,

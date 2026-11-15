@@ -900,7 +900,16 @@ pub fn delete_entity(ctx: CommandContext<'_>) -> CommandOutput {
 }
 
 fn delete_entity_output(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[("--yes", None), ("--erase", None)]) {
+    let parsed = match parse_args(
+        ctx.args,
+        &[],
+        &[
+            ("--yes", None),
+            ("--erase", None),
+            ("--from-backups", None),
+            ("--not-from-backups", None),
+        ],
+    ) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -911,13 +920,25 @@ fn delete_entity_output(ctx: CommandContext<'_>) -> CommandOutput {
         return stderr(DELETE_NEEDS_YES);
     }
     let erase = parsed.bool_value("--erase").unwrap_or(false);
+    let backups = if erase {
+        match crate::command::backups_choice(
+            ctx,
+            parsed.bool_value("--from-backups").unwrap_or(false),
+            parsed.bool_value("--not-from-backups").unwrap_or(false),
+        ) {
+            Ok(choice) => choice,
+            Err(error) => return stderr(error),
+        }
+    } else {
+        crate::command::BackupsChoice::default()
+    };
     // The set route takes a body on POST, so one entity goes as a set of one.
     let body = match request_json_with_policy(
         ctx,
         HttpMethod::Post,
         &format!("{ENTITY_HISTORY_BASE_ROUTE}/delete"),
         vec![],
-        Some(json!({"ids": [entity_id], "erase": erase})),
+        Some(json!({"ids": [entity_id], "erase": erase, "backups": backups.chosen})),
         TimeoutPolicy::EntityMutation,
     ) {
         Ok(body) => body,
@@ -936,7 +957,10 @@ fn delete_entity_output(ctx: CommandContext<'_>) -> CommandOutput {
         return stderr(MALFORMED_RESPONSE_MESSAGE);
     };
     if truthy(result.get("erased")) {
-        return stdout_line(format!("Erased '{entity_id}'."));
+        return stdout_line(match crate::command::backups_next_line(backups) {
+            Some(next) => format!("Erased '{entity_id}'. {next}"),
+            None => format!("Erased '{entity_id}'."),
+        });
     }
     let failed = if truthy(result.get("erase_failed")) {
         " It couldn't be erased now."

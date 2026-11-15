@@ -90,6 +90,14 @@ pub const ERASE_FROM_BACKUPS_KEY: &str = "erase_from_backups";
 pub use solstone_core_journal::is_trash_root_name;
 
 pub mod backup_erase;
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "test code"
+)]
+mod backup_erase_tests;
 mod linked;
 #[cfg(test)]
 #[allow(
@@ -822,12 +830,15 @@ fn erase_linked_within(journal: &Path, kinds: &[&dyn Kind], erased: &Item) {
         if !other.linked || other.state != State::Trashed || other.id == erased.id || !inside {
             continue;
         }
+        let backups = pending.as_ref().is_some_and(|pending| pending.backups);
         let (action, surface, operation) = pending
             .clone()
             .map_or((Action::Erase, timer_surface(), None), |pending| {
                 (pending.action, pending.surface, pending.operation)
             });
-        if let Err(error) = erase_as(journal, kinds, &other.id, action, surface, operation) {
+        if let Err(error) = erase_as_choosing(
+            journal, kinds, &other.id, action, surface, operation, backups,
+        ) {
             log::warn!(
                 "trash item {}: not erased with {}: {error}",
                 other.id,
@@ -1305,6 +1316,14 @@ pub fn holders(journal: &Path, path: &str, except: &str) -> Result<Vec<String>, 
     Ok(found)
 }
 
+/// The id of every item the trash holds, whatever its state.
+pub fn ids(journal: &Path) -> Result<Vec<String>, TrashError> {
+    Ok(all_items(journal)?
+        .into_iter()
+        .map(|item| item.id)
+        .collect())
+}
+
 /// One item by id, whatever its state.
 pub fn item(journal: &Path, id: &str) -> Result<Option<Item>, TrashError> {
     read_item(journal, id)
@@ -1404,6 +1423,9 @@ struct Set {
     surface: Surface,
     /// Erase each now, as well as moving it.
     erase: bool,
+    /// And remove each from the backups too, as the owner chose.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    backups: bool,
     entries: Vec<Entry>,
     /// The operation every item of the set records under, so the history
     /// shows the set as the one act the owner confirmed.
@@ -1448,8 +1470,31 @@ pub fn detach_set(
     surface: Surface,
     erase: bool,
 ) -> Result<Vec<SetResult>, TrashError> {
+    detach_set_with(journal, kinds, chosen, action, surface, erase, false)
+}
+
+/// [`detach_set`], with the owner's choice, for an erase now, to also remove
+/// each thing from their backups.
+pub fn detach_set_with(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    chosen: Vec<Chosen>,
+    action: Action,
+    surface: Surface,
+    erase: bool,
+    backups: bool,
+) -> Result<Vec<SetResult>, TrashError> {
     let parts = chosen.into_iter().map(|chosen| (chosen, None)).collect();
-    detach_set_as(journal, kinds, parts, action, surface, erase, None).map(|(_, results)| results)
+    detach_set_as(
+        journal,
+        kinds,
+        parts,
+        action,
+        surface,
+        (erase, erase && backups),
+        None,
+    )
+    .map(|(_, results)| results)
 }
 
 /// Move a stretch of time to the trash as one thing: [`detach_set`], each
@@ -1466,12 +1511,35 @@ pub fn detach_stretch(
     erase: bool,
     whole: Stretch,
 ) -> Result<(Stretch, Vec<SetResult>), TrashError> {
+    detach_stretch_with(journal, kinds, parts, action, surface, erase, false, whole)
+}
+
+/// [`detach_stretch`], with the owner's choice, for an erase now, to also
+/// remove it from their backups.
+#[allow(clippy::too_many_arguments, reason = "the owner act's every part")]
+pub fn detach_stretch_with(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    parts: Vec<(Chosen, Stretch)>,
+    action: Action,
+    surface: Surface,
+    erase: bool,
+    backups: bool,
+    whole: Stretch,
+) -> Result<(Stretch, Vec<SetResult>), TrashError> {
     let parts = parts
         .into_iter()
         .map(|(chosen, part)| (chosen, Some(part)))
         .collect();
-    let (stretch, results) =
-        detach_set_as(journal, kinds, parts, action, surface, erase, Some(whole))?;
+    let (stretch, results) = detach_set_as(
+        journal,
+        kinds,
+        parts,
+        action,
+        surface,
+        (erase, erase && backups),
+        Some(whole),
+    )?;
     let stretch = stretch.ok_or_else(|| TrashError::Io("the stretch wasn't written".into()))?;
     Ok((stretch, results))
 }
@@ -1482,7 +1550,7 @@ fn detach_set_as(
     parts: Vec<(Chosen, Option<Stretch>)>,
     action: Action,
     surface: Surface,
-    erase: bool,
+    (erase, backups): (bool, bool),
     stretch: Option<Stretch>,
 ) -> Result<(Option<Stretch>, Vec<SetResult>), TrashError> {
     let at = Utc::now();
@@ -1506,6 +1574,7 @@ fn detach_set_as(
         action,
         surface,
         erase,
+        backups,
         entries: parts
             .into_iter()
             .map(|(chosen, part)| Entry {
@@ -1684,13 +1753,14 @@ fn settle(
     }
     match item.state {
         State::Trashed | State::Erasing => {
-            match erase_as(
+            match erase_as_choosing(
                 journal,
                 kinds,
                 &id,
                 set.action,
                 set.surface,
                 set.operation.clone(),
+                set.backups,
             ) {
                 Ok(()) => {
                     entry.settled = true;
@@ -3116,6 +3186,7 @@ mod tests {
             action: Action::SegmentDelete,
             surface: web(),
             erase,
+            backups: false,
             entries: vec![Entry {
                 chosen: chosen(),
                 item: None,
@@ -3498,6 +3569,7 @@ mod tests {
             action: Action::EntityDelete,
             surface: web(),
             erase: false,
+            backups: false,
             entries: people(&root)
                 .into_iter()
                 .map(|chosen| Entry {
@@ -3545,6 +3617,7 @@ mod tests {
             action: Action::StretchDelete,
             surface: web(),
             erase: false,
+            backups: false,
             entries: people(&root)
                 .into_iter()
                 .map(|chosen| Entry {
@@ -3704,6 +3777,7 @@ mod tests {
             action: Action::StretchDelete,
             surface: web(),
             erase: false,
+            backups: false,
             entries: people(&root)
                 .into_iter()
                 .map(|chosen| Entry {

@@ -73,7 +73,7 @@ params = [
 [[entries]]
 path = ["entities", "delete"]
 kind = "command"
-help = "Move an entity and its facet links to the trash; --erase erases it at once."
+help = "Move an entity and its facet links to the trash; --erase erases it at once. With --erase, --from-backups also removes it from your backups and --not-from-backups leaves it there. Without either, the trash setting decides."
 operation_id = "entities.delete"
 entry_type = "http"
 method = "POST"
@@ -84,6 +84,8 @@ params = [
   { name = "entity_id", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["entity_id"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "yes", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--yes"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
   { name = "erase", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--erase"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+  { name = "from_backups", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--from-backups"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+  { name = "not_from_backups", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--not-from-backups"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
 ]
 
 [[entries]]

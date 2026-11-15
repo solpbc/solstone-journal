@@ -36,6 +36,9 @@ struct DeleteBody {
     /// Erase it now rather than leave it in the trash.
     #[serde(default)]
     erase: bool,
+    /// And remove it from the backups too, as the owner chose with erase now.
+    #[serde(default)]
+    backups: bool,
 }
 
 pub(crate) async fn delete_segment(
@@ -82,8 +85,9 @@ pub(crate) async fn delete_segment(
     );
     let root = state.journal_root.clone();
     let erase = request.erase;
+    let backups = request.backups;
     let outcome = tokio::task::spawn_blocking(move || {
-        trash_recording(&root, day, stream, key, page, surface, erase)
+        trash_recording(&root, day, stream, key, page, surface, erase, backups)
     })
     .await;
     match outcome {
@@ -136,6 +140,8 @@ struct SetBody {
     segments: Vec<SetSegment>,
     #[serde(default)]
     erase: bool,
+    #[serde(default)]
+    backups: bool,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
@@ -241,13 +247,14 @@ pub(crate) async fn delete_segments(
                 .map(|choice| (choice.covers.clone(), choice.import.clone()))
                 .collect();
             let results = solstone_core_import::trash_kinds::with_kinds(&root, |kinds| {
-                solstone_core_trash::detach_set(
+                solstone_core_trash::detach_set_with(
                     &root,
                     kinds,
                     choices.into_iter().map(|choice| choice.chosen).collect(),
                     action,
                     surface,
                     request.erase,
+                    request.backups,
                 )
             })?;
             for ((covered, import), result) in covers.into_iter().zip(results) {
@@ -360,6 +367,7 @@ struct Trashed {
     search: solstone_core_import::made_from::SearchNow,
 }
 
+#[allow(clippy::too_many_arguments, reason = "the owner act's every part")]
 fn trash_recording(
     root: &Path,
     day: String,
@@ -368,6 +376,7 @@ fn trash_recording(
     page: Page,
     surface: Surface,
     erase: bool,
+    backups: bool,
 ) -> Result<Trashed, TrashError> {
     let (action, unit) = if page == Page::Agents {
         (
@@ -432,7 +441,7 @@ fn trash_recording(
     };
     let erased = erase
         && match solstone_core_import::trash_kinds::with_kinds(root, |kinds| {
-            solstone_core_trash::erase(root, kinds, &item.id, action, surface)
+            solstone_core_trash::erase_with(root, kinds, &item.id, action, surface, None, backups)
         }) {
             Ok(()) => true,
             Err(error) => {

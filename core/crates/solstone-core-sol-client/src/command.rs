@@ -149,6 +149,78 @@ pub fn moved_to_trash_line(name: &str, failed: &str, day: Option<&str>) -> Strin
     }
 }
 
+/// The owner's choice, on a delete that erases now, to also remove it from
+/// their backups: `--from-backups` or `--not-from-backups`, else the trash
+/// setting. Shown only while backup is set up.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BackupsChoice {
+    pub chosen: bool,
+    pub paused: bool,
+}
+
+pub const FROM_BACKUPS_HELP: &str = "Also remove it from your backups. Without this or --not-from-backups, the trash setting decides.";
+pub const NOT_FROM_BACKUPS_HELP: &str = "Leave it in your backups.";
+pub const NO_BACKUP_SET_UP: &str =
+    "Error: backup isn't set up, so there are no backups to remove it from.";
+
+/// Work out the choice for an erase now. `from` and `not_from` are the flags.
+pub fn backups_choice(
+    ctx: CommandContext<'_>,
+    from: bool,
+    not_from: bool,
+) -> Result<BackupsChoice, String> {
+    if from && not_from {
+        return Err("Error: choose --from-backups or --not-from-backups, not both.".to_owned());
+    }
+    if not_from {
+        return Ok(BackupsChoice::default());
+    }
+    let state = ctx
+        .transport
+        .request(ApiRequest {
+            method: HttpMethod::Get,
+            path: "/app/settings/api/trash/backups".to_owned(),
+            params: vec![],
+            json: None,
+            headers: vec![],
+            policy: TimeoutPolicy::Api,
+        })
+        .ok()
+        .and_then(|response| decode_response(&response).ok());
+    let set_up = state
+        .as_ref()
+        .and_then(|state| state.get("set_up"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if from && !set_up {
+        return Err(NO_BACKUP_SET_UP.to_owned());
+    }
+    let setting = state
+        .as_ref()
+        .and_then(|state| state.get("setting"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let paused = state
+        .as_ref()
+        .and_then(|state| state.get("paused"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    Ok(BackupsChoice {
+        chosen: set_up && (from || setting),
+        paused,
+    })
+}
+
+/// The line after `Erased '...'.` when the choice was made.
+#[must_use]
+pub fn backups_next_line(choice: BackupsChoice) -> Option<&'static str> {
+    match (choice.chosen, choice.paused) {
+        (false, _) => None,
+        (true, false) => Some("Removing it from your backups next."),
+        (true, true) => Some("Removing it from your backups once you resume backup."),
+    }
+}
+
 /// A scripted `/api/shell` exchange answering with the journal's `today`.
 #[cfg(test)]
 pub(crate) fn shell_today_call(today: &str) -> crate::seam::ExpectedHttpCall {

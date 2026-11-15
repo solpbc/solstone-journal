@@ -1776,7 +1776,15 @@ function renderImportDeleteStep(step) {
   nodes.moveFoot.hidden = erasing;
   nodes.eraseFoot.hidden = !erasing;
   nodes.body.replaceChildren(...importDialog.spec.body(step));
+  // The erase step offers to also remove it from the backups.
+  if (window.BackupErase) {
+    if (erasing) window.BackupErase.attach(nodes.body, importDialog.spec.count || 1);
+    else window.BackupErase.detach(nodes.body);
+  }
 }
+
+// What the owner chose in the erase step, read as they confirm.
+let importEraseBackups = { chosen: false, clause: '' };
 
 function wireImportDeleteDialog(nodes) {
   if (nodes.modal.dataset.wired) return;
@@ -1802,6 +1810,10 @@ function wireImportDeleteDialog(nodes) {
   const act = erase => {
     if (!importDialog) return;
     const spec = importDialog.spec;
+    const body = importDialogNodes().body;
+    importEraseBackups = erase && window.BackupErase
+      ? { chosen: window.BackupErase.chosenIn(body), clause: window.BackupErase.receiptIn(body, spec.count || 1) }
+      : { chosen: false, clause: '' };
     closeImportDeleteDialog(false);
     spec.act(erase);
   };
@@ -1898,7 +1910,7 @@ async function deleteOneImport(item, erase) {
   let response;
   try {
     response = await fetch(`/app/import/api/imports/${encodeURIComponent(item.id)}`, erase
-      ? { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ erase: true }) }
+      ? { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ erase: true, backups: importEraseBackups.chosen }) }
       : { method: 'DELETE' });
   } catch (_) {
     return { kind: 'noAnswer' };
@@ -1906,7 +1918,7 @@ async function deleteOneImport(item, erase) {
   const data = await response.json().catch(() => null);
   if (!response.ok) return { kind: 'refused', key: data?.key || 'other' };
   if (!data || data.success !== true) return { kind: 'noAnswer' };
-  if (data.erased === true) return { kind: 'erased' };
+  if (data.erased === true) return { kind: 'erased', clause: importEraseBackups.clause };
   if (data.erase_failed === true) return { kind: 'eraseFailed' };
   return { kind: 'moved', trashId: data.trash?.id, eraseAt: data.trash?.erase_at };
 }
@@ -1921,7 +1933,7 @@ function showImportOneReceipt(outcome, erase, reload) {
       ], { settled: true, message: importEraseDate(outcome.eraseAt) ? undefined : '' });
       return;
     case 'erased':
-      importReceipt(R.erased, {}, [], { settled: true });
+      importReceipt(R.erased, {}, [], outcome.clause ? { settled: true, message: outcome.clause } : { settled: true });
       return;
     case 'eraseFailed':
       importReceipt(R.eraseFailed, {}, [importOpenTrashButton()]);
@@ -2152,7 +2164,7 @@ function deleteChosenImports() {
     openImportDeleteDialog(importOneSpec(chosen[0], erase => deleteOneFromList(chosen[0], erase)));
     return;
   }
-  openImportDeleteDialog(importSetSpec(chosen, erase => deleteSetFromList(chosen, erase)));
+  openImportDeleteDialog({ ...importSetSpec(chosen, erase => deleteSetFromList(chosen, erase)), count: chosen.length });
 }
 
 async function deleteOneFromList(item, erase) {
@@ -2178,7 +2190,7 @@ async function deleteSetFromList(items, erase) {
     const response = await fetch('/app/import/api/imports/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(erase ? { ids, erase: true } : { ids }),
+      body: JSON.stringify(erase ? { ids, erase: true, backups: importEraseBackups.chosen } : { ids }),
     });
     answer = response.ok ? await response.json().catch(() => null) : null;
   } catch (_) {
@@ -2194,10 +2206,11 @@ async function deleteSetFromList(items, erase) {
   const buttons = outcome.buttons.map(name => (name === 'recover'
     ? { label: IMPORT_DELETE_COPY.buttons.recover, onClick: () => recoverImports(outcome.moved.map(entry => entry.trashId), loadImports) }
     : importOpenTrashButton()));
+  const allErased = erase && outcome.settled && importEraseBackups.clause;
   importReceipt(outcome.receipt, outcome.fill, buttons, {
     settled: outcome.settled,
     icon: outcome.settled ? 'trash-2' : 'triangle-alert',
-    message: outcome.message,
+    message: allErased ? importEraseBackups.clause : outcome.message,
   });
 }
 

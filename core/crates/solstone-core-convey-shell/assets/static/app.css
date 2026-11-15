@@ -1930,3 +1930,11 @@ a.ev-meta {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* The choice to also remove what an erase takes from the backups: one row in
+   every confirm that erases now. */
+label.backup-erase-choice { display: flex; align-items: flex-start; gap: .6rem; margin: .75rem 0 0; padding: .7rem .75rem; border: 1px solid var(--hairline-2); border-radius: 8px; background: var(--paper); cursor: pointer; text-align: left; }
+.backup-erase-choice input { margin-top: .2rem; flex: none; width: 18px; height: 18px; }
+.backup-erase-choice-label { display: block; font-weight: 600; color: var(--ink); }
+.backup-erase-choice-hint { display: block; margin-top: .15rem; color: var(--ink-soft); font-size: .88em; line-height: 1.45; }
+@media (max-width: 480px) { label.backup-erase-choice { min-height: 44px; } .backup-erase-choice input { width: 20px; height: 20px; } }

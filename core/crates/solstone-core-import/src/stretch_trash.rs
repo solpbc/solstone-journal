@@ -540,6 +540,19 @@ pub fn trash(
     surface: Surface,
     erase: bool,
 ) -> Result<Result<Outcome, Refused>, TrashError> {
+    trash_with(journal, from, to, surface, erase, false)
+}
+
+/// [`trash`], with the owner's choice, for an erase now, to also remove the
+/// stretch from their backups.
+pub fn trash_with(
+    journal: &Path,
+    from: NaiveDateTime,
+    to: NaiveDateTime,
+    surface: Surface,
+    erase: bool,
+    backups: bool,
+) -> Result<Result<Outcome, Refused>, TrashError> {
     let plan = match plan(journal, from, to) {
         Ok(plan) => plan,
         Err(refused) => return Ok(Err(refused)),
@@ -596,13 +609,14 @@ pub fn trash(
         })
         .collect();
     let (stretch, results) = crate::trash_kinds::with_kinds(journal, |kinds| {
-        solstone_core_trash::detach_stretch(
+        solstone_core_trash::detach_stretch_with(
             journal,
             kinds,
             parts,
             Action::StretchDelete,
             surface,
             erase,
+            backups,
             plan.stretch(),
         )
     })?;

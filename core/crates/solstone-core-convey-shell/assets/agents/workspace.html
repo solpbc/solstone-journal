@@ -101,6 +101,7 @@
     const settled = kind === 'moved' || kind === 'recovered' || kind === 'erased';
     const notice = {app: 'agents', icon: settled ? (kind === 'recovered' ? 'undo-2' : 'trash-2') : 'triangle-alert', title: put(copy.title), dismissible: true, buttons};
     if (copy.message && (kind !== 'moved' || fill.date)) notice.message = put(copy.message);
+    if (fill.message) notice.message = fill.message;
     // A refused or failed card stays until the owner dismisses it.
     if (settled) notice.autoDismiss = 10000;
     window.AppServices?.notifications?.show?.(notice);
@@ -1001,14 +1002,21 @@
       render();
       // The step's own control takes focus even when focus wasn't in the view.
       view.querySelector?.(focus)?.focus?.();
+      // The erase step offers to also remove it from the backups.
+      memoryChoiceBox = step === 'erase' ? view.querySelector?.('[data-memory-step="erase"]') || null : null;
+      if (memoryChoiceBox && window.BackupErase) window.BackupErase.attach(memoryChoiceBox, 1);
     }
+    let memoryChoiceBox = null;
     async function deleteMemory(memory, erase, around = []) {
       const place = memoryPlace(memory);
       const source = sourceOf(memory);
       const url = `/app/transcripts/api/segment/${encodeURIComponent(memory.day)}/${encodeURIComponent(memory.stream)}/${encodeURIComponent(memory.segment)}`;
       let answer;
+      let clause = '';
       try {
-        answer = await api(url, erase ? jsonOptions('DELETE', {erase: true}) : ownerOptions('DELETE'));
+        const backups = Boolean(erase && window.BackupErase?.chosenIn(memoryChoiceBox));
+        clause = erase && window.BackupErase ? window.BackupErase.receiptIn(memoryChoiceBox, 1) : '';
+        answer = await api(url, erase ? jsonOptions('DELETE', {erase: true, backups}) : ownerOptions('DELETE'));
       } catch (error) {
         trashReceipt(unanswered(error) ? (erase ? 'noAnswerErase' : 'noAnswerMove') : (erase ? 'eraseRefused' : 'moveRefused'));
         landing = [deleteKey(place)];
@@ -1020,7 +1028,7 @@
       const receipt = () => {
         if (receipted) return;
         receipted = true;
-        if (answer?.erased === true) { trashReceipt('erased'); return; }
+        if (answer?.erased === true) { trashReceipt('erased', clause ? {message: clause} : {}); return; }
         if (answer?.erase_failed === true) { trashReceipt('eraseFailed', {}, [openTrashButton()]); return; }
         const trashId = answer?.trash?.id;
         trashReceipt('moved', {date: trashEraseDate(answer?.trash?.erase_at)}, [
