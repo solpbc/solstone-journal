@@ -1214,7 +1214,11 @@ fn ac7_ac21_ac22_entities_are_scoped_stable_and_omit_forbidden_fields() {
     assert_eq!(listed["entities"].as_array().unwrap().len(), 2);
     let reference = listed["entities"][0]["reference"].as_str().unwrap();
     let entity = probe(&journal, "get_entity", json!({"reference": reference})).unwrap();
-    assert_eq!(entity, json!({"name": "Same Name", "notes": []}));
+    // Photos of people are on by default, so the entity says it has no photo.
+    assert_eq!(
+        entity,
+        json!({"name": "Same Name", "notes": [], "photo": {"state": "none"}})
+    );
     let serialized = entity.to_string();
     for forbidden in ["aka", "out-of-scope", "detached", "aggregate", "decision"] {
         assert!(!serialized.contains(forbidden));

@@ -43,6 +43,9 @@ pub struct DuplicateItem {
     pub facets: Vec<String>,
     pub keys: Vec<String>,
     pub rows: Vec<DuplicateReviewRow>,
+    /// Why the pair was suggested, one entry per distinct basis
+    /// (`name-variant`, `meeting-face`, ...), so the review can show its reason.
+    pub bases: Vec<String>,
 }
 
 /// One suggested merge pair and the review keys that formed it.
@@ -94,6 +97,7 @@ struct RawDuplicateRow {
     facet: String,
     key: String,
     composite: f64,
+    basis: String,
 }
 
 struct PairData {
@@ -101,6 +105,7 @@ struct PairData {
     facets: Vec<String>,
     keys: Vec<String>,
     rows: Vec<DuplicateReviewRow>,
+    bases: Vec<String>,
 }
 
 fn string_or(row: &Value, key: &str, fallback: &str) -> String {
@@ -283,6 +288,11 @@ pub fn build_tidy_up_response(
                     let evidence = row.get("evidence").and_then(Value::as_object);
                     let detection_count = evidence.and_then(|e| e.get("detection_count"));
                     let strength = solstone_core_entity::json_i64(detection_count);
+                    let basis = evidence
+                        .and_then(|e| e.get("basis"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("name-variant")
+                        .to_owned();
                     let composite = strength as f64;
                     let facet = row
                         .get("facet")
@@ -314,6 +324,7 @@ pub fn build_tidy_up_response(
                         facet,
                         key,
                         composite,
+                        basis,
                     });
                 }
             }
@@ -338,8 +349,12 @@ pub fn build_tidy_up_response(
                         facets: Vec::new(),
                         keys: Vec::new(),
                         rows: Vec::new(),
+                        bases: Vec::new(),
                     }
                 });
+                if !entry.bases.contains(&row.basis) {
+                    entry.bases.push(row.basis.clone());
+                }
                 if !entry.facets.contains(&row.facet) {
                     entry.facets.push(row.facet.clone());
                 }
@@ -391,6 +406,7 @@ pub fn build_tidy_up_response(
                         facets: data.facets.clone(),
                         keys: data.keys.clone(),
                         rows: data.rows.clone(),
+                        bases: data.bases.clone(),
                     }
                 })
                 .collect();

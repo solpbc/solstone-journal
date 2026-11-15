@@ -9,11 +9,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - your agent can now give you links to places in your journal, including activities, people, days and recordings. opening a place needs a version of the solstone app that supports journal links; older versions may open the app without opening the place.
+- photos of people: on a computer, your journal now finds faces in your meeting recordings and offers photos on each person's page, where you choose one, say it isn't them, or choose none. it's on by default, and past meeting recordings still in your journal are read a little at a time in the background. the photo you choose shows beside their name. agents you connect can receive a person's photo, marked as a suggestion until you choose it. to turn it off, or to erase face data once it's off, go to settings, vision.
 - when you answer whether a name in your journal is one of your people, activities in the facet you answered in that already named them now follow your answer. they list that person. recent activities also show them as attending when the recording shows it, and older ones keep the role they had. change your answer and they follow that too. an activity whose people you edited yourself stays as you left it.
 - your journal keeps the screenshots the solstone app takes in, each at the minute you took it. a journal from before 2.0.75 doesn't keep them, so the app says your screenshots are waiting for a journal update.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
+- after you erase something from the trash, the backup page lets you remove every backup older than your newest one, once a backup has finished without what you erased. you choose separately whether to also remove the backups kept from before you restored this journal. a media archive that may hold the only copy of media you still have stays. apart from those, no backup at your current destination can bring it back. what only the removed backups held can stay in storage, encrypted with your recovery key, with no backup pointing to it. `solstone journal backup remove-older` does the same from the command line. not on iphone yet.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
 ### Changed
@@ -23,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- in settings, under transcription, turning on "leave out other voices" now shows its confirmation. before, the confirmation never appeared, so the switch couldn't be turned on there.
 - merging two entities no longer loses what the one merged away held: your own voice when it was you, and your answers about which person a name means.
 - on windows, your journal no longer fails to start when another program, such as a backup tool, has some of your journal's setup files open to read them.
 - fixed a problem after you answered whether a name in your journal was one of your people. later activities that named them could be left with no list of who was there, or no story. your answer now holds on days that never mention their full name.
@@ -60,6 +63,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the "pair a device" box now fits your window, and its buttons stay in view while the rest scrolls.
 - on every page, closing the "review this report" box or an error message now puts focus back where you were: on the button that opened it, in the box underneath if one is still open, or at the start of the page if that button is gone. an error message now takes focus when it appears, and escape closes it. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 - on every page, a notice that goes away by itself, like the one with "recover" after a delete, now stays while a box is open over the page, and its countdown starts over when you close the box. before, it kept counting down behind the box.
+- on the agents page, focus now stays where you were after you change a setting, pause, resume or disconnect an agent, rename a key, delete a memory or dismiss a notice, when you close a box, and when the page refreshes itself: on the same button or choice if it's still there, otherwise on what took its place, such as the next agent, the next memory or the line that says what happened. going back from an agent's page to the list lands on that agent. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 
 ## [2.0.79] - 2026-11-14
 

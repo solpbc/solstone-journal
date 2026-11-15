@@ -700,6 +700,7 @@ function makePage(env, address = '/app/network/', { answers, arrival = null } = 
   vm.runInContext(fs.readFileSync(path.join(shell, 'store.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'views.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'router.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(shell, 'focus.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(env.manifestDir, 'assets/network/network.js'), 'utf8'), context);
   ['SolStore', 'SolViews', 'solRouter', 'NetworkRender'].forEach((name) => { window[name] = context.window[name] || context[name]; });
   // How the view arrived: the real router's answer, set by the case.

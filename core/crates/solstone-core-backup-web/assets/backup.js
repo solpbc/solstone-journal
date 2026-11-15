@@ -304,7 +304,61 @@
         "verification_failed": "restored media did not match the backup checksum."
       }
     },
+    "older": {
+      "title": "older backups",
+      "wait_lead": "your older backups can still restore what you erased.",
+      "wait_next": "you can remove them once a backup has finished after the erase.",
+      "wait_incomplete": "your older backups can still restore what you erased. your newest backup couldn't read some files, and older backups may hold the only copy of those, so they can be removed only after a backup reads every file.",
+      "ready_lead": "your older backups can still restore things you've erased.",
+      "ready_meta": "{count} older backups, {from} to {to}. your newest, from {newest}, already leaves those things out.",
+      "ready_meta_one": "1 older backup, from {from}. your newest, from {newest}, already leaves those things out.",
+      "act": "remove older backups",
+      "gate_title_one": "remove 1 older backup?",
+      "removed_backups_one": "1 backup, from {from}",
+      "removed_archives_one": "1 media archive that holds nothing you still have",
+      "removed_restore_one": "1 backup from before you restored this journal",
+      "kept_archives_one": "1 media archive that may hold the only copy of media you still have",
+      "restore_choice_one": "also remove 1 backup from before you restored this journal",
+      "part_archives_one": "1 media archive stays, because it may hold the only copy of media you still have. it may also hold some of what you erased.",
+      "part_restore_one": "1 backup from before you restored this journal stays.",
+      "gate_title": "remove {count} older backups?",
+      "gate_stakes": "you won't be able to restore your journal to any date before {newest}. that's everything in it, not only what you erased.",
+      "removed": "removed",
+      "kept": "kept",
+      "removed_backups": "{count} backups, {from} to {to}",
+      "removed_archives": "{count} media archives that hold nothing you still have",
+      "removed_restore": "{count} backups from before you restored this journal",
+      "kept_newest": "your newest backup, {newest}",
+      "kept_archives": "{count} media archives that may hold the only copy of media you still have",
+      "restore_choice": "also remove {count} backups from before you restored this journal",
+      "restore_hint": "they hold things this journal doesn't have, up to {to}. after this, nothing can bring those back.",
+      "restore_hint_one": "it holds things this journal doesn't have, up to {to}. after this, nothing can bring those back.",
+      "restore_gate_title": "remove {count} backups from before you restored this journal?",
+      "restore_gate_title_one": "remove 1 backup from before you restored this journal?",
+      "restore_gate_act": "remove",
+      "reach_summary": "what this doesn't reach",
+      "reach_storage": "what only these backups held can stay in storage, encrypted with your recovery key and with no backup pointing to it.",
+      "reach_elsewhere": "backups at a destination you used before, and copies your other devices made, aren't touched.",
+      "running": "removing older backups… {removed} of {total}",
+      "running_note": "you can leave this page while it runs.",
+      "stopped": "removing older backups stopped after {removed} of {total}. what was removed stays removed, and the rest can still restore what you erased.",
+      "stopped_act": "remove the rest",
+      "done_lead": "removed {at}. no backup here can bring back what you erased before {before}.",
+      "part_lead": "removed {at}. no backup here can bring back what you erased before {before}, except:",
+      "part_archives": "{count} media archives stay, because they may hold the only copy of media you still have. they may also hold some of what you erased.",
+      "part_restore": "{count} backups from before you restored this journal stay.",
+      "part_restore_act": "remove them",
+      "part_restore_act_one": "remove it",
+      "done_storage": "what only the removed backups held can stay in storage, encrypted, with no backup pointing to it.",
+      "storage_versions": "your storage keeps earlier versions of deleted files, so copies of these backups stay in your bucket until you delete those versions or your provider's own rules remove them.",
+      "storage_locks": "your bucket can lock files against deletion, so copies of these backups stay there until any lock ends and you delete those versions or your provider's own rules remove them.",
+      "storage_hidden_files": "your B2 bucket only hides deleted files unless a lifecycle rule for the whole bucket removes them, so copies of these backups stay there until you add one or delete them yourself.",
+      "storage_versions_done": "your storage keeps earlier versions of deleted files, so copies of the removed backups stay in your bucket until you delete those versions or your provider's own rules remove them.",
+      "storage_locks_done": "your bucket can lock files against deletion, so copies of the removed backups stay there until any lock ends and you delete those versions or your provider's own rules remove them.",
+      "storage_hidden_files_done": "your B2 bucket only hides deleted files unless a lifecycle rule for the whole bucket removes them, so copies of the removed backups stay there until you add one or delete them yourself."
+    },
     "phase_labels": {
+      "removing": "removing older backups…",
       "cleanup_pending": "backup needs attention",
       "setting_up": "setting up your backup…",
       "restoring": "restoring your journal…",
@@ -321,6 +375,12 @@
       "backup_paused": "backup is paused. resume it, then try again.",
       "cleanup_pending": "couldn't confirm that the backup task has stopped. other backup actions are waiting.",
       "backup_busy": "another backup task is already running. try again in a moment.",
+      "waiting": "nothing older can be removed yet. wait for a backup to finish after the erase.",
+      "newest_holds_erased": "your newest backup still holds something you erased, so nothing was removed. try again after the next backup.",
+      "newest_incomplete": "your newest backup couldn't read some files, so nothing was removed.",
+      "check_blind": "couldn't check your newest backup, so nothing was removed. try again later.",
+      "nothing_to_remove": "there are no older backups to remove.",
+      "running": "older backups are already being removed.",
       "backup_not_confirmed": "confirm your recovery key before turning on backup.",
       "backup_operation_failed": "that backup action couldn't be finished. check the recovery key and destination, then try again.",
       "backup_unavailable": "the backup service couldn't be reached. start it, then try again.",
@@ -426,6 +486,7 @@
     'offload-enable', 'offload-save', 'offload-disable', 'offload-restore-day',
     'offload-prepare',
     'pause', 'resume', 'destination-edit', 'switch-confirm', 'switch-restore-first',
+    'older-confirm', 'older-rest', 'older-remove-kept', 'older-kept-open',
   ]);
   let destinationEditing = false;
   let restoreLane = null;
@@ -1912,6 +1973,164 @@
     setText('[data-operation-error]', hasGuidance || operation.reason_code ? errorLabel : '');
   }
 
+  // ---- older backups: after an erase, remove every backup older than the newest
+
+  function olderCopy(key, values) {
+    const copy = BACKUP_COPY.older || {};
+    // A count of one reads in the singular where a "_one" form exists.
+    const one = values && values.count === 1 && copy[`${key}_one`];
+    let text = one || copy[key] || '';
+    for (const [name, value] of Object.entries(values || {})) {
+      text = text.split(`{${name}}`).join(value == null ? '' : String(value));
+    }
+    return text;
+  }
+
+  // The shell's shared absolute ladder ("Nov 14, 5:50 PM"), as the other
+  // pages show times.
+  function olderTime(value) {
+    const millis = typeof value === 'number' ? value * 1000 : Date.parse(value || '');
+    if (!Number.isFinite(millis)) return '';
+    if (window.JournalFormat?.timestamp) return window.JournalFormat.timestamp(millis);
+    return formatTime(Math.floor(millis / 1000));
+  }
+
+  function olderList(selector, items) {
+    const list = root.querySelector(selector);
+    if (!list) return;
+    list.replaceChildren(...items.filter(Boolean).map((text) => {
+      const item = document.createElement('li');
+      item.textContent = text;
+      return item;
+    }));
+  }
+
+  function olderStorageLine(storage, done) {
+    if (!['versions', 'locks', 'hidden_files'].includes(storage)) return '';
+    return olderCopy(done ? `storage_${storage}_done` : `storage_${storage}`);
+  }
+
+  function setOlderText(selector, text) {
+    const node = root.querySelector(selector);
+    if (!node) return;
+    node.textContent = text || '';
+    node.hidden = !text;
+  }
+
+  function closeOlderGate() {
+    setElementHidden('[data-older-gate]', true);
+    const include = root.querySelector('[data-older-include-kept]');
+    if (include) include.checked = false;
+  }
+
+  function renderOlderGate() {
+    const view = state.older_backups || {};
+    const include = root.querySelector('[data-older-include-kept]');
+    const withKept = Boolean(include && include.checked);
+    const kept = view.kept_before_restore || 0;
+    // The title counts backups; an archive is in the removed list.
+    const count = (view.older || 0) + (withKept ? kept : 0);
+    const newest = olderTime(view.newest);
+    setText('[data-older-gate-title]', olderCopy('gate_title', { count }));
+    setText('[data-older-stakes]', olderCopy('gate_stakes', { newest }));
+    olderList('[data-older-removed]', [
+      view.older ? olderCopy('removed_backups', { count: view.older, from: olderTime(view.older_from), to: olderTime(view.older_to) }) : '',
+      view.archives_removable ? olderCopy('removed_archives', { count: view.archives_removable }) : '',
+      withKept && kept ? olderCopy('removed_restore', { count: kept }) : '',
+    ]);
+    const keptArchives = (view.archives_mixed || 0) + (view.archives_kept || 0);
+    olderList('[data-older-kept]', [
+      olderCopy('kept_newest', { newest }),
+      keptArchives ? olderCopy('kept_archives', { count: keptArchives }) : '',
+      kept && !withKept ? olderCopy('removed_restore', { count: kept }) : '',
+    ]);
+    setElementHidden('[data-older-kept-choice]', !kept);
+    setText('[data-older-kept-choice-label]', olderCopy('restore_choice', { count: kept }));
+    setText('[data-older-kept-choice-hint]', olderCopy('restore_hint', { count: kept, to: olderTime(view.kept_before_restore_to) }));
+    setOlderText('[data-older-gate-warn]', olderStorageLine(view.storage));
+    const confirm = root.querySelector('[data-action="older-confirm"]');
+    if (confirm) confirm.disabled = count + (view.archives_removable || 0) === 0;
+  }
+
+  function renderOlder() {
+    const section = root.querySelector('[data-older-section]');
+    if (!section) return;
+    const view = state.older_backups || { state: 'hidden' };
+    const shown = managedMode() && view.state && view.state !== 'hidden';
+    section.hidden = !shown;
+    section.setAttribute('data-older-state', view.state || 'hidden');
+    if (!shown) {
+      closeOlderGate();
+      return;
+    }
+    let lead = '';
+    let note = '';
+    let warn = '';
+    let action = '';
+    const except = [];
+    if (view.state === 'waiting') {
+      lead = view.newest_incomplete ? olderCopy('wait_incomplete') : olderCopy('wait_lead');
+      note = view.newest_incomplete ? '' : olderCopy('wait_next');
+    } else if (view.state === 'ready') {
+      lead = olderCopy('ready_lead');
+      note = view.older ? olderCopy('ready_meta', {
+        count: view.older, from: olderTime(view.older_from), to: olderTime(view.older_to), newest: olderTime(view.newest),
+      }) : '';
+      action = 'older-open';
+    } else if (view.state === 'running') {
+      lead = olderCopy('running', { removed: view.removed || 0, total: view.total || 0 });
+      note = olderCopy('running_note');
+    } else if (view.state === 'stopped') {
+      lead = olderCopy('stopped', { removed: view.removed || 0, total: view.total || 0 });
+      action = 'older-rest';
+    } else if (view.state === 'done' || view.state === 'partly_done') {
+      const values = { at: olderTime(view.at), before: olderTime(view.before) };
+      const partlyItems = [];
+      if (view.archives_mixed) partlyItems.push(olderCopy('part_archives', { count: view.archives_mixed }));
+      if (view.kept_before_restore) partlyItems.push(olderCopy('part_restore', { count: view.kept_before_restore }));
+      lead = partlyItems.length ? olderCopy('part_lead', values) : olderCopy('done_lead', values);
+      except.push(...partlyItems);
+      warn = olderStorageLine(view.storage, true);
+      note = warn ? '' : olderCopy('done_storage');
+    }
+    setText('[data-older-lead]', lead);
+    setOlderText('[data-older-note]', note);
+    setOlderText('[data-older-warn]', warn);
+    const exceptList = root.querySelector('[data-older-except]');
+    if (exceptList) {
+      olderList('[data-older-except]', except);
+      if (view.kept_before_restore && view.state === 'partly_done') {
+        const items = exceptList.querySelectorAll('li');
+        const last = items[items.length - 1];
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'danger backup-older-inline';
+        button.setAttribute('data-action', 'older-kept-open');
+        button.textContent = olderCopy('part_restore_act', { count: view.kept_before_restore });
+        if (last) last.appendChild(button);
+      }
+      exceptList.hidden = except.length === 0;
+    }
+    const actions = root.querySelector('[data-older-actions]');
+    const open = root.querySelector('[data-action="older-open"]');
+    if (actions && open) {
+      actions.hidden = !action;
+      open.textContent = action === 'older-rest' ? olderCopy('stopped_act') : olderCopy('act');
+      open.setAttribute('data-action-mode', action);
+    }
+    const gate = root.querySelector('[data-older-gate]');
+    if (view.state !== 'ready') closeOlderGate();
+    else if (gate && !gate.hidden) renderOlderGate();
+    if (view.state !== 'partly_done' || !view.kept_before_restore) {
+      setElementHidden('[data-older-kept-gate]', true);
+    } else {
+      setText('[data-older-kept-gate-title]', olderCopy('restore_gate_title', { count: view.kept_before_restore }));
+      setText('[data-older-kept-gate-hint]', olderCopy('restore_hint', {
+        count: view.kept_before_restore, to: olderTime(view.kept_before_restore_to),
+      }));
+    }
+  }
+
   function renderCleanup() {
     const banner = root.querySelector('[data-cleanup-banner]');
     const button = root.querySelector('[data-action="finish-cleanup"]');
@@ -2006,6 +2225,7 @@
     renderByoLocation();
     renderPaused();
     renderOffload();
+    renderOlder();
     applyCleanupFence();
     const heading = root.querySelector('h1[data-copy="intro.title"]') || document.querySelector('h1');
     if (heading && window.JournalClock?.placeNote) {
@@ -2509,6 +2729,9 @@
   }
 
   function bindIntro() {
+    root.addEventListener('change', function (event) {
+      if (event.target.matches && event.target.matches('[data-older-include-kept]')) renderOlderGate();
+    });
     root.addEventListener('click', async function (event) {
       const button = event.target.closest('[data-action]');
       const action = button && button.getAttribute('data-action');
@@ -2594,6 +2817,49 @@
           showPanel('display');
         }
         if (action === 'rotate-key') await startOperation('/app/backup/recovery-key/rotate');
+        if (action === 'older-open') {
+          const mode = button.getAttribute('data-action-mode');
+          if (mode === 'older-rest') {
+            // The stopped run resumes as it was chosen.
+            await startOperation('/app/backup/older-backups/remove', { include_kept_before_restore: false });
+          } else {
+            setElementHidden('[data-older-actions]', true);
+            setElementHidden('[data-older-gate]', false);
+            renderOlderGate();
+            root.querySelector('[data-action="older-cancel"]')?.focus();
+          }
+        }
+        if (action === 'older-cancel') {
+          closeOlderGate();
+          renderOlder();
+          root.querySelector('[data-action="older-open"]')?.focus();
+        }
+        if (action === 'older-confirm') {
+          const include = root.querySelector('[data-older-include-kept]');
+          const withKept = Boolean(include && include.checked);
+          // The newest kept-from-restore backup shown: none newer is taken.
+          const body = {
+            include_kept_before_restore: withKept,
+            kept_before_restore_to: withKept ? ((state.older_backups || {}).kept_before_restore_to || null) : null,
+          };
+          closeOlderGate();
+          await startOperation('/app/backup/older-backups/remove', body);
+        }
+        if (action === 'older-kept-open') {
+          setElementHidden('[data-older-kept-gate]', false);
+          root.querySelector('[data-action="older-kept-cancel"]')?.focus();
+        }
+        if (action === 'older-kept-cancel') {
+          setElementHidden('[data-older-kept-gate]', true);
+          root.querySelector('[data-action="older-kept-open"]')?.focus();
+        }
+        if (action === 'older-remove-kept') {
+          setElementHidden('[data-older-kept-gate]', true);
+          await startOperation('/app/backup/older-backups/remove', {
+            include_kept_before_restore: true,
+            kept_before_restore_to: (state.older_backups || {}).kept_before_restore_to || null,
+          });
+        }
         if (action === 'teardown-open') await openTeardownGate();
         if (action === 'teardown-cancel') resetTeardownGate();
         if (action === 'teardown-confirm') {

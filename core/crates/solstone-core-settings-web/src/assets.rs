@@ -37,6 +37,23 @@ mod tests {
     use super::{SETTINGS_JS, WORKSPACE};
     use crate::test_support::{established_root, shell_router};
 
+    /// A settings-wide confirmation must not sit inside the facet page, which
+    /// is hidden while the owner is on the settings index: a dialog there opens
+    /// invisibly, and the switch behind it can never be turned on.
+    #[test]
+    fn settings_wide_confirmations_are_outside_the_hidden_facet_page() {
+        let page = std::str::from_utf8(WORKSPACE).expect("utf-8 workspace");
+        let facet_page = page
+            .find("<section id=\"settings-facet-detail-view\"")
+            .expect("facet page");
+        for dialog in ["ownerVoiceConsentModal", "facesClearModal"] {
+            let at = page
+                .find(&format!("<div id=\"{dialog}\""))
+                .unwrap_or_else(|| panic!("{dialog} is in the page"));
+            assert!(at < facet_page, "{dialog} sits inside the facet page");
+        }
+    }
+
     #[tokio::test]
     async fn ac13_embedded_assets_are_served_verbatim() {
         let root = established_root();

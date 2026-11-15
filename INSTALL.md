@@ -93,9 +93,11 @@ curl -fsSL https://solstone.app/install.sh | sh -s -- --components journal --rou
 
 The installer verifies the signed release, then installs the `.deb` with `apt` on Debian or Ubuntu, or the `.rpm` with `dnf` on Fedora or RHEL, using `sudo`. It runs setup and records the package, so `solstone update` and the installer's `--upgrade` update it. The package puts `solstone` on PATH for every account on the machine and installs the OpenMP runtime dependency. `journal <args>` has moved to `solstone journal <args>`; update any commands or scripts that use the old name.
 
-If you installed a `.deb` or `.rpm` yourself, run the same command once. The installer checks every file the package installed against the signed release before it records it. If a file doesn't match, it stops and changes nothing. An older package is replaced with the current signed one.
+If you installed a standalone `.deb` or `.rpm` yourself without the package repository, run the same command once. The installer checks every file the package installed against the signed release before it records it. If a file doesn't match, it stops and changes nothing. An older package is replaced with the current signed one.
 
-On linux, `solstone update` updates copies recorded by the solstone installer. `solstone update --check` reports whether an update is available. If the installation cannot be identified, use its original installer.
+You can also add the signed solstone package repository (`apt` on Debian/Ubuntu, `dnf` on Fedora/RHEL, or `zypper` on openSUSE; OpenPGP fingerprint `BD77BD200A710D13EDF1D2555BF7582BF7EBA751`; setup commands in [`solstone` `INSTALL.md`](https://github.com/solpbc/solstone/blob/main/INSTALL.md) and at https://solstone.app/install#linux-packages) and install `solstone` (both your journal and the desktop app) or `solstone-journal` (your journal and CLI alone), then run `solstone journal setup` under your own account.
+
+On linux, `solstone update --check` checks all installer and signed-repository installs, `solstone update` updates copies recorded by the solstone installer or installed from the signed `apt` or `dnf` repository, and your distribution's package manager (`apt upgrade`, `dnf upgrade`, or `zypper update`) updates any signed-repository install. If the installation cannot be identified, use its original installer.
 
 ### One tree, whichever machine
 
@@ -239,7 +241,7 @@ On mac, each app handles its own updates. The shell installer verifies an existi
 
 On linux, use the route that owns the installation:
 
-For a tree install, `sh install.sh --upgrade` is the whole upgrade: it preserves the recorded lane unless `--lane` is explicit, verifies the signed release, flips `current`, and repoints the managed wrapper and service through setup. For a package install, run `solstone update`, or the installer with `--upgrade`; there is no package repository to add. If you installed the `.deb` or `.rpm` yourself, run `curl -fsSL https://solstone.app/install.sh | sh -s -- --upgrade` once: it checks the installed files against the signed release and records the package, and `solstone update` updates it from then on.
+For a tree install, `sh install.sh --upgrade` is the whole upgrade: it preserves the recorded lane unless `--lane` is explicit, verifies the signed release, flips `current`, and repoints the managed wrapper and service through setup. For a package install, run your distribution's package manager (`sudo apt update && sudo apt upgrade`, `sudo dnf upgrade`, or `sudo zypper update`) if you added the signed package repository, or run `solstone update` or the installer with `--upgrade` on Debian, Ubuntu, Fedora, and RHEL; after a package-manager upgrade, run `solstone journal service restart` so the running journal switches to the new build. If you installed a standalone `.deb` or `.rpm` yourself without the package repository, run `curl -fsSL https://solstone.app/install.sh | sh -s -- --upgrade` once: it checks the installed files against the signed release and records the package, and `solstone update` updates it from then on.
 
 The new build takes effect when your journal next starts, including after a login or reboot. It checks for updates to models, location data and agent skills you already use. Files that already match the new build stay in place, and optional assets you have not installed stay absent. A failed refresh does not stop your journal; it tries again on a later start.
 

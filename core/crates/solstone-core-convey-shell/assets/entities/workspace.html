@@ -2028,6 +2028,44 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   .journal-list-pager { margin-left: 0; }
 }
 
+/* Photos of people: the person-page panel, list thumbnails and the reason a
+   face-based merge suggestion gives. */
+.entity-faces[hidden] { display: none; }
+.entity-faces-title { margin: 0 0 0.2em; font-weight: 600; color: var(--ink); font-size: 1.05em; }
+.entity-faces-lede { margin: 0 0 0.75em; color: var(--ink-soft); font-size: 0.9em; line-height: 1.45; max-width: 40rem; }
+.entity-face-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: 1em 0.75em; margin-top: 0.9em; }
+.entity-face { margin: 0; display: flex; flex-direction: column; gap: 0.4em; min-width: 0; }
+.entity-face-img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--radius-sm, 9px); background: var(--cream); }
+.entity-faces-ask { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 1.25em; align-items: start; }
+.entity-faces-ask-face { margin: 0; }
+.entity-faces-ask-body { min-width: 0; }
+.entity-faces-ask-body .entity-face-caption { margin: 0 0 0.75em; }
+.entity-faces-ask-body .entity-faces-actions { margin-top: 0.5em; }
+.entity-face-caption { display: flex; flex-wrap: wrap; gap: 0.25em 0.5em; align-items: center; font-size: 0.8em; color: var(--ink-soft); line-height: 1.35; }
+.entity-face-badge { padding: 0 0.45em; border-radius: 999px; background: var(--cream-bright); color: var(--ink); font-size: 0.95em; white-space: nowrap; }
+.entity-face-actions, .entity-faces-actions { display: flex; flex-wrap: wrap; gap: 0.4em; }
+.entity-face-actions .btn { flex: 1 1 auto; }
+.entity-faces-actions { margin-top: 0.75em; }
+.entity-face-actions .btn, .entity-faces-actions .btn, .entity-faces-line .btn { min-height: 44px; }
+.entity-faces-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; margin: 0.9em 0 0; color: var(--ink); }
+.entity-faces-error { color: var(--danger); }
+.entity-faces-line a { color: var(--orange-text-aa); text-decoration: underline; }
+.entity-photo-thumb { display: inline-block; width: 1.5rem; height: 1.5rem; margin-right: 0.5em; border-radius: 50%; object-fit: cover; vertical-align: middle; background: var(--cream); }
+.entity-photo-thumb-lg { width: 3rem; height: 3rem; margin-right: 0.25em; }
+.entity-photo-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em 0.75em; margin-top: 0.75em; font-size: 0.9em; }
+.entity-photo-hint[hidden] { display: none; }
+.entity-photo-hint a { color: var(--orange-text-aa); text-decoration: underline; }
+.journal-dup-reason { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em 0.6em; margin-top: 0.4em; color: var(--ink-soft); font-size: 0.85em; }
+.journal-dup-faces { display: inline-flex; gap: 0.5em; }
+.journal-dup-face { display: inline-flex; flex-direction: column; align-items: center; gap: 0.2em; }
+.journal-dup-face-img { width: 2.75rem; height: 2.75rem; border-radius: 50%; object-fit: cover; background: var(--cream); }
+.journal-dup-face .entity-face-badge { font-size: 0.8em; }
+@media (max-width: 700px) {
+  .entity-face-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .entity-faces-ask { grid-template-columns: minmax(0, 1fr); gap: 0.75em; }
+  .entity-faces-ask-face { max-width: 12rem; }
+}
+
 /* Deleting entities: select mode on the journal-wide list, the strip, and the
    trash's own three-button dialog. */
 .ent-select-btn { margin-left: auto; }
@@ -2155,6 +2193,8 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
       <div class="entity-detail-aka" id="journal-detail-aka"></div>
       <div class="entity-detail-indicators" id="journal-detail-indicators"></div>
     </div>
+
+    <section class="entity-detail-section entity-faces" id="journal-detail-photo" aria-labelledby="journal-detail-photo-heading" hidden></section>
 
     <div class="entity-detail-section">
       <h4>facets</h4>
@@ -4536,6 +4576,7 @@ function showJournalDetailView(entityId) {
   document.getElementById('journal-detail-connections').innerHTML = '<span class="observations-empty">loading…</span>';
   renderEntityDeleteAction(null);
   resetJournalTrustSurface();
+  resetFacesPanel();
 
   // Fetch journal entity details
   fetch(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}`)
@@ -4778,6 +4819,7 @@ function renderJournalDetailView(entity) {
     });
   }
 
+  openFacesPanel(entity);
   renderConnectionsSection(entity.id, 'journal-detail-connections', isPrincipal);
   renderJournalTrustControls(entity);
   loadJournalTrustDetails(entity.id);
@@ -5035,6 +5077,13 @@ function renderJournalEntitySuggestions(entityId, rows) {
       target: row.target || row.target_slug,
       facet: row.facet || ''
     });
+    if (row.evidence?.basis === FACES_MERGE_BASIS) {
+      const why = document.createElement('div');
+      why.className = 'entity-trust-meta';
+      why.dataset.mergeBasis = FACES_MERGE_BASIS;
+      why.textContent = ENT_COPY.ENT_FACES_MERGE_REASON || '';
+      item.appendChild(why);
+    }
     list.appendChild(item);
   });
   container.appendChild(list);
@@ -6155,6 +6204,7 @@ function renderDetailView(entity, observations, detailData) {
     indicators.push(`<span class="voiceprint-icon" aria-hidden="true">${(window.ConveyIcons?.svg('mic-vocal') || '')}</span> Has voiceprint`);
   }
   document.getElementById('detail-indicators').innerHTML = indicators.join(' · ');
+  renderFacetPhotoHint(entity);
 
   // Description
   renderDescriptionSection(entity);
@@ -6996,6 +7046,8 @@ function appendJournalRowCells(row, entity, {notes, day}) {
   const name = document.createElement('span');
   name.className = 'journal-row-name';
   name.textContent = entity.name;
+  const thumb = entityPhotoThumb(entity);
+  if (thumb) name.prepend(thumb);
   if (entity.is_principal) {
     const badge = document.createElement('span');
     badge.className = 'journal-row-badge';
@@ -7201,6 +7253,8 @@ function createEntityCard(entity) {
   const name = document.createElement('div');
   name.className = 'entity-card-name';
   name.textContent = entity.name;
+  const thumb = entityPhotoThumb(entity);
+  if (thumb) name.prepend(thumb);
   card.appendChild(name);
 
   // Meta line (last seen, voiceprint)
@@ -8497,6 +8551,7 @@ function renderDupsPanel() {
       const name = document.createElement('span');
       name.className = 'journal-row-name';
       name.textContent = `${item.names[0]} merges into ${item.names[1]}`;
+      if ((item.bases || []).includes(FACES_MERGE_BASIS)) name.append(facesMergeReason(item));
       const facets = document.createElement('span');
       facets.className = 'journal-dup-facets';
       facets.textContent = facetListText(item.facets || []);
@@ -8750,6 +8805,506 @@ noticeHooks = {
   retryHide: (name) => retryHide({ name }),
 };
 entitiesHooks = noticeHooks;
+
+// --- photos of people: the person-page panel, list thumbnails, merge reasons ---
+// Every face shown here comes from the owner's own meetings. A suggestion is
+// always labelled as one; only the owner's choice is a photo of the person.
+const FACES_MERGE_BASIS = 'meeting-face';
+const facesPanel = {
+  entityId: null,
+  name: '',
+  data: null,
+  busy: false,
+  picking: false,
+  status: null,   // {key, token} after an action, so it can be undone
+  error: null,    // {key, retry} when an action or read didn't land
+  request: 0,
+};
+
+function facesCopy(key, values = {}) {
+  return entityTrustFormat(ENT_COPY[key] || '', values);
+}
+
+function facesBase(entityId) {
+  return `/app/entities/api/journal/entity/${encodeURIComponent(entityId)}`;
+}
+
+/// A face's day reads like a date, never a raw YYYYMMDD.
+function facesDayText(day) {
+  if (!/^\d{8}$/.test(String(day || ''))) return '';
+  const date = parseYYYYMMDD(day);
+  const thisYear = new Date().getFullYear();
+  const options = date.getFullYear() === thisYear
+    ? {month: 'short', day: 'numeric'}
+    : {month: 'short', day: 'numeric', year: 'numeric'};
+  return date.toLocaleDateString('en-US', options).toLowerCase();
+}
+
+/// Where a face came from, in the owner's words: the day, and whether the
+/// face sat by the person's name or in their own video tile.
+function facesProvenance(face) {
+  const where = face.source === 'anchored'
+    ? ENT_COPY.ENT_FACES_SOURCE_ANCHORED
+    : ENT_COPY.ENT_FACES_SOURCE_BOX;
+  const day = facesDayText(face.day);
+  const parts = [];
+  if (day) parts.push(facesCopy('ENT_FACES_FROM_DAY', {day}));
+  if (where) parts.push(where);
+  return parts.join(' · ');
+}
+
+function facesButton(label, onClick, {primary = false, action = ''} = {}) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = primary ? 'btn btn-primary' : 'btn btn-secondary';
+  button.textContent = label;
+  if (action) button.dataset.facesAction = action;
+  button.disabled = facesPanel.busy;
+  button.onclick = onClick;
+  return button;
+}
+
+function facesImage(src, alt, className) {
+  const img = document.createElement('img');
+  img.className = className;
+  img.src = src;
+  img.alt = alt;
+  img.loading = 'lazy';
+  img.decoding = 'async';
+  return img;
+}
+
+/// One face from a meeting, with its provenance and the two answers an owner
+/// can give about it.
+function facesTile(face) {
+  const name = facesPanel.name;
+  const figure = document.createElement('figure');
+  figure.className = 'entity-face';
+  figure.dataset.faceSource = face.source;
+  figure.append(facesImage(
+    face.crop_url,
+    facesCopy('ENT_FACES_FACE_ALT', {name, day: facesDayText(face.day)}),
+    'entity-face-img'
+  ));
+  const caption = facesCaption(face, false);
+  const figcaption = document.createElement('figcaption');
+  figcaption.append(...caption.childNodes);
+  figcaption.className = caption.className;
+  figure.append(figcaption);
+  const row = document.createElement('div');
+  row.className = 'entity-face-actions';
+  row.append(
+    facesButton(ENT_COPY.ENT_FACES_USE || '', () => facesAct('choose', {key: face.key}), {action: 'choose'}),
+    facesButton(facesCopy('ENT_FACES_NOT_THEM', {name}), () => facesAct('reject', {key: face.key}), {action: 'reject'}),
+  );
+  figure.append(row);
+  return figure;
+}
+
+/// The one-face question: the face on one side, what it is and the answers on
+/// the other (stacked on a phone).
+function facesAsk(img, ...body) {
+  const ask = document.createElement('div');
+  ask.className = 'entity-faces-ask';
+  const figure = document.createElement('figure');
+  figure.className = 'entity-faces-ask-face';
+  figure.append(img);
+  const text = document.createElement('div');
+  text.className = 'entity-faces-ask-body';
+  text.append(...body.filter(Boolean));
+  ask.append(figure, text);
+  return ask;
+}
+
+function facesCaption(face, suggested) {
+  const caption = document.createElement('p');
+  caption.className = 'entity-face-caption';
+  if (suggested) {
+    const badge = document.createElement('span');
+    badge.className = 'entity-face-badge';
+    badge.dataset.facesLabel = 'suggested';
+    badge.textContent = ENT_COPY.ENT_FACES_SUGGESTED_BADGE || '';
+    caption.append(badge);
+  }
+  const where = document.createElement('span');
+  where.className = 'entity-face-where';
+  where.textContent = facesProvenance(face);
+  caption.append(where);
+  return caption;
+}
+
+function facesGrid(faces) {
+  const grid = document.createElement('div');
+  grid.className = 'entity-face-grid';
+  faces.forEach((face) => grid.append(facesTile(face)));
+  return grid;
+}
+
+function sameFaceKey(a, b) {
+  return Boolean(a && b) && JSON.stringify(a) === JSON.stringify(b);
+}
+
+function facesSection() {
+  return document.getElementById('journal-detail-photo');
+}
+
+function facesLine(text, kind) {
+  const line = document.createElement('p');
+  line.className = kind === 'error' ? 'entity-faces-line entity-faces-error' : 'entity-faces-line';
+  line.dataset.facesLine = kind;
+  if (kind === 'status') line.setAttribute('role', 'status');
+  if (kind === 'error') line.setAttribute('role', 'alert');
+  const span = document.createElement('span');
+  span.textContent = text;
+  line.append(span);
+  return line;
+}
+
+/// Recovery for a refused or failed action: every one is a next step, never a
+/// dead end. Busy and failed retry the same act; a stale page refreshes.
+function facesErrorLine() {
+  const error = facesPanel.error;
+  const line = facesLine(ENT_COPY[error.key] || ENT_COPY.ENT_FACES_FAILED || '', 'error');
+  line.dataset.facesError = error.key;
+  if (error.key === 'ENT_FACES_DISABLED') {
+    const link = document.createElement('a');
+    link.href = '/app/settings/#vision';
+    link.textContent = ENT_COPY.ENT_FACES_SETTINGS_LINK || '';
+    line.append(' ', link);
+  } else if (error.retry) {
+    line.append(' ', facesButton(ENT_COPY.ENT_FACES_RETRY || '', error.retry, {action: 'retry'}));
+  } else {
+    line.append(' ', facesButton(ENT_COPY.ENT_FACES_REFRESH || '', () => loadFacesPanel(facesPanel.entityId, facesPanel.name), {action: 'refresh'}));
+  }
+  return line;
+}
+
+function facesStatusLine() {
+  const status = facesPanel.status;
+  const line = facesLine(facesCopy(status.key, {name: facesPanel.name}), 'status');
+  if (status.token) {
+    line.append(' ', facesButton(ENT_COPY.ENT_FACES_UNDO || '', () => facesUndo(status.token), {action: 'undo'}));
+  }
+  return line;
+}
+
+function renderFacesPanel() {
+  const section = facesSection();
+  if (!section) return;
+  section.replaceChildren();
+  const data = facesPanel.data;
+  const state = data?.state || 'none';
+  const showing = state !== 'none' || facesPanel.status || facesPanel.error;
+  section.hidden = !showing;
+  section.dataset.facesState = state;
+  if (!showing) return;
+  const name = facesPanel.name;
+  const heading = document.createElement('h4');
+  heading.id = 'journal-detail-photo-heading';
+  heading.textContent = ENT_COPY.ENT_FACES_HEADING || '';
+  section.append(heading);
+  const faces = Array.isArray(data?.faces) ? data.faces : [];
+  const lede = (key) => {
+    const p = document.createElement('p');
+    p.className = 'entity-faces-lede';
+    p.textContent = facesCopy(key, {name});
+    return p;
+  };
+  const actions = (...buttons) => {
+    const row = document.createElement('div');
+    row.className = 'entity-faces-actions';
+    row.append(...buttons);
+    return row;
+  };
+  if (state === 'suggested') {
+    const hero = faces.find((face) => sameFaceKey(face.key, data.default)) || faces[0];
+    const others = faces.filter((face) => face !== hero);
+    const title = document.createElement('p');
+    title.className = 'entity-faces-title';
+    title.textContent = facesCopy('ENT_FACES_SUGGESTED_TITLE', {name});
+    const answers = hero ? actions(
+      facesButton(ENT_COPY.ENT_FACES_YES || '', () => facesAct('choose', {key: hero.key}), {primary: true, action: 'choose'}),
+      facesButton(facesCopy('ENT_FACES_NOT_THEM', {name}), () => facesAct('reject', {key: hero.key}), {action: 'reject'}),
+    ) : null;
+    const more = actions();
+    more.classList.add('entity-faces-more');
+    if (others.length) {
+      const pick = facesButton(ENT_COPY.ENT_FACES_SEE_OTHERS || '', () => {
+        facesPanel.picking = !facesPanel.picking;
+        renderFacesPanel();
+      }, {action: 'pick'});
+      pick.setAttribute('aria-expanded', facesPanel.picking ? 'true' : 'false');
+      more.append(pick);
+    }
+    more.append(facesButton(ENT_COPY.ENT_FACES_NONE || '', () => facesAct('dismiss'), {action: 'dismiss'}));
+    if (hero) {
+      const img = facesImage(hero.crop_url, facesCopy('ENT_FACES_FACE_ALT', {name, day: facesDayText(hero.day)}), 'entity-face-img');
+      section.append(facesAsk(img, title, lede('ENT_FACES_SUGGESTED_LEDE'), facesCaption(hero, true), answers, more));
+    } else {
+      section.append(title, lede('ENT_FACES_SUGGESTED_LEDE'), more);
+    }
+    if (facesPanel.picking && others.length) section.append(facesGrid(others));
+  } else if (state === 'possible') {
+    const title = document.createElement('p');
+    title.className = 'entity-faces-title';
+    title.textContent = facesCopy('ENT_FACES_POSSIBLE_TITLE', {name});
+    section.append(title, lede('ENT_FACES_POSSIBLE_LEDE'), facesGrid(faces));
+    section.append(actions(facesButton(ENT_COPY.ENT_FACES_NONE || '', () => facesAct('dismiss'), {action: 'dismiss'})));
+  } else if (state === 'confirmed') {
+    // The chosen photo is the owner's own copy, read fresh after every change.
+    const img = facesImage(
+      `${facesBase(facesPanel.entityId)}/photo?v=${encodeURIComponent(data.last_action || '')}`,
+      facesCopy('ENT_FACES_CHOSEN_ALT', {name}),
+      'entity-face-img'
+    );
+    const others = faces.filter((face) => !sameFaceKey(face.key, data.default));
+    const row = actions();
+    if (others.length) {
+      const change = facesButton(ENT_COPY.ENT_FACES_CHANGE || '', () => {
+        facesPanel.picking = !facesPanel.picking;
+        renderFacesPanel();
+      }, {action: 'pick'});
+      change.setAttribute('aria-expanded', facesPanel.picking ? 'true' : 'false');
+      row.append(change);
+    }
+    row.append(facesButton(ENT_COPY.ENT_FACES_REMOVE || '', () => facesAct('dismiss'), {action: 'dismiss'}));
+    section.append(facesAsk(img, lede('ENT_FACES_CONFIRMED_LEDE'), row));
+    if (facesPanel.picking && others.length) section.append(facesGrid(others));
+  } else if (state === 'dismissed') {
+    section.append(lede('ENT_FACES_DISMISSED_LEDE'));
+    if (data.last_action && !facesPanel.status) {
+      section.append(actions(facesButton(ENT_COPY.ENT_FACES_SHOW_AGAIN || '', () => facesUndo(data.last_action), {action: 'undo'})));
+    }
+  }
+  if (facesPanel.status) section.append(facesStatusLine());
+  if (facesPanel.error) section.append(facesErrorLine());
+}
+
+/// The reason codes the face routes refuse with, each mapped to a next step.
+function facesErrorKey(err, undoing = false) {
+  switch (err?.reasonCode) {
+    case 'faces_busy': return 'ENT_FACES_BUSY';
+    // An undo that is no longer the latest action, or a face that changed
+    // after the page read it: either way, refresh.
+    case 'face_action_changed': return undoing ? 'ENT_FACES_CHANGED' : 'ENT_FACES_STALE';
+    case 'faces_disabled': return 'ENT_FACES_DISABLED';
+    case 'face_not_found': return 'ENT_FACES_GONE';
+    default: return 'ENT_FACES_FAILED';
+  }
+}
+
+async function loadFacesPanel(entityId, name, {keep = false} = {}) {
+  const request = ++facesPanel.request;
+  if (facesPanel.entityId !== entityId) {
+    facesPanel.status = null;
+    facesPanel.picking = false;
+  }
+  facesPanel.entityId = entityId;
+  facesPanel.name = name;
+  if (!keep) facesPanel.error = null;
+  try {
+    const data = await apiJson(`${facesBase(entityId)}/faces`);
+    if (request !== facesPanel.request || currentDetailEntity?.id !== entityId) return;
+    facesPanel.data = data;
+  } catch (err) {
+    if (request !== facesPanel.request || currentDetailEntity?.id !== entityId) return;
+    facesPanel.data = null;
+    facesPanel.error = {key: 'ENT_FACES_LOAD_FAILED', retry: () => loadFacesPanel(entityId, name)};
+  }
+  renderFacesPanel();
+}
+
+/// Open the panel for a newly shown person. Nothing is fetched while the
+/// switch is off or there is nothing to choose from: the page looks as before.
+function openFacesPanel(entity) {
+  facesPanel.request += 1;
+  facesPanel.entityId = entity.id;
+  facesPanel.name = entity.name || '';
+  facesPanel.data = {state: entity.photo_state || 'none', faces: []};
+  facesPanel.status = null;
+  facesPanel.error = null;
+  facesPanel.picking = false;
+  facesPanel.busy = false;
+  renderFacesPanel();
+  if (entity.photo_state && entity.photo_state !== 'none') loadFacesPanel(entity.id, facesPanel.name);
+}
+
+function resetFacesPanel() {
+  facesPanel.request += 1;
+  facesPanel.entityId = null;
+  facesPanel.data = null;
+  facesPanel.status = null;
+  facesPanel.error = null;
+  facesPanel.picking = false;
+  facesPanel.busy = false;
+  renderFacesPanel();
+}
+
+const FACES_DONE_KEYS = {
+  choose: 'ENT_FACES_DONE_CHOSEN',
+  reject: 'ENT_FACES_DONE_REJECTED',
+  dismiss: 'ENT_FACES_DONE_DISMISSED',
+};
+
+async function facesAct(verb, body) {
+  const entityId = facesPanel.entityId;
+  if (!entityId || facesPanel.busy) return;
+  facesPanel.busy = true;
+  facesPanel.error = null;
+  renderFacesPanel();
+  let refresh = true;
+  try {
+    const result = await apiJson(`${facesBase(entityId)}/faces/${verb}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (currentDetailEntity?.id !== entityId) return;
+    facesPanel.status = {key: FACES_DONE_KEYS[verb], token: result?.token || null};
+    facesPanel.picking = false;
+  } catch (err) {
+    if (currentDetailEntity?.id !== entityId) return;
+    const key = facesErrorKey(err);
+    const retryable = key === 'ENT_FACES_BUSY' || key === 'ENT_FACES_FAILED';
+    facesPanel.error = {key, retry: retryable ? () => facesAct(verb, body) : null};
+    refresh = !retryable;
+  } finally {
+    if (currentDetailEntity?.id === entityId) facesPanel.busy = false;
+  }
+  if (refresh) await loadFacesPanel(entityId, facesPanel.name, {keep: true});
+  else renderFacesPanel();
+  refreshFacesThumbs(entityId);
+}
+
+async function facesUndo(token) {
+  const entityId = facesPanel.entityId;
+  if (!entityId || facesPanel.busy || !token) return;
+  facesPanel.busy = true;
+  facesPanel.error = null;
+  renderFacesPanel();
+  let refresh = true;
+  try {
+    await apiJson(`${facesBase(entityId)}/faces/undo`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({token}),
+    });
+    if (currentDetailEntity?.id !== entityId) return;
+    facesPanel.status = {key: 'ENT_FACES_UNDONE', token: null};
+  } catch (err) {
+    if (currentDetailEntity?.id !== entityId) return;
+    const key = facesErrorKey(err, true);
+    const retryable = key === 'ENT_FACES_BUSY' || key === 'ENT_FACES_FAILED';
+    facesPanel.status = null;
+    facesPanel.error = {key, retry: retryable ? () => facesUndo(token) : null};
+    refresh = !retryable;
+  } finally {
+    if (currentDetailEntity?.id === entityId) facesPanel.busy = false;
+  }
+  if (refresh) await loadFacesPanel(entityId, facesPanel.name, {keep: true});
+  else renderFacesPanel();
+  refreshFacesThumbs(entityId);
+}
+
+/// A confirmed photo, small, beside a name in a list. Only the owner's choice
+/// is shown here (`has_photo`); without one the row looks as it always has.
+function entityPhotoThumb(entity, className = 'entity-photo-thumb') {
+  if (!entity?.has_photo || !entity.id) return null;
+  const img = facesImage(`${facesBase(entity.id)}/photo`, '', className);
+  img.dataset.photoFor = entity.id;
+  img.setAttribute('aria-hidden', 'true');
+  img.onerror = () => img.remove();
+  return img;
+}
+
+/// After a change on the person's page, list thumbnails already drawn for
+/// them read the photo again (or drop it when there is none any more).
+function refreshFacesThumbs(entityId) {
+  const state = facesPanel.data?.state;
+  document.querySelectorAll?.('img[data-photo-for]')?.forEach?.((img) => {
+    if (img.dataset.photoFor !== entityId) return;
+    if (state === 'confirmed') img.src = `${facesBase(entityId)}/photo?v=${Date.now()}`;
+    else img.remove();
+  });
+}
+
+/// What a face-based merge suggestion can show for one person: their chosen
+/// photo, else a face from their meetings marked as not confirmed, else nothing.
+async function facesPreview(entityId) {
+  try {
+    const data = await apiJson(`${facesBase(entityId)}/faces`);
+    const faces = Array.isArray(data?.faces) ? data.faces : [];
+    if (data?.state === 'confirmed') return {src: `${facesBase(entityId)}/photo`, confirmed: true};
+    const face = faces.find((f) => sameFaceKey(f.key, data?.default)) || faces[0];
+    if (face && (data?.state === 'suggested' || data?.state === 'possible')) {
+      return {src: face.crop_url, confirmed: false};
+    }
+  } catch (err) {
+    // A missing preview leaves the suggestion's words to stand on their own.
+  }
+  return null;
+}
+
+function facesMergeReason(item) {
+  const reason = document.createElement('span');
+  reason.className = 'journal-dup-reason';
+  reason.dataset.mergeBasis = FACES_MERGE_BASIS;
+  const faces = document.createElement('span');
+  faces.className = 'journal-dup-faces';
+  const text = document.createElement('span');
+  text.className = 'journal-dup-reason-text';
+  text.textContent = ENT_COPY.ENT_FACES_MERGE_REASON || '';
+  reason.append(faces, text);
+  item.pair.forEach((entityId, index) => {
+    const slot = document.createElement('span');
+    slot.className = 'journal-dup-face';
+    faces.append(slot);
+    facesPreview(entityId).then((preview) => {
+      if (!preview) { slot.remove(); return; }
+      const name = item.names[index] || entityId;
+      slot.append(facesImage(
+        preview.src,
+        facesCopy(preview.confirmed ? 'ENT_FACES_CHOSEN_ALT' : 'ENT_FACES_UNCONFIRMED_ALT', {name}),
+        'journal-dup-face-img'
+      ));
+      if (!preview.confirmed) {
+        const badge = document.createElement('span');
+        badge.className = 'entity-face-badge';
+        badge.dataset.facesLabel = 'unconfirmed';
+        badge.textContent = ENT_COPY.ENT_FACES_UNCONFIRMED_BADGE || '';
+        slot.append(badge);
+      }
+    });
+  });
+  return reason;
+}
+/// A person's page inside a facet shows their chosen photo, or says photos
+/// are ready to choose from on their all-facets page, where the choice lives.
+function renderFacetPhotoHint(entity) {
+  const indicators = document.getElementById('detail-indicators');
+  if (!indicators) return;
+  let hint = document.getElementById('detail-photo-hint');
+  if (!hint) {
+    hint = document.createElement('div');
+    hint.id = 'detail-photo-hint';
+    hint.className = 'entity-photo-hint';
+    indicators.parentNode.insertBefore(hint, indicators.nextSibling);
+  }
+  hint.replaceChildren();
+  const state = entity?.photo_state || 'none';
+  const thumb = entityPhotoThumb(entity, 'entity-photo-thumb entity-photo-thumb-lg');
+  if (thumb) hint.append(thumb);
+  if (state === 'possible' || state === 'suggested') {
+    const link = document.createElement('a');
+    link.href = '#';
+    link.dataset.facesLabel = 'choose';
+    link.onclick = (event) => { event.preventDefault(); selectEntityScope(null); };
+    link.textContent = facesCopy('ENT_FACES_FACET_HINT', {name: entity.name || ''});
+    hint.append(link);
+  }
+  hint.hidden = hint.childNodes.length === 0;
+}
+// --- end photos of people ---
 
 ctx.onDispose(() => {
   if (entitiesHooks === noticeHooks) entitiesHooks = null;
