@@ -787,6 +787,16 @@ function answerHeld(p, test, body, status = 200, extra) {
   p.calls.filter((call) => !call.settled && test(call)).forEach((call) => call.answer(body, status, extra));
 }
 
+// The gone view's markup, as it was when the owner left: no status line,
+// the pressed button still busy.
+function goneViewUntouched(root, outcome) {
+  const gone = root.deref();
+  assert.ok(gone, 'the gone markup is still reachable here');
+  assert.ok(gone.querySelector('[data-backlog-status="20261110"]').textContent === '', `${outcome}: no status line in the gone view`);
+  const pressed = gone.querySelector('[data-backlog-day="20261110"][data-backlog-flavor="process-now"]');
+  assert.ok(pressed.getAttribute('aria-busy') === 'true', `${outcome}: the gone view is left as it was`);
+}
+
 const isStats = (call) => call.url === '/app/stats/api/stats';
 const isWrite = (call) => call.method === 'POST' && call.url === '/app/health/api/reprocess';
 const GONE = ['Dashboard', 'BACKLOG_COPY', 'mountStats', 'render', 'load', 'reportStatsReady', 'requestBacklogReprocess', 'renderBacklog', 'select', 'renderRollup'];
@@ -930,6 +940,9 @@ module.exports = async function statsContractCases(crateDir) {
       else write.answer({ error: 'no' }, 503);
       await settle();
       assert.ok(p.mutations() === before, `${outcome}: nothing drawn`);
+      // Not into the gone markup either. Read in a function of its own, so
+      // nothing it touched stays on this case's frame.
+      goneViewUntouched(root, outcome);
       assert.ok(p.errors.length === 0, `${outcome}: nothing logged from a gone view`);
       if (typeof global.gc === 'function') {
         await settle();
