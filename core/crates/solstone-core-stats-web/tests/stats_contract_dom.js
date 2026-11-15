@@ -849,7 +849,7 @@ module.exports = async function statsContractCases(crateDir) {
     assert.ok(p.qa('.stat-card').length === 5, 'five tiles');
     assert.ok(p.qa('[data-backlog-flavor]').length === 4, 'two backlog days, two actions each');
     assert.ok(p.qa('.token-rollup__bar').length === 2, 'the rollup reached the card');
-    assert.ok(p.find('button', 'refresh')?.hidden === false, 'refresh is shown');
+    assert.ok(p.find('button', 'refresh')?.isConnected === true, 'refresh is drawn');
     assert.deepStrictEqual(p.ready, ['content']);
     assert.ok(p.errors.length === 0, 'no error logged');
   });
@@ -984,6 +984,7 @@ module.exports = async function statsContractCases(crateDir) {
     p.statuses.push([isStats, 503]);
     await p.mount();
     assert.deepStrictEqual(p.ready, ['error']);
+    assert.ok(p.find('button', 'refresh') === null, 'no refresh is drawn before an answer has been');
     p.statuses.length = 0;
     p.press(p.find('#stats-read-error button', 'try again'));
     await settle();

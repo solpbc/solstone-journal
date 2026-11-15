@@ -1314,8 +1314,10 @@
     const freshnessEl = root.querySelector('#statsFreshness');
     const freshnessText = document.createElement('span');
     freshnessText.className = 'stats-freshness-text';
-    const refreshButton = el('button', {type: 'button', className: 'stats-refresh', 'data-stats-action': 'refresh', hidden: ''}, ['refresh']);
-    freshnessEl.replaceChildren(freshnessText, refreshButton);
+    // Drawn into the freshness line by the first answer that has one, as the
+    // page always has: not while it loads or when the read fails first.
+    const refreshButton = el('button', {type: 'button', className: 'stats-refresh', 'data-stats-action': 'refresh'}, ['refresh']);
+    freshnessEl.replaceChildren(freshnessText);
 
     let reported = false;
     let drawn = null;
@@ -1341,7 +1343,7 @@
           ? 'updated ' + relativeTime(Date.now() - new Date(generatedAt).getTime()) + ' ago'
           : '';
         if (freshnessText.textContent !== text) freshnessText.textContent = text;
-        if (refreshButton.hidden) refreshButton.hidden = false;
+        if (!refreshButton.isConnected) freshnessEl.append(refreshButton);
       },
       rollup(byDay) { card.rollup(byDay); }
     };
