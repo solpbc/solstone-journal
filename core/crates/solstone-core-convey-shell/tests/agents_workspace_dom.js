@@ -79,10 +79,17 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
   const fields = Object.fromEntries(['outcome', 'tool', 'agent', 'from', 'to', 'byo-hostname', 'byo-relay-address', 'byo-relay-port'].map(key => [key.startsWith('byo-') ? key : `a-${key}`, {value: ''}]));
   const view = {
     _html: '',
+    // Stand-ins for the view's top-level nodes: a new one for each write, so the page's check
+    // that the view still holds what it drew sees every write, as a browser's nodes would show.
+    _nodes: [],
+    get firstChild() { return this._nodes[0] || null; },
+    get lastChild() { return this._nodes[this._nodes.length - 1] || null; },
+    get childNodes() { return this._nodes; },
     focused: null,
     get innerHTML() { return this._html; },
     set innerHTML(value) {
       this._html = value;
+      this._nodes = [{}];
       for (const [key, field] of Object.entries(fields)) {
         if (key.startsWith('a-')) field.value = '';
         else {
@@ -94,10 +101,10 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
     listeners: {},
     addEventListener(name, listener) { (this.listeners[name] ||= []).push(listener); },
     querySelector(selector) {
-      if (selector === '.modal' && this._html.includes('<div class="modal"')) return {remove: () => { this._html = this._html.slice(0, this._html.indexOf('<div class="modal"')); }};
+      if (selector === '.modal' && this._html.includes('<div class="modal"')) return {remove: () => { this._html = this._html.slice(0, this._html.indexOf('<div class="modal"')); this._nodes = [this._nodes[0] || {}, {}]; }};
       if (selector === '.modal-card:last-of-type' && this._html.includes('modal-card')) {
         const view = this;
-        return {insertAdjacentHTML(_position, text) { view._html += text; }};
+        return {insertAdjacentHTML(_position, text) { view._html += text; view._nodes = [...view._nodes, {}]; }};
       }
       const idMatch = selector.match(/^#([a-zA-Z0-9_-]+)$/);
       if (idMatch && fields[idMatch[1]]) return fields[idMatch[1]];
@@ -115,7 +122,7 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
       }
       return [];
     },
-    insertAdjacentHTML(_, text) { this._html += text; },
+    insertAdjacentHTML(_, text) { this._html += text; this._nodes = [...this._nodes, {}]; },
   };
   const location = {
     origin: 'http://127.0.0.1:8080',

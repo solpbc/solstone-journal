@@ -134,7 +134,10 @@ class Element extends Target {
     this.attrs = new Map();
     this.childNodes = [];
     this.parentNode = null;
-    this.value = '';
+    // A field's value follows its `value` attribute until something sets it, as a browser's does,
+    // with a caret that a new value puts at the end.
+    this._value = null;
+    this._caret = null;
     this.disabled = false;
     this.checked = false;
     this._style = null;
@@ -153,6 +156,13 @@ class Element extends Target {
     });
   }
   get style() { if (!this._style) this._style = makeStyle(this); return this._style; }
+  get value() { return this._value ?? this.getAttribute('value') ?? ''; }
+  set value(v) { this._value = String(v ?? ''); this._caret = null; }
+  get defaultValue() { return this.getAttribute('value') ?? ''; }
+  get selectionStart() { return this._caret ? this._caret[0] : this.value.length; }
+  get selectionEnd() { return this._caret ? this._caret[1] : this.value.length; }
+  get selectionDirection() { return this._caret ? this._caret[2] : 'none'; }
+  setSelectionRange(start, end, direction = 'none') { this._caret = [start, end, direction]; }
   get children() { return this.childNodes.filter((n) => n.nodeType === 1); }
   get parentElement() { return this.parentNode && this.parentNode.nodeType === 1 ? this.parentNode : null; }
   get firstElementChild() { return this.children[0] || null; }
@@ -1224,7 +1234,7 @@ module.exports = async function agentsContractCases(manifestDir) {
   });
 
   await test('a control whose write is out is busy, never disabled, ignores presses, stays busy through a redraw, and clears on its answer', async () => {
-    const { answers } = living({ local_door: DOOR_OFF }, { 'PUT /app/agents/api/local-door': (box) => { box.st = { ...box.st, local_door: DOOR_ON }; return {}; } });
+    const { box, answers } = living({ local_door: DOOR_OFF }, { 'PUT /app/agents/api/local-door': (box) => { box.st = { ...box.st, local_door: DOOR_ON }; return {}; } });
     const p = await boot(env, '/app/agents/', { answers });
     p.holds.push((call) => call.method === 'PUT');
     const own = sw(p, 'agents on this device');
@@ -1234,7 +1244,17 @@ module.exports = async function agentsContractCases(manifestDir) {
     p.press(own);
     await settle();
     assert.ok(p.writes().length === 1, `a press while busy writes nothing (${p.writes().length})`);
-    // The 20 s poll draws the page again while the write is out.
+    // A 20 s poll that changes nothing leaves the switch, busy, as it was, and writes nothing to it.
+    let marks = 0;
+    const set = own.setAttribute;
+    own.setAttribute = function (...args) { marks += 1; return set.apply(this, args); };
+    p.clock.advance(20000);
+    await settle();
+    own.setAttribute = set;
+    assert.ok(sw(p, 'agents on this device') === own && own.getAttribute('aria-busy') === 'true', 'a poll that changes nothing leaves the busy switch alone');
+    assert.ok(marks === 0, `and marks nothing on it again (${marks})`);
+    // One that changes something draws the page again while the write is out.
+    box.st = { ...box.st, lan_door: LAN_ON };
     p.clock.advance(20000);
     await settle();
     const redrawn = sw(p, 'agents on this device');
@@ -1342,7 +1362,7 @@ module.exports = async function agentsContractCases(manifestDir) {
     for (const action of ['byo-relay-check', 'byo-dns-check']) {
       const button = p.q(`[data-action="${action}"]`);
       await keyPress(p, button);
-      assert.ok(!button.isConnected, `${action} was drawn again`);
+      // Drawn again where its answer changed the page, left as it was where it didn't.
       lands(p, p.q(`[data-action="${action}"]`), `${action}: the same button`);
     }
     await keyPress(p, p.q('[data-action="byo-on"]'));
@@ -1506,16 +1526,247 @@ module.exports = async function agentsContractCases(manifestDir) {
     lands(p, p.q('a[data-route="activity"]'), 'back from activity: "recent activity"');
   });
 
-  await test('a redraw by a poll keeps focus where it was, and leaves focus outside agents alone', async () => {
+  // ---- a poll that changes nothing leaves the page alone; a field being typed in keeps its text
+  const viewNodes = (p) => {
+    const out = [];
+    const walk = (node) => { out.push(node); (node.childNodes || []).forEach(walk); };
+    walk(p.q('#agents-view'));
+    return out;
+  };
+  const sameNodes = (p, before, why) => {
+    const after = viewNodes(p);
+    assert.ok(after.length === before.length && after.every((node, i) => node === before[i]), why);
+  };
+  await test('a poll that changes nothing leaves the page alone; one that changes something keeps focus where it was', async () => {
     const down = { enabled: true, listening: false, reason: 'not_running', address: 'http://127.0.0.1:7659/mcp' };
-    const p = await boot(env, '/app/agents/', { answers: living({ local_door: down }).answers });
+    const { box, answers } = living({ local_door: down });
+    const p = await boot(env, '/app/agents/', { answers });
     const own = sw(p, 'agents on this device');
     own.focus();
+    const nodes = viewNodes(p);
     const reads = p.reads('/app/agents/api/state').length;
     p.clock.advance(20000);
     await settle();
-    assert.ok(p.reads('/app/agents/api/state').length === reads + 1 && !own.isConnected, 'the poll read and drew again');
+    assert.ok(p.reads('/app/agents/api/state').length === reads + 1, 'the poll read');
+    assert.ok(own.isConnected && p.doc.activeElement === own, 'the 20 s re-read with nothing changed: the same switch, the same node');
+    sameNodes(p, nodes, 'and every node in the view is the one it was');
+    box.st = { ...box.st, local_door: { ...down, reason: 'port_in_use' } };
+    p.clock.advance(20000);
+    await settle();
+    assert.ok(!own.isConnected, 'a re-read that changes something draws again');
     lands(p, sw(p, 'agents on this device'), 'the 20 s re-read: the same switch');
+  });
+
+  // The DNS check answers what `dns.verdict` says, so a test can change it between polls.
+  function byoJournal(start, dns) {
+    return living({ byo: BYO, ...start }, {
+      'POST /app/agents/api/byo/dns-check': () => ({ verdict: dns.verdict, addresses: dns.addresses || [], diagnostics: [] }),
+    });
+  }
+
+  await test('your own domain: a DNS poll that changes nothing leaves the page alone', async () => {
+    const dns = { verdict: 'unchecked' };
+    const { answers } = byoJournal({}, dns);
+    const p = await boot(env, '/app/agents/', { answers });
+    await keyPress(p, p.q('[data-lane="byo"]'));
+    p.clock.advance(20000);
+    await settle();
+    const check = p.q('[data-action="byo-dns-check"]');
+    check.focus();
+    const before = viewNodes(p);
+    p.clock.advance(20000);
+    await settle();
+    assert.ok(p.calls.filter((c) => c.url.endsWith('/byo/dns-check')).length >= 2, 'the poll asked again');
+    lands(p, check, 'the DNS poll with nothing new: the same "check", the same node');
+    sameNodes(p, before, 'and every node in the view is the one it was');
+  });
+
+  await test('a read with the same state after an error draws the page again, and a copied button reads "copy" again at the next draw', async () => {
+    const down = { enabled: true, listening: false, reason: 'not_running', address: 'http://127.0.0.1:7659/mcp' };
+    const p = await boot(env, '/app/agents/', { answers: living({ local_door: down }).answers });
+    p.statuses.push([(call) => call.url === '/app/agents/api/state', 503]);
+    p.clock.advance(20000);
+    await settle();
+    assert.ok(p.q('[data-action="reload"]'), 'the poll\'s failed read drew the error');
+    p.statuses.length = 0;
+    await keyPress(p, p.q('[data-action="reload"]'));
+    assert.ok(!p.q('[data-action="reload"]') && sw(p, 'agents on this device'), 'the same state as before the error draws the page again');
+    const copy = p.q('[data-copy]');
+    p.press(copy);
+    await settle();
+    assert.ok(copy.textContent === 'copied', 'the button says it copied');
+    p.clock.advance(20000);
+    await settle();
+    assert.ok(p.q('[data-copy]').textContent === 'copy', `the next draw puts "copy" back (${p.q('[data-copy]').textContent})`);
+  });
+
+  await test('your own domain: the DNS poll keeps the server address being typed, its caret and focus', async () => {
+    const dns = { verdict: 'unchecked' };
+    const { answers } = byoJournal({}, dns);
+    const p = await boot(env, '/app/agents/', { answers });
+    await keyPress(p, p.q('[data-lane="byo"]'));
+    const field = p.q('#byo-relay-address');
+    field.focus();
+    field.value = '198.51.100.7';
+    field.setSelectionRange(4, 7, 'forward');
+    dns.verdict = 'admitted';
+    dns.addresses = ['203.0.113.24'];
+    p.clock.advance(20000);
+    await settle();
+    const now = p.q('#byo-relay-address');
+    assert.ok(now !== field, 'the poll drew the lane again');
+    assert.ok(now.value === '198.51.100.7', `the typed address is kept (${now.value})`);
+    lands(p, now, 'focus stays in the field');
+    assert.ok(now.selectionStart === 4 && now.selectionEnd === 7 && now.selectionDirection === 'forward', 'with its caret');
+  });
+
+  await test('your own domain: the SSH port being typed keeps its text, and its box stays open', async () => {
+    const dns = { verdict: 'unchecked' };
+    const { answers } = byoJournal({}, dns);
+    const p = await boot(env, '/app/agents/', { answers });
+    await keyPress(p, p.q('[data-lane="byo"]'));
+    const port = p.q('#byo-relay-port');
+    port.closest('details').open = true;
+    port.focus();
+    port.value = '2222';
+    port.setSelectionRange(4, 4);
+    dns.verdict = 'admitted';
+    p.clock.advance(20000);
+    await settle();
+    const now = p.q('#byo-relay-port');
+    assert.ok(now !== port && now.closest('details').open, 'drawn again, in a box still open');
+    assert.ok(now.value === '2222', `the typed port is kept (${now.value})`);
+    lands(p, now, 'focus stays in the port');
+    assert.ok(now.selectionStart === 4 && now.selectionEnd === 4, 'with its caret');
+  });
+
+  await test('your own domain: the 20 s re-read keeps the address being typed, and the journal\'s own value wins once it changes', async () => {
+    const { box, answers } = living({ lan_door: LAN_ON, byo: { hostname: null } });
+    const p = await boot(env, '/app/agents/', { answers });
+    await keyPress(p, p.q('[data-lane="byo"]'));
+    await keyPress(p, p.q('[data-action="byo-setup"]'));
+    const field = p.q('#byo-hostname');
+    field.focus();
+    field.value = 'journal.exam';
+    field.setSelectionRange(12, 12);
+    // solstone.me goes offline meanwhile: its choice above the lane says so.
+    box.st = { ...box.st, enabled: true, status: 'offline', owner_state: { address: 'abcd1234.solstone.me', status: 'offline' } };
+    p.clock.advance(20000);
+    await settle();
+    const now = p.q('#byo-hostname');
+    assert.ok(now !== field, 'the re-read drew the page again');
+    assert.ok(now.value === 'journal.exam', `the typed address is kept (${now.value})`);
+    lands(p, now, 'focus stays in the field');
+    assert.ok(now.selectionStart === 12 && now.selectionEnd === 12, 'with its caret');
+    // A server address the owner typed, then saved elsewhere: the journal's value wins.
+    const saved = living({ lan_door: LAN_ON, byo: BYO });
+    const q = await boot(env, '/app/agents/', { answers: saved.answers });
+    await keyPress(q, q.q('[data-lane="byo"]'));
+    const typed = q.q('#byo-relay-address');
+    typed.focus();
+    typed.value = '198.51.100.7';
+    saved.box.st = { ...saved.box.st, byo: { ...BYO, relay: { ...BYO.relay, address: '192.0.2.9' } } };
+    q.clock.advance(20000);
+    await settle();
+    assert.ok(q.q('#byo-relay-address').value === '192.0.2.9', `the journal's new value is shown (${q.q('#byo-relay-address').value})`);
+  });
+
+  await test('a back onto an own entry with the box open, opened from its focused control, lands on the workspace', async () => {
+    const q = await boot(env);
+    q.window.history.pushState(null, '', '#x');
+    q.window.fire({ type: 'popstate', state: null });
+    await settle();
+    // The modal layer's two moves that matter here, as the shell's makes them: focus moved out of
+    // the open dialog is pulled back into it, and once the dialog is gone the control that last had
+    // focus outside it gets it back, if it's still on the page and the close wasn't a move's.
+    const focus = Element.prototype.focus;
+    let open = null;
+    let outside = null;
+    Element.prototype.focus = function () {
+      focus.call(this);
+      if (q.doc.activeElement !== this) return;
+      if (open && open.isConnected && !open.contains(this)) focus.call(open.querySelector('button'));
+      else if (!open) outside = this;
+    };
+    q.window.ConveyModalLayer = {
+      reconcile(options) {
+        const dialog = q.q('[role="dialog"]');
+        if (dialog) { open = dialog; return; }
+        const was = open;
+        open = null;
+        if (was && !(options && options.restore === false) && outside && outside.isConnected) outside.focus();
+      },
+    };
+    try {
+      await keyPress(q, q.q('[data-action="connect"]'));
+      q.window.ConveyModalLayer.reconcile();
+      q.q('.modal-card [data-close-modal]').focus();
+      assert.ok(q.doc.activeElement.closest('[role="dialog"]'), 'focus is in the dialog');
+      const hops = [];
+      const layer = Element.prototype.focus;
+      Element.prototype.focus = function () { layer.call(this); hops.push(focusOn(q)); };
+      q.window.history.back();
+      await settle();
+      Element.prototype.focus = layer;
+      assert.ok(q.q('[role="dialog"]') === null, 'the back closed the dialog');
+      assert.ok(focusOn(q) === 'MAIN#main-content', `focus is on the workspace, not the page (${focusOn(q)})`);
+      // One move, straight there: nothing pulled back into the closing dialog for a reader to speak.
+      assert.ok(hops.join(' → ') === 'MAIN#main-content', `focus moved once (${hops.join(' → ')})`);
+      // Opened by a tap that left focus on agents' root, as Safari's does: the back still lands on
+      // the workspace, with no stop on the root on the way.
+      q.window.history.pushState(null, '', '#y');
+      q.q('#agents-root').focus();
+      q.press(q.q('[data-action="connect"]'));
+      await settle();
+      q.window.ConveyModalLayer.reconcile();
+      q.q('.modal-card [data-close-modal]').focus();
+      const seen = [];
+      const record = Element.prototype.focus;
+      Element.prototype.focus = function () { record.call(this); seen.push(focusOn(q)); };
+      q.window.history.back();
+      await settle();
+      Element.prototype.focus = record;
+      assert.ok(q.q('[role="dialog"]') === null && focusOn(q) === 'MAIN#main-content', `a tap's box: the back lands on the workspace (${focusOn(q)})`);
+      assert.ok(!seen.includes('MAIN#agents-root'), `with no stop on agents' root (${seen.join(' → ')})`);
+      // Focus already lost to the page when the back comes: the workspace too.
+      q.window.history.pushState(null, '', '#z');
+      await keyPress(q, q.q('[data-action="connect"]'));
+      q.window.ConveyModalLayer.reconcile();
+      q.doc.activeElement.blur();
+      q.window.history.back();
+      await settle();
+      assert.ok(focusOn(q) === 'MAIN#main-content', `focus lost before the back: the workspace (${focusOn(q)})`);
+    } finally {
+      Element.prototype.focus = focus;
+    }
+  });
+
+  await test('a draw that changes nothing still shows the time-zone note once the journal\'s zone differs', async () => {
+    const zone = { differs: false };
+    const offline = { enabled: true, status: 'starting', owner_state: { address: 'abcd1234.solstone.me', status: 'starting', certificate_leg: 'not_this_week', next_attempt_at: '2026-11-14T12:00:00Z' } };
+    const { answers } = living({ ...offline, lan_door: LAN_ON });
+    const p = await boot(env, '/app/agents/', { answers });
+    {
+      p.window.JournalClock = {
+        formatInstant: () => '12:00',
+        differs: () => zone.differs,
+        zoneNoteText: () => 'journal time',
+        placeNote(anchor, options) {
+          const doc = anchor.ownerDocument;
+          let note = anchor.querySelector('[data-zone-note]');
+          if (!zone.differs) { note?.remove(); return; }
+          if (!note) { note = doc.createElement('span'); note.setAttribute('data-zone-note', ''); anchor.append(note); }
+          note.textContent = 'journal time';
+        },
+      };
+    }
+    await keyPress(p, p.q('[data-lane="me"]'));
+    assert.ok(p.q('[data-next-attempt]'), 'the page shows when solstone.me tries again');
+    assert.ok(!p.q('[data-zone-note]'), 'no note while the zones agree');
+    zone.differs = true;
+    p.clock.advance(20000);
+    await settle();
+    assert.ok(p.q('[data-zone-note]'), 'the next draw shows the note, though the page is otherwise the same');
   });
 
   await test('a redraw leaves focus outside agents alone: on the rail, or on a shell notice', async () => {
