@@ -59,6 +59,14 @@ function settle() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+// The page's write-on-a-difference helpers, which the functions sliced out of it call.
+function quietHelpers(workspace) {
+  const start = workspace.indexOf('    function setText(');
+  const end = workspace.indexOf('    function revealStatusPanel(', start);
+  assert.ok(start !== -1 && end !== -1, 'the page has its write-on-a-difference helpers');
+  return workspace.slice(start, end);
+}
+
 function renderEmptyStateHTML(workspace, copy) {
   const start = workspace.indexOf('function emptyStateHTML() {');
   const end = workspace.indexOf('function clientStatsHTML', start);
@@ -74,7 +82,7 @@ function renderEmptyStateHTML(workspace, copy) {
     },
     escapeHtml: (value) => String(value),
   });
-  vm.runInContext(workspace.slice(start, end), context, { filename: 'workspace-empty-state.js' });
+  vm.runInContext(quietHelpers(workspace) + workspace.slice(start, end), context, { filename: 'workspace-empty-state.js' });
   return context.emptyStateHTML();
 }
 
@@ -96,7 +104,7 @@ function localNetworkEnvironment(workspace, copy) {
     applyLocalNetworkToReach() {},
     refreshStatus() {},
   });
-  vm.runInContext(workspace.slice(start, end), context, { filename: 'workspace-local-network.js' });
+  vm.runInContext(quietHelpers(workspace) + workspace.slice(start, end), context, { filename: 'workspace-local-network.js' });
   return { nodes, render: context.renderLocalNetwork };
 }
 
@@ -587,6 +595,7 @@ async function main() {
   const manifestDir = path.resolve(process.argv[2]);
   if (!manifestDir) throw new Error('manifest directory required');
   const workspace = fs.readFileSync(path.join(manifestDir, 'assets/network/workspace.html'), 'utf8');
+
   await testCase('a retained Windows Block rule replaces the open-network claim and clears after recovery', async () => {
     const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/network_copy.json'), 'utf8'));
     const env = localNetworkEnvironment(workspace, copy);
@@ -841,7 +850,7 @@ async function main() {
         validMarkSpec: () => false,
         applyIdentityToAll() {},
       });
-      vm.runInContext(workspace.slice(start, end), context, { filename: 'workspace-load-identity.js' });
+      vm.runInContext(quietHelpers(workspace) + workspace.slice(start, end), context, { filename: 'workspace-load-identity.js' });
       await context.loadIdentity();
       assert.strictEqual(disclosure.hidden, hidden);
       assert.strictEqual(idValue.textContent, body.instance_id || '');
@@ -863,7 +872,7 @@ async function main() {
       renderUnavailableIdentityMark: (container) => drawn.push(['unavailable', container]),
       renderGenericIdentityMark: (container) => drawn.push(['none', container]),
     });
-    vm.runInContext(workspace.slice(start, end), context, { filename: 'workspace-identity.js' });
+    vm.runInContext(quietHelpers(workspace) + workspace.slice(start, end), context, { filename: 'workspace-identity.js' });
     for (const type of ['ready', 'unavailable', 'none']) {
       drawn.length = 0;
       context.applyIdentityToAll(type, {});
@@ -1151,7 +1160,7 @@ async function main() {
       confirm: (message) => { asked.push(message); return false; },
       fetch: async (url) => { fetched.push(url); return response({}); },
     });
-    vm.runInContext(workspace.slice(start, end), context);
+    vm.runInContext(quietHelpers(workspace) + workspace.slice(start, end), context);
     const button = {
       closest: () => ({ querySelector: () => ({ textContent: 'suze' }) }),
     };
@@ -1173,7 +1182,7 @@ async function main() {
       clientsList: { addEventListener() {} },
       escapeHtml: (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
     });
-    vm.runInContext(workspace.slice(start, end), context);
+    vm.runInContext(quietHelpers(workspace) + workspace.slice(start, end), context);
 
     const never = {
       cid: 'sha256:never', display_label: 'SOL-WINBUILD (2)', state: 'disconnected',
@@ -1777,7 +1786,7 @@ async function main() {
       deviceAddressesEl,
       deviceAddressesRow,
     });
-    vm.runInContext(workspace.slice(start, end), context, { filename: 'workspace-device-addresses.js' });
+    vm.runInContext(quietHelpers(workspace) + workspace.slice(start, end), context, { filename: 'workspace-device-addresses.js' });
     const lines = () => deviceAddressesEl.children.map(
       (item) => item.children.map((child) => child.textContent).join(''),
     );
@@ -1826,9 +1835,10 @@ async function main() {
       linkCopy: copy,
       window: {},
       document: { activeElement: null },
+      hostAddressTyped: false,
       ...elements,
     });
-    vm.runInContext(workspace.slice(start, end), context, { filename: 'workspace-home-address.js' });
+    vm.runInContext(quietHelpers(workspace) + workspace.slice(start, end), context, { filename: 'workspace-home-address.js' });
 
     // With unusable address
     context.renderHomeAddress({
@@ -1920,7 +1930,7 @@ async function main() {
     vm.runInContext(hostJs, context, { filename: 'journal-web-host.js' });
     navigator.userAgent = `${navigator.userAgent} ${window.solstoneJournalWebHost.userAgentProduct}`;
     vm.runInContext(navJs, context, { filename: 'external-navigation.js' });
-    vm.runInContext(workspace.slice(start, end), context, { filename: 'workspace-privatelink.js' });
+    vm.runInContext(quietHelpers(workspace) + workspace.slice(start, end), context, { filename: 'workspace-privatelink.js' });
 
     await context.startPrivateLinkSetup();
     assert.strictEqual(opened.length, 0, 'capable host does not call window.open');
