@@ -1,0 +1,1296 @@
+diff --git a/cmd/restic/cmd_erase_paths.go b/cmd/restic/cmd_erase_paths.go
+new file mode 100644
+index 0000000..f017825
+--- /dev/null
++++ b/cmd/restic/cmd_erase_paths.go
+@@ -0,0 +1,1044 @@
++package main
++
++// erase-paths removes named paths from every snapshot, then removes the stored
++// pieces only those paths used, under one exclusive lock:
++//
++//  1. find: in every snapshot, the content blobs and trees under each path,
++//     and the trees on the way to it;
++//  2. save that list to --state before anything changes, merged with the list
++//     a stopped run saved, so a retry never loses track of a piece;
++//  3. rewrite every snapshot that holds a path without it, keeping its time,
++//     host, tags and paths, and forget the old one;
++//  4. remove the listed pieces no snapshot still uses, rewriting only the pack
++//     files that hold them; a piece still in use stays, and is reported with
++//     where it is used;
++//  5. scan every pack file the backend lists, and refuse to report success
++//     while any copy of a removed piece remains.
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"os"
++	"path"
++	"path/filepath"
++	"sort"
++	"strings"
++	"time"
++
++	"github.com/restic/restic/internal/data"
++	"github.com/restic/restic/internal/global"
++	"github.com/restic/restic/internal/repository"
++	"github.com/restic/restic/internal/restic"
++	"github.com/restic/restic/internal/ui"
++	"github.com/restic/restic/internal/walker"
++	"github.com/spf13/cobra"
++)
++
++type erasePathsRequest struct {
++	// Roots are the snapshot tree paths a journal can sit at, such as
++	// "/home/owner/journal" or "/C/Users/owner/journal".
++	Roots []string `json:"roots"`
++	// Targets are what to remove, each relative to every root.
++	Targets []erasePathsTarget `json:"targets"`
++	// Trash names the journal's trash folder, relative to a root, and the items
++	// still in it, whose copies are never removed.
++	Trash *erasePathsTrash `json:"trash,omitempty"`
++	// SnapshotPaths names exact tree paths to remove from one snapshot, keyed
++	// by the snapshot's id, or the id it was rewritten from, or a prefix of
++	// either. Each path belongs to an entry.
++	SnapshotPaths map[string][]erasePathsExact `json:"snapshot_paths,omitempty"`
++	// DropEmptyTags: a rewritten snapshot carrying one of these tags that would
++	// hold no file is forgotten rather than kept empty.
++	DropEmptyTags []string `json:"drop_empty_tags,omitempty"`
++}
++
++type erasePathsTarget struct {
++	// Entry groups targets for the per-entry report.
++	Entry string `json:"entry"`
++	Path  string `json:"path"`
++	// Marker, when set, is the file the journal leaves in the target's place
++	// (a tombstone) and what it names. A snapshot whose copy of it names this
++	// value keeps the marker and loses everything beside it.
++	Marker *erasePathsMarker `json:"marker,omitempty"`
++	// Settled, when set: a snapshot from this time on, without the marker, is
++	// left alone at this path (something new arrived there).
++	Settled *time.Time `json:"settled,omitempty"`
++	// TrashCopies also removes earlier trash copies of this path:
++	// <trash>/<any id not still in the trash>/<files>/<path>.
++	TrashCopies bool `json:"trash_copies,omitempty"`
++}
++
++type erasePathsMarker struct {
++	Name  string `json:"name"`
++	Key   string `json:"key"`
++	Value string `json:"value"`
++}
++
++type erasePathsTrash struct {
++	Dir   string   `json:"dir"`
++	Files string   `json:"files"`
++	Live  []string `json:"live"`
++	// Item names each trash folder's record, and PathsKey its list of the
++	// journal paths it held: a copy whose every path is removed goes whole.
++	Item     string `json:"item"`
++	PathsKey string `json:"paths_key"`
++}
++
++type erasePathsExact struct {
++	Entry string `json:"entry"`
++	Path  string `json:"path"`
++}
++
++type erasePathsState struct {
++	Schema  int      `json:"schema"`
++	Targets []string `json:"targets"`
++}
++
++type erasePathsResult struct {
++	OK                 bool                         `json:"ok"`
++	Reason             string                       `json:"reason,omitempty"`
++	Error              string                       `json:"error,omitempty"`
++	Phase              string                       `json:"phase"`
++	Snapshots          int                          `json:"snapshots"`
++	SnapshotsHolding   int                          `json:"snapshots_holding"`
++	SnapshotsRewritten []rewrittenSnapshot          `json:"snapshots_rewritten"`
++	SnapshotsDropped   []string                     `json:"snapshots_dropped"`
++	Entries            map[string]*entryReport      `json:"entries"`
++	Targets            pieceCount                   `json:"targets"`
++	InUse              pieceCount                   `json:"in_use"`
++	Removed            *repository.RemoveBlobsStats `json:"removed,omitempty"`
++	Remaining          int                          `json:"remaining"`
++}
++
++// entryReport is what one entry's paths held, and what of it stays in use.
++type entryReport struct {
++	Snapshots int        `json:"snapshots"`
++	Files     uint       `json:"files"`
++	Pieces    pieceCount `json:"pieces"`
++	// InUseKept are pieces something kept also uses; InUseTrash are pieces a
++	// copy still in the journal's trash uses. Both stay.
++	InUseKept  int      `json:"in_use_kept"`
++	InUseTrash int      `json:"in_use_trash"`
++	InUseAt    []string `json:"in_use_at,omitempty"`
++	pieces     restic.BlobSet
++}
++
++type rewrittenSnapshot struct {
++	Original string   `json:"original"`
++	From     string   `json:"from"`
++	To       string   `json:"to"`
++	Tags     []string `json:"tags,omitempty"`
++}
++
++type pieceCount struct {
++	Data int `json:"data"`
++	Tree int `json:"tree"`
++}
++
++func countPieces(set restic.BlobSet) pieceCount {
++	var c pieceCount
++	for bh := range set {
++		if bh.Type == restic.DataBlob {
++			c.Data++
++		} else {
++			c.Tree++
++		}
++	}
++	return c
++}
++
++// eraseError carries a stable reason code for the caller beside the message.
++type eraseError struct {
++	reason string
++	err    error
++}
++
++func (e eraseError) Error() string { return e.err.Error() }
++func (e eraseError) Unwrap() error { return e.err }
++
++func failed(reason string, err error) error {
++	if err == nil {
++		return nil
++	}
++	var already eraseError
++	if errors.As(err, &already) {
++		return err
++	}
++	return eraseError{reason, err}
++}
++
++func newErasePathsCommand(globalOptions *global.Options) *cobra.Command {
++	var requestPath, statePath, stopAfter string
++	cmd := &cobra.Command{
++		Use:    "erase-paths",
++		Short:  "Remove paths from every snapshot and their pieces from storage",
++		Hidden: true,
++		Args:   cobra.NoArgs,
++		RunE: func(cmd *cobra.Command, _ []string) error {
++			result := erasePathsResult{Phase: "start", SnapshotsRewritten: []rewrittenSnapshot{},
++				SnapshotsDropped: []string{}, Entries: map[string]*entryReport{}}
++			err := runErasePaths(cmd.Context(), *globalOptions, requestPath, statePath, stopAfter, &result)
++			for _, report := range result.Entries {
++				report.Pieces = countPieces(report.pieces)
++			}
++			if err != nil {
++				result.Error = err.Error()
++				var coded eraseError
++				if errors.As(err, &coded) {
++					result.Reason = coded.reason
++				} else {
++					result.Reason = "error"
++				}
++			} else {
++				result.OK = true
++			}
++			if encodeErr := json.NewEncoder(os.Stdout).Encode(result); encodeErr != nil {
++				return encodeErr
++			}
++			return err
++		},
++	}
++	cmd.Flags().StringVar(&requestPath, "request", "", "JSON file naming what to remove")
++	cmd.Flags().StringVar(&statePath, "state", "", "JSON file holding the saved piece list")
++	cmd.Flags().StringVar(&stopAfter, "stop-after", "", "stop after a phase (qualification only)")
++	_ = cmd.Flags().MarkHidden("stop-after")
++	return cmd
++}
++
++func cleanRelative(rel string) bool {
++	return rel != "" && rel != "." && !strings.HasPrefix(rel, "/") && path.Clean(rel) == rel &&
++		rel != ".." && !strings.HasPrefix(rel, "../")
++}
++
++func readErasePathsRequest(file string) (erasePathsRequest, error) {
++	var req erasePathsRequest
++	buf, err := os.ReadFile(file)
++	if err != nil {
++		return req, err
++	}
++	dec := json.NewDecoder(bytes.NewReader(buf))
++	dec.DisallowUnknownFields()
++	if err := dec.Decode(&req); err != nil {
++		return req, err
++	}
++	if len(req.Targets) == 0 && len(req.SnapshotPaths) == 0 {
++		return req, errors.New("request names nothing to remove")
++	}
++	if len(req.Targets) > 0 && len(req.Roots) == 0 {
++		return req, errors.New("request targets need a root")
++	}
++	for _, root := range req.Roots {
++		if !strings.HasPrefix(root, "/") || path.Clean(root) != root {
++			return req, fmt.Errorf("root %q is not a clean absolute tree path", root)
++		}
++	}
++	for _, t := range req.Targets {
++		if !cleanRelative(t.Path) || t.Entry == "" {
++			return req, fmt.Errorf("target %q needs a clean relative path and an entry", t.Path)
++		}
++		if t.Marker != nil && (t.Marker.Name == "" || strings.Contains(t.Marker.Name, "/") || t.Marker.Key == "" || t.Marker.Value == "") {
++			return req, fmt.Errorf("target %q has an incomplete marker", t.Path)
++		}
++		if t.TrashCopies && req.Trash == nil {
++			return req, fmt.Errorf("target %q asks for trash copies without a trash", t.Path)
++		}
++	}
++	if req.Trash != nil && (!cleanRelative(req.Trash.Dir) || req.Trash.Files == "" || strings.Contains(req.Trash.Files, "/") ||
++		req.Trash.Item == "" || strings.Contains(req.Trash.Item, "/") || req.Trash.PathsKey == "") {
++		return req, errors.New("trash needs a clean relative folder, a files name, an item name and its paths key")
++	}
++	for key, paths := range req.SnapshotPaths {
++		if len(key) < 8 || strings.Trim(key, "0123456789abcdef") != "" {
++			return req, fmt.Errorf("snapshot key %q is not an id or id prefix", key)
++		}
++		for _, p := range paths {
++			if !strings.HasPrefix(p.Path, "/") || path.Clean(p.Path) != p.Path || p.Path == "/" || p.Entry == "" {
++				return req, fmt.Errorf("snapshot path %q needs a clean absolute tree path and an entry", p.Path)
++			}
++		}
++	}
++	return req, nil
++}
++
++func readErasePathsState(file string) (restic.BlobSet, error) {
++	set := restic.NewBlobSet()
++	buf, err := os.ReadFile(file)
++	if errors.Is(err, os.ErrNotExist) {
++		return set, nil
++	}
++	if err != nil {
++		return nil, err
++	}
++	var state erasePathsState
++	if err := json.Unmarshal(buf, &state); err != nil {
++		return nil, fmt.Errorf("saved list: %w", err)
++	}
++	if state.Schema != 1 {
++		return nil, fmt.Errorf("saved list schema %d", state.Schema)
++	}
++	for _, item := range state.Targets {
++		kind, hex, ok := strings.Cut(item, ":")
++		id, err := restic.ParseID(hex)
++		if !ok || err != nil || (kind != "data" && kind != "tree") {
++			return nil, fmt.Errorf("saved list entry %q", item)
++		}
++		t := restic.DataBlob
++		if kind == "tree" {
++			t = restic.TreeBlob
++		}
++		set.Insert(restic.BlobHandle{ID: id, Type: t})
++	}
++	return set, nil
++}
++
++// writeErasePathsState replaces the list durably: written, synced, renamed,
++// and the directory synced, before the caller changes the repository.
++func writeErasePathsState(file string, set restic.BlobSet) error {
++	items := make([]string, 0, len(set))
++	for bh := range set {
++		kind := "data"
++		if bh.Type == restic.TreeBlob {
++			kind = "tree"
++		}
++		items = append(items, kind+":"+bh.ID.String())
++	}
++	sort.Strings(items)
++	buf, err := json.Marshal(erasePathsState{Schema: 1, Targets: items})
++	if err != nil {
++		return err
++	}
++	dir := filepath.Dir(file)
++	tmp, err := os.CreateTemp(dir, ".erase-state-*")
++	if err != nil {
++		return err
++	}
++	defer func() { _ = os.Remove(tmp.Name()) }()
++	if _, err = tmp.Write(buf); err == nil {
++		err = tmp.Sync()
++	}
++	if closeErr := tmp.Close(); err == nil {
++		err = closeErr
++	}
++	if err != nil {
++		return err
++	}
++	if err = os.Rename(tmp.Name(), file); err != nil {
++		return err
++	}
++	if d, err := os.Open(dir); err == nil {
++		_ = d.Sync()
++		_ = d.Close()
++	}
++	return nil
++}
++
++// aimed is one path to remove from one snapshot.
++type aimed struct {
++	entry  string
++	marker *erasePathsMarker
++}
++
++// eraseWalk finds and rewrites the target paths of one snapshot at a time; its
++// tree cache is shared across snapshots.
++type eraseWalk struct {
++	repo     restic.Repository
++	targets  map[string]aimed
++	prefixes map[string]bool
++	cache    map[restic.ID][]*data.Node
++	found    restic.BlobSet
++	entries  map[string]*entryReport
++	held     map[string]bool
++	files    uint
++	bytes    uint64
++}
++
++func newEraseWalk(repo restic.Repository, entries map[string]*entryReport) *eraseWalk {
++	return &eraseWalk{repo: repo, cache: map[restic.ID][]*data.Node{}, found: restic.NewBlobSet(), entries: entries}
++}
++
++func addPrefixes(prefixes map[string]bool, full string) {
++	for dir := path.Dir(full); ; dir = path.Dir(dir) {
++		prefixes[dir] = true
++		if dir == "/" {
++			break
++		}
++	}
++}
++
++func (w *eraseWalk) entry(name string) *entryReport {
++	report, ok := w.entries[name]
++	if !ok {
++		report = &entryReport{pieces: restic.NewBlobSet()}
++		w.entries[name] = report
++	}
++	return report
++}
++
++func (w *eraseWalk) add(full string, a aimed) {
++	if _, ok := w.targets[full]; ok {
++		return
++	}
++	w.targets[full] = a
++	addPrefixes(w.prefixes, full)
++}
++
++func snapshotKeyMatches(key string, ids ...*restic.ID) bool {
++	for _, id := range ids {
++		if id != nil && strings.HasPrefix(id.String(), key) {
++			return true
++		}
++	}
++	return false
++}
++
++// aim sets the paths that apply to one snapshot. It reports whether any does.
++func (w *eraseWalk) aim(ctx context.Context, req erasePathsRequest, id restic.ID, sn *data.Snapshot) (bool, error) {
++	w.targets, w.prefixes = map[string]aimed{}, map[string]bool{}
++	for _, root := range req.Roots {
++		var copies []string
++		if req.Trash != nil {
++			var err error
++			if copies, err = w.trashCopies(ctx, root, req.Trash, *sn.Tree); err != nil {
++				return false, err
++			}
++		}
++		for _, t := range req.Targets {
++			full := path.Join(root, t.Path)
++			marked := false
++			if t.Marker != nil {
++				var err error
++				if marked, err = w.marked(ctx, *sn.Tree, path.Join(full, t.Marker.Name), t.Marker); err != nil {
++					return false, err
++				}
++			}
++			switch {
++			case marked:
++				w.add(full, aimed{entry: t.Entry, marker: t.Marker})
++			case t.Settled == nil || sn.Time.Before(*t.Settled):
++				w.add(full, aimed{entry: t.Entry})
++			}
++			if t.TrashCopies {
++				for _, copyDir := range copies {
++					whole, err := w.copyIsWithin(ctx, *sn.Tree, req, copyDir, t.Entry)
++					if err != nil {
++						return false, err
++					}
++					if whole {
++						w.add(copyDir, aimed{entry: t.Entry})
++					} else {
++						w.add(path.Join(copyDir, req.Trash.Files, t.Path), aimed{entry: t.Entry})
++					}
++				}
++			}
++		}
++	}
++	for key, paths := range req.SnapshotPaths {
++		if !snapshotKeyMatches(key, &id, sn.Original) {
++			continue
++		}
++		for _, p := range paths {
++			w.add(p.Path, aimed{entry: p.Entry})
++		}
++	}
++	return len(w.targets) > 0, nil
++}
++
++// trashCopies lists <root>/<trash>/<id> folders of items no longer in the trash.
++func (w *eraseWalk) trashCopies(ctx context.Context, root string, trash *erasePathsTrash, tree restic.ID) ([]string, error) {
++	node, err := w.find(ctx, tree, path.Join(root, trash.Dir))
++	if err != nil || node == nil || node.Type != data.NodeTypeDir || node.Subtree == nil {
++		return nil, err
++	}
++	nodes, err := w.load(ctx, *node.Subtree)
++	if err != nil {
++		return nil, err
++	}
++	live := map[string]bool{}
++	for _, id := range trash.Live {
++		live[id] = true
++	}
++	var copies []string
++	for _, child := range nodes {
++		if child.Type == data.NodeTypeDir && !live[child.Name] {
++			copies = append(copies, path.Join(root, trash.Dir, child.Name))
++		}
++	}
++	return copies, nil
++}
++
++// copyIsWithin reports whether an earlier trash copy held only paths this
++// entry removes: then it was this thing, and its whole folder goes, record
++// included. A copy that also held something else keeps all but this path.
++func (w *eraseWalk) copyIsWithin(ctx context.Context, tree restic.ID, req erasePathsRequest, copyDir, entry string) (bool, error) {
++	body, err := w.readJSON(ctx, tree, path.Join(copyDir, req.Trash.Item))
++	if err != nil || body == nil {
++		return false, err
++	}
++	held, _ := body[req.Trash.PathsKey].([]any)
++	if len(held) == 0 {
++		return false, nil
++	}
++	for _, value := range held {
++		p, _ := value.(string)
++		covered := false
++		for _, t := range req.Targets {
++			if t.Entry == entry && t.TrashCopies && (p == t.Path || strings.HasPrefix(p, t.Path+"/")) {
++				covered = true
++			}
++		}
++		if !covered {
++			return false, nil
++		}
++	}
++	return true, nil
++}
++
++// readJSON reads a small JSON object file from a snapshot, or nil.
++func (w *eraseWalk) readJSON(ctx context.Context, tree restic.ID, full string) (map[string]any, error) {
++	node, err := w.find(ctx, tree, full)
++	if err != nil || node == nil || node.Type != data.NodeTypeFile || node.Size > 1<<20 {
++		return nil, err
++	}
++	var buf []byte
++	for _, id := range node.Content {
++		blob, err := w.repo.LoadBlob(ctx, restic.DataBlob, id, nil)
++		if err != nil {
++			return nil, err
++		}
++		buf = append(buf, blob...)
++	}
++	var body map[string]any
++	if json.Unmarshal(buf, &body) != nil {
++		return nil, nil
++	}
++	return body, nil
++}
++
++// find returns the node at an absolute tree path, or nil.
++func (w *eraseWalk) find(ctx context.Context, tree restic.ID, full string) (*data.Node, error) {
++	current := &data.Node{Type: data.NodeTypeDir, Subtree: &tree}
++	for _, name := range strings.Split(strings.TrimPrefix(full, "/"), "/") {
++		if current.Type != data.NodeTypeDir || current.Subtree == nil {
++			return nil, nil
++		}
++		nodes, err := w.load(ctx, *current.Subtree)
++		if err != nil {
++			return nil, err
++		}
++		var next *data.Node
++		for _, node := range nodes {
++			if node.Name == name {
++				next = node
++				break
++			}
++		}
++		if next == nil {
++			return nil, nil
++		}
++		current = next
++	}
++	return current, nil
++}
++
++// marked reports whether the snapshot's file at full is a JSON object whose
++// marker key names the marker value.
++func (w *eraseWalk) marked(ctx context.Context, tree restic.ID, full string, m *erasePathsMarker) (bool, error) {
++	body, err := w.readJSON(ctx, tree, full)
++	if err != nil || body == nil {
++		return false, err
++	}
++	value, _ := body[m.Key].(string)
++	return value == m.Value, nil
++}
++
++func (w *eraseWalk) load(ctx context.Context, id restic.ID) ([]*data.Node, error) {
++	if nodes, ok := w.cache[id]; ok {
++		return nodes, nil
++	}
++	tree, err := data.LoadTree(ctx, w.repo, id)
++	if err != nil {
++		return nil, err
++	}
++	var nodes []*data.Node
++	for item := range tree {
++		if item.Error != nil {
++			return nil, item.Error
++		}
++		nodes = append(nodes, item.Node)
++	}
++	w.cache[id] = nodes
++	return nodes, nil
++}
++
++func (w *eraseWalk) piece(entry string, bh restic.BlobHandle) {
++	w.found.Insert(bh)
++	w.entry(entry).pieces.Insert(bh)
++	w.held[entry] = true
++}
++
++// collect adds everything under a removed node: its content, or its tree and
++// every tree and content below it.
++func (w *eraseWalk) collect(ctx context.Context, entry string, node *data.Node) error {
++	w.held[entry] = true
++	switch node.Type {
++	case data.NodeTypeFile:
++		w.files++
++		w.bytes += node.Size
++		w.entry(entry).Files++
++		for _, id := range node.Content {
++			w.piece(entry, restic.BlobHandle{ID: id, Type: restic.DataBlob})
++		}
++	case data.NodeTypeDir:
++		if node.Subtree == nil {
++			return nil
++		}
++		w.piece(entry, restic.BlobHandle{ID: *node.Subtree, Type: restic.TreeBlob})
++		nodes, err := w.load(ctx, *node.Subtree)
++		if err != nil {
++			return err
++		}
++		for _, child := range nodes {
++			if err := w.collect(ctx, entry, child); err != nil {
++				return err
++			}
++		}
++	}
++	return nil
++}
++
++func (w *eraseWalk) save(ctx context.Context, saver restic.BlobSaver, nodes []*data.Node) (restic.ID, error) {
++	tw := data.NewTreeWriter(saver)
++	for _, node := range nodes {
++		if err := tw.AddNode(node); err != nil {
++			return restic.ID{}, err
++		}
++	}
++	return tw.Finalize(ctx)
++}
++
++// visit walks only toward target paths. It collects what goes and, when saver
++// is set, writes the trees without it. It returns the tree's new id and
++// whether anything under it was removed.
++func (w *eraseWalk) visit(ctx context.Context, saver restic.BlobSaver, dir string, id restic.ID) (restic.ID, bool, error) {
++	nodes, err := w.load(ctx, id)
++	if err != nil {
++		return restic.ID{}, false, err
++	}
++	changed := false
++	var kept []*data.Node
++	for _, node := range nodes {
++		p := path.Join(dir, node.Name)
++		if a, ok := w.targets[p]; ok {
++			if a.marker != nil && node.Type == data.NodeTypeDir && node.Subtree != nil {
++				// Keep the marker, and what a lock leaves; everything else goes.
++				newID, sub, err := w.besideMarker(ctx, saver, a, *node.Subtree)
++				if err != nil {
++					return restic.ID{}, false, err
++				}
++				if sub {
++					copied := *node
++					copied.Subtree = &newID
++					node = &copied
++					changed = true
++				}
++				kept = append(kept, node)
++				continue
++			}
++			if err := w.collect(ctx, a.entry, node); err != nil {
++				return restic.ID{}, false, err
++			}
++			changed = true
++			continue
++		}
++		if node.Type == data.NodeTypeDir && node.Subtree != nil && w.prefixes[p] {
++			newID, sub, err := w.visit(ctx, saver, p, *node.Subtree)
++			if err != nil {
++				return restic.ID{}, false, err
++			}
++			if sub {
++				copied := *node
++				copied.Subtree = &newID
++				node = &copied
++				changed = true
++			}
++		}
++		kept = append(kept, node)
++	}
++	if !changed {
++		return id, false, nil
++	}
++	// The tree this replaces names what was removed.
++	w.found.Insert(restic.BlobHandle{ID: id, Type: restic.TreeBlob})
++	if saver == nil {
++		return restic.ID{}, true, nil
++	}
++	// Refuse a tree that doesn't encode back to itself: rewriting it would
++	// lose information, as restic's own rewrite refuses.
++	if same, err := w.save(ctx, saver, nodes); err != nil {
++		return restic.ID{}, false, err
++	} else if !same.Equal(id) {
++		return restic.ID{}, false, fmt.Errorf("cannot encode tree at %q without losing information", dir)
++	}
++	newID, err := w.save(ctx, saver, kept)
++	return newID, true, err
++}
++
++// besideMarker removes everything in a marked folder but the marker and lock
++// files. It reports whether anything went.
++func (w *eraseWalk) besideMarker(ctx context.Context, saver restic.BlobSaver, a aimed, id restic.ID) (restic.ID, bool, error) {
++	nodes, err := w.load(ctx, id)
++	if err != nil {
++		return restic.ID{}, false, err
++	}
++	var kept []*data.Node
++	for _, node := range nodes {
++		if node.Name == a.marker.Name || strings.HasSuffix(node.Name, ".lock") {
++			kept = append(kept, node)
++			continue
++		}
++		if err := w.collect(ctx, a.entry, node); err != nil {
++			return restic.ID{}, false, err
++		}
++	}
++	if len(kept) == len(nodes) {
++		return id, false, nil
++	}
++	w.found.Insert(restic.BlobHandle{ID: id, Type: restic.TreeBlob})
++	if saver == nil {
++		return restic.ID{}, true, nil
++	}
++	newID, err := w.save(ctx, saver, kept)
++	return newID, true, err
++}
++
++func hasTag(sn *data.Snapshot, tags []string) bool {
++	for _, want := range tags {
++		for _, tag := range sn.Tags {
++			if tag == want {
++				return true
++			}
++		}
++	}
++	return false
++}
++
++func runErasePaths(ctx context.Context, gopts global.Options, requestPath, statePath, stopAfter string, result *erasePathsResult) error {
++	if requestPath == "" || statePath == "" {
++		return failed("usage", errors.New("--request and --state are required"))
++	}
++	if gopts.NoLock {
++		return failed("usage", errors.New("erase-paths needs the repository lock"))
++	}
++	req, err := readErasePathsRequest(requestPath)
++	if err != nil {
++		return failed("request", err)
++	}
++	printer := ui.NewProgressPrinter(false, gopts.Verbosity, gopts.Term)
++	ctx, repo, unlock, err := openWithExclusiveLock(ctx, gopts, false, printer)
++	if err != nil {
++		return failed("lock", err)
++	}
++	defer unlock()
++	// The saved list is read under the lock, so a run that held the lock
++	// before has finished writing it.
++	saved, err := readErasePathsState(statePath)
++	if err != nil {
++		return failed("list", err)
++	}
++	if err = repo.LoadIndex(ctx, printer); err != nil {
++		return failed("index", err)
++	}
++
++	// 1. find
++	result.Phase = "find"
++	type snapshot struct {
++		id restic.ID
++		sn *data.Snapshot
++	}
++	var all, holds []snapshot
++	walk := newEraseWalk(repo, result.Entries)
++	err = data.ForAllSnapshots(ctx, repo, repo, nil, func(id restic.ID, sn *data.Snapshot, err error) error {
++		if err != nil {
++			return err
++		}
++		if sn.Tree == nil {
++			return fmt.Errorf("snapshot %v has no tree", id.Str())
++		}
++		all = append(all, snapshot{id, sn})
++		return nil
++	})
++	if err != nil {
++		return failed("find", err)
++	}
++	// A run that stopped after saving a replacement but before forgetting the
++	// snapshot it replaced left both. The replaced one is forgotten; the
++	// replacement is visited like any other snapshot.
++	stale := restic.NewIDSet()
++	for _, a := range all {
++		for _, b := range all {
++			if !a.id.Equal(b.id) && b.sn.Original != nil && a.sn.Time.Equal(b.sn.Time) &&
++				(b.sn.Original.Equal(a.id) || (a.sn.Original != nil && b.sn.Original.Equal(*a.sn.Original) && a.id.String() < b.id.String())) {
++				stale.Insert(a.id)
++			}
++		}
++	}
++	for _, s := range all {
++		if stale.Has(s.id) {
++			continue
++		}
++		walk.held = map[string]bool{}
++		aimedAny, err := walk.aim(ctx, req, s.id, s.sn)
++		if err != nil {
++			return failed("find", fmt.Errorf("snapshot %v: %w", s.id.Str(), err))
++		}
++		if !aimedAny {
++			continue
++		}
++		_, changed, err := walk.visit(ctx, nil, "/", *s.sn.Tree)
++		if err != nil {
++			return failed("find", fmt.Errorf("snapshot %v: %w", s.id.Str(), err))
++		}
++		for entry := range walk.held {
++			walk.entry(entry).Snapshots++
++		}
++		if changed {
++			holds = append(holds, s)
++		}
++	}
++	result.Snapshots = len(all) - len(stale)
++	result.SnapshotsHolding = len(holds)
++
++	// 2. save the list
++	result.Phase = "save"
++	targets := restic.NewBlobSet()
++	targets.Merge(saved)
++	targets.Merge(walk.found)
++	if err = writeErasePathsState(statePath, targets); err != nil {
++		return failed("list", fmt.Errorf("saving the list: %w", err))
++	}
++	result.Targets = countPieces(targets)
++	if stopAfter == "save" {
++		return failed("stopped", errors.New("stopped after save"))
++	}
++
++	// 3. rewrite
++	result.Phase = "rewrite"
++	for id := range stale {
++		if err = repo.RemoveUnpacked(ctx, restic.WriteableSnapshotFile, id); err != nil {
++			return failed("rewrite", fmt.Errorf("snapshot %v: forgetting a replaced one: %w", id.Str(), err))
++		}
++	}
++	for _, h := range holds {
++		original := h.sn.Original
++		if original == nil {
++			original = &h.id
++		}
++		walk.held = map[string]bool{}
++		if _, err = walk.aim(ctx, req, h.id, h.sn); err != nil {
++			return failed("rewrite", err)
++		}
++		walk.files, walk.bytes = 0, 0
++		var newTree restic.ID
++		err = repo.WithBlobUploader(ctx, func(ctx context.Context, uploader restic.BlobSaverWithAsync) error {
++			var err error
++			newTree, _, err = walk.visit(ctx, uploader, "/", *h.sn.Tree)
++			return err
++		})
++		if err != nil {
++			return failed("rewrite", fmt.Errorf("snapshot %v: %w", h.id.Str(), err))
++		}
++		if hasTag(h.sn, req.DropEmptyTags) && h.sn.Summary != nil && h.sn.Summary.TotalFilesProcessed <= walk.files {
++			// Nothing would stay in it: forget it rather than keep an empty one.
++			if err = repo.RemoveUnpacked(ctx, restic.WriteableSnapshotFile, h.id); err != nil {
++				return failed("rewrite", fmt.Errorf("snapshot %v: forgetting it: %w", h.id.Str(), err))
++			}
++			result.SnapshotsDropped = append(result.SnapshotsDropped, h.id.String())
++			continue
++		}
++		next := *h.sn
++		next.Original = original
++		next.Tree = &newTree
++		if h.sn.Summary != nil {
++			summary := *h.sn.Summary
++			summary.TotalFilesProcessed -= min(summary.TotalFilesProcessed, walk.files)
++			summary.TotalBytesProcessed -= min(summary.TotalBytesProcessed, walk.bytes)
++			next.Summary = &summary
++		}
++		replacement, err := data.SaveSnapshot(ctx, repo, &next)
++		if err != nil {
++			return failed("rewrite", fmt.Errorf("snapshot %v: saving its replacement: %w", h.id.Str(), err))
++		}
++		if stopAfter == "rewrite-save" {
++			return failed("stopped", errors.New("stopped after saving a replacement"))
++		}
++		if err = repo.RemoveUnpacked(ctx, restic.WriteableSnapshotFile, h.id); err != nil {
++			return failed("rewrite", fmt.Errorf("snapshot %v: forgetting it: %w", h.id.Str(), err))
++		}
++		result.SnapshotsRewritten = append(result.SnapshotsRewritten, rewrittenSnapshot{
++			Original: original.String(), From: h.id.String(), To: replacement.String(), Tags: h.sn.Tags})
++	}
++	if stopAfter == "rewrite" {
++		return failed("stopped", errors.New("stopped after rewrite"))
++	}
++
++	// 4. remove what no snapshot uses
++	result.Phase = "clean"
++	used := restic.NewBlobSet()
++	if err = getUsedBlobs(ctx, repo, used, restic.NewIDSet(), printer); err != nil {
++		return failed("clean", err)
++	}
++	inUse := restic.NewBlobSet()
++	remove := restic.NewBlobSet()
++	for bh := range targets {
++		if used.Has(bh) {
++			inUse.Insert(bh)
++		} else {
++			remove.Insert(bh)
++		}
++	}
++	result.InUse = countPieces(inUse)
++	if inUse.Len() > 0 {
++		if err = attributeInUse(ctx, repo, req, inUse, result.Entries); err != nil {
++			return failed("missed", err)
++		}
++	}
++	// Fail closed on an index that already misses a referenced blob: this is
++	// removal, not repair.
++	for bh := range used {
++		if len(repo.LookupBlob(bh.Type, bh.ID)) == 0 {
++			return failed("index", fmt.Errorf("referenced %v is missing from the index", bh))
++		}
++	}
++	stats, err := repository.RemoveUnreferencedBlobs(ctx, repo, remove, used, printer)
++	result.Removed = &stats
++	if stats.After != nil {
++		result.Remaining = len(stats.After.Occurrences)
++	}
++	if err != nil {
++		switch {
++		case result.Remaining > 0:
++			return failed("residue", err)
++		case strings.Contains(err.Error(), "deleting pack files"):
++			return failed("delete_refused", err)
++		default:
++			return failed("clean", err)
++		}
++	}
++	result.Phase = "done"
++	return nil
++}
++
++// attributeInUse finds, for each entry, where its still-used data pieces are
++// used: under the trash folder (a copy still in the trash) or anywhere else
++// (something kept). A target the request removes in every snapshot still
++// using one means a holder was missed, and fails the run.
++func attributeInUse(ctx context.Context, repo restic.Repository, req erasePathsRequest, inUse restic.BlobSet, entries map[string]*entryReport) error {
++	at := map[restic.BlobHandle]string{}
++	seen := restic.NewIDSet()
++	err := data.ForAllSnapshots(ctx, repo, repo, nil, func(_ restic.ID, sn *data.Snapshot, err error) error {
++		if err != nil {
++			return err
++		}
++		return walker.Walk(ctx, repo, *sn.Tree, walker.WalkVisitor{
++			ProcessNode: func(_ restic.ID, nodepath string, node *data.Node, err error) error {
++				if err != nil {
++					return err
++				}
++				if node == nil {
++					return nil
++				}
++				if node.Type == data.NodeTypeDir && node.Subtree != nil {
++					if seen.Has(*node.Subtree) {
++						return walker.ErrSkipNode
++					}
++					seen.Insert(*node.Subtree)
++				}
++				for _, content := range node.Content {
++					bh := restic.BlobHandle{ID: content, Type: restic.DataBlob}
++					if _, ok := at[bh]; !ok && inUse.Has(bh) {
++						at[bh] = nodepath
++					}
++				}
++				return nil
++			},
++		})
++	})
++	if err != nil {
++		return err
++	}
++	for name, report := range entries {
++		for bh := range report.pieces {
++			if bh.Type != restic.DataBlob || !inUse.Has(bh) {
++				continue
++			}
++			where := at[bh]
++			inTrash := false
++			for _, root := range req.Roots {
++				if req.Trash != nil && strings.HasPrefix(where, path.Join(root, req.Trash.Dir)+"/") {
++					inTrash = true
++				}
++				for _, t := range req.Targets {
++					full := path.Join(root, t.Path)
++					if t.Marker == nil && t.Settled == nil && (where == full || strings.HasPrefix(where, full+"/")) {
++						return fmt.Errorf("entry %s: %s still uses a removed piece", name, where)
++					}
++				}
++			}
++			if inTrash {
++				report.InUseTrash++
++			} else {
++				report.InUseKept++
++			}
++			if len(report.InUseAt) < 5 && where != "" {
++				report.InUseAt = append(report.InUseAt, where)
++			}
++		}
++	}
++	return nil
++}
++
++// scan-blobs reads the header of every pack file the backend lists and reports
++// each copy of the listed pieces. Read-only, under a shared lock.
++func newScanBlobsCommand(globalOptions *global.Options) *cobra.Command {
++	var statePath string
++	cmd := &cobra.Command{
++		Use:    "scan-blobs",
++		Short:  "Find every stored copy of the pieces in a saved list",
++		Hidden: true,
++		Args:   cobra.NoArgs,
++		RunE: func(cmd *cobra.Command, _ []string) error {
++			gopts := *globalOptions
++			if gopts.NoLock {
++				return errors.New("scan-blobs needs the repository lock")
++			}
++			targets, err := readErasePathsState(statePath)
++			if err != nil {
++				return err
++			}
++			printer := ui.NewProgressPrinter(false, gopts.Verbosity, gopts.Term)
++			ctx, repo, unlock, err := openWithReadLock(cmd.Context(), gopts, false, printer)
++			if err != nil {
++				return err
++			}
++			defer unlock()
++			scan, err := repository.ScanBlobs(ctx, repo, targets, nil)
++			if err != nil {
++				return err
++			}
++			found := restic.NewBlobSet()
++			for _, hit := range scan.Occurrences {
++				found.Insert(hit.Blob)
++			}
++			return json.NewEncoder(os.Stdout).Encode(map[string]any{
++				"packs_listed": scan.PacksListed, "packs_read": scan.PacksRead,
++				"targets": len(targets), "targets_found": len(found),
++				"occurrences": len(scan.Occurrences), "matching_packs": scan.MatchingPacks,
++			})
++		},
++	}
++	cmd.Flags().StringVar(&statePath, "state", "", "JSON file holding the saved piece list")
++	return cmd
++}
+diff --git a/cmd/restic/main.go b/cmd/restic/main.go
+index 619eee6..0cbf43f 100644
+--- a/cmd/restic/main.go
++++ b/cmd/restic/main.go
+@@ -93,6 +93,8 @@ The full documentation can be found at https://restic.readthedocs.io/ .
+ 		newMigrateCommand(globalOptions),
+ 		newOptionsCommand(globalOptions),
+ 		newPruneCommand(globalOptions),
++		newErasePathsCommand(globalOptions),
++		newScanBlobsCommand(globalOptions),
+ 		newRebuildIndexCommand(globalOptions),
+ 		newRecoverCommand(globalOptions),
+ 		newRepairCommand(globalOptions),
+diff --git a/internal/repository/erase_blobs.go b/internal/repository/erase_blobs.go
+new file mode 100644
+index 0000000..582bad6
+--- /dev/null
++++ b/internal/repository/erase_blobs.go
+@@ -0,0 +1,227 @@
++package repository
++
++// Targeted removal of unreferenced blobs: rewrite only the pack files that
++// physically hold the named blobs, keep every blob still referenced, then
++// delete the originals and prove by a physical scan that none remains.
++
++import (
++	"context"
++	"fmt"
++	"sort"
++	"sync"
++
++	"github.com/restic/restic/internal/backend"
++	"github.com/restic/restic/internal/restic"
++	"github.com/restic/restic/internal/ui/progress"
++	"golang.org/x/sync/errgroup"
++)
++
++// BlobOccurrence is one physical copy of a named blob in a pack file.
++type BlobOccurrence struct {
++	PackID restic.ID         `json:"pack_id"`
++	Blob   restic.BlobHandle `json:"blob"`
++}
++
++// BlobScan is what a physical scan of pack files found.
++type BlobScan struct {
++	PacksListed   int              `json:"packs_listed"`
++	PacksRead     int              `json:"packs_read"`
++	Occurrences   []BlobOccurrence `json:"occurrences"`
++	MatchingPacks int              `json:"matching_packs"`
++	selected      map[restic.ID][]restic.Blob
++	physical      restic.IDSet
++}
++
++// ScanBlobs lists the pack files the backend actually holds and authenticates
++// the header of every one, reporting each copy of a blob in targets. It never
++// trusts the index for what a pack contains. When candidates is not nil, only
++// packs in candidates and packs the index doesn't know are read.
++func ScanBlobs(ctx context.Context, repo *Repository, targets restic.BlobSet, candidates restic.IDSet) (BlobScan, error) {
++	result := BlobScan{Occurrences: []BlobOccurrence{}, selected: map[restic.ID][]restic.Blob{}, physical: restic.NewIDSet()}
++	var indexed restic.IDSet
++	if candidates != nil {
++		indexed = repo.idx.Packs(nil)
++	}
++	type packInfo struct {
++		id   restic.ID
++		size int64
++	}
++	var mu sync.Mutex
++	queue := make(chan packInfo)
++	group, groupCtx := errgroup.WithContext(ctx)
++	group.Go(func() error {
++		defer close(queue)
++		return repo.be.List(groupCtx, restic.PackFile, func(fi backend.FileInfo) error {
++			id, err := restic.ParseID(fi.Name)
++			if err != nil {
++				return fmt.Errorf("unparseable pack file name %q: %w", fi.Name, err)
++			}
++			mu.Lock()
++			result.physical.Insert(id)
++			result.PacksListed++
++			mu.Unlock()
++			if candidates != nil && indexed.Has(id) && !candidates.Has(id) {
++				return nil
++			}
++			select {
++			case queue <- packInfo{id, fi.Size}:
++				return nil
++			case <-groupCtx.Done():
++				return groupCtx.Err()
++			}
++		})
++	})
++	for range repo.Connections() {
++		group.Go(func() error {
++			for item := range queue {
++				entries, _, err := repo.ListPack(groupCtx, item.id, item.size)
++				if err != nil {
++					return fmt.Errorf("pack %s header: %w", item.id, err)
++				}
++				var hits []BlobOccurrence
++				for _, entry := range entries {
++					if targets.Has(entry.BlobHandle) {
++						hits = append(hits, BlobOccurrence{item.id, entry.BlobHandle})
++					}
++				}
++				mu.Lock()
++				result.PacksRead++
++				if len(hits) > 0 {
++					result.MatchingPacks++
++					result.selected[item.id] = entries
++					result.Occurrences = append(result.Occurrences, hits...)
++				}
++				mu.Unlock()
++			}
++			return nil
++		})
++	}
++	if err := group.Wait(); err != nil {
++		return result, err
++	}
++	sort.Slice(result.Occurrences, func(i, j int) bool {
++		a, b := result.Occurrences[i], result.Occurrences[j]
++		if a.PackID != b.PackID {
++			return a.PackID.String() < b.PackID.String()
++		}
++		return a.Blob.String() < b.Blob.String()
++	})
++	return result, nil
++}
++
++// RemoveBlobsStats reports what RemoveUnreferencedBlobs did.
++type RemoveBlobsStats struct {
++	Before          BlobScan  `json:"before"`
++	After           *BlobScan `json:"after,omitempty"`
++	BlobsCopied     int       `json:"blobs_copied"`
++	BytesCopied     uint64    `json:"bytes_copied"`
++	PacksRewritten  int       `json:"packs_rewritten"`
++	PacksDeleteOnly int       `json:"packs_deleted_without_rewrite"`
++	PacksDeleted    int       `json:"packs_deleted"`
++}
++
++// RemoveUnreferencedBlobs physically removes every copy of targets from the
++// repository. The caller holds an exclusive lock, and used holds every blob any
++// snapshot still references; a target in used is refused. Only pack files that
++// hold a target are touched: the referenced blobs they also hold are written to
++// new packs first, then the index is rewritten without the old packs, then the
++// old packs are deleted, as prune orders it, so a stop at any point leaves a
++// healthy repository and a rerun finishes the job. Unlike prune, a failed
++// delete is an error. Ends with a physical scan of every pack file.
++func RemoveUnreferencedBlobs(ctx context.Context, repo *Repository, targets restic.BlobSet, used restic.FindBlobSet, printer progress.Printer) (RemoveBlobsStats, error) {
++	var stats RemoveBlobsStats
++	for bh := range targets {
++		if used.Has(bh) {
++			return stats, fmt.Errorf("blob %v is still referenced", bh)
++		}
++	}
++	candidates := restic.NewIDSet()
++	for bh := range targets {
++		for _, pb := range repo.LookupBlob(bh.Type, bh.ID) {
++			candidates.Insert(pb.PackID)
++		}
++	}
++	before, err := ScanBlobs(ctx, repo, targets, candidates)
++	stats.Before = before
++	if err != nil {
++		return stats, err
++	}
++	selected := restic.NewIDSet()
++	for id := range before.selected {
++		selected.Insert(id)
++	}
++	// A referenced blob that also has a copy in a pack this run keeps needs no
++	// copy; otherwise copy it once, from the authenticated header entries.
++	keep := restic.NewBlobSet()
++	jobs := map[restic.ID][]restic.Blob{}
++	for id, entries := range before.selected {
++		for _, entry := range entries {
++			if !used.Has(entry.BlobHandle) || keep.Has(entry.BlobHandle) {
++				continue
++			}
++			elsewhere := false
++			for _, pb := range repo.LookupBlob(entry.Type, entry.ID) {
++				if before.physical.Has(pb.PackID) && !selected.Has(pb.PackID) {
++					elsewhere = true
++					break
++				}
++			}
++			if elsewhere {
++				continue
++			}
++			keep.Insert(entry.BlobHandle)
++			jobs[id] = append(jobs[id], entry)
++			stats.BytesCopied += uint64(entry.Length)
++		}
++	}
++	stats.BlobsCopied = keep.Len()
++	stats.PacksRewritten = len(jobs)
++	stats.PacksDeleteOnly = len(selected) - len(jobs)
++	if len(selected) > 0 {
++		if len(jobs) > 0 {
++			err = repo.WithBlobUploader(ctx, func(ctx context.Context, uploader restic.BlobSaverWithAsync) error {
++				var mu sync.Mutex
++				for id, entries := range jobs {
++					if err := repo.LoadBlobsFromPack(ctx, id, entries, func(bh restic.BlobHandle, buf []byte, err error) error {
++						if err != nil {
++							return err
++						}
++						if _, _, _, err := uploader.SaveBlob(ctx, bh.Type, buf, bh.ID, true); err != nil {
++							return err
++						}
++						mu.Lock()
++						keep.Delete(bh)
++						mu.Unlock()
++						return nil
++					}); err != nil {
++						return err
++					}
++				}
++				return nil
++			})
++			if err != nil {
++				return stats, err
++			}
++			if keep.Len() != 0 {
++				return stats, fmt.Errorf("%d referenced blobs were not copied", keep.Len())
++			}
++		}
++		if err = rewriteIndexFiles(ctx, repo, selected, nil, nil, printer); err != nil {
++			return stats, err
++		}
++		if err = deleteFiles(ctx, false, &internalRepository{repo}, selected, restic.PackFile, printer); err != nil {
++			return stats, fmt.Errorf("deleting pack files: %w", err)
++		}
++		repo.clearIndex()
++		stats.PacksDeleted = len(selected)
++	}
++	after, err := ScanBlobs(ctx, repo, targets, nil)
++	stats.After = &after
++	if err != nil {
++		return stats, err
++	}
++	if len(after.Occurrences) > 0 {
++		return stats, fmt.Errorf("%d copies remain after the delete", len(after.Occurrences))
++	}
++	return stats, nil
++}

@@ -83,8 +83,13 @@ pub const SETTINGS_SECTION: &str = "trash";
 /// The setting's key in [`SETTINGS_SECTION`].
 pub const ERASE_AFTER_DAYS_KEY: &str = "erase_after_days";
 
+/// The owner's setting, in [`SETTINGS_SECTION`], that what the trash erases is
+/// also removed from their backups, and that erase now starts ticked.
+pub const ERASE_FROM_BACKUPS_KEY: &str = "erase_from_backups";
+
 pub use solstone_core_journal::is_trash_root_name;
 
+pub mod backup_erase;
 mod linked;
 #[cfg(test)]
 #[allow(
@@ -123,6 +128,10 @@ pub struct Pending {
     /// recovered or erased together); otherwise the item's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation: Option<String>,
+    /// The owner chose to also remove it from their backups. Every item the
+    /// act erases carries it, so each leaves its own entry.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub backups: bool,
 }
 
 /// One thing in the trash.
@@ -137,8 +146,12 @@ pub struct Item {
     pub action: Action,
     #[serde(flatten)]
     pub surface: Surface,
-    /// When it moved to the trash.
+    /// When it moved to the trash: when the move began.
     pub trashed_at: String,
+    /// When its move finished and it was in the trash. A backup taken from then
+    /// on holds it only in the trash, or by the marker its detach left.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settled_at: Option<String>,
     /// When the trash erases it: fixed when it was trashed, so a later change
     /// to the setting never moves an item already waiting.
     pub erase_at: String,
@@ -446,6 +459,7 @@ fn detach_as(
         action,
         surface,
         trashed_at: now.to_rfc3339_opts(SecondsFormat::Millis, true),
+        settled_at: None,
         erase_at: erase_at.to_rfc3339_opts(SecondsFormat::Millis, true),
         paths,
         bytes: 0,
@@ -603,6 +617,7 @@ fn attach_as(
             surface,
             at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             operation,
+            backups: false,
         });
         publish(journal, &item)?;
     }
@@ -643,6 +658,29 @@ pub fn erase_in(
     )
 }
 
+/// [`erase`], with the owner's choice to also remove it from their backups:
+/// every item the act erases leaves an entry for the backup to drain
+/// ([`backup_erase`]), written before anything is unlinked.
+pub fn erase_with(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    id: &str,
+    action: Action,
+    surface: Surface,
+    operation: Option<&OperationId>,
+    backups: bool,
+) -> Result<(), TrashError> {
+    erase_as_choosing(
+        journal,
+        kinds,
+        id,
+        action,
+        surface,
+        operation.map(ToString::to_string),
+        backups,
+    )
+}
+
 fn erase_as(
     journal: &Path,
     kinds: &[&dyn Kind],
@@ -650,6 +688,18 @@ fn erase_as(
     action: Action,
     surface: Surface,
     operation: Option<String>,
+) -> Result<(), TrashError> {
+    erase_as_choosing(journal, kinds, id, action, surface, operation, false)
+}
+
+fn erase_as_choosing(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    id: &str,
+    action: Action,
+    surface: Surface,
+    operation: Option<String>,
+    backups: bool,
 ) -> Result<(), TrashError> {
     let lock = lock(journal)?;
     let mut item = read_item(journal, id)?.ok_or(TrashError::NotInTrash)?;
@@ -661,6 +711,7 @@ fn erase_as(
                 surface,
                 at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
                 operation,
+                backups,
             });
             publish(journal, &item)?;
         }
@@ -879,6 +930,7 @@ pub fn recover_stretch(
             surface,
             at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             operation: Some(operation.to_string()),
+            backups: false,
         };
         let mut marked = Vec::new();
         for mut item in members {
@@ -926,6 +978,20 @@ pub fn erase_stretch(
     surface: Surface,
     operation: &OperationId,
 ) -> Result<Vec<Item>, TrashError> {
+    erase_stretch_with(journal, kinds, id, action, surface, operation, false)
+}
+
+/// [`erase_stretch`], with the owner's choice to also remove it from their
+/// backups.
+pub fn erase_stretch_with(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    id: &str,
+    action: Action,
+    surface: Surface,
+    operation: &OperationId,
+    backups: bool,
+) -> Result<Vec<Item>, TrashError> {
     let (members, needing) = {
         let _lock = lock(journal)?;
         if stretch_finishing(journal, id) {
@@ -946,6 +1012,7 @@ pub fn erase_stretch(
             surface,
             at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             operation: Some(operation.to_string()),
+            backups,
         };
         let mut marked = Vec::new();
         for mut item in members {
@@ -1283,6 +1350,21 @@ pub fn erase_after_days(journal: &Path) -> u32 {
         .and_then(|days| u32::try_from(days).ok())
         .filter(|days| (MIN_ERASE_AFTER_DAYS..=MAX_ERASE_AFTER_DAYS).contains(days))
         .unwrap_or(DEFAULT_ERASE_AFTER_DAYS)
+}
+
+/// Whether the owner set what the trash erases to also leave their backups.
+/// Off when unset or unreadable: a backup half is never taken unasked.
+pub fn erase_from_backups(journal: &Path) -> bool {
+    solstone_core_journal_config::read_journal_config(journal)
+        .ok()
+        .and_then(|read| read.config)
+        .and_then(|config| {
+            config
+                .get(SETTINGS_SECTION)
+                .and_then(|section| section.get(ERASE_FROM_BACKUPS_KEY))
+                .and_then(serde_json::Value::as_bool)
+        })
+        .unwrap_or(false)
 }
 
 /// What one [`sweep`] did.
@@ -1797,6 +1879,8 @@ fn sweep_set(journal: &Path, kinds: &[&dyn Kind], mut set: Set, swept: &mut Swep
 /// Runs at start and on the maintenance schedule.
 pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
     let mut swept = Swept::default();
+    // What the timer erases follows the owner's setting for backups.
+    let backups = erase_from_backups(journal);
     // Soonest due first, so an item erased with one it needed is met after.
     let items = match all_items(journal) {
         Ok(mut items) => {
@@ -1861,13 +1945,14 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                 match stretch_due.get(&id) {
                     Some(at) if *at <= now => {
                         if stretch_erased.insert(id.clone()) {
-                            erase_stretch(
+                            erase_stretch_with(
                                 journal,
                                 kinds,
                                 &id,
                                 Action::Erase,
                                 timer_surface(),
                                 &OperationId::fresh(now),
+                                backups,
                             )
                             .map(|erased| {
                                 swept.erased += erased.len();
@@ -1883,11 +1968,18 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                 }
             }
             State::Trashed => match item.erase_at() {
-                Some(at) if at <= now => {
-                    erase(journal, kinds, &item.id, Action::Erase, timer_surface()).map(|()| {
-                        swept.erased += 1;
-                    })
-                }
+                Some(at) if at <= now => erase_with(
+                    journal,
+                    kinds,
+                    &item.id,
+                    Action::Erase,
+                    timer_surface(),
+                    None,
+                    backups,
+                )
+                .map(|()| {
+                    swept.erased += 1;
+                }),
                 Some(_) => {
                     swept.waiting += 1;
                     Ok(())
@@ -1915,7 +2007,7 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
 }
 
 /// The surface of the trash's own timer.
-fn timer_surface() -> Surface {
+pub(crate) fn timer_surface() -> Surface {
     Surface::Policy {
         policy: solstone_core_removals::Policy::Trash,
     }
@@ -1984,6 +2076,7 @@ fn finish_detach(
     )
     .record_event(Event::Trashed, item.unit.clone());
     item.state = State::Trashed;
+    item.settled_at = Some(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true));
     publish(journal, item)
 }
 
@@ -2108,10 +2201,16 @@ fn finish_erase(journal: &Path, kinds: &[&dyn Kind], item: &Item) -> Result<(), 
         surface: timer_surface(),
         at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
         operation: None,
+        backups: false,
     });
     let at = DateTime::parse_from_rfc3339(&pending.at)
         .map(|at| at.with_timezone(&Utc))
         .unwrap_or_else(|_| Utc::now());
+    // The saved list's first half, before anything is unlinked: what it was,
+    // where, and when, for the backup to remove it from every backup.
+    if pending.backups && backup_erase::backups_on(journal) {
+        backup_erase::write(journal, item)?;
+    }
     let files = trash_root(journal).join(&item.id).join(FILES_DIR);
     removal(
         journal,
@@ -2929,6 +3028,7 @@ mod tests {
             action: Action::SegmentDelete,
             surface: web(),
             trashed_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            settled_at: None,
             erase_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             paths: vec![SEGMENT.into()],
             bytes: 8,
@@ -3166,6 +3266,7 @@ mod tests {
             surface: web(),
             at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             operation: None,
+            backups: false,
         });
         publish(&root, &item).unwrap();
         let mut set = set_of(true);
@@ -3786,6 +3887,7 @@ mod tests {
             action: Action::SegmentDelete,
             surface: web(),
             trashed_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            settled_at: None,
             erase_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             paths: vec![SEGMENT.into()],
             bytes: 8,
@@ -3821,6 +3923,7 @@ mod tests {
             surface: web(),
             at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             operation: None,
+            backups: false,
         });
         publish(&root, &item).unwrap();
         let displaced = displaced_rel(&item.id, SEGMENT);
@@ -3856,6 +3959,7 @@ mod tests {
             surface: web(),
             at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             operation: None,
+            backups: false,
         });
         publish(&root, &item).unwrap();
         fs::remove_file(

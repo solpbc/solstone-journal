@@ -141,6 +141,14 @@ pub enum Action {
     Erase,
     /// Emptied the trash.
     EmptyTrash,
+    /// Removed an erased thing from every backup, its stored pieces gone.
+    BackupErase,
+    /// Removed an erased thing from every backup; a piece identical to
+    /// something kept stays, as part of what was kept.
+    BackupEraseShared,
+    /// Removed an erased thing from every backup, but its storage keeps
+    /// copies (versions, locks, hidden files, or a refused delete).
+    BackupEraseStays,
 }
 
 /// A page of the journal's web app.

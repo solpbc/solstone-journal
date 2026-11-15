@@ -27,6 +27,9 @@ pub const COPY_EXCLUDES: &[&str] = &[
     "health/init-restore.json",
     // Local restore obligation. A snapshot must not import, overwrite, or erase it.
     crate::whole_journal_restore::WHOLE_JOURNAL_RESTORE_FILE,
+    // Local obligation: what an erase left for the backup to remove. A copy or
+    // restore must not bring the list back, nor the names it holds.
+    "health/backup-erase",
     "health/!solstone-claim-00000000-*",
     "health/brain.log",
     "health/brain-fingerprint.key",

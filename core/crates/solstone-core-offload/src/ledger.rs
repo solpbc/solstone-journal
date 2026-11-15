@@ -71,6 +71,86 @@ impl JournalOffloadSummary {
     }
 }
 
+/// Media archives a backup erase rewrote: each archive's first id, as the
+/// ledger's witnesses name it, to the id it has now. Beside the day ledgers and
+/// backed up with them; a `.json`, so the ledger listing passes over it.
+const MOVES_FILE: &str = "health/offload/archive-moves.json";
+
+/// The archive moves recorded so far.
+pub fn archive_moves(journal: &Path) -> std::collections::BTreeMap<String, String> {
+    fs::read(journal.join(MOVES_FILE))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|value| value.get("moves").cloned())
+        .and_then(|moves| serde_json::from_value(moves).ok())
+        .unwrap_or_default()
+}
+
+/// Record that archives were rewritten: `original` is now `current`. Later
+/// records win. Ids are full restic snapshot ids.
+pub fn record_archive_moves(journal: &Path, moves: &[(String, String)]) -> Result<(), String> {
+    if moves.is_empty() {
+        return Ok(());
+    }
+    let hex = |id: &str| id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit());
+    if moves.iter().any(|(from, to)| !hex(from) || !hex(to)) {
+        return Err("invalid archive move".into());
+    }
+    let mut all = archive_moves(journal);
+    for (original, current) in moves {
+        all.insert(original.clone(), current.clone());
+    }
+    fs::create_dir_all(journal.join("health/offload")).map_err(|error| error.to_string())?;
+    let bytes = serde_json::to_vec_pretty(&serde_json::json!({"schema": 1, "moves": all}))
+        .map_err(|error| error.to_string())?;
+    solstone_core_journal_io::atomic::atomic_replace(
+        journal.join(MOVES_FILE),
+        &bytes,
+        solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map_err(|error| error.to_string())
+}
+
+/// A witness's archive as it is now: the id a backup erase moved it to, found
+/// by the original id, or by a prefix of it for a witness that names a short
+/// one.
+fn moved(moves: &std::collections::BTreeMap<String, String>, id: &str) -> Option<String> {
+    if id.len() < 8 {
+        return None;
+    }
+    moves.get(id).cloned().or_else(|| {
+        let mut found = moves
+            .iter()
+            .filter(|(original, _)| original.starts_with(id));
+        match (found.next(), found.next()) {
+            (Some((_, current)), None) => Some(current.clone()),
+            _ => None,
+        }
+    })
+}
+
+fn apply_moves(journal: &Path, mut catalog: DayCatalog) -> DayCatalog {
+    let moves = archive_moves(journal);
+    if moves.is_empty() {
+        return catalog;
+    }
+    for segment in &mut catalog.segments {
+        let witnesses = segment
+            .history
+            .iter_mut()
+            .flat_map(|manifest| manifest.files.iter_mut())
+            .chain(segment.active.iter_mut());
+        for witness in witnesses {
+            if let Some(current) = moved(&moves, &witness.snapshot_id) {
+                witness.snapshot_id = current;
+            }
+        }
+        // A legacy restore binding's revision covers its snapshot id, so it is
+        // never moved; the erase leaves the archives such bindings name alone.
+    }
+    catalog
+}
+
 fn path(journal: &Path, day: &str) -> PathBuf {
     journal.join("health/offload").join(format!("{day}.jsonl"))
 }
@@ -158,7 +238,7 @@ pub fn catalog_day(journal: &Path, day: &str) -> Result<DayCatalog, String> {
         }
     }
     match fs::read(&file) {
-        Ok(bytes) => Ok(fold_lines(day, &bytes)),
+        Ok(bytes) => Ok(apply_moves(journal, fold_lines(day, &bytes))),
         Err(_) => {
             result.unreadable_ledgers.push(file.display().to_string());
             Ok(result)

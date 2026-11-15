@@ -32,6 +32,7 @@ pub(crate) fn run(
         }
         "backup:prune" if args.is_empty() => backup_prune(journal, services),
         "backup:verify" if args.is_empty() => backup_verify(journal, services),
+        "backup:erase" if args.is_empty() => backup_erase(journal, services),
         "backup:offload" => backup_offload(args, journal, services),
         _ => usage_error(id, args),
     }
@@ -73,6 +74,31 @@ fn backup_prune(journal: &Path, services: &BackupServices<'_>) -> CliRun {
         solstone_core_offload::older_backups::survey_if_pending(journal, services);
     }
     paused_line(journal, backup_prune_result(result))
+}
+
+fn backup_erase(journal: &Path, services: &BackupServices<'_>) -> CliRun {
+    let report = solstone_core_offload::backup_erase::run(journal, services);
+    let mut line = format!(
+        "backup erase: {} removed={} shared={} staying={} unreached={} pending={}",
+        report.state,
+        report.removed,
+        report.shared,
+        report.staying,
+        report.unreached,
+        report.pending
+    );
+    if let Some(reason) = &report.reason {
+        line.push_str(&format!(" reason={reason}"));
+    }
+    let ok = matches!(
+        report.state.as_str(),
+        "nothing" | "done" | "idle" | "waiting" | "running"
+    );
+    CliRun {
+        stdout: format!("{line}\n"),
+        stderr: String::new(),
+        exit_code: i32::from(!ok),
+    }
 }
 
 const PAUSED_NOTHING_RAN: &str =

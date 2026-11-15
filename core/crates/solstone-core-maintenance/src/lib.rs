@@ -360,6 +360,7 @@ fn format_backup_resolution_error(args: &[String], error: &ClosedToolError) -> C
     let id = classify_maintenance_routine_id(args);
     let line = match id.as_deref() {
         Some("backup:prune") => format!("backup prune: error reason={outer} detail={detail}"),
+        Some("backup:erase") => format!("backup erase: error reason={outer} detail={detail}"),
         Some("backup:verify") => format!("backup verify: error reason={outer} detail={detail}"),
         Some("backup:offload") => format_offload_result(&OffloadResult {
             status: "stalled".into(),
@@ -456,6 +457,7 @@ fn classify_maintenance_tool_resolution(args: &[String]) -> Option<bool> {
         .unwrap_or(routine_args);
     match id.as_str() {
         "backup:prune" if forwarded.is_empty() => Some(false),
+        "backup:erase" if forwarded.is_empty() => Some(false),
         "backup:verify" if forwarded.is_empty() => Some(false),
         "backup:offload" => None,
         _ => None,

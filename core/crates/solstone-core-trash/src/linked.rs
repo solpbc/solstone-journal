@@ -111,6 +111,7 @@ pub fn detach_linked(
         action,
         surface,
         trashed_at: now.to_rfc3339_opts(SecondsFormat::Millis, true),
+        settled_at: None,
         // Provisional, so a reader before it settles never sees an erase that
         // has already come; settling counts the days again from then.
         erase_at: (now + Duration::days(i64::from(erase_after_days(journal))))
@@ -331,6 +332,7 @@ fn settle(journal: &Path, kind: &dyn Kind, id: &str) -> Result<Option<Item>, Tra
     )
     .record_event(Event::Trashed, item.unit.clone());
     item.state = State::Trashed;
+    item.settled_at = Some(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true));
     publish(journal, &item)?;
     Ok(Some(item))
 }

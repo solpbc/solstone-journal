@@ -51,6 +51,23 @@ pub fn destination_from_config(config: &Map<String, Value>) -> Option<Destinatio
     })
 }
 
+/// Which backup destination is set up, as a stable name that holds across key
+/// and credential changes: own storage by its repository, storage sol pbc
+/// operates by its account, instance and place. `None` when none is set up.
+pub fn destination_identity(journal: &Path) -> Option<String> {
+    let config = get_backup_config(journal).ok()?;
+    match config.get("mode").and_then(Value::as_str)? {
+        "byo" => destination_from_config(&config).map(|d| format!("byo:{}", d.repository)),
+        "operated" => crate::hosted::load_hosted_binding(journal).map(|b| {
+            format!(
+                "operated:{}:{}:{}/{}",
+                b.account_id, b.instance_id, b.bucket, b.prefix
+            )
+        }),
+        _ => None,
+    }
+}
+
 pub fn get_keys(journal: &Path) -> Result<Option<BackupKeys>, BackupError> {
     let config = get_backup_config(journal)?;
     build_keys(config.get("daily_key"), config.get("recovery_key"))

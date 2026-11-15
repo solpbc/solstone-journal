@@ -69,11 +69,12 @@ pub use state::{
     backup_paused_at, backup_setup_fingerprint, candidate_binding, clear_backup_config,
     clear_backup_config_at_root, clear_backup_config_if_unchanged,
     clear_pending_key_revocation_at_root, credential_binding, destination_from_config,
-    generate_and_store_keys, get_backup_config, get_destination, get_keys, mutate_older_backups,
-    record_backup_result, record_offload_result, record_prune_result, record_restore_result,
-    record_verification_result, set_backup_paused, set_destination, set_enabled, set_mode,
-    set_mode_at_root_checked, set_offload, set_recovery_key, set_recovery_key_confirmed,
-    set_retention, stage_pending_key_revocation_at_root, status_view, with_backup_task_checkpoint,
+    destination_identity, generate_and_store_keys, get_backup_config, get_destination, get_keys,
+    mutate_older_backups, record_backup_result, record_offload_result, record_prune_result,
+    record_restore_result, record_verification_result, set_backup_paused, set_destination,
+    set_enabled, set_mode, set_mode_at_root_checked, set_offload, set_recovery_key,
+    set_recovery_key_confirmed, set_retention, stage_pending_key_revocation_at_root, status_view,
+    with_backup_task_checkpoint,
 };
 pub use teardown_recovery::{TEARDOWN_RECOVERY_VERSION, teardown_recovery_path};
 

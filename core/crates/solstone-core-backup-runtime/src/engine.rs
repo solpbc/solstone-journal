@@ -600,6 +600,32 @@ pub(crate) fn restic(
     .map_err(|_| "failed".into())
 }
 
+/// Run another restic-compatible program (the journal's erase helper) with this
+/// runtime's repository, password, backend environment and global options.
+pub(crate) fn run_program(
+    services: &BackupServices<'_>,
+    runtime: &Runtime,
+    program: &Path,
+    args: Vec<String>,
+    timeout: u64,
+) -> Result<crate::runner::ResticResult, String> {
+    let mut full = runtime.global_options.clone();
+    full.extend(args);
+    run_restic(
+        services.runner,
+        &full,
+        &runtime.destination.repository,
+        &runtime.password,
+        program,
+        Some(&runtime.backend_env),
+        false,
+        None,
+        Some(Duration::from_secs(timeout)),
+        &[],
+    )
+    .map_err(|_| "failed".into())
+}
+
 pub(crate) fn unlock(services: &BackupServices<'_>, runtime: &Runtime) {
     let _ = restic(
         services,

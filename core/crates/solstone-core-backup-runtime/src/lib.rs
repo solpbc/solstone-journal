@@ -29,6 +29,7 @@ pub mod destination;
 pub mod destination_admission;
 pub mod destination_edit;
 pub mod engine;
+pub mod erase_paths;
 pub mod hosted_runtime;
 #[cfg(target_os = "ios")]
 pub mod ios_callable;

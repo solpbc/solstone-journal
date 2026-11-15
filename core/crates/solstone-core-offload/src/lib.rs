@@ -3,6 +3,7 @@
 
 //! Native media-offload runtime authorities.
 
+pub mod backup_erase;
 pub mod cli_restore;
 pub mod cli_run;
 pub mod creator_recovery;

@@ -29,7 +29,7 @@ pub struct RoutineDescriptor {
     pub max_runtime: Option<&'static str>,
 }
 
-const ROUTINES: [RoutineDescriptor; 16] = [
+const ROUTINES: [RoutineDescriptor; 17] = [
     RoutineDescriptor {
         id: "faces:backfill",
         description: "refresh photo suggestions from meetings, including past meetings.",
@@ -91,6 +91,12 @@ const ROUTINES: [RoutineDescriptor; 16] = [
         max_runtime: Some("3h"),
     },
     RoutineDescriptor {
+        id: "backup:erase",
+        description: "remove what you erased from your backups too, when you chose it.",
+        cadence: Cadence::Hourly,
+        max_runtime: Some("7h"),
+    },
+    RoutineDescriptor {
         id: "backup:verify",
         description: "verify encrypted backup read-back.",
         cadence: Cadence::Weekly,
@@ -140,7 +146,7 @@ pub fn routine(id: &str) -> Option<&'static RoutineDescriptor> {
 
 #[cfg(test)]
 fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
-    const EXPECTED: [(&str, Cadence, Option<&str>); 16] = [
+    const EXPECTED: [(&str, Cadence, Option<&str>); 17] = [
         ("faces:reconcile", Cadence::Daily, Some("10m")),
         ("faces:backfill", Cadence::Hourly, Some("40m")),
         ("speakers:discover-voices", Cadence::Daily, Some("10m")),
@@ -155,6 +161,7 @@ fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
         ("speakers:backfill-labels", Cadence::Daily, Some("30m")),
         ("backup:run", Cadence::Hourly, Some("49h")),
         ("backup:prune", Cadence::Daily, Some("3h")),
+        ("backup:erase", Cadence::Hourly, Some("7h")),
         ("backup:verify", Cadence::Weekly, Some("90m")),
         ("backup:offload", Cadence::Daily, Some("7h")),
         ("health:mark-raw", Cadence::Daily, Some("60m")),

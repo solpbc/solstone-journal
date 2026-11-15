@@ -129,7 +129,7 @@ fn run_routine(
     };
     if matches!(
         id.as_str(),
-        "backup:run" | "backup:prune" | "backup:verify" | "backup:offload"
+        "backup:run" | "backup:prune" | "backup:erase" | "backup:verify" | "backup:offload"
     ) {
         return match backup_services {
             Some(backup_services) => {
