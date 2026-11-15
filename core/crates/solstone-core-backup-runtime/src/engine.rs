@@ -626,7 +626,7 @@ pub(crate) fn run_program(
     .map_err(|_| "failed".into())
 }
 
-pub(crate) fn unlock(services: &BackupServices<'_>, runtime: &Runtime) {
+fn unlock(services: &BackupServices<'_>, runtime: &Runtime) {
     let _ = restic(
         services,
         runtime,

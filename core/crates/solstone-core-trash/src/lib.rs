@@ -1305,28 +1305,6 @@ pub fn holders(journal: &Path, path: &str, except: &str) -> Result<Vec<String>, 
     Ok(found)
 }
 
-/// The trash folder's path relative to the journal root, for code that looks
-/// at a copy of the journal made elsewhere (a backup), never at the live one.
-pub fn copy_rel() -> &'static str {
-    TRASH_DIR
-}
-
-/// Whether a top-level name found in a copy's trash folder has since left this
-/// journal's trash: it isn't the trash's own bookkeeping, and nothing by that
-/// name is here now. Anything still here, even unreadable, can be recovered.
-pub fn left_since_copied(journal: &Path, name: &str) -> bool {
-    if name.is_empty()
-        || name.contains(['/', '\\'])
-        || name == SETS_DIR
-        || name == LOCK_STEM
-        || name == format!("{LOCK_STEM}.lock")
-    {
-        return false;
-    }
-    std::fs::symlink_metadata(trash_root(journal).join(name))
-        .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
-}
-
 /// One item by id, whatever its state.
 pub fn item(journal: &Path, id: &str) -> Result<Option<Item>, TrashError> {
     read_item(journal, id)

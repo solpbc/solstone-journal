@@ -15,7 +15,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
-- after you erase something from the trash, the backup page lets you remove every backup older than your newest one, once a backup has finished without what you erased. you choose separately whether to also remove the backups kept from before you restored this journal. a media archive that may hold the only copy of media you still have stays. apart from those, no backup at your current destination can bring it back. what only the removed backups held can stay in storage, encrypted with your recovery key, with no backup pointing to it. `solstone journal backup remove-older` does the same from the command line. not on iphone yet.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
 ### Changed

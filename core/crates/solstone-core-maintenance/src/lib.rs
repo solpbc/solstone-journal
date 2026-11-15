@@ -400,12 +400,7 @@ fn run_admitted_backup(
                     rclone_path: tools.rclone_path.as_deref(),
                     ..placeholder
                 };
-                let result = capability.execute(&services);
-                // A backup that finished may be the one an erase was waiting on.
-                if result.status == "ok" {
-                    solstone_core_offload::older_backups::survey_if_pending(journal, &services);
-                }
-                bodies::backup::backup_run_result(result)
+                bodies::backup::backup_run_result(capability.execute(&services))
             }
             Err(tool_error) => {
                 bodies::backup::backup_run_result(capability.record_tool_error(clock, tool_error))

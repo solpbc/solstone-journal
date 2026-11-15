@@ -153,10 +153,6 @@ async fn corpus_replays_all_cases() {
                         json!(!cfg!(any(target_os = "ios", target_os = "android")));
                     expected_json["prepare_supported"] = json!(false);
                 }
-                // Nothing in the corpus erased anything, so older backups stay hidden.
-                if case["path"] == "/app/backup/status" && response.status == 200 {
-                    expected_json["older_backups"] = json!({"state": "hidden"});
-                }
                 #[cfg(windows)]
                 if matches!(
                     case["path"].as_str(),
@@ -260,7 +256,7 @@ async fn status_shape_preserves_backup_phase_discrimination() {
         assert_eq!(status, 200);
         assert_eq!(
             body.as_object().expect("object").len(),
-            22 + usize::from(cfg!(windows))
+            21 + usize::from(cfg!(windows))
         );
         assert_eq!(body["recovery_key_revocation_pending"], false);
         assert_eq!(body["recovery_key_revocation_unresolved"], false);

@@ -973,30 +973,6 @@ pub(crate) fn build_keys(
     }
 }
 
-/// The key "remove older backups" keeps its state under.
-pub const OLDER_BACKUPS: &str = "older_backups";
-
-/// Change the "remove older backups" state in one locked config write. The
-/// closure gets the object (empty when there is none) and returns whether it
-/// changed it.
-pub fn mutate_older_backups<T>(
-    journal: &Path,
-    operation: impl FnOnce(&mut Map<String, Value>) -> (bool, T),
-) -> Result<T, BackupError> {
-    mutate_backup_section(journal, |backup| {
-        let mut state = backup
-            .get(OLDER_BACKUPS)
-            .and_then(Value::as_object)
-            .cloned()
-            .unwrap_or_default();
-        let (changed, value) = operation(&mut state);
-        if changed {
-            backup.insert(OLDER_BACKUPS.to_owned(), Value::Object(state));
-        }
-        Ok((changed, value))
-    })
-}
-
 fn record(journal: &Path, key: &str, value: Map<String, Value>) -> Result<(), BackupError> {
     mutate_backup_section(journal, |backup| {
         set_value(backup, key, Value::Object(value))

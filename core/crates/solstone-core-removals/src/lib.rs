@@ -126,8 +126,6 @@ pub enum Action {
     VoiceOnlyRelease,
     /// Turned off the backup and deleted its copies.
     BackupOff,
-    /// Removed every backup older than the newest, after an erase.
-    OlderBackupsRemove,
     /// Removed segments or originals with the operator retention tool.
     RetentionTool,
     /// Finished removals that had stopped partway (Home's "finish them").
@@ -688,67 +686,6 @@ pub fn history(journal_root: &Path, limit: usize) -> Result<History, HistoryErro
     }
     entries.sort_by(|left, right| right.at.cmp(&left.at).then(right.id.cmp(&left.id)));
     Ok(History { total, entries })
-}
-
-/// How far before `since` an erase's name may begin: an entry's name carries
-/// its operation's start, which can precede the erase itself (a resumed erase
-/// keeps the time the owner asked).
-const ERASED_NAME_SLACK_DAYS: i64 = 31;
-
-/// Every erase entry whose files were gone after `since`, oldest first.
-///
-/// With `skip_old_names`, a name that begins more than a month before `since`
-/// isn't read: a quick look for a page. Without it every entry is read, which
-/// is what a decision to remove anything takes, since an erase can finish long
-/// after the act its name dates.
-pub fn erased_since(
-    journal_root: &Path,
-    since: DateTime<Utc>,
-    skip_old_names: bool,
-) -> Result<Vec<Entry>, HistoryError> {
-    let dir = contained_path(journal_root, RECORD_DIR)?;
-    let listing = match std::fs::read_dir(&dir) {
-        Ok(listing) => listing,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(source) => return Err(HistoryError::Read { path: dir, source }),
-    };
-    let floor = skip_old_names
-        .then(|| since.checked_sub_signed(chrono::Duration::days(ERASED_NAME_SLACK_DAYS)))
-        .flatten()
-        .map(|floor| floor.format("%Y%m%dT%H%M%S%3fZ").to_string());
-    let mut entries = Vec::new();
-    for item in listing {
-        let item = item.map_err(|source| HistoryError::Read {
-            path: dir.clone(),
-            source,
-        })?;
-        let name = item.file_name();
-        let Some(name) = name.to_str().filter(|name| name.ends_with(".json")) else {
-            continue;
-        };
-        let started = name.get(..19).filter(|prefix| {
-            chrono::NaiveDateTime::parse_from_str(prefix, "%Y%m%dT%H%M%S%3fZ").is_ok()
-        });
-        if let Some(floor) = &floor
-            && started.is_some_and(|started| started < floor.as_str())
-        {
-            continue;
-        }
-        let path = dir.join(name);
-        let Ok(bytes) = std::fs::read(&path) else {
-            log::warn!("deletion record entry {} unreadable", path.display());
-            continue;
-        };
-        let Ok(entry) = serde_json::from_slice::<Entry>(&bytes) else {
-            continue;
-        };
-        let after = DateTime::parse_from_rfc3339(&entry.at).is_ok_and(|at| at > since);
-        if entry.event == Event::Erased && after {
-            entries.push(entry);
-        }
-    }
-    entries.sort_by(|left, right| left.at.cmp(&right.at).then(left.id.cmp(&right.id)));
-    Ok(entries)
 }
 
 /// What [`history`] returns.
