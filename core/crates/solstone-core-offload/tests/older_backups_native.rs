@@ -619,3 +619,127 @@ fn an_archive_of_only_erased_media_goes_and_one_with_kept_media_stays() {
     let backup = get_backup_config(&fixture.journal).unwrap();
     assert!(backup.get("older_backups").is_some());
 }
+
+/// sol pbc's operated storage, with a stub broker handing out credentials for
+/// the loopback bucket: the removal takes the delete-capable maintenance
+/// credential, and the survey after a backup the backup's append-only one.
+struct StubBroker {
+    endpoint: String,
+    scopes: std::cell::RefCell<Vec<String>>,
+}
+
+impl solstone_core_backup_runtime::HttpTransport for StubBroker {
+    fn execute(
+        &self,
+        request: &solstone_core_backup_runtime::HttpRequest,
+    ) -> Result<
+        solstone_core_backup_runtime::HttpResponse,
+        solstone_core_backup_runtime::hosted_runtime::HttpError,
+    > {
+        if !request.url.ends_with("/backup/credentials") {
+            return Err(solstone_core_backup_runtime::hosted_runtime::HttpError::Other);
+        }
+        let scope = serde_json::from_slice::<Value>(&request.body).unwrap()["scope"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        self.scopes.borrow_mut().push(scope);
+        Ok(solstone_core_backup_runtime::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&json!({
+                "access_key_id": "fixture-access", "secret_access_key": "fixture-secret",
+                "session_token": "fixture-session", "endpoint": self.endpoint,
+                "expires_at": "2099-01-01T00:00:00Z",
+            }))
+            .unwrap(),
+        })
+    }
+}
+
+#[test]
+#[ignore = "requires native restic and rclone; see the module doc"]
+fn operated_storage_takes_the_same_choice_through_the_maintenance_credential() {
+    let fixture = Fixture::new();
+    let endpoint = fixture
+        .repository
+        .trim_start_matches("s3:")
+        .trim_end_matches("/fixture-bucket/byo")
+        .to_owned();
+    solstone_core_backup::save_hosted_binding(
+        &fixture.journal,
+        &solstone_core_backup::HostedBinding {
+            broker_endpoint: "https://broker.invalid".into(),
+            account_id: "synthetic-account".into(),
+            instance_id: "synthetic-instance".into(),
+            bucket: "fixture-bucket".into(),
+            prefix: "byo".into(),
+            broker_token: "synthetic-broker-token".into(),
+        },
+    )
+    .unwrap();
+    solstone_core_backup::set_mode(&fixture.journal, "operated").unwrap();
+    let broker = StubBroker {
+        endpoint,
+        scopes: std::cell::RefCell::new(Vec::new()),
+    };
+    let rclone = required("SOLSTONE_NATIVE_RCLONE");
+    let services = BackupServices {
+        runner: &SystemToolRunner,
+        http: &broker,
+        clock: &WallClock,
+        restic: Some((&fixture.restic).into()),
+        rclone_path: Some(&rclone),
+        version: "older-backups-fixture",
+        journal_maintenance: &NativeJournalMaintenance,
+    };
+    fixture.older(48, &[]);
+    fixture.trash();
+    std::thread::sleep(Duration::from_millis(1100));
+    assert_eq!(run_backup(&fixture.journal, &services).status, "ok");
+    fixture.erase(true);
+    std::thread::sleep(Duration::from_millis(1100));
+    broker.scopes.borrow_mut().clear();
+    let newest = run_backup(&fixture.journal, &services);
+    assert_eq!(newest.status, "ok", "{newest:?}");
+    let backup_scopes = broker.scopes.borrow().clone();
+    broker.scopes.borrow_mut().clear();
+    solstone_core_offload::older_backups::survey_if_pending(&fixture.journal, &services);
+    assert_eq!(
+        *broker.scopes.borrow(),
+        backup_scopes,
+        "the survey asks only for what a backup asks for"
+    );
+    assert!(!backup_scopes.iter().any(|scope| scope == "maintenance"));
+    let shown = fixture.state();
+    assert_eq!(
+        (shown["state"].as_str(), shown["operated"].as_bool()),
+        (Some("ready"), Some(true)),
+        "{shown}"
+    );
+    broker.scopes.borrow_mut().clear();
+    let done = remove(&fixture.journal, &services, false, None, web(), &|_, _| {}).unwrap();
+    assert!(
+        broker
+            .scopes
+            .borrow()
+            .iter()
+            .all(|scope| scope == "maintenance")
+    );
+    assert_eq!(done.removed, 2);
+    assert_eq!(done.storage, "removes");
+    assert_eq!(fixture.snapshots().len(), 1);
+    assert_eq!(fixture.holders(&erased_rel()), 0);
+    assert_eq!(fixture.holders(&trash_rel()), 0);
+    let history = solstone_core_removals::history(&fixture.journal, 10).unwrap();
+    assert!(
+        history
+            .entries
+            .iter()
+            .any(|entry| entry.action == Action::OlderBackupsRemove
+                && entry.unit
+                    == Unit::Backup {
+                        storage: "operated".into()
+                    })
+    );
+}
