@@ -627,19 +627,23 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         let shared = count(entry, "in_use_kept") + count(entry, "in_use_trash");
         let elsewhere = count(entry, "elsewhere") > 0;
         let left_alone = legacy.contains(&entry.id);
-        let action = if keeps.is_some() || left_alone || elsewhere {
+        // Some backups still able to restore it is the larger truth, ahead of
+        // what the storage keeps of deleted files.
+        let action = if left_alone || elsewhere {
+            Action::BackupErasePartly
+        } else if keeps.is_some() {
             Action::BackupEraseStays
         } else if shared > 0 {
             Action::BackupEraseShared
         } else {
             Action::BackupErase
         };
-        if keeps.is_none() {
-            if elsewhere {
-                stays_reason = Some("elsewhere");
-            } else if left_alone && stays_reason.is_none() {
-                stays_reason = Some("legacy_archive");
-            }
+        // The run's reason: backups that still hold it outrank storage that
+        // keeps deleted files.
+        if elsewhere {
+            stays_reason = Some("elsewhere");
+        } else if left_alone && stays_reason != Some("elsewhere") {
+            stays_reason = Some("legacy_archive");
         }
         // Durable: a run that stops before the entry is retired finds the
         // same history row again rather than writing a second. A row that
@@ -671,7 +675,7 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
             }),
         );
         match action {
-            Action::BackupEraseStays => report.staying += 1,
+            Action::BackupEraseStays | Action::BackupErasePartly => report.staying += 1,
             Action::BackupEraseShared => report.shared += 1,
             _ => report.removed += 1,
         }

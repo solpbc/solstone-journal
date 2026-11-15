@@ -8032,6 +8032,7 @@ const REMOVAL_ACTION = {
   backup_erase: 'removed from your backups',
   backup_erase_shared: 'removed from your backups',
   backup_erase_stays: 'removed from your backups, but copies stay in storage',
+  backup_erase_partly: 'removed from your backups, but some older backups still hold it',
 };
 // A note a row carries after its words.
 const REMOVAL_ACTION_NOTE = {
@@ -8351,6 +8352,13 @@ const TRASH_COPY = {
       hidden_files: "the key your journal uses for B2 can't delete files, so B2 hid the copies instead. they stay in your bucket until you delete them there or a lifecycle rule removes hidden files.",
       refused: "your storage said no, or said yes and kept them. if the key your journal uses can't delete files, give it that permission. your journal tries again {when}.",
       unknown: "check your bucket's versioning, lifecycle and lock settings to make sure the copies are gone.",
+    },
+    // Placeholder words for VPX: some backups can still restore it.
+    partOne: '1 erased thing is out of your backups, but some older backups still hold it.',
+    partMany: '{n} erased things are out of your backups, but some older backups still hold them.',
+    part: {
+      legacy_archive: "media your journal archived before it recorded where each file sits can't be taken out of that archive safely, so the archive keeps it.",
+      elsewhere: 'backups your journal made while it was in another folder are left as they are.',
     },
   },
   loading: 'loading…',
@@ -8878,6 +8886,10 @@ function trashBackupsSentence(backups) {
         return [text(fill(B.refusedOne, B.refusedMany, count) + ' '), why(trashFill(B.own.refused, { when: trashBackupsWhen(backups.next_try) }))];
       }
       if (reason === 'unknown') return [text(fill(B.unknownOne, B.unknownMany, count) + ' '), why(B.own.unknown)];
+      // Some backups can still restore it: never "no backup can restore".
+      if (reason === 'legacy_archive' || reason === 'elsewhere') {
+        return [text(fill(B.partOne, B.partMany, count) + ' '), why(B.part[reason])];
+      }
       if (B.own[reason]) return [text(fill(B.staysOne, B.staysMany, count) + ' '), why(B.own[reason])];
       return [text(fill(B.unknownOne, B.unknownMany, count))];
     }

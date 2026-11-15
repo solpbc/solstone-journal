@@ -147,6 +147,10 @@ pub enum Action {
     /// Removed an erased thing from every backup, but its storage keeps
     /// copies (versions, locks, hidden files, or a refused delete).
     BackupEraseStays,
+    /// Removed an erased thing from the backups the journal can change, but
+    /// some older ones still hold it: a media archive from before archive
+    /// paths were recorded, or backups of the journal at another place.
+    BackupErasePartly,
 }
 
 /// A page of the journal's web app.
