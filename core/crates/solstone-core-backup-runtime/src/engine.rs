@@ -218,8 +218,8 @@ pub struct ArchiveCheckResult {
     pub verdicts: Option<Vec<ArchiveFileVerdict>>,
 }
 
-struct Runtime {
-    destination: Destination,
+pub(crate) struct Runtime {
+    pub(crate) destination: Destination,
     password: String,
     backend_env: BTreeMap<String, Option<String>>,
     global_options: Vec<String>,
@@ -496,7 +496,7 @@ pub(crate) fn value_env(destination: &Destination) -> Option<BTreeMap<String, Op
     })
 }
 
-fn runtime(
+pub(crate) fn runtime(
     journal: &Path,
     services: &BackupServices<'_>,
     scope: &str,
@@ -566,7 +566,7 @@ fn resolve_keys(journal: &Path) -> Result<String, String> {
         .ok_or_else(|| "failed".into())
 }
 
-fn restic(
+pub(crate) fn restic(
     services: &BackupServices<'_>,
     runtime: &Runtime,
     mut args: Vec<String>,
@@ -600,7 +600,7 @@ fn restic(
     .map_err(|_| "failed".into())
 }
 
-fn unlock(services: &BackupServices<'_>, runtime: &Runtime) {
+pub(crate) fn unlock(services: &BackupServices<'_>, runtime: &Runtime) {
     let _ = restic(
         services,
         runtime,

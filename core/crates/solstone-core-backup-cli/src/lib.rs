@@ -401,6 +401,7 @@ fn classify_tool_resolution(args: &[String]) -> Option<bool> {
     let (command, rest) = args.split_first()?;
     match command.as_str() {
         "prune" if no_positionals(rest) => Some(false),
+        "remove-older" if remove_older_options(rest).is_some() => Some(false),
         "restore" => restore_options(rest).map(|_| false),
         "recovery-key" => {
             let (options, positionals) = split_terminator(rest);
@@ -543,6 +544,14 @@ fn run_cli_with(
                 "schedule".into(),
                 solstone_core_backup_runtime::effective_backup_schedule(journal),
             );
+            view.insert(
+                "older_backups".into(),
+                solstone_core_offload::older_backups::view(
+                    journal,
+                    chrono::Utc::now().timestamp(),
+                    false,
+                ),
+            );
             Value::Object(view)
         })),
         "destination" => destination_command(rest, journal, services, executable),
@@ -551,6 +560,10 @@ fn run_cli_with(
         "pause" if no_positionals(rest) => pause_command(journal, services, true),
         "resume" if no_positionals(rest) => pause_command(journal, services, false),
         "prune" if no_positionals(rest) => backup_prune(journal, services),
+        "remove-older" => match remove_older_options(rest) {
+            Some((yes, include_kept)) => remove_older(journal, services, yes, include_kept),
+            None => usage_error(&args.join(" ")),
+        },
         "offload" => offload_command(rest, journal, services),
         "off" => off_command(rest, journal, services),
         "restore" => restore_command(rest, journal, services, recorder),
@@ -1824,6 +1837,131 @@ fn incomplete_backup_message(
             "Backup partial. {scale} in it, and the snapshot couldn't be \
              confirmed.{reason} Run `solstone journal backup run` again once that's fixed."
         ),
+    }
+}
+
+/// `remove-older [--yes] [--include-kept-before-restore]`.
+fn remove_older_options(args: &[String]) -> Option<(bool, bool)> {
+    let (options, positionals) = split_terminator(args);
+    if !positionals.is_empty() {
+        return None;
+    }
+    let (mut yes, mut include_kept) = (false, false);
+    for option in options {
+        match option.as_str() {
+            "--yes" => yes = true,
+            "--include-kept-before-restore" => include_kept = true,
+            _ => return None,
+        }
+    }
+    Some((yes, include_kept))
+}
+
+fn backup_time(value: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|time| {
+            time.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|_| value.to_owned())
+}
+
+fn older_refusal(refusal: &solstone_core_offload::older_backups::Refusal) -> CliRun {
+    use solstone_core_offload::older_backups::Refusal;
+    let line = match refusal {
+        Refusal::Unavailable => "Backup isn't set up here, so there's nothing to remove.".to_owned(),
+        Refusal::Running => "Older backups are already being removed.".to_owned(),
+        Refusal::Waiting => "Nothing to remove yet: older backups can be removed once a backup has finished after an erase.".to_owned(),
+        Refusal::NewestIncomplete => "Your newest backup couldn't read some files, so older backups may hold their only copy. Nothing was removed.".to_owned(),
+        Refusal::NewestHoldsErased => "Your newest backup still holds something you erased. Nothing was removed; try again after the next backup.".to_owned(),
+        Refusal::CheckBlind => "Couldn't check your newest backup, so nothing was removed.".to_owned(),
+        Refusal::Nothing => "There are no older backups to remove.".to_owned(),
+        Refusal::Failed(reason) => format!("Couldn't reach your backup: {}. Nothing was removed.", backup_failure_reason(reason)),
+        Refusal::Stopped { reason, removed, total } => format!(
+            "Stopped after removing {removed} of {total}: {}. What was removed stays removed; run this again to remove the rest.",
+            backup_failure_reason(reason)
+        ),
+    };
+    runtime_error(line)
+}
+
+fn remove_older(
+    journal: &Path,
+    services: &BackupServices<'_>,
+    yes: bool,
+    include_kept: bool,
+) -> CliRun {
+    use solstone_core_offload::older_backups;
+    if !yes {
+        let plan = match older_backups::plan(journal, services) {
+            Ok(plan) => plan,
+            Err(refusal) => return older_refusal(&refusal),
+        };
+        let mut out = String::new();
+        let removed = plan.older.len()
+            + plan.archives_removable.len()
+            + if include_kept {
+                plan.kept_before_restore.len()
+            } else {
+                0
+            };
+        out.push_str(&format!("This removes {removed} backups:\n"));
+        if let (Some(first), Some(last)) = (plan.older.first(), plan.older.last()) {
+            out.push_str(&format!(
+                "  {} older backups, {} to {}\n",
+                plan.older.len(),
+                backup_time(&first.time),
+                backup_time(&last.time)
+            ));
+        }
+        if !plan.archives_removable.is_empty() {
+            out.push_str(&format!(
+                "  {} media archives that hold only things you erased\n",
+                plan.archives_removable.len()
+            ));
+        }
+        if include_kept && !plan.kept_before_restore.is_empty() {
+            out.push_str(&format!(
+                "  {} backups from before you restored this journal\n",
+                plan.kept_before_restore.len()
+            ));
+        }
+        out.push_str(&format!(
+            "It keeps your newest backup, from {}.\n",
+            backup_time(&plan.keep.time)
+        ));
+        if plan.archives_mixed + plan.archives_kept > 0 {
+            out.push_str(&format!(
+                "It keeps {} media archives that may hold media you still have.\n",
+                plan.archives_mixed + plan.archives_kept
+            ));
+        }
+        if !include_kept && !plan.kept_before_restore.is_empty() {
+            out.push_str(&format!(
+                "It keeps {} backups from before you restored this journal; add --include-kept-before-restore to remove them too.\n",
+                plan.kept_before_restore.len()
+            ));
+        }
+        out.push_str(&format!(
+            "After this you can't restore your journal to any time before {}.\nRun again with --yes to remove them.\n",
+            backup_time(&plan.keep.time)
+        ));
+        return success(out);
+    }
+    match older_backups::remove(
+        journal,
+        services,
+        include_kept,
+        solstone_core_removals::Surface::Cli,
+        &|_, _| {},
+    ) {
+        Ok(done) => success(format!(
+            "Removed {} backups. No backup can bring back what you erased before {}.\n",
+            done.removed,
+            backup_time(&done.kept_newest_time)
+        )),
+        Err(refusal) => older_refusal(&refusal),
     }
 }
 

@@ -282,6 +282,7 @@ pub fn routes_with_deps(deps: BackupWebDeps) -> Router {
     let enable_hosted = deps.clone();
     let destination = deps.clone();
     let rotate = deps.clone();
+    let older_backups = deps.clone();
     let teardown = deps.clone();
     let restore = deps.clone();
     let restore_hosted = deps.clone();
@@ -364,6 +365,10 @@ pub fn routes_with_deps(deps: BackupWebDeps) -> Router {
         .route(
             "/app/backup/recovery-key/rotate",
             post(move || rotate_key(rotate.clone())),
+        )
+        .route(
+            "/app/backup/older-backups/remove",
+            post(move |body| older_backups_route(older_backups.clone(), body)),
         )
         .route(
             "/app/backup/teardown",
@@ -1318,6 +1323,51 @@ async fn rotate_key(deps: BackupWebDeps) -> axum::response::Response {
                 "error",
                 result.reason_code.or_else(|| Some("failed".into())),
             ),
+        }
+    });
+    status_response(&deps)
+}
+
+/// Remove every backup older than the newest after an erase. The removal
+/// itself refuses anything the page's state no longer allows.
+async fn older_backups_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Response {
+    let payload = match validation::object(&body, response::missing) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let include_kept = match payload.get("include_kept_before_restore") {
+        None => false,
+        Some(serde_json::Value::Bool(value)) => *value,
+        Some(_) => return response::missing("include_kept_before_restore must be true or false"),
+    };
+    let started = match operation::begin(&deps.operations, "older_backups", None, None, None) {
+        Ok(started) => started,
+        Err(error) => return error,
+    };
+    spawn_backup_worker(deps.clone(), started.generation, move |worker| {
+        let tools = match resolve_tools(&worker) {
+            Ok(tools) => tools,
+            Err(error) => return Terminal::tool_error(error),
+        };
+        let runner = lifetime_runner(&worker);
+        let result = solstone_core_offload::older_backups::remove(
+            &worker.journal_root,
+            &services(&worker, &runner, &tools),
+            include_kept,
+            solstone_core_removals::Surface::Web {
+                page: solstone_core_removals::Page::Backup,
+            },
+            &|_, _| {},
+        );
+        match result {
+            Ok(_) => Terminal::done(),
+            Err(refusal) => match refusal {
+                solstone_core_offload::older_backups::Refusal::Stopped { .. }
+                | solstone_core_offload::older_backups::Refusal::Failed(_) => {
+                    Terminal::error(refusal.code().to_owned())
+                }
+                _ => Terminal::phase("refused", Some(refusal.code().to_owned())),
+            },
         }
     });
     status_response(&deps)

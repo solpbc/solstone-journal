@@ -226,6 +226,39 @@
         <button type="button" data-action="view-key" data-copy="action_labels.view_key"></button>
       </div>
 
+      <section class="backup-older" id="older-backups" data-older-section hidden>
+        <h2 data-copy="older.title"></h2>
+        <p data-older-lead></p>
+        <p class="backup-note" data-older-note hidden></p>
+        <ul class="backup-older-except" data-older-except hidden></ul>
+        <p class="backup-older-warn" data-older-warn hidden></p>
+        <div class="backup-panel-actions" data-older-actions hidden>
+          <button type="button" class="danger" data-action="older-open" data-copy="older.act"></button>
+        </div>
+        <div class="backup-teardown-gate backup-older-gate" data-older-gate role="group" aria-labelledby="backup-older-gate-title" hidden>
+          <h3 id="backup-older-gate-title" data-older-gate-title></h3>
+          <p class="backup-warning backup-older-stakes" data-older-stakes></p>
+          <div class="backup-older-lists">
+            <div><span class="backup-older-list-label" data-copy="older.removed"></span><ul data-older-removed></ul></div>
+            <div><span class="backup-older-list-label" data-copy="older.kept"></span><ul data-older-kept></ul></div>
+          </div>
+          <label class="backup-older-check" data-older-kept-choice hidden>
+            <input type="checkbox" data-older-include-kept>
+            <span><span data-older-kept-choice-label></span><small class="backup-hint" data-older-kept-choice-hint></small></span>
+          </label>
+          <p class="backup-older-warn" data-older-gate-warn hidden></p>
+          <details class="backup-disclose">
+            <summary data-copy="older.reach_summary"></summary>
+            <p data-copy="older.reach_storage"></p>
+            <p data-copy="older.reach_elsewhere"></p>
+          </details>
+          <div class="backup-panel-actions">
+            <button type="button" data-action="older-cancel" data-copy="action_labels.cancel"></button>
+            <button type="button" class="danger" data-action="older-confirm" data-copy="older.act"></button>
+          </div>
+        </div>
+      </section>
+
       <details class="backup-disclose backup-rotate-key">
         <summary data-copy="management.rotate_key_summary"></summary>
         <p class="backup-warning" data-copy="management.rotate_key_caption"></p>

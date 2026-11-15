@@ -373,6 +373,26 @@ function fixture(document) {
   add(preparation, 'p', { 'data-offload-prepare-status': '' });
   const pauseSection = add(management, 'section', { 'data-pause-section': '', hidden: '' });
   const pause = add(pauseSection, 'button', { 'data-action': 'pause' });
+  const older = add(management, 'section', { class: 'backup-older', id: 'older-backups', 'data-older-section': '', hidden: '' });
+  const olderLead = add(older, 'p', { 'data-older-lead': '' });
+  add(older, 'p', { 'data-older-note': '', hidden: '' });
+  const olderExcept = add(older, 'ul', { 'data-older-except': '', hidden: '' });
+  add(older, 'p', { 'data-older-warn': '', hidden: '' });
+  const olderActions = add(older, 'div', { 'data-older-actions': '', hidden: '' });
+  const olderOpen = add(olderActions, 'button', { 'data-action': 'older-open' });
+  const olderGate = add(older, 'div', { 'data-older-gate': '', hidden: '' });
+  add(olderGate, 'h3', { 'data-older-gate-title': '' });
+  add(olderGate, 'p', { 'data-older-stakes': '' });
+  const olderRemoved = add(olderGate, 'ul', { 'data-older-removed': '' });
+  const olderKept = add(olderGate, 'ul', { 'data-older-kept': '' });
+  const olderKeptChoice = add(olderGate, 'label', { 'data-older-kept-choice': '', hidden: '' });
+  const olderIncludeKept = add(olderKeptChoice, 'input', { type: 'checkbox', 'data-older-include-kept': '' });
+  olderIncludeKept.checked = false;
+  add(olderKeptChoice, 'span', { 'data-older-kept-choice-label': '' });
+  add(olderKeptChoice, 'small', { 'data-older-kept-choice-hint': '' });
+  add(olderGate, 'p', { 'data-older-gate-warn': '', hidden: '' });
+  const olderCancel = add(olderGate, 'button', { 'data-action': 'older-cancel' });
+  const olderConfirm = add(olderGate, 'button', { 'data-action': 'older-confirm' });
   const teardownSection = add(management, 'section', { class: 'backup-teardown' });
   const teardownOpen = add(teardownSection, 'button', { 'data-action': 'teardown-open' });
   const teardownGate = add(teardownSection, 'div', { class: 'backup-teardown-gate', 'data-teardown-gate': '', hidden: '' });
@@ -431,7 +451,7 @@ function fixture(document) {
   add(byo, 'form', { 'data-restore-form': '' });
   const panelCancel = add(restore, 'button', { 'data-action': 'cancel-restore' });
   panelCancel.textContent = 'cancel';
-  return { pausedSection, resume, byoLocation, destinationEdit, pauseSection, pause, destinationCancel, switchGate, switchDays, switchConfirm, root, destination, destinationForm, destinationStatus, enableBackup, saveDestination, showRestore, generateKey, backupNow, viewKey, rotateKey, retention, saveRetention, offloadProof, lastOffload, lastVerify, runHistory, runSuccessTime, verifyHistory, verifySuccessTime, stallReason, saveOffload, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, reopen, panelCancel, banner, cleanupBanner, cleanup, management, managementGrid, lastBackup, teardownOpen, teardownGate, teardownInput, teardownConfirm };
+  return { pausedSection, resume, byoLocation, destinationEdit, pauseSection, pause, destinationCancel, switchGate, switchDays, switchConfirm, root, destination, destinationForm, destinationStatus, enableBackup, saveDestination, showRestore, generateKey, backupNow, viewKey, rotateKey, retention, saveRetention, offloadProof, lastOffload, lastVerify, runHistory, runSuccessTime, verifyHistory, verifySuccessTime, stallReason, saveOffload, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, reopen, panelCancel, banner, cleanupBanner, cleanup, management, managementGrid, lastBackup, teardownOpen, teardownGate, teardownInput, teardownConfirm, older, olderLead, olderExcept, olderActions, olderOpen, olderGate, olderRemoved, olderKept, olderKeptChoice, olderIncludeKept, olderCancel, olderConfirm };
 }
 
 function createHarness(options = {}) {
@@ -2525,6 +2545,117 @@ asyncCase('an unavailable clipboard leaves a visible recovery path', async () =>
   assert.strictEqual(error.hidden, false);
   assert.ok(error.textContent.length > 0);
   h.detach();
+});
+
+
+// ---- older backups: the section's states, the confirm and its one choice
+
+function olderStatus(older) {
+  return { ...status(), enabled: true, mode: 'byo', destination: { repository: 's3:example/bucket', backend: 's3', credentials_set: true },
+    daily_key_set: true, recovery_key_set: true, recovery_key_confirmed: true, older_backups: older };
+}
+
+const READY = { state: 'ready', newest: '2026-11-14T15:12:00-07:00', older: 41, older_from: '2026-10-03T03:00:00-06:00',
+  older_to: '2026-11-13T23:00:00-07:00', archives_removable: 1, archives_mixed: 0, archives_kept: 2,
+  kept_before_restore: 2, kept_before_restore_to: '2026-09-28T10:00:00-06:00', storage: 'removes', operated: false };
+
+asyncCase('older backups: hidden, waiting and done show no action', async () => {
+  for (const [older, shown] of [[{ state: 'hidden' }, false], [{ state: 'waiting' }, true], [{ state: 'waiting', newest_incomplete: true }, true],
+    [{ state: 'done', at: 1763000000, before: '2026-11-14T15:12:00-07:00', removed: 41, archives_removed: 1, archives_mixed: 0, kept_before_restore: 0, storage: 'removes' }, true]]) {
+    const harness = createHarness({ statusQueue: [olderStatus(older)] });
+    await ready(harness);
+    assert.strictEqual(harness.older.hidden, !shown, older.state);
+    assert.strictEqual(harness.olderActions.hidden, true, older.state);
+    assert.strictEqual(harness.olderGate.hidden, true, older.state);
+    if (shown) assert.ok(harness.olderLead.textContent.length > 0, older.state);
+  }
+});
+
+asyncCase('older backups: the confirm opens with focus on cancel and sends the owner choice', async () => {
+  let body = 'uncalled';
+  const harness = createHarness({
+    statusQueue: [olderStatus(READY)],
+    respond(call) {
+      if (call.url === '/app/backup/older-backups/remove') {
+        body = JSON.parse(call.request.body);
+        return response({ ...olderStatus({ state: 'running', removed: 0, total: 44 }), operation: { kind: 'older_backups', phase: 'done' } });
+      }
+    },
+  });
+  await ready(harness);
+  assert.strictEqual(harness.olderActions.hidden, false);
+  click(harness.olderOpen);
+  await settle();
+  assert.strictEqual(harness.olderGate.hidden, false);
+  assert.strictEqual(harness.olderActions.hidden, true);
+  assert.strictEqual(harness.document.activeElement, harness.olderCancel);
+  assert.strictEqual(harness.olderKeptChoice.hidden, false, 'kept-from-restore backups exist, so the choice shows');
+  assert.strictEqual(harness.olderIncludeKept.checked, false, 'and it starts unticked');
+  const removedBefore = harness.olderRemoved.children.length;
+  harness.olderIncludeKept.checked = true;
+  harness.olderIncludeKept.dispatchEvent(event('change', { bubbles: true }));
+  assert.strictEqual(harness.olderRemoved.children.length, removedBefore + 1, 'ticking moves them to removed');
+  click(harness.olderConfirm);
+  await settle();
+  assert.deepStrictEqual(body, { include_kept_before_restore: true });
+});
+
+asyncCase('older backups: cancel closes the confirm and sends nothing', async () => {
+  let called = false;
+  const harness = createHarness({
+    statusQueue: [olderStatus({ ...READY, kept_before_restore: 0 })],
+    respond(call) { if (call.url === '/app/backup/older-backups/remove') called = true; },
+  });
+  await ready(harness);
+  click(harness.olderOpen);
+  await settle();
+  assert.strictEqual(harness.olderKeptChoice.hidden, true, 'no kept-from-restore backups, no choice');
+  click(harness.olderCancel);
+  await settle();
+  assert.strictEqual(harness.olderGate.hidden, true);
+  assert.strictEqual(harness.olderActions.hidden, false);
+  assert.strictEqual(called, false);
+});
+
+asyncCase('older backups: partly done offers to remove the kept-from-restore backups', async () => {
+  let body = 'uncalled';
+  const harness = createHarness({
+    statusQueue: [olderStatus({ state: 'partly_done', at: 1763000000, before: '2026-11-14T15:12:00-07:00', removed: 41,
+      archives_removed: 1, archives_mixed: 1, kept_before_restore: 2, storage: 'versions' })],
+    respond(call) {
+      if (call.url === '/app/backup/older-backups/remove') {
+        body = JSON.parse(call.request.body);
+        return response({ ...olderStatus({ state: 'running', removed: 0, total: 2 }), operation: { kind: 'older_backups', phase: 'done' } });
+      }
+    },
+  });
+  await ready(harness);
+  assert.strictEqual(harness.olderExcept.hidden, false);
+  assert.strictEqual(harness.olderExcept.children.length, 2);
+  const removeThem = harness.root.querySelector('[data-action="older-remove-kept"]');
+  assert.ok(removeThem, 'the inline action is there');
+  click(removeThem);
+  await settle();
+  assert.deepStrictEqual(body, { include_kept_before_restore: true });
+});
+
+asyncCase('older backups: a stopped run offers the rest with its own choice', async () => {
+  let body = 'uncalled';
+  const harness = createHarness({
+    statusQueue: [olderStatus({ state: 'stopped', removed: 18, total: 41, include_kept: false, reason: 'locked' })],
+    respond(call) {
+      if (call.url === '/app/backup/older-backups/remove') {
+        body = JSON.parse(call.request.body);
+        return response({ ...olderStatus({ state: 'running', removed: 18, total: 41 }), operation: { kind: 'older_backups', phase: 'done' } });
+      }
+    },
+  });
+  await ready(harness);
+  assert.strictEqual(harness.olderActions.hidden, false);
+  click(harness.olderOpen);
+  await settle();
+  assert.strictEqual(harness.olderGate.hidden, true, 'the owner already confirmed: no second confirm');
+  assert.deepStrictEqual(body, { include_kept_before_restore: false });
 });
 
 async function runAsyncCases() {

@@ -2169,6 +2169,9 @@ button:focus:not(:focus-visible) {
 .removals-foot { padding: 0.6em 1em 0.75em; border-top: 1px solid var(--hairline); color: var(--ink-faint); font-size: 0.8em; text-align: center; }
 
 /* Trash: what waits before it's erased. One strip above the rows swaps in place. */
+.trash-backups-line { margin: .9em 0 0; color: var(--ink-soft); font-size: .9em; }
+.trash-backups-line[hidden] { display: none; }
+@media (max-width: 560px) { .trash-backups-link { display: inline-block; min-height: 44px; line-height: 44px; } }
 .trash-panel { margin-top: .5em; }
 .trash-panel .log-entries { max-height: none; overflow: visible; padding: 0; }
 .trash-bar { position: sticky; top: 0; z-index: 1; min-height: 2.5em; padding: .5em 1em .5em .85em; border-bottom: 1px solid var(--hairline); background: var(--cream); border-radius: 8px 8px 0 0; }
@@ -2969,6 +2972,7 @@ button:focus:not(:focus-visible) {
         <div class="trash-result" id="trashResult" role="status" aria-live="polite" tabindex="-1" hidden></div>
         <div class="log-entries" id="trashList"><div class="log-empty">loading…</div></div>
       </div>
+      <p class="trash-backups-line" id="trashBackupsLine" hidden>your older backups can still restore things you've erased. <a class="trash-backups-link" href="/app/backup/#older-backups">remove older backups in backup →</a></p>
 
       <div class="settings-field trash-setting" id="trashSettingField">
         <label for="trashEraseAfterDays">erase after</label>
@@ -7755,11 +7759,12 @@ const REMOVAL_ACTION = {
   originals_release: 'removed after you approved it',
   voice_only_release: 'removed because "leave out other voices" was on',
   backup_off: 'deleted when you turned off backup',
+  older_backups_remove: 'older backups removed',
   finish_stopped: 'finished deleting',
   stretch_delete: 'deleted',
 };
 const REMOVAL_ACTION_FALLBACK = 'removed';
-const REMOVAL_ACTION_NAMES_PLACE = { backup_off: 'backup' };
+const REMOVAL_ACTION_NAMES_PLACE = { backup_off: 'backup', older_backups_remove: 'backup' };
 const REMOVAL_SURFACE = {
   transcripts: 'in transcripts', body: 'in body', import: 'in import', entities: 'in entities',
   settings: 'in settings', home: 'in home', backup: 'in backup', agents: 'in agents',
@@ -8518,7 +8523,27 @@ async function loadTrash() {
   } catch (err) {
     payload = null;
   }
+  loadTrashBackupsLine();
   return renderTrash(payload);
+}
+
+// One quiet line, shown only while older backups can still restore something
+// erased and the owner hasn't yet chosen to remove them.
+async function loadTrashBackupsLine() {
+  const line = document.getElementById('trashBackupsLine');
+  if (!line) return;
+  let shown = false;
+  try {
+    const response = await fetch('/app/backup/status', { headers: { Accept: 'application/json' } });
+    if (response.ok) {
+      const status = await response.json();
+      const state = status && status.older_backups && status.older_backups.state;
+      shown = state === 'waiting' || state === 'ready';
+    }
+  } catch (err) {
+    shown = false;
+  }
+  line.hidden = !shown;
 }
 
 // What an act's answer says, checked against what the reloaded list still holds.
