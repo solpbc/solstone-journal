@@ -246,6 +246,9 @@ pub struct ArchiveClasses {
     pub mixed: BTreeSet<String>,
 }
 
+/// One day's recordings, by (stream, key, folder), as restore resolves them.
+type DayRecordings = Vec<(String, String, PathBuf)>;
+
 /// What one archived file is, for this purpose.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Held {
@@ -332,7 +335,7 @@ pub fn classify_archives(journal: &Path, archives: &[SnapshotFacts]) -> ArchiveC
 /// from the folder.
 fn held_file(
     root: &Arc<JournalRoot>,
-    discovered: &mut BTreeMap<String, Option<Vec<(String, String, PathBuf)>>>,
+    discovered: &mut BTreeMap<String, Option<DayRecordings>>,
     segment: &SegmentCatalog,
     witness: &ArchiveWitness,
 ) -> Held {
@@ -1035,7 +1038,7 @@ fn check_newest(
     let found = repository
         .present(&plan.keep.id, &wanted)
         .map_err(Refusal::Failed)?;
-    if !found.iter().any(|path| *path == control) {
+    if !found.contains(&control) {
         return Err(Refusal::CheckBlind);
     }
     let trash_prefix = format!("{trash}/");
