@@ -1270,12 +1270,12 @@ static ARTIFACTS: &[Artifact] = &[
     // lib/solstone-restic/restic-erase beside restic.
     Artifact {
         unit: "restic-erase",
-        version: "0.19.0-sol2",
-        filename: "restic-erase_0.19.0-sol2_darwin_arm64.bz2",
-        sha256: "ed51de8b2426e569f3abee1ed80b63fa750a3993ac20936a714ffbefdd18276e",
-        size_bytes: 9770402,
-        upstream_url: "https://updates.solstone.app/assets/restic-erase/0.19.0-sol2/restic-erase_0.19.0-sol2_darwin_arm64.bz2",
-        origin_key: "assets/restic-erase/0.19.0-sol2/restic-erase_0.19.0-sol2_darwin_arm64.bz2",
+        version: "0.19.0-sol3",
+        filename: "restic-erase_0.19.0-sol3_darwin_arm64.bz2",
+        sha256: "fb257d4daca700a6c066c2d11656f691f32e1a743eb8dbcf4a2dfadb9d512ad9",
+        size_bytes: 9770318,
+        upstream_url: "https://updates.solstone.app/assets/restic-erase/0.19.0-sol3/restic-erase_0.19.0-sol3_darwin_arm64.bz2",
+        origin_key: "assets/restic-erase/0.19.0-sol3/restic-erase_0.19.0-sol3_darwin_arm64.bz2",
         artifact_key: Some("darwin-arm64"),
         platform: None,
         backend: None,
@@ -1283,12 +1283,12 @@ static ARTIFACTS: &[Artifact] = &[
     },
     Artifact {
         unit: "restic-erase",
-        version: "0.19.0-sol2",
-        filename: "restic-erase_0.19.0-sol2_linux_amd64.bz2",
-        sha256: "7542db919fb057ca1b9e3635ed0cf9a988856da929d807b39adaf1019b7eb62b",
-        size_bytes: 10142045,
-        upstream_url: "https://updates.solstone.app/assets/restic-erase/0.19.0-sol2/restic-erase_0.19.0-sol2_linux_amd64.bz2",
-        origin_key: "assets/restic-erase/0.19.0-sol2/restic-erase_0.19.0-sol2_linux_amd64.bz2",
+        version: "0.19.0-sol3",
+        filename: "restic-erase_0.19.0-sol3_linux_amd64.bz2",
+        sha256: "72d1f12d9419532159c2982720b58568524af7555e8f1972be62b612cc5ed098",
+        size_bytes: 10138580,
+        upstream_url: "https://updates.solstone.app/assets/restic-erase/0.19.0-sol3/restic-erase_0.19.0-sol3_linux_amd64.bz2",
+        origin_key: "assets/restic-erase/0.19.0-sol3/restic-erase_0.19.0-sol3_linux_amd64.bz2",
         artifact_key: Some("linux-amd64"),
         platform: None,
         backend: None,
@@ -1296,12 +1296,12 @@ static ARTIFACTS: &[Artifact] = &[
     },
     Artifact {
         unit: "restic-erase",
-        version: "0.19.0-sol2",
-        filename: "restic-erase_0.19.0-sol2_linux_arm64.bz2",
-        sha256: "f1794dfffe82c2e2880280715475d6c39efad5233637c321afd5bc390569c8e6",
-        size_bytes: 9070060,
-        upstream_url: "https://updates.solstone.app/assets/restic-erase/0.19.0-sol2/restic-erase_0.19.0-sol2_linux_arm64.bz2",
-        origin_key: "assets/restic-erase/0.19.0-sol2/restic-erase_0.19.0-sol2_linux_arm64.bz2",
+        version: "0.19.0-sol3",
+        filename: "restic-erase_0.19.0-sol3_linux_arm64.bz2",
+        sha256: "6b8468850779e7f312b26fc4033ccfbcaf62e5b52a623d99ae8a09ab63e58e7c",
+        size_bytes: 9069813,
+        upstream_url: "https://updates.solstone.app/assets/restic-erase/0.19.0-sol3/restic-erase_0.19.0-sol3_linux_arm64.bz2",
+        origin_key: "assets/restic-erase/0.19.0-sol3/restic-erase_0.19.0-sol3_linux_arm64.bz2",
         artifact_key: Some("linux-arm64"),
         platform: None,
         backend: None,
@@ -1447,6 +1447,27 @@ mod tests {
 
     thread_local! {
         static INVENTORY_OVERRIDE: Cell<Option<&'static [Artifact]>> = const { Cell::new(None) };
+    }
+
+    /// The payload ships the helper `build.py` builds: a version bump there
+    /// without new rows here (or the reverse) ships a helper nobody qualified.
+    #[test]
+    fn restic_erase_rows_are_the_build_version() {
+        let build = include_str!("../../../distribution/restic-erase/build.py");
+        let version = build
+            .lines()
+            .find_map(|line| line.strip_prefix("VERSION = \""))
+            .and_then(|rest| rest.strip_suffix('"'))
+            .expect("build.py names its VERSION");
+        let rows: Vec<_> = catalog()
+            .iter()
+            .filter(|a| a.unit == "restic-erase")
+            .collect();
+        assert!(!rows.is_empty());
+        for row in rows {
+            assert_eq!(row.version, version, "{}", row.filename);
+            assert!(row.filename.contains(version), "{}", row.filename);
+        }
     }
 
     pub(super) fn current_inventory_override() -> Option<&'static [Artifact]> {
