@@ -624,3 +624,267 @@ async fn a_journal_that_isnt_set_up_sends_a_link_to_setup() {
         "{location:?}"
     );
 }
+
+#[tokio::test]
+async fn journal_links_body_members_open_the_current_dashboard_anchor_and_hidden_groups_refuse() {
+    use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows, recorder_id};
+    let journal = journal();
+    let root = journal.path();
+    write_json(
+        &root.join("imports/.apple_health-zone.json"),
+        &json!({"zone":"UTC"}),
+    );
+    let mut records = String::new();
+    for (id, stream, key, by) in [
+        ("body_a", "import.apple_health", "a", "Synthetic Watch"),
+        ("body_b", "import.oura", "b", "Synthetic Ring"),
+    ] {
+        let mut row = BodyRow::new(
+            RowKind::Experience,
+            key.into(),
+            stream.strip_prefix("import.").unwrap(),
+            "running",
+            "Running".into(),
+        );
+        row.experience = Some("workout".into());
+        row.start = Some("2026-09-01 07:00:00 +0000".into());
+        row.end = Some("2026-09-01 07:40:00 +0000".into());
+        row.by = Some(by.into());
+        write_file(
+            &root.join(format!("chronicle/{DAY}/{stream}/070000_3600/body.jsonl")),
+            &encode_rows(std::slice::from_ref(&row)),
+        );
+        records.push_str(&format!(
+            "{}\n",
+            json!({
+                "id":id, "source":"body", "activity":"workout",
+                "account":{"key":format!("{stream}\u{1f}{key}"), "start":row.start, "end":row.end,
+                    "type":"running", "recorder":recorder_id(stream, Some(by))},
+            })
+        ));
+    }
+    write_file(
+        &root.join(format!("facets/work/activities/{DAY}.jsonl")),
+        &records,
+    );
+    let dashboard = || {
+        solstone_core_facets_web::routes(
+            root.to_path_buf(),
+            solstone_core_facets_web::Clock::owner(root),
+        )
+    };
+    let (status, body, _) = get(
+        dashboard(),
+        &format!("/app/activities/api/day/{DAY}/view?facet=work"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let view: Value = serde_json::from_str(&body).unwrap();
+    let shown = view["items"].as_array().unwrap();
+    assert_eq!(shown.len(), 1, "{view}");
+    assert_eq!(shown[0]["id"], "body_a");
+    for id in ["body_a", "body_b"] {
+        assert_eq!(
+            opens_to(root, &activity("work", id), "").await,
+            format!("/app/activities/{DAY}?facet=work#work/body_a")
+        );
+    }
+    // An owner edit can move the group's anchor without invalidating a link
+    // printed for either member.
+    let mut rows: Vec<Value> = records
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    rows[1]["title"] = json!("My run");
+    rows[1]["edits"] = json!([{"actor":"owner:test", "fields":["title"]}]);
+    write_file(
+        &root.join(format!("facets/work/activities/{DAY}.jsonl")),
+        &rows
+            .iter()
+            .map(|row| format!("{row}\n"))
+            .collect::<String>(),
+    );
+    assert_eq!(
+        opens_to(root, &activity("work", "body_a"), "").await,
+        format!("/app/activities/{DAY}?facet=work#work/body_b")
+    );
+    rows[0]["hidden"] = json!(true);
+    write_file(
+        &root.join(format!("facets/work/activities/{DAY}.jsonl")),
+        &rows
+            .iter()
+            .map(|row| format!("{row}\n"))
+            .collect::<String>(),
+    );
+    for id in ["body_a", "body_b"] {
+        let sealed = seal(root, &activity("work", id)).unwrap();
+        let (status, body, location) = open(root, &sealed).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+        assert!(location.is_none());
+        assert!(body.contains(ABSENT));
+    }
+}
+
+/// Exercise the complete tool-to-dashboard boundary on the published fixture,
+/// rather than accepting a seal that merely decrypts into a plausible place.
+#[cfg(unix)]
+#[tokio::test]
+async fn journal_links_from_fixture_tools_open_their_places() {
+    use solstone_core_mcp_endpoint::run_mcp_probe;
+    use solstone_core_mcp_endpoint::{PermissionStore, ReadPermission};
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures");
+    let journal = tempdir().unwrap();
+    let root = journal.path();
+    copy_tree(&fixtures.join("journal"), root);
+    // The dashboard fixture predates facet UUIDs. Give this test copy
+    // registered identities so the agent boundary can discover its facets.
+    let mut declarations = fs::read_dir(root.join("facets"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path().join("facet.json"))
+        .filter(|path| path.is_file())
+        .collect::<Vec<_>>();
+    declarations.sort();
+    for (index, path) in declarations.iter().enumerate() {
+        let mut declaration: Value =
+            serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+        declaration["id"] = json!(format!("a0000000-0000-4000-8000-{:012}", index + 1));
+        write_json(path, &declaration);
+    }
+    // A page quote points at an actual activity in this published fixture.
+    write_json(
+        &root.join("reflections/weekly/20260301.json"),
+        &json!({
+            "version":1, "week":{"start":"20260301", "end":"20260307"},
+            "days": (1..=7).map(|day| json!({"day":format!("202603{day:02}"), "state":"nothing_shared"})).collect::<Vec<_>>(),
+            "memories":[], "said":[{"id":"s1", "key":"s1", "day":"20260305", "quote":"a fixture quote",
+                "source":{"kind":"activity", "uri":"sol://facets/verona/activities/20260305#engineering_220000_300"}}],
+        }),
+    );
+    PermissionStore::open(root)
+        .set_permission(
+            "bearer:link-fixture",
+            ReadPermission::default_whole_journal(),
+        )
+        .unwrap();
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    let probe = |tool, args: Value| {
+        run_mcp_probe(root, "bearer:link-fixture", tool, &args)
+            .unwrap_or_else(|error| panic!("{tool} {args}: {error:?}"))
+    };
+    let activities = probe("list_activities", json!({"day":"20260305", "limit":100}));
+    let transcripts = probe("list_transcripts", json!({"day":"20260304"}));
+    let first = &transcripts["transcripts"][0];
+    let mut calls = vec![
+        ("list_activities", activities.clone()),
+        (
+            "list_entities",
+            probe("list_entities", json!({"limit":100})),
+        ),
+        ("list_transcripts", transcripts.clone()),
+        (
+            "get_transcript",
+            probe("get_transcript", json!({"reference":first["reference"]})),
+        ),
+        (
+            "get_transcript_span",
+            probe(
+                "get_transcript",
+                json!({"reference":transcripts["span_reference"]}),
+            ),
+        ),
+        (
+            "search",
+            probe(
+                "search",
+                json!({"query":"prototype", "day":"20260305", "limit":100}),
+            ),
+        ),
+        ("get_week", probe("get_week", json!({"week":"20260301"}))),
+    ];
+    let week = &calls
+        .iter()
+        .find(|(name, _)| *name == "get_week")
+        .unwrap()
+        .1;
+    assert!(!week["activities"].as_array().unwrap().is_empty(), "{week}");
+    assert_eq!(week["said"].as_array().unwrap().len(), 1, "{week}");
+    assert_eq!(week["days"].as_array().unwrap().len(), 7, "{week}");
+    calls.push((
+        "get_activity_sources",
+        probe(
+            "get_activity_sources",
+            json!({"reference":activities["activities"][0]["reference"]}),
+        ),
+    ));
+    let searched = &calls.iter().find(|(name, _)| *name == "search").unwrap().1;
+    calls.push((
+        "fetch",
+        probe(
+            "fetch",
+            json!({"reference":searched["results"].as_array().unwrap().iter()
+                .find(|hit| hit["segments"].as_array().is_some_and(|items| !items.is_empty()))
+                .expect("fixture search has a recording source")["reference"]}),
+        ),
+    ));
+    fn links(value: &Value, out: &mut Vec<String>) {
+        match value {
+            Value::Object(fields) => {
+                if let Some(link) = fields.get("link").and_then(Value::as_str) {
+                    out.push(link.to_owned());
+                }
+                for child in fields.values() {
+                    links(child, out);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    links(item, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    for (tool, value) in calls {
+        let mut found = Vec::new();
+        links(&value, &mut found);
+        assert!(!found.is_empty(), "{tool}: {value}");
+        for link in &found {
+            let sealed = link.strip_prefix("https://go.solstone.app/j#").unwrap();
+            let place = solstone_core_journal_link::open(root, sealed).unwrap();
+            let (status, body, location) = open(root, sealed).await;
+            // Every admitted weekly date gets a day link. These three dates
+            // are absent in the published fixture, so A3 answers honestly.
+            if let Place::Day { day } = &place
+                && ["20260301", "20260302", "20260303"].contains(&day.as_str())
+            {
+                assert_eq!(status, StatusCode::NOT_FOUND, "{tool} {place:?}: {body}");
+                assert!(location.is_none());
+                assert!(body.contains(ABSENT));
+                continue;
+            }
+            assert_eq!(status, StatusCode::FOUND, "{tool} {place:?}: {body}");
+            let location = location.unwrap();
+            match place {
+                Place::Activity { facet, day, id } => assert_eq!(
+                    location,
+                    format!("/app/activities/{day}?facet={facet}#{facet}/{id}")
+                ),
+                Place::Recording {
+                    day,
+                    stream,
+                    segment,
+                } => assert_eq!(
+                    location,
+                    format!("/app/transcripts/{day}?stream={stream}#{segment}")
+                ),
+                Place::Person { id } => assert_eq!(location, format!("/app/entities/#{id}")),
+                Place::Day { day } => assert!(
+                    location == format!("/app/activities/{day}")
+                        || location == format!("/app/transcripts/{day}")
+                ),
+            }
+            println!("journal-link-proof {tool}: {} {location}", status.as_u16());
+        }
+        println!("journal-link-proof {tool}: {} links", found.len());
+    }
+}

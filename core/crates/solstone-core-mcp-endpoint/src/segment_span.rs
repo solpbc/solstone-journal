@@ -28,7 +28,8 @@ use crate::dispatch::{
 use crate::permissions::ConnectionReadSnapshot;
 use crate::possible_names::ConnectionPossibleNames;
 use crate::references::{
-    ReferenceKind, ReferenceTarget, SegmentSpanInside, SegmentSpanPosition, SegmentSpanReference,
+    ReferenceKind, ReferenceTarget, SegmentReference, SegmentSpanInside, SegmentSpanPosition,
+    SegmentSpanReference,
 };
 use crate::tools::{ToolError, ValidatedGetTranscript};
 
@@ -301,6 +302,7 @@ pub(crate) fn read_segment_span(
     let speakers = solstone_core_talent_runtime::agent_speakers(journal_root);
     let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
 
+    let mut owner_links = crate::journal_links::Recordings::default();
     let mut read = Vec::new();
     let mut targets = Vec::new();
     let mut entries_served = 0_usize;
@@ -359,6 +361,7 @@ pub(crate) fn read_segment_span(
         let mut inside = resumed.clone();
         let mut entries = Vec::new();
         let mut untimed = false;
+        let mut last_version;
         loop {
             #[cfg(feature = "test-hooks")]
             crate::source_freeze_barrier::checkpoint(
@@ -415,6 +418,7 @@ pub(crate) fn read_segment_span(
             };
             untimed |= page.untimed;
             let version = page.version.fingerprint();
+            last_version = version;
             for entry in page.entries {
                 let text = solstone_core_format::markdown::literal_text(&entry.text);
                 bytes += text.len();
@@ -447,7 +451,19 @@ pub(crate) fn read_segment_span(
                 "time": item.clock.as_ref().map_or("", |clock| clock.label.as_str()),
                 "source": source_label(&labels, &item.stream),
                 "entries": entries,
+                "reference": crate::dispatch::segment_reference(journal_root, principal, snapshot, SegmentReference {
+                    day: reference.day.clone(), stream: item.stream.clone(), segment: item.name.clone(),
+                    version: last_version, source_index: None,
+                    byte_offset: None, statement_ordinal: None,
+                })?,
             });
+            owner_links.attach(
+                journal_root,
+                &mut section,
+                &reference.day,
+                &item.stream,
+                &item.name,
+            );
             if untimed {
                 section["untimed"] = Value::Bool(true);
             }

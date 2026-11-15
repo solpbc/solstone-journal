@@ -1083,6 +1083,13 @@ pub(crate) fn execute_list(
         if let Some((face, there)) = &face {
             let mut activity =
                 body_activity(face, &item.facet_title, &item.day, reference, &zone_str);
+            crate::journal_links::activity(
+                journal_root,
+                &mut activity,
+                &item.facet_dir,
+                &item.day,
+                &item.rec_identity,
+            );
             if let Some(span) = face_span(face) {
                 let captures = capture_on.entry(item.day.clone()).or_insert_with(|| {
                     capture_lines_on(journal_root, &facets_to_search, &item.day)
@@ -1134,6 +1141,13 @@ pub(crate) fn execute_list(
             "reference": reference,
             "zone": zone_str,
         });
+        crate::journal_links::activity(
+            journal_root,
+            &mut activity,
+            &item.facet_dir,
+            &item.day,
+            &item.rec_identity,
+        );
         if let Some(kind) = activity_kind(&item.record) {
             activity["kind"] = json!(kind);
         }

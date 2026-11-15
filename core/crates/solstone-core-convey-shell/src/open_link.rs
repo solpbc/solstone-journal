@@ -335,21 +335,48 @@ fn resolve_activity(journal: &Path, facet: &str, day: &str, id: &str) -> Result<
     {
         return Ok(Landing::Absent);
     }
-    // The store's own reader: no retired plan, raw body record or
-    // superseded record is an activity.
-    let Some(record) =
+    // Ordinary activities use the store's own reader. Body activities use
+    // the owner's composed view, so a link to any member follows the group
+    // to the same anchor the dashboard shows now.
+    let (day, id) = if let Some(record) =
         get_activity_record(journal, &facet, day, id).map_err(|error| error.to_string())?
-    else {
-        return Ok(Landing::Absent);
+    {
+        if record.get("hidden").is_some_and(activity_value_truthy) {
+            return Ok(Landing::Absent);
+        }
+        (day.to_owned(), id.to_owned())
+    } else {
+        let days = solstone_core_location::body_records::days_after(day);
+        let from = days
+            .iter()
+            .map(String::as_str)
+            .chain([day])
+            .min()
+            .unwrap_or(day);
+        let to = days
+            .iter()
+            .map(String::as_str)
+            .chain([day])
+            .max()
+            .unwrap_or(day);
+        let faces = solstone_core_location::body_records::body_faces_range(
+            journal, &facet, from, to, None, false,
+        )
+        .map_err(|error| error.to_string())?;
+        let Some(face) = faces.into_values().flatten().find(|face| {
+            face.members
+                .iter()
+                .any(|member| member.id == id && member.day == day)
+        }) else {
+            return Ok(Landing::Absent);
+        };
+        (face.anchor.day, face.anchor.id)
     };
-    if record.get("hidden").is_some_and(activity_value_truthy) {
-        return Ok(Landing::Absent);
-    }
     let facet = encode_path_component(&facet);
     Ok(redirect(format!(
         "/app/activities/{}?facet={facet}#{facet}/{}",
-        encode_path_component(day),
-        encode_path_component(id)
+        encode_path_component(&day),
+        encode_path_component(&id)
     )))
 }
 

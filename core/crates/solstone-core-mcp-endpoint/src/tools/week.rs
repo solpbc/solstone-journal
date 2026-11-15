@@ -415,6 +415,13 @@ fn project_sunday(
             "reference": reference.clone(),
             "zone": zone_str,
         });
+        crate::journal_links::activity(
+            journal,
+            &mut activity,
+            &rep.facet_dir,
+            &rep.day,
+            &rep.record_identity,
+        );
         if let Some(kind) = crate::tools::activities::activity_kind(&rep.record) {
             activity["kind"] = json!(kind);
         }
@@ -506,7 +513,17 @@ fn project_sunday(
                 .and_then(|id| memory_by_id.get(id).copied());
             let memory_key = memory.map(|m| m.key.as_str());
             let state = resolve_day_cell_state(day.state.as_str(), memory_key, &left_out_keys);
-            days.push(json!({"day": day.day, "state": state}));
+            let mut cell = json!({"day": day.day, "state": state});
+            // A calendar cell is already admitted. Mint from its day alone:
+            // testing source existence here would reveal withheld body days.
+            crate::journal_links::attach(
+                journal,
+                &mut cell,
+                solstone_core_journal_link::Place::Day {
+                    day: day.day.clone(),
+                },
+            );
+            days.push(cell);
         }
 
         if !left_out_unreadable && let Said::Entries(said_entries) = &trusted.said {
@@ -514,11 +531,21 @@ fn project_sunday(
                 if left_out_keys.contains(&entry.key) {
                     continue;
                 }
-                said.push(json!({
+                let mut quote = json!({
                     "day": entry.day,
                     "quote": entry.quote,
                     "uri": entry.uri,
-                }));
+                });
+                // The weekly reader already validated this activity URI.
+                if let Some((facet, rest)) = entry
+                    .uri
+                    .strip_prefix("sol://facets/")
+                    .and_then(|uri| uri.split_once("/activities/"))
+                    && let Some((day, id)) = rest.split_once('#')
+                {
+                    crate::journal_links::activity(journal, &mut quote, facet, day, id);
+                }
+                said.push(quote);
             }
         }
     }
@@ -535,15 +562,23 @@ fn project_sunday(
     body.sort_by(|left, right| (&left.0, &left.1).cmp(&(&right.0, &right.1)));
     let mut body_items = Vec::new();
     for (day, _, target, facet_title, face) in body {
-        let reference = crate::dispatch::activity_reference(principal, snapshot, target)
+        let reference = crate::dispatch::activity_reference(principal, snapshot, target.clone())
             .map_err(|_| ToolError::ReferenceNotFound)?;
-        body_items.push(crate::tools::activities::body_activity(
+        let mut item = crate::tools::activities::body_activity(
             &face,
             &facet_title,
             &day,
             reference,
             &zone_str,
-        ));
+        );
+        crate::journal_links::activity(
+            journal,
+            &mut item,
+            &target.facet_dir,
+            &target.day,
+            &target.record_identity,
+        );
+        body_items.push(item);
     }
 
     let value = json!({
@@ -807,6 +842,8 @@ mod tests {
             BTreeSet::from(["end".to_owned(), "start".to_owned()])
         );
         for day in value["days"].as_array().unwrap() {
+            let mut day = day.clone();
+            day.as_object_mut().unwrap().remove("link");
             assert_eq!(
                 day.as_object()
                     .unwrap()
@@ -835,6 +872,8 @@ mod tests {
             assert!(memory["refs"].is_array());
         }
         for quote in value["said"].as_array().unwrap() {
+            let mut quote = quote.clone();
+            quote.as_object_mut().unwrap().remove("link");
             assert_eq!(
                 quote
                     .as_object()
@@ -934,6 +973,44 @@ mod tests {
     }
 
     #[test]
+    fn day_links_do_not_disclose_a_body_only_day_without_body_permission() {
+        let root = journal("solstone-week-day-links-");
+        whole(root.path());
+        let days: Vec<_> = (8..=14)
+            .map(|day| json!({"day": format!("202603{day:02}"), "state": "nothing_shared"}))
+            .collect();
+        write_raw(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            &json!({
+                "version": 1, "week": {"start":"20260308", "end":"20260314"},
+                "days": days, "memories": [], "said": [],
+            })
+            .to_string(),
+        );
+        let before = probe(root.path(), json!({"week":"20260308"})).unwrap();
+        write_raw(
+            root.path(),
+            "chronicle/20260310/import.apple_health/090000_300/body.jsonl",
+            "{}\n",
+        );
+        let after = probe(root.path(), json!({"week":"20260308"})).unwrap();
+        assert_eq!(
+            before["days"], after["days"],
+            "a withheld source changes no day link"
+        );
+        for row in before["days"].as_array().unwrap() {
+            let sealed = row["link"].as_str().unwrap().split_once('#').unwrap().1;
+            assert_eq!(
+                solstone_core_journal_link::open(root.path(), sealed),
+                Ok(solstone_core_journal_link::Place::Day {
+                    day: row["day"].as_str().unwrap().into()
+                })
+            );
+        }
+    }
+
+    #[test]
     fn a_page_keeps_its_day_states_and_quotes() {
         let root = journal("solstone-week-page-states-");
         whole(root.path());
@@ -980,8 +1057,34 @@ mod tests {
 
         let value = probe(root.path(), json!({"week": sunday})).unwrap();
         assert_closed(&value);
+        // Day links name calendar cells, independent of their state or sources.
+        let opens = |row: &Value| {
+            solstone_core_journal_link::open(
+                root.path(),
+                row["link"].as_str().unwrap().split_once('#').unwrap().1,
+            )
+            .unwrap()
+        };
         assert_eq!(
-            value["days"],
+            opens(&value["days"][1]),
+            solstone_core_journal_link::Place::Day {
+                day: "20260309".into()
+            }
+        );
+        assert_eq!(
+            opens(&value["said"][0]),
+            solstone_core_journal_link::Place::Activity {
+                facet: "work".into(),
+                day: "20260309".into(),
+                id: "standup".into(),
+            }
+        );
+        let mut days = value["days"].clone();
+        for day in days.as_array_mut().unwrap() {
+            day.as_object_mut().unwrap().remove("link");
+        }
+        assert_eq!(
+            days,
             json!([
                 {"day": "20260308", "state": "memory"},
                 {"day": "20260309", "state": "not_ready"},
@@ -992,8 +1095,12 @@ mod tests {
                 {"day": "20260314", "state": "nothing_shared"},
             ])
         );
+        let mut said = value["said"].clone();
+        for quote in said.as_array_mut().unwrap() {
+            quote.as_object_mut().unwrap().remove("link");
+        }
         assert_eq!(
-            value["said"],
+            said,
             json!([{
                 "day": "20260309",
                 "quote": "the owner's words",

@@ -1310,6 +1310,13 @@ fn resolve_search_entities(
             "facet": m.facet_id,
             "reference": reference,
         });
+        crate::journal_links::attach(
+            journal_root,
+            &mut card_val,
+            solstone_core_journal_link::Place::Person {
+                id: m.entity_id.clone(),
+            },
+        );
         if let Some(kind) = &m.kind {
             card_val["type"] = json!(kind);
         }
@@ -1406,6 +1413,7 @@ fn search(
         })
         .transpose()?;
     let mut results = Vec::new();
+    let mut owner_links = crate::journal_links::Recordings::default();
     let mut screen_text_checks = std::collections::BTreeMap::new();
     let mut response_checks = 0;
     // The owner's coordinates for each hit released. ⚠ These never enter
@@ -1634,6 +1642,7 @@ fn search(
             }
 
             targets.push(format!("{}#{}", hit.metadata.path, hit.metadata.idx));
+            let hit_activity_id = record_identity.clone();
             let reference = codec()
                 .mint(
                     principal.connection,
@@ -1661,6 +1670,12 @@ fn search(
                 },
                 "reference": reference,
             });
+            owner_links.entry(
+                journal_root,
+                &mut value,
+                &hit.metadata.path,
+                hit_activity_id.as_deref(),
+            );
             if is_possible_name {
                 // Tentative: the journal's guess at who or what was meant.
                 value["possible_name"] = Value::Bool(true);
@@ -2735,13 +2750,21 @@ fn list_entities(
         )?;
         targets.push(format!("facet:{facet_id}/entity:{}", item.entity_id));
         // An entity in two facets is listed once for each; the facet tells the rows apart.
-        entities.push(json!({
+        let mut row = json!({
             "name": entity_name(&item.identity),
             "facet": facet_id,
             "reference": reference,
             "has_photo": solstone_core_entities::photos::has_photo_in_facet(journal_root, &item.entity_dir, &facet_dir)
                 .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?,
-        }));
+        });
+        crate::journal_links::attach(
+            journal_root,
+            &mut row,
+            solstone_core_journal_link::Place::Person {
+                id: item.entity_id.clone(),
+            },
+        );
+        entities.push(row);
     }
 
     let next_cursor = if has_more {
@@ -3038,6 +3061,7 @@ fn list_transcripts(
         };
 
     let sources = source_labels(journal_root);
+    let mut owner_links = crate::journal_links::Recordings::default();
     let mut segments = Vec::new();
     let mut targets = Vec::new();
     let mut unreadable = 0;
@@ -3255,6 +3279,7 @@ fn list_transcripts(
                 // How much was said, so a segment can be chosen without reading it.
                 "lines": page.entries.len(),
             });
+            owner_links.attach(journal_root, &mut seg_val, day, &stream, &name);
             if let Some(clock) = &clock {
                 seg_val["seconds"] = json!(
                     clock
@@ -3591,6 +3616,13 @@ pub(crate) fn read_segment(
         "source": source_label(&source_labels(journal_root), &reference.stream),
         "next_cursor": next_cursor,
     });
+    crate::journal_links::Recordings::default().attach(
+        journal_root,
+        &mut response_val,
+        &reference.day,
+        &reference.stream,
+        &reference.segment,
+    );
     if page.untimed {
         response_val["untimed"] = Value::Bool(true);
     }
@@ -3765,7 +3797,8 @@ fn digest(value: &str) -> String {
 ///
 /// ✅ So the digest covers what was served — titles, dates, snippets, text,
 /// names, coverage — with every sealed token (`reference`, `next_cursor`,
-/// `span_reference`, `next_reference`, `continuation`) excluded, and object
+/// `span_reference`, `next_reference`, `continuation`, and journal `link`)
+/// excluded, and object
 /// keys sorted so a later field reordering does not silently invalidate every
 /// record already written. ⚠ It is therefore a digest of the **content**, not
 /// a fingerprint of the exact bytes on the wire; the targets beside it say
@@ -3784,6 +3817,7 @@ pub(crate) fn canonical_content(value: &Value) -> Value {
                     !matches!(
                         *key,
                         "reference"
+                            | "link"
                             | "next_cursor"
                             | "span_reference"
                             | "next_reference"
@@ -3837,9 +3871,11 @@ mod literal_tests {
     #[test]
     fn audit_digest_tracks_presentation_and_ignores_randomized_references() {
         let source = "![cover](https://example.test/cover.png)";
-        let before = serde_json::json!({"snippet":source, "reference":"first"});
-        let after = serde_json::json!({"snippet":snippet(source), "reference":"second"});
-        let replay = serde_json::json!({"snippet":snippet(source), "reference":"third"});
+        let before = serde_json::json!({"snippet":source, "reference":"first", "link":"one"});
+        let after =
+            serde_json::json!({"snippet":snippet(source), "reference":"second", "link":"two"});
+        let replay =
+            serde_json::json!({"snippet":snippet(source), "reference":"third", "link":"three"});
         assert_ne!(content_digest(&before), content_digest(&after));
         assert_eq!(content_digest(&after), content_digest(&replay));
     }

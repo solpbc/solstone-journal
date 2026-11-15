@@ -47,6 +47,7 @@ mod door_state_writer;
 #[cfg(all(test, not(feature = "full-tests")))]
 mod downgrade_tests;
 mod http1;
+mod journal_links;
 mod jsonrpc;
 pub mod lan_door;
 pub mod local_door;

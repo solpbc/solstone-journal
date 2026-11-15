@@ -75,8 +75,21 @@ pub(crate) fn status_with_operation(
         "daily_key_set": backup.get("daily_key").is_some_and(|value| !value.is_null()), "recovery_key_set": backup.get("recovery_key").is_some_and(|value| !value.is_null()), "recovery_key_confirmed": backup.get("confirmed_recovery_key").and_then(Value::as_bool).unwrap_or(false),
         "recovery_key_revocation_pending": revocation_pending, "recovery_key_revocation_unresolved": revocation_unresolved,
         "retention": backup.get("retention").cloned().unwrap_or(Value::Null), "offload": backup.get("offload").cloned().unwrap_or(Value::Null), "schedule": solstone_core_backup_runtime::effective_backup_schedule(root),
-        "last_backup": backup.get("last_backup").cloned().unwrap_or(Value::Null), "last_backup_current_setup": current_setup, "last_prune": backup.get("last_prune").cloned().unwrap_or(Value::Null), "last_offload": backup.get("last_offload").cloned().unwrap_or(Value::Null), "last_verification": backup.get("last_verification").cloned().unwrap_or(Value::Null), "last_restore": backup.get("last_restore").cloned().unwrap_or(Value::Null), "hosted": hosted_view(binding.as_ref(), operation), "operation": operation_value(operation)
+        "last_backup": backup.get("last_backup").cloned().unwrap_or(Value::Null), "last_backup_current_setup": current_setup, "last_prune": backup.get("last_prune").cloned().unwrap_or(Value::Null), "last_offload": backup.get("last_offload").cloned().unwrap_or(Value::Null), "last_verification": backup.get("last_verification").cloned().unwrap_or(Value::Null), "last_restore": backup.get("last_restore").cloned().unwrap_or(Value::Null), "hosted": hosted_view(binding.as_ref(), operation), "operation": operation_value(operation),
+        "older_backups": older_backups_view(root, operation)
     })))
+}
+
+/// The "older backups" section: what an erase left in older backups, and
+/// whether the owner can remove them now.
+fn older_backups_view(root: &Path, operation: Option<&Operation>) -> Value {
+    let running = operation.is_some_and(|operation| {
+        operation.kind == "older_backups" && !crate::operation::is_terminal(&operation.phase)
+    });
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs() as i64);
+    solstone_core_offload::older_backups::view(root, now, running)
 }
 
 /// Home's small read-only observation. Historical or routine failures are quiet;
