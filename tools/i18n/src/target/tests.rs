@@ -1009,7 +1009,7 @@ assert.throws(() => {
             let name = entry.file_name().to_string_lossy().to_string();
             assert!(
                 !name.contains("b+"),
-                "Android must not emit b+ folder: {}",
+                "Private-use fixtures must keep their explicit native projections: {}",
                 name
             );
         }
@@ -1291,6 +1291,158 @@ assert.throws(() => {
     }
 
     #[test]
+    fn native_locale_grammars_admit_supported_forms_and_refuse_unloadable_names() {
+        use crate::locale::{validate_android_qualifier, validate_webextension_folder};
+        for q in [
+            "b+en",
+            "b+car",
+            "b+es+419",
+            "b+zh+Hans",
+            "b+zh+Hant+TW",
+            "b+sr+Latn+RS",
+            "b+pa+Arab",
+            "b+az+Arab",
+            "b+fil+PH",
+            "b+de+1901",
+            "b+sl+rozaj",
+            "b+sl+Latn+SI+rozaj",
+            "pt-rBR",
+        ] {
+            assert!(validate_android_qualifier(q), "{q}");
+        }
+        for q in [
+            "b+",
+            "b++es",
+            "b+e",
+            "b+es+",
+            "b+es+41",
+            "b+es+419+",
+            "b+zh+hans",
+            "b+sr+RS+Latn",
+            "b+en+USA",
+            "b+en+US+u+nu+latn",
+            "b+en+x+test",
+            "b+sl+rozaj+1994",
+            "b+en+US/../GB",
+            "b+éé",
+            "b+en+abcdefghij",
+            "car",
+        ] {
+            assert!(!validate_android_qualifier(q), "{q}");
+        }
+        for folder in ["en", "fil", "en_US", "pt_BR", "es_419", "zh_CN", "zh_TW"] {
+            assert!(validate_webextension_folder(folder), "{folder}");
+        }
+        for folder in [
+            "",
+            "es-419",
+            "es_41",
+            "es_4190",
+            "es_001",
+            "en_Us",
+            "zh_Hant",
+            "sr_Latn",
+            "zh_Hans_CN",
+            "en_US_extra",
+            "en/US",
+            "../en",
+            "zz",
+        ] {
+            assert!(!validate_webextension_folder(folder), "{folder}");
+        }
+        let mut registry: serde_json::Value =
+            serde_json::from_str(include_str!("../../locales.json")).unwrap();
+        for (field, value, rule) in [
+            ("android_qualifier", "b+es+41", "locale-qualifier"),
+            ("webextension_folder", "zh_Hant", "webextension-folder"),
+        ] {
+            registry["locales"][0][field] = value.into();
+            assert_eq!(
+                LocaleRegistry::load(&registry.to_string())
+                    .unwrap_err()
+                    .rule,
+                rule
+            );
+            registry["locales"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+        }
+    }
+
+    #[test]
+    fn numeric_region_registry_compiles_and_publishes_every_target() {
+        // An isolated source fixture proves native names without adding a launch
+        // language or editing any real catalog or embedded registry.
+        let owned = TestDirectory::new("numeric-region");
+        let root = owned.root.join("catalog");
+        fs::create_dir_all(root.join("source")).unwrap();
+        fs::create_dir(root.join("meta")).unwrap();
+        fs::write(root.join("catalog.json"), r#"{"catalog_version":1,"label":"Synthetic locale projection","history":true,"source_locale":"es-419"}"#).unwrap();
+        fs::write(
+            root.join("source/es-419.ftl"),
+            "synth.notes.chrome = Chrome literal %n and %1$s slot { $var_name }\n",
+        )
+        .unwrap();
+        fs::copy(
+            "fixtures/targets/meta/synth.notes.chrome.json",
+            root.join("meta/synth.notes.chrome.json"),
+        )
+        .unwrap();
+        fs::copy("fixtures/targets/history.json", root.join("history.json")).unwrap();
+        fs::copy(
+            "fixtures/targets/source-lock.json",
+            root.join("source-lock.json"),
+        )
+        .unwrap();
+        let registry = LocaleRegistry::load(r#"{
+            "locales":[{"tag":"es-419","tier":"source","purpose":"ordinary",
+                "development":"released","production":"released","description":"Synthetic locale projection",
+                "android_qualifier":"b+es+419","webextension_folder":"es_419"}],
+            "namespaces":[{"namespace":"synth.notes","owner":"synth"}],
+            "bundles":[{"id":"target-chrome","locales":["es-419"]}]
+        }"#).unwrap();
+        let catalog =
+            LoadedCatalog::load_with_registry(&root, Channel::Production, None, registry).unwrap();
+        publish(
+            &catalog,
+            Channel::Production,
+            None,
+            &[
+                Target::Rust,
+                Target::Esm,
+                Target::Classic,
+                Target::Apple,
+                Target::Android,
+                Target::Webextension,
+                Target::Gettext,
+            ],
+            owned.path(),
+        )
+        .unwrap();
+        for path in [
+            "android/target-chrome/values-b+es+419/strings.xml",
+            "webextension/target-chrome/_locales/es_419/messages.json",
+            "rust/target-chrome/es-419.ftl",
+            "esm/target-chrome/es-419.ftl",
+            "gettext/target-chrome/es-419.po",
+        ] {
+            assert!(owned.path().join(path).is_file(), "{path}");
+        }
+        let apple: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(owned.path().join("apple/target-chrome.xcstrings")).unwrap(),
+        )
+        .unwrap();
+        let key = crate::history::compute_resource_key("synth.notes.chrome");
+        assert!(apple["strings"][key]["localizations"]["es-419"].is_object());
+        let rust = fs::read_to_string(owned.path().join("rust/target-chrome/api.rs")).unwrap();
+        assert!(rust.contains("es-419"));
+        let classic =
+            fs::read_to_string(owned.path().join("classic/target-chrome/api.js")).unwrap();
+        assert!(classic.contains("es-419"));
+    }
+
+    #[test]
     fn test_android_qualifier_validation_and_resolution() {
         use crate::locale::{LocaleEntry, validate_android_qualifier};
         use crate::target::android::resolve_android_qualifier;
@@ -1306,7 +1458,7 @@ assert.throws(() => {
         assert!(validate_android_qualifier("es-rES"));
 
         assert!(!validate_android_qualifier("en-x-synth"));
-        assert!(!validate_android_qualifier("b+en"));
+        assert!(validate_android_qualifier("b+en"));
         assert!(!validate_android_qualifier("values-en"));
         assert!(!validate_android_qualifier("en-rus"));
         assert!(!validate_android_qualifier("EN"));
@@ -1358,6 +1510,37 @@ assert.throws(() => {
         };
         let err_unres = resolve_android_qualifier(&unresolvable).unwrap_err();
         assert_eq!(err_unres.rule, "locale-qualifier");
+
+        for (tag, expected) in [
+            ("es-419", "b+es+419"),
+            ("zh-Hans", "b+zh+Hans"),
+            ("zh-Hant", "b+zh+Hant"),
+            ("sr-Latn", "b+sr+Latn"),
+            ("pa-Arab", "b+pa+Arab"),
+            ("az-Arab", "b+az+Arab"),
+            ("pt-BR", "pt-rBR"),
+            ("car", "b+car"),
+        ] {
+            let mut entry = unresolvable.clone();
+            entry.tag = tag.into();
+            assert_eq!(resolve_android_qualifier(&entry).unwrap(), expected);
+        }
+
+        let mut alias_a = unresolvable.clone();
+        alias_a.android_qualifier = Some("en-rUS".into());
+        let mut alias_b = unresolvable.clone();
+        alias_b.tag = "en-US".into();
+        alias_b.android_qualifier = Some("b+en+US".into());
+        let aliases = TargetBundle {
+            id: "aliases".into(),
+            locales: vec![alias_a, alias_b],
+            messages: vec![],
+        };
+        let out = TestDirectory::new("aliases");
+        let faults = crate::target::android::generate_android_target(&aliases, out.path(), "en")
+            .unwrap_err();
+        assert_eq!(faults[0].rule, "locale-qualifier");
+        assert!(!out.path().exists());
 
         // Collision detection in generate_android_target
         let mut loc_dup1 = unresolvable.clone();

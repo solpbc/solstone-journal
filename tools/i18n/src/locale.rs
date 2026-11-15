@@ -19,43 +19,129 @@ pub fn validate_locale_tag(tag: &str) -> bool {
         .all(|&b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
+// One shared WebExtension target uses Chrome's documented locale set. Firefox
+// and Safari can load additional locales, but Chrome silently ignores them.
 pub fn validate_webextension_folder(folder: &str) -> bool {
-    if let Some((lang, region)) = folder.split_once('_') {
-        if region.contains('_') {
-            return false;
-        }
-        let lang_bytes = lang.as_bytes();
-        if !(lang_bytes.len() == 2 || lang_bytes.len() == 3)
-            || !lang_bytes.iter().all(|b| b.is_ascii_lowercase())
-        {
-            return false;
-        }
-        let reg_bytes = region.as_bytes();
-        if !(reg_bytes.len() >= 2 && reg_bytes.len() <= 4) {
-            return false;
-        }
-        if !reg_bytes[0].is_ascii_uppercase() {
-            return false;
-        }
-        reg_bytes[1..].iter().all(|b| b.is_ascii_alphabetic())
-    } else {
-        let bytes = folder.as_bytes();
-        (bytes.len() == 2 || bytes.len() == 3) && bytes.iter().all(|b| b.is_ascii_lowercase())
+    matches!(
+        folder,
+        "ar" | "am"
+            | "bg"
+            | "bn"
+            | "ca"
+            | "cs"
+            | "da"
+            | "de"
+            | "el"
+            | "en"
+            | "en_AU"
+            | "en_GB"
+            | "en_US"
+            | "es"
+            | "es_419"
+            | "et"
+            | "fa"
+            | "fi"
+            | "fil"
+            | "fr"
+            | "gu"
+            | "he"
+            | "hi"
+            | "hr"
+            | "hu"
+            | "id"
+            | "it"
+            | "ja"
+            | "kn"
+            | "ko"
+            | "lt"
+            | "lv"
+            | "ml"
+            | "mr"
+            | "ms"
+            | "nl"
+            | "no"
+            | "pl"
+            | "pt_BR"
+            | "pt_PT"
+            | "ro"
+            | "ru"
+            | "sk"
+            | "sl"
+            | "sr"
+            | "sv"
+            | "sw"
+            | "ta"
+            | "te"
+            | "th"
+            | "tr"
+            | "uk"
+            | "vi"
+            | "zh_CN"
+            | "zh_TW"
+    )
+}
+
+fn is_language(s: &str) -> bool {
+    (s.len() == 2 || s.len() == 3) && s.bytes().all(|b| b.is_ascii_lowercase())
+}
+
+fn is_region(s: &str) -> bool {
+    (s.len() == 2 && s.bytes().all(|b| b.is_ascii_uppercase()))
+        || (s.len() == 3 && s.bytes().all(|b| b.is_ascii_digit()))
+}
+
+// Android's resource locale stores language, script, region and one variant.
+// Extensions, private use, extlangs and multiple variants are not representable.
+fn validate_android_bcp47(locale: &str) -> bool {
+    let mut parts = locale.split('+').peekable();
+    if !parts.next().is_some_and(is_language) {
+        return false;
     }
+    if parts.peek().is_some_and(|s| {
+        s.len() == 4
+            && s.as_bytes()[0].is_ascii_uppercase()
+            && s.as_bytes()[1..].iter().all(|b| b.is_ascii_lowercase())
+    }) {
+        parts.next();
+    }
+    if parts.peek().is_some_and(|s| is_region(s)) {
+        parts.next();
+    }
+    if parts.peek().is_some_and(|s| {
+        ((5..=8).contains(&s.len()) || (s.len() == 4 && s.as_bytes()[0].is_ascii_digit()))
+            && s.bytes().all(|b| b.is_ascii_alphanumeric())
+    }) {
+        parts.next();
+    }
+    parts.next().is_none()
 }
 
 pub fn validate_android_qualifier(q: &str) -> bool {
-    if let Some((lang, reg)) = q.split_once("-r") {
-        let lang_bytes = lang.as_bytes();
-        let reg_bytes = reg.as_bytes();
-        (lang_bytes.len() == 2 || lang_bytes.len() == 3)
-            && lang_bytes.iter().all(|b| b.is_ascii_lowercase())
-            && reg_bytes.len() == 2
-            && reg_bytes.iter().all(|b| b.is_ascii_uppercase())
+    if let Some(locale) = q.strip_prefix("b+") {
+        validate_android_bcp47(locale)
+    } else if let Some((lang, reg)) = q.split_once("-r") {
+        is_language(lang) && lang != "car" && reg.len() == 2 && is_region(reg)
     } else {
-        let bytes = q.as_bytes();
-        (bytes.len() == 2 || bytes.len() == 3) && bytes.iter().all(|b| b.is_ascii_lowercase())
+        is_language(q) && q != "car"
     }
+}
+
+// Keep traditional folders for simple tags. Use b+ when a script, numeric
+// region or variant needs it. Private-use tags require an explicit projection.
+pub fn android_qualifier_from_tag(tag: &str) -> Option<String> {
+    let qualifier = if is_language(tag) && tag != "car" {
+        tag.to_string()
+    } else if let Some((lang, region)) = tag.split_once('-')
+        && is_language(lang)
+        && lang != "car"
+        && region.len() == 2
+        && is_region(region)
+    {
+        format!("{lang}-r{region}")
+    } else {
+        format!("b+{}", tag.replace('-', "+"))
+    };
+    validate_android_qualifier(&qualifier).then_some(qualifier)
 }
 
 pub fn is_standard_formatting_locale(tag: &str) -> bool {

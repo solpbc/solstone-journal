@@ -13,13 +13,8 @@ pub fn resolve_android_qualifier(loc: &crate::locale::LocaleEntry) -> Result<Str
     if let Some(qual) = &loc.android_qualifier {
         Ok(qual.clone())
     } else {
-        let tag = loc.tag.as_str();
-        let bytes = tag.as_bytes();
-        if (bytes.len() == 2 || bytes.len() == 3) && bytes.iter().all(|b| b.is_ascii_lowercase()) {
-            Ok(tag.to_string())
-        } else {
-            Err(Fault::new("locale-qualifier", &loc.tag, "*"))
-        }
+        crate::locale::android_qualifier_from_tag(&loc.tag)
+            .ok_or_else(|| Fault::new("locale-qualifier", &loc.tag, "*"))
     }
 }
 
@@ -33,7 +28,12 @@ pub fn generate_android_target(
     let mut resolved_quals = Vec::new();
     for loc in &bundle.locales {
         let qual = resolve_android_qualifier(loc).map_err(|f| vec![f])?;
-        if !seen_quals.insert(qual.clone()) {
+        let identity = qual
+            .strip_prefix("b+")
+            .unwrap_or(&qual)
+            .replace("-r", "+")
+            .to_ascii_lowercase();
+        if !seen_quals.insert(identity) {
             return Err(vec![Fault::new("locale-qualifier", &loc.tag, "*")]);
         }
         resolved_quals.push((loc, qual));
