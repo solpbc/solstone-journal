@@ -20,15 +20,10 @@ pub(crate) fn run(
 ) -> CliRun {
     match id {
         "backup:run" if args.is_empty() => {
-            let result = match prepare(journal, services.clock) {
+            backup_run_result(match prepare(journal, services.clock) {
                 Ok(capability) => capability.execute(services),
                 Err(result) => result,
-            };
-            // A backup that finished may be the one an erase was waiting on.
-            if result.status == "ok" {
-                solstone_core_offload::older_backups::survey_if_pending(journal, services);
-            }
-            backup_run_result(result)
+            })
         }
         "backup:prune" if args.is_empty() => backup_prune(journal, services),
         "backup:verify" if args.is_empty() => backup_verify(journal, services),
@@ -67,12 +62,7 @@ pub(crate) fn backup_run_result(result: BackupResult) -> CliRun {
 }
 
 fn backup_prune(journal: &Path, services: &BackupServices<'_>) -> CliRun {
-    let result = run_prune(journal, services);
-    // Rotation may have taken the last older backup that held an erase.
-    if result.status == "ok" {
-        solstone_core_offload::older_backups::survey_if_pending(journal, services);
-    }
-    paused_line(journal, backup_prune_result(result))
+    paused_line(journal, backup_prune_result(run_prune(journal, services)))
 }
 
 const PAUSED_NOTHING_RAN: &str =

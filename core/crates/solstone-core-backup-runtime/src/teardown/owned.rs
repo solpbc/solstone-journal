@@ -453,7 +453,7 @@ impl TeardownOperation {
 #[cfg(target_os = "ios")]
 mod ios;
 mod own_storage;
-pub(crate) mod retention;
+mod retention;
 #[cfg(target_os = "ios")]
 pub use ios::IosOperatedPreparation;
 pub use own_storage::snapshot_ids;

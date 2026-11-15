@@ -124,10 +124,7 @@ pub fn build_checked_offload_status(journal: &Path) -> Result<OffloadStatus, Str
     let local = measure_local_media(journal);
     let catalog = catalog_journal(journal);
     let config = get_backup_config(journal).map_err(|error| error.to_string())?;
-    let mut value = checked_media_value(
-        &without_deleted_recordings(journal, catalog.clone()),
-        &local,
-    )?;
+    let mut value = checked_media_value(&catalog, &local)?;
     for key in [
         "offload",
         "last_offload",
@@ -164,34 +161,6 @@ fn add_count(total: &mut u64, value: u64) -> Result<(), String> {
         .checked_add(value)
         .ok_or("media status total overflow")?;
     Ok(())
-}
-
-/// Media of a recording the owner deleted isn't restorable (restore leaves
-/// it out), and once older backups are removed its archive may be gone too,
-/// so it doesn't count as held in the backup.
-fn without_deleted_recordings(journal: &Path, mut catalog: JournalCatalog) -> JournalCatalog {
-    for day in &mut catalog.days {
-        for segment in &mut day.segments {
-            let day_dir = journal.join("chronicle").join(&segment.day);
-            let stream = segment.stream.clone();
-            segment.active.retain(|witness| {
-                let dir = match (witness.layout, witness.segment_dir.as_deref()) {
-                    (Some(solstone_core_journal_io::paths::SegmentLayout::Direct), Some(dir)) => {
-                        day_dir.join(dir)
-                    }
-                    (Some(solstone_core_journal_io::paths::SegmentLayout::Named), Some(dir)) => {
-                        day_dir.join(&stream).join(dir)
-                    }
-                    _ => return true,
-                };
-                !matches!(
-                    solstone_core_segment::owner_deletion_state(&dir),
-                    Ok(solstone_core_segment::OwnerDeletionState::Deleted)
-                )
-            });
-        }
-    }
-    catalog
 }
 
 fn checked_media_value(
