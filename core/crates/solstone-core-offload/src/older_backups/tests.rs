@@ -346,8 +346,8 @@ fn offloaded(journal: &Path, key: &str, snapshot: &str) {
     .unwrap();
 }
 
-/// The recording went to the trash: its folder now holds only the tombstone.
-fn trashed(journal: &Path, key: &str, cid: &str, still_waiting: bool) {
+/// The recording's folder now holds only the tombstone.
+fn tombstoned(journal: &Path, key: &str, cid: &str) {
     let dir = segment_dir(journal, key);
     std::fs::remove_dir_all(&dir).unwrap();
     std::fs::create_dir_all(&dir).unwrap();
@@ -360,6 +360,11 @@ fn trashed(journal: &Path, key: &str, cid: &str, still_waiting: bool) {
         .unwrap(),
     )
     .unwrap();
+}
+
+/// The recording went to the trash: its folder now holds only the tombstone.
+fn trashed(journal: &Path, key: &str, cid: &str, still_waiting: bool) {
+    tombstoned(journal, key, cid);
     if still_waiting {
         std::fs::create_dir_all(journal.join(".trash").join(cid).join("files")).unwrap();
     } else {
@@ -530,9 +535,10 @@ fn an_archive_of_a_recording_removed_another_way_is_not_this_features() {
     let temp = journal();
     let id = "8".repeat(64);
     offloaded(temp.path(), "090000_300", &id);
-    // A retention policy's tombstone, not the owner's.
-    trashed(temp.path(), "090000_300", "sha256:abc", true);
-    std::fs::remove_dir_all(temp.path().join(".trash")).unwrap();
+    // A retention policy's tombstone, not the owner's, and nothing in the
+    // trash. Its content id can't name a folder on Windows (':'), so none is
+    // made for it.
+    tombstoned(temp.path(), "090000_300", "sha256:abc");
     let tombstone = segment_dir(temp.path(), "090000_300").join(TOMBSTONE_NAME);
     let body = std::fs::read_to_string(&tombstone)
         .unwrap()
