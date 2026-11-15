@@ -8,7 +8,7 @@ use crate::work_policy::{ThinkingLane, WorkPolicy};
 use solstone_core_journal_config::work_priority::{WORK_PRIORITY_ENV, WorkPriority};
 use solstone_core_local::admission::confidential_background_open;
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ffi::OsString;
 use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -1959,28 +1959,42 @@ impl TaskQueue {
             if replace {
                 state.discovered.clear();
             }
+            let mut known = state
+                .discovered
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| (entry.submission.command.clone(), index))
+                .collect::<HashMap<_, _>>();
             for candidate in candidates {
                 let mut submission = normalize_request(
                     ExecutionRequest::Bus(candidate.request.clone()),
                     self.inner.options.cap_resolver.as_ref(),
                 );
                 submission.discovered = true;
-                if state
-                    .discovered
-                    .iter()
-                    .any(|entry| entry.submission.command == submission.command)
-                    || reserves_command(&state, &submission.command)
-                {
+                if reserves_command(&state, &submission.command) {
                     continue;
                 }
                 let priority = submission
                     .priority
                     .resolve(&submission.command, selection.today);
-                state.discovered.push(DiscoveredEntry {
+                let entry = DiscoveredEntry {
                     task: candidate,
                     submission,
                     priority,
-                });
+                };
+                // The same work found again keeps its better place: an owner's
+                // ask raises a day's band without changing its command.
+                match known.get(&entry.submission.command) {
+                    Some(&index) => {
+                        if entry.priority.sort_key() < state.discovered[index].priority.sort_key() {
+                            state.discovered[index] = entry;
+                        }
+                    }
+                    None => {
+                        known.insert(entry.submission.command.clone(), state.discovered.len());
+                        state.discovered.push(entry);
+                    }
+                }
             }
             // Stable: discovery's own order breaks ties.
             state
@@ -3878,6 +3892,10 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
                     daily_catchup_provenance: entry.daily_catchup_provenance,
                     priority: entry.priority,
                 };
+                // Discovery's copy of the same work would only run it again.
+                state
+                    .discovered
+                    .retain(|twin| twin.submission.command != submission.command);
                 (entry.sources, submission, entry.references, None)
             }
             Pick::Discovered(index) => {
@@ -3897,6 +3915,16 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
                             return true;
                         }
                         submission.priority.merge(queued.priority);
+                        // The direct submission's own run details win.
+                        submission.day = queued.day.clone().or(submission.day.take());
+                        submission.scheduler_name = queued
+                            .scheduler_name
+                            .clone()
+                            .or(submission.scheduler_name.take());
+                        submission.daily_catchup_provenance = queued
+                            .daily_catchup_provenance
+                            .clone()
+                            .or(submission.daily_catchup_provenance.take());
                         sources.extend(queued.sources.iter().cloned());
                         references.extend(queued.references.iter().cloned());
                         preflight = None;
@@ -4143,7 +4171,15 @@ fn preflight_then_start(
     let worker_inner = Arc::clone(&inner);
     let run = move || {
         let owed = catch_unwind(AssertUnwindSafe(|| check(&task))).unwrap_or(false);
-        if owed {
+        // The check can take a while; work must not start into a queue that
+        // has since shut down or withdrawn this generation.
+        let withdrawn = {
+            let state = worker_inner.state.lock().expect("queue state");
+            state.shutdown
+                || state.callable_paused
+                || state.callable_generation != dispatch.generation
+        };
+        if owed && !withdrawn {
             start_dispatch(worker_inner, dispatch);
         } else {
             log::debug!("task queue: discovered work no longer owed: {reference}");
@@ -6987,6 +7023,46 @@ mod tests {
             .map(|entry| entry.submission.reference.as_str())
             .collect::<Vec<_>>();
         assert_eq!(order, ["c", "b", "a"]);
+    }
+
+    /// Work found again at a better place moves up: an owner's ask raises a
+    /// day's band mid-pass without changing its command.
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn work_found_again_keeps_its_better_place() {
+        let queue = queue(false, 10, VecDeque::new());
+        queue.replace_discovered(vec![discovered("x", "5:1"), discovered("y", "5:2")]);
+        queue.add_discovered(vec![discovered("x", "2:1"), discovered("y", "6:9")]);
+        let state = queue.inner.state.lock().unwrap();
+        let order = state
+            .discovered
+            .iter()
+            .map(|entry| (entry.submission.reference.as_str(), entry.priority.band as u8))
+            .collect::<Vec<_>>();
+        assert_eq!(order, [("x", 2), ("y", 5)]);
+    }
+
+    /// Direct work picked ahead of discovery's copy of it takes that copy out,
+    /// so the same work never runs twice in a row.
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn direct_work_picked_first_takes_discoverys_copy_with_it() {
+        let queue = queue(false, 10, VecDeque::new());
+        let mut state = ready_state(&queue);
+        state.queue_hold = Some(QueueHoldStatus {
+            reason: QueueHoldReason::RecordsUnavailable,
+            detail: "fixture".into(),
+        });
+        enqueue_ranked(&queue, &mut state, &[("x", "--segment", "5:1")]);
+        drop(state);
+        queue.replace_discovered(vec![discovered("x", "5:1")]);
+        let mut state = queue.inner.state.lock().unwrap();
+        state.queue_hold = None;
+        let today = selection_day(Path::new(""));
+        let picked = take_ready(&mut state, selection(today, local_spending()));
+        assert_eq!(picked.len(), 1);
+        assert!(state.discovered.is_empty());
+        assert!(state.queues.is_empty());
     }
 
     /// While thinking keeps failing the ranking waits rather than being thrown

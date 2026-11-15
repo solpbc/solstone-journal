@@ -667,9 +667,6 @@ fn retry_imported(unit: &Unit, imports: &[ImportThinking]) -> bool {
     })
 }
 
-/// Read native writer evidence on the discovery worker. The permission ledger
-/// keeps the original failed input; it does not make this scan authoritative.
-#[allow(clippy::too_many_arguments)]
 /// The place a held unit's retry takes: an owner's ask is waited on, a
 /// declared fix completes the journal, and imported material keeps its own.
 fn retry_band(cause: Option<&str>, imported: bool) -> Option<WorkBand> {
@@ -710,6 +707,9 @@ fn retry_task(
     }
 }
 
+/// Read native writer evidence on the discovery worker. The permission ledger
+/// keeps the original failed input; it does not make this scan authoritative.
+#[allow(clippy::too_many_arguments)]
 fn raw_retries(
     journal: &Path,
     day: &str,
@@ -1483,7 +1483,9 @@ impl solstone_core_system_health::SegmentSource for ExactSegmentSource<'_> {
 
 /// Have the queue check discovered work as still owed just before it starts,
 /// with the same reading a pass uses. Unreadable work does not start; the next
-/// pass reports it.
+/// pass reports it. The check holds discovery's checkpoint only weakly: it may
+/// own a restore's in-use guard, which must end when discovery does, and the
+/// queue outlives discovery.
 fn install_preflight(
     journal: &Path,
     queue: &TaskQueue,
@@ -1502,22 +1504,21 @@ fn discovered_preflight(
 ) -> solstone_core_system::queue::DiscoveredPreflight {
     let journal = journal.to_path_buf();
     let stopped = Arc::clone(stopped);
-    let checkpoint = Arc::clone(checkpoint);
+    let checkpoint = Arc::downgrade(checkpoint);
     Arc::new(move |task| {
-        let checkpoint = || {
-            if stopped.load(Ordering::Acquire) {
-                Err("work discovery stopped".to_owned())
-            } else {
-                checkpoint()
-            }
+        let checkpoint = || match checkpoint.upgrade() {
+            Some(checkpoint) if !stopped.load(Ordering::Acquire) => checkpoint(),
+            _ => Err("work discovery stopped".to_owned()),
         };
         if checkpoint().is_err() {
             return false;
         }
         match still_owed(&journal, task, roots.as_ref(), &checkpoint) {
             Ok(owed) => owed,
+            // Each pass reports unreadable days in its inventory; one line per
+            // pick would repeat that for every entry of the day.
             Err(error) => {
-                log::warn!("work discovery: {error}");
+                log::debug!("work discovery: not started: {error}");
                 false
             }
         }
@@ -2811,10 +2812,12 @@ mod tests {
                 assert!(queue.contains_reference(&task.request.reference));
             }
             let preflight_stop = Arc::new(AtomicBool::new(false));
+            let preflight_checkpoint: Arc<dyn Fn() -> Result<(), String> + Send + Sync> =
+                Arc::new(|| Ok(()));
             let preflight = discovered_preflight(
                 root.path(),
                 &preflight_stop,
-                &(Arc::new(|| Ok(())) as Arc<dyn Fn() -> Result<(), String> + Send + Sync>),
+                &preflight_checkpoint,
                 Some(resources.clone()),
             );
             assert!(preflight(&backlog.offered[0]));
@@ -2899,6 +2902,11 @@ mod tests {
             // stopped discovery starts nothing.
             assert!(preflight(&retry));
             preflight_stop.store(true, Ordering::Release);
+            assert!(!preflight(&retry));
+            // Once discovery is gone the check starts nothing, and keeps no
+            // part of discovery's checkpoint alive.
+            preflight_stop.store(false, Ordering::Release);
+            drop(preflight_checkpoint);
             assert!(!preflight(&retry));
             let missing = DiscoveryTalentRoots {
                 rebuild_recovery: false,
