@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- home's "add your phone" step points to solstone.app/mobile, the page for the solstone app on phones and tablets. the old address still works.
 - the stats page now works like home, transcripts and search: moving between it and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 - your journal now keeps working through older recordings and days whenever it has room, rather than pausing for minutes between small batches. newer work still goes first. if thinking stops answering for a while, your journal tries again after five minutes and picks the older work back up as soon as thinking answers, instead of setting it aside until it next goes back through your older days.
 
