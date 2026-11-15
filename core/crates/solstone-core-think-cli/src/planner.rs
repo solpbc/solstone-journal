@@ -628,23 +628,39 @@ fn daily_priority(
     mut priority: WorkPriority,
     coverage: &daily_coverage::DailyCoverage,
 ) -> WorkPriority {
-    if priority.band == WorkBand::Remake
-        && coverage.units.iter().any(|unit| {
-            unit.state.is_owed()
-                && match unit.owed_by.as_deref() {
-                    Some("never_made") => true,
-                    Some("evidence_changed") => {
-                        solstone_core_indexer::daily_evidence::evidence_day_offsets(
-                            &unit.identity.name,
-                        ) == [0]
-                    }
-                    _ => false,
-                }
-        })
-    {
+    if priority.band == WorkBand::Remake && owes_own_day(coverage) {
         priority.band = WorkBand::Completing;
     }
     priority
+}
+
+/// The import place a day's daily work takes, if any. An import holds it there
+/// until the import is fulfilled. Note history is arriving only while the day
+/// owes its own outputs: an entity review re-owed by the days before it is a
+/// remake, as on any day, and at the import place it would run again each time
+/// the walk re-senses one of those days.
+fn imported_daily_band(
+    note_history: bool,
+    in_import: bool,
+    coverage: &daily_coverage::DailyCoverage,
+) -> Option<WorkBand> {
+    (in_import || (note_history && owes_own_day(coverage))).then_some(WorkBand::Import)
+}
+
+/// Whether a day owes a daily output that was never made or whose own day's
+/// evidence changed, rather than only ones the days before it re-owe.
+fn owes_own_day(coverage: &daily_coverage::DailyCoverage) -> bool {
+    coverage.units.iter().any(|unit| {
+        unit.state.is_owed()
+            && match unit.owed_by.as_deref() {
+                Some("never_made") => true,
+                Some("evidence_changed") => {
+                    solstone_core_indexer::daily_evidence::evidence_day_offsets(&unit.identity.name)
+                        == [0]
+                }
+                _ => false,
+            }
+    })
 }
 
 /// The queue reference of a from-scratch request's run.
@@ -1341,15 +1357,14 @@ fn inspect_day(
         false
     } else {
         let closing = day_still_closing(journal, queue, SystemTime::now()).as_deref() == Some(day);
-        let imported = day_holds_note_history
-            || sources
-                .imports
-                .iter()
-                .any(|import| import.days.contains(day));
+        let coverage = read_coverage(journal, day, sources.roots)?;
+        let in_import = sources
+            .imports
+            .iter()
+            .any(|import| import.days.contains(day));
         let explicit = intent
             .map(|_| WorkBand::Waiting)
-            .or_else(|| imported.then_some(WorkBand::Import));
-        let coverage = read_coverage(journal, day, sources.roots)?;
+            .or_else(|| imported_daily_band(day_holds_note_history, in_import, &coverage));
         let mut p = daily_priority(priority(day, None, today, explicit), &coverage);
         p.band = sources.ask.band(p.band);
         let mut permanently_held_daily = BTreeSet::new();
@@ -3298,6 +3313,21 @@ mod tests {
             let explicit = priority(day, None, today, Some(band));
             assert_eq!(daily_priority(explicit, &coverage), explicit);
         }
+        // A day holding note history takes the import place while it owes its
+        // own outputs, and an import holds it there, but a review re-owed by
+        // the days before it waits for band 6 as on any day.
+        assert_eq!(
+            imported_daily_band(true, false, &coverage),
+            Some(WorkBand::Import)
+        );
+        coverage.units[index].owed_by = Some("evidence_changed".into());
+        assert_eq!(imported_daily_band(true, false, &coverage), None);
+        assert_eq!(
+            imported_daily_band(false, true, &coverage),
+            Some(WorkBand::Import)
+        );
+        assert_eq!(imported_daily_band(false, false, &coverage), None);
+        coverage.units[index].owed_by = Some("never_made".into());
         let mut ranked = Vec::new();
         retain_best(
             &mut ranked,
