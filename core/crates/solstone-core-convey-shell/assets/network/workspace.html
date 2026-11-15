@@ -2046,7 +2046,7 @@ systemctl --user start solstone-linux</code></div>
         : 'nothing yet';
       return `<dl>
         <div><dt>last added</dt><dd>${escapeHtml(lastAdded)}</dd></div>
-        <div><dt>last check-in</dt><dd>${escapeHtml(window.NetworkRender.checkInLabel(client))}<span class="client-stat-note">${escapeHtml(CHECK_IN_NOTE)}</span></dd></div>
+        <div><dt>last check-in</dt><dd><span data-check-in>${escapeHtml(checkInText(client))}</span><span class="client-stat-note">${escapeHtml(CHECK_IN_NOTE)}</span></dd></div>
         ${connectionLabel ? `<div><dt>connection</dt><dd>${escapeHtml(connectionLabel)}</dd></div>` : ''}
         <div><dt>last journal segment</dt><dd>${segmentCell}</dd></div>
         ${failure ? `<div><dt>delivery detail</dt><dd>${escapeHtml(failure)}</dd></div>` : ''}
@@ -2100,7 +2100,7 @@ systemctl --user start solstone-linux</code></div>
     }
 
     let clientsEpoch = 0;
-    // What the devices list last drew, and from which rows.
+    // What the devices list last drew (its markup with the "… ago" labels as tokens), and from which rows.
     let drawnClients = null;
     let lastClients = null;
     const clientLabels = window.NetworkRender.createClientLabels({
@@ -2175,7 +2175,7 @@ systemctl --user start solstone-linux</code></div>
         if (status) status.textContent = clientLabels.editor(form.dataset.labelCid)?.message || '';
         // The list now shows what it would draw with this draft, so a poll that brings nothing new
         // leaves the field being typed in alone.
-        if (drawnClients && lastClients) drawnClients.html = renderClients(lastClients);
+        if (drawnClients && lastClients) drawnClients.shape = clientsShape(lastClients);
       }
     });
     clientsList.addEventListener('submit', (event) => {
@@ -2191,17 +2191,51 @@ systemctl --user start solstone-linux</code></div>
       if (button.dataset.labelAction === 'cancel') clientLabels.cancel(form.dataset.labelCid);
     });
 
-    function clientCardHTML(client) {
+    // "… ago" labels (the chip's "added …" and the last check-in) move with the clock, not with
+    // what the journal answered. The list is compared without them, as a token, and when only
+    // they moved, just those texts are written again.
+    let timeShape = false;
+    const AGO = '\u0001';
+    const TIMELESS_GROUPS = ['failing', 'adding', 'never', 'unknown'];
+    function chipLabel(client) {
+      const render = window.NetworkRender;
+      if (timeShape && !TIMELESS_GROUPS.includes(render.deliveryGroupFor(client))) return `${AGO}added`;
+      return render.deliveryChipLabel(client);
+    }
+    function checkInText(client) {
+      return timeShape ? `${AGO}check-in` : window.NetworkRender.checkInLabel(client);
+    }
+    function cardFacts(client) {
       const render = window.NetworkRender;
       const displayName = client.role === 'peer' ? 'another journal' : (client.display_label || client.device_label || client.client_label || client.cid_short);
-      const deliveryLabel = render.deliveryChipLabel(client);
+      const deliveryLabel = chipLabel(client);
       const deliveryGroup = render.deliveryGroupFor(client);
       // A device that is actively adding says so in the chip already; a stale
       // heartbeat under the same card said the opposite one line down (G3-110).
       // Only devices outside 'adding' get a connection fact at all, and it lives
       // in the disclosure (clientStatsHTML), not the card face.
       const connectionLabel = deliveryGroup === 'adding' ? '' : render.connectionLineLabel(client);
-      const ariaLabel = [displayName, deliveryLabel, connectionLabel].filter(Boolean).join(', ');
+      return { displayName, deliveryLabel, deliveryGroup, ariaLabel: [displayName, deliveryLabel, connectionLabel].filter(Boolean).join(', ') };
+    }
+    function clientsShape(clients) {
+      timeShape = true;
+      try { return renderClients(clients); } finally { timeShape = false; }
+    }
+    // Only the clock moved: each card's "… ago" texts, and its name for a screen reader, in place.
+    function refreshTimes(clients) {
+      for (const client of clients) {
+        const card = clientsList.querySelector(`.client-card[data-cid="${CSS.escape(client.cid)}"]`);
+        if (!card) continue;
+        const facts = cardFacts(client);
+        setAttr(card, 'aria-label', facts.ariaLabel);
+        setText(card.querySelector('.client-status'), facts.deliveryLabel);
+        setText(card.querySelector('[data-check-in]'), checkInText(client));
+      }
+    }
+
+    function clientCardHTML(client) {
+      const render = window.NetworkRender;
+      const { displayName, deliveryLabel, deliveryGroup, ariaLabel } = cardFacts(client);
       const lastAdded = client.last_accepted_ingest_at
         ? `<p class="client-last-material">last added ${escapeHtml(window.JournalFormat.timestamp(client.last_accepted_ingest_at))}</p>`
         : '';
@@ -2264,9 +2298,13 @@ systemctl --user start solstone-linux</code></div>
         const clients = clientLabels.receive(payload.clients);
         // A list that would draw what it shows is left alone: its cards and their controls stay
         // the same nodes, with their open details and asks as the owner left them.
-        const html = renderClients(clients);
-        if (!focusFrom && drawnClients && drawnClients.html === html && clientsList.firstChild === drawnClients.first
-            && clientsList.lastChild === drawnClients.last && clientsList.childNodes.length === drawnClients.count) return;
+        const shape = clientsShape(clients);
+        if (!focusFrom && drawnClients && drawnClients.shape === shape && clientsList.firstChild === drawnClients.first
+            && clientsList.lastChild === drawnClients.last && clientsList.childNodes.length === drawnClients.count) {
+          refreshTimes(clients);
+          lastClients = clients;
+          return;
+        }
 
         // Rebuild on every poll so grouped headers stay aligned with server ordering.
         const activeEl = document.activeElement;
@@ -2301,13 +2339,13 @@ systemctl --user start solstone-linux</code></div>
         }
         const scrollTop = clientsList.scrollTop;
 
-        clientsList.innerHTML = html;
+        clientsList.innerHTML = renderClients(clients);
         clientsList.querySelectorAll('details').forEach(el => { el.open = openDetails.has(el.dataset.clientDetails); });
         clientsList.querySelectorAll('.client-forget').forEach(el => {
           setForgetAsking(el, openForgets.has(el.dataset.forgetCid));
         });
         clientsList.scrollTop = scrollTop;
-        drawnClients = { html, first: clientsList.firstChild, last: clientsList.lastChild, count: clientsList.childNodes.length };
+        drawnClients = { shape, first: clientsList.firstChild, last: clientsList.lastChild, count: clientsList.childNodes.length };
         lastClients = clients;
 
         let restored = false;
