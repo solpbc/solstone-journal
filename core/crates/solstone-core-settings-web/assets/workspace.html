@@ -1862,7 +1862,7 @@ button:focus:not(:focus-visible) {
   line-height: 1.45;
 }
 
-.trash-backups-line { margin: .9em 0 0; color: var(--ink-soft); font-size: .9em; }
+.trash-backups-line { margin: 0; padding: .6em 1em; border-top: 1px solid var(--hairline); color: var(--ink-soft); font-size: .9em; }
 .trash-backups-line[hidden] { display: none; }
 .trash-backups-line .trash-backups-stays { color: var(--warn-text, var(--ink)); }
 .trash-backups-link { color: var(--orange-text-aa); font-weight: 600; text-decoration: none; }
@@ -8899,6 +8899,8 @@ function trashBackupsSentence(backups) {
       return [text(B.stopped)];
     case 'running':
       return [text(n === 1 ? B.runningOne : trashFill(B.running, { n }))];
+    // Pending with no run yet reads as waiting, paused included.
+    case 'idle':
     case 'waiting': {
       if (n === 0) return null;
       const waiting = fill(B.waitingOne, B.waitingMany, n);
