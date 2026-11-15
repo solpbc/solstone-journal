@@ -311,7 +311,16 @@
       "wait_incomplete": "your newest backup couldn't read some files, so your older backups may hold the only copy of them. you can remove older backups once a backup finishes that reads everything.",
       "ready_lead": "your older backups can still restore things you've erased.",
       "ready_meta": "{count} older backups, {from} to {to}. your newest, from {newest}, already leaves those things out.",
+      "ready_meta_one": "1 older backup, from {from}. your newest, from {newest}, already leaves those things out.",
       "act": "remove older backups",
+      "gate_title_one": "remove 1 older backup?",
+      "removed_backups_one": "1 backup, from {from}",
+      "removed_archives_one": "1 media archive that holds nothing you still have",
+      "removed_restore_one": "1 backup from before you restored this journal",
+      "kept_archives_one": "1 media archive that may hold the only copy of media you still have",
+      "restore_choice_one": "also remove 1 backup from before you restored this journal",
+      "part_archives_one": "1 media archive stays, because it holds the only copy of media you still have, or what it holds isn't known. it may still hold some of what you erased.",
+      "part_restore_one": "1 backup from before you restored this journal stays.",
       "gate_title": "remove {count} older backups?",
       "gate_stakes": "you won't be able to restore your journal to any date before {newest}. that's everything in it, not only what you erased.",
       "removed": "removed",
@@ -1958,7 +1967,10 @@
   // ---- older backups: after an erase, remove every backup older than the newest
 
   function olderCopy(key, values) {
-    let text = (BACKUP_COPY.older || {})[key] || '';
+    const copy = BACKUP_COPY.older || {};
+    // A count of one reads in the singular where a "_one" form exists.
+    const one = values && values.count === 1 && copy[`${key}_one`];
+    let text = one || copy[key] || '';
     for (const [name, value] of Object.entries(values || {})) {
       text = text.split(`{${name}}`).join(value == null ? '' : String(value));
     }
