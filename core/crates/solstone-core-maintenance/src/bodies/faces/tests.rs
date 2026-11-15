@@ -119,3 +119,122 @@ fn one_undescribed_or_damaged_screen_does_not_stop_the_history() {
     let daily = reconcile(root).unwrap();
     assert_eq!((daily.pending, daily.failed), (0, 0));
 }
+
+fn age(path: &Path, seconds: u64) {
+    let file = std::fs::File::options().write(true).open(path).unwrap();
+    file.set_modified(SystemTime::now() - Duration::from_secs(seconds))
+        .unwrap();
+}
+fn reads() -> usize {
+    BODY_READS.with(|n| n.replace(0))
+}
+/// Two plain recordings and one meeting already described, all settled.
+fn settled_history(root: &Path) -> (PathBuf, PathBuf) {
+    let day = root.join("chronicle").join("20260101");
+    let meeting =
+        json!({"frame_id":1,"content":{"meeting":{"participants":[{"name":"synthetic"}]}}});
+    for (name, body) in [
+        ("000000_300", json!({"frame_id":1,"content":{}})),
+        ("000001_300", json!({"frame_id":1,"content":{}})),
+        ("000002_300", meeting),
+    ] {
+        let dir = day.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("screen.webm"), b"synthetic").unwrap();
+        std::fs::write(dir.join("screen.jsonl"), format!("{{}}\n{body}\n")).unwrap();
+        age(&dir.join("screen.jsonl"), 600);
+    }
+    let raw = day.join("000002_300").join("screen.webm");
+    let digest = solstone_core_segment::screen_body_digest(&raw.with_extension("jsonl")).unwrap();
+    std::fs::write(
+        sidecar_path(&raw),
+        json!({"schema_version":1,"source_name":"screen.webm","screen_body_sha256":digest})
+            .to_string(),
+    )
+    .unwrap();
+    age(&sidecar_path(&raw), 600);
+    (day.join("000001_300").join("screen.jsonl"), raw)
+}
+
+#[test]
+fn an_unchanged_history_costs_a_stat_not_a_read() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    settled_history(root);
+    reads();
+    let first = backfill(root).unwrap();
+    assert_eq!((first.valid, first.pending, first.failed), (1, 0, 0));
+    // Three screen outputs and one sidecar were read to settle them.
+    assert_eq!(reads(), 4);
+    let second = backfill(root).unwrap();
+    assert_eq!((second.valid, second.pending, second.failed), (1, 0, 0));
+    assert_eq!(reads(), 0, "an unchanged history reads no screen bodies");
+    let daily = reconcile(root).unwrap();
+    assert_eq!((daily.valid, daily.pending), (1, 0));
+    assert_eq!(reads(), 0);
+}
+
+#[test]
+fn a_changed_screen_or_sidecar_is_read_again() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let (plain, raw) = settled_history(root);
+    backfill(root).unwrap();
+    reads();
+    // A plain recording rewritten as a meeting becomes a candidate.
+    let meeting =
+        json!({"frame_id":1,"content":{"meeting":{"participants":[{"name":"synthetic"}]}}});
+    std::fs::write(&plain, format!("{{}}\n{meeting}\n")).unwrap();
+    age(&plain, 300);
+    // A sidecar bound to an older screen body no longer counts as described.
+    std::fs::write(
+        sidecar_path(&raw),
+        json!({"schema_version":1,"source_name":"screen.webm","screen_body_sha256":"stale"})
+            .to_string(),
+    )
+    .unwrap();
+    age(&sidecar_path(&raw), 300);
+    let mut stats = Stats::default();
+    let pending = discover(root, &mut cross::Backfill::default(), &mut stats).unwrap();
+    assert_eq!((pending.len(), stats.valid), (2, 0));
+    // Each changed recording: its screen output and its sidecar.
+    assert_eq!(reads(), 4);
+    // A file still being written is not trusted from its stamp.
+    let fresh = root.join("chronicle/20260101/000000_300/screen.jsonl");
+    std::fs::write(&fresh, "{}\n{\"frame_id\":2,\"content\":{}}\n").unwrap();
+    discover(root, &mut cross::Backfill::default(), &mut Stats::default()).unwrap();
+    discover(root, &mut cross::Backfill::default(), &mut Stats::default()).unwrap();
+    // The two pending meetings (screen + sidecar each) on both passes, and the
+    // fresh output on both passes.
+    assert_eq!(reads(), 2 * (4 + 1));
+}
+
+#[test]
+fn a_removed_sidecar_or_recording_leaves_the_scan_cache() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let (plain, raw) = settled_history(root);
+    backfill(root).unwrap();
+    assert_eq!(load_scan(root).len(), 3);
+    // Without its sidecar the meeting is owed again, not remembered as described.
+    std::fs::remove_file(sidecar_path(&raw)).unwrap();
+    let mut stats = Stats::default();
+    let pending = discover(root, &mut cross::Backfill::default(), &mut stats).unwrap();
+    assert_eq!((pending.len(), stats.valid), (1, 0));
+    assert_eq!(load_scan(root).len(), 2);
+    // A recording no longer in the journal drops out of the cache.
+    std::fs::remove_dir_all(plain.parent().unwrap()).unwrap();
+    discover(root, &mut cross::Backfill::default(), &mut Stats::default()).unwrap();
+    let scan = load_scan(root);
+    assert_eq!(scan.len(), 1);
+    assert!(scan.keys().all(|k| k.contains("000000_300")));
+    // Turned off, the catch-up keeps nothing of its own.
+    std::fs::create_dir_all(root.join("config")).unwrap();
+    std::fs::write(
+        root.join("config/journal.json"),
+        json!({"faces":{"enabled":false}}).to_string(),
+    )
+    .unwrap();
+    backfill(root).unwrap();
+    assert!(!root.join(SCAN_CACHE).exists());
+}
