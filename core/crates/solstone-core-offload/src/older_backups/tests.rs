@@ -530,9 +530,14 @@ fn an_archive_of_a_recording_removed_another_way_is_not_this_features() {
     let temp = journal();
     let id = "8".repeat(64);
     offloaded(temp.path(), "090000_300", &id);
-    // A retention policy's tombstone names no trash item an erase recorded.
+    // A retention policy's tombstone, not the owner's.
     trashed(temp.path(), "090000_300", "sha256:abc", true);
     std::fs::remove_dir_all(temp.path().join(".trash")).unwrap();
+    let tombstone = segment_dir(temp.path(), "090000_300").join(TOMBSTONE_NAME);
+    let body = std::fs::read_to_string(&tombstone)
+        .unwrap()
+        .replace("owner_segment_delete", "retention_policy");
+    std::fs::write(&tombstone, body).unwrap();
     let classes = classify_archives(temp.path(), &[archive(&id)]);
     assert!(classes.removable.is_empty() && classes.mixed.is_empty());
 }
@@ -548,7 +553,9 @@ fn ready_only_when_the_press_would_take_something() {
         temp.path(),
         backup_with((NOW - 100, "aa"), json!({"survey": only_kept})),
     );
-    assert_ne!(state_of(&view(temp.path(), NOW, false)), "ready");
+    // A current listing shows a backup after the erase, so no backup can
+    // change this: not "waiting" either.
+    assert_eq!(state_of(&view(temp.path(), NOW, false)), "hidden");
 }
 
 // ------------------------------------------------------- removal, fake restic
@@ -598,6 +605,9 @@ mod removal {
         appears_after: Option<(usize, Value)>,
         forgets: RefCell<usize>,
         verbs: RefCell<Vec<String>>,
+        /// The listing after this forget call (1-based) fails once.
+        lose_listing_after: Option<usize>,
+        losing: RefCell<bool>,
     }
 
     fn ok(stdout: String) -> ToolOutput {
@@ -618,6 +628,11 @@ mod removal {
             let verb = args.first().cloned().unwrap_or_default();
             self.verbs.borrow_mut().push(verb.clone());
             Ok(match verb.as_str() {
+                "snapshots" if self.losing.replace(false) => ToolOutput {
+                    returncode: 1,
+                    stdout: vec![],
+                    stderr: vec![],
+                },
                 "snapshots" => ok(serde_json::to_string(&*self.snapshots.borrow()).unwrap()),
                 "unlock" => ok(String::new()),
                 "ls" => {
@@ -646,6 +661,9 @@ mod removal {
                     self.snapshots
                         .borrow_mut()
                         .retain(|snapshot| !ids.iter().any(|id| snapshot["id"] == json!(id)));
+                    if self.lose_listing_after == Some(call) {
+                        *self.losing.borrow_mut() = true;
+                    }
                     if let Some((after, snapshot)) = &self.appears_after
                         && *after == call
                     {
@@ -737,10 +755,20 @@ mod removal {
     }
 
     fn run(root: &Path, fake: &FakeRestic, include_kept: bool) -> Result<Done, Refusal> {
+        run_bounded(root, fake, include_kept, Some("9999-12-31T00:00:00Z"))
+    }
+
+    fn run_bounded(
+        root: &Path,
+        fake: &FakeRestic,
+        include_kept: bool,
+        bound: Option<&str>,
+    ) -> Result<Done, Refusal> {
         remove(
             root,
             &services(fake),
             include_kept,
+            bound,
             Surface::Cli,
             &|_, _| {},
         )
@@ -784,6 +812,8 @@ mod removal {
         fake.listed
             .borrow_mut()
             .push(node(".trash/20261114T090000000Z-abcdef12"));
+        // It's still in this journal's trash: recoverable, so the owner has it.
+        std::fs::create_dir_all(temp.path().join(".trash/20261114T090000000Z-abcdef12")).unwrap();
         assert!(run(temp.path(), &fake, false).is_ok());
     }
 
@@ -905,6 +935,65 @@ mod removal {
         let state = current_state(temp.path());
         assert_eq!(state.settled_through, settled);
         assert_eq!(state.done.unwrap().kept_newest_time, iso(NOW - 400));
+    }
+
+    #[test]
+    fn a_kept_only_run_that_lost_its_listing_finishes_on_the_next_press() {
+        let (temp, mut fake) = setup(2, 2);
+        run(temp.path(), &fake, false).unwrap();
+        let boundary = current_state(temp.path()).done.unwrap().kept_newest_time;
+        // "remove them": the forget works, the listing after it fails.
+        fake.lose_listing_after = Some(*fake.forgets.borrow() + 1);
+        assert!(matches!(
+            run(temp.path(), &fake, true),
+            Err(Refusal::Stopped { .. })
+        ));
+        assert_eq!(state_of(&view(temp.path(), NOW, false)), "stopped");
+        assert_eq!(
+            entries(temp.path()),
+            2,
+            "the forget may have happened: recorded"
+        );
+        // "remove the rest" resumes that run, whatever the press asks.
+        let done = run(temp.path(), &fake, false).unwrap();
+        assert_eq!((done.removed, done.kept_before_restore_left), (2, 0));
+        assert_eq!(entries(temp.path()), 2, "one entry for the operation");
+        let state = current_state(temp.path());
+        assert!(state.run.is_none());
+        assert_eq!(state.done.unwrap().kept_newest_time, boundary);
+    }
+
+    #[test]
+    fn a_ticked_run_stopped_with_only_kept_backups_left_takes_them_and_settles() {
+        let (temp, mut fake) = setup(10, 2);
+        // Batch one takes the ten older backups; batch two (the kept ones) fails.
+        fake.fail_forgets = vec![2];
+        assert!(matches!(
+            run(temp.path(), &fake, true),
+            Err(Refusal::Stopped {
+                removed: 10,
+                total: 12,
+                ..
+            })
+        ));
+        assert_eq!(state_of(&view(temp.path(), NOW, false)), "stopped");
+        let done = run(temp.path(), &fake, true).unwrap();
+        assert_eq!((done.removed, done.kept_before_restore_left), (12, 0));
+        assert_eq!(ids(&fake), [hex("newest")]);
+        assert_eq!(
+            current_state(temp.path()).settled_through.as_deref(),
+            Some(iso(NOW - 400).as_str())
+        );
+        assert_eq!(entries(temp.path()), 1);
+    }
+
+    #[test]
+    fn kept_backups_newer_than_what_the_owner_was_shown_stay() {
+        let (temp, fake) = setup(2, 2);
+        // kept1 started at NOW-90001 and kept0 at NOW-90000: shown up to kept1.
+        let done = run_bounded(temp.path(), &fake, true, Some(&iso(NOW - 90_001))).unwrap();
+        assert_eq!(done.kept_before_restore_left, 1);
+        assert_eq!(ids(&fake), [hex("newest"), hex("kept0")]);
     }
 
     #[test]

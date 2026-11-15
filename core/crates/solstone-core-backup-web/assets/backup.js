@@ -2785,9 +2785,8 @@
         if (action === 'older-open') {
           const mode = button.getAttribute('data-action-mode');
           if (mode === 'older-rest') {
-            await startOperation('/app/backup/older-backups/remove', {
-              include_kept_before_restore: Boolean((state.older_backups || {}).include_kept),
-            });
+            // The stopped run resumes as it was chosen.
+            await startOperation('/app/backup/older-backups/remove', { include_kept_before_restore: false });
           } else {
             setElementHidden('[data-older-actions]', true);
             setElementHidden('[data-older-gate]', false);
@@ -2802,12 +2801,20 @@
         }
         if (action === 'older-confirm') {
           const include = root.querySelector('[data-older-include-kept]');
-          const body = { include_kept_before_restore: Boolean(include && include.checked) };
+          const withKept = Boolean(include && include.checked);
+          // The newest kept-from-restore backup shown: none newer is taken.
+          const body = {
+            include_kept_before_restore: withKept,
+            kept_before_restore_to: withKept ? ((state.older_backups || {}).kept_before_restore_to || null) : null,
+          };
           closeOlderGate();
           await startOperation('/app/backup/older-backups/remove', body);
         }
         if (action === 'older-remove-kept') {
-          await startOperation('/app/backup/older-backups/remove', { include_kept_before_restore: true });
+          await startOperation('/app/backup/older-backups/remove', {
+            include_kept_before_restore: true,
+            kept_before_restore_to: (state.older_backups || {}).kept_before_restore_to || null,
+          });
         }
         if (action === 'teardown-open') await openTeardownGate();
         if (action === 'teardown-cancel') resetTeardownGate();

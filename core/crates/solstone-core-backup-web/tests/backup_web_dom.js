@@ -2597,7 +2597,7 @@ asyncCase('older backups: the confirm opens with focus on cancel and sends the o
   assert.strictEqual(harness.olderRemoved.children.length, removedBefore + 1, 'ticking moves them to removed');
   click(harness.olderConfirm);
   await settle();
-  assert.deepStrictEqual(body, { include_kept_before_restore: true });
+  assert.deepStrictEqual(body, { include_kept_before_restore: true, kept_before_restore_to: READY.kept_before_restore_to });
 });
 
 asyncCase('older backups: cancel closes the confirm and sends nothing', async () => {
@@ -2621,7 +2621,7 @@ asyncCase('older backups: partly done offers to remove the kept-from-restore bac
   let body = 'uncalled';
   const harness = createHarness({
     statusQueue: [olderStatus({ state: 'partly_done', at: 1763000000, before: '2026-11-14T15:12:00-07:00', removed: 41,
-      archives_removed: 1, archives_mixed: 1, kept_before_restore: 2, storage: 'versions' })],
+      archives_removed: 1, archives_mixed: 1, kept_before_restore: 2, kept_before_restore_to: '2026-09-28T10:00:00-06:00', storage: 'versions' })],
     respond(call) {
       if (call.url === '/app/backup/older-backups/remove') {
         body = JSON.parse(call.request.body);
@@ -2636,10 +2636,10 @@ asyncCase('older backups: partly done offers to remove the kept-from-restore bac
   assert.ok(removeThem, 'the inline action is there');
   click(removeThem);
   await settle();
-  assert.deepStrictEqual(body, { include_kept_before_restore: true });
+  assert.deepStrictEqual(body, { include_kept_before_restore: true, kept_before_restore_to: '2026-09-28T10:00:00-06:00' });
 });
 
-asyncCase('older backups: a stopped run offers the rest with its own choice', async () => {
+asyncCase('older backups: a stopped run offers the rest without a second confirm', async () => {
   let body = 'uncalled';
   const harness = createHarness({
     statusQueue: [olderStatus({ state: 'stopped', removed: 18, total: 41, include_kept: false, reason: 'locked' })],

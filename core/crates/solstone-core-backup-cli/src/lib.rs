@@ -1892,21 +1892,28 @@ fn remove_older(
     yes: bool,
     include_kept: bool,
 ) -> CliRun {
-    use solstone_core_offload::older_backups;
+    use solstone_core_offload::older_backups::{self, Kind};
+    // The preview and the removal make the same decision. Kept-from-restore
+    // backups are taken up to the newest this invocation lists.
+    let plan = match older_backups::plan(
+        journal,
+        services,
+        include_kept,
+        Some("9999-12-31T23:59:59Z"),
+    ) {
+        Ok(plan) => plan,
+        Err(refusal) => return older_refusal(&refusal),
+    };
+    let bound = plan
+        .kept_before_restore
+        .last()
+        .map(|dated| dated.time.clone());
     if !yes {
-        let plan = match older_backups::plan(journal, services) {
-            Ok(plan) => plan,
-            Err(refusal) => return older_refusal(&refusal),
-        };
         let mut out = String::new();
-        let removed = plan.older.len()
-            + plan.archives_removable.len()
-            + if include_kept {
-                plan.kept_before_restore.len()
-            } else {
-                0
-            };
-        out.push_str(&format!("This removes {removed} backups:\n"));
+        if plan.kind == Kind::Resume {
+            out.push_str("This finishes removing older backups that stopped part way.\n");
+        }
+        out.push_str(&format!("This removes {} backups:\n", plan.targets().len()));
         if let (Some(first), Some(last)) = (plan.older.first(), plan.older.last()) {
             out.push_str(&format!(
                 "  {} older backups, {} to {}\n",
@@ -1921,10 +1928,11 @@ fn remove_older(
                 plan.archives_removable.len()
             ));
         }
-        if include_kept && !plan.kept_before_restore.is_empty() {
+        if let Some(last) = plan.kept_before_restore.last() {
             out.push_str(&format!(
-                "  {} backups from before you restored this journal\n",
-                plan.kept_before_restore.len()
+                "  {} backups from before you restored this journal, up to {}\n",
+                plan.kept_before_restore.len(),
+                backup_time(&last.time)
             ));
         }
         out.push_str(&format!(
@@ -1937,30 +1945,58 @@ fn remove_older(
                 plan.archives_mixed + plan.archives_kept
             ));
         }
-        if !include_kept && !plan.kept_before_restore.is_empty() {
+        if !plan.kept_before_restore_left.is_empty() {
             out.push_str(&format!(
                 "It keeps {} backups from before you restored this journal; add --include-kept-before-restore to remove them too.\n",
-                plan.kept_before_restore.len()
+                plan.kept_before_restore_left.len()
             ));
         }
-        out.push_str(&format!(
-            "After this you can't restore your journal to any time before {}.\nRun again with --yes to remove them.\n",
-            backup_time(&plan.keep.time)
-        ));
+        if plan.kind == Kind::Older {
+            out.push_str(&format!(
+                "After this you can't restore your journal to any time before {}.\n",
+                backup_time(&plan.keep.time)
+            ));
+        }
+        out.push_str("Run again with --yes to remove them.\n");
         return success(out);
     }
     match older_backups::remove(
         journal,
         services,
         include_kept,
+        bound.as_deref(),
         solstone_core_removals::Surface::Cli,
         &|_, _| {},
     ) {
-        Ok(done) => success(format!(
-            "Removed {} backups. No backup can bring back what you erased before {}.\n",
-            done.removed,
-            backup_time(&done.kept_newest_time)
-        )),
+        Ok(done) => {
+            let mut out = format!(
+                "Removed {} backups. No backup can bring back what you erased before {}",
+                done.removed,
+                backup_time(&done.kept_newest_time)
+            );
+            let mut except = Vec::new();
+            if done.archives_mixed > 0 {
+                except.push(format!(
+                    "{} media archives that also hold media you still have may still hold some of it",
+                    done.archives_mixed
+                ));
+            }
+            if done.kept_before_restore_left > 0 {
+                except.push(format!(
+                    "{} backups from before you restored this journal stay",
+                    done.kept_before_restore_left
+                ));
+            }
+            if matches!(done.storage.as_str(), "versions" | "locks" | "hidden_files") {
+                except.push("your storage may keep copies of the removed backups".to_owned());
+            }
+            if except.is_empty() {
+                out.push_str(".\n");
+            } else {
+                out.push_str(&format!(", except: {}.\n", except.join("; ")));
+            }
+            success(out)
+        }
         Err(refusal) => older_refusal(&refusal),
     }
 }

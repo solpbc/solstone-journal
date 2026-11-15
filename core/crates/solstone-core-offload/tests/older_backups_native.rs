@@ -32,6 +32,7 @@ const DAY: &str = "20261101";
 const ERASED: &str = "090000_300";
 const KEPT: &str = "091000_300";
 const ITEM: &str = "1f3c2a9e-trash-item";
+const FAR: &str = "9999-12-31T00:00:00Z";
 
 struct WallClock;
 impl Clock for WallClock {
@@ -354,6 +355,7 @@ fn erase_back_up_remove_older_then_nothing_holds_it_at_either_path() {
         &fixture.journal,
         &fixture.services(&SystemToolRunner),
         false,
+        None,
         web(),
         &|_, _| {},
     )
@@ -383,6 +385,7 @@ fn erase_back_up_remove_older_then_nothing_holds_it_at_either_path() {
             &fixture.journal,
             &fixture.services(&SystemToolRunner),
             false,
+            None,
             web(),
             &|_, _| {}
         )
@@ -404,11 +407,14 @@ fn a_newest_backup_that_still_holds_it_is_refused_and_nothing_is_removed() {
     fixture.erase(false);
     fixture.backup();
     fixture.after_backup();
+    // The erase then finishes here: the newest backup holds what's gone.
+    fs::remove_dir_all(fixture.journal.join(".trash").join(ITEM)).unwrap();
     let before = fixture.snapshots().len();
     let refused = remove(
         &fixture.journal,
         &fixture.services(&SystemToolRunner),
         true,
+        Some(FAR),
         web(),
         &|_, _| {},
     );
@@ -430,7 +436,7 @@ fn backups_kept_from_before_a_restore_go_only_when_ticked() {
     fixture.after_backup();
     assert_eq!(fixture.state()["kept_before_restore"], 2);
     let services = fixture.services(&SystemToolRunner);
-    let unticked = remove(&fixture.journal, &services, false, web(), &|_, _| {}).unwrap();
+    let unticked = remove(&fixture.journal, &services, false, None, web(), &|_, _| {}).unwrap();
     assert_eq!(unticked.kept_before_restore_left, 2);
     let kept: Vec<Value> = fixture
         .snapshots()
@@ -455,7 +461,15 @@ fn backups_kept_from_before_a_restore_go_only_when_ticked() {
         (Some("partly_done"), Some(2))
     );
     // Partly done's "remove them" takes them, with no new erase.
-    let ticked = remove(&fixture.journal, &services, true, web(), &|_, _| {}).unwrap();
+    let ticked = remove(
+        &fixture.journal,
+        &services,
+        true,
+        Some(FAR),
+        web(),
+        &|_, _| {},
+    )
+    .unwrap();
     assert_eq!(ticked.kept_before_restore_left, 0);
     assert_eq!(
         fixture.snapshots().len(),
@@ -485,6 +499,7 @@ fn a_stop_part_way_reports_what_it_removed_and_the_next_press_removes_the_rest()
         &fixture.journal,
         &fixture.services(&failing),
         false,
+        None,
         web(),
         &|_, _| {},
     );
@@ -502,6 +517,7 @@ fn a_stop_part_way_reports_what_it_removed_and_the_next_press_removes_the_rest()
         &fixture.journal,
         &fixture.services(&SystemToolRunner),
         false,
+        None,
         web(),
         &|_, _| {},
     )
@@ -569,12 +585,19 @@ fn an_archive_of_only_erased_media_goes_and_one_with_kept_media_stays() {
         (Some(1), Some(1)),
         "{ready}"
     );
-    let plan = plan(&fixture.journal, &fixture.services(&SystemToolRunner)).unwrap();
+    let plan = plan(
+        &fixture.journal,
+        &fixture.services(&SystemToolRunner),
+        false,
+        None,
+    )
+    .unwrap();
     assert_eq!(plan.archives_removable[0].id, archive_ids[0]);
     let done = remove(
         &fixture.journal,
         &fixture.services(&SystemToolRunner),
         false,
+        None,
         web(),
         &|_, _| {},
     )

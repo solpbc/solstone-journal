@@ -102,17 +102,21 @@ pub struct Run {
     pub started: i64,
     pub updated: i64,
     pub keep: String,
+    /// The boundary this run claims: erases before it are settled.
     pub keep_time: String,
     pub include_kept: bool,
-    pub total: usize,
-    pub removed: usize,
-    pub archives_removed: usize,
-    /// Only the backups kept from before a restore (partly done's choice).
+    /// Only the kept-from-restore backups a finished removal left.
     #[serde(default)]
     pub kept_only: bool,
-    /// What earlier attempts of this operation removed.
+    /// Every backup this run chose, by id; what's gone is read back from a
+    /// listing, never counted from exit codes.
     #[serde(default)]
-    pub carried: usize,
+    pub targets: Vec<String>,
+    /// Which of them are media archives.
+    #[serde(default)]
+    pub archives: Vec<String>,
+    pub total: usize,
+    pub removed: usize,
     /// Whether the deletion record has this operation's entry.
     #[serde(default)]
     pub recorded: bool,
@@ -131,6 +135,9 @@ pub struct Done {
     pub archives_removed: usize,
     pub archives_mixed: usize,
     pub kept_before_restore_left: usize,
+    /// The newest kept-from-restore backup left: "remove them" takes none newer.
+    #[serde(default)]
+    pub kept_before_restore_to: Option<String>,
     pub storage: String,
 }
 
@@ -182,8 +189,6 @@ fn store(journal: &Path, change: impl FnOnce(&mut State)) -> Result<(), String> 
 pub struct Erase {
     pub at: DateTime<FixedOffset>,
     pub unit: Unit,
-    /// The entry's id and operation: between them they name the trash item.
-    names: String,
 }
 
 fn settled(state: &State) -> Option<DateTime<FixedOffset>> {
@@ -220,15 +225,10 @@ pub fn unsettled_erases(journal: &Path, state: &State, now: i64, whole: bool) ->
         .filter_map(|entry: Entry| {
             Some(Erase {
                 at: DateTime::parse_from_rfc3339(&entry.at).ok()?,
-                names: alphanumeric(&format!("{}{}", entry.id, entry.operation)),
                 unit: entry.unit,
             })
         })
         .collect()
-}
-
-fn alphanumeric(value: &str) -> String {
-    value.chars().filter(char::is_ascii_alphanumeric).collect()
 }
 
 // ---------------------------------------------------------------- archives
@@ -279,15 +279,6 @@ pub fn classify_archives(journal: &Path, archives: &[SnapshotFacts]) -> ArchiveC
     {
         return unknown();
     }
-    // The trash items an erase was recorded for, by name.
-    let Ok(erased) = solstone_core_removals::erased_since(journal, DateTime::<Utc>::MIN_UTC, false)
-    else {
-        return unknown();
-    };
-    let erased_names: Vec<String> = erased
-        .iter()
-        .map(|entry| alphanumeric(&format!("{}{}", entry.id, entry.operation)))
-        .collect();
     // Per archive: (erased, kept, unknown) files.
     let mut held: BTreeMap<&str, (usize, usize, usize)> = archives
         .iter()
@@ -301,7 +292,9 @@ pub fn classify_archives(journal: &Path, archives: &[SnapshotFacts]) -> ArchiveC
                     let matching: Vec<&str> = archives
                         .iter()
                         .filter(|archive| {
-                            !witness.snapshot_id.is_empty()
+                            // A short id could name several archives; one
+                            // this short names none.
+                            witness.snapshot_id.len() >= 8
                                 && archive.id.starts_with(&witness.snapshot_id)
                         })
                         .map(|archive| archive.id.as_str())
@@ -309,7 +302,7 @@ pub fn classify_archives(journal: &Path, archives: &[SnapshotFacts]) -> ArchiveC
                     if matching.is_empty() {
                         continue;
                     }
-                    let state = held_file(&root, &mut discovered, segment, witness, &erased_names);
+                    let state = held_file(&root, &mut discovered, segment, witness);
                     for id in matching {
                         let counts = held.entry(id).or_default();
                         match state {
@@ -333,15 +326,15 @@ pub fn classify_archives(journal: &Path, archives: &[SnapshotFacts]) -> ArchiveC
     classes
 }
 
-/// What a witnessed file is: erased when its folder holds a tombstone whose
-/// item a recorded trash erase names, that item is no longer in the trash,
-/// and the file is gone from the folder.
+/// What a witnessed file is: erased when its folder holds the owner's own
+/// delete tombstone (the trash's, or an owner delete from before it), the
+/// item that tombstone names is no longer in the trash, and the file is gone
+/// from the folder.
 fn held_file(
     root: &Arc<JournalRoot>,
     discovered: &mut BTreeMap<String, Option<Vec<(String, String, PathBuf)>>>,
     segment: &SegmentCatalog,
     witness: &ArchiveWitness,
-    erased_names: &[String],
 ) -> Held {
     let day = root.canonical_path().join("chronicle").join(&segment.day);
     let path = match (witness.layout, &witness.segment_dir) {
@@ -393,8 +386,7 @@ fn held_file(
     let Some(tombstone) = read_tombstone(&path) else {
         return Held::Unknown;
     };
-    let item = alphanumeric(&tombstone.cid);
-    if item.is_empty() || !erased_names.iter().any(|names| names.contains(&item)) {
+    if tombstone.reason != "owner_segment_delete" {
         // Deleted some other way (a retention policy, an import's release):
         // not this feature's to remove.
         return Held::Kept;
@@ -415,6 +407,8 @@ fn held_file(
 #[derive(Deserialize)]
 struct Tombstone {
     cid: String,
+    #[serde(default)]
+    reason: String,
     #[serde(default)]
     manifest: Vec<String>,
 }
@@ -603,16 +597,17 @@ pub fn view(journal: &Path, now: i64, running: bool) -> Value {
     }
     let state = load_state(&backup);
     if running || run_lock_held(journal) {
-        let (removed, total) = state.run.as_ref().map_or((0, 0), |run| {
-            (run.carried + run.removed, run.carried + run.total)
-        });
+        let (removed, total) = state
+            .run
+            .as_ref()
+            .map_or((0, 0), |run| (run.removed, run.total));
         return json!({"state": "running", "removed": removed, "total": total});
     }
     if let Some(run) = &state.run {
         return json!({
             "state": "stopped",
-            "removed": run.carried + run.removed,
-            "total": run.carried + run.total,
+            "removed": run.removed,
+            "total": run.total,
             "include_kept": run.include_kept,
             "reason": run.stopped.clone().unwrap_or_else(|| "interrupted".into()),
         });
@@ -638,10 +633,25 @@ pub fn view(journal: &Path, now: i64, running: bool) -> Value {
                 return json!({"state": "waiting", "newest_incomplete": true});
             }
         }
+        // Waiting means a backup after the erase is still to come and
+        // something older can bring it back meanwhile. Once a current
+        // listing shows a backup after it, nothing a backup does changes
+        // what's left, so it isn't waiting.
+        let fresh_newest = match (survey, &last) {
+            (Some(survey), Some((_, id, _))) => survey
+                .newest
+                .as_ref()
+                .filter(|newest| same_snapshot(&newest.id, id))
+                .and_then(Dated::instant),
+            _ => None,
+        };
         let waiting = erases.iter().any(|erase| {
-            last.as_ref()
+            let outstanding = fresh_newest.is_none_or(|newest| newest <= erase.at);
+            let held = last
+                .as_ref()
                 .is_some_and(|(time, _, _)| *time < erase.at.timestamp())
-                || survey.is_some_and(|survey| restorable(survey, erase.at))
+                || survey.is_some_and(|survey| restorable(survey, erase.at));
+            outstanding && held
         });
         if waiting {
             return json!({"state": "waiting"});
@@ -668,6 +678,7 @@ pub fn view(journal: &Path, now: i64, running: bool) -> Value {
             "archives_removed": done.archives_removed,
             "archives_mixed": done.archives_mixed,
             "kept_before_restore": kept,
+            "kept_before_restore_to": done.kept_before_restore_to,
             "storage": done.storage,
         });
     }
@@ -706,7 +717,7 @@ pub enum Refusal {
     /// The newest backup couldn't read some files, so it can't stand in for
     /// the older ones.
     NewestIncomplete,
-    /// The newest backup still holds an erased thing at one of its paths.
+    /// The newest backup still holds something that has left the trash.
     NewestHoldsErased,
     /// The look into the newest backup didn't see what it must hold, so its
     /// silence about erased things means nothing.
@@ -739,55 +750,49 @@ impl Refusal {
     }
 }
 
-/// What a removal would take, for the CLI's plan and the confirm.
+/// Which removal a press makes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Kind {
+    /// Every older backup and every archive of only erased media, and the
+    /// kept-from-restore backups when chosen.
+    Older,
+    /// Only the kept-from-restore backups a finished removal left.
+    KeptOnly,
+    /// The rest of a removal that stopped, as it was chosen.
+    Resume,
+}
+
+/// What a press would take, for the CLI's preview and the confirm. The
+/// preview and the removal share this one decision.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Plan {
+    pub kind: Kind,
     pub keep: Dated,
     keep_paths: Vec<String>,
+    /// The boundary this removal claims: erases before it are settled.
+    pub boundary: String,
     pub older: Vec<Dated>,
     pub archives_removable: Vec<Dated>,
     pub archives_mixed: usize,
     pub archives_kept: usize,
+    /// Kept-from-restore backups this press takes.
     pub kept_before_restore: Vec<Dated>,
+    /// Kept-from-restore backups it leaves.
+    pub kept_before_restore_left: Vec<Dated>,
     pub storage: String,
     pub operated: bool,
+    targets: Vec<String>,
+    archive_targets: Vec<String>,
 }
 
 impl Plan {
-    pub fn targets(&self, include_kept: bool) -> Vec<String> {
-        let mut ids: Vec<String> = self
-            .older
-            .iter()
-            .chain(&self.archives_removable)
-            .map(|dated| dated.id.clone())
-            .collect();
-        if include_kept {
-            ids.extend(
-                self.kept_before_restore
-                    .iter()
-                    .map(|dated| dated.id.clone()),
-            );
-        }
-        ids
-    }
-
-    fn from_survey(survey: Survey, keep: Dated, keep_paths: Vec<String>) -> Self {
-        Self {
-            keep,
-            keep_paths,
-            older: survey.older,
-            archives_removable: survey.archives_removable,
-            archives_mixed: survey.archives_mixed.len(),
-            archives_kept: survey.archives_kept,
-            kept_before_restore: survey.kept_before_restore,
-            storage: survey.storage,
-            operated: survey.operated,
-        }
+    pub fn targets(&self) -> &[String] {
+        &self.targets
     }
 }
 
-/// The journal-relative paths an erased recording had: its files where they
-/// were. (Its trash folder is checked for every kind, by name.)
+/// The paths an erased recording had where it was. (Its trash folder is
+/// covered by the trash check, for every kind.)
 fn erased_paths(journal: &Path, erase: &Erase) -> Vec<String> {
     let Unit::Segment {
         day,
@@ -826,51 +831,6 @@ fn current_state(journal: &Path) -> State {
         .unwrap_or_default()
 }
 
-/// Look at the destination and say what a removal would take. Nothing
-/// changes but the kept listing.
-pub fn plan(journal: &Path, services: &BackupServices<'_>) -> Result<Plan, Refusal> {
-    let repository = open(journal, services)?;
-    plan_with(journal, services, &repository).map(|(plan, _)| plan)
-}
-
-/// What an ordinary removal takes, and every unsettled erase older than the
-/// backup it keeps (each of which that backup must not hold).
-fn plan_with(
-    journal: &Path,
-    services: &BackupServices<'_>,
-    repository: &Repository<'_>,
-) -> Result<(Plan, Vec<Erase>), Refusal> {
-    let now = services.clock.now_unix();
-    let snapshots = repository.snapshots().map_err(Refusal::Failed)?;
-    let survey = listing(journal, repository, snapshots.clone(), now);
-    let _ = store(journal, |state| state.survey = Some(survey.clone()));
-    let backup = get_backup_config(journal).map_err(|_| Refusal::Unavailable)?;
-    let state = load_state(&backup);
-    let Some(keep) = survey.newest.clone() else {
-        return Err(Refusal::Nothing);
-    };
-    // The backup kept must be this journal's last recorded success, and whole.
-    let Some((_, last_id, complete)) = last_success(&backup) else {
-        return Err(Refusal::Waiting);
-    };
-    if !same_snapshot(&keep.id, &last_id) {
-        return Err(Refusal::Waiting);
-    }
-    if !complete {
-        return Err(Refusal::NewestIncomplete);
-    }
-    let keep_time = keep.instant().ok_or(Refusal::Nothing)?;
-    let before_keep: Vec<Erase> = unsettled_erases(journal, &state, now, true)
-        .into_iter()
-        .filter(|erase| erase.at < keep_time)
-        .collect();
-    if !before_keep.iter().any(|erase| offerable(&survey, erase.at)) {
-        return Err(Refusal::Waiting);
-    }
-    let keep_paths = paths_of(&snapshots, &keep.id);
-    Ok((Plan::from_survey(survey, keep, keep_paths), before_keep))
-}
-
 fn paths_of(snapshots: &[SnapshotFacts], id: &str) -> Vec<String> {
     snapshots
         .iter()
@@ -879,10 +839,179 @@ fn paths_of(snapshots: &[SnapshotFacts], id: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The kept backup must hold none of the erases before it: not a
-/// recording's files where they were, and no erased thing's folder in the
-/// trash. The same look must see the journal's own `config` folder, or it
-/// proves nothing.
+fn at_or_before(dated: &Dated, bound: Option<&str>) -> bool {
+    match (
+        dated.instant(),
+        bound.and_then(|bound| DateTime::parse_from_rfc3339(bound).ok()),
+    ) {
+        (Some(time), Some(bound)) => time <= bound,
+        _ => false,
+    }
+}
+
+/// Look at the destination and say what a press would take. Nothing changes
+/// but the kept listing.
+pub fn plan(
+    journal: &Path,
+    services: &BackupServices<'_>,
+    include_kept: bool,
+    kept_bound: Option<&str>,
+) -> Result<Plan, Refusal> {
+    let repository = open(journal, services)?;
+    decide(journal, services, &repository, include_kept, kept_bound).map(|(plan, _)| plan)
+}
+
+/// The one decision a press makes. A run that stopped is resumed as it was
+/// chosen, whatever this press asks; otherwise kept-from-restore backups
+/// alone after a finished removal, or an ordinary removal.
+fn decide(
+    journal: &Path,
+    services: &BackupServices<'_>,
+    repository: &Repository<'_>,
+    include_kept: bool,
+    kept_bound: Option<&str>,
+) -> Result<(Plan, Vec<Erase>), Refusal> {
+    let now = services.clock.now_unix();
+    let snapshots = repository.snapshots().map_err(Refusal::Failed)?;
+    let survey = listing(journal, repository, snapshots.clone(), now);
+    let _ = store(journal, |state| state.survey = Some(survey.clone()));
+    let backup = get_backup_config(journal).map_err(|_| Refusal::Unavailable)?;
+    let state = load_state(&backup);
+    let base = |kind, keep: Dated, boundary: String| Plan {
+        kind,
+        keep_paths: paths_of(&snapshots, &keep.id),
+        keep,
+        boundary,
+        older: Vec::new(),
+        archives_removable: Vec::new(),
+        archives_mixed: survey.archives_mixed.len(),
+        archives_kept: survey.archives_kept,
+        kept_before_restore: Vec::new(),
+        kept_before_restore_left: survey.kept_before_restore.clone(),
+        storage: survey.storage.clone(),
+        operated: survey.operated,
+        targets: Vec::new(),
+        archive_targets: Vec::new(),
+    };
+
+    if let Some(run) = &state.run {
+        // What the stopped run chose and hasn't removed yet.
+        let left: BTreeSet<&str> = snapshots.iter().map(|facts| facts.id.as_str()).collect();
+        let keep = Dated {
+            id: run.keep.clone(),
+            time: snapshots
+                .iter()
+                .find(|facts| facts.id == run.keep)
+                .map(|facts| facts.time.clone())
+                .ok_or_else(|| Refusal::Failed("kept_backup_missing".into()))?,
+        };
+        let mut plan = base(Kind::Resume, keep, run.keep_time.clone());
+        plan.targets = run
+            .targets
+            .iter()
+            .filter(|id| left.contains(id.as_str()))
+            .cloned()
+            .collect();
+        plan.archive_targets = run.archives.clone();
+        let taking: BTreeSet<&str> = plan.targets.iter().map(String::as_str).collect();
+        let take = |list: &[Dated]| -> Vec<Dated> {
+            list.iter()
+                .filter(|dated| taking.contains(dated.id.as_str()))
+                .cloned()
+                .collect()
+        };
+        plan.older = take(&survey.older);
+        plan.archives_removable = take(&survey.archives_removable);
+        plan.kept_before_restore = take(&survey.kept_before_restore);
+        plan.kept_before_restore_left = survey
+            .kept_before_restore
+            .iter()
+            .filter(|dated| !taking.contains(dated.id.as_str()))
+            .cloned()
+            .collect();
+        return Ok((plan, Vec::new()));
+    }
+
+    let ordinary = (|| -> Result<(Plan, Vec<Erase>), Refusal> {
+        let Some(keep) = survey.newest.clone() else {
+            return Err(Refusal::Nothing);
+        };
+        // The backup kept must be this journal's last recorded success, and
+        // whole.
+        let Some((_, last_id, complete)) = last_success(&backup) else {
+            return Err(Refusal::Waiting);
+        };
+        if !same_snapshot(&keep.id, &last_id) {
+            return Err(Refusal::Waiting);
+        }
+        if !complete {
+            return Err(Refusal::NewestIncomplete);
+        }
+        let keep_time = keep.instant().ok_or(Refusal::Nothing)?;
+        let before_keep: Vec<Erase> = unsettled_erases(journal, &state, now, true)
+            .into_iter()
+            .filter(|erase| erase.at < keep_time)
+            .collect();
+        if !before_keep.iter().any(|erase| offerable(&survey, erase.at)) {
+            return Err(Refusal::Waiting);
+        }
+        let (chosen, left): (Vec<Dated>, Vec<Dated>) = survey
+            .kept_before_restore
+            .iter()
+            .cloned()
+            .partition(|dated| include_kept && at_or_before(dated, kept_bound));
+        let mut plan = base(Kind::Older, keep.clone(), keep.time.clone());
+        plan.older = survey.older.clone();
+        plan.archives_removable = survey.archives_removable.clone();
+        plan.kept_before_restore = chosen;
+        plan.kept_before_restore_left = left;
+        plan.targets = plan
+            .older
+            .iter()
+            .chain(&plan.archives_removable)
+            .chain(&plan.kept_before_restore)
+            .map(|dated| dated.id.clone())
+            .collect();
+        plan.archive_targets = plan
+            .archives_removable
+            .iter()
+            .map(|dated| dated.id.clone())
+            .collect();
+        Ok((plan, before_keep))
+    })();
+    let refusal = match ordinary {
+        Ok(decided) => return Ok(decided),
+        Err(refusal) => refusal,
+    };
+
+    // Partly done's "remove them": the kept-from-restore backups a finished
+    // removal left, up to what the owner was shown. It settles nothing new,
+    // so it needs no new backup.
+    if let Some(done) = &state.done
+        && done.kept_before_restore_left > 0
+        && include_kept
+        && let Some(keep) = survey.newest.clone()
+    {
+        let (chosen, left): (Vec<Dated>, Vec<Dated>) = survey
+            .kept_before_restore
+            .iter()
+            .cloned()
+            .partition(|dated| at_or_before(dated, kept_bound));
+        if !chosen.is_empty() {
+            let mut plan = base(Kind::KeptOnly, keep, done.kept_newest_time.clone());
+            plan.targets = chosen.iter().map(|dated| dated.id.clone()).collect();
+            plan.kept_before_restore = chosen;
+            plan.kept_before_restore_left = left;
+            return Ok((plan, Vec::new()));
+        }
+    }
+    Err(refusal)
+}
+
+/// The kept backup must hold nothing that has left the trash: no folder in
+/// its trash that isn't in the journal's trash now, and none of an erased
+/// recording's files where they were. The same look must see the journal's
+/// own `config` folder, or it proves nothing.
 fn check_newest(
     journal: &Path,
     repository: &Repository<'_>,
@@ -910,136 +1039,111 @@ fn check_newest(
         return Err(Refusal::CheckBlind);
     }
     let trash_prefix = format!("{trash}/");
+    let local_trash = journal.join(solstone_core_journal::TRASH_DIR);
     for path in &found {
         if path == &control || path.starts_with(&format!("{control}/")) || path == &trash {
             continue;
         }
-        if let Some(item) = path.strip_prefix(&trash_prefix) {
-            let item = alphanumeric(item.split('/').next().unwrap_or_default());
-            if !item.is_empty() && erases.iter().any(|erase| erase.names.contains(&item)) {
-                return Err(Refusal::NewestHoldsErased);
+        if let Some(child) = path.strip_prefix(&trash_prefix) {
+            let child = child.split('/').next().unwrap_or_default();
+            // Still in the trash here: recoverable, so the owner has it.
+            let live =
+                !child.is_empty() && std::fs::symlink_metadata(local_trash.join(child)).is_ok();
+            if live {
+                continue;
             }
-            continue;
+            return Err(Refusal::NewestHoldsErased);
         }
         return Err(Refusal::NewestHoldsErased);
     }
     Ok(())
 }
 
-/// Remove every backup older than the newest and the media archives that
-/// hold only erased things, and, when `include_kept`, the backups kept from
-/// before a restore. After a finished removal that left them, `include_kept`
-/// alone removes those (partly done's "remove them"). `progress` hears
-/// (removed, total) after each batch.
+/// Remove what one press takes (see [`decide`]). `kept_bound` is the newest
+/// kept-from-restore backup the owner was shown; none newer is taken.
+/// `progress` hears (removed, total) after each batch.
 ///
 /// The premise, as prune's: a repository holds one journal.
 pub fn remove(
     journal: &Path,
     services: &BackupServices<'_>,
     include_kept: bool,
+    kept_bound: Option<&str>,
     surface: Surface,
     progress: &dyn Fn(usize, usize),
 ) -> Result<Done, Refusal> {
     let _lock = hold_run_lock(journal)?;
     let repository = open(journal, services)?;
-    let prior = current_state(journal).run;
-    let planned = plan_with(journal, services, &repository);
-    let (plan, erases, kept_only) = match planned {
-        Ok((plan, erases)) => (plan, erases, false),
-        Err(Refusal::Waiting) if include_kept && kept_left_by_last_run(journal) => (
-            kept_only_plan(journal, services, &repository)?,
-            Vec::new(),
-            true,
-        ),
-        Err(Refusal::Waiting | Refusal::Nothing) if prior.is_some() => {
-            return finish_left_run(journal, services, &repository, prior, surface);
+    let (plan, erases) = decide(journal, services, &repository, include_kept, kept_bound)?;
+    let mut run = match current_state(journal).run {
+        Some(run) => run,
+        None => {
+            if plan.targets.is_empty() {
+                return Err(Refusal::Nothing);
+            }
+            if plan.kind == Kind::Older {
+                check_newest(journal, &repository, &plan, &erases)?;
+            }
+            Run {
+                started: services.clock.now_unix(),
+                keep: plan.keep.id.clone(),
+                keep_time: plan.boundary.clone(),
+                include_kept: !plan.kept_before_restore.is_empty(),
+                kept_only: plan.kind == Kind::KeptOnly,
+                total: plan.targets.len(),
+                targets: plan.targets.clone(),
+                archives: plan.archive_targets.clone(),
+                ..Run::default()
+            }
         }
-        Err(refusal) => return Err(refusal),
     };
-    let targets = if kept_only {
-        plan.targets(true)
-            .into_iter()
-            .filter(|id| plan.kept_before_restore.iter().any(|kept| &kept.id == id))
-            .collect()
-    } else {
-        plan.targets(include_kept)
-    };
-    if targets.is_empty() {
-        return match prior {
-            Some(_) => finish_left_run(journal, services, &repository, prior, surface),
-            None => Err(Refusal::Nothing),
-        };
-    }
-    if !kept_only {
-        check_newest(journal, &repository, &plan, &erases)?;
-    }
-
-    // A stopped run's count and history entry carry into this one.
-    let (carried, recorded) = prior.as_ref().map_or((0, false), |prior| {
-        (prior.carried + prior.removed, prior.recorded)
-    });
-    let previous_done = current_state(journal).done;
-    let mut run = Run {
-        started: services.clock.now_unix(),
-        updated: services.clock.now_unix(),
-        keep: plan.keep.id.clone(),
-        // A run that only takes the kept-from-restore backups settles
-        // nothing new: the boundary stays where the last run left it.
-        keep_time: match (&previous_done, kept_only) {
-            (Some(done), true) => done.kept_newest_time.clone(),
-            _ => plan.keep.time.clone(),
-        },
-        include_kept: include_kept || kept_only,
-        kept_only,
-        total: targets.len(),
-        carried,
-        recorded,
-        ..Run::default()
-    };
-    let archives: BTreeSet<&str> = plan
-        .archives_removable
-        .iter()
-        .map(|dated| dated.id.as_str())
-        .collect();
+    run.stopped = None;
     write_run(journal, services, &run);
-    progress(0, run.total);
-    for batch in targets.chunks(FORGET_BATCH) {
+    progress(run.removed, run.total);
+    for batch in plan.targets.chunks(FORGET_BATCH) {
         let forgot = repository.forget(batch);
-        // The listing decides: a target someone else already forgot counts
-        // as gone, and an exit code alone never stops a run.
+        // The listing decides what's gone: a target someone else already
+        // forgot counts, and an exit code alone never stops a run.
         let left = match repository.snapshots() {
             Ok(after) => after
                 .into_iter()
                 .map(|facts| facts.id)
                 .collect::<BTreeSet<_>>(),
             Err(listing) => {
-                let reason = forgot.err().unwrap_or(listing);
-                return Err(stop(journal, services, &mut run, reason, surface));
+                // A forget may have happened: the record says so, once.
+                record_once(journal, &mut run, plan.operated, surface);
+                return Err(stop(
+                    journal,
+                    services,
+                    &mut run,
+                    forgot.err().unwrap_or(listing),
+                ));
             }
         };
-        let gone = batch.iter().filter(|id| !left.contains(*id)).count();
-        run.removed += gone;
-        run.archives_removed += batch
-            .iter()
-            .filter(|id| !left.contains(*id) && archives.contains(id.as_str()))
-            .count();
-        record_once(journal, &mut run, plan.operated, surface, false);
-        if gone < batch.len() || !left.contains(&plan.keep.id) {
+        run.removed = run.targets.iter().filter(|id| !left.contains(*id)).count();
+        if run.removed > 0 {
+            record_once(journal, &mut run, plan.operated, surface);
+        }
+        if batch.iter().any(|id| left.contains(id)) || !left.contains(&run.keep) {
             let reason = forgot.err().unwrap_or_else(|| "residual".into());
-            return Err(stop(journal, services, &mut run, reason, surface));
+            return Err(stop(journal, services, &mut run, reason));
         }
         write_run(journal, services, &run);
         progress(run.removed, run.total);
     }
-    finish(journal, services, &repository, &mut run, surface)
+    finish(
+        journal,
+        services,
+        &repository,
+        &mut run,
+        plan.operated,
+        surface,
+    )
 }
 
-/// Write the deletion record's one entry for this operation, once anything
-/// is gone (a resumed run carries whether it was written).
-fn record_once(journal: &Path, run: &mut Run, operated: bool, surface: Surface, finished: bool) {
-    // A finished operation removed something, even when a lost listing
-    // left its count short.
-    if run.recorded || (!finished && run.carried + run.removed == 0) {
+/// The deletion record's one entry for this operation.
+fn record_once(journal: &Path, run: &mut Run, operated: bool, surface: Surface) {
+    if run.recorded {
         return;
     }
     Removal::begin(journal, Action::OlderBackupsRemove, surface).record(Unit::Backup {
@@ -1054,67 +1158,63 @@ fn write_run(journal: &Path, services: &BackupServices<'_>, run: &Run) {
     let _ = store(journal, |state| state.run = Some(run));
 }
 
-fn stop(
-    journal: &Path,
-    services: &BackupServices<'_>,
-    run: &mut Run,
-    reason: String,
-    _surface: Surface,
-) -> Refusal {
+fn stop(journal: &Path, services: &BackupServices<'_>, run: &mut Run, reason: String) -> Refusal {
     run.stopped = Some(reason.clone());
     write_run(journal, services, run);
     Refusal::Stopped {
         reason,
-        removed: run.carried + run.removed,
-        total: run.carried + run.total,
+        removed: run.removed,
+        total: run.total,
     }
 }
 
-/// Write the result, claiming only what a fresh listing shows: no regular
-/// backup older than the one kept, no archive of only erased media, and,
-/// when chosen, no backup kept from before a restore. Anything else is a
-/// stop, never a "done".
+/// Write the result, claiming only what a fresh listing shows: nothing the
+/// run chose is left, and no regular backup older than its boundary. A run
+/// that took regular backups also needs no archive of only erased media
+/// left. Anything else is a stop, never a "done".
 fn finish(
     journal: &Path,
     services: &BackupServices<'_>,
     repository: &Repository<'_>,
     run: &mut Run,
+    operated: bool,
     surface: Surface,
 ) -> Result<Done, Refusal> {
+    record_once(journal, run, operated, surface);
     let now = services.clock.now_unix();
-    let survey = match list(journal, repository, now) {
-        Ok(survey) => survey,
-        Err(reason) => return Err(stop(journal, services, run, reason, surface)),
+    let snapshots = match repository.snapshots() {
+        Ok(snapshots) => snapshots,
+        Err(reason) => return Err(stop(journal, services, run, reason)),
     };
-    let keep_time = DateTime::parse_from_rfc3339(&run.keep_time).ok();
+    let survey = listing(journal, repository, snapshots.clone(), now);
+    let present: BTreeSet<&str> = snapshots.iter().map(|facts| facts.id.as_str()).collect();
+    let boundary = DateTime::parse_from_rfc3339(&run.keep_time).ok();
     let older_left = survey.older.iter().any(|dated| {
         dated.id != run.keep
-            && match (dated.instant(), keep_time) {
-                (Some(time), Some(keep)) => time < keep,
+            && match (dated.instant(), boundary) {
+                (Some(time), Some(boundary)) => time < boundary,
                 _ => true,
             }
     });
-    let kept_left = run.include_kept && !survey.kept_before_restore.is_empty();
-    if older_left || !survey.archives_removable.is_empty() || kept_left {
-        return Err(stop(journal, services, run, "residual".into(), surface));
+    let chosen_left = run.targets.iter().any(|id| present.contains(id.as_str()));
+    let archives_left = !run.kept_only && !survey.archives_removable.is_empty();
+    if chosen_left || older_left || archives_left || !present.contains(run.keep.as_str()) {
+        return Err(stop(journal, services, run, "residual".into()));
     }
-    record_once(journal, run, survey.operated, surface, true);
+    run.removed = run.total;
     let done = Done {
         at: now,
         kept_newest_time: run.keep_time.clone(),
-        removed: run.carried + run.removed,
-        archives_removed: run.archives_removed,
+        removed: run.total,
+        archives_removed: run.archives.len(),
         archives_mixed: survey.archives_mixed.len(),
         kept_before_restore_left: survey.kept_before_restore.len(),
+        kept_before_restore_to: survey
+            .kept_before_restore
+            .last()
+            .map(|dated| dated.time.clone()),
         storage: survey.storage.clone(),
     };
-    let mut done = done;
-    if run.kept_only
-        && let Some(previous) = current_state(journal).done
-    {
-        done.removed += previous.removed;
-        done.archives_removed += previous.archives_removed;
-    }
     let settle = (!run.kept_only).then(|| run.keep_time.clone());
     store(journal, |state| {
         state.run = None;
@@ -1126,58 +1226,6 @@ fn finish(
     })
     .map_err(Refusal::Failed)?;
     Ok(done)
-}
-
-/// A run record left behind (a crash, or a stop) when nothing is left to
-/// take: finish it if what it claims holds, else let the record go.
-fn finish_left_run(
-    journal: &Path,
-    services: &BackupServices<'_>,
-    repository: &Repository<'_>,
-    prior: Option<Run>,
-    surface: Surface,
-) -> Result<Done, Refusal> {
-    let Some(mut run) = prior else {
-        return Err(Refusal::Nothing);
-    };
-    run.stopped = None;
-    match finish(journal, services, repository, &mut run, surface) {
-        Ok(done) => Ok(done),
-        Err(_) => {
-            // What's left holds nothing this run could still take: its
-            // record only says it stopped. The deletion record already has
-            // its entry if it removed anything.
-            let _ = store(journal, |state| state.run = None);
-            Err(Refusal::Waiting)
-        }
-    }
-}
-
-fn kept_left_by_last_run(journal: &Path) -> bool {
-    current_state(journal)
-        .done
-        .is_some_and(|done| done.kept_before_restore_left > 0)
-}
-
-/// A plan that takes only the backups kept from before a restore.
-fn kept_only_plan(
-    journal: &Path,
-    services: &BackupServices<'_>,
-    repository: &Repository<'_>,
-) -> Result<Plan, Refusal> {
-    let snapshots = repository.snapshots().map_err(Refusal::Failed)?;
-    let survey = listing(
-        journal,
-        repository,
-        snapshots.clone(),
-        services.clock.now_unix(),
-    );
-    let keep = survey.newest.clone().ok_or(Refusal::Nothing)?;
-    if survey.kept_before_restore.is_empty() {
-        return Err(Refusal::Nothing);
-    }
-    let keep_paths = paths_of(&snapshots, &keep.id);
-    Ok(Plan::from_survey(survey, keep, keep_paths))
 }
 
 #[cfg(test)]

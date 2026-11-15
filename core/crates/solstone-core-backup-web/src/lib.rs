@@ -1340,6 +1340,13 @@ async fn older_backups_route(deps: BackupWebDeps, body: Bytes) -> axum::response
         Some(serde_json::Value::Bool(value)) => *value,
         Some(_) => return response::missing("include_kept_before_restore must be true or false"),
     };
+    // The newest kept-from-restore backup the owner was shown: none newer
+    // is taken.
+    let kept_bound = match payload.get("kept_before_restore_to") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(value)) => Some(value.clone()),
+        Some(_) => return response::missing("kept_before_restore_to must be a time"),
+    };
     let started = match operation::begin(&deps.operations, "older_backups", None, None, None) {
         Ok(started) => started,
         Err(error) => return error,
@@ -1354,6 +1361,7 @@ async fn older_backups_route(deps: BackupWebDeps, body: Bytes) -> axum::response
             &worker.journal_root,
             &services(&worker, &runner, &tools),
             include_kept,
+            kept_bound.as_deref(),
             solstone_core_removals::Surface::Web {
                 page: solstone_core_removals::Page::Backup,
             },
