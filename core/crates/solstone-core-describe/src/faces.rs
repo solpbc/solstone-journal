@@ -678,7 +678,7 @@ fn run_segment_with_ocr(
         };
         let mut pull = crate::decode::FramePull::open(video, config, true)
             .map_err(|_| "could not decode recording")?;
-        pull.retain_pngs(wanted.keys().copied().collect());
+        pull.select_native_frames(wanted.keys().copied().collect());
         loop {
             match pull.next(stop) {
                 crate::decode::PullNext::Frame(frame) => {
@@ -694,6 +694,9 @@ fn run_segment_with_ocr(
                     }
                     pass.add_frame(&row, &frame.png, cached.as_ref(), ocr)
                         .map_err(|e| e.to_string())?;
+                    if wanted.is_empty() {
+                        break;
+                    }
                 }
                 crate::decode::PullNext::Done => break,
                 crate::decode::PullNext::Cancelled => return Err("face pass cancelled".into()),

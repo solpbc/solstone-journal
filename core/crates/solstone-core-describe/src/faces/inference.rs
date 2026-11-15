@@ -63,9 +63,9 @@ impl FaceModels {
     pub fn detect(&mut self, image: &RgbImage) -> PassResult<Vec<FaceDetection>> {
         let scale = if image.width() <= 1920 { 1.5 } else { 1.0 };
         let scaled = if scale > 1.0 {
-            resize_cubic(image, scale)
+            std::borrow::Cow::Owned(resize_cubic(image, scale))
         } else {
-            image.clone()
+            std::borrow::Cow::Borrowed(image)
         };
         let w = scaled.width().div_ceil(32) as usize * 32;
         let h = scaled.height().div_ceil(32) as usize * 32;
@@ -266,22 +266,32 @@ pub fn resize_cubic(image: &RgbImage, scale: f32) -> RgbImage {
             0.
         }
     };
+    // Sample coordinates and coefficients depend only on their axis. Keep the
+    // original multiply/add order so the detector and OCR receive identical bytes.
+    let axis = |length: u32, source: u32| {
+        (0..length)
+            .map(|v| {
+                let s = (v as f64 + 0.5) / scale as f64 - 0.5;
+                std::array::from_fn::<_, 4, _>(|i| {
+                    let sample = s.floor() as i32 + i as i32 - 1;
+                    (
+                        sample.clamp(0, source as i32 - 1) as usize,
+                        coeff(s - sample as f64),
+                    )
+                })
+            })
+            .collect::<Vec<_>>()
+    };
+    let xs = axis(w, image.width());
+    let ys = axis(h, image.height());
+    let source = image.as_raw();
     RgbImage::from_fn(w, h, |x, y| {
-        let sx = (x as f64 + 0.5) / scale as f64 - 0.5;
-        let sy = (y as f64 + 0.5) / scale as f64 - 0.5;
         let mut p = [0; 3];
         for (c, out) in p.iter_mut().enumerate() {
             let mut value = 0.;
-            for yy in -1..=2 {
-                for xx in -1..=2 {
-                    let ix = sx.floor() as i32 + xx;
-                    let iy = sy.floor() as i32 + yy;
-                    value += image.get_pixel(
-                        ix.clamp(0, image.width() as i32 - 1) as u32,
-                        iy.clamp(0, image.height() as i32 - 1) as u32,
-                    )[c] as f64
-                        * coeff(sx - ix as f64)
-                        * coeff(sy - iy as f64);
+            for &(iy, wy) in &ys[y as usize] {
+                for &(ix, wx) in &xs[x as usize] {
+                    value += source[(iy * image.width() as usize + ix) * 3 + c] as f64 * wx * wy;
                 }
             }
             *out = value.round_ties_even().clamp(0., 255.) as u8;
@@ -317,4 +327,65 @@ fn sharpness(image: &RgbImage) -> f32 {
         }
     }
     (sq / 12544. - (sum / 12544.).powi(2)) as f32
+}
+
+#[cfg(test)]
+mod resize_tests {
+    use super::*;
+
+    fn original_resize_cubic(image: &RgbImage, scale: f32) -> RgbImage {
+        let w = (image.width() as f32 * scale).round_ties_even() as u32;
+        let h = (image.height() as f32 * scale).round_ties_even() as u32;
+        let coeff = |x: f64| {
+            let x = x.abs();
+            if x <= 1. {
+                1.25 * x * x * x - 2.25 * x * x + 1.
+            } else if x < 2. {
+                -0.75 * x * x * x + 3.75 * x * x - 6. * x + 3.
+            } else {
+                0.
+            }
+        };
+        RgbImage::from_fn(w, h, |x, y| {
+            let sx = (x as f64 + 0.5) / scale as f64 - 0.5;
+            let sy = (y as f64 + 0.5) / scale as f64 - 0.5;
+            let mut p = [0; 3];
+            for (c, out) in p.iter_mut().enumerate() {
+                let mut value = 0.;
+                for yy in -1..=2 {
+                    for xx in -1..=2 {
+                        let ix = sx.floor() as i32 + xx;
+                        let iy = sy.floor() as i32 + yy;
+                        value += image.get_pixel(
+                            ix.clamp(0, image.width() as i32 - 1) as u32,
+                            iy.clamp(0, image.height() as i32 - 1) as u32,
+                        )[c] as f64
+                            * coeff(sx - ix as f64)
+                            * coeff(sy - iy as f64);
+                    }
+                }
+                *out = value.round_ties_even().clamp(0., 255.) as u8;
+            }
+            Rgb(p)
+        })
+    }
+
+    #[test]
+    fn cubic_preparation_preserves_every_pixel_at_detector_and_ocr_scales() {
+        for (w, h) in [(1, 1), (2, 3), (7, 5), (13, 11)] {
+            let image = RgbImage::from_fn(w, h, |x, y| {
+                Rgb([
+                    (x * 43 + y * 97) as u8,
+                    (x * 179 + y * 31 + 127) as u8,
+                    if (x + y) % 2 == 0 { 0 } else { 255 },
+                ])
+            });
+            for scale in [1.5, 2.0, 1400.0 / 997.0] {
+                assert_eq!(
+                    resize_cubic(&image, scale),
+                    original_resize_cubic(&image, scale)
+                );
+            }
+        }
+    }
 }

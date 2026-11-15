@@ -180,6 +180,7 @@ pub(crate) fn redecode_frame(
 pub(crate) struct FramePull {
     encode: bool,
     retain_pngs: Option<BTreeSet<u64>>,
+    selected_native: bool,
     replay_text_changes: BTreeSet<u64>,
     state: Option<PullState>,
     result: DescribeResult,
@@ -193,6 +194,7 @@ pub(crate) struct FramePull {
 struct PngPlan<'a> {
     encode: bool,
     retain: Option<&'a BTreeSet<u64>>,
+    selected_native: bool,
 }
 
 /// Who decides on a frame below the hash threshold: the live gate, or an earlier pass.
@@ -271,6 +273,7 @@ impl FramePull {
             raw: 0,
             winnow: Some(WinnowState::new(config)),
             retain_pngs: None,
+            selected_native: false,
             replay_text_changes: BTreeSet::new(),
         })
     }
@@ -329,6 +332,7 @@ impl FramePull {
             raw: 1,
             winnow: Some(winnow),
             retain_pngs: None,
+            selected_native: false,
             replay_text_changes: BTreeSet::new(),
         })
     }
@@ -336,6 +340,15 @@ impl FramePull {
     /// Encode and enqueue PNGs only for these qualified ids. Other kept frames stay metadata.
     pub(crate) fn retain_pngs(&mut self, ids: BTreeSet<u64>) {
         self.retain_pngs = Some(ids);
+    }
+
+    /// Recover exact raw IDs already selected by an earlier pass. Unrequested
+    /// frames need decoding for codec state, but no RGB conversion or hashing.
+    /// Metadata and winnow metrics are not populated by this recovery mode.
+    #[allow(dead_code)] // Face recovery has no caller in mobile builds.
+    pub(crate) fn select_native_frames(&mut self, ids: BTreeSet<u64>) {
+        self.retain_pngs(ids);
+        self.selected_native = true;
     }
 
     /// Keep these frames as the text gate kept them on an earlier pass over this video.
@@ -375,6 +388,7 @@ impl FramePull {
             PngPlan {
                 encode: self.encode,
                 retain: self.retain_pngs.as_ref(),
+                selected_native: self.selected_native,
             },
             Gate {
                 live: gate,
@@ -580,10 +594,21 @@ fn receive_frames(
                     continue;
                 };
                 *frame_id += 1;
+                if png.selected_native && png.retain.is_some_and(|ids| !ids.contains(frame_id)) {
+                    continue;
+                }
                 let timestamp = pts as f64 * f64::from(time_base);
                 let mut rgb = ffmpeg::frame::Video::empty();
                 rgb_scaler_for(scaler, &decoded)?.run(&decoded, &mut rgb)?;
                 let frame = rgb_frame(&rgb).ok_or(ffmpeg::Error::InvalidData)?;
+                if png.selected_native {
+                    pending.push_back(QualifiedFrame {
+                        frame_id: *frame_id,
+                        timestamp,
+                        png: encode_png(&frame).ok_or(ffmpeg::Error::InvalidData)?,
+                    });
+                    continue;
+                }
                 let hash = dhash(&frame);
                 let hashed = HashedFrame { timestamp, hash };
                 let mut verdict = state.decide(hashed);
@@ -913,7 +938,7 @@ mod text_gate_tests {
         let wanted = [frames[0], frames[2], frames[3]];
         let mut replay = open(&video, true);
         replay.replay_text_changes(text_changed.clone());
-        replay.retain_pngs(wanted.iter().map(|(id, _)| *id).collect());
+        replay.select_native_frames(wanted.iter().map(|(id, _)| *id).collect());
         for (id, timestamp) in wanted {
             let PullNext::Frame(frame) = replay.next(&|| false) else {
                 panic!("requested native frame missing");
@@ -933,8 +958,43 @@ mod text_gate_tests {
         }
         assert!(matches!(replay.next(&|| false), PullNext::Done));
         let mut cancelled = open(&video, true);
-        cancelled.retain_pngs(BTreeSet::from([wanted[2].0]));
+        cancelled.select_native_frames(BTreeSet::from([wanted[2].0]));
         assert!(matches!(cancelled.next(&|| true), PullNext::Cancelled));
+
+        // Raw ID 3 is below the ordinary winnow threshold. Recovery obeys the
+        // earlier caller's explicit IDs rather than making that choice again.
+        let all = super::process_video(
+            &video,
+            WinnowConfig {
+                dhash_threshold: 0,
+                scene_cut_threshold: 0,
+                min_stride_seconds: 0.,
+            },
+        );
+        let expected = all
+            .qualified_frames
+            .iter()
+            .find(|f| f.frame_id == 3)
+            .unwrap();
+        let mut sparse = open(&video, true);
+        sparse.select_native_frames(BTreeSet::from([3]));
+        let PullNext::Frame(actual) = sparse.next(&|| false) else {
+            panic!("requested raw frame missing");
+        };
+        assert_eq!(actual, *expected);
+
+        let checkpoints = std::cell::Cell::new(0);
+        let mut cancelled = open(&video, true);
+        cancelled.select_native_frames(BTreeSet::from([wanted[2].0]));
+        assert!(matches!(
+            cancelled.next(&|| {
+                checkpoints.set(checkpoints.get() + 1);
+                checkpoints.get() == 3
+            }),
+            PullNext::Cancelled
+        ));
+        assert_eq!(checkpoints.get(), 3);
+        assert!(cancelled.raw > 0);
     }
 
     #[test]

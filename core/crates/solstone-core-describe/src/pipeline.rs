@@ -1010,14 +1010,13 @@ fn run_prepared(
             if meeting_rows.is_empty() {
                 return Ok(());
             }
-            // Replay the original winnow once, encoding only meeting frames.
+            // Recover the exact raw IDs already selected for these meeting rows.
             // Retain one native PNG at a time and stop after the last request.
             let mut pull = crate::decode::FramePull::open(options.video, options.config, true)
                 .map_err(|_| {
                     crate::faces::FaceError::at("frame_decode", "could not reopen video")
                 })?;
-            pull.replay_text_changes(text_changed.clone());
-            pull.retain_pngs(meeting_rows.iter().map(|(id, _)| **id).collect());
+            pull.select_native_frames(meeting_rows.iter().map(|(id, _)| **id).collect());
             for (frame_id, row) in meeting_rows {
                 let timestamp = row
                     .data
