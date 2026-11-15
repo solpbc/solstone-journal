@@ -2174,7 +2174,7 @@ button:focus:not(:focus-visible) {
 .trash-backups-link { color: var(--orange-text-aa); font-weight: 600; text-decoration: none; }
 .trash-backups-link:hover { text-decoration: underline; }
 .trash-backups-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
-@media (max-width: 560px) { .trash-backups-link { display: inline-block; min-height: 44px; line-height: 44px; } }
+@media (max-width: 560px) { .trash-backups-link { display: inline-flex; align-items: center; min-height: 44px; } }
 .trash-panel { margin-top: .5em; }
 .trash-panel .log-entries { max-height: none; overflow: visible; padding: 0; }
 .trash-bar { position: sticky; top: 0; z-index: 1; min-height: 2.5em; padding: .5em 1em .5em .85em; border-bottom: 1px solid var(--hairline); background: var(--cream); border-radius: 8px 8px 0 0; }
@@ -2975,7 +2975,7 @@ button:focus:not(:focus-visible) {
         <div class="trash-result" id="trashResult" role="status" aria-live="polite" tabindex="-1" hidden></div>
         <div class="log-entries" id="trashList"><div class="log-empty">loading…</div></div>
       </div>
-      <p class="trash-backups-line" id="trashBackupsLine" hidden>your older backups can still restore things you've erased. <a class="trash-backups-link" href="/app/backup/#older-backups">remove older backups in backup →</a></p>
+      <p class="trash-backups-line" id="trashBackupsLine" hidden>your older backups can still restore things you've erased. <a class="trash-backups-link" href="/app/backup/#older-backups">remove older backups in backup&nbsp;→</a></p>
 
       <div class="settings-field trash-setting" id="trashSettingField">
         <label for="trashEraseAfterDays">erase after</label>
