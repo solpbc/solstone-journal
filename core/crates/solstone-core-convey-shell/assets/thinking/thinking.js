@@ -1,8 +1,58 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-(() => {
-  const reportThinkingReady = window.createViewReady('thinking');
+// Thinking, on the view contract: the script only registers, and the view
+// starts each time it is mounted. Everything it adds outside its markup goes
+// through `ctx` and ends with it: its two page listeners, its timers and the
+// sleeps its polls wait on, its history entries and its reads. A read the
+// view still has out when it goes never answers, so a poll stops at its next
+// read or sleep. The next mount starts from what the journal says, as a full
+// load does, so an install, a turn-on or a sign-in still running picks up
+// there.
+window.SolViews.register('thinking', { mount: (ctx) => {
+  // The view's only address. Its API lives under it.
+  const THINKING_PATH = '/app/thinking/';
+  // The view's own markup. Once it has gone, a write that answers late draws
+  // into this markup, out of the page, never into a later mount's.
+  const viewRoot = document.getElementById('providers');
+  const NO_MARKUP = {querySelector: () => null, querySelectorAll: () => []};
+  let markupRoot = null;
+  let readyReported = false;
+
+  // Readiness, once per mount.
+  function reportThinkingReady(readyState) {
+    if (readyReported || ctx.disposed) return;
+    readyReported = true;
+    ctx.ready(readyState);
+  }
+
+  function markup() {
+    return markupRoot || document;
+  }
+
+  // An entry of thinking's own, on its own path. Nothing once it has gone:
+  // the address belongs to whatever came next.
+  function writeEntry(kind, hash) {
+    if (ctx.disposed) return;
+    ctx.history[kind](`${THINKING_PATH}${ctx.route.search || ''}${hash}`);
+  }
+
+  function disposeThinking() {
+    const modal = $('thinkingRunsPromptModal');
+    markupRoot = viewRoot || NO_MARKUP;
+    // The move places focus, so the dialog's opener doesn't get it first.
+    try {
+      if (modal?.open) modal.close();
+    } catch (_err) {}
+    window.ConveyModalLayer?.reconcile?.({restore: false});
+  }
+  ctx.onDispose(disposeThinking);
+
+  // A full load of /app/thinking is answered by a redirect to /app/thinking/.
+  // In the page there is none, so the view takes that address itself.
+  if (window.location.pathname === '/app/thinking') {
+    ctx.history.replace(`${THINKING_PATH}${window.location.search}${window.location.hash}`);
+  }
 
   const state = {
     providers: {},
@@ -166,6 +216,7 @@
   const googleModelResolutionTargetsField = 'google_model_resolution_targets';
 
   function $(id) {
+    if (markupRoot) return markupRoot.querySelector(`#${id}`);
     return document.getElementById(id);
   }
 
@@ -1013,9 +1064,9 @@
     if (accessUnknownRereadScheduled) return;
     if (state.access?.state !== 'unknown') return;
     accessUnknownRereadScheduled = true;
-    setTimeout(async () => {
+    ctx.setTimeout(async () => {
       try {
-        const payload = await window.apiJson('/app/thinking/api/state');
+        const payload = await ctx.read('/app/thinking/api/state');
         state.providers = payload.providers || {};
         state.keys = payload.keys || {};
         state.access = payload.access || null;
@@ -1031,7 +1082,7 @@
   async function loadInitialState() {
     renderInitialLoading();
     try {
-      const payload = await window.apiJson('/app/thinking/api/state');
+      const payload = await ctx.read('/app/thinking/api/state');
       state.providers = payload.providers || {};
       state.keys = payload.keys || {};
       state.access = payload.access || null;
@@ -1050,9 +1101,12 @@
   }
 
   async function api(path, options = {}) {
+    // Every address is absolute, so a read still answers for this view's API
+    // whatever the page's address is by then.
+    const url = String(path).startsWith('/') ? path : `${THINKING_PATH}${path}`;
     let payload;
     try {
-      payload = await window.apiJson(path, {
+      payload = await ctx.read(url, {
         ...options,
         noAuthRedirect: true,
         headers: {
@@ -1100,7 +1154,7 @@
   }
 
   function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => ctx.setTimeout(resolve, ms));
   }
 
   function showView(name, options = {}) {
@@ -1113,11 +1167,7 @@
     // than writing a route token the owner never asked for.
     const keepHashless = options.keepHashless && target === 'main' && !window.location.hash;
     if (!keepHashless && window.location.hash !== nextHash) {
-      if (options.replace) {
-        window.history.replaceState(null, '', nextHash);
-      } else {
-        window.history.pushState(null, '', nextHash);
-      }
+      writeEntry(options.replace ? 'replace' : 'push', nextHash);
     }
     if (target !== 'local-setup') {
       clearLocalSetupError();
@@ -1143,7 +1193,7 @@
       }
     }
     let previous = '';
-    document.querySelectorAll('#providers [data-view]').forEach((section) => {
+    markup().querySelectorAll('#providers [data-view]').forEach((section) => {
       if (!previous && !section.hidden) previous = section.dataset.view;
       section.hidden = section.dataset.view !== target;
     });
@@ -1248,7 +1298,7 @@
 
   function replaceThinkingHash(hash) {
     if (window.location.hash !== hash) {
-      window.history.replaceState(null, '', hash);
+      writeEntry('replace', hash);
     }
   }
 
@@ -1389,10 +1439,10 @@
 
   function showThinkingSection(section, route, origin) {
     setThinkingRoute(route);
-    document.querySelectorAll('#providers [data-view]').forEach((view) => {
+    markup().querySelectorAll('#providers [data-view]').forEach((view) => {
       view.hidden = true;
     });
-    document.querySelectorAll('[data-thinking-section]').forEach((panel) => {
+    markup().querySelectorAll('[data-thinking-section]').forEach((panel) => {
       panel.hidden = panel.dataset.thinkingSection !== section;
     });
     activateThinkingSectionTab('thinkingRunsTab', origin);
@@ -1406,13 +1456,13 @@
     const hash = section === 'setup'
       ? '#main'
       : (state.runsLastHash || '#runs');
-    if (window.location.hash !== hash) window.history.pushState(null, '', hash);
+    if (window.location.hash !== hash) writeEntry('push', hash);
     routeThinkingHash(origin);
   }
 
   function showThinkingSetup(origin) {
     setThinkingRoute({key: 'setup'});
-    document.querySelectorAll('[data-thinking-section]').forEach((panel) => {
+    markup().querySelectorAll('[data-thinking-section]').forEach((panel) => {
       panel.hidden = true;
     });
     showView(viewFromHash(), {replace: true, keepHashless: true});
@@ -2011,7 +2061,7 @@
 
   function loadThinkingUpdatedDays() {
     const token = beginThinkingRequest('day');
-    window.apiJson('/app/thinking/api/updated-days').then((days) => {
+    ctx.read('/app/thinking/api/updated-days').then((days) => {
       if (isCurrentThinkingRequest(token)) renderThinkingUpdatedDays(days);
     }).catch(() => {
       if (isCurrentThinkingRequest(token)) setThinkingStatus('thinkingRunsStatus', "some run details aren't available right now.");
@@ -2071,7 +2121,7 @@
     loadThinkingRequest(
       'day',
       key,
-      () => window.apiJson(thinkingDayUrl(route)),
+      () => ctx.read(thinkingDayUrl(route)),
       (payload) => {
         renderThinkingRunsDay(payload, route);
         loadThinkingUpdatedDays();
@@ -2089,7 +2139,7 @@
       facet: route.facet,
       facetExplicit: route.facetExplicit,
     });
-    window.history.pushState(null, '', thinkingRunsHash(next));
+    writeEntry('push', thinkingRunsHash(next));
     routeThinkingHash('pointer');
   }
 
@@ -2230,7 +2280,7 @@
     loadThinkingRequest(
       'run',
       key,
-      () => window.apiJson(`/app/thinking/api/run/${encodeThinkingSegment(route.useId)}`),
+      () => ctx.read(`/app/thinking/api/run/${encodeThinkingSegment(route.useId)}`),
       (run) => {
         if (run?.reason_code === 'talent_run_pending') {
           renderThinkingRunPending(route);
@@ -2293,7 +2343,7 @@
     const encoded = String(run.output_file).split('/').map(encodeThinkingSegment).join('/');
     loadThinkingRequest(
       'output', key,
-      () => window.apiJson(`/app/thinking/api/output/${run.day}/${encoded}`),
+      () => ctx.read(`/app/thinking/api/output/${run.day}/${encoded}`),
       (payload) => renderThinkingOutput(panel, payload),
       () => { panel.textContent = "couldn't load that output"; },
     );
@@ -2316,7 +2366,7 @@
     }
     loadThinkingRequest(
       'prompt', key,
-      () => window.apiJson(`/app/thinking/api/preview/${encodeThinkingSegment(run.name)}`),
+      () => ctx.read(`/app/thinking/api/preview/${encodeThinkingSegment(run.name)}`),
       (payload) => { content.textContent = payload.full_prompt || ''; },
       () => { content.textContent = "couldn't load the current template"; },
     );
@@ -2329,7 +2379,7 @@
     const route = parseThinkingHash();
     if (route?.kind !== 'runs') return;
     const next = currentThinkingRunsRoute(route);
-    window.history.pushState(null, '', thinkingRunsHash(next));
+    writeEntry('push', thinkingRunsHash(next));
     routeThinkingHash('pointer');
   }
 
@@ -2361,7 +2411,7 @@
     const requested = requestedDay || shiftThinkingDay(route?.day || today, amount);
     const day = requested > today ? today : requested;
     const next = currentThinkingRunsRoute({kind: 'runs', day, talent: '', useId: ''});
-    window.history.pushState(null, '', thinkingRunsHash(next));
+    writeEntry('push', thinkingRunsHash(next));
     routeThinkingHash('pointer');
   }
 
@@ -2667,7 +2717,7 @@
   function stopChatGptPoll() {
     state.chatgpt.pollToken = (state.chatgpt.pollToken || 0) + 1;
     if (state.chatgpt.pollTimer) {
-      clearTimeout(state.chatgpt.pollTimer);
+      ctx.clearTimeout(state.chatgpt.pollTimer);
       state.chatgpt.pollTimer = null;
     }
   }
@@ -2855,7 +2905,8 @@
     button.textContent = action.label;
     if (action.href) {
       button.onclick = () => {
-        window.location.href = action.href;
+        // Another view of the page opens in it where it can.
+        if (!window.solRouter?.navigate?.(action.href)) window.location.href = action.href;
       };
       return;
     }
@@ -3444,7 +3495,7 @@
     setText('byoEndpointSub', byoText.endpoint_sub || '');
     setText('byoEndpointHonesty', byoText.endpoint_honesty || '');
     setButtonText('byoSaveKey', byoText.paste_cta || '');
-    document.querySelectorAll('[data-byo-key-link]').forEach((link) => {
+    markup().querySelectorAll('[data-byo-key-link]').forEach((link) => {
       link.textContent = byoText.get_key || '';
     });
     const keyModeButton = $('byoModeKey');
@@ -3474,7 +3525,7 @@
 
     setText('byoBackLink', (pasteMode || modelMode || chatgptMode) ? '‹ pick a different provider' : '‹ thinking');
 
-    document.querySelectorAll('[data-provider-card]').forEach((card) => {
+    markup().querySelectorAll('[data-provider-card]').forEach((card) => {
       const cardProvider = card.dataset.providerCard;
       if (cardProvider === 'chatgpt') return;
       const picked = cardProvider === provider;
@@ -3573,10 +3624,10 @@
     setText('byoThinkingLabel', text.check || '');
     setHidden('byoThinkingBudget', budget === 0);
     setText('byoThinkingBudgetLegend', text.budget || '');
-    document.querySelectorAll('input[name="byoThinkingBudget"]').forEach((input) => {
+    markup().querySelectorAll('input[name="byoThinkingBudget"]').forEach((input) => {
       input.checked = Number(input.value) === budget;
     });
-    document.querySelectorAll('[data-thinking-budget-label]').forEach((label) => {
+    markup().querySelectorAll('[data-thinking-budget-label]').forEach((label) => {
       const value = Number(label.dataset.thinkingBudgetLabel);
       label.textContent = formatCopy(tuning.choice || '', {budget: thinkingBudgetLabel(value)});
     });
@@ -4008,6 +4059,7 @@
   }
 
   function renderAll() {
+    if (ctx.disposed) return;
     renderGlance();
     renderMainLanes();
     renderByo();
@@ -4091,7 +4143,10 @@
 
   function openConsentTab(operation) {
     const url = operation?.portal_url;
-    if (url) {
+    // A turn-on that answers after the owner left opens no window over the
+    // page they went to. The journal goes on with it, and thinking shows it
+    // when they come back.
+    if (url && !ctx.disposed) {
       window.solstoneOutside.openDelayed(url);
     }
   }
@@ -4887,7 +4942,7 @@
         token === state.chatgpt.pollToken &&
         state.chatgpt.attempt?.id === attemptId
       ) {
-        state.chatgpt.pollTimer = setTimeout(() => {
+        state.chatgpt.pollTimer = ctx.setTimeout(() => {
           pollChatGptAttempt(attemptId, token).catch(() => {});
         }, 2000);
       }
@@ -4909,7 +4964,7 @@
         token === state.chatgpt.pollToken &&
         state.chatgpt.attempt?.id === attemptId
       ) {
-        state.chatgpt.pollTimer = setTimeout(() => {
+        state.chatgpt.pollTimer = ctx.setTimeout(() => {
           pollChatGptAttempt(attemptId, token).catch(() => {});
         }, 2000);
       }
@@ -5427,7 +5482,7 @@
   }
 
   function bind() {
-    document.querySelectorAll('[data-open-view]').forEach(bindOpenView);
+    markup().querySelectorAll('[data-open-view]').forEach(bindOpenView);
     $('byoModeKey')?.addEventListener('click', () => {
       if (selectedByoProvider() === 'local') {
         setSelectedByoProvider(configuredProviders()[0] || 'anthropic');
@@ -5448,15 +5503,15 @@
       // Turning thinking on starts at the smallest budget.
       setByoThinkingBudget(event.target.checked ? BYO_THINKING_BUDGETS[0] : 0);
     });
-    document.querySelectorAll('input[name="byoThinkingBudget"]').forEach((input) => {
+    markup().querySelectorAll('input[name="byoThinkingBudget"]').forEach((input) => {
       input.addEventListener('change', () => setByoThinkingBudget(Number(input.value)));
     });
-    document.querySelectorAll('[data-byo-provider]').forEach((button) => {
+    markup().querySelectorAll('[data-byo-provider]').forEach((button) => {
       button.addEventListener('click', () => {
         changeByoProvider(button.dataset.byoProvider);
       });
     });
-    document.querySelectorAll('[data-switch-lane]').forEach((button) => {
+    markup().querySelectorAll('[data-switch-lane]').forEach((button) => {
       button.addEventListener('click', () => {
         const lane = button.dataset.switchLane;
         if (!lane) return;
@@ -5524,10 +5579,10 @@
       state.byoMode = 'pick';
       renderByo();
     });
-    document.addEventListener('visibilitychange', () => {
+    ctx.on(document, 'visibilitychange', () => {
       if (document.visibilityState === 'hidden') {
         if (state.chatgpt.pollTimer) {
-          clearTimeout(state.chatgpt.pollTimer);
+          ctx.clearTimeout(state.chatgpt.pollTimer);
           state.chatgpt.pollTimer = null;
         }
       } else if (document.visibilityState === 'visible') {
@@ -5583,7 +5638,7 @@
     $('localEndpointSave')?.addEventListener('click', () => saveLocalEndpoint().catch((err) => setMessage('localEndpointStatus', err.message, 'error')));
     $('localEndpointClear')?.addEventListener('click', () => clearLocalEndpoint().catch((err) => setMessage('localEndpointStatus', err.message, 'error')));
     $('localEndpointClearFromLocal')?.addEventListener('click', () => clearLocalEndpoint().catch((err) => showLocalSetupFailure(err)));
-    window.addEventListener('hashchange', () => routeThinkingHash('history'));
+    ctx.on(window, 'hashchange', () => routeThinkingHash('history'));
   }
 
   // A journal with no paired device has nothing to think about. Point at the
@@ -5594,7 +5649,7 @@
     if (!invite) return;
     let none = false;
     try {
-      const payload = await window.apiJson('/app/network/api/clients', {noAuthRedirect: true});
+      const payload = await ctx.read('/app/network/api/clients', {noAuthRedirect: true});
       none = Array.isArray(payload?.clients) && payload.clients.length === 0;
     } catch (_err) {
       none = false;
@@ -5659,4 +5714,4 @@
   }
 
   init();
-})();
+} });
