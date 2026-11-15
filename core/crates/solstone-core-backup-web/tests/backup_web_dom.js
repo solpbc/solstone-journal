@@ -377,6 +377,11 @@ function fixture(document) {
   const olderLead = add(older, 'p', { 'data-older-lead': '' });
   add(older, 'p', { 'data-older-note': '', hidden: '' });
   const olderExcept = add(older, 'ul', { 'data-older-except': '', hidden: '' });
+  const olderKeptGate = add(older, 'div', { 'data-older-kept-gate': '', hidden: '' });
+  add(olderKeptGate, 'h3', { 'data-older-kept-gate-title': '' });
+  add(olderKeptGate, 'p', { 'data-older-kept-gate-hint': '' });
+  const olderKeptCancel = add(olderKeptGate, 'button', { 'data-action': 'older-kept-cancel' });
+  const olderKeptConfirm = add(olderKeptGate, 'button', { 'data-action': 'older-remove-kept' });
   add(older, 'p', { 'data-older-warn': '', hidden: '' });
   const olderActions = add(older, 'div', { 'data-older-actions': '', hidden: '' });
   const olderOpen = add(olderActions, 'button', { 'data-action': 'older-open' });
@@ -451,7 +456,7 @@ function fixture(document) {
   add(byo, 'form', { 'data-restore-form': '' });
   const panelCancel = add(restore, 'button', { 'data-action': 'cancel-restore' });
   panelCancel.textContent = 'cancel';
-  return { pausedSection, resume, byoLocation, destinationEdit, pauseSection, pause, destinationCancel, switchGate, switchDays, switchConfirm, root, destination, destinationForm, destinationStatus, enableBackup, saveDestination, showRestore, generateKey, backupNow, viewKey, rotateKey, retention, saveRetention, offloadProof, lastOffload, lastVerify, runHistory, runSuccessTime, verifyHistory, verifySuccessTime, stallReason, saveOffload, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, reopen, panelCancel, banner, cleanupBanner, cleanup, management, managementGrid, lastBackup, teardownOpen, teardownGate, teardownInput, teardownConfirm, older, olderLead, olderExcept, olderActions, olderOpen, olderGate, olderRemoved, olderKept, olderKeptChoice, olderIncludeKept, olderCancel, olderConfirm };
+  return { pausedSection, resume, byoLocation, destinationEdit, pauseSection, pause, destinationCancel, switchGate, switchDays, switchConfirm, root, destination, destinationForm, destinationStatus, enableBackup, saveDestination, showRestore, generateKey, backupNow, viewKey, rotateKey, retention, saveRetention, offloadProof, lastOffload, lastVerify, runHistory, runSuccessTime, verifyHistory, verifySuccessTime, stallReason, saveOffload, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, reopen, panelCancel, banner, cleanupBanner, cleanup, management, managementGrid, lastBackup, teardownOpen, teardownGate, teardownInput, teardownConfirm, older, olderLead, olderExcept, olderActions, olderOpen, olderGate, olderRemoved, olderKept, olderKeptChoice, olderIncludeKept, olderCancel, olderConfirm, olderKeptGate, olderKeptCancel, olderKeptConfirm };
 }
 
 function createHarness(options = {}) {
@@ -2632,9 +2637,20 @@ asyncCase('older backups: partly done offers to remove the kept-from-restore bac
   await ready(harness);
   assert.strictEqual(harness.olderExcept.hidden, false);
   assert.strictEqual(harness.olderExcept.children.length, 2);
-  const removeThem = harness.root.querySelector('[data-action="older-remove-kept"]');
+  const removeThem = harness.root.querySelector('[data-action="older-kept-open"]');
   assert.ok(removeThem, 'the inline action is there');
   click(removeThem);
+  await settle();
+  assert.strictEqual(body, 'uncalled', 'it asks first');
+  assert.strictEqual(harness.olderKeptGate.hidden, false);
+  assert.strictEqual(harness.document.activeElement, harness.olderKeptCancel);
+  click(harness.olderKeptCancel);
+  await settle();
+  assert.strictEqual(harness.olderKeptGate.hidden, true);
+  assert.strictEqual(body, 'uncalled', 'cancel sends nothing');
+  click(removeThem);
+  await settle();
+  click(harness.olderKeptConfirm);
   await settle();
   assert.deepStrictEqual(body, { include_kept_before_restore: true, kept_before_restore_to: '2026-09-28T10:00:00-06:00' });
 });

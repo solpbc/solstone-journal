@@ -239,6 +239,14 @@
         <p data-older-lead></p>
         <p class="backup-note" data-older-note hidden></p>
         <ul class="backup-older-except" data-older-except hidden></ul>
+        <div class="backup-teardown-gate backup-older-gate" data-older-kept-gate role="group" aria-labelledby="backup-older-kept-gate-title" hidden>
+          <h3 id="backup-older-kept-gate-title" data-older-kept-gate-title></h3>
+          <p class="backup-warning backup-older-stakes" data-older-kept-gate-hint></p>
+          <div class="backup-panel-actions">
+            <button type="button" data-action="older-kept-cancel" data-copy="action_labels.cancel"></button>
+            <button type="button" class="danger" data-action="older-remove-kept" data-copy="older.restore_gate_act"></button>
+          </div>
+        </div>
         <p class="backup-older-warn" data-older-warn hidden></p>
         <div class="backup-panel-actions" data-older-actions hidden>
           <button type="button" class="danger" data-action="older-open" data-copy="older.act"></button>

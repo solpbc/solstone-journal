@@ -1873,9 +1873,9 @@ fn older_refusal(refusal: &solstone_core_offload::older_backups::Refusal) -> Cli
         Refusal::Unavailable => "Backup isn't set up here, so there's nothing to remove.".to_owned(),
         Refusal::Running => "Older backups are already being removed.".to_owned(),
         Refusal::Waiting => "Nothing to remove yet: older backups can be removed once a backup has finished after an erase.".to_owned(),
-        Refusal::NewestIncomplete => "Your newest backup couldn't read some files, so older backups may hold their only copy. Nothing was removed.".to_owned(),
+        Refusal::NewestIncomplete => "Your newest backup couldn't read some files, and older backups may hold the only copy of those. Nothing was removed; this works after a backup reads every file.".to_owned(),
         Refusal::NewestHoldsErased => "Your newest backup still holds something you erased. Nothing was removed; try again after the next backup.".to_owned(),
-        Refusal::CheckBlind => "Couldn't check your newest backup, so nothing was removed.".to_owned(),
+        Refusal::CheckBlind => "Couldn't check your newest backup, so nothing was removed. Try again later.".to_owned(),
         Refusal::Nothing => "There are no older backups to remove.".to_owned(),
         Refusal::Failed(reason) => format!("Couldn't reach your backup: {}. Nothing was removed.", backup_failure_reason(reason)),
         Refusal::Stopped { reason, removed, total } => format!(
@@ -1913,7 +1913,7 @@ fn remove_older(
         if plan.kind == Kind::Resume {
             out.push_str("This finishes removing older backups that stopped part way.\n");
         }
-        out.push_str(&format!("This removes {} backups:\n", plan.targets().len()));
+        out.push_str("This removes:\n");
         if let (Some(first), Some(last)) = (plan.older.first(), plan.older.last()) {
             out.push_str(&format!(
                 "  {} older backups, {} to {}\n",
@@ -1924,7 +1924,7 @@ fn remove_older(
         }
         if !plan.archives_removable.is_empty() {
             out.push_str(&format!(
-                "  {} media archives that hold only things you erased\n",
+                "  {} media archives that hold nothing you still have\n",
                 plan.archives_removable.len()
             ));
         }
@@ -1941,7 +1941,7 @@ fn remove_older(
         ));
         if plan.archives_mixed + plan.archives_kept > 0 {
             out.push_str(&format!(
-                "It keeps {} media archives that may hold media you still have.\n",
+                "It keeps {} media archives that may hold the only copy of media you still have.\n",
                 plan.archives_mixed + plan.archives_kept
             ));
         }
@@ -1995,6 +1995,7 @@ fn remove_older(
             } else {
                 out.push_str(&format!(", except: {}.\n", except.join("; ")));
             }
+            out.push_str("What only the removed backups held can stay in storage, encrypted, with no backup pointing to it.\n");
             success(out)
         }
         Err(refusal) => older_refusal(&refusal),
