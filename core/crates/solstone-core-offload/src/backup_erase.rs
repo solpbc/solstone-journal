@@ -287,6 +287,34 @@ pub fn outcome(
     }
 }
 
+/// What the listing after a run says of the origins it sent.
+#[derive(Debug, PartialEq, Eq)]
+enum AfterRun {
+    /// None was backed up since its restore.
+    Quiet,
+    /// These were: their new backups may hold what the run removed.
+    Late(Vec<String>),
+    /// The listing couldn't be read.
+    Unread,
+}
+
+fn after_run(sent: &[erase_paths::Origin], listing: Result<Vec<Value>, String>) -> AfterRun {
+    let Ok(listing) = listing else {
+        return AfterRun::Unread;
+    };
+    let quiet = erase_paths::quiet_origins(sent, &listing);
+    let late: Vec<String> = sent
+        .iter()
+        .filter(|origin| !quiet.contains(&origin.path))
+        .map(|origin| origin.path.clone())
+        .collect();
+    if late.is_empty() {
+        AfterRun::Quiet
+    } else {
+        AfterRun::Late(late)
+    }
+}
+
 /// Run once: drain every pending entry the backup can take now.
 pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
     // One runner at a time; a second finds it busy at once and leaves it.
@@ -564,7 +592,8 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         };
         let quiet = erase_paths::quiet_origins(&recorded, &listing);
         for origin in recorded {
-            let why = if Path::new(&origin.path).exists() {
+            // A place that can't be checked counts as still here.
+            let why = if Path::new(&origin.path).try_exists().unwrap_or(true) {
                 Some("still_on_this_device")
             } else if !quiet.contains(&origin.path) {
                 Some("backed_up_since_the_restore")
@@ -679,17 +708,37 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
     // An origin backed up while the helper waited for its lock, or since:
     // its new backups may hold what this run removed, so nothing is claimed
     // gone. A listing that fails counts the same.
-    let late = !sent.is_empty()
-        && destination
-            .snapshots(services)
-            .map(|listing| erase_paths::quiet_origins(&sent, &listing).len() != sent.len())
-            .unwrap_or(true);
-    if late {
-        record_result(
-            journal,
-            json!({"at": now(), "outcome": "origin_backed_up_during_run"}),
-        );
-    }
+    let after = if sent.is_empty() {
+        AfterRun::Quiet
+    } else {
+        after_run(&sent, destination.snapshots(services))
+    };
+    let late = match &after {
+        AfterRun::Quiet => false,
+        AfterRun::Late(paths) => {
+            record_result(
+                journal,
+                json!({"at": now(), "outcome": "origin_backed_up_during_run", "paths": paths}),
+            );
+            true
+        }
+        // Not known is not quiet, and not late either: every entry waits for
+        // the next run, which re-runs the helper and checks again.
+        AfterRun::Unread => {
+            for entry in &runnable {
+                hold(&mut status, &entry.id, "offline");
+            }
+            finish(
+                journal,
+                status,
+                "waiting",
+                Some("offline"),
+                true,
+                &mut report,
+            );
+            return report;
+        }
+    };
     let entries_report = result.get("entries").cloned().unwrap_or(Value::Null);
     let field = |entry: &Entry, key: &str| {
         entries_report
@@ -757,7 +806,7 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
                 "id": entry.id, "at": now(), "outcome": format!("{action:?}"),
                 "snapshots": count(entry, "snapshots"), "files": count(entry, "files"),
                 "in_use_kept": count(entry, "in_use_kept"), "in_use_trash": count(entry, "in_use_trash"),
-                "elsewhere": count(entry, "elsewhere"),
+                "elsewhere": count(entry, "elsewhere"), "origin_backed_up_during_run": late,
                 "storage": keeps.unwrap_or("removes"), "legacy_archive": left_alone,
             }),
         );
@@ -939,6 +988,33 @@ mod tests {
         assert!((hours(1) - 1.0).abs() < 0.05);
         assert!((hours(3) - 4.0).abs() < 0.05);
         assert!((hours(40) - 24.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn an_origin_backed_up_during_the_run_is_late_and_an_unread_listing_decides_nothing() {
+        let at = DateTime::parse_from_rfc3339("2026-11-15T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let sent = [erase_paths::Origin {
+            path: "/home/old/journal".into(),
+            at,
+        }];
+        let before = json!([{"paths": ["/home/old/journal"], "time": "2026-11-14T00:00:00Z"}]);
+        let during = json!([{"paths": ["/home/old/journal"], "time": "2026-11-15T12:30:00Z"}]);
+        assert_eq!(
+            after_run(&sent, Ok(before.as_array().unwrap().clone())),
+            AfterRun::Quiet
+        );
+        assert_eq!(
+            after_run(&sent, Ok(during.as_array().unwrap().clone())),
+            AfterRun::Late(vec!["/home/old/journal".into()])
+        );
+        assert_eq!(after_run(&sent, Err("offline".into())), AfterRun::Unread);
+        // An empty listing proves nothing quiet.
+        assert_eq!(
+            after_run(&sent, Ok(Vec::new())),
+            AfterRun::Late(vec!["/home/old/journal".into()])
+        );
     }
 
     #[test]
