@@ -480,6 +480,12 @@ fn storage_that_keeps_versions_or_cant_say_is_never_called_done() {
             (status.state.as_str(), status.reason.as_deref()),
             ("stays", Some(reason))
         );
+        // The page counts the storage half by these two.
+        assert_eq!(
+            (status.partly, status.keeps.as_deref()),
+            (Some(0), Some(reason)),
+            "{status:?}"
+        );
         let history = format!(
             "{:?}",
             solstone_core_removals::history(journal, 50).unwrap()

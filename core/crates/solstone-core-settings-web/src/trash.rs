@@ -603,6 +603,8 @@ pub fn backups_view(journal_root: &Path) -> Result<Value, String> {
         "reason": status.reason,
         "pending": status.pending,
         "staying": status.staying,
+        "partly": status.partly,
+        "keeps": status.keeps,
         "next_try": status.next_try,
         "operated": solstone_core_backup::get_backup_config(journal_root)
             .ok()
