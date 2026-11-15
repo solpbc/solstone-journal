@@ -13,7 +13,7 @@ pub const BUILD_RUN_ID_ENV: &str = "SOLSTONE_FFMPEG_BUILD_RUN_ID";
 pub const EVIDENCE_DIR: &str = "solstone-ffmpeg-evidence";
 
 // This is the complete component surface Journal builds on every platform:
-// H.264/VP8 video; AAC, ALAC, AC-3/E-AC-3, FLAC, MP3, Opus, Vorbis, linear PCM,
+// H.264/VP8/VP9 video; AAC, ALAC, AC-3/E-AC-3, FLAC, MP3, Opus, Vorbis, linear PCM,
 // G.711 and the common WAV/QuickTime ADPCM audio codecs; MOV/MP4, Matroska/WebM,
 // MP3, Ogg, WAV and FLAC demuxing; and remux into each extension `journal
 // import` accepts. `--disable-everything` makes this an allowlist rather than a
@@ -82,6 +82,7 @@ const AUDIO_REMUX_COMPONENT_ARGS: &[&str] = &[
     "--enable-decoder=pcm_u8",
     "--enable-decoder=vorbis",
     "--enable-decoder=vp8",
+    "--enable-decoder=vp9",
     "--enable-parser=aac",
     "--enable-parser=ac3",
     "--enable-parser=flac",
@@ -90,6 +91,7 @@ const AUDIO_REMUX_COMPONENT_ARGS: &[&str] = &[
     "--enable-parser=opus",
     "--enable-parser=vorbis",
     "--enable-parser=vp8",
+    "--enable-parser=vp9",
 ];
 
 // FFmpeg 9.0's effective component inventory for AUDIO_REMUX_COMPONENT_ARGS.
@@ -147,7 +149,10 @@ const AUDIO_REMUX_COMPONENT_INVENTORY: &[&str] = &[
     "CONFIG_VORBIS_PARSER",
     "CONFIG_VP8_DECODER",
     "CONFIG_VP8_PARSER",
+    "CONFIG_VP9_DECODER",
+    "CONFIG_VP9_PARSER",
     "CONFIG_VP9_SUPERFRAME_BSF",
+    "CONFIG_VP9_SUPERFRAME_SPLIT_BSF",
     "CONFIG_WAV_DEMUXER",
     "CONFIG_WAV_MUXER",
     "CONFIG_WEBM_MUXER",
@@ -178,8 +183,10 @@ const VIDEO_DECODE_COMPONENT_ARGS: &[&str] = &[
     "--enable-demuxer=mov",
     "--enable-decoder=h264",
     "--enable-decoder=vp8",
+    "--enable-decoder=vp9",
     "--enable-parser=h264",
     "--enable-parser=vp8",
+    "--enable-parser=vp9",
 ];
 
 const VIDEO_DECODE_COMPONENT_INVENTORY: &[&str] = &[
@@ -190,6 +197,9 @@ const VIDEO_DECODE_COMPONENT_INVENTORY: &[&str] = &[
     "CONFIG_MOV_DEMUXER",
     "CONFIG_VP8_DECODER",
     "CONFIG_VP8_PARSER",
+    "CONFIG_VP9_DECODER",
+    "CONFIG_VP9_PARSER",
+    "CONFIG_VP9_SUPERFRAME_SPLIT_BSF",
 ];
 
 pub fn controlled_component_args() -> &'static [&'static str] {

@@ -83,6 +83,7 @@ arg=--enable-decoder=pcm_s8
 arg=--enable-decoder=pcm_u8
 arg=--enable-decoder=vorbis
 arg=--enable-decoder=vp8
+arg=--enable-decoder=vp9
 arg=--enable-parser=aac
 arg=--enable-parser=ac3
 arg=--enable-parser=flac
@@ -91,6 +92,7 @@ arg=--enable-parser=mpegaudio
 arg=--enable-parser=opus
 arg=--enable-parser=vorbis
 arg=--enable-parser=vp8
+arg=--enable-parser=vp9
 arg=--disable-gpl
 arg=--disable-version3
 arg=--disable-nonfree
@@ -145,8 +147,11 @@ component=CONFIG_VORBIS_DECODER
 component=CONFIG_VORBIS_PARSER
 component=CONFIG_VP8_DECODER
 component=CONFIG_VP8_PARSER
+component=CONFIG_VP9_DECODER
+component=CONFIG_VP9_PARSER
 component=CONFIG_VP9_SUPERFRAME_BSF
+component=CONFIG_VP9_SUPERFRAME_SPLIT_BSF
 component=CONFIG_WAV_DEMUXER
 component=CONFIG_WAV_MUXER
 component=CONFIG_WEBM_MUXER
-fingerprint=14503a5557a466383235b8e8a0635b36853406a15e4e396a6b8d0b516c36236d
+fingerprint=fb97772bae81e7f1fbbe4a32f09f6c208cf21241c37b5a914757d3093a9974e7
