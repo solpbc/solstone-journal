@@ -7037,7 +7037,12 @@ mod tests {
         let order = state
             .discovered
             .iter()
-            .map(|entry| (entry.submission.reference.as_str(), entry.priority.band as u8))
+            .map(|entry| {
+                (
+                    entry.submission.reference.as_str(),
+                    entry.priority.band as u8,
+                )
+            })
             .collect::<Vec<_>>();
         assert_eq!(order, [("x", 2), ("y", 5)]);
     }
