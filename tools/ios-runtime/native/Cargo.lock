@@ -6512,6 +6512,7 @@ dependencies = [
  "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-system",
+ "solstone-core-trash",
 ]
 
 [[package]]

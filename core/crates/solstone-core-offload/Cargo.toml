@@ -32,6 +32,7 @@ solstone-core-journal.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-retention.workspace = true
 solstone-core-segment.workspace = true
+solstone-core-trash.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 solstone-core-system.workspace = true

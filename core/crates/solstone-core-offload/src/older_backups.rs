@@ -396,14 +396,10 @@ fn held_file(
     }
     // An item still in the trash (even one whose record can't be read) can
     // be recovered, so the owner still has it.
-    match std::fs::symlink_metadata(
-        root.canonical_path()
-            .join(solstone_core_journal::TRASH_DIR)
-            .join(&tombstone.cid),
-    ) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Held::Erased,
-        Ok(_) => Held::Kept,
-        Err(_) => Held::Unknown,
+    if solstone_core_trash::left_since_copied(root.canonical_path(), &tombstone.cid) {
+        Held::Erased
+    } else {
+        Held::Kept
     }
 }
 
@@ -1027,7 +1023,7 @@ fn check_newest(
     let base = restic_tree_path(Path::new(base));
     let base = base.trim_end_matches('/');
     let control = format!("{base}/config");
-    let trash = format!("{base}/{}", solstone_core_journal::TRASH_DIR);
+    let trash = format!("{base}/{}", solstone_core_trash::copy_rel());
     let mut wanted = vec![control.clone(), trash.clone()];
     wanted.extend(
         erases
@@ -1042,7 +1038,6 @@ fn check_newest(
         return Err(Refusal::CheckBlind);
     }
     let trash_prefix = format!("{trash}/");
-    let local_trash = journal.join(solstone_core_journal::TRASH_DIR);
     for path in &found {
         if path == &control || path.starts_with(&format!("{control}/")) || path == &trash {
             continue;
@@ -1050,9 +1045,7 @@ fn check_newest(
         if let Some(child) = path.strip_prefix(&trash_prefix) {
             let child = child.split('/').next().unwrap_or_default();
             // Still in the trash here: recoverable, so the owner has it.
-            let live =
-                !child.is_empty() && std::fs::symlink_metadata(local_trash.join(child)).is_ok();
-            if live {
+            if !solstone_core_trash::left_since_copied(journal, child) {
                 continue;
             }
             return Err(Refusal::NewestHoldsErased);
