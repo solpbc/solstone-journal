@@ -541,3 +541,86 @@ fn a_timed_erase_follows_the_setting_and_backup_off_writes_no_entry() {
         "no entry while backup is off"
     );
 }
+
+#[test]
+#[ignore = "requires native restic, its erase helper and rclone; see the module doc"]
+fn each_entry_stands_alone_and_nothing_unreadable_is_dropped() {
+    let fixture = Fixture::new();
+    let journal = &fixture.journal;
+    fixture.backup();
+    let first = delete(journal, ERASED);
+    let second = delete(journal, KEPT);
+    fixture.backup();
+    erase(journal, &first, true);
+    erase(journal, &second, true);
+    let dir = journal.join("health/backup-erase");
+    // The second waits on its own, not yet due; a torn entry sits beside them.
+    let later = (Utc::now() + chrono::Duration::hours(3)).to_rfc3339();
+    fs::write(
+        dir.join("status.json"),
+        serde_json::to_vec(&json!({
+            "state": "failed", "pending": 2, "updated": Utc::now().to_rfc3339(),
+            "held": {second.clone(): {"reason": "ledger", "attempts": 1, "next_try": later}},
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    fs::write(dir.join("torn.json"), b"{").unwrap();
+
+    let removes = BucketSays { versioning: "" };
+    let report =
+        solstone_core_offload::backup_erase::run(journal, &fixture.services_with(&removes));
+    // The fixture's recordings share a small piece, so the first is removed
+    // or removed-but-shared: either way it ran.
+    assert_eq!(
+        report.removed + report.shared,
+        1,
+        "the first ran while the second sat out: {report:?}"
+    );
+    let (left, torn) = solstone_core_trash::backup_erase::pending(journal);
+    assert_eq!(
+        left.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+        [second.as_str()]
+    );
+    assert_eq!(torn, ["torn.json"], "an entry that can't be read is kept");
+    let status = solstone_core_offload::backup_erase::status(journal);
+    assert_eq!(status.pending, 2, "{status:?}");
+    assert!(status.held.contains_key(&second), "{status:?}");
+    assert!(!fixture.listed_anywhere(&format!("{}/audio.m4a", segment_rel(ERASED))));
+    assert!(
+        fixture.listed_anywhere(&format!("{}/audio.m4a", segment_rel(KEPT))),
+        "a held entry's thing is untouched"
+    );
+
+    // A destination other than the one set up now: retired unreached, with no
+    // claim; the torn entry still waits and says so.
+    let path = dir.join(format!("{second}.json"));
+    let mut entry: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    entry["destination"] = json!("byo:s3:somewhere-else");
+    fs::write(&path, serde_json::to_vec(&entry).unwrap()).unwrap();
+    let report =
+        solstone_core_offload::backup_erase::run(journal, &fixture.services_with(&removes));
+    assert_eq!(report.unreached, 1, "{report:?}");
+    assert!(
+        solstone_core_trash::backup_erase::pending(journal)
+            .0
+            .is_empty()
+    );
+    let status = solstone_core_offload::backup_erase::status(journal);
+    assert_eq!(
+        (status.state.as_str(), status.reason.as_deref()),
+        ("failed", Some("unreadable")),
+        "{status:?}"
+    );
+    let results = fs::read_to_string(dir.join("results.jsonl")).unwrap();
+    assert!(results.contains("not_reached"), "{results}");
+    let history = format!(
+        "{:?}",
+        solstone_core_removals::history(journal, 50).unwrap()
+    );
+    assert_eq!(
+        history.matches("BackupErase").count(),
+        1,
+        "no claim for the unreached one"
+    );
+}

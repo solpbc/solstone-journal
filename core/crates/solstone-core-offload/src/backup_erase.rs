@@ -89,7 +89,8 @@ fn now() -> String {
 
 /// The runner's last word, or idle.
 pub fn status(journal: &Path) -> Status {
-    let pending = backup_erase::pending(journal).0.len();
+    let (readable, unreadable) = backup_erase::pending(journal);
+    let pending = readable.len() + unreadable.len();
     let mut status: Status = std::fs::read(dir(journal).join(STATUS_FILE))
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -209,7 +210,7 @@ fn reconcile(journal: &Path, services: &BackupServices<'_>) {
         .ok()
         .and_then(|at| at.elapsed().ok())
         .is_some_and(|age| age < std::time::Duration::from_secs(24 * 60 * 60));
-    if fresh || erase_paths::helper(services).is_none() {
+    if fresh {
         return;
     }
     let has_ledger = std::fs::read_dir(journal.join("health/offload")).is_ok_and(|entries| {
@@ -285,16 +286,9 @@ pub fn outcome(
 
 /// Run once: drain every pending entry the backup can take now.
 pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
-    reconcile(journal, services);
-    let (entries, _unreadable) = backup_erase::pending(journal);
-    if entries.is_empty() {
-        let _ = std::fs::remove_file(dir(journal).join(PIECES_FILE));
-        return Report {
-            state: "nothing".into(),
-            ..Report::default()
-        };
-    }
+    let (entries, unreadable) = backup_erase::pending(journal);
     // One runner at a time; a second finds it busy at once and leaves it.
+    let _ = std::fs::create_dir_all(dir(journal));
     let Ok(_lock) = solstone_core_journal_io::hold_lock(
         dir(journal),
         solstone_core_journal_io::LockOptions {
@@ -308,6 +302,15 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
             ..Report::default()
         };
     };
+    // Under the lock: the moves file is read, changed and written whole.
+    reconcile(journal, services);
+    if entries.is_empty() && unreadable.is_empty() {
+        let _ = std::fs::remove_file(dir(journal).join(PIECES_FILE));
+        return Report {
+            state: "nothing".into(),
+            ..Report::default()
+        };
+    }
     let previous = status(journal);
     let mut status = Status {
         updated: now(),
@@ -335,7 +338,8 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         };
         status.next_try =
             retry.then(|| next_try(status.attempts).to_rfc3339_opts(SecondsFormat::Millis, true));
-        status.pending = backup_erase::pending(journal).0.len();
+        let (left, torn) = backup_erase::pending(journal);
+        status.pending = left.len() + torn.len();
         status.updated = now();
         report.state = state.into();
         report.reason = reason.map(str::to_owned);
@@ -384,6 +388,17 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         }
     }
     if live.is_empty() {
+        if !unreadable.is_empty() {
+            finish(
+                journal,
+                status,
+                "failed",
+                Some("unreadable"),
+                false,
+                &mut report,
+            );
+            return report;
+        }
         let _ = std::fs::remove_file(dir(journal).join(PIECES_FILE));
         finish(journal, status, "idle", None, false, &mut report);
         return report;
@@ -493,12 +508,7 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
                 "marker": {"name": MARKER_NAME, "key": MARKER_KEY, "value": entry.id},
             }));
         }
-        // Every backup taken while it sat in the trash holds it there: one
-        // that doesn't means the request didn't reach where it is.
-        targets.push(json!({
-            "entry": entry.id, "path": entry.trash_path,
-            "expect_from": entry.settled(), "expect_until": entry.erased_at,
-        }));
+        targets.push(json!({"entry": entry.id, "path": entry.trash_path}));
         for (snapshot, paths) in archives {
             snapshot_paths.entry(snapshot).or_default().extend(
                 paths
@@ -591,8 +601,19 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
             ))
         })
         .collect();
-    // Not recorded here, the daily reconcile reads them back.
-    let _ = crate::ledger::record_archive_moves(journal, &moves);
+    // Not recorded here, the next run's reconcile reads them back: a restore
+    // of kept media in a rewritten archive needs its current id.
+    if crate::ledger::record_archive_moves(journal, &moves).is_err() {
+        let _ = std::fs::remove_file(dir(journal).join(RECONCILED_FILE));
+    }
+    if let Some(keys) = result.get("unmatched_keys").and_then(Value::as_array)
+        && !keys.is_empty()
+    {
+        record_result(
+            journal,
+            json!({"at": now(), "outcome": "unmatched_archives", "keys": keys}),
+        );
+    }
 
     // Every listed piece no backup uses is gone. What the storage keeps of a
     // deleted file is the storage's own answer.
@@ -684,7 +705,24 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         }
     }
     status.staying = report.staying;
-    if backup_erase::pending(journal).0.is_empty() {
+    let (left, torn) = backup_erase::pending(journal);
+    if !torn.is_empty() {
+        // An entry that can't be read still owes its backup half: it isn't
+        // dropped, and the saved list stays for it.
+        let any_held = !status.held.is_empty() || stays_reason.is_some();
+        if !any_held {
+            finish(
+                journal,
+                status,
+                "failed",
+                Some("unreadable"),
+                false,
+                &mut report,
+            );
+            return report;
+        }
+    }
+    if left.is_empty() && torn.is_empty() {
         // Nothing left owes a backup half: the saved list has done its job.
         let _ = std::fs::remove_file(dir(journal).join(PIECES_FILE));
     }
@@ -703,7 +741,7 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
             );
         }
         (None, false) => {
-            let left = backup_erase::pending(journal).0.len();
+            let left = left.len();
             finish(
                 journal,
                 status,

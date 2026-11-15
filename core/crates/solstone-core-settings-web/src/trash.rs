@@ -88,7 +88,7 @@ pub async fn list(journal_root: PathBuf) -> Response {
         }
         Ok::<_, String>(json!({
             "erase_after_days": solstone_core_trash::erase_after_days(&journal_root),
-            "backups": backups_view(&journal_root),
+            "backups": backups_view(&journal_root).ok(),
             "unfinished": unfinished,
             "items": shown,
             "stopped": stopped_rows,
@@ -585,15 +585,20 @@ fn replaces(journal_root: &Path, item: &Item) -> bool {
 /// Whether this journal can also remove what the trash erases from its
 /// backups, and where that stands: backup set up (on, paused or unreachable),
 /// the owner's setting, and the backup half's state.
-pub fn backups_view(journal_root: &Path) -> Value {
-    let set_up = solstone_core_trash::backup_erase::backups_on(journal_root);
+/// `Err` when the journal's settings can't be read: the confirm then says it
+/// couldn't check, rather than reading that as "not set up".
+pub fn backups_view(journal_root: &Path) -> Result<Value, String> {
+    let set_up = solstone_core_trash::backup_erase::backups_on_checked(journal_root)
+        .map_err(|error| error.to_string())?;
+    let setting = solstone_core_trash::erase_from_backups_checked(journal_root)
+        .map_err(|error| error.to_string())?;
     let status = solstone_core_offload::backup_erase::status(journal_root);
-    json!({
+    Ok(json!({
         "set_up": set_up,
         // Where the backup half can't run here, the choice isn't offered.
         "available": set_up && solstone_core_backup_runtime::erase_paths::helper_installed(),
         "paused": set_up && solstone_core_backup_runtime::backup_paused(journal_root),
-        "setting": solstone_core_trash::erase_from_backups(journal_root),
+        "setting": setting,
         "state": status.state,
         "reason": status.reason,
         "pending": status.pending,
@@ -603,13 +608,14 @@ pub fn backups_view(journal_root: &Path) -> Value {
             .ok()
             .and_then(|config| config.get("mode").and_then(Value::as_str).map(|mode| mode == "operated"))
             .unwrap_or(false),
-    })
+    }))
 }
 
 /// Backup's state for the choice in an erase-now confirm, on every page.
 pub async fn backups(journal_root: PathBuf) -> Response {
     match tokio::task::spawn_blocking(move || backups_view(&journal_root)).await {
-        Ok(view) => json_response(view),
+        Ok(Ok(view)) => json_response(view),
+        Ok(Err(error)) => unreadable(error),
         Err(error) => unreadable(error.to_string()),
     }
 }

@@ -58,12 +58,16 @@ pub fn destination_from_config(config: &Map<String, Value>) -> Option<Destinatio
 pub fn destination_identity(journal: &Path) -> Result<Option<String>, BackupError> {
     let config = get_backup_config(journal)?;
     match config.get("mode").and_then(Value::as_str) {
-        Some("byo") => Ok(destination_from_config(&config).map(|d| format!("byo:{}", d.repository))),
+        Some("byo") => {
+            Ok(destination_from_config(&config).map(|d| format!("byo:{}", d.repository)))
+        }
         Some("operated") => crate::hosted::hosted_place(journal)
-            .map(|(account, instance, bucket, prefix)| {
-                Some(format!("operated:{account}:{instance}:{bucket}/{prefix}"))
+            .map(|place| {
+                place.map(|(account, instance, bucket, prefix)| {
+                    format!("operated:{account}:{instance}:{bucket}/{prefix}")
+                })
             })
-            .ok_or(BackupError::HostedRead),
+            .map_err(|()| BackupError::HostedRead),
         _ => Ok(None),
     }
 }

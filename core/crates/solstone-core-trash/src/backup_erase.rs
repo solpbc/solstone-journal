@@ -89,8 +89,9 @@ pub fn backups_on(journal: &Path) -> bool {
 /// [`backups_on`], with a configuration that can't be read as an error: an
 /// erase the owner chose to take from the backups never goes ahead on a guess.
 pub fn backups_on_checked(journal: &Path) -> Result<bool, TrashError> {
-    let read = solstone_core_journal_config::read_journal_config(journal)
-        .map_err(|error| TrashError::Io(format!("the journal's settings can't be read: {error}")))?;
+    let read = solstone_core_journal_config::read_journal_config(journal).map_err(|error| {
+        TrashError::Io(format!("the journal's settings can't be read: {error}"))
+    })?;
     Ok(read
         .config
         .and_then(|config| {
@@ -140,14 +141,27 @@ pub(crate) fn write(journal: &Path, item: &Item) -> Result<(), TrashError> {
 pub fn pending(journal: &Path) -> (Vec<Entry>, Vec<String>) {
     let mut entries = Vec::new();
     let mut unreadable = Vec::new();
-    let Ok(listing) = std::fs::read_dir(dir(journal)) else {
-        return (entries, unreadable);
+    let listing = match std::fs::read_dir(dir(journal)) {
+        Ok(listing) => listing,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return (entries, unreadable);
+        }
+        // A folder that can't be listed is not an empty one.
+        Err(_) => return (entries, vec![DIR.to_owned()]),
     };
-    for found in listing.flatten() {
+    for found in listing {
+        let Ok(found) = found else {
+            unreadable.push(DIR.to_owned());
+            continue;
+        };
         let name = found.file_name().to_string_lossy().into_owned();
         let Some(id) = name.strip_suffix(".json") else {
             continue;
         };
+        // The runner's own files sit beside the entries.
+        if RUNNER_FILES.contains(&name.as_str()) {
+            continue;
+        }
         match std::fs::read(found.path())
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Entry>(&bytes).ok())
@@ -159,6 +173,9 @@ pub fn pending(journal: &Path) -> (Vec<Entry>, Vec<String>) {
     entries.sort_by(|a, b| a.erased_at.cmp(&b.erased_at).then(a.id.cmp(&b.id)));
     (entries, unreadable)
 }
+
+/// Files the backup-erase runner keeps beside the entries; not entries.
+pub const RUNNER_FILES: &[&str] = &["status.json", "pieces.json", "request.json"];
 
 /// Retire an entry once its outcome is recorded.
 pub fn retire(journal: &Path, id: &str) -> Result<(), TrashError> {

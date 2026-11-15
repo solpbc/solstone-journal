@@ -1,9 +1,9 @@
 diff --git a/cmd/restic/cmd_erase_paths.go b/cmd/restic/cmd_erase_paths.go
 new file mode 100644
-index 0000000..329e922
+index 0000000..00ee4ad
 --- /dev/null
 +++ b/cmd/restic/cmd_erase_paths.go
-@@ -0,0 +1,1332 @@
+@@ -0,0 +1,1309 @@
 +package main
 +
 +// erase-paths removes named paths from every snapshot, then removes the stored
@@ -114,11 +114,6 @@ index 0000000..329e922
 +	// TrashCopies also removes earlier trash copies of this path:
 +	// <trash>/<any id not still in the trash>/<files>/<path>.
 +	TrashCopies bool `json:"trash_copies,omitempty"`
-+	// ExpectFrom and ExpectUntil, when set: a regular snapshot taken in
-+	// between must hold this path, because the thing sat there then. If one
-+	// exists and none held it, the request did not reach where the thing is.
-+	ExpectFrom  *time.Time `json:"expect_from,omitempty"`
-+	ExpectUntil *time.Time `json:"expect_until,omitempty"`
 +}
 +
 +type erasePathsMarker struct {
@@ -150,10 +145,6 @@ index 0000000..329e922
 +	Entries map[string][]string `json:"entries,omitempty"`
 +	// Counts holds each entry's snapshots and files as first found.
 +	Counts map[string][2]uint `json:"counts,omitempty"`
-+	// Window holds, for each entry found, whether its expect window found it
-+	// missed. A held answer is kept by a retry after the rewrite, when the
-+	// rewritten backups no longer hold the thing, by design.
-+	Window map[string]bool `json:"window,omitempty"`
 +}
 +
 +type erasePathsResult struct {
@@ -192,10 +183,6 @@ index 0000000..329e922
 +	// changed, so they can still restore it.
 +	Elsewhere int `json:"elsewhere,omitempty"`
 +	pieces    restic.BlobSet
-+	// expected and expectHeld: snapshots an expect window says should hold a
-+	// target, and those that did.
-+	expected   int
-+	expectHeld int
 +}
 +
 +type rewrittenSnapshot struct {
@@ -356,27 +343,27 @@ index 0000000..329e922
 +	return kind + ":" + bh.ID.String()
 +}
 +
-+func readErasePathsState(file string) (restic.BlobSet, map[string]restic.BlobSet, map[string][2]uint, map[string]bool, error) {
++func readErasePathsState(file string) (restic.BlobSet, map[string]restic.BlobSet, map[string][2]uint, error) {
 +	set := restic.NewBlobSet()
 +	entries := map[string]restic.BlobSet{}
 +	buf, err := os.ReadFile(file)
 +	if errors.Is(err, os.ErrNotExist) {
-+		return set, entries, map[string][2]uint{}, map[string]bool{}, nil
++		return set, entries, map[string][2]uint{}, nil
 +	}
 +	if err != nil {
-+		return nil, nil, nil, nil, err
++		return nil, nil, nil, err
 +	}
 +	var state erasePathsState
 +	if err := json.Unmarshal(buf, &state); err != nil {
-+		return nil, nil, nil, nil, fmt.Errorf("saved list: %w", err)
++		return nil, nil, nil, fmt.Errorf("saved list: %w", err)
 +	}
 +	if state.Schema != 1 {
-+		return nil, nil, nil, nil, fmt.Errorf("saved list schema %d", state.Schema)
++		return nil, nil, nil, fmt.Errorf("saved list schema %d", state.Schema)
 +	}
 +	for _, item := range state.Targets {
 +		bh, err := parsePiece(item)
 +		if err != nil {
-+			return nil, nil, nil, nil, err
++			return nil, nil, nil, err
 +		}
 +		set.Insert(bh)
 +	}
@@ -385,7 +372,7 @@ index 0000000..329e922
 +		for _, item := range items {
 +			bh, err := parsePiece(item)
 +			if err != nil {
-+				return nil, nil, nil, nil, err
++				return nil, nil, nil, err
 +			}
 +			pieces.Insert(bh)
 +		}
@@ -395,16 +382,12 @@ index 0000000..329e922
 +	if counts == nil {
 +		counts = map[string][2]uint{}
 +	}
-+	window := state.Window
-+	if window == nil {
-+		window = map[string]bool{}
-+	}
-+	return set, entries, counts, window, nil
++	return set, entries, counts, nil
 +}
 +
 +// writeErasePathsState replaces the list durably: written, synced, renamed,
 +// and the directory synced, before the caller changes the repository.
-+func writeErasePathsState(file string, set restic.BlobSet, entries map[string]restic.BlobSet, counts map[string][2]uint, window map[string]bool) error {
++func writeErasePathsState(file string, set restic.BlobSet, entries map[string]restic.BlobSet, counts map[string][2]uint) error {
 +	names := func(set restic.BlobSet) []string {
 +		items := make([]string, 0, len(set))
 +		for bh := range set {
@@ -413,7 +396,7 @@ index 0000000..329e922
 +		sort.Strings(items)
 +		return items
 +	}
-+	state := erasePathsState{Schema: 1, Targets: names(set), Entries: map[string][]string{}, Counts: counts, Window: window}
++	state := erasePathsState{Schema: 1, Targets: names(set), Entries: map[string][]string{}, Counts: counts}
 +	for name, pieces := range entries {
 +		state.Entries[name] = names(pieces)
 +	}
@@ -869,7 +852,7 @@ index 0000000..329e922
 +	defer unlock()
 +	// The saved list is read under the lock, so a run that held the lock
 +	// before has finished writing it.
-+	saved, savedEntries, savedCounts, savedWindow, err := readErasePathsState(statePath)
++	saved, savedEntries, savedCounts, err := readErasePathsState(statePath)
 +	if err != nil {
 +		return failed("list", err)
 +	}
@@ -911,6 +894,7 @@ index 0000000..329e922
 +		}
 +	}
 +	matchedKeys := map[string]bool{}
++	regular, rootSeen := 0, false
 +	for _, s := range all {
 +		if stale.Has(s.id) {
 +			continue
@@ -951,19 +935,13 @@ index 0000000..329e922
 +		for entry := range walk.held {
 +			walk.entry(entry).Snapshots++
 +		}
-+		// A regular backup taken while the thing sat at a target must hold it.
++		// Whether any regular backup is of the journal at a place this
++		// request names: without one, finding nothing proves nothing.
 +		if !hasTag(s.sn, req.DropEmptyTags) {
-+			for _, t := range req.Targets {
-+				if t.ExpectFrom == nil || t.ExpectUntil == nil || s.sn.Time.Before(*t.ExpectFrom) || !s.sn.Time.Before(*t.ExpectUntil) {
-+					continue
-+				}
-+				report := walk.entry(t.Entry)
-+				report.expected++
-+				for _, root := range req.Roots {
-+					if walk.heldPaths[path.Join(root, t.Path)] {
-+						report.expectHeld++
-+						break
-+					}
++			regular++
++			for _, p := range s.sn.Paths {
++				if contains(req.Roots, treePath(p)) {
++					rootSeen = true
 +				}
 +			}
 +		}
@@ -979,21 +957,17 @@ index 0000000..329e922
 +		}
 +	}
 +	sort.Strings(result.UnmatchedKeys)
-+	for name, report := range walk.entries {
-+		// A window found held before stays held: a retry after the rewrite
-+		// finds its own rewritten backups without the thing, by design. One
-+		// found missed is judged again, so a corrected request can clear it.
-+		missed := report.expected > 0 && report.expectHeld == 0
-+		if wasMissed, judged := savedWindow[name]; judged && !wasMissed {
-+			missed = false
-+		}
-+		if missed {
-+			report.Missed = true
-+			report.MissedAt = "a backup taken while it was in the trash doesn't hold it at the place named"
-+		}
-+		if counts, ok := savedCounts[name]; ok {
++	for _, t := range req.Targets {
++		report := walk.entry(t.Entry)
++		if counts, ok := savedCounts[t.Entry]; ok {
 +			report.Snapshots = max(report.Snapshots, counts[0])
 +			report.Files = max(report.Files, counts[1])
++		}
++		// Stateless, judged every run: an entry no backup held, while backups
++		// exist and none is of the journal at the place named, was missed.
++		if report.Snapshots == 0 && regular > 0 && !rootSeen {
++			report.Missed = true
++			report.MissedAt = "no backup of the journal at the place named"
 +		}
 +	}
 +
@@ -1007,13 +981,16 @@ index 0000000..329e922
 +	}
 +	entryPieces := map[string]restic.BlobSet{}
 +	entryCounts := map[string][2]uint{}
-+	entryWindow := map[string]bool{}
 +	for name, report := range walk.entries {
 +		entryPieces[name] = report.pieces
 +		entryCounts[name] = [2]uint{report.Snapshots, report.Files}
-+		entryWindow[name] = report.Missed
 +	}
-+	if err = writeErasePathsState(statePath, targets, entryPieces, entryCounts, entryWindow); err != nil {
++	// An entry saved earlier but not in this request keeps its first counts.
++	for name, counts := range savedCounts {
++		have := entryCounts[name]
++		entryCounts[name] = [2]uint{max(have[0], counts[0]), max(have[1], counts[1])}
++	}
++	if err = writeErasePathsState(statePath, targets, entryPieces, entryCounts); err != nil {
 +		return failed("list", fmt.Errorf("saving the list: %w", err))
 +	}
 +	result.Targets = countPieces(targets)
@@ -1308,7 +1285,7 @@ index 0000000..329e922
 +			if gopts.NoLock {
 +				return errors.New("scan-blobs needs the repository lock")
 +			}
-+			targets, _, _, _, err := readErasePathsState(statePath)
++			targets, _, _, err := readErasePathsState(statePath)
 +			if err != nil {
 +				return err
 +			}

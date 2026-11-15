@@ -1352,16 +1352,24 @@ pub fn erase_after_days(journal: &Path) -> u32 {
 /// Whether the owner set what the trash erases to also leave their backups.
 /// Off when unset or unreadable: a backup half is never taken unasked.
 pub fn erase_from_backups(journal: &Path) -> bool {
-    solstone_core_journal_config::read_journal_config(journal)
-        .ok()
-        .and_then(|read| read.config)
+    erase_from_backups_checked(journal).unwrap_or(false)
+}
+
+/// [`erase_from_backups`], with settings that can't be read as an error, so
+/// the timer never erases on a guess about the owner's choice.
+pub fn erase_from_backups_checked(journal: &Path) -> Result<bool, TrashError> {
+    let read = solstone_core_journal_config::read_journal_config(journal).map_err(|error| {
+        TrashError::Io(format!("the journal's settings can't be read: {error}"))
+    })?;
+    Ok(read
+        .config
         .and_then(|config| {
             config
                 .get(SETTINGS_SECTION)
                 .and_then(|section| section.get(ERASE_FROM_BACKUPS_KEY))
                 .and_then(serde_json::Value::as_bool)
         })
-        .unwrap_or(false)
+        .unwrap_or(false))
 }
 
 /// What one [`sweep`] did.
@@ -1927,8 +1935,16 @@ fn sweep_set(journal: &Path, kinds: &[&dyn Kind], mut set: Set, swept: &mut Swep
 /// Runs at start and on the maintenance schedule.
 pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
     let mut swept = Swept::default();
-    // What the timer erases follows the owner's setting for backups.
-    let backups = erase_from_backups(journal);
+    // What the timer erases follows the owner's setting for backups. Settings
+    // that can't be read leave what's due in the trash until they can: the
+    // owner's choice is never guessed. Interrupted steps still finish.
+    let backups = match erase_from_backups_checked(journal) {
+        Ok(backups) => Some(backups),
+        Err(error) => {
+            swept.failed.push(error.to_string());
+            None
+        }
+    };
     // Soonest due first, so an item erased with one it needed is met after.
     let items = match all_items(journal) {
         Ok(mut items) => {
@@ -1991,6 +2007,10 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                 // A stretch is due when the last of it is, and the timer erases
                 // it whole, as the owner would.
                 match stretch_due.get(&id) {
+                    Some(at) if *at <= now && backups.is_none() => {
+                        swept.waiting += 1;
+                        Ok(())
+                    }
                     Some(at) if *at <= now => {
                         if stretch_erased.insert(id.clone()) {
                             erase_stretch_with(
@@ -2000,7 +2020,7 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                                 Action::Erase,
                                 timer_surface(),
                                 &OperationId::fresh(now),
-                                backups,
+                                backups.unwrap_or(false),
                             )
                             .map(|erased| {
                                 swept.erased += erased.len();
@@ -2016,6 +2036,10 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                 }
             }
             State::Trashed => match item.erase_at() {
+                Some(at) if at <= now && backups.is_none() => {
+                    swept.waiting += 1;
+                    Ok(())
+                }
                 Some(at) if at <= now => erase_with(
                     journal,
                     kinds,
@@ -2023,7 +2047,7 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                     Action::Erase,
                     timer_surface(),
                     None,
-                    backups,
+                    backups.unwrap_or(false),
                 )
                 .map(|()| {
                     swept.erased += 1;

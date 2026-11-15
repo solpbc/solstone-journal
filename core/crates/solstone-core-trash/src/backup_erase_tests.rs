@@ -212,6 +212,23 @@ fn the_timer_follows_the_setting() {
 }
 
 #[test]
+fn the_timer_never_guesses_the_choice_from_settings_it_cant_read() {
+    let (_dir, root) = journal(true, Some(true));
+    let item = trash_segment(&root);
+    fs::write(root.join("config/journal.json"), b"{ not json").unwrap();
+    let later = Utc::now() + Duration::days(i64::from(MAX_ERASE_AFTER_DAYS) + 1);
+    let swept = sweep(&root, &[&Kind1], later);
+    assert_eq!(swept.erased, 0, "{swept:?}");
+    assert!(!swept.failed.is_empty(), "the sweep says why: {swept:?}");
+    assert!(
+        root.join(".trash").join(&item.id).exists(),
+        "still in the trash"
+    );
+    assert!(pending_ids(&root).is_empty());
+    assert!(erase_from_backups_checked(&root).is_err());
+}
+
+#[test]
 fn a_resumed_erase_keeps_the_owners_choice() {
     let (_dir, root) = journal(true, Some(false));
     let item = trash_segment(&root);

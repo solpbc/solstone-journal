@@ -48,16 +48,23 @@ pub fn load_hosted_binding_at_root(
 
 /// Where the hosted binding points (account, instance, bucket, prefix), read
 /// without its credential, so a sign-in that lapsed still names the place.
-pub(crate) fn hosted_place(journal: &Path) -> Option<(String, String, String, String)> {
-    let bytes = read_binding_bytes(&hosted_binding_read_path(journal)).ok()?;
-    let raw = serde_json::from_slice::<Value>(&bytes).ok()?;
-    let raw = raw.as_object()?;
-    Some((
-        non_blank(raw, "account_id")?,
-        non_blank(raw, "instance_id")?,
-        non_blank(raw, "bucket")?,
-        non_blank(raw, "prefix")?,
-    ))
+/// The hosted place, without its token. `Ok(None)` when no binding exists
+/// (hosted backup has no place yet); `Err` when one exists and can't be read.
+pub(crate) fn hosted_place(journal: &Path) -> Result<Option<(String, String, String, String)>, ()> {
+    let bytes = match read_binding_bytes(&hosted_binding_read_path(journal)) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(()),
+    };
+    let raw = serde_json::from_slice::<Value>(&bytes).map_err(|_| ())?;
+    let raw = raw.as_object().ok_or(())?;
+    let field = |name| non_blank(raw, name).ok_or(());
+    Ok(Some((
+        field("account_id")?,
+        field("instance_id")?,
+        field("bucket")?,
+        field("prefix")?,
+    )))
 }
 
 pub(crate) fn decode_hosted_binding(bytes: &[u8]) -> Option<HostedBinding> {

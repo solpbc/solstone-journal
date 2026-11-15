@@ -161,12 +161,11 @@ def tombstone(j, rel, item):
     write(j / rel / TOMB, json.dumps({"cid": item}).encode())
 
 
-def erase_request(j, item, settled, live=(), seg=SEG, erased="2025-11-27T00:00:00Z"):
-    # Every regular backup taken while it sat in the trash must hold it there.
+def erase_request(j, item, settled, live=(), seg=SEG):
     return {"roots": [str(j)],
             "targets": [{"entry": item, "path": seg, "marker": {"name": TOMB, "key": "cid", "value": item},
                          "settled": settled, "trash_copies": True},
-                        {"entry": item, "path": f".trash/{item}", "expect_from": settled, "expect_until": erased}],
+                        {"entry": item, "path": f".trash/{item}"}],
             "trash": {"dir": ".trash", "files": "files", "live": list(live), "item": "item.json", "paths_key": "paths"}}
 
 
@@ -555,7 +554,7 @@ def case_shared_after_stop(stock, helper):
         rc, res = repo.erase(erase_request(j, "t1", "2025-11-26T00:00:00Z"))
         assert res["snapshots_holding"] == 0, "the retry finds nothing left to rewrite"
         assert res["entries"]["t1"]["in_use_kept"] >= 1, res
-        assert not res["entries"]["t1"].get("missed"), "the saved window answer holds across the stop"
+        assert not res["entries"]["t1"].get("missed"), "found before the stop, not missed after it"
         return {"in_use_kept_after_resume": res["entries"]["t1"]["in_use_kept"]}
 
 
@@ -579,9 +578,32 @@ def case_archive_kept_file_not_dropped(stock, helper):
         return {"kept_file_archive": "kept", "unmatched_keys": res["unmatched_keys"]}
 
 
+def case_entries_apart(stock, helper):
+    """An entry that sits out a run keeps what it found; one whose journal no
+    backup is of stays missed whatever ran between."""
+    with tempfile.TemporaryDirectory(dir="/var/tmp") as tmp:
+        repo, j = stop_fixture(tmp, stock, helper)
+        rc, res = repo.erase(erase_request(j, "t1", "2025-11-26T00:00:00Z"))
+        first = res["entries"]["t1"]
+        assert first["snapshots"] >= 1 and not first.get("missed"), res
+        rc, res = repo.erase(erase_request(j, "t2", "2025-11-26T00:00:00Z", seg=OTHER))
+        assert res["entries"]["t2"]["snapshots"] >= 1, res
+        rc, res = repo.erase(erase_request(j, "t1", "2025-11-26T00:00:00Z"))
+        again = res["entries"]["t1"]
+        assert again["snapshots"] == first["snapshots"] and again["files"] == first["files"], (first, again)
+        assert not again.get("missed"), again
+        wrong = erase_request(Path("/nowhere/journal"), "t3", "2025-11-26T00:00:00Z")
+        for _ in range(2):
+            rc, res = repo.erase(wrong)
+            assert res["entries"]["t3"].get("missed") is True, res
+            rc, res = repo.erase(erase_request(j, "t2", "2025-11-26T00:00:00Z", seg=OTHER))
+        repo.check()
+        return {"sat_out": "counts kept", "wrong_root": "missed every run"}
+
+
 CASES = [case_basic, case_outputs_beside_and_mid_detach, case_trash_recover_trash, case_shared, case_stops,
          case_two_runners, case_racing_backup, case_delete_faults, case_archive_paths, case_nothing_held,
-         case_roots, case_shared_after_stop, case_archive_kept_file_not_dropped]
+         case_roots, case_shared_after_stop, case_archive_kept_file_not_dropped, case_entries_apart]
 
 
 def main():
