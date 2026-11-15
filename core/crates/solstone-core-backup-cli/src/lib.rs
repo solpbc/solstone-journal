@@ -1857,6 +1857,11 @@ fn remove_older_options(args: &[String]) -> Option<(bool, bool)> {
     Some((yes, include_kept))
 }
 
+/// "1 backup", "3 backups".
+fn count(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
 fn backup_time(value: &str) -> String {
     chrono::DateTime::parse_from_rfc3339(value)
         .map(|time| {
@@ -1872,7 +1877,7 @@ fn older_refusal(refusal: &solstone_core_offload::older_backups::Refusal) -> Cli
     let line = match refusal {
         Refusal::Unavailable => "Backup isn't set up here, so there's nothing to remove.".to_owned(),
         Refusal::Running => "Older backups are already being removed.".to_owned(),
-        Refusal::Waiting => "Nothing to remove yet: older backups can be removed once a backup has finished after an erase.".to_owned(),
+        Refusal::Waiting => "Nothing to remove: older backups can be removed only once a backup has finished after an erase.".to_owned(),
         Refusal::NewestIncomplete => "Your newest backup couldn't read some files, and older backups may hold the only copy of those. Nothing was removed; this works after a backup reads every file.".to_owned(),
         Refusal::NewestHoldsErased => "Your newest backup still holds something you erased. Nothing was removed; try again after the next backup.".to_owned(),
         Refusal::CheckBlind => "Couldn't check your newest backup, so nothing was removed. Try again later.".to_owned(),
@@ -1916,22 +1921,31 @@ fn remove_older(
         out.push_str("This removes:\n");
         if let (Some(first), Some(last)) = (plan.older.first(), plan.older.last()) {
             out.push_str(&format!(
-                "  {} older backups, {} to {}\n",
-                plan.older.len(),
+                "  {}, {} to {}\n",
+                count(plan.older.len(), "older backup", "older backups"),
                 backup_time(&first.time),
                 backup_time(&last.time)
             ));
         }
         if !plan.archives_removable.is_empty() {
             out.push_str(&format!(
-                "  {} media archives that hold nothing you still have\n",
-                plan.archives_removable.len()
+                "  {} that {} nothing you still have\n",
+                count(
+                    plan.archives_removable.len(),
+                    "media archive",
+                    "media archives"
+                ),
+                if plan.archives_removable.len() == 1 {
+                    "holds"
+                } else {
+                    "hold"
+                }
             ));
         }
         if let Some(last) = plan.kept_before_restore.last() {
             out.push_str(&format!(
-                "  {} backups from before you restored this journal, up to {}\n",
-                plan.kept_before_restore.len(),
+                "  {} from before you restored this journal, up to {}\n",
+                count(plan.kept_before_restore.len(), "backup", "backups"),
                 backup_time(&last.time)
             ));
         }
@@ -1941,14 +1955,19 @@ fn remove_older(
         ));
         if plan.archives_mixed + plan.archives_kept > 0 {
             out.push_str(&format!(
-                "It keeps {} media archives that may hold the only copy of media you still have.\n",
-                plan.archives_mixed + plan.archives_kept
+                "It keeps {} that may hold the only copy of media you still have.\n",
+                count(
+                    plan.archives_mixed + plan.archives_kept,
+                    "media archive",
+                    "media archives"
+                )
             ));
         }
         if !plan.kept_before_restore_left.is_empty() {
             out.push_str(&format!(
-                "It keeps {} backups from before you restored this journal; add --include-kept-before-restore to remove them too.\n",
-                plan.kept_before_restore_left.len()
+                "It keeps {} from before you restored this journal; add --include-kept-before-restore to remove {} too.\n",
+                count(plan.kept_before_restore_left.len(), "backup", "backups"),
+                if plan.kept_before_restore_left.len() == 1 { "it" } else { "them" }
             ));
         }
         if plan.kind == Kind::Older {
@@ -1970,21 +1989,26 @@ fn remove_older(
     ) {
         Ok(done) => {
             let mut out = format!(
-                "Removed {} backups. No backup can bring back what you erased before {}",
-                done.removed,
+                "Removed {}. No backup at this destination can bring back what you erased before {}",
+                count(done.removed, "backup", "backups"),
                 backup_time(&done.kept_newest_time)
             );
             let mut except = Vec::new();
             if done.archives_mixed > 0 {
                 except.push(format!(
-                    "{} media archives that also hold media you still have may still hold some of it",
-                    done.archives_mixed
+                    "{} kept for media you still have may also hold some of it",
+                    count(done.archives_mixed, "media archive", "media archives")
                 ));
             }
             if done.kept_before_restore_left > 0 {
                 except.push(format!(
-                    "{} backups from before you restored this journal stay",
-                    done.kept_before_restore_left
+                    "{} from before you restored this journal {}",
+                    count(done.kept_before_restore_left, "backup", "backups"),
+                    if done.kept_before_restore_left == 1 {
+                        "stays"
+                    } else {
+                        "stay"
+                    }
                 ));
             }
             if matches!(done.storage.as_str(), "versions" | "locks" | "hidden_files") {
