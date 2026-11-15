@@ -26,6 +26,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- dashboard questions now appear in the page, so actions such as unpairing a device or renaming an agent key work even when the app showing your journal doesn't draw browser dialogs.
 - in settings, under transcription, turning on "leave out other voices" now shows its confirmation. before, the confirmation never appeared, so the switch couldn't be turned on there.
 - merging two entities no longer loses what the one merged away held: your own voice when it was you, and your answers about which person a name means.
 - on windows, your journal no longer fails to start when another program, such as a backup tool, has some of your journal's setup files open to read them.

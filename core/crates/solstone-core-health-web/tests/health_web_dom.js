@@ -670,7 +670,7 @@ function createDeviceEnvironment() {
   vm.runInContext([
     sourceBlock(source, 'const HEALTH_GLANCE_COPY =', 'let brainSnapshot ='),
     sourceBlock(source, 'function registeredClientName(', 'function formatGlanceSentence('),
-    sourceBlock(source, 'const sinceDay =', 'function requestBacklogReprocess('),
+    sourceBlock(source, 'const sinceDay =', 'async function requestBacklogReprocess('),
     observeCode,
     sourceBlock(source, 'let devicesDeepLinkScrolled =', '// Update cortex grid'),
   ].join('\n'), context);

@@ -1369,11 +1369,12 @@
       });
     }
 
-    function reprocess(button) {
+    async function reprocess(button) {
       const day = button.dataset.backlogDay;
       const flavor = button.dataset.backlogFlavor;
       if (window.SolFocus.isBusy(button)) return;
-      if (flavor === 'from-scratch' && !window.confirm(C.CONFIRM_REDO_SCRATCH)) return;
+      if (flavor === 'from-scratch' && !(await window.SolQuestion.ask({ message: C.CONFIRM_REDO_SCRATCH, action: C.ACTION_REDO_SCRATCH, signal: ctx.signal, opener: () => Array.from(root.querySelectorAll('[data-backlog-flavor]')).find(el => el.dataset.backlogDay === day && el.dataset.backlogFlavor === flavor) }))) return;
+      if (ctx.disposed) return;
       writes.set(day, {state: 'busy', text: ''});
       applyWrite(day);
       ctx.read('/app/health/api/reprocess', {

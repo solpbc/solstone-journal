@@ -2887,14 +2887,17 @@
 	    return 'never reported';
 	  }
 
-	  function requestBacklogReprocess(button) {
-	    const row = button.closest('.backlog-row');
+	  async function requestBacklogReprocess(button) {
+	    let row = button.closest('.backlog-row');
 	    if (!row) return;
 	    const day = button.dataset.day;
 	    const flavor = button.dataset.flavor;
-	    if (flavor === 'from-scratch' && !window.confirm(button.dataset.confirm)) {
+	    const findButton = () => Array.from(document.querySelectorAll('.backlog-action')).find(el => el.dataset.day === day && el.dataset.flavor === flavor);
+	    if (flavor === 'from-scratch' && !(await window.SolQuestion.ask({ message: button.dataset.confirm, action: button.textContent, opener: findButton }))) {
 	      return;
 	    }
+	    row = findButton()?.closest('.backlog-row');
+	    if (!row) return;
 	    const buttons = Array.from(row.querySelectorAll('.backlog-action'));
 	    const statusEl = row.querySelector('.backlog-action-status');
 	    buttons.forEach((rowButton) => { rowButton.disabled = true; });

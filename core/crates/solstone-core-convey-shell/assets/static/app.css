@@ -1085,6 +1085,52 @@ a.notification-card:active {
   max-width: 560px;
 }
 
+.convey-question {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+.convey-question .modal-content {
+  margin: 0;
+  width: 100%;
+  box-sizing: border-box;
+  max-height: calc(100dvh - 2rem);
+  color: var(--ink);
+}
+.convey-question h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+  font-weight: 500;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.convey-question label { display: block; margin-bottom: .4rem; }
+.convey-question input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: .65rem;
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+}
+.convey-question-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .75rem; margin-top: 1.25rem; }
+.convey-question button {
+  min-height: 46px;
+  padding: .6rem 1rem;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.convey-question [data-question-accept] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.convey-question :is(button, input):focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
 .report-error-review {
   margin: 1rem 0;
   border: 1px solid var(--hairline);
