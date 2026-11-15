@@ -1078,6 +1078,60 @@ module.exports = async function thinkingContractCases(crateDir) {
     }
   });
 
+  await test('a lane switch that answers after the owner left and came back draws nothing, writes no entry, and skips its redraw', async () => {
+    const p = await boot(env, '/app/thinking/#byo-setup');
+    const isSwitch = (call) => call.method === 'PUT' && call.url === '/app/thinking/api/providers';
+    p.holds.push(isSwitch);
+    const button = p.qa('[data-switch-lane]')[0];
+    assert.ok(button, 'a lane switch is drawn');
+    // The lane the switch panel names, as renderLaneSwitch writes it.
+    button.setAttribute('data-switch-lane', 'local');
+    p.press(button);
+    await settle();
+    const put = p.calls.find((c) => isSwitch(c) && !c.settled);
+    assert.ok(put, 'the switch is out');
+    const goneRoot = p.byId('providers');
+    p.leave();
+    await settle();
+    // The old markup's lookups after it has gone: the answer's own lines only.
+    let lookups = 0;
+    const look = goneRoot.querySelector.bind(goneRoot);
+    goneRoot.querySelector = (selector) => { lookups += 1; return look(selector); };
+    const lookAll = goneRoot.querySelectorAll.bind(goneRoot);
+    goneRoot.querySelectorAll = (selector) => { lookups += 1; return lookAll(selector); };
+    p.holds.length = 0;
+    p.holds.push(isSwitch);
+    await p.arrive('/app/thinking/#byo-setup');
+    await drain(p);
+    const entries = p.entries.length;
+    const address = p.window.location.href;
+    const drawn = p.mutations();
+    put.answer(clone(local.get('/app/thinking/api/providers')));
+    await run(p, 10000);
+    assert.ok(p.entries.length === entries && p.window.location.href === address, `no entry is written (${p.window.location.hash})`);
+    assert.ok(p.mutations() === drawn, 'the new thinking is left as it was');
+    assert.ok(lookups < 20, `the gone view skips its redraw (${lookups} lookups)`);
+  });
+
+  await test('a "clear key" that answers after the owner left and came back leaves the new thinking\'s typed key alone', async () => {
+    const p = await boot(env, '/app/thinking/#byo-setup', { phase: 'byo_cloud' });
+    const isClear = (call) => call.method === 'PUT' && call.url === '/app/thinking/api/keys';
+    p.holds.push(isClear);
+    p.press(p.byId('byoClearKey'));
+    await settle();
+    const put = p.calls.find((c) => isClear(c) && !c.settled);
+    assert.ok(put, 'the clear is out');
+    p.leave();
+    await settle();
+    p.holds.length = 0;
+    await p.arrive('/app/thinking/#byo-setup');
+    await drain(p);
+    p.byId('byoKeyInput').value = 'typed in the new thinking';
+    put.answer(clone(env.answers('none').get('/app/thinking/api/keys')));
+    await run(p, 5000);
+    assert.ok(p.byId('byoKeyInput').value === 'typed in the new thinking', 'the late answer clears nothing in the new thinking');
+  });
+
   await test('a confidential turn-on that answers after the owner left opens no consent window, and the return follows it', async () => {
     const overrides = {};
     const p = await boot(env, '/app/thinking/#confidential-setup', { overrides });
