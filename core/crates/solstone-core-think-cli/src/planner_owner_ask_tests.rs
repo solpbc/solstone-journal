@@ -203,9 +203,8 @@ fn daily_for(plan: &[(String, WorkBand)], day: &str) -> bool {
 fn plan(root: &Path, queue: &TaskQueue) -> Vec<(String, WorkBand)> {
     let backlog = reconcile_pass(root, queue, &AtomicBool::new(false), false).unwrap();
     backlog
-        .admitted
+        .offered
         .iter()
-        .chain(backlog.ranked.iter())
         .map(|task| {
             (
                 task.request.reference.clone(),
@@ -418,12 +417,12 @@ fn the_day_waits_for_its_asked_activity_however_its_work_stands() {
     let backlog = reconcile_pass(root.path(), &queue, &AtomicBool::new(false), false).unwrap();
     assert!(
         backlog
-            .admitted
+            .offered
             .iter()
             .any(|task| task.request.reference == format!("supervisor-work-{day}-daily")),
         "{:?}",
         backlog
-            .admitted
+            .offered
             .iter()
             .map(|t| &t.request.reference)
             .collect::<Vec<_>>()
@@ -976,9 +975,8 @@ fn asks_across_an_ended_week_remake_its_page_once_every_day_is_settled() {
     );
     let backlog = reconcile_pass(root.path(), &queue, &AtomicBool::new(false), false).unwrap();
     let tasks = backlog
-        .admitted
+        .offered
         .iter()
-        .chain(&backlog.ranked)
         .filter(|task| task.request.reference == WEEK_TASK)
         .collect::<Vec<_>>();
     assert_eq!(tasks.len(), 1);

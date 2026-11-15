@@ -5179,7 +5179,7 @@ async function commitJournalEntityMerge(sourceId, targetId, targetName, button) 
     source: sourceName,
     target: targetName
   });
-  if (!window.confirm(prompt)) return;
+  if (!(await window.SolQuestion.ask({ message: prompt, action: ENT_COPY.ENT_TRUST_MERGE_CONFIRM_ACTION, signal: ctx.signal, opener: button })) || ctx.disposed || currentDetailEntity?.id !== sourceId) return;
   button.disabled = true;
   try {
     const result = await apiJson('/app/entities/api/merge', {
@@ -5216,7 +5216,7 @@ function showJournalMergeDone(merge) {
 }
 
 async function restoreJournalEntityVersion(entityId, versionId, button) {
-  if (!window.confirm(ENT_COPY.ENT_TRUST_RESTORE_CONFIRM || '')) return;
+  if (!(await window.SolQuestion.ask({ message: ENT_COPY.ENT_TRUST_RESTORE_CONFIRM || '', action: ENT_COPY.ENT_TRUST_RESTORE_ACTION, signal: ctx.signal, opener: button })) || ctx.disposed || currentDetailEntity?.id !== entityId) return;
   button.disabled = true;
   try {
     await apiJson(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}/restore`, {

@@ -314,6 +314,7 @@ function makePage(options = {}) {
   // not displayed until its inline style shows it.
   doc.displayOf = (el) => {
     if (el.style.display) return el.style.display;
+    if (el.classList.contains('convey-question')) return 'flex';
     if (el.classList.contains('modal')) return 'none';
     return 'block';
   };
@@ -435,7 +436,7 @@ function makePage(options = {}) {
   context.globalThis = context;
   // The notices are in the boot file, the layer in the rest that loads after.
   const files = options.notices ? ['convey_icons.js', 'app.js'] : [];
-  files.push('modal_layer.js', 'error-handler.js', 'report-error.js');
+  files.push('modal_layer.js', 'question.js', 'error-handler.js', 'report-error.js');
   if (options.console) files.push('diagnostic-console.js');
   for (const file of files) {
     vm.runInContext(fs.readFileSync(path.join(staticDir, file), 'utf8'), context, { filename: file });
@@ -451,6 +452,7 @@ function makePage(options = {}) {
     win,
     doc,
     frame,
+    run: source => vm.runInContext(source, context),
     el: (id) => doc.getElementById(id),
     focusId() {
       const a = doc.activeElement;
@@ -519,6 +521,119 @@ function focusIs(page, id, what) {
 }
 
 async function main() {
+
+  await test('questions render text safely, start on cancel, trap focus, and answer only once', async () => {
+    const p = makePage();
+    p.el('unpair').focus();
+    const answer = p.win.SolQuestion.ask({ message: '<img src=x onerror=alert(1)>', action: 'unpair' });
+    const dialog = p.doc.querySelector('.convey-question');
+    const cancel = dialog.querySelector('[data-question-cancel]');
+    const accept = dialog.querySelector('[data-question-accept]');
+    assert.ok(dialog.querySelector('img') === null, 'the message is text, never HTML');
+    assert.strictEqual(dialog.getAttribute('aria-labelledby'), dialog.querySelector('h2').id, 'the question is named');
+    assert.ok(p.doc.activeElement === cancel, 'the safe choice takes focus');
+    assert.ok(p.el('main-content').inert, 'the background is inert from the first interaction');
+    accept.focus();
+    p.key('Tab');
+    assert.ok(p.doc.activeElement === cancel, 'Tab wraps inside the question');
+    assert.strictEqual(await p.win.SolQuestion.ask({message: 'second', action: 'act'}), null, 'a second press cannot replace the pending question');
+    accept.click();
+    accept.click();
+    assert.strictEqual(await answer, true, 'accepted once');
+    assert.ok(p.doc.querySelector('.convey-question') === null && !p.el('main-content').inert, 'closed and inert released');
+    focusIs(p, 'unpair', 'answer returns to the opener');
+  });
+
+  for (const how of ['cancel', 'Escape', 'backdrop']) {
+    await test(`a question cancelled by ${how} settles without acting`, async () => {
+      const p = makePage();
+      p.el('unpair').focus();
+      const answer = p.win.SolQuestion.ask({message: 'remove?', action: 'remove'});
+      const dialog = p.doc.querySelector('.convey-question');
+      if (how === 'cancel') dialog.querySelector('[data-question-cancel]').click();
+      else if (how === 'Escape') p.key('Escape');
+      else dialog.click();
+      assert.strictEqual(await answer, null);
+      focusIs(p, 'unpair', 'cancel returns to the opener');
+    });
+  }
+
+  await test('rename starts with its name, accepts form submission, and allows an empty answer', async () => {
+    for (const value of ['new name', '']) {
+      const p = makePage();
+      const answer = p.win.SolQuestion.ask({message: 'name this key', action: 'save name', value: 'current name'});
+      const input = p.doc.querySelector('.convey-question input');
+      assert.strictEqual(input.value, 'current name');
+      assert.ok(p.doc.activeElement === input, 'the field takes focus');
+      input.value = value;
+      p.doc.dispatch(input.closest('form'), {type: 'submit', bubbles: true});
+      assert.strictEqual(await answer, value);
+    }
+  });
+
+  await test('health redo asks in-page and acts only on accept, using the current row after a refresh', async () => {
+    const source = fs.readFileSync(path.join(crateDir, '../solstone-core-health-web/assets/static/health.js'), 'utf8');
+    const start = source.indexOf('async function requestBacklogReprocess(');
+    const end = source.indexOf('function wireBacklogReprocessActions(', start);
+    assert.ok(start >= 0 && end > start, 'the real health action is present');
+    for (const accepted of [false, true]) {
+      const p = makePage();
+      const writes = [];
+      p.win.apiJson = async (url, opts) => { writes.push({url, body: JSON.parse(opts.body)}); return {status: 'already_complete'}; };
+      const markup = '<div class="backlog-row"><button class="backlog-action" data-day="20261114" data-flavor="from-scratch" data-confirm="question">redo</button><span class="backlog-action-status"></span></div>';
+      const main = p.el('main-content');
+      parseInto(p.doc, main, markup);
+      const opener = main.querySelector('.backlog-action');
+      const request = p.run(source.slice(start, end) + '\nrequestBacklogReprocess;');
+      const asking = request(opener);
+      assert.ok(p.doc.querySelector('.convey-question') && writes.length === 0, 'question precedes write');
+      opener.closest('.backlog-row').remove();
+      parseInto(p.doc, main, markup);
+      const replacement = main.querySelector('.backlog-action');
+      p.doc.querySelector(accepted ? '[data-question-accept]' : '[data-question-cancel]').click();
+      await asking;
+      await settle();
+      assert.strictEqual(writes.length, accepted ? 1 : 0);
+      assert.ok(p.doc.activeElement === replacement, 'focus returns to the redrawn control');
+      if (accepted) assert.deepStrictEqual(writes[0].body, {day: '20261114', flavor: 'from-scratch'});
+    }
+  });
+
+  await test('an error over a question takes one Escape, leaving the question pending and focused', async () => {
+    const p = makePage();
+    const answer = p.win.SolQuestion.ask({message: 'remove?', action: 'remove'});
+    const dialog = p.doc.querySelector('.convey-question');
+    p.win.showError('x');
+    p.frame();
+    p.key('Escape');
+    assert.ok(!p.errorOpen() && dialog.isConnected, 'only the error closed');
+    assert.ok(dialog.contains(p.doc.activeElement), 'focus returns inside the question');
+    p.key('Escape');
+    assert.strictEqual(await answer, null, 'the next Escape cancels the question');
+  });
+
+  for (const how of ['abort', 'popstate', 'hashchange', 'pagehide']) {
+    await test(`a pending question closed by ${how} releases everything and leaves arrival focus alone`, async () => {
+      const p = makePage();
+      p.el('unpair').focus();
+      const controller = new AbortController();
+      const before = [...p.win.listeners.values()].reduce((n, list) => n + list.length, 0);
+      const answer = p.win.SolQuestion.ask({message: 'remove?', action: 'remove', signal: controller.signal});
+      const oldAccept = p.doc.querySelector('[data-question-accept]');
+      let returned = 0;
+      p.el('unpair').addEventListener('focusin', () => { returned += 1; });
+      if (how === 'abort') controller.abort();
+      else p.doc.dispatch(p.win, {type: how});
+      p.el('support-title').focus();
+      p.frame();
+      oldAccept.click();
+      assert.strictEqual(await answer, null);
+      assert.ok(p.doc.querySelector('.convey-question') === null && !p.el('main-content').inert);
+      focusIs(p, 'support-title', 'arrival focus');
+      assert.strictEqual(returned, 0, 'the opener was never focused during the move');
+      assert.strictEqual([...p.win.listeners.values()].reduce((n, list) => n + list.length, 0), before, 'no question listeners remain');
+    });
+  }
   // ---- the report review
 
   for (const [how, close] of [

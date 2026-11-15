@@ -9,6 +9,7 @@
 // never an element.
 
 const assert = require('assert');
+const { answerQuestion } = require('../../solstone-core-convey-shell/tests/question_controls.js');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -633,6 +634,7 @@ function makePage(env, address = '/app/stats/', { answers } = {}) {
   window.SurfaceState = { empty: ({ heading }) => `<p class="empty">${heading}</p>` };
   window.relativeTime = (ms) => `${Math.round(ms / 60000)} min`;
   window.logError = (error, context) => { errors.push({ error, context }); };
+  window.ConveyModalLayer = { reconcile() {} };
   window.appEvents = { buildChanged: () => false, onConnectionState: () => () => {}, listen: () => () => {} };
   window.__SOL_ENTRY_TABLE__ = { views: { stats: { contract: true, fragment: '/app/stats/workspace', scripts: [], styles: [] } } };
   window.solShellData = { apps: [{ name: 'stats', label: 'stats', workspace_url: '/app/stats/workspace' }] };
@@ -678,7 +680,6 @@ function makePage(env, address = '/app/stats/', { answers } = {}) {
 
   const page = {
     env, window, doc, main, clock, calls, errors, loads,
-    confirmAnswer: true,
     holds: [],
     statuses: [],
     hold(call) { return page.holds.some((test) => test(call)); },
@@ -737,16 +738,17 @@ function makePage(env, address = '/app/stats/', { answers } = {}) {
     addEventListener: window.addEventListener.bind(window),
     performance: { mark() {}, clearMarks() {} },
     fetch: window.fetch,
-    confirm: () => page.confirmAnswer,
+    confirm: () => { throw new Error("browser confirm is forbidden"); },
     relativeTime: window.relativeTime,
   });
   context.self = window;
-  window.confirm = () => page.confirmAnswer;
+  window.confirm = () => { throw new Error("browser confirm is forbidden"); };
   const shell = env.shellDir;
   vm.runInContext(fs.readFileSync(path.join(shell, 'store.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'views.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'router.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'focus.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(shell, 'question.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'date-nav.js'), 'utf8'), context);
   // The page's router is on, as it is once a contract view has mounted: it owns the history's ids.
   window.solRouter.start('stats');
@@ -1010,12 +1012,12 @@ module.exports = async function statsContractCases(crateDir) {
     await settle();
     assert.ok(p.writes().length === 1 && JSON.parse(p.writes()[0].body).flavor === 'process-now', 'process now posts');
     // redo, declined then accepted
-    p.confirmAnswer = false;
     p.press(p.q('[data-backlog-day="20261111"][data-backlog-flavor="from-scratch"]'));
+    answerQuestion(p, null);
     await settle();
     assert.ok(p.writes().length === 1, 'a declined redo writes nothing');
-    p.confirmAnswer = true;
     p.press(p.q('[data-backlog-day="20261111"][data-backlog-flavor="from-scratch"]'));
+    answerQuestion(p);
     await settle();
     assert.ok(p.writes().length === 2 && JSON.parse(p.writes()[1].body).flavor === 'from-scratch', 'redo posts');
     // a sort header
@@ -1113,14 +1115,14 @@ module.exports = async function statsContractCases(crateDir) {
     const p = await boot(env);
     const redo = p.q('[data-backlog-day="20261110"][data-backlog-flavor="from-scratch"]');
     redo.focus();
-    p.confirmAnswer = false;
     p.press(redo);
+    answerQuestion(p, null);
     await settle();
     assert.ok(redo.getAttribute('aria-busy') === null && p.writes().length === 0, 'declined: nothing');
     assert.ok(focusOn(p) === 'BUTTON:redo from scratch');
-    p.confirmAnswer = true;
     p.holds.push(isWrite);
     p.press(redo);
+    answerQuestion(p);
     await settle();
     assert.ok(redo.getAttribute('aria-busy') === 'true' && focusOn(p) === 'BUTTON:redo from scratch', 'busy with focus');
     answerHeld(p, isWrite, { status: 'queued' });
@@ -1230,6 +1232,7 @@ module.exports = async function statsContractCases(crateDir) {
     p.holds.length = 0;
     p.holds.push(isWrite);
     p.press(now);
+    answerQuestion(p);
     await settle();
     p.holds.push(isStats);
     p.press(p.find('button', 'refresh'));

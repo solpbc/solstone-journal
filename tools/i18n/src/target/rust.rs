@@ -102,7 +102,7 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
 
     s.push_str(&plural_category_fn(bundle));
 
-    s.push_str("pub fn render_dotted(locale: &str, dotted_id: &str, args: &[(&str, Value)]) -> Result<String, RenderError> {\n");
+    s.push_str("pub fn render_dotted(locale: &str, dotted_id: &str, args: &[(&str, Value)]) -> Result<String, RenderError> { render_dotted_with_options(locale, dotted_id, args, true) }\n\npub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, Value)], use_isolating: bool) -> Result<String, RenderError> {\n");
     s.push_str("    let id = match dotted_id {\n");
     for msg in &bundle.messages {
         s.push_str(&format!(
@@ -112,10 +112,10 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
     }
     s.push_str("        _ => return Err(RenderError::UnknownMessage),\n");
     s.push_str("    };\n");
-    s.push_str("    render(locale, id, args)\n");
+    s.push_str("    render_with_options(locale, id, args, use_isolating)\n");
     s.push_str("}\n\n");
 
-    s.push_str("pub fn render(locale: &str, id: MessageId, args: &[(&str, Value)]) -> Result<String, RenderError> {\n");
+    s.push_str("pub fn render(locale: &str, id: MessageId, args: &[(&str, Value)]) -> Result<String, RenderError> { render_with_options(locale, id, args, true) }\n\npub fn render_with_options(locale: &str, id: MessageId, args: &[(&str, Value)], use_isolating: bool) -> Result<String, RenderError> {\n");
     s.push_str("    let message_id = id;\n\n");
 
     // Check duplicate args
@@ -299,7 +299,9 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
     s.push_str("    let _ = cardinal_rule;\n");
     s.push_str("    let lang = \"und\".parse().map_err(|_| RenderError::FormatFailed)?;\n");
     s.push_str("    let mut bundle = FluentBundle::new(vec![lang]);\n");
-    s.push_str("    let _ = bundle.add_builtins();\n");
+    s.push_str(
+        "    bundle.set_use_isolating(use_isolating);\n    let _ = bundle.add_builtins();\n",
+    );
     s.push_str("    let res = FluentResource::try_new(ftl_content.to_string()).map_err(|_| RenderError::FormatFailed)?;\n");
     s.push_str("    bundle.add_resource(res).map_err(|_| RenderError::FormatFailed)?;\n\n");
 

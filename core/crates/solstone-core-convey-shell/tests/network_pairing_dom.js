@@ -1156,8 +1156,8 @@ async function main() {
     const context = vm.createContext({
       linkCopy: copy,
       ctx: { disposed: false },
-      window: {},
-      confirm: (message) => { asked.push(message); return false; },
+      window: { SolQuestion: { ask: async ({message}) => { asked.push(message); return null; } } },
+      confirm: () => { throw new Error('browser confirm is forbidden'); },
       fetch: async (url) => { fetched.push(url); return response({}); },
     });
     vm.runInContext(quietHelpers(workspace) + workspace.slice(start, end), context);
