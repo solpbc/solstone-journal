@@ -408,13 +408,13 @@ test('daily charts expose exact values through keyboard and touch selection', ()
   assert.strictEqual(chart.getAttribute('role'), 'group', 'interactive descendants remain exposed');
   assert.strictEqual(bars.filter(bar => bar.getAttribute('tabindex') === '0').length, 1);
   bars[2].dispatchEvent({ type: 'keydown', key: 'ArrowLeft', preventDefault() {} });
-  assert.strictEqual(doc.activeElement, bars[1]);
+  assert.ok(doc.activeElement === bars[1], 'ArrowLeft focuses the previous bar');
   assert.strictEqual(readout.textContent, bars[1].getAttribute('aria-label'), 'zero days are inspectable too');
   select.value = '0';
   select.dispatchEvent({ type: 'change' });
   assert.strictEqual(readout.textContent, bars[0].getAttribute('aria-label'), 'native touch selector reads the same exact day');
   bars[0].dispatchEvent({ type: 'keydown', key: 'End', preventDefault() {} });
-  assert.strictEqual(doc.activeElement, bars[2]);
+  assert.ok(doc.activeElement === bars[2], 'End focuses the last bar');
   assert.strictEqual(select.value, '2');
   assert.strictEqual(vm.runInContext('shouldLabel(28, 30)', context), false, 'weekly tick leaves room for endpoint');
   assert.strictEqual(vm.runInContext('shouldLabel(29, 30)', context), true);
@@ -422,6 +422,8 @@ test('daily charts expose exact values through keyboard and touch selection', ()
 
 async function runAsyncCases() {
   for (const runCase of asyncCases) await runCase();
+  // Stats on the view contract: the real fragment through the real shell.
+  cases += await require('./stats_contract_dom.js')(crateDir);
   console.log('DOM CASES: ' + cases + ' passed');
 }
 

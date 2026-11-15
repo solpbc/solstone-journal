@@ -352,10 +352,15 @@ fn ac7_filename_day_fold_and_stats_rollup_agree() {
 fn merged_card_declares_each_state_and_day_scoped_selection_contract() {
     let script = include_str!("../assets/static/token-card.js");
     let stats_script = include_str!("../assets/static/dashboard.js");
-    assert!(script.contains("stats:token-rollup"));
-    assert!(stats_script.contains("dispatchEvent(new CustomEvent('stats:token-rollup'"));
+    // The stats read hands its 30-day rollup to the card it mounted.
+    assert!(script.contains("rollup: rollupFromStats"));
+    assert!(stats_script.contains("hooks.rollup(stats.tokens.by_day || {});"));
+    assert!(stats_script.contains("rollup(byDay) { card.rollup(byDay); }"));
     assert!(script.contains("/app/stats/api/index"));
-    assert!(script.contains("history.pushState"));
+    // A picked day is the card's own history entry, written through the
+    // router on stats' own path.
+    assert!(script.contains("ctx.history.push(`${OWN_PATH}?tokens=${day}#tokens`)"));
+    assert!(!script.contains("history.pushState"));
     assert!(script.contains("heading.focus()"));
     assert!(!script.contains("window.location.href"));
 }

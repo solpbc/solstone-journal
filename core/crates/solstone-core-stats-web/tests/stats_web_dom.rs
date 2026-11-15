@@ -18,6 +18,8 @@ fn stats_web_dom_contract() {
         Ok(_) => {}
     }
     let output = Command::new("node")
+        // The contract cases check that a gone view's markup is collected.
+        .arg("--expose-gc")
         .arg(format!(
             "{}/tests/stats_web_dom.js",
             env!("CARGO_MANIFEST_DIR")
