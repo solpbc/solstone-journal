@@ -208,13 +208,26 @@ pub fn run(args: &[String]) -> Result<(), AcquireError> {
                     .ok_or_else(|| format!("no catalog row for {url}"))?;
                 let temp_dir = tempfile::tempdir().map_err(|e| e.to_string())?;
                 let temp_file = temp_dir.path().join("download.bin");
-                ensure_verified_url(
-                    row.upstream_url,
-                    row.sha256,
-                    Some(row.size_bytes),
-                    &temp_file,
-                    |_, _| {},
-                )
+                // A row sol pbc builds itself (restic-erase) is served only
+                // from the owner origin; every other input comes from its
+                // pinned upstream.
+                if solstone_core_artifact_download::is_owner_built(row.upstream_url, row.origin_key) {
+                    solstone_core_artifact_download::ensure_verified_owner_built_input(
+                        row.origin_key,
+                        row.sha256,
+                        Some(row.size_bytes),
+                        &temp_file,
+                        |_, _| {},
+                    )
+                } else {
+                    ensure_verified_url(
+                        row.upstream_url,
+                        row.sha256,
+                        Some(row.size_bytes),
+                        &temp_file,
+                        |_, _| {},
+                    )
+                }
                 .map_err(|e| e.to_string())?;
                 fs::read(&temp_file).map_err(|e| e.to_string())
             };

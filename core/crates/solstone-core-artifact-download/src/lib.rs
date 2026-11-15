@@ -375,6 +375,50 @@ pub fn ensure_verified_url(
     )
 }
 
+/// Fetch a builder input sol pbc builds itself (a `-sol` catalog row whose
+/// upstream is the owner origin), from the owner origin only, by the row's
+/// own origin key. The bytes are pinned like any builder input. Third-party
+/// inputs keep going through [`ensure_verified_url`], which never admits the
+/// owner origin.
+pub fn ensure_verified_owner_built_input(
+    origin_key: &str,
+    sha256: &str,
+    expected_size: Option<u64>,
+    destination: &Path,
+    mut progress: impl FnMut(u64, Option<u64>),
+) -> Result<bool, ArchiveError> {
+    if origin_key.is_empty()
+        || origin_key.starts_with('/')
+        || origin_key.contains("..")
+        || origin_key.contains("://")
+    {
+        return Err(ArchiveError::Download(format!(
+            "owner-built input key refused: {origin_key}"
+        )));
+    }
+    let url = format!("https://{OWNER_ORIGIN_HOST}/{origin_key}");
+    let policy = DownloadHostPolicy {
+        allowed_hosts: &[OWNER_ORIGIN_HOST],
+        allow_http: false,
+    };
+    download_verified_url_internal(
+        &url,
+        sha256,
+        expected_size,
+        destination,
+        &policy,
+        &mut progress,
+        None,
+    )
+}
+
+/// Whether a catalog row is one sol pbc builds and serves itself: its
+/// upstream is exactly the owner origin at its own key.
+#[must_use]
+pub fn is_owner_built(upstream_url: &str, origin_key: &str) -> bool {
+    upstream_url == format!("https://{OWNER_ORIGIN_HOST}/{origin_key}")
+}
+
 pub mod generation;
 
 mod resume;
@@ -733,6 +777,32 @@ mod tests {
             error,
             ArchiveError::HostRefused { host } if host == "updates.solstone.app"
         ));
+    }
+
+    #[test]
+    fn only_a_row_at_its_own_owner_origin_key_is_owner_built() {
+        assert!(is_owner_built(
+            "https://updates.solstone.app/assets/x/1/x.bz2",
+            "assets/x/1/x.bz2"
+        ));
+        assert!(!is_owner_built(
+            "https://updates.solstone.app/assets/x/1/x.bz2",
+            "assets/y/1/y.bz2"
+        ));
+        assert!(!is_owner_built("https://github.com/x/x.bz2", "x.bz2"));
+        for key in ["", "/abs", "a/../b", "https://example.com/x"] {
+            assert!(
+                ensure_verified_owner_built_input(
+                    key,
+                    "00",
+                    Some(1),
+                    Path::new("/nonexistent"),
+                    |_, _| {}
+                )
+                .is_err(),
+                "{key}"
+            );
+        }
     }
 
     #[test]
