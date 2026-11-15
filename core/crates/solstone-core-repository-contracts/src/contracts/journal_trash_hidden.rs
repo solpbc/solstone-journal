@@ -36,6 +36,14 @@ const NAMES_THE_TRASH: &[(&str, &str)] = &[
         "the trash itself",
     ),
     (
+        "core/crates/solstone-core-trash/src/backup_erase.rs",
+        "the trash's record of where an erased thing sat, for its backups",
+    ),
+    (
+        "core/crates/solstone-core-offload/src/backup_erase.rs",
+        "names where an erased thing sat in each backup, never the journal's own trash",
+    ),
+    (
         "core/crates/solstone-core-journal-io/src/paths.rs",
         "the journal resolver refuses it",
     ),

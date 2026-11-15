@@ -30,7 +30,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 # The catalog version of these builds. restic's own version is a constant and
 # still reads 0.19.0; the file name says which program it is.
-VERSION = "0.19.0-sol1"
+VERSION = "0.19.0-sol2"
 SOURCE_SHA256 = "800779b6c4c2396971c0567b09ccdd435e03155e1a0ec94e8bbf3d98641a8bc2"
 GO_SHA256 = {"go1.26.4.linux-amd64.tar.gz": "1153d3d50e0ac764b447adfe05c2bcf08e889d42a02e0fe0259bd47f6733ad7f"}
 GO_SUM_SHA256 = "94840327111dc755890d04c23208d5b17f549846494d4225445cc70ba8ed0b2b"

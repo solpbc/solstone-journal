@@ -2256,7 +2256,7 @@ fn finish_erase(journal: &Path, kinds: &[&dyn Kind], item: &Item) -> Result<(), 
         .unwrap_or_else(|_| Utc::now());
     // The saved list's first half, before anything is unlinked: what it was,
     // where, and when, for the backup to remove it from every backup.
-    if pending.backups && backup_erase::backups_on(journal) {
+    if pending.backups && backup_erase::backups_on_checked(journal)? {
         backup_erase::write(journal, item)?;
     }
     let files = trash_root(journal).join(&item.id).join(FILES_DIR);

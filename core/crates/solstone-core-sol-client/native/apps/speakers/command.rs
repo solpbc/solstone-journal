@@ -987,7 +987,11 @@ pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
         HttpMethod::Post,
         "/app/speakers/api/wipe",
         vec![],
-        Some(json!({"commit": commit, "erase": erase, "backups": backups.chosen})),
+        Some(if erase {
+            json!({"commit": commit, "erase": true, "backups": backups.chosen})
+        } else {
+            json!({"commit": commit, "erase": false})
+        }),
     ) {
         Ok(report) => report,
         Err(error) => return speaker_error_preserving_stdout(out, error),

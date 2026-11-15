@@ -161,11 +161,12 @@ def tombstone(j, rel, item):
     write(j / rel / TOMB, json.dumps({"cid": item}).encode())
 
 
-def erase_request(j, item, settled, live=(), seg=SEG):
-    return {"roots": [str(j)], "snapshot_roots": True,
+def erase_request(j, item, settled, live=(), seg=SEG, erased="2025-11-27T00:00:00Z"):
+    # Every regular backup taken while it sat in the trash must hold it there.
+    return {"roots": [str(j)],
             "targets": [{"entry": item, "path": seg, "marker": {"name": TOMB, "key": "cid", "value": item},
                          "settled": settled, "trash_copies": True},
-                        {"entry": item, "path": f".trash/{item}"}],
+                        {"entry": item, "path": f".trash/{item}", "expect_from": settled, "expect_until": erased}],
             "trash": {"dir": ".trash", "files": "files", "live": list(live), "item": "item.json", "paths_key": "paths"}}
 
 
@@ -508,8 +509,8 @@ def case_nothing_held(stock, helper):
 
 
 def case_roots(stock, helper):
-    """A request naming the wrong place fails rather than finding nothing; a
-    journal that moved is still reached through its own backups' path."""
+    """A request naming the wrong place is missed, never done; backups of the
+    journal at another place are read, never changed, and counted."""
     with tempfile.TemporaryDirectory(dir="/var/tmp") as tmp:
         repo = Repo(tmp, stock, helper)
         j = journal_case(tmp)
@@ -520,17 +521,19 @@ def case_roots(stock, helper):
         tombstone(moved, SEG, "t1")
         repo.backup(moved, when="2025-11-26 10:00:00")
         shutil.rmtree(moved / ".trash/t1")
-        wrong = erase_request(Path("/nowhere/journal"), "t1", "2025-11-26T00:00:00Z")
-        wrong["snapshot_roots"] = False
-        rc, res = repo.erase(wrong, check=False)
-        assert rc != 0 and res["reason"] == "roots", res
+        old = [sn["id"] for sn in repo.snapshots() if sn["paths"] == [str(j)]]
+        rc, res = repo.erase(erase_request(Path("/nowhere/journal"), "t1", "2025-11-26T00:00:00Z"))
+        e = res["entries"]["t1"]
+        assert e.get("missed") is True and res["snapshots_holding"] == 0, res
         rc, res = repo.erase(erase_request(moved, "t1", "2025-11-26T00:00:00Z"))
-        assert res["snapshots_holding"] == 2 and res["remaining"] == 0, res
+        e = res["entries"]["t1"]
+        assert not e.get("missed") and e.get("elsewhere", 0) >= 1, res
+        assert res["snapshots_holding"] == 1 and res["remaining"] == 0, res
         for sn in repo.snapshots():
-            for p in repo.ls_paths(sn["id"]):
-                assert not (p.endswith(f"{SEG}/audio.m4a") or "/.trash/t1" in p), (sn["paths"], p)
+            held = any(p.endswith(f"{SEG}/audio.m4a") for p in repo.ls_paths(sn["id"]))
+            assert held == (sn["id"] in old), (sn["paths"], held)
         repo.check()
-        return {"wrong_root": "roots", "moved_journal": "reached"}
+        return {"wrong_root": "missed", "other_place": {"elsewhere": e["elsewhere"], "left_alone": len(old)}}
 
 
 def case_shared_after_stop(stock, helper):
@@ -552,6 +555,7 @@ def case_shared_after_stop(stock, helper):
         rc, res = repo.erase(erase_request(j, "t1", "2025-11-26T00:00:00Z"))
         assert res["snapshots_holding"] == 0, "the retry finds nothing left to rewrite"
         assert res["entries"]["t1"]["in_use_kept"] >= 1, res
+        assert not res["entries"]["t1"].get("missed"), "the saved window answer holds across the stop"
         return {"in_use_kept_after_resume": res["entries"]["t1"]["in_use_kept"]}
 
 

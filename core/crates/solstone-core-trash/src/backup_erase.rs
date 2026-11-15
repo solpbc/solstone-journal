@@ -83,16 +83,23 @@ fn entry_path(journal: &Path, id: &str) -> Result<PathBuf, TrashError> {
 
 /// Whether backup is set up on this journal: on, paused or unreachable.
 pub fn backups_on(journal: &Path) -> bool {
-    solstone_core_journal_config::read_journal_config(journal)
-        .ok()
-        .and_then(|read| read.config)
+    backups_on_checked(journal).unwrap_or(false)
+}
+
+/// [`backups_on`], with a configuration that can't be read as an error: an
+/// erase the owner chose to take from the backups never goes ahead on a guess.
+pub fn backups_on_checked(journal: &Path) -> Result<bool, TrashError> {
+    let read = solstone_core_journal_config::read_journal_config(journal)
+        .map_err(|error| TrashError::Io(format!("the journal's settings can't be read: {error}")))?;
+    Ok(read
+        .config
         .and_then(|config| {
             config
                 .get("backup")
                 .and_then(|backup| backup.get("enabled"))
                 .and_then(serde_json::Value::as_bool)
         })
-        .unwrap_or(false)
+        .unwrap_or(false))
 }
 
 /// Write `item`'s entry, once and durably. Safe to repeat: a resumed erase
@@ -116,7 +123,10 @@ pub(crate) fn write(journal: &Path, item: &Item) -> Result<(), TrashError> {
         trashed_at: item.trashed_at.clone(),
         settled_at: item.settled_at.clone(),
         erased_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
-        destination: solstone_core_backup::destination_identity(journal),
+        // Which backup it drains to. One that can't be read stops the erase,
+        // for the sweep to try again, rather than leave an entry bound to none.
+        destination: solstone_core_backup::destination_identity(journal)
+            .map_err(|error| TrashError::Io(format!("the backup set up can't be read: {error}")))?,
     };
     let bytes =
         serde_json::to_vec_pretty(&entry).map_err(|error| TrashError::Io(error.to_string()))?;

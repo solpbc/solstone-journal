@@ -1719,10 +1719,12 @@ window.BackupErase = {
     nextMany: 'removing them from your backups next.',
     pausedOne: 'removing it from your backups once you resume backup.',
     pausedMany: 'removing them from your backups once you resume backup.',
+    unchecked: "your journal couldn't check your backups just now, so this leaves them as they are.",
   },
   _state: null,
   _at: 0,
   _seq: 0,
+  _failed: false,
 
   /** Backup's state for the choice: { set_up, paused, setting }, or null. */
   async state() {
@@ -1730,18 +1732,29 @@ window.BackupErase = {
     try {
       this._state = await window.apiJson('/app/settings/api/trash/backups');
       this._at = Date.now();
+      this._failed = false;
     } catch (_) {
+      // Not known is not "not set up": the confirm says so rather than
+      // dropping the choice without a word. The next confirm asks again.
       this._state = null;
+      this._failed = true;
     }
     return this._state;
   },
 
   /**
    * The checkbox row for a confirm erasing `count` things, or null when backup
-   * isn't set up. Its starting value is the setting's.
+   * isn't set up. Its starting value is the setting's. When backup's state
+   * couldn't be read, a note saying this erase leaves the backups as they are.
    */
   async row(count) {
     const state = await this.state();
+    if (!state && this._failed) {
+      const note = document.createElement('p');
+      note.className = 'backup-erase-choice-hint backup-erase-unchecked';
+      note.textContent = this.COPY.unchecked;
+      return note;
+    }
     if (!state || state.set_up !== true || state.available !== true) return null;
     const many = count !== 1;
     const C = this.COPY;

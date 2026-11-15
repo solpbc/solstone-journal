@@ -232,6 +232,27 @@ pub fn backups_next_line(choice: BackupsChoice) -> Option<&'static str> {
     }
 }
 
+/// A scripted backup-state exchange, as an erase now asks it.
+#[cfg(test)]
+pub(crate) fn backups_state_call(state: Value) -> crate::seam::ExpectedHttpCall {
+    crate::seam::ExpectedHttpCall::Request {
+        expected: ApiRequest {
+            method: HttpMethod::Get,
+            path: "/app/settings/api/trash/backups".to_owned(),
+            params: vec![],
+            json: None,
+            headers: vec![],
+            policy: TimeoutPolicy::Api,
+        },
+        result: Ok(crate::transport::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: state.to_string().into_bytes(),
+            policy: TimeoutPolicy::Api,
+        }),
+    }
+}
+
 /// A scripted `/api/shell` exchange answering with the journal's `today`.
 #[cfg(test)]
 pub(crate) fn shell_today_call(today: &str) -> crate::seam::ExpectedHttpCall {

@@ -938,7 +938,11 @@ fn delete_entity_output(ctx: CommandContext<'_>) -> CommandOutput {
         HttpMethod::Post,
         &format!("{ENTITY_HISTORY_BASE_ROUTE}/delete"),
         vec![],
-        Some(json!({"ids": [entity_id], "erase": erase, "backups": backups.chosen})),
+        Some(if erase {
+            json!({"ids": [entity_id], "erase": true, "backups": backups.chosen})
+        } else {
+            json!({"ids": [entity_id], "erase": false})
+        }),
         TimeoutPolicy::EntityMutation,
     ) {
         Ok(body) => body,
@@ -2448,7 +2452,12 @@ mod tests {
     fn run_delete(args: &[&str], json: Value, answer: Value) -> CommandOutput {
         use crate::seam::ExpectedHttpCall;
         use crate::transport::HttpResponse;
-        let mut calls = vec![ExpectedHttpCall::Request {
+        let mut calls = Vec::new();
+        // An erase now asks first whether it can also go from the backups.
+        if args.contains(&"--erase") {
+            calls.push(crate::command::backups_state_call(json!({"set_up": false})));
+        }
+        calls.push(ExpectedHttpCall::Request {
             expected: ApiRequest {
                 method: HttpMethod::Post,
                 path: "/app/entities/api/journal/delete".to_owned(),
@@ -2463,7 +2472,7 @@ mod tests {
                 body: answer.to_string().into_bytes(),
                 policy: TimeoutPolicy::EntityMutation,
             }),
-        }];
+        });
         // A move that says its erase day asks the journal for its today.
         if answer.pointer("/done/0/result/trash/erase_day").is_some() {
             calls.push(crate::command::shell_today_call("20261111"));
@@ -2503,7 +2512,7 @@ mod tests {
 
         let erased = run_delete(
             &["bob", "--yes", "--erase"],
-            json!({"ids": ["bob"], "erase": true}),
+            json!({"ids": ["bob"], "erase": true, "backups": false}),
             json!({"success": true, "done": [{"id": "bob", "result": {"success": true, "erased": true}}], "failed": []}),
         );
         assert_eq!(erased.exit, 0, "{}", erased.stderr);

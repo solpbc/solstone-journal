@@ -460,7 +460,12 @@ impl<'operation, 'clock> StagedRestore<'operation, 'clock> {
             } else {
                 Ok(ExactArchiveFile {
                     repository_id: witness.repository_id.clone().unwrap_or_default(),
-                    snapshot_id: witness.snapshot_id.clone(),
+                    // A backup erase may have rewritten the archive: restic
+                    // knows it by its current id, the ledger by its first.
+                    snapshot_id: crate::ledger::current_archive_id(
+                        owner.root().canonical_path(),
+                        &witness.snapshot_id,
+                    ),
                     name: witness.file.name.clone(),
                     archive_path: witness.archive_path.clone().unwrap_or_default(),
                     bytes: witness.file.bytes,

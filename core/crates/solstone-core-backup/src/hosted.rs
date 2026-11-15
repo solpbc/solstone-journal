@@ -46,6 +46,20 @@ pub fn load_hosted_binding_at_root(
     decode_hosted_binding(&read.bytes)
 }
 
+/// Where the hosted binding points (account, instance, bucket, prefix), read
+/// without its credential, so a sign-in that lapsed still names the place.
+pub(crate) fn hosted_place(journal: &Path) -> Option<(String, String, String, String)> {
+    let bytes = read_binding_bytes(&hosted_binding_read_path(journal)).ok()?;
+    let raw = serde_json::from_slice::<Value>(&bytes).ok()?;
+    let raw = raw.as_object()?;
+    Some((
+        non_blank(raw, "account_id")?,
+        non_blank(raw, "instance_id")?,
+        non_blank(raw, "bucket")?,
+        non_blank(raw, "prefix")?,
+    ))
+}
+
 pub(crate) fn decode_hosted_binding(bytes: &[u8]) -> Option<HostedBinding> {
     let raw = serde_json::from_slice::<Value>(bytes).ok()?;
     let raw = raw.as_object()?;

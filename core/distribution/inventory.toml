@@ -3343,9 +3343,9 @@ kind = "pinned-members"
 class = "component"
 component = "restic-erase"
 targets = ["linux-x86_64"]
-input = { kind = "catalog-acquired", unit = "restic-erase", filename = "restic-erase_0.19.0-sol1_linux_amd64.bz2" }
+input = { kind = "catalog-acquired", unit = "restic-erase", filename = "restic-erase_0.19.0-sol2_linux_amd64.bz2" }
 staged = [
-    { relpath = "", dest = "lib/solstone-restic/restic-erase", mode = 0o755, extracted_sha256 = "aebbb7230af2443eb40c7489066a88c8053ffadebc3575968f87b0df482336b2" }
+    { relpath = "", dest = "lib/solstone-restic/restic-erase", mode = 0o755, extracted_sha256 = "dfd53403985d6c7c8bada098cb6eb20bc6c525e9eb545b908e07051bf33aaaa1" }
 ]
 
 [[entry]]
@@ -3353,9 +3353,9 @@ kind = "pinned-members"
 class = "component"
 component = "restic-erase"
 targets = ["linux-aarch64"]
-input = { kind = "catalog-acquired", unit = "restic-erase", filename = "restic-erase_0.19.0-sol1_linux_arm64.bz2" }
+input = { kind = "catalog-acquired", unit = "restic-erase", filename = "restic-erase_0.19.0-sol2_linux_arm64.bz2" }
 staged = [
-    { relpath = "", dest = "lib/solstone-restic/restic-erase", mode = 0o755, extracted_sha256 = "b19876dd3449797b772b48b6fe9794fcc39850c4f84dbcfeee479a46258f866c" }
+    { relpath = "", dest = "lib/solstone-restic/restic-erase", mode = 0o755, extracted_sha256 = "5c345d453545f64063b428f9ceeab1e5d4fc671e5841b0c9c0f6c5b3295a8b31" }
 ]
 
 [[entry]]
@@ -3363,9 +3363,9 @@ kind = "pinned-members"
 class = "component"
 component = "restic-erase"
 targets = ["macos-arm64"]
-input = { kind = "catalog-acquired", unit = "restic-erase", filename = "restic-erase_0.19.0-sol1_darwin_arm64.bz2" }
+input = { kind = "catalog-acquired", unit = "restic-erase", filename = "restic-erase_0.19.0-sol2_darwin_arm64.bz2" }
 staged = [
-    { relpath = "", dest = "lib/solstone-restic/restic-erase", mode = 0o755, extracted_sha256 = "98175cbee8efdad8b9ba79b512b9553dde5af3a9c8bbb34cc66f55ef6f41b371" }
+    { relpath = "", dest = "lib/solstone-restic/restic-erase", mode = 0o755, extracted_sha256 = "22d12a557236ef52ce91cca591114b3dada569dff29f466a7d9cf60c0a6b0ab3" }
 ]
 
 # restic-erase: END

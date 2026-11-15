@@ -147,6 +147,7 @@ pub enum BackupError {
     Entropy,
     HostedWrite,
     HostedDelete,
+    HostedRead,
     TeardownRecoveryWrite,
     TeardownRecoveryDelete,
     TeardownRecoveryRead,
@@ -179,6 +180,7 @@ impl fmt::Display for BackupError {
             Self::Entropy => formatter.write_str("could not generate backup key."),
             Self::HostedWrite => formatter.write_str("could not save hosted binding."),
             Self::HostedDelete => formatter.write_str("could not delete hosted binding."),
+            Self::HostedRead => formatter.write_str("could not read hosted binding."),
             Self::TeardownRecoveryWrite => {
                 formatter.write_str("could not save teardown recovery record.")
             }

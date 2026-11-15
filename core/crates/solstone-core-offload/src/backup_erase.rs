@@ -10,15 +10,24 @@
 //! copies, and the media archives the offload ledger names) without it, then
 //! removes the stored pieces only it used and scans every stored pack.
 //!
-//! The local erase never waits for this. One runner at a time; an entry whose
-//! backup destination isn't the one set up now is retired unreached, with no
-//! claim. Each outcome is written to the removal history, and the page reads
-//! [`status`].
+//! Four rules hold throughout:
+//! - **A read that fails decides nothing.** Settings, the destination, the
+//!   trash or the ledger that can't be read leave every entry waiting; only a
+//!   destination that is known to be gone or changed retires an entry, and
+//!   then unreached, with no claim.
+//! - **Each entry stands alone.** One that can't be placed, or that the helper
+//!   reports missed, waits on its own and never holds the others back.
+//! - **Every way the helper ends has a state and a pace:** see [`outcome`].
+//! - **Media archives keep the id the ledger recorded.** Requests name them by
+//!   it; the helper matches it as a snapshot's id or its `original`.
+//!
+//! The local erase never waits for this. One runner at a time. Each outcome is
+//! written to the removal history, and the page reads [`status`].
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use chrono::{SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_backup_runtime::engine::BackupServices;
@@ -31,11 +40,9 @@ use solstone_core_trash::backup_erase::{self, Entry, MARKER_KEY, MARKER_NAME};
 const STATUS_FILE: &str = "status.json";
 const RECONCILED_FILE: &str = "reconciled";
 const RESULTS_FILE: &str = "results.jsonl";
-const OFFLOAD_TAG: &str = solstone_core_backup::archive_readback::OFFLOAD_ARCHIVE_TAG;
 const PIECES_FILE: &str = "pieces.json";
 const REQUEST_FILE: &str = "request.json";
-/// How long a result stays on the page once nothing is pending.
-const KEEP_RESULTS_DAYS: i64 = 7;
+const OFFLOAD_TAG: &str = solstone_core_backup::archive_readback::OFFLOAD_ARCHIVE_TAG;
 
 /// Where the runner stands, for the trash page and the backup page.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -43,8 +50,9 @@ pub struct Status {
     /// `idle`, `running`, `waiting`, `stopped`, `failed` or `stays`.
     pub state: String,
     /// Why, in a stable word: `paused`, `offline`, `busy`, `unavailable`,
-    /// `refused`, `residue`, `unknown`, `versions`, `locks`, `hidden_files`,
-    /// `legacy_archive`, `ledger`, `missed`, `error`.
+    /// `stopped`, `refused`, `residue`, `unknown`, `versions`, `locks`,
+    /// `hidden_files`, `legacy_archive`, `elsewhere`, `ledger`, `missed`,
+    /// `error`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     /// Erased things still to leave the backups.
@@ -58,10 +66,25 @@ pub struct Status {
     pub attempts: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_try: Option<String>,
+    /// Entries waiting on their own, by id: why, and when each may try again.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub held: BTreeMap<String, Held>,
+}
+
+/// One entry waiting on its own.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Held {
+    pub reason: String,
+    pub attempts: u32,
+    pub next_try: String,
 }
 
 fn dir(journal: &Path) -> PathBuf {
     journal.join(backup_erase::DIR)
+}
+
+fn now() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 /// The runner's last word, or idle.
@@ -79,25 +102,9 @@ pub fn status(journal: &Path) -> Status {
     status
 }
 
-fn write_status_full(
-    journal: &Path,
-    state: &str,
-    reason: Option<&str>,
-    pending: usize,
-    staying: usize,
-    attempts: u32,
-    next_try: Option<chrono::DateTime<Utc>>,
-) {
-    let status = Status {
-        state: state.into(),
-        reason: reason.map(str::to_owned),
-        pending,
-        staying,
-        updated: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
-        attempts,
-        next_try: next_try.map(|at| at.to_rfc3339_opts(SecondsFormat::Millis, true)),
-    };
-    if let Ok(bytes) = serde_json::to_vec_pretty(&status) {
+fn write_status(journal: &Path, status: &Status) {
+    if let Ok(bytes) = serde_json::to_vec_pretty(status) {
+        let _ = std::fs::create_dir_all(dir(journal));
         let _ = solstone_core_journal_io::atomic::atomic_replace(
             dir(journal).join(STATUS_FILE),
             &bytes,
@@ -117,6 +124,7 @@ pub struct Report {
     pub staying: usize,
     pub unreached: usize,
     pub pending: usize,
+    pub held: usize,
 }
 
 /// A segment's place, when an entry's path is one.
@@ -141,7 +149,7 @@ fn segment_of(path: &str) -> Option<(&str, &str, &str)> {
 /// recorded: the id a rewritten archive keeps as its `original`. The flag says
 /// a witness from before archive paths were recorded can't be placed: its
 /// archive is left alone, and the entry says so. `Err` when the ledger can't
-/// be read in full.
+/// be read in full for this segment.
 fn archive_paths(
     journal: &Path,
     entry: &Entry,
@@ -152,8 +160,8 @@ fn archive_paths(
         let Some((day, stream, segment)) = segment_of(path) else {
             continue;
         };
-        let catalog = crate::ledger::catalog_segment_as_recorded(journal, day, stream, segment)
-            .map_err(|_| "ledger")?;
+        let catalog =
+            crate::ledger::catalog_segment(journal, day, stream, segment).map_err(|_| "ledger")?;
         if catalog.skipped_records > 0 || !catalog.unreadable_ledgers.is_empty() {
             return Err("ledger");
         }
@@ -176,10 +184,24 @@ fn archive_paths(
     Ok((out, legacy))
 }
 
+/// Whether an entry's paths are ones the helper can name exactly: clean,
+/// relative and slash-separated.
+fn placeable(entry: &Entry) -> bool {
+    let clean = |rel: &str| {
+        !rel.is_empty()
+            && !rel.starts_with('/')
+            && !rel.contains('\\')
+            && rel
+                .split('/')
+                .all(|part| !part.is_empty() && part != "." && part != "..")
+    };
+    entry.paths.iter().all(|path| clean(path)) && clean(&entry.trash_path)
+}
+
 /// Read back, from the destination, which media archives a backup erase
-/// rewrote, and record any move the ledger is missing: after a whole-journal
-/// restore its moves are only as new as the backup restored. Once a day, while
-/// the journal has offloaded media and the helper to rewrite archives with.
+/// rewrote, and record any move the ledger's moves are missing: after a
+/// whole-journal restore they are only as new as the backup restored. Once a
+/// day, while the journal has offloaded media and the helper is here.
 fn reconcile(journal: &Path, services: &BackupServices<'_>) {
     let marker = dir(journal).join(RECONCILED_FILE);
     let fresh = std::fs::metadata(&marker)
@@ -221,15 +243,44 @@ fn reconcile(journal: &Path, services: &BackupServices<'_>) {
     }
 }
 
-/// When a run that failed may try again: an hour, doubling, at most a day.
-fn next_try(attempts: u32) -> chrono::DateTime<Utc> {
-    let hours = 1_i64 << attempts.min(5).saturating_sub(1);
+/// When a failed try may come again: an hour, doubling, at most a day.
+fn next_try(attempts: u32) -> DateTime<Utc> {
+    let hours = 1_i64 << attempts.clamp(1, 6).saturating_sub(1);
     Utc::now() + chrono::Duration::hours(hours.min(24))
+}
+
+fn due(at: &str) -> bool {
+    DateTime::parse_from_rfc3339(at).map_or(true, |at| at.with_timezone(&Utc) <= Utc::now())
 }
 
 /// One line in the engine's own record of each outcome, with its counts.
 fn record_result(journal: &Path, line: Value) {
+    let _ = std::fs::create_dir_all(dir(journal));
     let _ = solstone_core_journal_io::append_jsonl(dir(journal).join(RESULTS_FILE), &line);
+}
+
+/// How one run of the helper ended, for the whole run: a state, its reason,
+/// and whether the next try waits its turn. Per-entry outcomes come from an
+/// ok run's report.
+#[must_use]
+pub fn outcome(
+    ok: bool,
+    reason: Option<&str>,
+    answered: bool,
+) -> (&'static str, &'static str, bool) {
+    match (answered, ok, reason) {
+        // No answer at all: killed, timed out, or stopped part way. The saved
+        // list and the helper's own recovery take it up again.
+        (false, _, _) => ("stopped", "stopped", true),
+        (true, true, _) => ("done", "", false),
+        // Only another holder of the lock is a wait in turn: a running backup.
+        (true, false, Some("lock")) => ("waiting", "busy", false),
+        (true, false, Some("open")) => ("waiting", "offline", true),
+        (true, false, Some("stopped")) => ("stopped", "stopped", true),
+        (true, false, Some("delete_refused")) => ("stays", "refused", true),
+        (true, false, Some("residue")) => ("stays", "residue", true),
+        (true, false, _) => ("failed", "error", true),
+    }
 }
 
 /// Run once: drain every pending entry the backup can take now.
@@ -257,25 +308,40 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
             ..Report::default()
         };
     };
-    let mut report = Report::default();
     let previous = status(journal);
-    let finish = |state: &str, reason: Option<&str>, report: &mut Report, retry: bool| {
-        let attempts = if retry {
+    let mut status = Status {
+        updated: now(),
+        held: previous
+            .held
+            .clone()
+            .into_iter()
+            .filter(|(id, _)| entries.iter().any(|entry| &entry.id == id))
+            .collect(),
+        ..Status::default()
+    };
+    let mut report = Report::default();
+    let finish = |journal: &Path,
+                  mut status: Status,
+                  state: &str,
+                  reason: Option<&str>,
+                  retry: bool,
+                  report: &mut Report| {
+        status.state = state.into();
+        status.reason = reason.map(str::to_owned);
+        status.attempts = if retry {
             previous.attempts.saturating_add(1)
         } else {
             0
         };
-        write_status_full(
-            journal,
-            state,
-            reason,
-            report.pending,
-            report.staying,
-            attempts,
-            retry.then(|| next_try(attempts)),
-        );
+        status.next_try =
+            retry.then(|| next_try(status.attempts).to_rfc3339_opts(SecondsFormat::Millis, true));
+        status.pending = backup_erase::pending(journal).0.len();
+        status.updated = now();
         report.state = state.into();
         report.reason = reason.map(str::to_owned);
+        report.pending = status.pending;
+        report.held = status.held.len();
+        write_status(journal, &status);
     };
     // A run that failed waits its turn, unless the owner erased more since.
     let newest = entries
@@ -284,95 +350,138 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         .max()
         .unwrap_or_default();
     if let Some(at) = previous.next_try.as_deref()
-        && at
-            > Utc::now()
-                .to_rfc3339_opts(SecondsFormat::Millis, true)
-                .as_str()
+        && !due(at)
         && newest <= previous.updated.as_str()
     {
-        report.pending = entries.len();
         report.state = previous.state.clone();
         report.reason = previous.reason.clone();
+        report.pending = entries.len();
         return report;
     }
 
-    // The backup set up now. A configuration that can't be read decides
-    // nothing: everything waits.
-    if solstone_core_backup::get_backup_config(journal).is_err() {
-        report.pending = entries.len();
-        finish("failed", Some("error"), &mut report, true);
-        return report;
-    }
-    // An entry for a destination that isn't the one set up now can't be
-    // reached: it is retired with no claim, and the engine's record says why.
-    let current = solstone_core_backup::destination_identity(journal);
+    // Rule one: a read that fails decides nothing.
+    let current = match solstone_core_backup::destination_identity(journal) {
+        Ok(current) => current,
+        Err(_) => {
+            finish(journal, status, "waiting", Some("error"), true, &mut report);
+            return report;
+        }
+    };
+    // A destination known to be gone, or changed, can't be reached: its
+    // entries are retired unreached, with no claim.
     let mut live = Vec::new();
     for entry in entries {
         if current.is_none() || entry.destination != current {
             record_result(
                 journal,
-                json!({"id": entry.id, "at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true), "outcome": "not_reached"}),
+                json!({"id": entry.id, "at": now(), "outcome": "not_reached"}),
             );
             let _ = backup_erase::retire(journal, &entry.id);
+            status.held.remove(&entry.id);
             report.unreached += 1;
         } else {
             live.push(entry);
         }
     }
-    report.pending = live.len();
     if live.is_empty() {
         let _ = std::fs::remove_file(dir(journal).join(PIECES_FILE));
-        finish("idle", None, &mut report, false);
+        finish(journal, status, "idle", None, false, &mut report);
         return report;
     }
     if solstone_core_backup_runtime::backup_paused(journal) {
-        finish("waiting", Some("paused"), &mut report, false);
+        finish(
+            journal,
+            status,
+            "waiting",
+            Some("paused"),
+            false,
+            &mut report,
+        );
         return report;
     }
     let Some(helper) = erase_paths::helper(services) else {
-        finish("waiting", Some("unavailable"), &mut report, false);
+        finish(
+            journal,
+            status,
+            "waiting",
+            Some("unavailable"),
+            false,
+            &mut report,
+        );
+        return report;
+    };
+    let Ok(in_trash) = solstone_core_trash::ids(journal) else {
+        finish(journal, status, "waiting", Some("error"), true, &mut report);
+        return report;
+    };
+    let Some(root) = erase_paths::journal_root(journal) else {
+        finish(journal, status, "waiting", Some("error"), true, &mut report);
         return report;
     };
     let destination = match erase_paths::open(journal, services) {
         Ok(Some(destination)) => destination,
         Ok(None) => {
-            finish("waiting", Some("unavailable"), &mut report, false);
+            finish(
+                journal,
+                status,
+                "waiting",
+                Some("unavailable"),
+                false,
+                &mut report,
+            );
             return report;
         }
         Err(_) => {
-            finish("waiting", Some("offline"), &mut report, false);
+            finish(
+                journal,
+                status,
+                "waiting",
+                Some("offline"),
+                true,
+                &mut report,
+            );
             return report;
         }
     };
-    // Every item still in the trash, whatever it's doing, keeps its copies.
-    let Ok(in_trash) = solstone_core_trash::ids(journal) else {
-        finish("failed", Some("error"), &mut report, true);
-        return report;
-    };
-    let Some(root) = erase_paths::journal_root(journal) else {
-        finish("failed", Some("roots"), &mut report, true);
-        return report;
-    };
 
-    // One request for every entry.
+    // Rule two: each entry stands alone. One held, and not due, sits out; one
+    // that can't be placed is held on its own.
+    let hold = |status: &mut Status, id: &str, reason: &str| {
+        let attempts = status
+            .held
+            .get(id)
+            .map_or(0, |held| held.attempts)
+            .saturating_add(1);
+        status.held.insert(
+            id.to_owned(),
+            Held {
+                reason: reason.into(),
+                attempts,
+                next_try: next_try(attempts).to_rfc3339_opts(SecondsFormat::Millis, true),
+            },
+        );
+    };
     let mut targets = Vec::new();
     let mut snapshot_paths: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     let mut legacy = BTreeSet::new();
+    let mut runnable = Vec::new();
     for entry in &live {
-        if entry
-            .paths
-            .iter()
-            .chain([&entry.trash_path])
-            .any(|path| path.contains('\\'))
+        if status
+            .held
+            .get(&entry.id)
+            .is_some_and(|held| !due(&held.next_try))
         {
-            finish("failed", Some("error"), &mut report, true);
-            return report;
+            continue;
+        }
+        if !placeable(entry) {
+            hold(&mut status, &entry.id, "error");
+            continue;
         }
         let (archives, legacy_archive) = match archive_paths(journal, entry) {
             Ok(found) => found,
             Err(reason) => {
-                finish("failed", Some(reason), &mut report, true);
-                return report;
+                hold(&mut status, &entry.id, reason);
+                continue;
             }
         };
         if legacy_archive {
@@ -384,7 +493,12 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
                 "marker": {"name": MARKER_NAME, "key": MARKER_KEY, "value": entry.id},
             }));
         }
-        targets.push(json!({"entry": entry.id, "path": entry.trash_path}));
+        // Every backup taken while it sat in the trash holds it there: one
+        // that doesn't means the request didn't reach where it is.
+        targets.push(json!({
+            "entry": entry.id, "path": entry.trash_path,
+            "expect_from": entry.settled(), "expect_until": entry.erased_at,
+        }));
         for (snapshot, paths) in archives {
             snapshot_paths.entry(snapshot).or_default().extend(
                 paths
@@ -392,6 +506,19 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
                     .map(|path| json!({"entry": entry.id, "path": path})),
             );
         }
+        runnable.push(entry);
+    }
+    if runnable.is_empty() {
+        let reason = status.held.values().next().map(|held| held.reason.clone());
+        finish(
+            journal,
+            status,
+            "failed",
+            reason.as_deref(),
+            false,
+            &mut report,
+        );
+        return report;
     }
     let ours: BTreeSet<&str> = live.iter().map(|entry| entry.id.as_str()).collect();
     let live_trash: Vec<String> = in_trash
@@ -400,7 +527,6 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         .collect();
     let request = json!({
         "roots": [root],
-        "snapshot_roots": true,
         "targets": targets,
         "trash": {"dir": solstone_core_trash::TRASH_DIR, "files": "files", "live": live_trash,
                   "item": "item.json", "paths_key": "paths"},
@@ -409,10 +535,15 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
     });
     let request_path = dir(journal).join(REQUEST_FILE);
     if std::fs::write(&request_path, request.to_string()).is_err() {
-        finish("failed", Some("error"), &mut report, true);
+        finish(journal, status, "failed", Some("error"), true, &mut report);
         return report;
     }
-    finish("running", None, &mut report, false);
+    {
+        let mut running = status.clone();
+        running.state = "running".into();
+        running.updated = now();
+        write_status(journal, &running);
+    }
     let erased = destination.erase(
         services,
         &helper,
@@ -420,30 +551,26 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         &dir(journal).join(PIECES_FILE),
     );
     let _ = std::fs::remove_file(&request_path);
-    let erased = match erased {
-        Ok(erased) => erased,
-        Err(_) => {
-            finish("waiting", Some("offline"), &mut report, false);
-            return report;
-        }
+
+    // Rule three: every way the helper ends has a state and a pace.
+    let (answered, ok, reason, result) = match &erased {
+        Ok(erased) => (
+            true,
+            erased.returncode == 0 && erased.result.get("ok") == Some(&Value::Bool(true)),
+            erased.result.get("reason").and_then(Value::as_str),
+            Some(&erased.result),
+        ),
+        Err(_) => (false, false, None, None),
     };
-    let result = &erased.result;
-    if erased.returncode != 0 || result.get("ok") != Some(&Value::Bool(true)) {
-        let (state, reason, retry) = match result.get("reason").and_then(Value::as_str) {
-            Some("lock") => ("waiting", "busy", false),
-            Some("stopped") => ("stopped", "stopped", false),
-            Some("delete_refused") => ("stays", "refused", true),
-            Some("residue") => ("stays", "residue", true),
-            Some("missed") => ("failed", "missed", true),
-            Some("roots") => ("failed", "roots", true),
-            _ => ("failed", "error", true),
-        };
+    let (state, word, retry) = outcome(ok, reason, answered);
+    let Some(result) = result.filter(|_| ok) else {
         if state == "stays" {
-            report.staying = live.len();
+            report.staying = runnable.len();
+            status.staying = runnable.len();
         }
-        finish(state, Some(reason), &mut report, retry);
+        finish(journal, status, state, Some(word), retry, &mut report);
         return report;
-    }
+    };
 
     // Media archives keep their place in the ledger by their first id.
     let moves: Vec<(String, String)> = result
@@ -464,14 +591,12 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
             ))
         })
         .collect();
-    // Not recorded here, the daily reconcile reads them back from the
-    // destination.
+    // Not recorded here, the daily reconcile reads them back.
     let _ = crate::ledger::record_archive_moves(journal, &moves);
 
     // Every listed piece no backup uses is gone. What the storage keeps of a
     // deleted file is the storage's own answer.
-    let storage = destination.storage(services);
-    let keeps = match storage {
+    let keeps = match destination.storage(services) {
         StorageRetention::Removes => None,
         StorageRetention::Keeps(StorageKeeps::Versions) => Some("versions"),
         StorageRetention::Keeps(StorageKeeps::ObjectLock | StorageKeeps::FileLock) => Some("locks"),
@@ -479,28 +604,50 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         StorageRetention::Unknown => Some("unknown"),
     };
     let entries_report = result.get("entries").cloned().unwrap_or(Value::Null);
-    let count = |entry: &Entry, key: &str| {
+    let field = |entry: &Entry, key: &str| {
         entries_report
             .get(&entry.id)
             .and_then(|r| r.get(key))
-            .and_then(Value::as_u64)
-            .unwrap_or(0)
+            .cloned()
     };
-    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-    for entry in &live {
+    let count = |entry: &Entry, key: &str| field(entry, key).and_then(|v| v.as_u64()).unwrap_or(0);
+    let mut stays_reason: Option<&'static str> = keeps;
+    for entry in runnable {
+        // Missed: something that holds it wasn't reached. It waits on its own,
+        // with no claim, and the rest go on.
+        if field(entry, "missed").and_then(|v| v.as_bool()) == Some(true) {
+            hold(&mut status, &entry.id, "missed");
+            record_result(
+                journal,
+                json!({"id": entry.id, "at": now(), "outcome": "missed",
+                "missed_at": field(entry, "missed_at")}),
+            );
+            continue;
+        }
         let shared = count(entry, "in_use_kept") + count(entry, "in_use_trash");
+        let elsewhere = count(entry, "elsewhere") > 0;
         let left_alone = legacy.contains(&entry.id);
-        let action = match (keeps, left_alone, shared) {
-            (Some(_), _, _) | (None, true, _) => Action::BackupEraseStays,
-            (None, false, 0) => Action::BackupErase,
-            (None, false, _) => Action::BackupEraseShared,
+        let action = if keeps.is_some() || left_alone || elsewhere {
+            Action::BackupEraseStays
+        } else if shared > 0 {
+            Action::BackupEraseShared
+        } else {
+            Action::BackupErase
         };
+        if keeps.is_none() {
+            if elsewhere {
+                stays_reason = Some("elsewhere");
+            } else if left_alone && stays_reason.is_none() {
+                stays_reason = Some("legacy_archive");
+            }
+        }
         // Durable: a run that stops before the entry is retired finds the
-        // same history row again rather than writing a second.
-        let at = chrono::DateTime::parse_from_rfc3339(&entry.erased_at)
+        // same history row again rather than writing a second. A row that
+        // can't be written keeps the entry for the next run.
+        let at = DateTime::parse_from_rfc3339(&entry.erased_at)
             .map(|at| at.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now());
-        Removal::with_id(
+        let written = Removal::with_id(
             journal,
             OperationId::durable(at, &format!("{}backups", entry.id)),
             action,
@@ -508,13 +655,18 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
             Surface::Web { page: Page::Backup },
         )
         .for_item(&entry.id)
-        .record_event(Event::Removed, entry.unit.clone());
+        .try_record_event(Event::Removed, entry.unit.clone());
+        if written.is_err() {
+            hold(&mut status, &entry.id, "error");
+            continue;
+        }
         record_result(
             journal,
             json!({
-                "id": entry.id, "at": now, "outcome": format!("{action:?}"),
+                "id": entry.id, "at": now(), "outcome": format!("{action:?}"),
                 "snapshots": count(entry, "snapshots"), "files": count(entry, "files"),
                 "in_use_kept": count(entry, "in_use_kept"), "in_use_trash": count(entry, "in_use_trash"),
+                "elsewhere": count(entry, "elsewhere"),
                 "storage": keeps.unwrap_or("removes"), "legacy_archive": left_alone,
             }),
         );
@@ -523,28 +675,46 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
             Action::BackupEraseShared => report.shared += 1,
             _ => report.removed += 1,
         }
-        let _ = backup_erase::retire(journal, &entry.id);
+        if backup_erase::retire(journal, &entry.id).is_ok() {
+            status.held.remove(&entry.id);
+        }
     }
-    report.pending = backup_erase::pending(journal).0.len();
-    if report.pending == 0 {
+    status.staying = report.staying;
+    if backup_erase::pending(journal).0.is_empty() {
         // Nothing left owes a backup half: the saved list has done its job.
         let _ = std::fs::remove_file(dir(journal).join(PIECES_FILE));
     }
-    match (keeps, legacy.is_empty()) {
-        (Some(kind), _) => finish("stays", Some(kind), &mut report, false),
-        (None, false) => finish("stays", Some("legacy_archive"), &mut report, false),
-        (None, true) if report.pending > 0 => finish("waiting", None, &mut report, false),
+    let any_held = !status.held.is_empty();
+    match (stays_reason, any_held) {
+        (Some(kind), _) => finish(journal, status, "stays", Some(kind), false, &mut report),
         (None, true) => {
-            finish("idle", None, &mut report, false);
-            report.state = "done".into();
+            let reason = status.held.values().next().map(|held| held.reason.clone());
+            finish(
+                journal,
+                status,
+                "failed",
+                reason.as_deref(),
+                false,
+                &mut report,
+            );
+        }
+        (None, false) => {
+            let left = backup_erase::pending(journal).0.len();
+            finish(
+                journal,
+                status,
+                if left > 0 { "waiting" } else { "idle" },
+                None,
+                false,
+                &mut report,
+            );
+            if left == 0 {
+                report.state = "done".into();
+            }
         }
     }
     report
 }
-
-/// How long a `stays` word stays once its copies may have gone: until the
-/// next erase checks again, or a week.
-pub const STAYS_DAYS: i64 = KEEP_RESULTS_DAYS;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing, reason = "test code")]
@@ -603,6 +773,64 @@ mod tests {
         let (placed, legacy) =
             archive_paths(journal, &entry(&["chronicle/20261102/macbook/090000_300"])).unwrap();
         assert!(!legacy && placed.is_empty());
+    }
+
+    #[test]
+    fn every_way_the_helper_ends_has_a_state_and_a_pace() {
+        assert_eq!(outcome(false, None, false), ("stopped", "stopped", true));
+        assert_eq!(outcome(true, None, true), ("done", "", false));
+        assert_eq!(
+            outcome(false, Some("lock"), true),
+            ("waiting", "busy", false)
+        );
+        assert_eq!(
+            outcome(false, Some("open"), true),
+            ("waiting", "offline", true)
+        );
+        assert_eq!(
+            outcome(false, Some("stopped"), true),
+            ("stopped", "stopped", true)
+        );
+        assert_eq!(
+            outcome(false, Some("delete_refused"), true),
+            ("stays", "refused", true)
+        );
+        assert_eq!(
+            outcome(false, Some("residue"), true),
+            ("stays", "residue", true)
+        );
+        for other in [
+            None,
+            Some("list"),
+            Some("find"),
+            Some("rewrite"),
+            Some("index"),
+            Some("new"),
+        ] {
+            assert_eq!(
+                outcome(false, other, true),
+                ("failed", "error", true),
+                "{other:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_clean_relative_paths_are_placed() {
+        assert!(placeable(&entry(&[
+            "chronicle/20261101/macbook/090000_300"
+        ])));
+        for bad in ["/abs", "a/../b", "a//b", "a\\b", "./a", ""] {
+            assert!(!placeable(&entry(&[bad])), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_failed_try_waits_an_hour_doubling_to_a_day() {
+        let hours = |attempts| (next_try(attempts) - Utc::now()).num_minutes() as f64 / 60.0;
+        assert!((hours(1) - 1.0).abs() < 0.05);
+        assert!((hours(3) - 4.0).abs() < 0.05);
+        assert!((hours(40) - 24.0).abs() < 0.05);
     }
 
     #[test]

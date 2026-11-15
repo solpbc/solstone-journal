@@ -129,26 +129,11 @@ fn moved(moves: &std::collections::BTreeMap<String, String>, id: &str) -> Option
     })
 }
 
-fn apply_moves(journal: &Path, mut catalog: DayCatalog) -> DayCatalog {
-    let moves = archive_moves(journal);
-    if moves.is_empty() {
-        return catalog;
-    }
-    for segment in &mut catalog.segments {
-        let witnesses = segment
-            .history
-            .iter_mut()
-            .flat_map(|manifest| manifest.files.iter_mut())
-            .chain(segment.active.iter_mut());
-        for witness in witnesses {
-            if let Some(current) = moved(&moves, &witness.snapshot_id) {
-                witness.snapshot_id = current;
-            }
-        }
-        // A legacy restore binding's revision covers its snapshot id, so it is
-        // never moved; the erase leaves the archives such bindings name alone.
-    }
-    catalog
+/// The id restic knows a media archive by now: the one a backup erase moved
+/// it to, or the id the ledger recorded. Witnesses keep the recorded id
+/// everywhere else; only a call that hands the id to restic translates it.
+pub fn current_archive_id(journal: &Path, recorded: &str) -> String {
+    moved(&archive_moves(journal), recorded).unwrap_or_else(|| recorded.to_owned())
 }
 
 fn path(journal: &Path, day: &str) -> PathBuf {
@@ -238,44 +223,12 @@ pub fn catalog_day(journal: &Path, day: &str) -> Result<DayCatalog, String> {
         }
     }
     match fs::read(&file) {
-        Ok(bytes) => Ok(apply_moves(journal, fold_lines(day, &bytes))),
+        Ok(bytes) => Ok(fold_lines(day, &bytes)),
         Err(_) => {
             result.unreadable_ledgers.push(file.display().to_string());
             Ok(result)
         }
     }
-}
-/// [`catalog_segment`], with each witness naming its archive by the id the
-/// ledger recorded, before any archive move: the id a rewritten archive keeps
-/// as its `original`.
-pub fn catalog_segment_as_recorded(
-    journal: &Path,
-    day: &str,
-    stream: &str,
-    segment: &str,
-) -> Result<SegmentCatalog, String> {
-    let file = path(journal, day);
-    if !valid_day(day) || ledger_directory(journal).is_err() {
-        return Err("ledger".into());
-    }
-    let bytes = match fs::read(&file) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-        Err(_) => return Err("ledger".into()),
-    };
-    let catalog = fold_lines(day, &bytes);
-    Ok(catalog
-        .segments
-        .into_iter()
-        .find(|s| s.stream == stream && s.segment == segment)
-        .unwrap_or(SegmentCatalog {
-            day: day.into(),
-            stream: stream.into(),
-            segment: segment.into(),
-            skipped_records: catalog.skipped_records,
-            unreadable_ledgers: catalog.unreadable_ledgers,
-            ..Default::default()
-        }))
 }
 pub fn catalog_segment(
     journal: &Path,
@@ -470,7 +423,7 @@ mod catalog_tests {
                 "processing":{"record":null,"has_analysis_row":true}}]})
     }
     #[test]
-    fn a_rewritten_archive_is_named_by_its_current_id_everywhere_the_catalog_reads() {
+    fn the_catalog_keeps_the_recorded_id_and_only_the_restic_call_translates_it() {
         let temp = tempfile::tempdir().unwrap();
         let journal = temp.path();
         fs::create_dir_all(journal.join("health/offload")).unwrap();
@@ -479,21 +432,18 @@ mod catalog_tests {
             format!("{}\n", archive_v2("manifest", "raw.flac")),
         )
         .unwrap();
-        let before = catalog_day(journal, "20260101").unwrap();
-        assert_eq!(before.segments[0].active[0].snapshot_id, "b".repeat(64));
+        assert_eq!(current_archive_id(journal, &"b".repeat(64)), "b".repeat(64));
         record_archive_moves(journal, &[("b".repeat(64), "d".repeat(64))]).unwrap();
         let after = catalog_day(journal, "20260101").unwrap();
-        assert_eq!(after.segments[0].active[0].snapshot_id, "d".repeat(64));
+        assert_eq!(after.segments[0].active[0].snapshot_id, "b".repeat(64));
         assert_eq!(
             after.segments[0].history[0].files[0].snapshot_id,
-            "d".repeat(64)
+            "b".repeat(64)
         );
+        assert_eq!(current_archive_id(journal, &"b".repeat(64)), "d".repeat(64));
         // Later moves win; the moves file is not a day ledger.
         record_archive_moves(journal, &[("b".repeat(64), "e".repeat(64))]).unwrap();
-        assert_eq!(
-            catalog_day(journal, "20260101").unwrap().segments[0].active[0].snapshot_id,
-            "e".repeat(64)
-        );
+        assert_eq!(current_archive_id(journal, &"b".repeat(64)), "e".repeat(64));
         assert!(catalog_journal(journal).unreadable_ledgers.is_empty());
         assert!(record_archive_moves(journal, &[("short".into(), "e".repeat(64))]).is_err());
     }
