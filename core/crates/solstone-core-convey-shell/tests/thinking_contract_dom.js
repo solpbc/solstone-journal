@@ -1357,9 +1357,13 @@ module.exports = async function thinkingContractCases(crateDir) {
     q.press(q.byId('thinkingRunsPrompt'));
     await settle();
     assert.ok(q.byId('thinkingRunsPromptModal').open === true, 'the dialog is open');
+    q.reconciles.length = 0;
     q.window.history.back();
     await settle();
     assert.ok(q.byId('thinkingRunsPromptModal').open === false, 'the back closed it');
+    // The layer hears the close at once, so it doesn't pull the focus that
+    // follows back into a closed dialog.
+    assert.ok(q.reconciles.some((o) => o && o.restore === false), 'the modal layer was told, without a restore');
     assert.ok(focusOn(q) !== 'BODY', `focus is not on the page (${focusOn(q)})`);
   });
 

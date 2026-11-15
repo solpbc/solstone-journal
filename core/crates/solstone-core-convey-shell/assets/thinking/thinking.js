@@ -2385,6 +2385,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
 
   function closeThinkingPrompt() {
     $('thinkingRunsPromptModal').close();
+    // The modal layer sees a closed <dialog> only at its next change. Until
+    // then it still holds the dialog active and pulls any focus back into it,
+    // which, closed, leaves focus on the page.
+    window.ConveyModalLayer?.reconcile?.({restore: false});
     state.runsModalFocus?.focus();
     state.runsModalFocus = null;
   }
