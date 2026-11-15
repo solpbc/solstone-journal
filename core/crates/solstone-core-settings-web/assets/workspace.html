@@ -1864,13 +1864,15 @@ button:focus:not(:focus-visible) {
 
 .trash-backups-line { margin: 0; padding: .6em 1em; border-top: 1px solid var(--hairline); color: var(--ink-soft); font-size: .9em; }
 .trash-backups-line[hidden] { display: none; }
-.trash-backups-line .trash-backups-stays { color: var(--warn-text, var(--ink)); }
+.trash-backups-line.trash-backups-warn { color: var(--warn-ink); background: var(--warn-wash); box-shadow: inset 3px 0 0 var(--warn); border-radius: 0 0 8px 8px; }
 .trash-backups-link { color: var(--orange-text-aa); font-weight: 600; text-decoration: none; }
 .trash-backups-link:hover { text-decoration: underline; }
 .trash-backups-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 .trash-backups-switch { flex: none; }
-.trash-backups-why summary { cursor: pointer; }
-@media (max-width: 560px) { .trash-backups-link { display: inline-flex; align-items: center; min-height: 44px; } .trash-backups-why summary { min-height: 44px; display: flex; align-items: center; } }
+#trashBackupsField .settings-field-note { margin: 0.4em 0 0; color: var(--ink-soft); font-size: 0.9em; line-height: 1.45; }
+.trash-backups-why summary { cursor: pointer; padding-top: .2em; font-weight: 600; }
+.trash-backups-why p { margin: .3em 0 0; }
+@media (max-width: 560px) { .trash-backups-link { display: inline-flex; align-items: center; min-height: 44px; } .trash-backups-why summary { padding: .7em 0; } .trash-backups-why p { margin: 0; } }
 .faces-more {
   margin-top: 0.25em;
   color: var(--ink-soft);
@@ -8031,15 +8033,21 @@ const REMOVAL_ACTION = {
   stretch_delete: 'deleted',
   backup_erase: 'removed from your backups',
   backup_erase_shared: 'removed from your backups',
-  backup_erase_stays: 'removed from your backups, but copies stay in storage',
-  backup_erase_partly: 'removed from your backups, but some older backups still hold it',
+  backup_erase_stays: 'removed from your backups, but copies may stay in storage',
+  backup_erase_partly: 'removed from your backups, except some older ones that still hold it',
 };
 // A note a row carries after its words.
 const REMOVAL_ACTION_NOTE = {
   backup_erase_shared: 'a part identical to something you kept stays, as part of what you kept.',
 };
 const REMOVAL_ACTION_FALLBACK = 'removed';
-const REMOVAL_ACTION_NAMES_PLACE = { backup_off: 'backup' };
+const REMOVAL_ACTION_NAMES_PLACE = {
+  backup_off: 'backup',
+  backup_erase: 'backup',
+  backup_erase_shared: 'backup',
+  backup_erase_stays: 'backup',
+  backup_erase_partly: 'backup',
+};
 const REMOVAL_SURFACE = {
   transcripts: 'in transcripts', body: 'in body', import: 'in import', entities: 'in entities',
   settings: 'in settings', home: 'in home', backup: 'in backup', agents: 'in agents',
@@ -8322,10 +8330,11 @@ const TRASH_COPY = {
     settingMore: 'how this works',
     settingMoreLines: [
       'each backup that holds it is rewritten without it, then the storage it took up is cleared, where your storage allows it. no backup is lost, and you can still restore your journal to any of them.',
-      'this covers every backup at the place your backup lives now, including backups kept from before you restored this journal, and media archives. a media archive keeps the media you still have.',
+      'this covers the backups at the place your backup lives now, including backups kept from before you restored this journal, and media archives. a media archive keeps the media you still have.',
       'erase always happens on time in your journal. if backup is paused or your storage can\'t be reached, your backups follow when they can.',
       'if something you kept is identical to what you erased, such as a copy of the same file, that part stays, as part of what you kept.',
-      'it doesn\'t reach a place your backup lived before, copies your other devices made, or what was erased before your journal could do this.',
+      'it doesn\'t reach a place your backup lived before, backups your journal made while it was in another folder, media your journal archived before it noted where each file sits, copies your other devices made, or what was erased before your journal could do this.',
+      'lines your journal wrote about it into things you keep, such as a person\'s details, can stay in backups from before the erase.',
     ],
     waitingOne: '1 erased thing is waiting to be removed from your backups.',
     waitingMany: '{n} erased things are waiting to be removed from your backups.',
@@ -8346,6 +8355,7 @@ const TRASH_COPY = {
     unknownOne: "no backup can restore 1 erased thing. your journal couldn't confirm its copies are gone from your bucket.",
     unknownMany: "no backup can restore {n} erased things. your journal couldn't confirm their copies are gone from your bucket.",
     why: 'why, and what you can do',
+    whyOnly: 'why',
     own: {
       versions: "your storage keeps earlier versions of deleted files, so the copies stay in your bucket until you delete those versions or your provider's own rules remove them.",
       locks: "your bucket can lock files against deletion, so the copies stay there until any lock ends and you delete those versions or your provider's own rules remove them.",
@@ -8353,11 +8363,11 @@ const TRASH_COPY = {
       refused: "your storage said no, or said yes and kept them. if the key your journal uses can't delete files, give it that permission. your journal tries again {when}.",
       unknown: "check your bucket's versioning, lifecycle and lock settings to make sure the copies are gone.",
     },
-    // Placeholder words for VPX: some backups can still restore it.
-    partOne: '1 erased thing is out of your backups, but some older backups still hold it.',
-    partMany: '{n} erased things are out of your backups, but some older backups still hold them.',
+    // Some backups can still restore it, so these never open with "no backup can restore".
+    partOne: '1 erased thing is removed from your backups, except some older ones that still hold it.',
+    partMany: '{n} erased things are removed from your backups, except some older ones that still hold them.',
     part: {
-      legacy_archive: "media your journal archived before it recorded where each file sits can't be taken out of that archive safely, so the archive keeps it.",
+      legacy_archive: "media your journal archived before it noted where each file sits can't be taken out of that archive safely, so that archive keeps it.",
       elsewhere: 'backups your journal made while it was in another folder are left as they are.',
     },
   },
@@ -8856,6 +8866,8 @@ function renderTrashBackups(backups) {
   line.replaceChildren();
   const sentence = trashBackupsSentence(backups);
   line.hidden = !sentence;
+  // Can't finish is the one state that warns: it stays until it's true no longer.
+  line.classList.toggle('trash-backups-warn', Boolean(sentence) && backups.state === 'stays');
   if (sentence) line.append(...sentence);
 }
 
@@ -8873,9 +8885,9 @@ function trashBackupsSentence(backups) {
   const staying = Number(backups.staying) || 0;
   const fill = (one, many, count) => trashFill(count === 1 ? one : many, { n: count });
   const text = (value) => document.createTextNode(value);
-  const why = (body) => {
+  const why = (body, summary = B.why) => {
     const details = removalEl('details', 'trash-backups-why');
-    details.append(removalEl('summary', '', B.why), removalEl('p', '', body));
+    details.append(removalEl('summary', '', summary), removalEl('p', '', body));
     return details;
   };
   switch (backups.state) {
@@ -8888,7 +8900,14 @@ function trashBackupsSentence(backups) {
       if (reason === 'unknown') return [text(fill(B.unknownOne, B.unknownMany, count) + ' '), why(B.own.unknown)];
       // Some backups can still restore it: never "no backup can restore".
       if (reason === 'legacy_archive' || reason === 'elsewhere') {
-        return [text(fill(B.partOne, B.partMany, count) + ' '), why(B.part[reason])];
+        // `partly` counts only what an older backup still holds; the rest of
+        // `staying` is what the storage keeps (`keeps`), said in its own words.
+        const partly = Number.isInteger(backups.partly) ? backups.partly : count;
+        const said = [text(fill(B.partOne, B.partMany, partly || count) + ' '), why(B.part[reason], B.whyOnly)];
+        const rest = Number.isInteger(backups.partly) ? count - partly : 0;
+        if (rest > 0 && backups.keeps === 'unknown') said.push(text(fill(B.unknownOne, B.unknownMany, rest) + ' '), why(B.own.unknown));
+        else if (rest > 0 && B.own[backups.keeps]) said.push(text(fill(B.staysOne, B.staysMany, rest) + ' '), why(B.own[backups.keeps]));
+        return said;
       }
       if (B.own[reason]) return [text(fill(B.staysOne, B.staysMany, count) + ' '), why(B.own[reason])];
       return [text(fill(B.unknownOne, B.unknownMany, count))];

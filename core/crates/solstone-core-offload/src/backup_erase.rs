@@ -60,6 +60,13 @@ pub struct Status {
     /// Erased things whose copies stay in storage (`stays`).
     #[serde(default)]
     pub staying: usize,
+    /// Of `staying`, those some older backups still hold (`BackupErasePartly`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partly: Option<usize>,
+    /// What the storage keeps of deleted files (`versions`, `locks`,
+    /// `hidden_files`, `unknown`) when any entry of the run stayed for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keeps: Option<String>,
     pub updated: String,
     /// Runs that failed in a row, and when the next may try.
     #[serde(default)]
@@ -125,6 +132,7 @@ pub struct Report {
     pub staying: usize,
     pub unreached: usize,
     pub pending: usize,
+    pub partly: usize,
     pub held: usize,
 }
 
@@ -811,7 +819,11 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
             }),
         );
         match action {
-            Action::BackupEraseStays | Action::BackupErasePartly => report.staying += 1,
+            Action::BackupEraseStays => report.staying += 1,
+            Action::BackupErasePartly => {
+                report.staying += 1;
+                report.partly += 1;
+            }
             Action::BackupEraseShared => report.shared += 1,
             _ => report.removed += 1,
         }
@@ -820,6 +832,10 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         }
     }
     status.staying = report.staying;
+    status.partly = Some(report.partly);
+    status.keeps = (report.staying > report.partly)
+        .then(|| keeps.map(str::to_owned))
+        .flatten();
     let (left, torn) = backup_erase::pending(journal);
     if !torn.is_empty() {
         // An entry that can't be read still owes its backup half: it isn't

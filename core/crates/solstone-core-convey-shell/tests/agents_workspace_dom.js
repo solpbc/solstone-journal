@@ -1256,7 +1256,7 @@ async function test(name, body) {
     has(view, 'data-memory-step="move"', 'a new delete starts on the first step');
     await click({memoryEraseStep: '1'});
     await click({memoryErase: '1'});
-    assert.deepStrictEqual(calls.find(call => call.method === 'DELETE').body, {erase: true});
+    assert.deepStrictEqual(calls.find(call => call.method === 'DELETE').body, {erase: true, backups: false});
     lacks(view, 'erase me');
     assert.strictEqual(notifications.at(-1).title, TRASH_COPY.receipt.erased.title.replace('{noun}', TRASH_COPY.noun.memory));
   });

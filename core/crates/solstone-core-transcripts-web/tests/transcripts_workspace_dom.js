@@ -2323,7 +2323,7 @@ test('delete one location row from 3 rows: recover restores its order, a refusal
   h.doc.getElementById('trDeleteSegmentModalErase').dispatchEvent({ type: 'click' });
   h.doc.getElementById('trDeleteSegmentModalEraseConfirm').dispatchEvent({ type: 'click' });
   await new Promise((r) => setTimeout(r, 10));
-  assert.deepStrictEqual(h.deletes.at(-1).body, { erase: true });
+  assert.deepStrictEqual(h.deletes.at(-1).body, { erase: true, backups: false });
   const rowsAfterErase = h.doc.querySelectorAll('.tr-location-row');
   assert.strictEqual(rowsAfterErase.length, 2);
   assert.ok([...rowsAfterErase].every((r) => r.dataset.stream !== 'watch'));
@@ -2853,7 +2853,7 @@ test('receipt: every answer to a delete has its own card, and only a change take
   ];
   for (const item of cases) {
     const env = await deleteFromDialog({ deleteResponse: item.reply }, { erase: item.erase });
-    assert.deepStrictEqual(env.deletes.at(-1).body, item.erase ? { erase: true } : null);
+    assert.deepStrictEqual(env.deletes.at(-1).body, item.erase ? { erase: true, backups: false } : null);
     assertReceipt(env.notifications.at(-1), item.kind, { settled: Boolean(item.settled), buttons: item.buttons || [] });
     assert.strictEqual(getZoomPills(env.doc).length, item.gone ? 2 : 3, `${item.kind}: the row leaves only when the journal changed`);
     if (item.buttons) {

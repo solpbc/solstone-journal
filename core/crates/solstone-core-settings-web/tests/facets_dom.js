@@ -970,7 +970,7 @@ async function testCase(name, fn) {
     await click(byId('facetDeleteModalErase'));
     await click(byId('facetDeleteModalEraseConfirm'));
     await settle();
-    assert.deepStrictEqual(deletes.at(-1).body, { consent: true, erase: true });
+    assert.deepStrictEqual(deletes.at(-1).body, { consent: true, erase: true, backups: false });
     assert.strictEqual(harness.window.location.href, '/app/settings/facets/work-life', 'a refusal stays on the page');
     assert.strictEqual(shown.at(-1).title, C.receipt.eraseRefused.title.replace('{noun}', C.noun));
     assert.strictEqual(shown.at(-1).message, C.refused.last_facet);
