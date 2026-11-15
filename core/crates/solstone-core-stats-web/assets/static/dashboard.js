@@ -1246,11 +1246,9 @@
     const previous = document.getElementById('stats-read-error');
     if (previous) previous.remove();
     const retry = el('button', {type: 'button', className: 'stats-refresh', 'data-stats-action': 'try-again'}, ['try again']);
-    retry.addEventListener('click', () => {
-      // Busy while its read is out, never disabled: focus stays on it.
-      if (window.SolFocus.isBusy(retry)) return;
-      retryAgain(retry);
-    });
+    // Busy while its read is out, never disabled: focus stays on it. A
+    // press while it is out shares that read.
+    retry.addEventListener('click', () => retryAgain(retry));
     notice.appendChild(el('div', {id: 'stats-read-error', className: 'alert alert-error', role: 'alert'}, [
       "couldn't load statistics. try again to refresh this view. ", retry
     ]));
@@ -1326,10 +1324,10 @@
     // the line that says what happened. A redraw draws them again.
     const writes = new Map();
 
+    // The store ends the card's reads with the view.
     const card = window.StatsTokenCard
       ? window.StatsTokenCard.mount(ctx, root)
-      : { rollup() {}, dispose() {} };
-    ctx.onDispose(() => card.dispose());
+      : { rollup() {} };
 
     function ready(state) {
       if (reported) return;
@@ -1447,8 +1445,10 @@
           return response.json();
         })
         .then(data => {
+          // The store never answers a view that has gone, so this draws only
+          // into the view on the page.
           done();
-          if (!data || ctx.disposed) return;
+          if (!data) return;
           const error = document.getElementById('stats-read-error');
           const fromError = error && error.contains(document.activeElement);
           if (error) error.remove();
@@ -1461,7 +1461,6 @@
         })
         .catch(() => {
           done();
-          if (ctx.disposed) return;
           const fromError = (document.getElementById('stats-read-error') || {contains: () => false}).contains(document.activeElement);
           const retry = readFailure(again => load(again));
           if (fromError) window.SolFocus.refocus(document, true, [retry]);
@@ -1480,7 +1479,7 @@
       }
       const refresh = target.closest('[data-stats-action="refresh"]');
       if (refresh && root.contains(refresh)) {
-        if (window.SolFocus.isBusy(refresh)) return;
+        // A press while its read is out shares that read (load).
         load(refresh);
       }
     });

@@ -6,8 +6,9 @@
 //
 // Stats is on the view contract, so this script only defines a factory:
 // `StatsTokenCard.mount(ctx, root)` starts the card inside the view's markup
-// and returns `{ rollup(byDay), dispose() }`. Nothing is kept here between
-// mounts; everything a mount adds outside its markup goes through `ctx`.
+// and returns `{ rollup(byDay) }`. Nothing is kept here between mounts;
+// everything a mount adds outside its markup goes through `ctx`, and the
+// view's store ends its reads when the view goes.
 (function (global) {
   'use strict';
 
@@ -15,7 +16,7 @@
 
   function mount(ctx, root) {
   const card = root.querySelector('.token-card');
-  if (!card) return { rollup() {}, dispose() {} };
+  if (!card) return { rollup() {} };
 
   const rollup = root.querySelector('#tokenRollup');
   const heading = root.querySelector('#tokenDayHeading');
@@ -473,13 +474,7 @@
     select(validDay(day) ? day : today(), { focus: true });
   });
 
-  return {
-    rollup: rollupFromStats,
-    dispose() {
-      usageRead?.abort();
-      usageRead = null;
-    }
-  };
+  return { rollup: rollupFromStats };
   }
 
   global.StatsTokenCard = { mount };
