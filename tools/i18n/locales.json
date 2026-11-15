@@ -153,6 +153,10 @@
     {
       "namespace": "trust",
       "owner": "transparency"
+    },
+    {
+      "namespace": "solpbc",
+      "owner": "solpbc-org"
     }
   ],
   "bundles": [
@@ -217,6 +221,12 @@
     },
     {
       "id": "transparency",
+      "locales": [
+        "en-US"
+      ]
+    },
+    {
+      "id": "solpbc-org",
       "locales": [
         "en-US"
       ]
