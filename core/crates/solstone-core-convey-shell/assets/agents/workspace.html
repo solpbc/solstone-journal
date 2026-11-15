@@ -1187,8 +1187,9 @@
       const held = inView || Boolean(modalBefore && SolFocus.focusLost(document)) || followed;
       const hadKey = inView ? keyOf(active) : null;
       const inLane = inView && Boolean(active.closest?.('.lanes'));
-      draw();
-      for (const key of busyKeys) SolFocus.setBusy(findKey(view, key), true);
+      const typed = typedFields();
+      // Nothing to put back on a draw that left the page as it was: busy controls still are.
+      if (draw(typed)) for (const key of busyKeys) SolFocus.setBusy(findKey(view, key), true);
       const now = routeKey();
       const moved = now !== drawnRoute;
       let left = null;
@@ -1212,16 +1213,71 @@
       const targets = [hadKey, ...(aim || []), left?.opener, left?.row,
         inLane && !top ? '.lanes [data-lane][aria-checked="true"]' : null, top ? 'h2' : 'h1'];
       SolFocus.refocus(document, true, targets.map(entry => resolveLanding(scope, entry)));
+      keepCaret(typed);
     }
-    function draw() {
+    // A draw that would put back the markup already on the page leaves the page alone, so the
+    // focused control stays the same node and a screen reader has nothing new to read. "Already
+    // on the page" is the string the last draw wrote, while the view still holds what that draw
+    // left: anything else that writes to the view (an error, the loading line, a request's box)
+    // changes its first or last child or its count.
+    let drawn = null;
+    function stillDrawn(html) {
+      return Boolean(drawn && drawn.html === html && view.firstChild === drawn.first
+        && view.lastChild === drawn.last && view.childNodes.length === drawn.count);
+    }
+    // Text fields the owner has typed in, by id: what they hold, what the journal drew there,
+    // and the caret of the one with focus.
+    const TYPED = /^(text|search|url|tel|email|number|password|textarea)$/;
+    function typedFields() {
+      const active = document.activeElement;
+      const typed = [];
+      for (const el of [...view.querySelectorAll('input'), ...view.querySelectorAll('textarea')]) {
+        if (!el.id || !TYPED.test(el.type || 'text') || el.value === el.defaultValue) continue;
+        let caret = null;
+        if (el === active) { try { caret = [el.selectionStart, el.selectionEnd, el.selectionDirection]; } catch (_) {} }
+        typed.push({id: el.id, node: el, value: el.value, was: el.defaultValue, caret,
+          open: el.closest('details[open]')?.querySelector('summary')?.textContent ?? null});
+      }
+      const open = active && view.contains(active) ? active.closest('details[open]') : null;
+      if (open) typed.push({open: open.querySelector('summary')?.textContent ?? null});
+      return typed;
+    }
+    // A field drawn again keeps what the owner typed, unless the journal's own value for it
+    // changed (a save went through), and a disclosure that held it stays open.
+    function keepTyped(typed) {
+      const open = new Set(typed.map(entry => entry.open).filter(text => text !== null));
+      if (open.size) for (const details of view.querySelectorAll('details')) if (open.has(details.querySelector('summary')?.textContent ?? null)) details.open = true;
+      for (const entry of typed) {
+        if (!entry.id) continue;
+        const el = document.getElementById(entry.id);
+        if (el && el !== entry.node && view.contains(el) && el.defaultValue === entry.was) el.value = entry.value;
+      }
+    }
+    function keepCaret(typed) {
+      for (const entry of typed) {
+        if (!entry.caret) continue;
+        const el = document.getElementById(entry.id);
+        if (el && el !== entry.node && el === document.activeElement) { try { el.setSelectionRange(...entry.caret); } catch (_) {} }
+      }
+    }
+    function draw(typed = []) {
+      let page;
+      if (route.name === 'connection') page = connectionPage(route.connection);
+      else if (route.name === 'activity') page = activityPage();
+      else if (route.name === 'memories') page = memoriesPage();
+      else page = home();
+      const box = dialog === 'connect' ? connectDialog() : dialog ? confirmDialog(dialog) : '';
+      // The journal-clock notes are placed after the draw, so the note they'd show is part of
+      // what's drawn: a time zone that changes while the page is open draws again.
+      const clock = window.JournalClock;
+      const note = clock?.placeNote && clock.differs?.() ? (clock.zoneNoteText?.() || '') : '';
+      const html = `${page}\u0000${box}\u0000${note}`;
+      if (stillDrawn(html)) return false;
       const scrolled = view.querySelector?.('.modal-card')?.scrollTop || 0;
-      if (route.name === 'connection') view.innerHTML = connectionPage(route.connection);
-      else if (route.name === 'activity') view.innerHTML = activityPage();
-      else if (route.name === 'memories') view.innerHTML = memoriesPage();
-      else view.innerHTML = home();
-      if (dialog === 'connect') view.insertAdjacentHTML('beforeend', connectDialog());
-      else if (dialog) view.insertAdjacentHTML('beforeend', confirmDialog(dialog));
+      view.innerHTML = page;
+      if (box) view.insertAdjacentHTML('beforeend', box);
       if (scrolled) { const card = view.querySelector?.('.modal-card'); if (card) card.scrollTop = scrolled; }
+      keepTyped(typed);
       const scope = document.getElementById('scope');
       const facetField = document.getElementById('facet-field');
       if (scope && facetField) { const sync = () => facetField.classList.toggle('hidden', scope.value !== 'facets'); scope.addEventListener('change', sync); sync(); }
@@ -1247,6 +1303,8 @@
           window.JournalClock.placeNote(el, { inside: false });
         }
       }
+      drawn = {html, first: view.firstChild, last: view.lastChild, count: view.childNodes.length};
+      return true;
     }
 
     function enableViewKey(op) { const { elapsed_ms, ...stable } = op || {}; return JSON.stringify(stable); }
@@ -1374,7 +1432,7 @@
       }
       if (target.dataset.activityConnection) { event.preventDefault(); await loadActivity(target.dataset.activityConnection); return; }
       if (target.dataset.connection) { event.preventDefault(); const [kind,id] = target.dataset.connection.split(':'); await openConnection(state.connections.find(item => item.kind === kind && item.id === id)); return; }
-      if (target.dataset.copy) { await navigator.clipboard?.writeText(target.dataset.copy); target.textContent = 'copied'; return; }
+      if (target.dataset.copy) { await navigator.clipboard?.writeText(target.dataset.copy); target.textContent = 'copied'; drawn = null; return; }
       if (target.dataset.activityIndex) {
         const entry = activity.entries[Number(target.dataset.activityIndex)];
         view.insertAdjacentHTML('beforeend', activityDetail(entry));
@@ -1426,18 +1484,21 @@
       } catch (error) { notify(error.message || 'that change did not finish'); }
       finally { markBusy(busy, target, false); }
     });
-    // A back or forward onto one of this view's own entries closes an open dialog. Focus leaves it
-    // first, so the page under the dialog can take focus once the layer lets it.
+    // A back or forward onto one of this view's own entries closes an open dialog. The dialog
+    // goes first and the layer is told a move closed it, so it neither pulls focus back into the
+    // dialog nor hands it to an opener the draw has replaced; then focus goes to the page, as
+    // every other back puts it.
     function closeDialogsForMove() {
       if (!view.querySelector('.modal')) return;
-      if (view.querySelector('.modal')?.contains?.(document.activeElement)) document.getElementById('main-content')?.focus?.({preventScroll: true});
+      const held = Boolean(view.querySelector('.modal')?.contains?.(document.activeElement));
       againTarget = null;
       stopWatch();
       pairingCode = null;
       dialog = null;
       for (const modal of view.querySelectorAll('.modal')) modal.remove();
       render();
-      window.ConveyModalLayer?.reconcile?.();
+      window.ConveyModalLayer?.reconcile?.({restore: false});
+      if (held || SolFocus.focusLost(document)) document.getElementById('main-content')?.focus?.({preventScroll: true});
     }
     const ownPath = ctx.route?.pathname || window.location.pathname;
     ctx.on(window, 'popstate', () => { if (window.location.pathname === ownPath) closeDialogsForMove(); });
