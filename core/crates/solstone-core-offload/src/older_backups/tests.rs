@@ -362,7 +362,33 @@ fn trashed(journal: &Path, key: &str, cid: &str, still_waiting: bool) {
     .unwrap();
     if still_waiting {
         std::fs::create_dir_all(journal.join(".trash").join(cid).join("files")).unwrap();
+    } else {
+        erased_item(journal, NOW - 500, cid);
     }
+}
+
+/// An erase entry as the trash writes it for one item: the item's id is in
+/// the operation's name.
+fn erased_item(journal: &Path, at: i64, item: &str) {
+    let operation = format!(
+        "{}-{}",
+        DateTime::from_timestamp(at, 0)
+            .unwrap()
+            .format("%Y%m%dT%H%M%S%3fZ"),
+        item.chars()
+            .filter(char::is_ascii_alphanumeric)
+            .collect::<String>()
+    );
+    let id = format!("{operation}-erased-u0badc0de");
+    let dir = journal.join("config/removals");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join(format!("{id}.json")),
+        serde_json::to_vec(&json!({"schema": 1, "id": id, "operation": operation, "event": "erased",
+            "at": iso(at), "action": "erase", "surface": "policy", "policy": "trash", "unit": {"kind": "entity"}}))
+        .unwrap(),
+    )
+    .unwrap();
 }
 
 fn archive(id: &str) -> SnapshotFacts {
@@ -484,4 +510,412 @@ fn a_tombstone_beside_media_still_present_does_not_count_as_erased() {
     .unwrap();
     let classes = classify_archives(temp.path(), &[archive(&id)]);
     assert!(classes.removable.is_empty());
+}
+
+// ------------------------------------------------- more archive and offer rows
+
+#[test]
+fn an_archive_whose_recording_cant_be_found_may_still_hold_something() {
+    let temp = journal();
+    let id = "7".repeat(64);
+    offloaded(temp.path(), "090000_300", &id);
+    std::fs::remove_dir_all(segment_dir(temp.path(), "090000_300")).unwrap();
+    let classes = classify_archives(temp.path(), &[archive(&id)]);
+    assert!(classes.removable.is_empty());
+    assert_eq!(classes.mixed, BTreeSet::from([id]));
+}
+
+#[test]
+fn an_archive_of_a_recording_removed_another_way_is_not_this_features() {
+    let temp = journal();
+    let id = "8".repeat(64);
+    offloaded(temp.path(), "090000_300", &id);
+    // A retention policy's tombstone names no trash item an erase recorded.
+    trashed(temp.path(), "090000_300", "sha256:abc", true);
+    std::fs::remove_dir_all(temp.path().join(".trash")).unwrap();
+    let classes = classify_archives(temp.path(), &[archive(&id)]);
+    assert!(classes.removable.is_empty() && classes.mixed.is_empty());
+}
+
+#[test]
+fn ready_only_when_the_press_would_take_something() {
+    let temp = journal();
+    erase(temp.path(), NOW - 1000, "090000_300");
+    // Only a backup kept from before a restore predates the erase.
+    let mut only_kept = survey(("aa", NOW - 400), &[]);
+    only_kept["kept_before_restore"] = json!([dated("k1", NOW - 90_000)]);
+    write_backup(
+        temp.path(),
+        backup_with((NOW - 100, "aa"), json!({"survey": only_kept})),
+    );
+    assert_ne!(state_of(&view(temp.path(), NOW, false)), "ready");
+}
+
+// ------------------------------------------------------- removal, fake restic
+
+mod removal {
+    use super::*;
+    use solstone_core_backup::{
+        Destination, generate_and_store_keys, set_destination, set_enabled,
+    };
+    use solstone_core_backup_runtime::{
+        Clock, HttpRequest, HttpResponse, HttpTransport, NativeJournalMaintenance, ToolOutput,
+        ToolRequest, ToolRunner,
+    };
+    use std::cell::RefCell;
+
+    const BASE: &str = "/journal";
+
+    struct Fixed;
+    impl Clock for Fixed {
+        fn now_unix(&self) -> i64 {
+            NOW
+        }
+        fn iso_week(&self) -> u8 {
+            46
+        }
+    }
+
+    struct NoHttp;
+    impl HttpTransport for NoHttp {
+        fn execute(
+            &self,
+            _: &HttpRequest,
+        ) -> Result<HttpResponse, solstone_core_backup_runtime::hosted_runtime::HttpError> {
+            Err(solstone_core_backup_runtime::hosted_runtime::HttpError::Other)
+        }
+    }
+
+    /// Restic's verbs this feature uses, over a list held in memory.
+    #[derive(Default)]
+    struct FakeRestic {
+        snapshots: RefCell<Vec<Value>>,
+        /// `ls` lines for the kept backup, beyond the snapshot line.
+        listed: RefCell<Vec<String>>,
+        /// Forget calls that fail (1-based), forgetting nothing.
+        fail_forgets: Vec<usize>,
+        /// A snapshot that appears after this forget call (1-based).
+        appears_after: Option<(usize, Value)>,
+        forgets: RefCell<usize>,
+        verbs: RefCell<Vec<String>>,
+    }
+
+    fn ok(stdout: String) -> ToolOutput {
+        ToolOutput {
+            returncode: 0,
+            stdout: stdout.into_bytes(),
+            stderr: vec![],
+        }
+    }
+
+    impl ToolRunner for FakeRestic {
+        fn run(&self, request: &ToolRequest<'_>) -> std::io::Result<ToolOutput> {
+            let args: Vec<String> = request
+                .argv
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect();
+            let verb = args.first().cloned().unwrap_or_default();
+            self.verbs.borrow_mut().push(verb.clone());
+            Ok(match verb.as_str() {
+                "snapshots" => ok(serde_json::to_string(&*self.snapshots.borrow()).unwrap()),
+                "unlock" => ok(String::new()),
+                "ls" => {
+                    let mut out = String::from("{\"struct_type\":\"snapshot\"}\n");
+                    for line in self.listed.borrow().iter() {
+                        out.push_str(line);
+                        out.push('\n');
+                    }
+                    ok(out)
+                }
+                "forget" => {
+                    let call = *self.forgets.borrow() + 1;
+                    *self.forgets.borrow_mut() = call;
+                    if self.fail_forgets.contains(&call) {
+                        return Ok(ToolOutput {
+                            returncode: 11,
+                            stdout: vec![],
+                            stderr: vec![],
+                        });
+                    }
+                    let ids: Vec<&String> = args
+                        .iter()
+                        .skip(1)
+                        .filter(|arg| !arg.starts_with('-'))
+                        .collect();
+                    self.snapshots
+                        .borrow_mut()
+                        .retain(|snapshot| !ids.iter().any(|id| snapshot["id"] == json!(id)));
+                    if let Some((after, snapshot)) = &self.appears_after
+                        && *after == call
+                    {
+                        self.snapshots.borrow_mut().push(snapshot.clone());
+                    }
+                    ok(String::new())
+                }
+                other => panic!("unexpected restic verb {other}"),
+            })
+        }
+    }
+
+    /// Restic ids are hex: a fixture name, hex-encoded.
+    fn hex(name: &str) -> String {
+        name.bytes().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    fn snap(name: &str, offset: i64, tags: &[&str]) -> Value {
+        json!({"id": hex(name), "time": iso(NOW - offset), "tags": tags, "paths": [BASE]})
+    }
+
+    fn node(rel: &str) -> String {
+        json!({"struct_type": "node", "path": format!("{BASE}/{rel}")}).to_string()
+    }
+
+    /// A journal with own-storage backup, an erase at NOW-1000, a newest
+    /// backup after it recorded as this journal's last success.
+    fn setup(older: usize, kept: usize) -> (TempDir, FakeRestic) {
+        let temp = journal();
+        let root = temp.path();
+        set_destination(
+            root,
+            &Destination {
+                repository: "s3:s3.example.invalid/bucket".into(),
+                backend: "s3".into(),
+                credentials: json!({"access_key_id": "fixture-access-key", "secret_access_key": "fixture-secret-key"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            },
+        )
+        .unwrap();
+        generate_and_store_keys(root).unwrap();
+        set_enabled(root, true).unwrap();
+        solstone_core_backup::record_backup_result(
+            root,
+            "ok",
+            json!(NOW - 100),
+            json!(hex("newest")),
+            Value::Null,
+            None,
+            None,
+        )
+        .unwrap();
+        erased_item(root, NOW - 1000, "t1");
+        let mut snapshots = vec![snap("newest", 400, &[])];
+        for index in 0..older {
+            snapshots.push(snap(&format!("old{index:02}"), 5000 + index as i64, &[]));
+        }
+        for index in 0..kept {
+            snapshots.push(snap(
+                &format!("kept{index}"),
+                90_000 + index as i64,
+                &[KEPT_BEFORE_RESTORE_TAG],
+            ));
+        }
+        let fake = FakeRestic {
+            snapshots: RefCell::new(snapshots),
+            listed: RefCell::new(vec![
+                node("config"),
+                node("config/journal.json"),
+                node(".trash"),
+            ]),
+            ..FakeRestic::default()
+        };
+        (temp, fake)
+    }
+
+    fn services<'a>(fake: &'a FakeRestic) -> BackupServices<'a> {
+        BackupServices {
+            runner: fake,
+            http: &NoHttp,
+            clock: &Fixed,
+            restic: Some(Path::new("/fake/restic").into()),
+            rclone_path: None,
+            version: "test",
+            journal_maintenance: &NativeJournalMaintenance,
+        }
+    }
+
+    fn run(root: &Path, fake: &FakeRestic, include_kept: bool) -> Result<Done, Refusal> {
+        remove(
+            root,
+            &services(fake),
+            include_kept,
+            Surface::Cli,
+            &|_, _| {},
+        )
+    }
+
+    fn entries(root: &Path) -> usize {
+        solstone_core_removals::history(root, 100)
+            .unwrap()
+            .entries
+            .iter()
+            .filter(|entry| entry.action == Action::OlderBackupsRemove)
+            .count()
+    }
+
+    fn ids(fake: &FakeRestic) -> Vec<String> {
+        fake.snapshots
+            .borrow()
+            .iter()
+            .map(|s| s["id"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn removes_every_older_backup_records_once_and_settles_at_the_kept_backup() {
+        let (temp, fake) = setup(3, 0);
+        let done = run(temp.path(), &fake, false).unwrap();
+        assert_eq!(done.removed, 3);
+        assert_eq!(ids(&fake), [hex("newest")]);
+        assert_eq!(entries(temp.path()), 1);
+        let state = current_state(temp.path());
+        assert_eq!(
+            state.settled_through.as_deref(),
+            Some(iso(NOW - 400).as_str())
+        );
+        assert!(state.run.is_none());
+    }
+
+    #[test]
+    fn an_item_still_waiting_in_the_newest_backups_trash_does_not_stop_it() {
+        let (temp, fake) = setup(2, 0);
+        fake.listed
+            .borrow_mut()
+            .push(node(".trash/20261114T090000000Z-abcdef12"));
+        assert!(run(temp.path(), &fake, false).is_ok());
+    }
+
+    #[test]
+    fn the_erased_item_in_the_newest_backups_trash_refuses_and_forgets_nothing() {
+        let (temp, fake) = setup(2, 0);
+        fake.listed.borrow_mut().push(node(".trash/t1"));
+        assert_eq!(
+            run(temp.path(), &fake, false).err(),
+            Some(Refusal::NewestHoldsErased)
+        );
+        assert_eq!(*fake.forgets.borrow(), 0);
+        assert_eq!(entries(temp.path()), 0);
+    }
+
+    #[test]
+    fn a_look_that_cannot_see_the_journal_refuses() {
+        let (temp, fake) = setup(2, 0);
+        fake.listed.borrow_mut().clear();
+        assert_eq!(
+            run(temp.path(), &fake, false).err(),
+            Some(Refusal::CheckBlind)
+        );
+        assert_eq!(*fake.forgets.borrow(), 0);
+    }
+
+    #[test]
+    fn an_incomplete_or_unrecorded_newest_backup_refuses() {
+        let (temp, fake) = setup(2, 0);
+        solstone_core_backup::record_backup_result(
+            temp.path(),
+            "ok",
+            json!(NOW - 100),
+            json!(hex("newest")),
+            json!("incomplete"),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            run(temp.path(), &fake, false).err(),
+            Some(Refusal::NewestIncomplete)
+        );
+        solstone_core_backup::record_backup_result(
+            temp.path(),
+            "ok",
+            json!(NOW - 100),
+            json!(hex("other")),
+            Value::Null,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(run(temp.path(), &fake, false).err(), Some(Refusal::Waiting));
+        assert_eq!(*fake.forgets.borrow(), 0);
+    }
+
+    #[test]
+    fn a_stop_part_way_then_the_rest_counts_everything_and_records_once() {
+        let (temp, mut fake) = setup(15, 0);
+        fake.fail_forgets = vec![2];
+        let stopped = run(temp.path(), &fake, false).err();
+        assert!(
+            matches!(
+                stopped,
+                Some(Refusal::Stopped {
+                    removed: 10,
+                    total: 15,
+                    ..
+                })
+            ),
+            "{stopped:?}"
+        );
+        assert_eq!(state_of(&view(temp.path(), NOW, false)), "stopped");
+        assert_eq!(
+            entries(temp.path()),
+            1,
+            "what was removed is in the record already"
+        );
+        let done = run(temp.path(), &fake, false).unwrap();
+        assert_eq!(done.removed, 15);
+        assert_eq!(entries(temp.path()), 1);
+        assert_eq!(ids(&fake), [hex("newest")]);
+    }
+
+    #[test]
+    fn a_run_left_after_its_last_batch_finishes_once_even_with_kept_restore_backups() {
+        let (temp, fake) = setup(0, 2);
+        // A crash after the last forget: the record is left, nothing older is.
+        store(temp.path(), |state| {
+            state.run = Some(Run {
+                started: NOW - 60,
+                updated: NOW - 60,
+                keep: hex("newest"),
+                keep_time: iso(NOW - 400),
+                total: 3,
+                removed: 3,
+                ..Run::default()
+            });
+        })
+        .unwrap();
+        let done = run(temp.path(), &fake, false).unwrap();
+        assert_eq!((done.removed, done.kept_before_restore_left), (3, 2));
+        assert_eq!(entries(temp.path()), 1);
+        assert_eq!(state_of(&view(temp.path(), NOW, false)), "partly_done");
+    }
+
+    #[test]
+    fn remove_them_takes_only_the_kept_restore_backups_and_moves_no_boundary() {
+        let (temp, fake) = setup(2, 2);
+        run(temp.path(), &fake, false).unwrap();
+        let settled = current_state(temp.path()).settled_through;
+        // A newer backup lands, recorded or not; "remove them" must not
+        // settle anything up to it.
+        fake.snapshots.borrow_mut().push(snap("newer", 50, &[]));
+        let done = run(temp.path(), &fake, true).unwrap();
+        assert_eq!(done.kept_before_restore_left, 0);
+        assert_eq!(ids(&fake), [hex("newest"), hex("newer")]);
+        let state = current_state(temp.path());
+        assert_eq!(state.settled_through, settled);
+        assert_eq!(state.done.unwrap().kept_newest_time, iso(NOW - 400));
+    }
+
+    #[test]
+    fn an_older_backup_that_appears_mid_run_is_not_called_done() {
+        let (temp, mut fake) = setup(12, 0);
+        fake.appears_after = Some((1, snap("late", 3000, &[])));
+        let result = run(temp.path(), &fake, false);
+        assert!(
+            matches!(result, Err(Refusal::Stopped { ref reason, .. }) if reason == "residual"),
+            "{result:?}"
+        );
+        assert_ne!(state_of(&view(temp.path(), NOW, false)), "done");
+    }
 }

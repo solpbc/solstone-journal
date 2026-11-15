@@ -704,9 +704,10 @@ pub fn erased_since(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(source) => return Err(HistoryError::Read { path: dir, source }),
     };
-    let floor = (since - chrono::Duration::days(ERASED_NAME_SLACK_DAYS))
-        .format("%Y%m%dT%H%M%S%3fZ")
-        .to_string();
+    let floor = skip_old_names
+        .then(|| since.checked_sub_signed(chrono::Duration::days(ERASED_NAME_SLACK_DAYS)))
+        .flatten()
+        .map(|floor| floor.format("%Y%m%dT%H%M%S%3fZ").to_string());
     let mut entries = Vec::new();
     for item in listing {
         let item = item.map_err(|source| HistoryError::Read {
@@ -720,7 +721,9 @@ pub fn erased_since(
         let started = name.get(..19).filter(|prefix| {
             chrono::NaiveDateTime::parse_from_str(prefix, "%Y%m%dT%H%M%S%3fZ").is_ok()
         });
-        if skip_old_names && started.is_some_and(|started| started < floor.as_str()) {
+        if let Some(floor) = &floor
+            && started.is_some_and(|started| started < floor.as_str())
+        {
             continue;
         }
         let path = dir.join(name);
