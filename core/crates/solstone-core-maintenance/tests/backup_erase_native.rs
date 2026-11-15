@@ -624,3 +624,100 @@ fn each_entry_stands_alone_and_nothing_unreadable_is_dropped() {
         "no claim for the unreached one"
     );
 }
+
+/// Back up a copy of the journal from another place, as an earlier copy of it
+/// would have, and record that place as where it was restored from.
+fn earlier_copy(fixture: &Fixture, name: &str) -> PathBuf {
+    let old = fixture.tmp.path().join(name);
+    let status = Command::new("cp")
+        .args(["-a"])
+        .arg(&fixture.journal)
+        .arg(&old)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let old = old.canonicalize().unwrap();
+    fixture.restic(&["backup", old.to_str().unwrap(), "-q"]);
+    std::thread::sleep(Duration::from_millis(1100));
+    let at = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    std::thread::sleep(Duration::from_millis(1100));
+    solstone_core_backup_runtime::erase_paths::record_origin(
+        &fixture.journal,
+        &"a".repeat(64),
+        old.to_str().unwrap(),
+        &at,
+    )
+    .unwrap();
+    old
+}
+
+#[test]
+#[ignore = "requires native restic, its erase helper and rclone; see the module doc"]
+fn a_restored_journals_old_place_is_reached_only_when_gone_and_quiet() {
+    let removes = BucketSays { versioning: "" };
+    let old_holds = |fixture: &Fixture, old: &Path, key: &str| {
+        let wanted = format!("{}/{}/audio.m4a", old.display(), segment_rel(key));
+        fixture.snapshots().iter().any(|sn| {
+            fixture
+                .restic(&["ls", sn["id"].as_str().unwrap()])
+                .lines()
+                .any(|l| l == wanted)
+        })
+    };
+
+    // Still on this device: left alone, and the entry says older backups hold it.
+    let fixture = Fixture::new();
+    let journal = &fixture.journal;
+    let old = earlier_copy(&fixture, "old-journal");
+    fixture.backup();
+    let first = delete(journal, ERASED);
+    fixture.backup();
+    erase(journal, &first, true);
+    let report =
+        solstone_core_offload::backup_erase::run(journal, &fixture.services_with(&removes));
+    assert_eq!(report.staying, 1, "{report:?}");
+    assert!(
+        old_holds(&fixture, &old, ERASED),
+        "the old place is left alone"
+    );
+    let results = fs::read_to_string(journal.join("health/backup-erase/results.jsonl")).unwrap();
+    assert!(results.contains("still_on_this_device"), "{results}");
+    assert!(
+        format!(
+            "{:?}",
+            solstone_core_removals::history(journal, 50).unwrap()
+        )
+        .contains("BackupErasePartly")
+    );
+
+    // Gone from this device and quiet since the restore: reached.
+    fs::remove_dir_all(&old).unwrap();
+    let second = delete(journal, KEPT);
+    fixture.backup();
+    erase(journal, &second, true);
+    let report =
+        solstone_core_offload::backup_erase::run(journal, &fixture.services_with(&removes));
+    assert_eq!(report.removed + report.shared, 1, "{report:?}");
+    assert!(
+        !old_holds(&fixture, &old, KEPT),
+        "the old place's backups are rewritten"
+    );
+    fixture.restic(&["check", "-q"]);
+
+    // Backed up again since the restore: left alone.
+    let fixture = Fixture::new();
+    let journal = &fixture.journal;
+    let old = earlier_copy(&fixture, "old-journal");
+    fixture.restic(&["backup", old.to_str().unwrap(), "-q"]);
+    fs::remove_dir_all(&old).unwrap();
+    fixture.backup();
+    let id = delete(journal, ERASED);
+    fixture.backup();
+    erase(journal, &id, true);
+    let report =
+        solstone_core_offload::backup_erase::run(journal, &fixture.services_with(&removes));
+    assert_eq!(report.staying, 1, "{report:?}");
+    assert!(old_holds(&fixture, &old, ERASED));
+    let results = fs::read_to_string(journal.join("health/backup-erase/results.jsonl")).unwrap();
+    assert!(results.contains("backed_up_since_the_restore"), "{results}");
+}

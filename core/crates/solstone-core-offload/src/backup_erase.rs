@@ -542,31 +542,46 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
     // The journal's place now, and the places setup restores recorded it at
     // before: by the founder's 11-10 ruling, the same journal's backups.
     let mut roots = vec![root.clone()];
-    let recorded = erase_paths::origins(journal);
+    // Origins: places restores recorded. One is sent only while its old place
+    // is gone from this device and nothing has backed up there since the
+    // restore; a listing that fails decides nothing.
+    let recorded: Vec<erase_paths::Origin> = erase_paths::origins(journal)
+        .into_iter()
+        .filter(|origin| origin.path != root)
+        .collect();
+    let mut sent: Vec<erase_paths::Origin> = Vec::new();
     if !recorded.is_empty() {
-        // An origin still backed up after the restore is another copy's
-        // history from then on: its place is left alone, counted elsewhere.
-        let listing = destination.snapshots(services).unwrap_or_default();
-        let skip = [
-            OFFLOAD_TAG,
-            solstone_core_backup_runtime::engine::ARCHIVE_TAG,
-        ];
-        let quiet = if listing.is_empty() {
-            Vec::new()
-        } else {
-            erase_paths::quiet_origins(&recorded, &listing, &skip)
+        let Ok(listing) = destination.snapshots(services) else {
+            finish(
+                journal,
+                status,
+                "waiting",
+                Some("offline"),
+                true,
+                &mut report,
+            );
+            return report;
         };
-        for origin in &recorded {
-            if !quiet.contains(&origin.path) {
-                record_result(
+        let quiet = erase_paths::quiet_origins(&recorded, &listing);
+        for origin in recorded {
+            let why = if Path::new(&origin.path).exists() {
+                Some("still_on_this_device")
+            } else if !quiet.contains(&origin.path) {
+                Some("backed_up_since_the_restore")
+            } else {
+                None
+            };
+            match why {
+                Some(why) => record_result(
                     journal,
-                    json!({"at": now(), "outcome": "origin_left_alone", "path": origin.path}),
-                );
-            }
-        }
-        for origin in quiet {
-            if !roots.contains(&origin) {
-                roots.push(origin);
+                    json!({"at": now(), "outcome": "origin_left_alone", "path": origin.path, "why": why}),
+                ),
+                None => {
+                    if !roots.contains(&origin.path) {
+                        roots.push(origin.path.clone());
+                    }
+                    sent.push(origin);
+                }
             }
         }
     }
@@ -661,6 +676,20 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         StorageRetention::Keeps(StorageKeeps::HiddenFiles) => Some("hidden_files"),
         StorageRetention::Unknown => Some("unknown"),
     };
+    // An origin backed up while the helper waited for its lock, or since:
+    // its new backups may hold what this run removed, so nothing is claimed
+    // gone. A listing that fails counts the same.
+    let late = !sent.is_empty()
+        && destination
+            .snapshots(services)
+            .map(|listing| erase_paths::quiet_origins(&sent, &listing).len() != sent.len())
+            .unwrap_or(true);
+    if late {
+        record_result(
+            journal,
+            json!({"at": now(), "outcome": "origin_backed_up_during_run"}),
+        );
+    }
     let entries_report = result.get("entries").cloned().unwrap_or(Value::Null);
     let field = |entry: &Entry, key: &str| {
         entries_report
@@ -683,7 +712,7 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
             continue;
         }
         let shared = count(entry, "in_use_kept") + count(entry, "in_use_trash");
-        let elsewhere = count(entry, "elsewhere") > 0;
+        let elsewhere = count(entry, "elsewhere") > 0 || late;
         let left_alone = legacy.contains(&entry.id);
         // Some backups still able to restore it is the larger truth, ahead of
         // what the storage keeps of deleted files.

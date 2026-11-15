@@ -152,25 +152,23 @@ pub fn origins(journal: &Path) -> Vec<Origin> {
         .collect()
 }
 
-/// The origins whose place holds no regular backup taken after the restore.
-/// A copy still backing up there (the old journal, switched back to) is not
-/// this journal's history from that point, so its place is left alone and
-/// counted elsewhere. A snapshot whose time can't be read counts as after.
-pub fn quiet_origins(origins: &[Origin], listing: &[Value], skip_tags: &[&str]) -> Vec<String> {
+/// The origins whose place holds no backup taken after the restore, by stock
+/// restic's listing of every snapshot. Any snapshot there counts, archives
+/// included: after the restore only another copy writes that place. A
+/// snapshot whose time can't be read counts as after, and an empty listing
+/// keeps none.
+pub fn quiet_origins(origins: &[Origin], listing: &[Value]) -> Vec<String> {
+    if listing.is_empty() {
+        return Vec::new();
+    }
     let backed_up_after = |origin: &Origin, snapshot: &Value| {
-        let tagged = snapshot
-            .get("tags")
-            .and_then(Value::as_array)
-            .is_some_and(|tags| {
-                tags.iter()
-                    .any(|tag| tag.as_str().is_some_and(|tag| skip_tags.contains(&tag)))
-            });
         let here = snapshot
             .get("paths")
             .and_then(Value::as_array)
             .is_some_and(|paths| {
                 paths.iter().filter_map(Value::as_str).any(|path| {
-                    crate::restic_paths::restic_tree_path(Path::new(path)) == origin.path
+                    let place = crate::restic_paths::restic_tree_path(Path::new(path));
+                    place == origin.path || place.starts_with(&format!("{}/", origin.path))
                 })
             });
         let after = snapshot
@@ -178,7 +176,7 @@ pub fn quiet_origins(origins: &[Origin], listing: &[Value], skip_tags: &[&str]) 
             .and_then(Value::as_str)
             .and_then(|time| DateTime::parse_from_rfc3339(time).ok())
             .is_none_or(|time| time.with_timezone(&chrono::Utc) > origin.at);
-        !tagged && here && after
+        here && after
     };
     origins
         .iter()
@@ -234,8 +232,6 @@ impl Destination {
         })
     }
 
-    /// The destination's backups carrying `tag`, as `restic snapshots` lists
-    /// them (id, time, tags, `original` when rewritten).
     /// Every snapshot, from stock restic.
     pub fn snapshots(&self, services: &BackupServices<'_>) -> Result<Vec<Value>, String> {
         let output = restic(
@@ -257,6 +253,8 @@ impl Destination {
             .ok_or_else(|| "unreadable_listing".into())
     }
 
+    /// The destination's backups carrying `tag`, as `restic snapshots` lists
+    /// them (id, time, tags, `original` when rewritten).
     pub fn snapshots_tagged(
         &self,
         services: &BackupServices<'_>,
@@ -330,23 +328,22 @@ mod origin_tests {
             found.iter().map(|o| o.path.as_str()).collect::<Vec<_>>(),
             ["/home/old/journal", "/Users/old/journal"]
         );
-        // A place backed up again after the restore is left alone; archives
-        // and backups from before don't count.
+        // A place backed up again after the restore, even only by an archive
+        // under it, is left alone; backups from before don't count.
         let listing = serde_json::json!([
             {"paths": ["/home/old/journal"], "time": "2026-11-14T10:00:00Z"},
-            {"paths": ["/Users/old/journal"], "time": "2026-11-15T13:00:00Z"},
-            {"paths": ["/home/old/journal"], "time": "2026-11-16T00:00:00Z", "tags": ["spb-offload-archive"]},
+            {"paths": ["/Users/old/journal/chronicle/x"], "time": "2026-11-15T13:00:00Z", "tags": ["spb-offload-archive"]},
         ]);
         assert_eq!(
-            quiet_origins(
-                &found,
-                listing.as_array().unwrap(),
-                &["spb-offload-archive"]
-            ),
+            quiet_origins(&found, listing.as_array().unwrap()),
             ["/home/old/journal"]
         );
         let untimed = serde_json::json!([{"paths": ["/home/old/journal"]}]);
-        assert!(quiet_origins(&found[..1], untimed.as_array().unwrap(), &[]).is_empty());
+        assert!(quiet_origins(&found[..1], untimed.as_array().unwrap()).is_empty());
+        assert!(
+            quiet_origins(&found, &[]).is_empty(),
+            "an empty listing keeps none"
+        );
         std::fs::write(journal.join(ORIGINS_FILE), b"{").unwrap();
         assert!(origins(journal).is_empty(), "unreadable reads as none");
         assert!(
