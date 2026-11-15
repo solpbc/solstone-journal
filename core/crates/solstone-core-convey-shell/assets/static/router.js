@@ -47,6 +47,7 @@
   const scrolls = new Map();
   const fragments = new Map();
   const prefetched = new Set();
+  const fetchedCode = new Set();
 
   function entryTable() {
     return window.__SOL_ENTRY_TABLE__?.views || {};
@@ -479,6 +480,10 @@
     if (controller.signal.aborted) return true;
     try {
       early = window.__solEarlyRoute?.(window.location.href, { fragment: !held }) || null;
+      // With nothing fetched ahead, the view's code starts now too, beside
+      // its fragment: its scripts would otherwise wait for the fragment and
+      // then for each other. A press that fetched ahead fetched the code.
+      if (!held) fetchCode(entryTable()[name], window.location.pathname, 'high');
       mountedPath = window.location.pathname;
       arrivalMode = mode;
       await window.mountWorkspaceFragment(app.workspace_url, {
@@ -573,11 +578,29 @@
         else if (fragments.get(name) === record) fragments.delete(name);
         return typeof text === 'string' ? text : null;
       });
-    const code = [...entry.scripts.filter((script) => !script.routePrefix).map((script) => script.src), ...entry.styles];
-    code.forEach((href) => {
-      fetch(href, { credentials: 'same-origin', priority: 'low' })
-        .then((response) => response.arrayBuffer())
-        .catch(() => {});
+    fetchCode(entry, null, 'low');
+  }
+
+  // A view's code, fetched into the HTTP cache ahead of the scripts its mount
+  // adds. Each address once for the page's life, unless that fetch failed:
+  // then it can be fetched again. Nothing here is the code's only way in. The
+  // mount's script elements make their own requests (from the cache when this
+  // worked), which a failed <link rel=preload> would not: the browser hands
+  // a script element the preload's failed answer.
+  function fetchCode(entry, path, priority) {
+    if (!entry) return;
+    const scripts = entry.scripts
+      .filter((script) => !script.routePrefix || (path && path.indexOf(script.routePrefix) === 0))
+      .map((script) => script.src);
+    [...scripts, ...entry.styles].forEach((href) => {
+      if (fetchedCode.has(href)) return;
+      fetchedCode.add(href);
+      fetch(href, { credentials: 'same-origin', priority })
+        .then((response) => {
+          if (!response.ok) fetchedCode.delete(href);
+          return response.arrayBuffer();
+        })
+        .catch(() => { fetchedCode.delete(href); });
     });
   }
 

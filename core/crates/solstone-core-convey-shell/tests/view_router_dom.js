@@ -2859,6 +2859,112 @@ asyncCase('first arrival: a press then a click reads the fragment once, and the 
   assert.deepStrictEqual(Array.from(page.window.solRouter.held().records), ['text', 'text'], 'no read or promise is kept once it has answered');
 });
 
+asyncCase('first arrival: a move with nothing fetched ahead fetches the view\'s code beside its fragment, once a page, again after a failure', async () => {
+  const code = (page) => page.server.calls.filter((call) => call.url === '/t/transcripts.js' || call.url === '/t/date-nav.css').map((call) => call.url);
+  const answerCode = (page) => {
+    page.server.answers.set('/t/transcripts.js', (call) => call.respond(200, ''));
+    page.server.answers.set('/t/date-nav.css', (call) => call.respond(200, ''));
+  };
+  // A click, no press first: the code is asked for at the move, with the
+  // fragment and the first read, before the fragment has answered.
+  {
+    const page = makePage();
+    page.answerAll();
+    answerDays(page);
+    answerCode(page);
+    page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+    const fragment = heldFragment(page, '/app/transcripts/workspace');
+    await page.boot('home');
+    page.click('/app/transcripts/');
+    await page.clock.advance(50);
+    assert.ok(fragment.calls.length === 1, 'the fragment is asked for');
+    assert.ok(page.server.of('/app/transcripts/api/day/20260101').length === 1, 'the first read starts at the move');
+    assert.deepStrictEqual(code(page).sort(), ['/t/date-nav.css', '/t/transcripts.js'], 'the code starts with them');
+    fragment.release();
+    await page.clock.advance(400);
+    assert.ok(page.view('transcripts'), 'the view mounts');
+    assert.ok(page.server.of('/app/transcripts/workspace').length === 1, 'one fragment read');
+    // A later arrival: the fragment is kept and the code was fetched; nothing is asked again.
+    page.click('/app/home/');
+    await page.clock.advance(400);
+    page.click('/app/transcripts/');
+    await page.clock.advance(400);
+    assert.ok(page.view('transcripts'), 'back on transcripts');
+    assert.ok(code(page).length === 2, `a later arrival fetches no code (${code(page).join(', ')})`);
+  }
+  // A press first: its fetch took the fragment and the code; the move adds none.
+  {
+    const page = makePage();
+    page.answerAll();
+    answerDays(page);
+    answerCode(page);
+    page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+    const fragment = heldFragment(page, '/app/transcripts/workspace');
+    await page.boot('home');
+    page.document.dispatchEvent({ type: 'pointerdown', target: page.link('/app/transcripts/') });
+    page.click('/app/transcripts/');
+    await page.clock.advance(50);
+    assert.ok(code(page).length === 2, `each file once (${code(page).join(', ')})`);
+    fragment.release();
+    await page.clock.advance(400);
+    assert.ok(page.view('transcripts'), 'the view mounts');
+  }
+  // A move superseded before its fragment answers runs none of the code it
+  // fetched, and a second one fetches nothing more.
+  {
+    const page = makePage();
+    page.answerAll();
+    answerDays(page);
+    answerCode(page);
+    page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+    const fragment = heldFragment(page, '/app/transcripts/workspace');
+    await page.boot('home');
+    page.click('/app/transcripts/');
+    await page.clock.advance(50);
+    page.click('/app/more/');
+    await page.clock.advance(400);
+    fragment.release();
+    await page.clock.advance(400);
+    assert.ok(page.view('more'), 'the newer move\'s view is on the page');
+    assert.ok(!page.window.SolViews.registered('transcripts'), 'the superseded view\'s script never ran');
+    const second = heldFragment(page, '/app/transcripts/workspace');
+    page.click('/app/transcripts/');
+    await page.clock.advance(50);
+    page.click('/app/home/');
+    await page.clock.advance(400);
+    second.release();
+    await page.clock.advance(400);
+    assert.ok(code(page).length === 2, `each file fetched once for the page (${code(page).join(', ')})`);
+  }
+  // A code fetch that fails: the view still mounts (its script element asks
+  // for itself), and the next move without the code fetches it again.
+  {
+    const page = makePage();
+    page.answerAll();
+    answerDays(page);
+    page.server.answers.set('/t/transcripts.js', (call) => call.respond(503, 'no'));
+    page.server.answers.set('/t/date-nav.css', (call) => call.respond(200, ''));
+    page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+    const fragment = heldFragment(page, '/app/transcripts/workspace');
+    await page.boot('home');
+    page.click('/app/transcripts/');
+    await page.clock.advance(50);
+    page.click('/app/home/');
+    await page.clock.advance(400);
+    fragment.release();
+    await page.clock.advance(400);
+    assert.ok(page.server.of('/t/transcripts.js').length === 1, 'fetched once, and it failed');
+    page.server.answers.set('/t/transcripts.js', (call) => call.respond(200, ''));
+    const again = heldFragment(page, '/app/transcripts/workspace');
+    page.click('/app/transcripts/');
+    await page.clock.advance(50);
+    assert.ok(page.server.of('/t/transcripts.js').length === 2, 'a failed address is fetched again');
+    again.release();
+    await page.clock.advance(400);
+    assert.ok(page.view('transcripts'), 'the view mounts');
+  }
+});
+
 asyncCase('first arrival: a press whose read fails, or never answers usefully, still mounts the view', async () => {
   for (const failure of ['status', 'transport', 'redirect-like']) {
     const page = makePage();
@@ -3213,6 +3319,9 @@ asyncCase('leaks: a hundred switches and fifty day steps leave the page as the f
   const page = makePage();
   page.answerAll();
   answerDays(page);
+  // The code a move fetches into the cache is answered, as the journal does.
+  page.server.answers.set('/t/transcripts.js', (call) => call.respond(200, ''));
+  page.server.answers.set('/t/date-nav.css', (call) => call.respond(200, ''));
   page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
   await page.boot('home');
   const cycle = async () => {
