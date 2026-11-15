@@ -8,13 +8,24 @@ use solstone_core_entity::faceprints::{self, cross};
 use solstone_core_journal_io::{LockOptions, PathOrDay, contained_path, hold_lock, iter_segments};
 use solstone_core_segment::output_attempt::OutputClaims;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
-    time::{Duration, Instant, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 pub const BATCH_SIZE: usize = 64;
 const BUDGET: Duration = Duration::from_secs(solstone_core_segment::face_backfill::MAX_SECONDS);
+/// Recording key -> the stamps of what a pass read to settle it: the screen
+/// output of a recording that is not a meeting, or the screen output and
+/// sidecar of a meeting already described. Unchanged since, it costs a stat on
+/// later passes, not a read. A cache only: a miss, a damaged or a lost file just
+/// reads again. Under `cache/`, so backups and portable copies leave it out.
+/// Changing what `meeting_frames` or `valid_sidecar` accepts must bump the
+/// version in this name, or old entries keep their old answer.
+const SCAN_CACHE: &str = "cache/faces/backfill-scan-v1.json";
+/// A file modified this recently could change again inside one timestamp tick
+/// without its stamp moving, so it is read again on the next pass instead.
+const SETTLED: Duration = Duration::from_secs(2);
 type Result<T> = std::result::Result<T, String>;
 
 #[derive(Debug, Default, Serialize)]
@@ -66,6 +77,53 @@ fn sidecar_path(raw: &Path) -> PathBuf {
         )
     ))
 }
+fn stamp(path: &Path) -> Option<String> {
+    let m = std::fs::metadata(path).ok()?;
+    let modified = m.modified().ok()?;
+    if SystemTime::now()
+        .duration_since(modified)
+        .map_or(true, |age| age < SETTLED)
+    {
+        return None;
+    }
+    let nanos = modified.duration_since(UNIX_EPOCH).ok()?.as_nanos();
+    Some(format!("{}:{nanos}", m.len()))
+}
+fn load_scan(journal: &Path) -> BTreeMap<String, String> {
+    contained_path(journal, SCAN_CACHE)
+        .ok()
+        .and_then(|p| {
+            solstone_core_journal_io::read_optional_text(p)
+                .ok()
+                .flatten()
+        })
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+fn save_scan(journal: &Path, scan: &BTreeMap<String, String>) {
+    let result = contained_path(journal, SCAN_CACHE)
+        .map_err(|e| e.to_string())
+        .and_then(|p| {
+            let text = serde_json::to_string(scan).map_err(|e| e.to_string())?;
+            solstone_core_journal_io::write_text(
+                p,
+                &text,
+                solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
+            )
+            .map_err(|e| e.to_string())
+        });
+    if let Err(error) = result {
+        log::warn!("face backfill scan cache not saved: {error}");
+    }
+}
+#[cfg(test)]
+thread_local! {
+    static BODY_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+fn body_read() {
+    #[cfg(test)]
+    BODY_READS.with(|n| n.set(n.get() + 1));
+}
 fn binding(raw: &Path, screen_digest: &str) -> Result<String> {
     let m = std::fs::metadata(raw).map_err(|e| e.to_string())?;
     let modified = m
@@ -80,7 +138,9 @@ fn binding(raw: &Path, screen_digest: &str) -> Result<String> {
 /// interrupted write (a row that does not parse, or bytes that are not UTF-8),
 /// is not a candidate: the face helper reads the same output strictly and
 /// would fail on it. Neither stops the history; the catch-up moves on.
+/// Its answer is cached by file stamp: a change here bumps `SCAN_CACHE`.
 fn meeting_frames(screen: &Path) -> Result<bool> {
+    body_read();
     let bytes = solstone_core_journal_io::read_bytes(screen, vec![]).map_err(|e| e.to_string())?;
     let Ok(text) = String::from_utf8(bytes) else {
         return Ok(false);
@@ -99,8 +159,10 @@ fn meeting_frames(screen: &Path) -> Result<bool> {
     }
     Ok(meeting)
 }
+/// Its answer is cached by file stamps: a change here bumps `SCAN_CACHE`.
 fn valid_sidecar(raw: &Path, digest: &str) -> Result<bool> {
     let path = sidecar_path(raw);
+    body_read();
     let Some(text) =
         solstone_core_journal_io::read_optional_text(path).map_err(|e| e.to_string())?
     else {
@@ -125,6 +187,9 @@ fn discover(
 ) -> Result<Vec<Candidate>> {
     let mut pending = vec![];
     let mut present = BTreeSet::new();
+    let mut scanned = load_scan(journal);
+    let mut seen = BTreeMap::new();
+    let mut changed = false;
     for (day, _) in solstone_core_journal_io::day_dirs(journal).map_err(|e| e.to_string())? {
         for segment in iter_segments(journal, PathOrDay::Day(&day)).map_err(|e| e.to_string())? {
             if !matches!(
@@ -157,15 +222,48 @@ fn discover(
                     present.insert(key.clone());
                     let Ok(_claim) = OutputClaims::acquire([screen.clone()], options()) else {
                         stats.yielded = true;
+                        if let Some(memo) = scanned.remove(&key) {
+                            seen.insert(key, memo);
+                        }
                         continue;
                     };
+                    // Stamp before reading, so a change during the read is
+                    // seen as a change on the next pass.
+                    let screen_stamp = stamp(screen);
+                    let sidecar_stamp = stamp(&sidecar_path(&raw));
+                    let memo = scanned.remove(&key);
+                    if let (Some(now), Some(memo)) = (&screen_stamp, &memo) {
+                        match memo.split_once(' ') {
+                            None if memo == now => {
+                                seen.insert(key, memo.clone());
+                                continue;
+                            }
+                            Some((screen, sidecar))
+                                if screen == now && Some(sidecar) == sidecar_stamp.as_deref() =>
+                            {
+                                stats.valid += 1;
+                                seen.insert(key, memo.clone());
+                                continue;
+                            }
+                            _ => {}
+                        }
+                    }
+                    changed |= memo.is_some();
                     if !meeting_frames(screen)? {
+                        if let Some(now) = screen_stamp {
+                            seen.insert(key, now);
+                            changed = true;
+                        }
                         continue;
                     }
                     let digest = solstone_core_segment::screen_body_digest(screen)
                         .map_err(|e| e.to_string())?;
                     if valid_sidecar(&raw, &digest)? {
                         stats.valid += 1;
+                        if let (Some(now), Some(sidecar)) = (screen_stamp, sidecar_stamp) {
+                            seen.insert(key, format!("{now} {sidecar}"));
+                            changed = true;
+                        }
                         continue;
                     }
                     let binding = binding(&raw, &digest)?;
@@ -191,6 +289,10 @@ fn discover(
         }
     }
     backfill.unsupported.retain(|key, _| present.contains(key));
+    // Entries for recordings no longer present, or changed since, drop out.
+    if changed || !scanned.is_empty() {
+        save_scan(journal, &seen);
+    }
     pending.sort_by(|a, b| a.key.cmp(&b.key));
     if let Some(cursor) = &backfill.cursor {
         let split = pending.partition_point(|c| c.key <= *cursor);
@@ -235,6 +337,12 @@ fn run(
 ) -> Result<Stats> {
     let mut stats = Stats::default();
     if !faceprints::enabled(journal)? || cfg!(any(target_os = "ios", target_os = "android")) {
+        // Turned off, the catch-up keeps nothing of its own.
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "system internal: the catch-up's own scan cache, read again if missing"
+        )]
+        let _ = solstone_core_journal_io::remove_file(journal, SCAN_CACHE);
         return Ok(stats);
     }
     let path = cross::path(journal)?;
