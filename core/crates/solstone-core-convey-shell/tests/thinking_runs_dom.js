@@ -4513,6 +4513,11 @@ async function main() {
     passedCases += 1;
   }
 
+  // Thinking on the view contract: the real fragment through the real shell.
+  const contractCases = await require('./thinking_contract_dom.js')(manifestDir);
+  passedCases += contractCases;
+  executedCases += contractCases;
+
   console.log(`DOM CASES: ${passedCases}/${executedCases} passed`);
 }
 

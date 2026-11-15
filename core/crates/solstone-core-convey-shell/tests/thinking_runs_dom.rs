@@ -16,6 +16,8 @@ fn thinking_runs_dom_contract() {
         Ok(_) => {}
     }
     let output = Command::new("node")
+        // The contract cases check that a gone view's markup is let go.
+        .arg("--expose-gc")
         .arg(format!(
             "{}/tests/thinking_runs_dom.js",
             env!("CARGO_MANIFEST_DIR")
@@ -260,6 +262,8 @@ fn thinking_failed_installs_dom_from_persisted_status() {
     )
     .unwrap();
     let output = Command::new("node")
+        // The contract cases check that a gone view's markup is let go.
+        .arg("--expose-gc")
         .arg(format!(
             "{}/tests/thinking_runs_dom.js",
             env!("CARGO_MANIFEST_DIR")
