@@ -542,9 +542,32 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
     // The journal's place now, and the places setup restores recorded it at
     // before: by the founder's 11-10 ruling, the same journal's backups.
     let mut roots = vec![root.clone()];
-    for origin in erase_paths::origins(journal) {
-        if !roots.contains(&origin) {
-            roots.push(origin);
+    let recorded = erase_paths::origins(journal);
+    if !recorded.is_empty() {
+        // An origin still backed up after the restore is another copy's
+        // history from then on: its place is left alone, counted elsewhere.
+        let listing = destination.snapshots(services).unwrap_or_default();
+        let skip = [
+            OFFLOAD_TAG,
+            solstone_core_backup_runtime::engine::ARCHIVE_TAG,
+        ];
+        let quiet = if listing.is_empty() {
+            Vec::new()
+        } else {
+            erase_paths::quiet_origins(&recorded, &listing, &skip)
+        };
+        for origin in &recorded {
+            if !quiet.contains(&origin.path) {
+                record_result(
+                    journal,
+                    json!({"at": now(), "outcome": "origin_left_alone", "path": origin.path}),
+                );
+            }
+        }
+        for origin in quiet {
+            if !roots.contains(&origin) {
+                roots.push(origin);
+            }
         }
     }
     let request = json!({

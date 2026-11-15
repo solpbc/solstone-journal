@@ -85,7 +85,12 @@ pub const ORIGINS_FILE: &str = "config/backup-origins.json";
 /// `path` (restic's tree form): by the founder's 11-10 ruling a restored
 /// journal is the same journal, so backups at that place are its own, and an
 /// erase reaches them. Write-once per path; the first snapshot named is kept.
-pub fn record_origin(journal: &Path, snapshot_id: &str, path: &str) -> std::io::Result<()> {
+pub fn record_origin(
+    journal: &Path,
+    snapshot_id: &str,
+    path: &str,
+    at: &str,
+) -> std::io::Result<()> {
     let file = journal.join(ORIGINS_FILE);
     let mut all = read_origins(&file)?;
     if !path.starts_with('/')
@@ -95,7 +100,7 @@ pub fn record_origin(journal: &Path, snapshot_id: &str, path: &str) -> std::io::
     {
         return Ok(());
     }
-    all.push(serde_json::json!({"path": path, "snapshot": snapshot_id}));
+    all.push(serde_json::json!({"path": path, "snapshot": snapshot_id, "at": at}));
     let bytes = serde_json::to_vec_pretty(&serde_json::json!({"schema": 1, "origins": all}))
         .map_err(std::io::Error::other)?;
     solstone_core_journal_io::atomic::atomic_replace(
@@ -118,21 +123,71 @@ fn read_origins(file: &Path) -> std::io::Result<Vec<Value>> {
     }
 }
 
-/// The places earlier copies of this journal were backed up from, recorded by
-/// setup restores, in restic's tree form. Unreadable reads as none: those
-/// backups are then counted elsewhere and said to still hold it, never
-/// claimed reached.
-pub fn origins(journal: &Path) -> Vec<String> {
+/// One place an earlier copy of this journal was backed up from, and when it
+/// was restored from there.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Origin {
+    pub path: String,
+    pub at: DateTime<chrono::Utc>,
+}
+
+/// The places restores recorded, in restic's tree form. Unreadable reads as
+/// none, and an entry without its restore time is skipped: those backups are
+/// then counted elsewhere and said to still hold it, never claimed reached.
+pub fn origins(journal: &Path) -> Vec<Origin> {
     read_origins(&journal.join(ORIGINS_FILE))
         .unwrap_or_default()
         .iter()
         .filter_map(|origin| {
-            origin
-                .get("path")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
+            let path = origin.get("path").and_then(Value::as_str)?;
+            let at = origin.get("at").and_then(Value::as_str)?;
+            Some(Origin {
+                path: path.to_owned(),
+                at: DateTime::parse_from_rfc3339(at)
+                    .ok()?
+                    .with_timezone(&chrono::Utc),
+            })
         })
-        .filter(|path| path.starts_with('/'))
+        .filter(|origin| origin.path.starts_with('/'))
+        .collect()
+}
+
+/// The origins whose place holds no regular backup taken after the restore.
+/// A copy still backing up there (the old journal, switched back to) is not
+/// this journal's history from that point, so its place is left alone and
+/// counted elsewhere. A snapshot whose time can't be read counts as after.
+pub fn quiet_origins(origins: &[Origin], listing: &[Value], skip_tags: &[&str]) -> Vec<String> {
+    let backed_up_after = |origin: &Origin, snapshot: &Value| {
+        let tagged = snapshot
+            .get("tags")
+            .and_then(Value::as_array)
+            .is_some_and(|tags| {
+                tags.iter()
+                    .any(|tag| tag.as_str().is_some_and(|tag| skip_tags.contains(&tag)))
+            });
+        let here = snapshot
+            .get("paths")
+            .and_then(Value::as_array)
+            .is_some_and(|paths| {
+                paths.iter().filter_map(Value::as_str).any(|path| {
+                    crate::restic_paths::restic_tree_path(Path::new(path)) == origin.path
+                })
+            });
+        let after = snapshot
+            .get("time")
+            .and_then(Value::as_str)
+            .and_then(|time| DateTime::parse_from_rfc3339(time).ok())
+            .is_none_or(|time| time.with_timezone(&chrono::Utc) > origin.at);
+        !tagged && here && after
+    };
+    origins
+        .iter()
+        .filter(|origin| {
+            !listing
+                .iter()
+                .any(|snapshot| backed_up_after(origin, snapshot))
+        })
+        .map(|origin| origin.path.clone())
         .collect()
 }
 
@@ -181,6 +236,27 @@ impl Destination {
 
     /// The destination's backups carrying `tag`, as `restic snapshots` lists
     /// them (id, time, tags, `original` when rewritten).
+    /// Every snapshot, from stock restic.
+    pub fn snapshots(&self, services: &BackupServices<'_>) -> Result<Vec<Value>, String> {
+        let output = restic(
+            services,
+            &self.runtime,
+            vec!["snapshots".into()],
+            true,
+            10 * 60,
+            None,
+        )?;
+        if output.returncode != 0 {
+            return Err(crate::runner::reason_for_returncode(output.returncode).into());
+        }
+        output
+            .json
+            .as_ref()
+            .and_then(Value::as_array)
+            .cloned()
+            .ok_or_else(|| "unreadable_listing".into())
+    }
+
     pub fn snapshots_tagged(
         &self,
         services: &BackupServices<'_>,
@@ -239,23 +315,42 @@ mod origin_tests {
     use super::*;
 
     #[test]
-    fn a_restore_origin_is_recorded_once_and_read_back() {
+    fn a_restore_origin_is_recorded_once_and_kept_only_while_quiet() {
         let temp = tempfile::tempdir().unwrap();
         let journal = temp.path();
         std::fs::create_dir_all(journal.join("config")).unwrap();
         assert!(origins(journal).is_empty());
-        record_origin(journal, &"a".repeat(64), "/home/old/journal").unwrap();
-        record_origin(journal, &"b".repeat(64), "/home/old/journal").unwrap();
-        record_origin(journal, &"c".repeat(64), "relative/not/kept").unwrap();
-        record_origin(journal, &"d".repeat(64), "/Users/old/journal").unwrap();
+        let at = "2026-11-15T12:00:00Z";
+        record_origin(journal, &"a".repeat(64), "/home/old/journal", at).unwrap();
+        record_origin(journal, &"b".repeat(64), "/home/old/journal", at).unwrap();
+        record_origin(journal, &"c".repeat(64), "relative/not/kept", at).unwrap();
+        record_origin(journal, &"d".repeat(64), "/Users/old/journal", at).unwrap();
+        let found = origins(journal);
         assert_eq!(
-            origins(journal),
+            found.iter().map(|o| o.path.as_str()).collect::<Vec<_>>(),
             ["/home/old/journal", "/Users/old/journal"]
         );
+        // A place backed up again after the restore is left alone; archives
+        // and backups from before don't count.
+        let listing = serde_json::json!([
+            {"paths": ["/home/old/journal"], "time": "2026-11-14T10:00:00Z"},
+            {"paths": ["/Users/old/journal"], "time": "2026-11-15T13:00:00Z"},
+            {"paths": ["/home/old/journal"], "time": "2026-11-16T00:00:00Z", "tags": ["spb-offload-archive"]},
+        ]);
+        assert_eq!(
+            quiet_origins(
+                &found,
+                listing.as_array().unwrap(),
+                &["spb-offload-archive"]
+            ),
+            ["/home/old/journal"]
+        );
+        let untimed = serde_json::json!([{"paths": ["/home/old/journal"]}]);
+        assert!(quiet_origins(&found[..1], untimed.as_array().unwrap(), &[]).is_empty());
         std::fs::write(journal.join(ORIGINS_FILE), b"{").unwrap();
         assert!(origins(journal).is_empty(), "unreadable reads as none");
         assert!(
-            record_origin(journal, &"e".repeat(64), "/x").is_err(),
+            record_origin(journal, &"e".repeat(64), "/x", at).is_err(),
             "never overwritten"
         );
     }
