@@ -1767,20 +1767,23 @@ systemctl --user start solstone-linux</code></div>
       refreshStatus();
       refreshPrivateLinkStatus();
     });
-    document.getElementById('link-local-network-toggle')?.addEventListener('click', (event) => {
-      if (isBusy(event.currentTarget)) return;
+    document.getElementById('link-local-network-toggle')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      if (isBusy(button)) return;
       if (!localNetworkCanChange || localNetworkOpen === null) return;
-      if (localNetworkOpen && !confirm(linkCopy.LOCAL_NETWORK_CLOSE_CONFIRM)) return;
-      setLocalNetwork(!localNetworkOpen);
+      const wasOpen = localNetworkOpen;
+      if (wasOpen && !(await window.SolQuestion.ask({ message: linkCopy.LOCAL_NETWORK_CLOSE_CONFIRM, action: linkCopy.LOCAL_NETWORK_CLOSE_CTA, signal: ctx.signal, opener: button }))) return;
+      if (ctx.disposed) return;
+      setLocalNetwork(!wasOpen);
     });
     segByo?.addEventListener('click', () => selectReachMode('byo'));
     segHosted?.addEventListener('click', () => selectReachMode('hosted'));
     privateLinkSetup?.addEventListener('click', () => { if (!isBusy(privateLinkSetup)) startPrivateLinkSetup(); });
     privateLinkEnroll?.addEventListener('click', () => { if (!isBusy(privateLinkEnroll)) startPrivateLinkSetup(); });
     document.querySelectorAll('.link-private-link-disable').forEach((btn) => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         if (isBusy(btn)) return;
-        if (!confirm(localNetworkClosed ? linkCopy.PRIVATE_LINK_DISABLE_CONFIRM_CLOSED : linkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
+        if (!(await window.SolQuestion.ask({ message: localNetworkClosed ? linkCopy.PRIVATE_LINK_DISABLE_CONFIRM_CLOSED : linkCopy.PRIVATE_LINK_DISABLE_CONFIRM, action: linkCopy.PRIVATE_LINK_DISABLE_CTA, signal: ctx.signal, opener: btn })) || ctx.disposed) return;
         disablePrivateLink();
       });
     });
@@ -1971,8 +1974,8 @@ systemctl --user start solstone-linux</code></div>
         canChangeLocalNetwork: () => localNetworkCanChange,
         canPairThisComputer: () => sameComputerPairing,
         onDeviceRemoved: () => loadClients(),
-        onPrivateLinkDisable: () => {
-          if (!confirm(localNetworkClosed ? linkCopy.PRIVATE_LINK_DISABLE_CONFIRM_CLOSED : linkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
+        onPrivateLinkDisable: async () => {
+          if (!(await window.SolQuestion.ask({ message: localNetworkClosed ? linkCopy.PRIVATE_LINK_DISABLE_CONFIRM_CLOSED : linkCopy.PRIVATE_LINK_DISABLE_CONFIRM, action: linkCopy.PRIVATE_LINK_DISABLE_CTA, signal: ctx.signal })) || ctx.disposed) return;
           disablePrivateLink();
         },
       });
@@ -2455,7 +2458,7 @@ systemctl --user start solstone-linux</code></div>
       const name = clientNameFor(button);
       const copy = linkCopy || {};
       const title = (copy.UNPAIR_TITLE_FORMAT || "unpair '{label}'?").replace('{label}', name);
-      if (!confirm(copy.UNPAIR_BODY ? `${title}\n\n${copy.UNPAIR_BODY}` : title)) {
+      if (!(await window.SolQuestion.ask({ message: copy.UNPAIR_BODY ? `${title}\n\n${copy.UNPAIR_BODY}` : title, action: 'unpair', signal: ctx.signal, opener: () => Array.from(workspaceRoot.querySelectorAll('[data-network-action="unpair"]')).find(el => el.dataset.cid === cid) })) || ctx.disposed) {
         return;
       }
 

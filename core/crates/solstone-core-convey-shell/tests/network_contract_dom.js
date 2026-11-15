@@ -8,6 +8,7 @@
 // Every compare is of plain values, ids or tag names: never an element.
 
 const assert = require('assert');
+const { answerQuestion } = require('./question_controls.js');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -638,7 +639,6 @@ function makePage(env, address = '/app/network/', { answers, arrival = null } = 
 
   const page = {
     env, window, doc, main, clock, calls, errors, shown, opened, loads, observers,
-    confirmAnswer: true,
     holds: [],
     statuses: [],
     hold(call) { return page.holds.some((test) => test(call)); },
@@ -691,7 +691,7 @@ function makePage(env, address = '/app/network/', { answers, arrival = null } = 
     setInterval: clock.setInterval, clearInterval: clock.clearInterval,
     performance: { mark() {}, clearMarks() {} },
     fetch: window.fetch,
-    confirm: () => page.confirmAnswer,
+    confirm: () => { throw new Error("browser confirm is forbidden"); },
     navigator: { clipboard: { writeText: async () => {} } },
     CSS: { escape: (s) => String(s).replace(/["\\]/g, '\\$&') },
     ResizeObserver: ResizeObserverShim,
@@ -701,6 +701,7 @@ function makePage(env, address = '/app/network/', { answers, arrival = null } = 
   vm.runInContext(fs.readFileSync(path.join(shell, 'store.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'views.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'router.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(shell, 'question.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'focus.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(env.manifestDir, 'assets/network/network.js'), 'utf8'), context);
   ['SolStore', 'SolViews', 'solRouter', 'NetworkRender'].forEach((name) => { window[name] = context.window[name] || context[name]; });
@@ -910,6 +911,7 @@ module.exports = async function networkContractCases(manifestDir) {
     p.holds.push((call) => call.method !== 'GET');
     // unpair, forget, the local network and the private link, each pressed
     p.press(p.q('[data-network-action="unpair"]'));
+    answerQuestion(p);
     const forgetRow = p.q('.client-forget');
     p.press(forgetRow.querySelector('[data-forget-action="ask"]'));
     p.press(forgetRow.querySelector('[data-forget-action="confirm"]'));
@@ -966,12 +968,65 @@ module.exports = async function networkContractCases(manifestDir) {
     assert.deepStrictEqual(p.opened, ['https://services.example/consent']);
   });
 
+  await test('unpair and closing the local network ask in-page: cancel does nothing, accept writes once, leaving cancels', async () => {
+    for (const target of ['[data-network-action="unpair"]', '#link-local-network-toggle']) {
+      const answers = journal(copy, { 'GET /app/network/api/local-network': {open: true, can_change: true, windows_asks: true} });
+      const p = await boot(env, '/app/network/', {answers});
+      const control = p.q(target);
+      const details = control.closest('details');
+      if (details) details.open = true;
+      control.focus();
+      p.press(control);
+      assert.ok(p.q('.convey-question') && p.writes().length === 0, 'drawn before any write');
+      answerQuestion(p, null);
+      await settle();
+      assert.ok(p.writes().length === 0 && p.doc.activeElement === control, 'cancel leaves state and focus as they were');
+      p.press(control);
+      p.holds.push(call => call.method !== 'GET');
+      const accept = p.q('[data-question-accept]');
+      answerQuestion(p);
+      accept.click();
+      await settle();
+      assert.ok(p.writes().length === 1, 'accept authorizes one write');
+      p.leave();
+      await p.arrive();
+      p.press(p.q(target));
+      const oldAccept = p.q('[data-question-accept]');
+      assert.ok(oldAccept, 'the question is drawn on the new mount');
+      p.leave();
+      p.main.focus();
+      oldAccept.click();
+      await settle();
+      assert.ok(p.writes().length === 1 && p.q('.convey-question') === null, 'leaving adds no write');
+      assert.ok(p.doc.activeElement === p.main, 'arrival focus stays on the next page');
+    }
+  });
+
+  await test('a clients poll may redraw the opener while a question is up; cancel returns to its replacement', async () => {
+    let clients = [DELIVERED, NEVER];
+    const p = await boot(env, '/app/network/', {answers: journal(copy, {'GET /app/network/api/clients': () => ({clients})})});
+    const selector = '.client-card[data-cid="sha256:delivered"] [data-network-action="unpair"]';
+    const opener = p.q(selector);
+    opener.closest('details').open = true;
+    opener.focus();
+    p.press(opener);
+    clients = clients.map(c => c.cid === DELIVERED.cid ? {...c, display_label: 'new device label'} : c);
+    p.clock.advance(30000);
+    await settle();
+    assert.ok(!opener.isConnected, 'the original control was redrawn');
+    answerQuestion(p, null);
+    await settle();
+    assert.ok(p.doc.activeElement === p.q(selector), 'cancel returns to the current control for that device');
+    assert.strictEqual(p.writes().length, 0, 'cancel never unpairs it');
+  });
+
   await test('a card\'s unpair works by a dispatched click after an in-page mount', async () => {
     const p = await boot(env);
     p.leave();
     await p.arrive('/app/network/');
     const before = p.reads('/app/network/api/clients').length;
     p.press(p.q('.client-card[data-cid="sha256:delivered"] [data-network-action="unpair"]'));
+    answerQuestion(p);
     await settle();
     assert.ok(p.writes().filter((c) => c.method === 'DELETE').length === 1, 'one unpair');
     assert.ok(p.reads('/app/network/api/clients').length === before + 1, 'the list is read again, of its own');
@@ -1054,6 +1109,7 @@ module.exports = async function networkContractCases(manifestDir) {
       p.holds.push((call) => call.url === '/app/network/host-address');
       const button = p.byId(`link-host-address-${which}`);
       keyPress(p, button);
+
       await settle();
       assert.ok(busy(button), `${which} is busy, not disabled, while the write is out`);
       assert.ok(focusOn(p) === `BUTTON#link-host-address-${which}`, `${which}: focus stays while the write is out (on ${focusOn(p)})`);
@@ -1065,6 +1121,7 @@ module.exports = async function networkContractCases(manifestDir) {
       p.holds.length = 0;
       p.statuses.push([(call) => call.url === '/app/network/host-address', 500]);
       keyPress(p, button);
+
       await settle();
       assert.ok(focusOn(p) === `BUTTON#link-host-address-${which}`, `${which}: a failed write leaves focus on the control (on ${focusOn(p)})`);
       assert.ok(p.byId('link-host-address-error').hidden === false, `${which}: and its error is shown`);
@@ -1169,6 +1226,7 @@ module.exports = async function networkContractCases(manifestDir) {
       p.holds.push((call) => call.url === '/app/network/private-link/disable');
       const off = p.byId('link-private-link-disable');
       keyPress(p, off);
+      answerQuestion(p);
       await settle();
       assert.ok(busy(off) && focusOn(p) === 'BUTTON#link-private-link-disable', `busy and focused while out (on ${focusOn(p)})`);
       const write = lastCall(p, 'POST', '/app/network/private-link/disable');
@@ -1235,6 +1293,7 @@ module.exports = async function networkContractCases(manifestDir) {
       const button = p.q(`.client-card[data-cid="${run.gone}"] [data-network-action="unpair"]`);
       p.state.clients = run.list.filter((c) => c.cid !== run.gone);
       keyPress(p, button);
+      answerQuestion(p);
       await settle();
       const active = p.doc.activeElement;
       if (run.want.endsWith('card')) {
@@ -1248,6 +1307,7 @@ module.exports = async function networkContractCases(manifestDir) {
     openDetails(p, DELIVERED.cid);
     const button = p.q(`.client-card[data-cid="${DELIVERED.cid}"] [data-network-action="unpair"]`);
     keyPress(p, button);
+    answerQuestion(p);
     await settle();
     assert.ok(p.shown.length === 1, 'a failed unpair shows the shell\'s error');
     assert.ok(p.doc.activeElement === button, `and focus stays on unpair (on ${focusOn(p)})`);

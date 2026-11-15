@@ -7,6 +7,7 @@
 // entities_workspace_dom.js runs these after its own cases.
 
 const assert = require('assert');
+const { answerQuestion } = require('./question_controls.js');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -541,7 +542,7 @@ function makePage(env, address = '/app/entities/', { answers, storage } = {}) {
   window.setInterval = clock.setInterval;
   window.clearInterval = clock.clearInterval;
   window.matchMedia = () => ({ matches: false });
-  window.confirm = () => true;
+  window.confirm = () => { throw new Error("browser confirm is forbidden"); };
   window.crypto = { getRandomValues: (bytes) => { bytes.fill(9); return bytes; } };
   const store = storage || new Map();
   window.sessionStorage = {
@@ -625,6 +626,7 @@ function makePage(env, address = '/app/entities/', { answers, storage } = {}) {
   vm.runInContext(fs.readFileSync(path.join(shell, 'store.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'views.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'router.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(shell, 'question.js'), 'utf8'), context);
   // The window is the context's global object in a browser; here the
   // contract's own names are copied across.
   ['SolStore', 'SolViews', 'solRouter'].forEach((name) => { window[name] = context.window[name] || context[name]; });
@@ -816,6 +818,7 @@ module.exports = async function entitiesContractCases(manifestDir) {
     p.byId('journal-detail-merge-btn').click();
     await settle();
     p.byId('journal-detail-merge-preview').querySelector('button').click();
+    answerQuestion(p);
     await settle();
     const commit = p.calls.find((c) => c.method === 'POST' && c.body?.commit);
     assert.ok(commit, 'the merge is committed');
@@ -850,6 +853,7 @@ module.exports = async function entitiesContractCases(manifestDir) {
     await settle();
     const i = p.index();
     p.byId('journal-detail-merge-preview').querySelector('button').click();
+    answerQuestion(p);
     await settle();
     assert.strictEqual(p.index(), i + 1, 'one entry, as the hash was');
     assert.strictEqual(p.location.hash, '#p1');

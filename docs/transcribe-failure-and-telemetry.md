@@ -35,7 +35,7 @@ transcribed. That is the bug this contract closes.
 
 Native transcription failures can leave durable processing and retry evidence without a successful transcript. The shared retry owner in `solstone-core-system/src/work_retry/raw.rs` derives eligibility from that evidence, the current input, declared fixes and ordinary owner retry permission. Repeated discovery, resume or restart must not grant fresh permission for an unchanged held input.
 
-The shared discovery worker in `solstone-core-think-cli/src/planner.rs` reconstructs owed work and submits eligible work to TaskQueue. Automatic passes rest for at least 60 seconds, or nine times the previous pass duration when that is longer. Explicit wakes and queue top-ups can act sooner. Historical no-progress backoff remains owned by `solstone-core-system/src/catchup.rs`.
+The shared discovery worker in `solstone-core-think-cli/src/planner.rs` reconstructs owed work and hands TaskQueue its ranking. The queue offers that ranking beside direct submissions at every pick, and checks each entry as still owed just before it starts. Automatic passes rest for at least 60 seconds, or nine times the previous pass duration when that is longer. Explicit wakes, a finished owner request and a used-up full ranking can start one sooner. Historical no-progress backoff remains owned by `solstone-core-system/src/catchup.rs`.
 
 The embedded audio worker also discovers eligible retained inputs through this shared retry contract. It preserves the selected provider and accepted custody record. An unavailable engine leaves work owed; automatic recovery depends on eligibility and the existing admission checks.
 

@@ -215,7 +215,7 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
     querySelectorAll: () => [],
     addEventListener(name, listener) { (view.listeners[name] ||= []).push(listener); },
   };
-  const context = vm.createContext({window, document, navigator, location, URL, setTimeout: callback => { timerId += 1; timers.set(timerId, callback); return timerId; }, clearTimeout(id) { timers.delete(id); }, confirm: () => true, prompt: () => null, URLSearchParams, console});
+  const context = vm.createContext({window, document, navigator, location, URL, setTimeout: callback => { timerId += 1; timers.set(timerId, callback); return timerId; }, clearTimeout(id) { timers.delete(id); }, confirm: () => { throw new Error('browser confirm is forbidden'); }, prompt: () => { throw new Error('browser prompt is forbidden'); }, URLSearchParams, console});
   const hostJs = fs.readFileSync(path.join(root, 'assets/static/journal-web-host.js'), 'utf8');
   const navJs = fs.readFileSync(path.join(root, 'assets/static/external-navigation.js'), 'utf8');
   vm.runInContext(hostJs, context, {filename: 'journal-web-host.js'});

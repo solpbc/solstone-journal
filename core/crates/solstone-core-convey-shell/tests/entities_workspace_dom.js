@@ -913,11 +913,13 @@ async function main() {
   let shownError;
   const mergeContext = {
     ...errorContext,
-    currentDetailEntity: {name: 'source'},
+    currentDetailEntity: {id: 'source', name: 'source'},
+    ctx: {disposed: false},
     ENT_COPY: {ENT_TRUST_ACTION_FAILED: 'failure fallback'},
     window: { createViewReady: () => () => {},
       ...errorContext.window,
-      confirm: () => true,
+      SolQuestion: {ask: async () => true},
+      confirm: () => { throw new Error('browser confirm is forbidden'); },
       apiJson: async () => { calls += 1; throw mergeFailure; },
     },
     // The view's reads and writes go through its mount's `apiJson`.

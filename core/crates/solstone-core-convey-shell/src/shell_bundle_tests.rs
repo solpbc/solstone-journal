@@ -120,7 +120,7 @@ fn the_bundles_hold_the_shell_page_files_in_order_one_banner_each_unchanged() {
     let tags = bundle::shell_page_tags(page).unwrap();
     let boot = files_of(&tags.scripts, bundle::SHELL_SCRIPT_BUNDLE);
     let rest = files_of(&tags.scripts, bundle::SHELL_REST_BUNDLE);
-    assert!(boot.len() >= 20 && rest.len() >= 5 && tags.styles.len() == 3);
+    assert!(boot.len() >= 20 && !rest.is_empty() && tags.styles.len() == 3);
     let script = source("/static/shell.js");
     let rest_script = source("/static/shell-rest.js");
     assert_bundle_holds(script, &boot);

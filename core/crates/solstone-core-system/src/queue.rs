@@ -8,7 +8,7 @@ use crate::work_policy::{ThinkingLane, WorkPolicy};
 use solstone_core_journal_config::work_priority::{WORK_PRIORITY_ENV, WorkPriority};
 use solstone_core_local::admission::confidential_background_open;
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ffi::OsString;
 use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -237,13 +237,21 @@ fn bounded_observation_command(command: &[String]) -> bool {
     !command.is_empty() && command.len() <= 8 && command.iter().all(|arg| arg.len() <= 64)
 }
 
-/// The most discovered tasks the queue takes from one replacement.
-pub const DISCOVERED_ADMISSION: usize = 4;
-
 /// Reconstructed work. This internal type has no bus representation.
 #[derive(Clone)]
 pub struct DiscoveredTask {
     pub request: crate::request::BusTaskRequest,
+}
+
+/// Says whether discovered work is still owed, just before it starts. It may
+/// read the journal, so the queue calls it off its lock and off the caller.
+pub type DiscoveredPreflight = Arc<dyn Fn(&DiscoveredTask) -> bool + Send + Sync>;
+
+/// Discovered work waits here, ranked, until it is the best runnable work.
+struct DiscoveredEntry {
+    task: DiscoveredTask,
+    submission: Submission,
+    priority: WorkPriority,
 }
 
 /// This many thinking tasks failing in a row, with none succeeding, says thinking
@@ -1087,6 +1095,7 @@ struct QueueInner {
     callable_worker: Option<CallableQueueWorker>,
     callable_admission: Option<CallableAdmission>,
     submission_admission: std::sync::OnceLock<CallableAdmission>,
+    discovered_preflight: Mutex<Option<DiscoveredPreflight>>,
     daily_talent_roots: Option<(PathBuf, PathBuf)>,
     callable_workers: Mutex<Vec<CallableTaskHandle>>,
     callable_join: Mutex<()>,
@@ -1199,6 +1208,67 @@ struct QueueState {
     termination_attempts: TerminationAttemptRegistry,
     /// When the last older analysis task left; the owner's rest counts from it.
     background_finished_at: Option<Instant>,
+    /// Discovery's ranking, best first. It is offered beside direct submissions
+    /// at every pick, so a backlog fills any free capacity as work finishes.
+    discovered: Vec<DiscoveredEntry>,
+    /// Why owed thinking last waited with none running, and since when.
+    idle: Option<(&'static str, Instant)>,
+}
+
+impl QueueState {
+    /// Every command the queue has taken on, with each of its references:
+    /// pending, queued, reserved or running, and held. Discovered work still
+    /// waiting in the ranking is not taken on yet.
+    fn taken_work(&self) -> impl Iterator<Item = (&[String], &str)> {
+        let pending = self
+            .pending
+            .iter()
+            .map(|entry| (entry.command.as_slice(), entry.reference.as_str()));
+        let running = self
+            .running
+            .values()
+            .map(|slot| (slot.command.as_slice(), slot.reference.as_str()));
+        let active = self
+            .active
+            .iter()
+            .map(|(reference, entry)| (entry.command.as_slice(), reference.as_str()));
+        let held = self.held.values().flat_map(|entry| {
+            let command = entry.dispatch.submission.command.as_slice();
+            std::iter::once(entry.dispatch.submission.reference.as_str())
+                .chain(entry.dispatch.references.iter().map(String::as_str))
+                .map(move |reference| (command, reference))
+        });
+        let queued = self.queues.values().flatten().flat_map(|entry| {
+            let command = entry.command.as_slice();
+            entry
+                .references
+                .iter()
+                .map(move |reference| (command, reference.as_str()))
+        });
+        pending
+            .chain(running)
+            .chain(active)
+            .chain(held)
+            .chain(queued)
+    }
+}
+
+/// Whether this exact command is pending, reserved, running or held: taken on
+/// beyond a queued entry that a discovered pick of the same command absorbs.
+fn reserves_command(state: &QueueState, command: &[String]) -> bool {
+    state.pending.iter().any(|entry| entry.command == command)
+        || state.running.values().any(|slot| slot.command == command)
+        || state
+            .held
+            .values()
+            .any(|entry| entry.dispatch.submission.command == command)
+}
+
+/// Whether thinking the queue has taken on is pending, queued, running or held.
+fn thinking_taken(state: &QueueState) -> bool {
+    state
+        .taken_work()
+        .any(|(command, _)| is_analysis_command(command))
 }
 
 struct RunningSlot {
@@ -1224,7 +1294,6 @@ struct Submission {
 #[derive(Clone)]
 struct QueuedEntry {
     sources: Vec<Submission>,
-    replaceable: bool,
     references: Vec<String>,
     cap: Duration,
     command: Vec<String>,
@@ -1242,6 +1311,8 @@ struct Dispatch {
     submission: Submission,
     references: Vec<String>,
     daily_catchup_admission: Option<DailyCatchupAdmission>,
+    /// Discovered work is checked as still owed before it starts.
+    preflight: Option<DiscoveredTask>,
 }
 
 struct ActiveEntry {
@@ -1349,6 +1420,7 @@ fn insert_loaded_record(
             },
             references: rec_state.references.clone(),
             daily_catchup_admission: None,
+            preflight: None,
             priority: WorkPriority::default(),
         };
         let reasons = rec_state.reasons.clone();
@@ -1712,6 +1784,8 @@ impl TaskQueue {
                     stopped_ticks: BTreeMap::new(),
                     termination_attempts: TerminationAttemptRegistry::default(),
                     background_finished_at: None,
+                    discovered: Vec::new(),
+                    idle: None,
                 }),
                 #[cfg(test)]
                 work_policy_override: Mutex::new(None),
@@ -1739,6 +1813,7 @@ impl TaskQueue {
                 daily_talent_roots,
                 callable_admission,
                 submission_admission: std::sync::OnceLock::new(),
+                discovered_preflight: Mutex::new(None),
                 callable_workers: Mutex::new(Vec::new()),
                 callable_join: Mutex::new(()),
                 callable_transition: Mutex::new(()),
@@ -1834,7 +1909,40 @@ impl TaskQueue {
     /// Replace only discovery's unstarted contributions. An ordinary request
     /// coalesced into the same command retains its own priority and authority.
     /// Reservation, execution and safety holds are outside this operation.
-    pub fn replace_discovered(&self, mut candidates: Vec<DiscoveredTask>) {
+    /// Hold discovery's whole ranking, best first, in place of the last one.
+    /// The queue offers it beside direct submissions at every pick, so owed
+    /// work starts as soon as there is room for it, and each entry is checked
+    /// as still owed only when it is about to start.
+    pub fn replace_discovered(&self, candidates: Vec<DiscoveredTask>) {
+        self.offer_discovered(candidates, true);
+    }
+
+    /// Add urgent work found part way through a pass without withdrawing the
+    /// ranking the queue already holds, so older work keeps running meanwhile.
+    pub fn add_discovered(&self, candidates: Vec<DiscoveredTask>) {
+        self.offer_discovered(candidates, false);
+    }
+
+    /// How much discovered work is waiting to start.
+    pub fn discovered_len(&self) -> usize {
+        self.inner
+            .state
+            .lock()
+            .expect("queue state")
+            .discovered
+            .len()
+    }
+
+    /// Install the check discovered work passes just before it starts.
+    pub fn install_discovered_preflight(&self, preflight: DiscoveredPreflight) {
+        *self
+            .inner
+            .discovered_preflight
+            .lock()
+            .expect("discovered preflight") = Some(preflight);
+    }
+
+    fn offer_discovered(&self, mut candidates: Vec<DiscoveredTask>, replace: bool) {
         let Some(generation) = self.admission_generation() else {
             return;
         };
@@ -1848,68 +1956,55 @@ impl TaskQueue {
             if state.shutdown || state.callable_paused || state.callable_generation != generation {
                 return;
             }
-            state.pending.retain(|source| !source.discovered);
-            let mut changed = state.queues.keys().cloned().collect::<BTreeSet<_>>();
-            let mut survivors = Vec::new();
-            for queue in state.queues.values_mut() {
-                queue.retain_mut(|entry| {
-                    if !entry.replaceable || !entry.sources.iter().any(|source| source.discovered) {
-                        return true;
-                    }
-                    survivors.extend(
-                        entry
-                            .sources
-                            .iter()
-                            .filter(|source| !source.discovered)
-                            .cloned(),
-                    );
-                    false
-                });
+            if replace {
+                state.discovered.clear();
             }
-            state.queues.retain(|_, queue| !queue.is_empty());
-            for source in survivors {
-                enqueue_locked(&mut state, source);
-            }
-            let mut added = 0;
+            let mut known = state
+                .discovered
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| (entry.submission.command.clone(), index))
+                .collect::<HashMap<_, _>>();
             for candidate in candidates {
-                let mut source = normalize_request(
-                    ExecutionRequest::Bus(candidate.request),
+                let mut submission = normalize_request(
+                    ExecutionRequest::Bus(candidate.request.clone()),
                     self.inner.options.cap_resolver.as_ref(),
                 );
-                if state
-                    .running
-                    .values()
-                    .any(|slot| slot.command == source.command)
-                    || state
-                        .held
-                        .values()
-                        .any(|held| held.dispatch.submission.command == source.command)
-                    || state
-                        .queues
-                        .values()
-                        .flatten()
-                        .any(|entry| !entry.replaceable && entry.command == source.command)
-                {
+                submission.discovered = true;
+                if reserves_command(&state, &submission.command) {
                     continue;
                 }
-                source.discovered = true;
-                changed.insert(source.partition.clone());
-                if state.ready {
-                    enqueue_locked(&mut state, source);
-                } else {
-                    state.pending.push(source);
-                }
-                added += 1;
-                if added == DISCOVERED_ADMISSION {
-                    break;
+                let priority = submission
+                    .priority
+                    .resolve(&submission.command, selection.today);
+                let entry = DiscoveredEntry {
+                    task: candidate,
+                    submission,
+                    priority,
+                };
+                // The same work found again keeps its better place: an owner's
+                // ask raises a day's band without changing its command.
+                match known.get(&entry.submission.command) {
+                    Some(&index) => {
+                        if entry.priority.sort_key() < state.discovered[index].priority.sort_key() {
+                            state.discovered[index] = entry;
+                        }
+                    }
+                    None => {
+                        known.insert(entry.submission.command.clone(), state.discovered.len());
+                        state.discovered.push(entry);
+                    }
                 }
             }
+            // Stable: discovery's own order breaks ties.
+            state
+                .discovered
+                .sort_by_key(|entry| entry.priority.sort_key());
             let dispatches = take_ready(&mut state, selection);
-            changed.extend(
-                dispatches
-                    .iter()
-                    .map(|dispatch| dispatch.submission.partition.clone()),
-            );
+            let changed = dispatches
+                .iter()
+                .map(|dispatch| dispatch.submission.partition.clone())
+                .collect::<BTreeSet<_>>();
             let events = changed
                 .iter()
                 .map(|partition| queue_changed_event(&state, partition))
@@ -1928,18 +2023,11 @@ impl TaskQueue {
     /// that `matches`.
     pub fn any_reference(&self, matches: impl Fn(&str) -> bool) -> bool {
         let state = self.inner.state.lock().expect("queue state lock poisoned");
-        state.pending.iter().any(|entry| matches(&entry.reference))
-            || state.running.values().any(|slot| matches(&slot.reference))
-            || state.active.keys().any(|value| matches(value))
+        state.taken_work().any(|(_, reference)| matches(reference))
             || state
-                .held
-                .values()
-                .any(|entry| entry.dispatch.references.iter().any(|value| matches(value)))
-            || state
-                .queues
-                .values()
-                .flatten()
-                .any(|entry| entry.references.iter().any(|value| matches(value)))
+                .discovered
+                .iter()
+                .any(|entry| matches(&entry.submission.reference))
     }
 
     pub fn set_ready(&self) {
@@ -2020,6 +2108,8 @@ impl TaskQueue {
                 .checked_add(1)
                 .ok_or("callable queue generation exhausted")?;
             let generation = state.callable_generation;
+            // Discovery's ranking is only advice; the next pass rebuilds it.
+            state.discovered.clear();
             let mut cancelled = Vec::new();
             let mut changed = BTreeSet::new();
             for submission in std::mem::take(&mut state.pending) {
@@ -2031,6 +2121,7 @@ impl TaskQueue {
                     submission,
                     priority: WorkPriority::default(),
                     daily_catchup_admission: None,
+                    preflight: None,
                 });
             }
             for (partition, entries) in std::mem::take(&mut state.queues) {
@@ -2053,6 +2144,7 @@ impl TaskQueue {
                         },
                         references: entry.references,
                         daily_catchup_admission: None,
+                        preflight: None,
                     });
                 }
             }
@@ -3413,59 +3505,7 @@ impl TaskQueue {
     /// When the latest of a failing run of thinking tasks ended. `None` means
     /// thinking is not known to be failing.
     pub fn thinking_failing_since(&self) -> Option<SystemTime> {
-        let state = self.inner.state.lock().expect("queue state lock poisoned");
-        let mut failures = state
-            .history
-            .iter()
-            .rev()
-            .filter(|record| asks_for_thinking(&record.command))
-            .filter(|record| {
-                matches!(
-                    record.exit_status.as_str(),
-                    "ok" | "error" | TIMEOUT_EXIT_STATUS
-                )
-            })
-            .take(THINKING_FAILURE_RUN);
-        let latest = failures.next()?;
-        (latest.exit_status != "ok"
-            && failures.clone().count() == THINKING_FAILURE_RUN - 1
-            && failures.all(|record| record.exit_status != "ok"))
-        .then_some(latest.ended_at)
-    }
-
-    /// How much discovered work may go to the queue now: all it admits, or
-    /// while thinking keeps failing, one task once the last failure has rested
-    /// and no thinking is under way.
-    pub fn discovered_room(&self, now: SystemTime) -> usize {
-        let Some(failed_at) = self.thinking_failing_since() else {
-            return DISCOVERED_ADMISSION;
-        };
-        let rested = now
-            .duration_since(failed_at)
-            .is_ok_and(|rested| rested >= THINKING_RETRY_AFTER);
-        usize::from(rested && !self.thinking_in_queue())
-    }
-
-    /// Whether a thinking task is pending, queued, running or held.
-    pub fn thinking_in_queue(&self) -> bool {
-        let state = self.inner.state.lock().expect("queue state lock poisoned");
-        state
-            .pending
-            .iter()
-            .any(|source| is_analysis_command(&source.command))
-            || state
-                .running
-                .values()
-                .any(|slot| is_analysis_command(&slot.command))
-            || state
-                .held
-                .values()
-                .any(|held| is_analysis_command(&held.dispatch.submission.command))
-            || state
-                .queues
-                .values()
-                .flatten()
-                .any(|entry| is_analysis_command(&entry.command))
+        thinking_failing_since(&self.inner.state.lock().expect("queue state lock poisoned"))
     }
 
     #[cfg(any(unix, test))]
@@ -3570,6 +3610,40 @@ fn task_status_flags(duration_seconds: u64, cap_seconds: u64) -> (bool, bool) {
         (duration_seconds as u128) * 4 >= (cap_seconds as u128) * 3,
         duration_seconds > cap_seconds,
     )
+}
+
+/// When the last of a run of failed thinking tasks ended, if the latest
+/// thinking tasks all failed.
+fn thinking_failing_since(state: &QueueState) -> Option<SystemTime> {
+    let mut failures = state
+        .history
+        .iter()
+        .rev()
+        .filter(|record| asks_for_thinking(&record.command))
+        .filter(|record| {
+            matches!(
+                record.exit_status.as_str(),
+                "ok" | "error" | TIMEOUT_EXIT_STATUS
+            )
+        })
+        .take(THINKING_FAILURE_RUN);
+    let latest = failures.next()?;
+    (latest.exit_status != "ok"
+        && failures.clone().count() == THINKING_FAILURE_RUN - 1
+        && failures.all(|record| record.exit_status != "ok"))
+    .then_some(latest.ended_at)
+}
+
+/// Whether discovered work may start: always, or while thinking keeps failing,
+/// one task once the last failure has rested and no thinking is under way. A
+/// failure never discards the ranking, and the first success releases it.
+fn discovered_open(state: &QueueState, now: SystemTime) -> bool {
+    let Some(failed_at) = thinking_failing_since(state) else {
+        return true;
+    };
+    now.duration_since(failed_at)
+        .is_ok_and(|rested| rested >= THINKING_RETRY_AFTER)
+        && !thinking_taken(state)
 }
 
 fn read_work_policy(inner: &QueueInner) -> WorkPolicy {
@@ -3678,7 +3752,6 @@ fn enqueue_locked(state: &mut QueueState, submission: Submission) -> SubmitOutco
     }
     queue.push_back(QueuedEntry {
         sources: vec![submission.clone()],
-        replaceable: true,
         cap: submission.cap,
         references: vec![submission.reference],
         command: submission.command,
@@ -3690,9 +3763,22 @@ fn enqueue_locked(state: &mut QueueState, submission: Submission) -> SubmitOutco
     SubmitOutcome::Queued
 }
 
-// One selector for every wakeup. Held lanes are not candidates. A busy lane's
-// highest waiting analysis is a barrier: lower work cannot reserve other lanes
-// ahead of it. Independent maintenance remains runnable during that wait.
+/// Where the best runnable analysis waits.
+#[derive(Clone)]
+enum Pick {
+    Queued(Partition, usize),
+    Discovered(usize),
+}
+
+// One selector for every wakeup. Held lanes are not candidates. Analysis is
+// chosen by priority across direct submissions and discovery's ranking alike,
+// so newer work always wins the next pick and older work fills any room left.
+//
+// On a local or own-key lane, a busy lane's highest waiting analysis is a
+// barrier: lower work cannot reserve other lanes ahead of it, because one model
+// serves them all. On the confidential lane the engine orders and throttles its
+// own calls, so the best analysis that can start does. Independent maintenance
+// remains runnable during any wait.
 //
 // Older confidential work (bands 4-6) shares one engine call at a time per
 // journal. One such task runs at a time, and only while no other call holds or
@@ -3710,77 +3796,150 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
     if !state.ready || state.shutdown || state.callable_paused || state.queue_hold.is_some() {
         return dispatches;
     }
+    let barrier = spending.lane != ThinkingLane::Confidential;
     loop {
-        let running_slots = &state.running;
-        let background_waits = spending.lane == ThinkingLane::Confidential
-            && (!background_slot_open
-                || state.running.values().any(|slot| slot.background)
-                || state
-                    .background_finished_at
-                    .is_some_and(|at| at.elapsed() < spending.confidential_history_rest));
-        let analysis = (allowed && state.local_analysis_pauses == 0)
+        let background_waits = background_waits_now(state, spending, background_slot_open);
+        let thinking = allowed && state.local_analysis_pauses == 0;
+        let runnable = |partition: &Partition, command: &[String], priority: WorkPriority| {
+            !state.held.contains_key(partition)
+                && !state
+                    .running
+                    .values()
+                    .any(|slot| index_daily_pair_conflicts(command, &slot.command))
+                && spending.permits(priority.band)
+                && !(background_waits && priority.band.is_background())
+                && (barrier || !state.running.contains_key(partition))
+        };
+        let runnable = &runnable;
+        let queued = thinking
             .then(|| {
                 state
                     .queues
                     .iter()
-                    .filter(|(partition, _)| !state.held.contains_key(*partition))
                     .flat_map(|(partition, queue)| {
                         queue.iter().enumerate().filter_map(move |(index, entry)| {
                             let priority = entry.priority.resolve(&entry.command, today);
                             (is_analysis_command(&entry.command)
-                                && !running_slots.values().any(|slot| {
-                                    index_daily_pair_conflicts(&entry.command, &slot.command)
-                                })
-                                && spending.permits(priority.band)
-                                && !(background_waits && priority.band.is_background()))
-                            .then(|| (partition.clone(), index, priority))
+                                && runnable(partition, &entry.command, priority))
+                            .then(|| (Pick::Queued(partition.clone(), index), priority))
                         })
                     })
-                    .min_by_key(|(_, _, priority)| priority.sort_key())
+                    .min_by_key(|(_, priority)| priority.sort_key())
             })
             .flatten();
-        let candidate = analysis
-            .filter(|(partition, _, _)| !state.running.contains_key(partition))
-            .map(|(partition, index, _)| (partition, index))
-            .or_else(|| {
-                state.queues.iter().find_map(|(partition, queue)| {
-                    (!state.running.contains_key(partition)
-                        && !state.held.contains_key(partition)
-                        && queue.front().is_some_and(|entry| {
-                            !is_analysis_command(&entry.command)
-                                && !(state.local_analysis_pauses != 0
-                                    && is_local_analysis_command(&entry.command))
-                                && !index_daily_conflict(state, &entry.command)
-                        }))
-                    .then(|| (partition.clone(), 0))
+        // The ranking is sorted, so its first runnable entry is its best.
+        let discovered = (thinking && discovered_open(state, SystemTime::now()))
+            .then(|| {
+                state.discovered.iter().enumerate().find(|(_, entry)| {
+                    is_analysis_command(&entry.submission.command)
+                        && runnable(
+                            &entry.submission.partition,
+                            &entry.submission.command,
+                            entry.priority,
+                        )
+                        && !reserves_command(state, &entry.submission.command)
                 })
+            })
+            .flatten()
+            .map(|(index, entry)| (Pick::Discovered(index), entry.priority));
+        let analysis = queued
+            .into_iter()
+            .chain(discovered)
+            .min_by_key(|(_, priority)| priority.sort_key())
+            .map(|(pick, _)| pick)
+            .filter(|pick| {
+                let partition = match pick {
+                    Pick::Queued(partition, _) => partition,
+                    Pick::Discovered(index) => &state.discovered[*index].submission.partition,
+                };
+                !state.running.contains_key(partition)
             });
-        let Some((partition, index)) = candidate else {
+        let pick = analysis.or_else(|| {
+            state.queues.iter().find_map(|(partition, queue)| {
+                (!state.running.contains_key(partition)
+                    && !state.held.contains_key(partition)
+                    && queue.front().is_some_and(|entry| {
+                        !is_analysis_command(&entry.command)
+                            && !(state.local_analysis_pauses != 0
+                                && is_local_analysis_command(&entry.command))
+                            && !index_daily_conflict(state, &entry.command)
+                    }))
+                .then(|| Pick::Queued(partition.clone(), 0))
+            })
+        });
+        let Some(pick) = pick else {
             break;
         };
-        let entry = state
-            .queues
-            .get_mut(&partition)
-            .expect("selected queue")
-            .remove(index)
-            .expect("selected entry");
-        if state.queues[&partition].is_empty() {
-            state.queues.remove(&partition);
-        }
-        let submission = Submission {
-            discovered: false,
-            partition: partition.clone(),
-            cap: entry.cap,
-            command: entry.command,
-            reference: entry.references[0].clone(),
-            day: entry.day,
-            scheduler_name: entry.scheduler_name,
-            daily_catchup_provenance: entry.daily_catchup_provenance,
-            priority: entry.priority,
+        let (sources, submission, references, preflight) = match pick {
+            Pick::Queued(partition, index) => {
+                let entry = state
+                    .queues
+                    .get_mut(&partition)
+                    .expect("selected queue")
+                    .remove(index)
+                    .expect("selected entry");
+                if state.queues[&partition].is_empty() {
+                    state.queues.remove(&partition);
+                }
+                let submission = Submission {
+                    discovered: false,
+                    partition,
+                    cap: entry.cap,
+                    command: entry.command,
+                    reference: entry.references[0].clone(),
+                    day: entry.day,
+                    scheduler_name: entry.scheduler_name,
+                    daily_catchup_provenance: entry.daily_catchup_provenance,
+                    priority: entry.priority,
+                };
+                // Discovery's copy of the same work would only run it again.
+                state
+                    .discovered
+                    .retain(|twin| twin.submission.command != submission.command);
+                (entry.sources, submission, entry.references, None)
+            }
+            Pick::Discovered(index) => {
+                let entry = state.discovered.remove(index);
+                let mut submission = Submission {
+                    discovered: false,
+                    ..entry.submission.clone()
+                };
+                let mut sources = vec![entry.submission];
+                let mut references = vec![submission.reference.clone()];
+                let mut preflight = Some(entry.task);
+                // A direct submission of the same command runs with it, once,
+                // and is never subject to discovery's check.
+                if let Some(queue) = state.queues.get_mut(&submission.partition) {
+                    queue.retain(|queued| {
+                        if queued.command != submission.command || queued.cap != submission.cap {
+                            return true;
+                        }
+                        submission.priority.merge(queued.priority);
+                        // The direct submission's own run details win.
+                        submission.day = queued.day.clone().or(submission.day.take());
+                        submission.scheduler_name = queued
+                            .scheduler_name
+                            .clone()
+                            .or(submission.scheduler_name.take());
+                        submission.daily_catchup_provenance = queued
+                            .daily_catchup_provenance
+                            .clone()
+                            .or(submission.daily_catchup_provenance.take());
+                        sources.extend(queued.sources.iter().cloned());
+                        references.extend(queued.references.iter().cloned());
+                        preflight = None;
+                        false
+                    });
+                    if queue.is_empty() {
+                        state.queues.remove(&submission.partition);
+                    }
+                }
+                (sources, submission, references, preflight)
+            }
         };
         let priority = submission.priority.resolve(&submission.command, today);
         state.running.insert(
-            partition,
+            submission.partition.clone(),
             RunningSlot {
                 reference: submission.reference.clone(),
                 command: submission.command.clone(),
@@ -3790,34 +3949,108 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
         );
         dispatches.push(Dispatch {
             generation: state.callable_generation,
-            sources: entry.sources,
+            sources,
             priority,
             submission,
-            references: entry.references,
+            references,
             daily_catchup_admission: None,
+            preflight,
         });
     }
+    note_idle(
+        state,
+        allowed,
+        background_waits_now(state, spending, background_slot_open),
+    );
     dispatches
 }
 
-fn is_local_analysis_command(command: &[String]) -> bool {
-    if is_analysis_command(command) {
-        return true;
+fn background_waits_now(state: &QueueState, spending: WorkPolicy, slot_open: bool) -> bool {
+    spending.lane == ThinkingLane::Confidential
+        && (!slot_open
+            || state.running.values().any(|slot| slot.background)
+            || state
+                .background_finished_at
+                .is_some_and(|at| at.elapsed() < spending.confidential_history_rest))
+}
+
+/// Log, once per change, when owed thinking waits with no thinking running,
+/// and why, so a journal's idle time can be read from its own log. Counts and
+/// reasons only.
+fn note_idle(state: &mut QueueState, allowed: bool, background_waits: bool) {
+    let thinking_running = state
+        .running
+        .values()
+        .any(|slot| is_analysis_command(&slot.command));
+    let queued = state
+        .queues
+        .values()
+        .flatten()
+        .filter(|entry| is_analysis_command(&entry.command))
+        .count();
+    let waiting = queued + state.discovered.len();
+    let reason = (!thinking_running && waiting > 0).then(|| {
+        if !allowed {
+            "processing paused"
+        } else if state.local_analysis_pauses != 0 {
+            "local analysis paused"
+        } else if !discovered_open(state, SystemTime::now()) && queued == 0 {
+            "thinking failing"
+        } else if background_waits {
+            "background slot busy"
+        } else {
+            "lane held or busy"
+        }
+    });
+    match (state.idle, reason) {
+        (None, Some(reason)) => {
+            log::info!(
+                "task queue: thinking idle with {queued} queued and {} discovered waiting ({reason})",
+                state.discovered.len()
+            );
+            state.idle = Some((reason, Instant::now()));
+        }
+        (Some((was, since)), Some(reason)) if was != reason => {
+            log::info!(
+                "task queue: thinking still idle after {}s ({reason})",
+                since.elapsed().as_secs()
+            );
+            state.idle = Some((reason, since));
+        }
+        (Some((_, since)), None) => {
+            log::info!(
+                "task queue: thinking resumed after {}s idle",
+                since.elapsed().as_secs()
+            );
+            state.idle = None;
+        }
+        _ => {}
     }
+}
+
+/// The journal verb a task runs (`think`, `describe`, ...), whichever launcher
+/// names it: `solstone journal <verb>`, or `journal`/`solstone-core-journal`
+/// `<verb>`. The standalone describe binary runs `describe`.
+fn journal_verb(command: &[String]) -> Option<String> {
     let alias = crate::partition::journal_alias_form(command);
-    let Some(program) = alias
+    let program = alias
         .first()
-        .and_then(|value| Path::new(value).file_name())
-        .and_then(|value| value.to_str())
-    else {
-        return false;
-    };
-    program == "solstone-core-describe"
-        || ((program == "solstone" || program.eq_ignore_ascii_case("solstone.exe"))
-            && alias.get(1).is_some_and(|value| value == "journal")
-            && alias.get(2).is_some_and(|value| value == "describe"))
-        || (matches!(program, "journal" | "solstone-core-journal")
-            && alias.get(1).is_some_and(|value| value == "describe"))
+        .and_then(|name| Path::new(name).file_name())
+        .and_then(|name| name.to_str())?;
+    if program == "solstone-core-describe" {
+        return Some("describe".to_owned());
+    }
+    let launcher = program == "solstone" || program.eq_ignore_ascii_case("solstone.exe");
+    if launcher && alias.get(1).is_some_and(|value| value == "journal") {
+        return alias.get(2).cloned();
+    }
+    matches!(program, "journal" | "solstone" | "solstone-core-journal")
+        .then(|| alias.get(1).cloned())
+        .flatten()
+}
+
+fn is_local_analysis_command(command: &[String]) -> bool {
+    journal_verb(command).is_some_and(|verb| verb == "think" || verb == "describe")
 }
 
 /// A thinking task whose result says whether thinking was answered. A scheduled
@@ -3833,21 +4066,7 @@ fn asks_for_thinking(command: &[String]) -> bool {
 }
 
 fn is_analysis_command(command: &[String]) -> bool {
-    let alias = crate::partition::journal_alias_form(command);
-    let Some(program) = alias
-        .first()
-        .and_then(|name| Path::new(name).file_name())
-        .and_then(|name| name.to_str())
-    else {
-        return false;
-    };
-    if (program.eq_ignore_ascii_case("solstone.exe") || program == "solstone")
-        && alias.get(1).is_some_and(|v| v == "journal")
-    {
-        return alias.get(2).is_some_and(|v| v == "think");
-    }
-    matches!(program, "journal" | "solstone" | "solstone-core-journal")
-        && alias.get(1).is_some_and(|v| v == "think")
+    journal_verb(command).is_some_and(|verb| verb == "think")
 }
 
 /// The daily catch-all and daily talents share the corpus. Keep their scheduled
@@ -3879,7 +4098,18 @@ fn record_callable_panic(inner: &QueueInner, payload: Box<dyn std::any::Any + Se
         .store(true, std::sync::atomic::Ordering::Release);
 }
 
-fn start_dispatch(inner: Arc<QueueInner>, dispatch: Dispatch) {
+fn start_dispatch(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
+    if let Some(task) = dispatch.preflight.take() {
+        let check = inner
+            .discovered_preflight
+            .lock()
+            .expect("discovered preflight")
+            .clone();
+        if let Some(check) = check {
+            preflight_then_start(inner, dispatch, task, check);
+            return;
+        }
+    }
     if inner.callable_worker.is_none() {
         start_dispatch_frame(inner, dispatch);
         return;
@@ -3920,6 +4150,51 @@ fn start_dispatch(inner: Arc<QueueInner>, dispatch: Dispatch) {
             &dispatch.submission.partition,
             &dispatch.submission.reference,
         ) {
+            start_dispatch(Arc::clone(&inner), next);
+        }
+    }
+}
+
+/// Check discovered work as still owed on its own thread, holding its lane,
+/// then start it, or give the lane to the next pick. The check reads the
+/// journal, so it never runs on the caller: a finishing worker, a submitter or
+/// the supervisor's tick.
+fn preflight_then_start(
+    inner: Arc<QueueInner>,
+    dispatch: Dispatch,
+    task: DiscoveredTask,
+    check: DiscoveredPreflight,
+) {
+    let partition = dispatch.submission.partition.clone();
+    let reference = dispatch.submission.reference.clone();
+    let (lane, held) = (partition.clone(), reference.clone());
+    let worker_inner = Arc::clone(&inner);
+    let run = move || {
+        let owed = catch_unwind(AssertUnwindSafe(|| check(&task))).unwrap_or(false);
+        // The check can take a while; work must not start into a queue that
+        // has since shut down or withdrawn this generation.
+        let withdrawn = {
+            let state = worker_inner.state.lock().expect("queue state");
+            state.shutdown
+                || state.callable_paused
+                || state.callable_generation != dispatch.generation
+        };
+        if owed && !withdrawn {
+            start_dispatch(worker_inner, dispatch);
+        } else {
+            log::debug!("task queue: discovered work no longer owed: {reference}");
+            for next in retire_reservation(&worker_inner, &partition, &reference, false) {
+                start_dispatch(Arc::clone(&worker_inner), next);
+            }
+        }
+    };
+    if let Err(error) = thread::Builder::new()
+        .name("queue-discovered-check".into())
+        .spawn(run)
+    {
+        // The work stays owed on disk, so the next pass finds it again.
+        log::warn!("task queue: could not check discovered work: {error}");
+        for next in retire_reservation(&inner, &lane, &held, false) {
             start_dispatch(Arc::clone(&inner), next);
         }
     }
@@ -4442,7 +4717,6 @@ fn requeue_dispatch_at_head(inner: &Arc<QueueInner>, dispatch: Dispatch) {
         .or_default()
         .push_front(QueuedEntry {
             sources: dispatch.sources,
-            replaceable: false,
             references: dispatch.references,
             cap: dispatch.submission.cap,
             command: dispatch.submission.command,
@@ -5145,6 +5419,17 @@ fn holds_any(state: &QueueState, references: &[String]) -> bool {
 }
 
 fn finish_worker(inner: &QueueInner, partition: &Partition, reference: &str) -> Vec<Dispatch> {
+    retire_reservation(inner, partition, reference, true)
+}
+
+/// Free a lane and pick again. Work that never ran does not start the
+/// confidential lane's rest.
+fn retire_reservation(
+    inner: &QueueInner,
+    partition: &Partition,
+    reference: &str,
+    ran: bool,
+) -> Vec<Dispatch> {
     let selection = Selection::read(inner);
     let (dispatches, events) = {
         let mut state = inner.state.lock().expect("queue state lock poisoned");
@@ -5161,6 +5446,7 @@ fn finish_worker(inner: &QueueInner, partition: &Partition, reference: &str) -> 
             .running
             .remove(partition)
             .is_some_and(|slot| slot.background)
+            && ran
         {
             state.background_finished_at = Some(Instant::now());
         }
@@ -6089,37 +6375,39 @@ mod tests {
             });
     }
 
-    /// Thinking that keeps failing sends one task at a time, after a rest, and
-    /// its success lets the backlog go. Other work never speaks for thinking.
+    /// Thinking that keeps failing lets one discovered task try it after a
+    /// rest, and its success lets the backlog go. Other work never speaks for
+    /// thinking, and nothing discards the ranking meanwhile.
     #[test]
     fn a_failing_run_of_thinking_narrows_discovered_work_to_one_trial() {
         let queue = queue(false, 10, VecDeque::new());
+        let open = |at| discovered_open(&queue.inner.state.lock().unwrap(), at);
         let start = SystemTime::now();
-        assert_eq!(queue.discovered_room(start), DISCOVERED_ADMISSION);
+        assert!(open(start));
         let repair = "journal think --day 20260101 --segment 120000_60 --repair-segment";
         ended(&queue, repair, "error", start);
         ended(&queue, repair, "error", start);
         ended(&queue, "journal indexer", "ok", start);
         ended(&queue, "journal think --cadence", "ok", start);
         ended(&queue, repair, "cancelled", start);
-        assert_eq!(queue.discovered_room(start), DISCOVERED_ADMISSION, "two");
+        assert!(open(start), "two");
         ended(&queue, repair, "error", start);
         assert_eq!(queue.thinking_failing_since(), Some(start));
-        assert_eq!(queue.discovered_room(start), 0);
+        assert!(!open(start));
         let rest = THINKING_RETRY_AFTER;
-        assert_eq!(queue.discovered_room(start + rest), 1);
+        assert!(open(start + rest));
         // A task already under way is the trial, whatever else is due.
         queue.submit(command_request(
             &["journal", "think", "--day", "20260101"],
             "trial",
             None,
         ));
-        assert_eq!(queue.discovered_room(start + rest), 0);
+        assert!(!open(start + rest));
         ended(&queue, "journal think --cadence", "ok", start + rest);
         assert_eq!(queue.thinking_failing_since(), Some(start));
         ended(&queue, repair, "ok", start + rest);
         assert_eq!(queue.thinking_failing_since(), None);
-        assert_eq!(queue.discovered_room(start + rest), DISCOVERED_ADMISSION);
+        assert!(open(start + rest));
     }
 
     #[cfg(feature = "full-tests")]
@@ -6489,6 +6777,7 @@ mod tests {
             },
             references: vec![reference.to_owned()],
             daily_catchup_admission: None,
+            preflight: None,
             priority: WorkPriority::default(),
         }
     }
@@ -6561,11 +6850,12 @@ mod tests {
                     .map(|n| discovered(&format!("{pass}-{n}"), "5:1"))
                     .collect(),
             );
-            assert_eq!(queue.inner.state.lock().unwrap().pending.len(), 4);
+            let state = queue.inner.state.lock().unwrap();
+            assert_eq!(state.discovered.len(), 12, "each pass replaces the last");
+            assert!(state.pending.is_empty() && state.queues.is_empty());
         }
         // Ordinary ownership of the same command survives removal of discovery.
         queue.submit(ranked_request("mixed", "--segment", "5:1"));
-        queue.replace_discovered(vec![discovered("mixed", "2:1")]);
         {
             let mut state = queue.inner.state.lock().unwrap();
             for source in std::mem::take(&mut state.pending) {
@@ -6576,28 +6866,35 @@ mod tests {
                 reason: QueueHoldReason::RecordsUnavailable,
                 detail: "fixture".into(),
             });
-            let entry = &state.queues[&Partition::new("segment")][0];
-            assert_eq!(entry.sources.len(), 2);
-            assert_eq!(
-                entry
-                    .priority
-                    .resolve(&entry.command, selection_day(Path::new("")))
-                    .band as u8,
-                2
-            );
+        }
+        queue.replace_discovered(vec![discovered("mixed", "2:1")]);
+        {
+            let state = queue.inner.state.lock().unwrap();
+            assert_eq!(state.queues[&Partition::new("segment")][0].sources.len(), 1);
+            assert_eq!(state.discovered.len(), 1);
         }
         queue.replace_discovered(Vec::new());
-        let state = queue.inner.state.lock().unwrap();
-        let entry = &state.queues[&Partition::new("segment")][0];
-        assert_eq!(entry.references, ["mixed"]);
-        assert_eq!(entry.sources.len(), 1);
-        assert_eq!(
-            entry
-                .priority
-                .resolve(&entry.command, selection_day(Path::new("")))
-                .band as u8,
-            5
+        {
+            let state = queue.inner.state.lock().unwrap();
+            assert!(state.discovered.is_empty());
+            let entry = &state.queues[&Partition::new("segment")][0];
+            assert_eq!(entry.references, ["mixed"]);
+            assert_eq!(entry.sources.len(), 1);
+        }
+        // Picked through discovery, the direct submission runs with it, at the
+        // better priority, once, and is not subject to discovery's check.
+        queue.replace_discovered(vec![discovered("mixed", "2:1")]);
+        let mut state = queue.inner.state.lock().unwrap();
+        state.queue_hold = None;
+        let picked = take_ready(
+            &mut state,
+            selection(selection_day(Path::new("")), local_spending()),
         );
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].references, ["mixed", "mixed"]);
+        assert_eq!(picked[0].priority.band as u8, 2);
+        assert!(picked[0].preflight.is_none());
+        assert!(state.queues.is_empty() && state.discovered.is_empty());
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -6607,15 +6904,13 @@ mod tests {
         queue.replace_discovered(vec![discovered("reserved", "5:2")]);
         {
             let mut state = queue.inner.state.lock().unwrap();
-            for source in std::mem::take(&mut state.pending) {
-                enqueue_locked(&mut state, source);
-            }
             state.ready = true;
             let reserved = take_ready(
                 &mut state,
                 selection(selection_day(Path::new("")), local_spending()),
             );
             assert_eq!(reserved.len(), 1);
+            assert!(reserved[0].preflight.is_some());
         }
         queue.replace_discovered(vec![
             discovered("reserved", "5:2"),
@@ -6627,15 +6922,216 @@ mod tests {
                 state.running[&Partition::new("segment")].reference,
                 "reserved"
             );
-            assert_eq!(state.queues[&Partition::new("segment")].len(), 1);
-            assert_eq!(
-                state.queues[&Partition::new("segment")][0].references,
-                ["next"]
-            );
+            let waiting = state
+                .discovered
+                .iter()
+                .map(|entry| entry.submission.reference.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(waiting, ["next"]);
             state.shutdown = true;
         }
         queue.replace_discovered(vec![discovered("late", "1:3")]);
         assert!(!queue.contains_reference("late"));
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    fn discovered_daily(reference: &str, priority: &str) -> DiscoveredTask {
+        let ExecutionRequest::Bus(request) = ranked_request(reference, "", priority) else {
+            unreachable!()
+        };
+        DiscoveredTask { request }
+    }
+
+    /// A ranked backlog keeps the lane busy from one task to the next, however
+    /// slow the still-owed check, work no longer owed never runs or counts, and
+    /// newer work arriving meanwhile wins the very next pick.
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_ranked_backlog_runs_back_to_back_while_newer_work_wins_each_pick() {
+        let root = tempfile::tempdir().unwrap();
+        let (sent, received) = mpsc::channel();
+        let callable = Arc::new(move |_: &[String], context: CallableTaskContext| {
+            sent.send(context.reference.clone()).unwrap();
+            0
+        });
+        let queue = TaskQueue::with_callable_worker(
+            TaskQueueOptions {
+                #[cfg(windows)]
+                read_file_grants: Vec::new(),
+                journal_root: root.path().to_path_buf(),
+                cap_resolver: Arc::new(FixedCap(10)),
+                process_state_probe: Arc::new(UnreachableProcessStateProbe),
+                queue_sink: None,
+                process_sink: None,
+                ready: true,
+                before_deadline_commit: None,
+                child_environment: BTreeMap::new(),
+                task_binary: None,
+            },
+            callable,
+        );
+        *queue.inner.work_policy_override.lock().unwrap() = Some(local_spending());
+        let (checking, checked) = mpsc::channel::<()>();
+        let (release, released) = mpsc::channel::<()>();
+        let released = Mutex::new(released);
+        queue.install_discovered_preflight(Arc::new(move |task| {
+            if task.request.reference == "done" {
+                checking.send(()).unwrap();
+                released.lock().unwrap().recv().unwrap();
+                return false;
+            }
+            thread::sleep(Duration::from_millis(30));
+            true
+        }));
+        let mut ranking = vec![discovered("done", "5:20")];
+        ranking.extend((0..8).map(|n| discovered(&format!("old-{n}"), &format!("5:{}", 10 - n))));
+        queue.replace_discovered(ranking);
+        // The best entry is being checked and holds its lane; newer work
+        // arrives meanwhile.
+        checked.recv_timeout(Duration::from_secs(10)).unwrap();
+        queue.submit(ranked_request("now", "--segment", "1:1"));
+        release.send(()).unwrap();
+        let ran = (0..9)
+            .map(|_| received.recv_timeout(Duration::from_secs(10)).unwrap())
+            .collect::<Vec<_>>();
+        let mut expected = vec!["now".to_owned()];
+        expected.extend((0..8).map(|n| format!("old-{n}")));
+        assert_eq!(ran, expected);
+        queue.join_callable_workers().unwrap();
+        assert_eq!(queue.discovered_len(), 0);
+        assert!(
+            !queue
+                .history()
+                .iter()
+                .any(|record| record.reference == "done")
+        );
+    }
+
+    /// Urgent work found during a pass joins the ranking the queue holds; it
+    /// never withdraws the older work, which keeps running meanwhile.
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn urgent_discovered_work_joins_the_ranking_without_evicting_it() {
+        let queue = queue(false, 10, VecDeque::new());
+        queue.replace_discovered(vec![discovered("a", "5:1"), discovered("b", "5:2")]);
+        queue.add_discovered(vec![discovered("c", "2:1"), discovered("b", "5:2")]);
+        queue.add_discovered(Vec::new());
+        let state = queue.inner.state.lock().unwrap();
+        let order = state
+            .discovered
+            .iter()
+            .map(|entry| entry.submission.reference.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(order, ["c", "b", "a"]);
+    }
+
+    /// Work found again at a better place moves up: an owner's ask raises a
+    /// day's band mid-pass without changing its command.
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn work_found_again_keeps_its_better_place() {
+        let queue = queue(false, 10, VecDeque::new());
+        queue.replace_discovered(vec![discovered("x", "5:1"), discovered("y", "5:2")]);
+        queue.add_discovered(vec![discovered("x", "2:1"), discovered("y", "6:9")]);
+        let state = queue.inner.state.lock().unwrap();
+        let order = state
+            .discovered
+            .iter()
+            .map(|entry| {
+                (
+                    entry.submission.reference.as_str(),
+                    entry.priority.band as u8,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(order, [("x", 2), ("y", 5)]);
+    }
+
+    /// Direct work picked ahead of discovery's copy of it takes that copy out,
+    /// so the same work never runs twice in a row.
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn direct_work_picked_first_takes_discoverys_copy_with_it() {
+        let queue = queue(false, 10, VecDeque::new());
+        let mut state = ready_state(&queue);
+        state.queue_hold = Some(QueueHoldStatus {
+            reason: QueueHoldReason::RecordsUnavailable,
+            detail: "fixture".into(),
+        });
+        enqueue_ranked(&queue, &mut state, &[("x", "--segment", "5:1")]);
+        drop(state);
+        queue.replace_discovered(vec![discovered("x", "5:1")]);
+        let mut state = queue.inner.state.lock().unwrap();
+        state.queue_hold = None;
+        let today = selection_day(Path::new(""));
+        let picked = take_ready(&mut state, selection(today, local_spending()));
+        assert_eq!(picked.len(), 1);
+        assert!(state.discovered.is_empty());
+        assert!(state.queues.is_empty());
+    }
+
+    /// While thinking keeps failing the ranking waits rather than being thrown
+    /// away, and the first success releases it without another pass.
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_thinking_outage_holds_the_ranking_and_a_success_releases_it() {
+        let queue = queue(false, 10, VecDeque::new());
+        queue.replace_discovered(vec![discovered("a", "5:1"), discovered("b", "5:2")]);
+        let now = SystemTime::now();
+        let repair = "journal think --day 20260101 --segment 120000_60 --repair-segment";
+        for _ in 0..3 {
+            ended(&queue, repair, "error", now);
+        }
+        let mut state = ready_state(&queue);
+        let today = selection_day(Path::new(""));
+        assert!(take_ready(&mut state, selection(today, local_spending())).is_empty());
+        assert_eq!(state.discovered.len(), 2);
+        assert_eq!(
+            state.idle.map(|(reason, _)| reason),
+            Some("thinking failing")
+        );
+        state.history.push_back(TaskHistoryRecord {
+            partition: Partition::new("segment"),
+            command: repair.split(' ').map(str::to_owned).collect(),
+            reference: "live".into(),
+            ended_at: now,
+            exit_status: "ok".into(),
+            scheduler_name: None,
+        });
+        let picked = take_ready(&mut state, selection(today, local_spending()));
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].submission.reference, "b");
+        assert!(picked[0].preflight.is_some());
+        assert!(state.idle.is_none());
+    }
+
+    /// On the confidential lane the best work that can start does, so a busy
+    /// lane's waiting work leaves free lanes working; on a local lane, where
+    /// one model serves every lane, it still holds lower work back.
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn free_lanes_fill_on_the_confidential_lane_and_wait_on_a_local_one() {
+        let queue = queue(false, 10, VecDeque::new());
+        let mut state = ready_state(&queue);
+        let busy = ["journal", "think", "--day", "20260101", "--segment", "busy"];
+        state.running.insert(
+            Partition::new("segment"),
+            RunningSlot {
+                reference: "busy".into(),
+                command: busy.iter().map(|arg| (*arg).to_owned()).collect(),
+                background: false,
+            },
+        );
+        enqueue_ranked(&queue, &mut state, &[("now", "--segment", "1:2")]);
+        drop(state);
+        queue.replace_discovered(vec![discovered_daily("recent", "3:1")]);
+        let mut state = queue.inner.state.lock().unwrap();
+        let today = selection_day(Path::new(""));
+        assert!(take_ready(&mut state, selection(today, local_spending())).is_empty());
+        assert_eq!(
+            select_confidential(&mut state, Duration::ZERO, true),
+            ["recent"]
+        );
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -7502,7 +7998,6 @@ mod tests {
                 Partition::new("svc"),
                 VecDeque::from([QueuedEntry {
                     sources: Vec::new(),
-                    replaceable: false,
                     cap: Duration::from_secs(10),
                     references: vec!["queued".to_owned()],
                     command: vec!["svc".to_owned()],
@@ -10716,6 +11211,7 @@ mod tests {
             submission,
             references: vec!["analysis-test-ref".to_owned()],
             daily_catchup_admission: None,
+            preflight: None,
         };
 
         start_dispatch(Arc::clone(&queue.inner), dispatch);

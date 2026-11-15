@@ -8,6 +8,7 @@
 // plain values, ids or tag names: never an element.
 
 const assert = require('assert');
+const { answerQuestion } = require('./question_controls.js');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -648,8 +649,6 @@ function makePage(env, address = '/app/agents/', { answers } = {}) {
 
   const page = {
     env, window, doc, main, clock, calls, errors, notices, opened, loads,
-    confirmAnswer: true,
-    promptAnswer: null,
     holds: [],
     statuses: [],
     hold(call) { return page.holds.some((test) => test(call)); },
@@ -707,8 +706,8 @@ function makePage(env, address = '/app/agents/', { answers } = {}) {
     setInterval: clock.setInterval, clearInterval: clock.clearInterval,
     performance: { mark() {}, clearMarks() {} },
     fetch: window.fetch,
-    confirm: () => page.confirmAnswer,
-    prompt: () => page.promptAnswer,
+    confirm: () => { throw new Error("browser confirm is forbidden"); },
+    prompt: () => { throw new Error("browser prompt is forbidden"); },
     navigator: { clipboard: { writeText: async () => {} } },
   });
   context.self = window;
@@ -716,6 +715,7 @@ function makePage(env, address = '/app/agents/', { answers } = {}) {
   vm.runInContext(fs.readFileSync(path.join(shell, 'store.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'views.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'router.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(shell, 'question.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'focus.js'), 'utf8'), context);
   // The page's router is on, as it is once a contract view has mounted: it owns the history's ids.
   window.solRouter.start('agents');
@@ -1065,6 +1065,25 @@ module.exports = async function agentsContractCases(manifestDir) {
     assert.ok(p.notices[p.notices.length - 1].title === 'memory recovered');
   });
 
+  await test('a pending rename or disconnect goes with its view and never writes from its old buttons', async () => {
+    for (const [connection, selector] of [['bearer:k1', '[data-rename]'], ['oauth:g1', '[data-revoke]']]) {
+      const p = await boot(env);
+      p.press(p.q(`[data-connection="${connection}"]`));
+      await settle();
+      p.press(p.q(selector));
+      const oldAccept = p.q('[data-question-accept]');
+      assert.ok(oldAccept && p.writes().length === 0, 'a question is drawn, nothing has acted');
+      p.leave();
+      p.main.focus();
+      oldAccept.click();
+      await settle();
+      assert.ok(p.q('.convey-question') === null && p.writes().length === 0, 'leaving cancels; old buttons cannot act');
+      assert.ok(p.doc.activeElement === p.main, 'arrival focus stays on the new page');
+      await p.arrive();
+      assert.ok(p.q('.convey-question') === null, 'returning starts with no pending question');
+    }
+  });
+
   await test('the controls work by a dispatched click after an in-page mount', async () => {
     const p = await boot(env);
     p.leave();
@@ -1083,13 +1102,15 @@ module.exports = async function agentsContractCases(manifestDir) {
     // A connection's page, a rename behind prompt(), and a disconnect behind confirm().
     p.press(p.q('[data-connection="bearer:k1"]'));
     await settle();
-    p.promptAnswer = 'renamed';
     p.press(p.q('[data-rename]'));
+    assert.strictEqual(p.q('.convey-question input').value, 'Script', 'rename starts with the current name');
+    answerQuestion(p, 'renamed');
     await settle();
     assert.ok(p.writes().some((c) => c.method === 'PATCH' && c.url === '/app/agents/api/connections/bearer/k1'), 'rename writes');
     p.press(p.q('[data-connection="oauth:g1"]'));
     await settle();
     p.press(p.q('[data-revoke]'));
+    answerQuestion(p);
     await settle();
     assert.ok(p.writes().some((c) => c.method === 'DELETE' && c.url === '/app/agents/api/connections/oauth/g1'), 'disconnect writes');
     // The paused card's "see what it tried" is a link to "#": the view takes it, not the router.
@@ -1374,9 +1395,13 @@ module.exports = async function agentsContractCases(manifestDir) {
     const q = await boot(env, '/app/agents/', { answers });
     await keyPress(q, q.q('[data-lane="byo"]'));
     await keyPress(q, q.q('[data-action="byo-replace"]'));
+    answerQuestion(q);
+    await settle();
     assert.ok(q.q('[data-action="byo-replace"]') === null, 'the key-lost notice is gone');
     lands(q, q.q('[data-byo-step="dns"]'), 'replace: the DNS records step');
     await keyPress(q, q.q('[data-action="byo-remove"]'));
+    answerQuestion(q);
+    await settle();
     assert.ok(q.q('[data-action="byo-remove"]') === null, 'the address is gone');
     lands(q, q.q('[data-byo-removed]'), 'remove: what to do next');
   });
@@ -1407,8 +1432,9 @@ module.exports = async function agentsContractCases(manifestDir) {
     await keyPress(p, p.q('[data-save-permission="oauth:g1"]'));
     lands(p, row(p, 'oauth:g1'), 'save: its row');
     await goTo(p, 'bearer:k1');
-    p.promptAnswer = 'renamed';
     await keyPress(p, p.q('[data-rename="k1"]'));
+    answerQuestion(p, 'renamed');
+    await settle();
     lands(p, row(p, 'bearer:k1'), 'rename: its row');
     assert.ok(p.doc.activeElement.textContent.includes('renamed'), 'with its new name');
   });
@@ -1423,23 +1449,30 @@ module.exports = async function agentsContractCases(manifestDir) {
     const p = await boot(env, '/app/agents/', { answers });
     await goTo(p, 'oauth:g1');
     await keyPress(p, p.q('[data-revoke="oauth:g1"]'));
+    answerQuestion(p);
+    await settle();
     assert.ok(row(p, 'oauth:g1') === null, 'its row is gone');
     lands(p, row(p, 'oauth:g2'), 'disconnect: the next agent');
     await goTo(p, 'bearer:k1');
     await keyPress(p, p.q('[data-revoke="bearer:k1"]'));
+    answerQuestion(p);
+    await settle();
     lands(p, row(p, 'oauth:g2'), 'revoke the last: the previous agent');
     await goTo(p, 'oauth:g2');
     await keyPress(p, p.q('[data-revoke="oauth:g2"]'));
+    answerQuestion(p);
+    await settle();
     assert.ok(p.qa('.list .ag-row[data-connection]').length === 0, 'no agent is left');
     lands(p, p.q('[data-agents-heading]'), 'the last one: "your agents"');
   });
 
   await test('a cancelled confirm or prompt, or an empty one, writes nothing and clears busy at once; the same name writes as before and clears on its answer', async () => {
     const p = await boot(env, '/app/agents/', { answers: living({ byo: { ...BYO, next_action: 'account_key_lost' } }).answers });
-    p.confirmAnswer = false;
     await goTo(p, 'oauth:g1');
     const revoke = p.q('[data-revoke="oauth:g1"]');
     await keyPress(p, revoke);
+    answerQuestion(p, null);
+    await settle();
     assert.ok(p.writes().length === 0, 'a cancelled disconnect writes nothing');
     notBusy(revoke, 'disconnect, cancelled,');
     lands(p, revoke, 'and focus stays on it');
@@ -1448,23 +1481,27 @@ module.exports = async function agentsContractCases(manifestDir) {
     for (const action of ['byo-remove', 'byo-replace']) {
       const button = p.q(`[data-action="${action}"]`);
       await keyPress(p, button);
+      answerQuestion(p, null);
+      await settle();
       assert.ok(p.writes().length === 0, `a cancelled ${action} writes nothing`);
       notBusy(button, `${action}, cancelled,`);
       lands(p, button, 'and focus stays on it');
     }
     await goTo(p, 'bearer:k1');
     for (const answer of [null, '']) {
-      p.promptAnswer = answer;
       const rename = p.q('[data-rename="k1"]');
       await keyPress(p, rename);
+      answerQuestion(p, answer);
+      await settle();
       assert.ok(p.writes().length === 0, `a rename answered ${JSON.stringify(answer)} writes nothing`);
       notBusy(rename, `rename, answered ${JSON.stringify(answer)},`);
       lands(p, rename, 'and focus stays on it');
     }
-    p.promptAnswer = 'Script';
     p.holds.push((call) => call.method === 'PATCH');
     const rename = p.q('[data-rename="k1"]');
     await keyPress(p, rename);
+    answerQuestion(p, 'Script');
+    await settle();
     assert.ok(p.writes().length === 1 && rename.getAttribute('aria-busy') === 'true', 'the same name writes, as before, and is busy while it does');
     p.holds.length = 0;
     p.calls.filter((c) => c.method === 'PATCH').forEach((c) => c.answer({}));

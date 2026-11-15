@@ -223,6 +223,11 @@ fn main() {
     let r4 = render("en-x-synth", MessageId::m73796e74682e6e6f7465732e6c6162656c, &[("name", Value::String("Alice"))]).unwrap();
     assert_eq!(r4, "tr label \u{2068}Alice\u{2069}");
 
+    // Byte-preserving adoption disables added isolation without stripping
+    // isolation characters deliberately supplied inside an argument.
+    let plain = render_dotted_with_options("en-x-synth", "synth.notes.label", &[("name", Value::String("\u{2068}Alice\u{2069}"))], false).unwrap();
+    assert_eq!(plain, "tr label \u{2068}Alice\u{2069}");
+
     // 5. Unknown dotted id
     let err_dotted = render_dotted("en-x-synth", "unknown.dotted.id", &[]).unwrap_err();
     assert_eq!(err_dotted, RenderError::UnknownMessage);
