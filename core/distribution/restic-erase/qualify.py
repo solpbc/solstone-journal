@@ -504,7 +504,18 @@ def case_nothing_held(stock, helper):
         req = erase_request(j, "t5", "2025-01-01T00:00:00Z", seg="chronicle/20250101/default/000000_300")
         rc, res = repo.erase(req)
         assert res["entries"].get("t5", {"snapshots": 0})["snapshots"] == 0 and res["snapshots_holding"] == 0, res
-        return {"snapshots": 0}
+        assert not res["entries"]["t5"].get("missed"), "a backup of the journal exists: true nothing, not missed"
+    # A repository of media archives only: nothing regular to be missed from.
+    with tempfile.TemporaryDirectory(dir="/var/tmp") as tmp:
+        repo = Repo(tmp, stock, helper)
+        stage = Path(tmp) / "stage"
+        write(stage / "a" / "kept.flac", os.urandom(100_000))
+        repo.backup(stage / "a", "spb-offload-archive")
+        req = erase_request(Path(tmp) / "journal", "t6", "2025-01-01T00:00:00Z")
+        req["drop_empty_tags"] = ["spb-offload-archive"]
+        rc, res = repo.erase(req)
+        assert not res["entries"]["t6"].get("missed") and res["entries"]["t6"]["snapshots"] == 0, res
+        return {"snapshots": 0, "missed": False, "archives_only": "not missed"}
 
 
 def case_roots(stock, helper):

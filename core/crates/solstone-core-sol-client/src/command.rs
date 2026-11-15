@@ -162,6 +162,8 @@ pub const FROM_BACKUPS_HELP: &str = "Also remove it from your backups. Without t
 pub const NOT_FROM_BACKUPS_HELP: &str = "Leave it in your backups.";
 pub const NO_BACKUP_SET_UP: &str =
     "Error: backup isn't set up, so there are no backups to remove it from.";
+/// Backup's state couldn't be read: an erase never goes ahead on a guess.
+pub const BACKUPS_UNCHECKED: &str = "Error: your journal couldn't check your backups just now. Try again, or pass --not-from-backups to erase without removing it from your backups.";
 pub const NOT_AVAILABLE_HERE: &str =
     "Error: this journal can't remove things from your backups yet.";
 
@@ -189,6 +191,11 @@ pub fn backups_choice(
         })
         .ok()
         .and_then(|response| decode_response(&response).ok());
+    // Not known is not "not set up": a setting that ticks it is never dropped
+    // without a word.
+    if state.is_none() {
+        return Err(BACKUPS_UNCHECKED.to_owned());
+    }
     let set_up = state
         .as_ref()
         .and_then(|state| state.get("set_up"))
@@ -282,6 +289,7 @@ mod tests {
 
     use super::*;
     use crate::seam::{ExpectedHttpCall, ScriptedHttpTransport};
+    use serde_json::json;
 
     fn context<'a>(
         env: &'a BTreeMap<String, String>,
@@ -332,6 +340,35 @@ mod tests {
         for day in ["", "2026111", "2026-11-17", "20261341"] {
             assert_eq!(format_erase_day(day, Some("20261111")), None, "{day}");
         }
+    }
+
+    #[test]
+    fn an_erase_never_guesses_the_backup_choice() {
+        let env = BTreeMap::new();
+        let ExpectedHttpCall::Request { expected, .. } = backups_state_call(json!({})) else {
+            unreachable!()
+        };
+        let failed = || ExpectedHttpCall::Request {
+            expected: expected.clone(),
+            result: Ok(crate::transport::HttpResponse {
+                status: 500,
+                headers: vec![],
+                body: br#"{"error":"trash_unreadable"}"#.to_vec(),
+                policy: TimeoutPolicy::Api,
+            }),
+        };
+        for from in [false, true] {
+            let transport = ScriptedHttpTransport::new(vec![failed()]);
+            assert_eq!(
+                backups_choice(context(&env, &transport), from, false).map(|_| ()),
+                Err(BACKUPS_UNCHECKED.to_owned()),
+                "from {from}"
+            );
+        }
+        // Not from backups asks nothing and goes ahead.
+        let transport = ScriptedHttpTransport::new(vec![]);
+        assert!(backups_choice(context(&env, &transport), false, true).is_ok());
+        transport.assert_done();
     }
 
     #[test]

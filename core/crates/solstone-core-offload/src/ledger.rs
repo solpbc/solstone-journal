@@ -96,7 +96,17 @@ pub fn record_archive_moves(journal: &Path, moves: &[(String, String)]) -> Resul
     if moves.iter().any(|(from, to)| !hex(from) || !hex(to)) {
         return Err("invalid archive move".into());
     }
-    let mut all = archive_moves(journal);
+    // A moves file that exists and can't be read is never overwritten.
+    let mut all: std::collections::BTreeMap<String, String> =
+        match fs::read(journal.join(MOVES_FILE)) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Default::default(),
+            Err(error) => return Err(error.to_string()),
+            Ok(bytes) => serde_json::from_slice::<serde_json::Value>(&bytes)
+                .ok()
+                .and_then(|value| value.get("moves").cloned())
+                .and_then(|moves| serde_json::from_value(moves).ok())
+                .ok_or_else(|| "archive moves unreadable".to_owned())?,
+        };
     for (original, current) in moves {
         all.insert(original.clone(), current.clone());
     }

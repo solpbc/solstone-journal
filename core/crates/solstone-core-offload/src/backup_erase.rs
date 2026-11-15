@@ -202,14 +202,17 @@ fn placeable(entry: &Entry) -> bool {
 /// Read back, from the destination, which media archives a backup erase
 /// rewrote, and record any move the ledger's moves are missing: after a
 /// whole-journal restore they are only as new as the backup restored. Once a
-/// day, while the journal has offloaded media and the helper is here.
-fn reconcile(journal: &Path, services: &BackupServices<'_>) {
+/// day while the journal has offloaded media, and `forced` after every run of
+/// the helper, however it ended: a rewrite it did and couldn't report, or a
+/// stale replacement a resumed run forgot, is read back from the archives.
+fn reconcile(journal: &Path, services: &BackupServices<'_>, forced: bool) {
     let marker = dir(journal).join(RECONCILED_FILE);
-    let fresh = std::fs::metadata(&marker)
-        .and_then(|meta| meta.modified())
-        .ok()
-        .and_then(|at| at.elapsed().ok())
-        .is_some_and(|age| age < std::time::Duration::from_secs(24 * 60 * 60));
+    let fresh = !forced
+        && std::fs::metadata(&marker)
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|at| at.elapsed().ok())
+            .is_some_and(|age| age < std::time::Duration::from_secs(24 * 60 * 60));
     if fresh {
         return;
     }
@@ -286,7 +289,6 @@ pub fn outcome(
 
 /// Run once: drain every pending entry the backup can take now.
 pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
-    let (entries, unreadable) = backup_erase::pending(journal);
     // One runner at a time; a second finds it busy at once and leaves it.
     let _ = std::fs::create_dir_all(dir(journal));
     let Ok(_lock) = solstone_core_journal_io::hold_lock(
@@ -298,12 +300,14 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
     ) else {
         return Report {
             state: "running".into(),
-            pending: entries.len(),
+            pending: backup_erase::pending(journal).0.len(),
             ..Report::default()
         };
     };
+    // Read under the lock, so no other runner's work slips between.
+    let (entries, unreadable) = backup_erase::pending(journal);
     // Under the lock: the moves file is read, changed and written whole.
-    reconcile(journal, services);
+    reconcile(journal, services, false);
     if entries.is_empty() && unreadable.is_empty() {
         let _ = std::fs::remove_file(dir(journal).join(PIECES_FILE));
         return Report {
@@ -561,6 +565,8 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         &dir(journal).join(PIECES_FILE),
     );
     let _ = std::fs::remove_file(&request_path);
+    // Whatever the helper reported, read back what it rewrote.
+    reconcile(journal, services, true);
 
     // Rule three: every way the helper ends has a state and a pace.
     let (answered, ok, reason, result) = match &erased {
