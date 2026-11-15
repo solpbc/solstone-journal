@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- photos of people: on a computer, your journal now finds faces in your meeting recordings and offers photos on each person's page, where you choose one, say it isn't them, or choose none. it's on by default, and past meeting recordings still in your journal are read a little at a time in the background. the photo you choose shows beside their name. agents you connect can receive a person's photo, marked as a suggestion until you choose it. to turn it off, or to erase face data once it's off, go to settings, vision.
 - when you answer whether a name in your journal is one of your people, activities in the facet you answered in that already named them now follow your answer. they list that person. recent activities also show them as attending when the recording shows it, and older ones keep the role they had. change your answer and they follow that too. an activity whose people you edited yourself stays as you left it.
 - your journal keeps the screenshots the solstone app takes in, each at the minute you took it. a journal from before 2.0.75 doesn't keep them, so the app says your screenshots are waiting for a journal update.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
@@ -22,6 +23,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- in settings, under transcription, turning on "leave out other voices" now shows its confirmation. before, the confirmation never appeared, so the switch couldn't be turned on there.
 - merging two entities no longer loses what the one merged away held: your own voice when it was you, and your answers about which person a name means.
 - on windows, your journal no longer fails to start when another program, such as a backup tool, has some of your journal's setup files open to read them.
 - fixed a problem after you answered whether a name in your journal was one of your people. later activities that named them could be left with no list of who was there, or no story. your answer now holds on days that never mention their full name.

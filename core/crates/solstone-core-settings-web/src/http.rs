@@ -85,7 +85,7 @@ pub fn owner_voice_consent_required() -> Response {
     error_envelope(
         "owner_voice_consent_required",
         "only the journal's owner can turn this on.",
-        "turn on \"leave out other voices\" in Settings, Transcription; it asks for confirmation.",
+        "turn on \"leave out other voices\" in settings, transcription; it asks for confirmation.",
         StatusCode::FORBIDDEN,
     )
     .into_response()

@@ -294,6 +294,11 @@ pub fn has_photo_in_facet(journal: &Path, folder: &str, facet: &str) -> Result<b
         .is_some_and(|p| in_facet(&p.face, facet)))
 }
 
+/// The owner's switch, read the one way every face reader reads it.
+pub fn enabled(journal: &Path) -> Result<bool, Error> {
+    Ok(fp::enabled(journal)?)
+}
+
 /// An unreadable switch withholds photos; other entity fields remain readable.
 pub(crate) fn enabled_for_lists(journal: &Path) -> bool {
     fp::enabled(journal).unwrap_or_else(|error| {

@@ -51,7 +51,7 @@ fn error(error: photos::Error) -> Response {
         ),
         photos::Error::Action(A::StaleAction) => (
             "face_action_changed",
-            "that action can no longer be undone. refresh the page.",
+            "this changed since the page loaded. refresh the page.",
             StatusCode::CONFLICT,
         ),
         _ => (

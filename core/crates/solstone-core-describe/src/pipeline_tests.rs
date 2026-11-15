@@ -342,6 +342,13 @@ fn artifact_body(path: &Path) -> String {
 #[test]
 fn synthetic_decode_covers_pipeline_contracts_without_native_media() {
     let test = TestRun::new("contracts");
+    // Photos of people are on by default; the owner's off writes no face sidecar.
+    fs::create_dir_all(test.journal.join("config")).expect("config dir");
+    fs::write(
+        test.journal.join("config/journal.json"),
+        br#"{"faces":{"enabled":false}}"#,
+    )
+    .expect("faces off");
     let factory = ScriptedFactory::new(default_response);
     let mut options = test.options(
         false,

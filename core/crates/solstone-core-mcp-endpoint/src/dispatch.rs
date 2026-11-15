@@ -2879,13 +2879,9 @@ pub(crate) fn read_entity(
         value["notes_truncated"] = json!(true);
     }
     let mut image = None;
-    if solstone_core_journal_config::read_journal_config(journal_root)
+    // The owner's switch, read the one way every face reader reads it.
+    if solstone_core_entities::photos::enabled(journal_root)
         .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?
-        .config
-        .as_ref()
-        .and_then(|c| c.get("faces").and_then(|v| v.get("enabled")))
-        .and_then(Value::as_bool)
-        == Some(true)
     {
         let photo =
             solstone_core_entities::photos::photo(journal_root, entity_id, Some(&facet_dir))

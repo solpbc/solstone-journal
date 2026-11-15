@@ -259,4 +259,4 @@ Optional local endpoint fields:
 
 ## `faces`
 
-- `enabled` (boolean) – off by default; only `true` turns it on. on desktop journals, meeting frames can supply face embeddings and photo crops stored privately in the journal. an agent must not set this to `true` itself, through an API or by editing `config/journal.json`. there is no owner control yet.
+- `enabled` (boolean) – "suggest photos of people". on by default: absent or `true` is on, `false` is off, and any other value is off. on desktop journals, faces in meeting frames are read on the owner's computer and kept privately in the journal, past meetings with recordings still in the journal are read gradually, and a person's page offers photos for the owner to choose. a connected agent can receive a person's photo, labelled `suggested` or `confirmed`. phone journals don't read faces and don't offer the switch. turning it off or on is the owner's own choice, in the journal's settings, vision: an agent must not change it either way, through the settings API or by editing `config/journal.json`, and should send the owner there. erasing face data is also there, and works only while this is off.
