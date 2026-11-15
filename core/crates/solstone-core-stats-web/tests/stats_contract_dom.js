@@ -945,10 +945,12 @@ module.exports = async function statsContractCases(crateDir) {
       goneViewUntouched(root, outcome);
       assert.ok(p.errors.length === 0, `${outcome}: nothing logged from a gone view`);
       if (typeof global.gc === 'function') {
-        await settle();
-        global.gc();
-        await settle();
-        global.gc();
+        // Collection is not immediate: give it up to ten full rounds, each
+        // after the microtasks have run, before calling the markup held.
+        for (let round = 0; round < 10 && root.deref() !== undefined; round += 1) {
+          await settle();
+          global.gc();
+        }
         assert.ok(root.deref() === undefined, `${outcome}: the gone markup is collected once the write has answered`);
       }
     }
