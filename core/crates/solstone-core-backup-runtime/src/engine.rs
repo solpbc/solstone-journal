@@ -1355,13 +1355,14 @@ impl AdmittedCapability {
                             // calling it an error made the owner's own status
                             // surface read "failed" while their data was in
                             // fact backed up -- `status` is what drives that
-                            // copy key. On Windows the running journal holds
-                            // files open, so this is the ORDINARY outcome
-                            // there: reporting it as failure would have meant a
-                            // working BYO backup showing failed every day,
-                            // which is how an owner learns to ignore the one
-                            // signal that matters. `error_reason` keeps the
-                            // caveat for anyone who looks.
+                            // copy key. ⛔ Exit 3 is NOT the ordinary outcome
+                            // on Windows, or anywhere: what the running journal
+                            // holds open or locks is excluded above, and
+                            // installed Windows journals back up complete while
+                            // running. When it does happen (a file removed
+                            // mid-run, a permission problem), what was read is
+                            // backed up, so `ok` stays true and `error_reason`
+                            // keeps the caveat.
                             (3, Some(id)) => BackupResult {
                                 status: "ok".into(),
                                 snapshot_id: Some(id),
@@ -6955,9 +6956,7 @@ mod tests {
     /// 🔴 That is a backup with a caveat, not a failed backup, and the
     /// distinction is owner-visible: `status` is what drives the backup panel's
     /// copy key, so reporting `error` made a run that genuinely backed the
-    /// owner's data up read as "failed". On Windows the running journal holds
-    /// files open, which makes exit 3 the ORDINARY outcome there -- a working
-    /// BYO backup would have shown failed every single day.
+    /// owner's data up read as "failed".
     #[test]
     fn a_partial_backup_keeps_its_snapshot_and_reports_success_with_a_caveat() {
         let journal = configured_journal();

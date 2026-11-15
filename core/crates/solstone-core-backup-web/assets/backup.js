@@ -2171,8 +2171,8 @@
       }
     }
     if (nodes.reason) {
-      // A backup that stored a copy but couldn't read everything (restic's exit 3,
-      // routine on Windows) is recorded as ok with the reason incomplete.
+      // A backup that stored a copy but couldn't read everything (restic's exit 3)
+      // is recorded as ok with the reason incomplete.
       const reason = lastBackup.status === 'error'
           || (lastBackup.status === 'ok' && lastBackup.error_reason === 'incomplete')
         ? backupErrorReasonLine(lastBackup.error_reason)
