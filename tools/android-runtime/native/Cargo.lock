@@ -6510,6 +6510,7 @@ dependencies = [
  "solstone-core-backup",
  "solstone-core-backup-runtime",
  "solstone-core-format",
+ "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
