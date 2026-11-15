@@ -1392,6 +1392,39 @@ module.exports = async function networkContractCases(manifestDir) {
     assert.ok(card && p.doc.activeElement && p.doc.activeElement !== p.doc.body && card.contains(p.doc.activeElement), `focus is on that card (on ${focusOn(p)})`);
   });
 
+  await test('a clients poll where only the clock moved rewrites the "… ago" texts in place and replaces no node', async () => {
+    const ago = (sec) => new Date(Date.now() - sec * 1000).toISOString();
+    // A live device: it checks in again before every poll; what it last added stays where it was.
+    const added = ago(300);
+    const live = (seen) => Object.assign({}, SECOND, { capture_state: 'idle', last_seen_at: ago(seen), last_accepted_ingest_at: added });
+    const p = await listPage([DELIVERED, live(50), NEVER]);
+    // The page's own wording of an age; `later` stands in for the minutes that pass between polls.
+    let later = 0;
+    p.window.relativeTime = (ms) => { const sec = Math.floor(ms / 1000) + later; return sec < 60 ? `${sec} seconds` : `${Math.floor(sec / 60)} minutes`; };
+    openDetails(p, SECOND.cid);
+    const card = p.q(`.client-card[data-cid="${SECOND.cid}"]`);
+    const checkIn = card.querySelector('[data-check-in]');
+    const first = { checkIn: checkIn?.textContent, chip: card.querySelector('.client-status').textContent };
+    const before = pageNodes(p).filter((node) => node.nodeType === 1);
+    for (const [target, seen, minutes] of [[card, 30, 0], [card.querySelector('[data-network-action="unpair"]'), 10, 60]]) {
+      target.focus();
+      p.state.clients = [DELIVERED, live(seen), NEVER];
+      p.clock.advance(30000);
+      later = minutes;
+      await settle();
+      assert.ok(p.doc.activeElement === target, `focus stays on the same node (on ${focusOn(p)})`);
+    }
+    const after = pageNodes(p).filter((node) => node.nodeType === 1);
+    assert.ok(after.length === before.length && after.every((node, i) => node === before[i]), 'no element was replaced');
+    // What the page's own labels say now, a minute on, and not what the first draw said.
+    const row = p.state.clients[1];
+    const render = p.window.NetworkRender;
+    assert.ok(checkIn && checkIn.textContent === render.checkInLabel(row) && checkIn.textContent !== first.checkIn, `the check-in is rewritten in place (${checkIn?.textContent})`);
+    const chip = card.querySelector('.client-status').textContent;
+    assert.ok(chip === render.deliveryChipLabel(row) && chip !== first.chip, `so is the chip (${chip})`);
+    assert.ok(card.getAttribute('aria-label').includes(card.querySelector('.client-status').textContent), `and the card's name (${card.getAttribute('aria-label')})`);
+  });
+
   await test('a clients poll that changes a card draws the list again and keeps focus on that card', async () => {
     const p = await listPage([DELIVERED, SECOND, NEVER]);
     const card = p.q(`.client-card[data-cid="${SECOND.cid}"]`);
