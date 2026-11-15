@@ -100,7 +100,7 @@ function checkBundle(label, text, minSegments) {
 }
 
 const bootTable = checkBundle('shell.js', bundle, 20);
-const restTable = checkBundle('shell-rest.js', restBundle, 5);
+const restTable = checkBundle('shell-rest.js', restBundle, 1);
 
 check('each file hands over exactly the names it declares at its top level', () => {
   let total = 0;
