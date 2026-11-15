@@ -539,8 +539,16 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         .into_iter()
         .filter(|id| !ours.contains(id.as_str()))
         .collect();
+    // The journal's place now, and the places setup restores recorded it at
+    // before: by the founder's 11-10 ruling, the same journal's backups.
+    let mut roots = vec![root.clone()];
+    for origin in erase_paths::origins(journal) {
+        if !roots.contains(&origin) {
+            roots.push(origin);
+        }
+    }
     let request = json!({
-        "roots": [root],
+        "roots": roots,
         "targets": targets,
         "trash": {"dir": solstone_core_trash::TRASH_DIR, "files": "files", "live": live_trash,
                   "item": "item.json", "paths_key": "paths"},

@@ -77,6 +77,65 @@ pub fn journal_root(journal: &Path) -> Option<String> {
     Some(crate::restic_paths::restic_tree_path(&resolved))
 }
 
+/// Where a setup restore records the place its snapshot came from. In
+/// `config/`, so it is backed up and a later whole-journal restore keeps it.
+pub const ORIGINS_FILE: &str = "config/backup-origins.json";
+
+/// Record that this journal was restored from `snapshot_id`, a backup of it at
+/// `path` (restic's tree form): by the founder's 11-10 ruling a restored
+/// journal is the same journal, so backups at that place are its own, and an
+/// erase reaches them. Write-once per path; the first snapshot named is kept.
+pub fn record_origin(journal: &Path, snapshot_id: &str, path: &str) -> std::io::Result<()> {
+    let file = journal.join(ORIGINS_FILE);
+    let mut all = read_origins(&file)?;
+    if !path.starts_with('/')
+        || all
+            .iter()
+            .any(|origin| origin.get("path").and_then(Value::as_str) == Some(path))
+    {
+        return Ok(());
+    }
+    all.push(serde_json::json!({"path": path, "snapshot": snapshot_id}));
+    let bytes = serde_json::to_vec_pretty(&serde_json::json!({"schema": 1, "origins": all}))
+        .map_err(std::io::Error::other)?;
+    solstone_core_journal_io::atomic::atomic_replace(
+        &file,
+        &bytes,
+        solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map(|_| ())
+    .map_err(|error| std::io::Error::other(error.to_string()))
+}
+
+fn read_origins(file: &Path) -> std::io::Result<Vec<Value>> {
+    match std::fs::read(file) {
+        Ok(bytes) => serde_json::from_slice::<Value>(&bytes)
+            .ok()
+            .and_then(|value| value.get("origins").and_then(Value::as_array).cloned())
+            .ok_or_else(|| std::io::Error::other("backup origins unreadable")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(error),
+    }
+}
+
+/// The places earlier copies of this journal were backed up from, recorded by
+/// setup restores, in restic's tree form. Unreadable reads as none: those
+/// backups are then counted elsewhere and said to still hold it, never
+/// claimed reached.
+pub fn origins(journal: &Path) -> Vec<String> {
+    read_origins(&journal.join(ORIGINS_FILE))
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|origin| {
+            origin
+                .get("path")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .filter(|path| path.starts_with('/'))
+        .collect()
+}
+
 /// What one run returned.
 pub struct Erased {
     /// The helper's result document.
@@ -171,5 +230,33 @@ impl Destination {
             );
         }
         StorageRetention::Unknown
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, reason = "test code")]
+mod origin_tests {
+    use super::*;
+
+    #[test]
+    fn a_restore_origin_is_recorded_once_and_read_back() {
+        let temp = tempfile::tempdir().unwrap();
+        let journal = temp.path();
+        std::fs::create_dir_all(journal.join("config")).unwrap();
+        assert!(origins(journal).is_empty());
+        record_origin(journal, &"a".repeat(64), "/home/old/journal").unwrap();
+        record_origin(journal, &"b".repeat(64), "/home/old/journal").unwrap();
+        record_origin(journal, &"c".repeat(64), "relative/not/kept").unwrap();
+        record_origin(journal, &"d".repeat(64), "/Users/old/journal").unwrap();
+        assert_eq!(
+            origins(journal),
+            ["/home/old/journal", "/Users/old/journal"]
+        );
+        std::fs::write(journal.join(ORIGINS_FILE), b"{").unwrap();
+        assert!(origins(journal).is_empty(), "unreadable reads as none");
+        assert!(
+            record_origin(journal, &"e".repeat(64), "/x").is_err(),
+            "never overwritten"
+        );
     }
 }

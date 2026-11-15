@@ -612,9 +612,38 @@ def case_entries_apart(stock, helper):
         return {"sat_out": "counts kept", "wrong_root": "missed every run"}
 
 
+def case_restored_origin(stock, helper):
+    """A journal restored to a new place names its old place as a root: the
+    backups from before the restore are rewritten too, and nothing is left
+    elsewhere."""
+    with tempfile.TemporaryDirectory(dir="/var/tmp") as tmp:
+        repo = Repo(tmp, stock, helper)
+        j = journal_case(tmp)
+        repo.backup(j, when="2025-11-25 10:00:00")
+        new = Path(tmp) / "home" / "other" / "journal"
+        new.parent.mkdir(parents=True)
+        shutil.copytree(j, new)
+        trash_move(new, "t1", SEG)
+        tombstone(new, SEG, "t1")
+        repo.backup(new, when="2025-11-26 10:00:00")
+        shutil.rmtree(new / ".trash/t1")
+        req = erase_request(new, "t1", "2025-11-26T00:00:00Z")
+        req["roots"].append(str(j))
+        rc, res = repo.erase(req)
+        e = res["entries"]["t1"]
+        assert not e.get("missed") and not e.get("elsewhere") and res["snapshots_holding"] == 2, res
+        assert res["remaining"] == 0, res
+        for sn in repo.snapshots():
+            for p in repo.ls_paths(sn["id"]):
+                assert not p.endswith(f"{SEG}/audio.m4a") and "/.trash/t1" not in p, (sn["paths"], p)
+            assert any(p.endswith(f"{KEEP}/audio.m4a") for p in repo.ls_paths(sn["id"])), sn["paths"]
+        repo.check()
+        return {"old_place": "reached", "elsewhere": 0}
+
+
 CASES = [case_basic, case_outputs_beside_and_mid_detach, case_trash_recover_trash, case_shared, case_stops,
          case_two_runners, case_racing_backup, case_delete_faults, case_archive_paths, case_nothing_held,
-         case_roots, case_shared_after_stop, case_archive_kept_file_not_dropped, case_entries_apart]
+         case_roots, case_shared_after_stop, case_archive_kept_file_not_dropped, case_entries_apart, case_restored_origin]
 
 
 def main():

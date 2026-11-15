@@ -1455,6 +1455,16 @@ fn restore_journal_with(
             ),
         );
     }
+    // A journal restored from a backup of it is the same journal (founder,
+    // 11-10): the place that backup came from is this journal's own, for
+    // erases that also remove from the backups.
+    if status == "ok"
+        && let Err(error) = crate::erase_paths::record_origin(journal, &snapshot.id, &tree_path)
+    {
+        // Not fatal: backups at that place are then left alone and said to
+        // still hold what an erase removes, never claimed reached.
+        log::warn!("restore: the backup origin was not recorded: {error}");
+    }
     retire_obligation(
         journal,
         mobile.as_ref().map(|request| &request.root),
