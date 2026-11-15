@@ -304,7 +304,6 @@ pub fn running_phase(kind: &str) -> &'static str {
         "restore" | "restore_hosted" | "offload_restore" => "restoring",
         "rotate" => "rotating",
         "teardown" => "tearing_down",
-        "older_backups" => "removing",
         _ => "setting_up",
     }
 }

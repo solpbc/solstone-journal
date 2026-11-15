@@ -2279,22 +2279,6 @@ name = "process::backup_native_job_cleanup"
 lines = ["JOURNAL_WIN_CI_BACKUP_JOB_CLEANUP=executed/pass"]
 
 [[suites]]
-id = "solstone-core-offload::older_backups_native"
-package = "solstone-core-offload"
-target = "older_backups_native"
-set = "component"
-areas = ["backup", "retention"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-# Every test is #[ignore]: it needs a native restic and rclone, named by
-# SOLSTONE_NATIVE_RESTIC and SOLSTONE_NATIVE_RCLONE, and runs by hand with
-# --ignored. The routine run builds it and runs nothing.
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-backup-web::backup_web_callosum_transport"
 package = "solstone-core-backup-web"
 target = "backup_web_callosum_transport"

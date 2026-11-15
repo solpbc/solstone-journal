@@ -6506,7 +6506,6 @@ dependencies = [
  "solstone-core-backup",
  "solstone-core-backup-runtime",
  "solstone-core-format",
- "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
@@ -6514,7 +6513,6 @@ dependencies = [
  "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-system",
- "solstone-core-trash",
 ]
 
 [[package]]
