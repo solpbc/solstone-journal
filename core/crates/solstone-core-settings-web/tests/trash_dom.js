@@ -18,7 +18,7 @@ const sourceNames = html.slice(html.indexOf('// ========== SOURCE NAMES ========
 assert.ok(sourceNames.includes('REMOVAL_SOURCE'), 'the source names block is marked');
 
 class El {
-  constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; this.style = {}; this.hidden = false; this.listeners = {}; this.className = ''; this._text = ''; }
+  constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; this.style = {}; this.hidden = false; this.listeners = {}; this.className = ''; this._text = ''; this.classes = new Set(); this.classList = { toggle: (name, on) => { if (on) this.classes.add(name); else this.classes.delete(name); }, contains: (name) => this.classes.has(name) }; }
   set textContent(value) { this._text = String(value); this.children = []; }
   get textContent() { return this._text + this.children.map((child) => child.textContent).join(''); }
   append(...nodes) { this.children.push(...nodes); }
@@ -29,7 +29,7 @@ class El {
   setAttribute(name, value) { (this.attributes ||= {})[name] = String(value); }
   all(cls) { const out = []; for (const child of this.children) { if (child.className === cls) out.push(child); if (child.all) out.push(...child.all(cls)); } return out; }
 }
-const ids = ['trashBar', 'trashBarIdle', 'trashBarSome', 'trashCount', 'trashSelectAll', 'trashSelectAllLabel', 'trashEmptyBtn', 'trashRecoverBtn', 'trashEraseBtn', 'trashResult', 'trashList', 'trashEraseAfterDays', 'trashHeading', 'trashConfirmHeading', 'trashConfirmBody', 'trashConfirmCancel', 'trashConfirmErase', 'trashConfirmModal'];
+const ids = ['trashBar', 'trashBarIdle', 'trashBarSome', 'trashCount', 'trashSelectAll', 'trashSelectAllLabel', 'trashEmptyBtn', 'trashRecoverBtn', 'trashEraseBtn', 'trashResult', 'trashList', 'trashEraseAfterDays', 'trashHeading', 'trashConfirmHeading', 'trashConfirmBody', 'trashConfirmCancel', 'trashConfirmErase', 'trashConfirmModal', 'trashConfirmChoice', 'trashBackupsField', 'trashBackupsLine', 'trashBackupsSetting', 'trashBackupsNote', 'trashBackupsSettingLabel', 'trashBackupsMoreSummary', 'trashBackupsMoreList'];
 const byId = Object.fromEntries(ids.map((id) => [id, new El('div')]));
 const modal = byId.trashConfirmModal;
 modal._openAccessible = () => { modal.open = true; };
@@ -67,7 +67,7 @@ const sandbox = {
   saveField: (el, section, key, value) => saves.push({ section, key, value }),
 };
 vm.createContext(sandbox);
-vm.runInContext(`${sourceNames}\n${html.slice(start, end)};this.api={TRASH_COPY,TRASH_WORDS,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,trashSelected,trashWord,trashRowNote,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
+vm.runInContext(`${sourceNames}\n${html.slice(start, end)};this.api={TRASH_COPY,TRASH_WORDS,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,renderTrashBackups,trashSelected,trashWord,trashRowNote,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
 const { api } = sandbox;
 const C = api.TRASH_COPY;
 api.setupTrash();
@@ -180,7 +180,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   answers['api/trash/empty'] = { done: ['a'], failed: [] };
   byId.trashConfirmErase.fire('click');
   await flush();
-  assert.strictEqual(calls.find((call) => call.url === 'api/trash/empty').options.body, undefined);
+  assert.deepStrictEqual(JSON.parse(calls.find((call) => call.url === 'api/trash/empty').options.body), { backups: false }, 'empty sends only the backups choice');
 
   // Confirm wording follows count and kind.
   const K = (act, items) => { const copy = api.trashConfirmCopy(act, items); return { title: copy.title, paragraphs: Array.from(copy.paragraphs) }; };
@@ -504,6 +504,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     const REMOVAL_ACTION = { segment_delete: 'STAGE1' };
     const REMOVAL_ACTION_FALLBACK = 'FALLBACK';
     const REMOVAL_ACTION_NAMES_PLACE = {};
+    const REMOVAL_ACTION_NOTE = {};
     const REMOVAL_SURFACE = { settings: 'IN-SETTINGS', cli: 'BY-CLI' };
     function removalSurfaceKey(entry) { return entry.surface === 'web' ? entry.page : entry.surface; }
     ${history.slice(0, history.indexOf('\n')).trim()}
@@ -602,5 +603,37 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     assert.deepStrictEqual(set.map((group) => [fold.removalGroupHow(group), group.units.length]), [['HOW:erased', 2], ['HOW:trashed', 2]]);
     const partly = groups([at('erased', 'entity', 'op7'), at('trashed', 'entity', 'op7'), at('trashed', 'entity', 'op7')]);
     assert.deepStrictEqual(partly.map((group) => group.units.length), [1, 2], 'one whose erase was refused is still counted as moved');
+  }
+
+  // The backups line: can't finish warns; where an older backup still holds
+  // it, the part words show with a plain "why", never the stays words.
+  {
+    const B = C.backups;
+    const line = byId.trashBackupsLine;
+    const backups = (state, reason) => ({ set_up: true, available: true, setting: false, state, reason, pending: 1, staying: 1 });
+    api.renderTrashBackups(backups('stays', 'elsewhere'));
+    assert.ok(line.classList.contains('trash-backups-warn'), 'a part state warns');
+    assert.ok(line.textContent.startsWith(B.partOne), 'the part words, not the stays words');
+    assert.ok(line.textContent.includes(B.part.elsewhere));
+    assert.strictEqual(line.children[1].children[0].textContent, B.whyOnly, 'nothing to do, so the summary is only why');
+    api.renderTrashBackups({ ...backups('stays', 'elsewhere'), staying: 3, partly: 1, keeps: 'versions' });
+    assert.ok(line.textContent.startsWith(B.partOne), 'the part words count only what an older backup holds');
+    assert.ok(line.textContent.includes(B.own.versions), 'the rest are said as what the storage keeps');
+    api.renderTrashBackups(backups('stays', 'versions'));
+    assert.strictEqual(line.children[1].children[0].textContent, B.why);
+    api.renderTrashBackups(backups('running', null));
+    assert.ok(!line.classList.contains('trash-backups-warn'), 'a running removal does not warn');
+    api.renderTrashBackups({ set_up: false });
+    assert.ok(line.hidden && byId.trashBackupsField.hidden, 'nothing shows while backup is not set up');
+  }
+
+  // A row from the backup half names backups in its action, so it adds no place word.
+  {
+    const places = {};
+    vm.createContext(places);
+    vm.runInContext(`${html.slice(html.indexOf('const REMOVAL_ACTION_NAMES_PLACE'), html.indexOf('const REMOVAL_ACTION_NAMES_PLACE') + 400).split('};')[0]}}; this.p = REMOVAL_ACTION_NAMES_PLACE;`, places);
+    for (const action of ['backup_erase', 'backup_erase_shared', 'backup_erase_stays', 'backup_erase_partly']) {
+      assert.strictEqual(places.p[action], 'backup', action);
+    }
   }
 })().catch((error) => { console.error(error); process.exit(1); });
