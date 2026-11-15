@@ -192,3 +192,51 @@ fn a_removed_recording_is_left_out_and_nothing_is_created() {
     std::fs::write(place.join("tombstone.json"), b"{}").unwrap();
     assert!(removed_from_journal(temp.path(), &segment));
 }
+
+/// One media archive holds an erased recording and a kept one: "restore this
+/// day" selects only the kept one's media, and nothing of the erased one.
+#[test]
+fn restore_this_day_takes_only_what_the_owner_kept_out_of_a_shared_archive() {
+    use solstone_core_retention::archive_catalog::OffloadFile;
+    let temp = tempfile::tempdir().unwrap();
+    let journal = temp.path();
+    let day = "20261101";
+    let archive = "9".repeat(64);
+    for key in ["090000_300", "091000_300"] {
+        std::fs::create_dir_all(
+            journal
+                .join("chronicle")
+                .join(day)
+                .join("macbook")
+                .join(key),
+        )
+        .unwrap();
+        crate::ledger::append_offload_event(
+            journal,
+            day,
+            "macbook",
+            key,
+            &archive,
+            &[OffloadFile {
+                name: "audio.flac".into(),
+                bytes: 10,
+                sha256: "a".repeat(64),
+            }],
+            1,
+        )
+        .unwrap();
+    }
+    // The first was erased: only its tombstone stays where it was.
+    std::fs::write(
+        journal
+            .join("chronicle")
+            .join(day)
+            .join("macbook/090000_300/tombstone.json"),
+        b"{}",
+    )
+    .unwrap();
+    let root = Arc::new(solstone_core_journal_io::JournalRoot::open(journal).unwrap());
+    let (_, files) = select(&root, "day", Some(day)).unwrap();
+    let segments: Vec<&str> = files.iter().map(|file| file.segment.as_str()).collect();
+    assert_eq!(segments, ["091000_300"]);
+}
