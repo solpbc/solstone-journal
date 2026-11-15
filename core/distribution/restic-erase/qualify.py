@@ -162,7 +162,7 @@ def tombstone(j, rel, item):
 
 
 def erase_request(j, item, settled, live=(), seg=SEG):
-    return {"roots": [str(j)],
+    return {"roots": [str(j)], "snapshot_roots": True,
             "targets": [{"entry": item, "path": seg, "marker": {"name": TOMB, "key": "cid", "value": item},
                          "settled": settled, "trash_copies": True},
                         {"entry": item, "path": f".trash/{item}"}],
@@ -507,8 +507,77 @@ def case_nothing_held(stock, helper):
         return {"snapshots": 0}
 
 
+def case_roots(stock, helper):
+    """A request naming the wrong place fails rather than finding nothing; a
+    journal that moved is still reached through its own backups' path."""
+    with tempfile.TemporaryDirectory(dir="/var/tmp") as tmp:
+        repo = Repo(tmp, stock, helper)
+        j = journal_case(tmp)
+        repo.backup(j, when="2025-11-25 10:00:00")
+        moved = Path(tmp) / "home" / "owner" / "moved-journal"
+        os.rename(j, moved)
+        trash_move(moved, "t1", SEG)
+        tombstone(moved, SEG, "t1")
+        repo.backup(moved, when="2025-11-26 10:00:00")
+        shutil.rmtree(moved / ".trash/t1")
+        wrong = erase_request(Path("/nowhere/journal"), "t1", "2025-11-26T00:00:00Z")
+        wrong["snapshot_roots"] = False
+        rc, res = repo.erase(wrong, check=False)
+        assert rc != 0 and res["reason"] == "roots", res
+        rc, res = repo.erase(erase_request(moved, "t1", "2025-11-26T00:00:00Z"))
+        assert res["snapshots_holding"] == 2 and res["remaining"] == 0, res
+        for sn in repo.snapshots():
+            for p in repo.ls_paths(sn["id"]):
+                assert not (p.endswith(f"{SEG}/audio.m4a") or "/.trash/t1" in p), (sn["paths"], p)
+        repo.check()
+        return {"wrong_root": "roots", "moved_journal": "reached"}
+
+
+def case_shared_after_stop(stock, helper):
+    """A stop after the rewrite, then a retry: the entry still counts the piece
+    something kept shares, from the saved list."""
+    with tempfile.TemporaryDirectory(dir="/var/tmp") as tmp:
+        repo = Repo(tmp, stock, helper)
+        j = journal_case(tmp)
+        same = os.urandom(1_000_000)
+        write(j / SEG / "copy.bin", same)
+        write(j / KEEP / "copy.bin", same)
+        repo.backup(j, when="2025-11-25 10:00:00")
+        trash_move(j, "t1", SEG)
+        tombstone(j, SEG, "t1")
+        repo.backup(j, when="2025-11-26 10:00:00")
+        shutil.rmtree(j / ".trash/t1")
+        rc, res = repo.erase(erase_request(j, "t1", "2025-11-26T00:00:00Z"), stop_after="rewrite", check=False)
+        assert res["reason"] == "stopped", res
+        rc, res = repo.erase(erase_request(j, "t1", "2025-11-26T00:00:00Z"))
+        assert res["snapshots_holding"] == 0, "the retry finds nothing left to rewrite"
+        assert res["entries"]["t1"]["in_use_kept"] >= 1, res
+        return {"in_use_kept_after_resume": res["entries"]["t1"]["in_use_kept"]}
+
+
+def case_archive_kept_file_not_dropped(stock, helper):
+    """An archive keeping one file stays, even with a summary that undercounts;
+    a key that names no archive is reported."""
+    with tempfile.TemporaryDirectory(dir="/var/tmp") as tmp:
+        repo = Repo(tmp, stock, helper)
+        stage = Path(tmp) / "stage"
+        write(stage / "a" / "erased.flac", os.urandom(300_000))
+        write(stage / "a" / "kept.flac", os.urandom(300_000))
+        mixed = repo.backup(stage / "a", "spb-offload-archive")
+        j = journal_case(tmp)
+        repo.backup(j)
+        rc, res = repo.erase({"roots": [], "targets": [], "drop_empty_tags": ["spb-offload-archive"],
+                              "snapshot_paths": {mixed: [{"entry": "t1", "path": f"{stage}/a/erased.flac"}],
+                                                 "deadbeefdeadbeef": [{"entry": "t1", "path": "/gone/x.flac"}]}})
+        assert res["snapshots_dropped"] == [] and len(res["snapshots_rewritten"]) == 1, res
+        assert res["unmatched_keys"] == ["deadbeefdeadbeef"], res
+        repo.check()
+        return {"kept_file_archive": "kept", "unmatched_keys": res["unmatched_keys"]}
+
+
 CASES = [case_basic, case_outputs_beside_and_mid_detach, case_trash_recover_trash, case_shared, case_stops,
-         case_two_runners, case_racing_backup, case_delete_faults, case_archive_paths, case_nothing_held]
+         case_two_runners, case_racing_backup, case_delete_faults, case_archive_paths, case_nothing_held,
+         case_roots, case_shared_after_stop, case_archive_kept_file_not_dropped]
 
 
 def main():

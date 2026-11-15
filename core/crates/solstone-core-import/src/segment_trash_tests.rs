@@ -290,6 +290,7 @@ fn a_recover_a_stop_left_part_way_is_finished_even_with_its_import_in_the_trash(
         surface: surface(),
         at: chrono::Utc::now().to_rfc3339(),
         operation: None,
+        backups: false,
     });
     let record = root
         .path()

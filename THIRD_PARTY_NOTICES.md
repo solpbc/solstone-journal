@@ -1057,6 +1057,13 @@ linux and macos they are at `lib/solstone-restic/restic` and
 and `lib/solstone-rclone/rclone.exe`. They are not part of solstone and are
 not covered by solstone's AGPL-3.0-only license.
 
+On linux and macos the packages also include `lib/solstone-restic/restic-erase`.
+It is restic 0.19.0 with one patch, which adds the commands the journal uses to
+remove an erased thing from every backup. The patch, its build script and its
+qualification are in `core/distribution/restic-erase/`, and the build uses the
+same restic source and Go modules as the release above. It is covered by
+restic's license and the module licenses listed for restic.
+
 restic is licensed under the BSD 2-Clause License and rclone under the MIT
 License. Both are Go programs, and Go links every module they use into the
 binary. The complete license texts of

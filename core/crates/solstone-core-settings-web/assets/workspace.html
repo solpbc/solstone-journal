@@ -8838,7 +8838,7 @@ function renderTrashBackups(backups) {
   const B = TRASH_COPY.backups;
   const field = document.getElementById('trashBackupsField');
   const line = document.getElementById('trashBackupsLine');
-  const setUp = Boolean(backups && backups.set_up === true);
+  const setUp = Boolean(backups && backups.set_up === true && backups.available === true);
   field.hidden = !setUp;
   if (setUp) {
     const box = document.getElementById('trashBackupsSetting');
@@ -8859,7 +8859,7 @@ function trashBackupsWhen(at) {
 }
 
 function trashBackupsSentence(backups) {
-  if (!backups || backups.set_up !== true) return null;
+  if (!backups || backups.set_up !== true || backups.available !== true) return null;
   const B = TRASH_COPY.backups;
   const n = Number(backups.pending) || 0;
   const staying = Number(backups.staying) || 0;

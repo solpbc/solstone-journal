@@ -590,6 +590,8 @@ pub fn backups_view(journal_root: &Path) -> Value {
     let status = solstone_core_offload::backup_erase::status(journal_root);
     json!({
         "set_up": set_up,
+        // Where the backup half can't run here, the choice isn't offered.
+        "available": set_up && solstone_core_backup_runtime::erase_paths::helper_installed(),
         "paused": set_up && solstone_core_backup_runtime::backup_paused(journal_root),
         "setting": solstone_core_trash::erase_from_backups(journal_root),
         "state": status.state,

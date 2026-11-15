@@ -3337,6 +3337,39 @@ staged = [
     { relpath = "", dest = "lib/solstone-restic/restic", mode = 0o755, extracted_sha256 = "f6c965a0f7f59464614130d79246479d48e2aa6780c34d27df6e48c8ee0308bd" }
 ]
 
+# restic-erase: BEGIN (written from its build receipt)
+[[entry]]
+kind = "pinned-members"
+class = "component"
+component = "restic-erase"
+targets = ["linux-x86_64"]
+input = { kind = "catalog-acquired", unit = "restic-erase", filename = "restic-erase_0.19.0-sol1_linux_amd64.bz2" }
+staged = [
+    { relpath = "", dest = "lib/solstone-restic/restic-erase", mode = 0o755, extracted_sha256 = "aebbb7230af2443eb40c7489066a88c8053ffadebc3575968f87b0df482336b2" }
+]
+
+[[entry]]
+kind = "pinned-members"
+class = "component"
+component = "restic-erase"
+targets = ["linux-aarch64"]
+input = { kind = "catalog-acquired", unit = "restic-erase", filename = "restic-erase_0.19.0-sol1_linux_arm64.bz2" }
+staged = [
+    { relpath = "", dest = "lib/solstone-restic/restic-erase", mode = 0o755, extracted_sha256 = "b19876dd3449797b772b48b6fe9794fcc39850c4f84dbcfeee479a46258f866c" }
+]
+
+[[entry]]
+kind = "pinned-members"
+class = "component"
+component = "restic-erase"
+targets = ["macos-arm64"]
+input = { kind = "catalog-acquired", unit = "restic-erase", filename = "restic-erase_0.19.0-sol1_darwin_arm64.bz2" }
+staged = [
+    { relpath = "", dest = "lib/solstone-restic/restic-erase", mode = 0o755, extracted_sha256 = "98175cbee8efdad8b9ba79b512b9553dde5af3a9c8bbb34cc66f55ef6f41b371" }
+]
+
+# restic-erase: END
+
 [[entry]]
 kind = "pinned-members"
 class = "component"

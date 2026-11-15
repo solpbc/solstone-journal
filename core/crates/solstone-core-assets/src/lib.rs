@@ -1264,6 +1264,50 @@ static ARTIFACTS: &[Artifact] = &[
         backend: None,
         extracted_binary_sha256: None,
     },
+    // restic-erase: BEGIN (written from its build receipt)
+    // The journal's restic helper: restic 0.19.0 with one patch
+    // (core/distribution/restic-erase), built by sol pbc. POSIX packages ship
+    // lib/solstone-restic/restic-erase beside restic.
+    Artifact {
+        unit: "restic-erase",
+        version: "0.19.0-sol1",
+        filename: "restic-erase_0.19.0-sol1_darwin_arm64.bz2",
+        sha256: "edfd33dea9ad6fff427ae3d091867cb6cb3948a82396a782f6edfc25a82fddb5",
+        size_bytes: 9768442,
+        upstream_url: "https://updates.solstone.app/assets/restic-erase/0.19.0-sol1/restic-erase_0.19.0-sol1_darwin_arm64.bz2",
+        origin_key: "assets/restic-erase/0.19.0-sol1/restic-erase_0.19.0-sol1_darwin_arm64.bz2",
+        artifact_key: Some("darwin-arm64"),
+        platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "restic-erase",
+        version: "0.19.0-sol1",
+        filename: "restic-erase_0.19.0-sol1_linux_amd64.bz2",
+        sha256: "cd71bf2f459cdf58995d5e24a2e8051054c720ea5210ab4722a0d178641e7e6e",
+        size_bytes: 10140395,
+        upstream_url: "https://updates.solstone.app/assets/restic-erase/0.19.0-sol1/restic-erase_0.19.0-sol1_linux_amd64.bz2",
+        origin_key: "assets/restic-erase/0.19.0-sol1/restic-erase_0.19.0-sol1_linux_amd64.bz2",
+        artifact_key: Some("linux-amd64"),
+        platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "restic-erase",
+        version: "0.19.0-sol1",
+        filename: "restic-erase_0.19.0-sol1_linux_arm64.bz2",
+        sha256: "caef6ba92434ede0f4886fe06b9dea393b5bb596e47d049ebde88d368a45c391",
+        size_bytes: 9067153,
+        upstream_url: "https://updates.solstone.app/assets/restic-erase/0.19.0-sol1/restic-erase_0.19.0-sol1_linux_arm64.bz2",
+        origin_key: "assets/restic-erase/0.19.0-sol1/restic-erase_0.19.0-sol1_linux_arm64.bz2",
+        artifact_key: Some("linux-arm64"),
+        platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    // restic-erase: END
     // rclone is the operated backup tier's append-only transport (restic
     // reaches the hosted repository through `rclone serve restic --stdio
     // --append-only`). POSIX packages ship lib/solstone-rclone/rclone.

@@ -37,6 +37,23 @@ pub fn helper(services: &BackupServices<'_>) -> Option<PathBuf> {
     helper.is_file().then_some(helper)
 }
 
+/// Whether this installed journal carries the helper, beside its restic: the
+/// choice is offered only where the backup half can run. Windows payloads
+/// don't carry it yet.
+pub fn helper_installed() -> bool {
+    #[cfg(windows)]
+    {
+        false
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| crate::resolve::resolve_restic_member(&exe).ok())
+            .is_some_and(|restic| restic.with_file_name(HELPER).is_file())
+    }
+}
+
 /// The destination, opened with the maintenance credential. `Ok(None)` when
 /// backup isn't set up here.
 pub struct Destination {

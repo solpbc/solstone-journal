@@ -988,6 +988,7 @@ mod tests {
                 },
                 at: chrono::Utc::now().to_rfc3339(),
                 operation: None,
+                backups: false,
             });
             fs::write(held.join("item.json"), serde_json::to_vec(&item).unwrap()).unwrap();
             let index = solstone_core_indexer_store::RetentionIndex::new(root.path());

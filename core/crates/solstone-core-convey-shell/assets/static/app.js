@@ -1742,7 +1742,7 @@ window.BackupErase = {
    */
   async row(count) {
     const state = await this.state();
-    if (!state || state.set_up !== true) return null;
+    if (!state || state.set_up !== true || state.available !== true) return null;
     const many = count !== 1;
     const C = this.COPY;
     const id = `backupEraseChoice${++this._seq}`;

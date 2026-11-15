@@ -162,6 +162,8 @@ pub const FROM_BACKUPS_HELP: &str = "Also remove it from your backups. Without t
 pub const NOT_FROM_BACKUPS_HELP: &str = "Leave it in your backups.";
 pub const NO_BACKUP_SET_UP: &str =
     "Error: backup isn't set up, so there are no backups to remove it from.";
+pub const NOT_AVAILABLE_HERE: &str =
+    "Error: this journal can't remove things from your backups yet.";
 
 /// Work out the choice for an erase now. `from` and `not_from` are the flags.
 pub fn backups_choice(
@@ -195,6 +197,15 @@ pub fn backups_choice(
     if from && !set_up {
         return Err(NO_BACKUP_SET_UP.to_owned());
     }
+    let available = state
+        .as_ref()
+        .and_then(|state| state.get("available"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if from && !available {
+        return Err(NOT_AVAILABLE_HERE.to_owned());
+    }
+    let set_up = set_up && available;
     let setting = state
         .as_ref()
         .and_then(|state| state.get("setting"))

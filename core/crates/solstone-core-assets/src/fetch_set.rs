@@ -62,7 +62,7 @@ pub fn unit_id(unit: &str) -> Option<&'static str> {
         "llama-server" | "llama-server-vulkan" => Some("llama-server"),
         "local-model" | "local-model-mlx" | "location-accuracy" | "llama-server-cuda"
         | "parakeet-server" | "parakeet-model" | "parakeet-coreml" | "ced-engine" | "ced-model"
-        | "restic" | "rclone" | "nvattest" => Some(match unit {
+        | "restic" | "restic-erase" | "rclone" | "nvattest" => Some(match unit {
             "local-model" => "local-model",
             "local-model-mlx" => "local-model-mlx",
             "location-accuracy" => "location-accuracy",
@@ -73,6 +73,7 @@ pub fn unit_id(unit: &str) -> Option<&'static str> {
             "ced-engine" => "ced-engine",
             "ced-model" => "ced-model",
             "restic" => "restic",
+            "restic-erase" => "restic-erase",
             "rclone" => "rclone",
             "nvattest" => "nvattest",
             _ => unreachable!(),
@@ -94,21 +95,42 @@ const WINDOWS_BUNDLED_IDS: &[&str] = &[
 
 /// Compiled bundled catalog-unit IDs per target.
 ///
-/// POSIX targets bundle: ced-engine, ced-model, restic, rclone, nvattest.
+/// POSIX targets bundle: ced-engine, ced-model, restic, restic-erase, rclone, nvattest.
 /// Windows bundles: llama-server, parakeet-server, parakeet-model, ced-engine, ced-model,
 /// restic, rclone, nvattest.
 static COMPILED_BUNDLED_IDS: &[(&str, &[&str])] = &[
     (
         "linux-x86_64",
-        &["ced-engine", "ced-model", "restic", "rclone", "nvattest"],
+        &[
+            "ced-engine",
+            "ced-model",
+            "restic",
+            "restic-erase",
+            "rclone",
+            "nvattest",
+        ],
     ),
     (
         "linux-aarch64",
-        &["ced-engine", "ced-model", "restic", "rclone", "nvattest"],
+        &[
+            "ced-engine",
+            "ced-model",
+            "restic",
+            "restic-erase",
+            "rclone",
+            "nvattest",
+        ],
     ),
     (
         "macos-arm64",
-        &["ced-engine", "ced-model", "restic", "rclone", "nvattest"],
+        &[
+            "ced-engine",
+            "ced-model",
+            "restic",
+            "restic-erase",
+            "rclone",
+            "nvattest",
+        ],
     ),
     ("windows-x86_64", WINDOWS_BUNDLED_IDS),
     ("windows-aarch64", WINDOWS_BUNDLED_IDS),

@@ -240,6 +240,7 @@ fn a_memory_or_body_data_asks_for_nothing() {
         action: Action::SegmentDelete,
         surface: surface(),
         trashed_at: String::new(),
+        settled_at: None,
         erase_at: String::new(),
         paths: Vec::new(),
         bytes: 0,
