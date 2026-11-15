@@ -33,21 +33,22 @@ const MIN_REST: Duration = Duration::from_secs(60);
 const REST_PER_PASS: u32 = 9;
 /// How often a pass publishes its progress before it finishes.
 const PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
-/// How much of its ranking a pass keeps. The queue admits a few tasks at a
-/// time; the rest wait here, in order, and are admitted as those tasks leave
-/// the queue, so a backlog drains at the pace work finishes rather than a few
-/// tasks per pass.
+/// How much of its ranking a pass hands the queue. The queue offers all of it
+/// beside direct submissions at every pick, so a backlog drains at the pace
+/// work finishes, and checks each entry as still owed only as it starts.
 const RANKED: usize = 1024;
+/// A full ranking that the queue has used up starts the next pass early, but no
+/// sooner than this many pass-lengths after the last, so discovery stays at
+/// most a quarter of one core even if every entry turned out to be done.
+const DRAINED_REST_PER_PASS: u32 = 3;
 
 fn rest_after(pass: Duration) -> Duration {
     MIN_REST.max(pass * REST_PER_PASS)
 }
 
 /// While it watches the queue, a resting worker checks it this often: for
-/// the end of an owner's requested work, and for discovered work that has left.
+/// the end of an owner's requested work, and for a used-up ranking.
 const QUEUE_POLL: Duration = Duration::from_secs(1);
-/// A resting worker tells readers a later next pass at most this often.
-const REPROMISE: Duration = Duration::from_secs(60);
 
 /// Days the owner asked to redo, or asked to think again after a correction,
 /// whose discovered work is still in the queue. An asked day carries its
@@ -76,71 +77,27 @@ fn owner_work_in_queue(queue: &TaskQueue, day: &str, week: Option<&str>) -> bool
     })
 }
 
-/// Rest until a wake, the next automatic pass, or the end of an owner's
-/// requested work. A day's later steps (its daily batch, or segments past the
-/// queue's admission bound) are found only by a pass, so a finished owner
-/// request starts one rather than waiting out the automatic rest. It still
-/// waits as long as the last pass ran, so discovery stays at most half a core
-/// while owner work keeps finishing. Returns false when the worker must exit.
-///
-/// While it rests, `top_up` admits the pass's next ranked work as earlier work
-/// leaves the queue, until it returns false. Each top-up then rests nine times
-/// as long as it ran and moves the next pass back by ten times as long, so
-/// discovery as a whole still holds at most a tenth of one core.
-///
-/// `promise` carries the time readers were told the next pass is due. When
-/// that time arrives and top-ups have moved the next pass back, it tells them
-/// the new time. Only a live worker does this, so if it stops, its snapshot
-/// goes stale on the time last promised.
+/// Rest until a wake, the next automatic pass, or an early reason to look
+/// again. Each early reason is watched from its own time: the end of an owner's
+/// requested work (a day's later steps, such as its daily batch, are found only
+/// by a pass, so a finished owner request starts one rather than waiting out the
+/// automatic rest), and the queue using up a full ranking. Returns false when
+/// the worker must exit.
 fn rest(
     receiver: &mpsc::Receiver<()>,
-    mut next_pass: Option<Instant>,
-    owner: Option<(Instant, &dyn Fn() -> bool)>,
-    mut top_up: Option<&mut dyn FnMut() -> bool>,
-    mut promise: Option<(Instant, &mut dyn FnMut(Instant))>,
+    next_pass: Option<Instant>,
+    early: &[(Instant, &dyn Fn() -> bool)],
 ) -> bool {
-    let mut top_up_at = Instant::now();
-    let mut told = promise.as_ref().map(|(told, _)| *told);
-    let mut check_at = told;
     loop {
         let now = Instant::now();
         if next_pass.is_some_and(|due| now >= due)
-            || owner.is_some_and(|(from, done)| now >= from && done())
+            || early.iter().any(|(from, due)| now >= *from && due())
         {
             return true;
         }
-        if let (Some(due), Some(at), Some(was)) = (next_pass, check_at, told)
-            && now >= at
-            && let Some((_, tell)) = promise.as_mut()
-        {
-            if due > was + QUEUE_POLL {
-                tell(due);
-                told = Some(due);
-            }
-            check_at = Some(due.max(now + REPROMISE));
-        }
-        if now >= top_up_at
-            && let Some(admit_next) = top_up.as_mut()
-        {
-            let began = Instant::now();
-            let more = admit_next();
-            let spent = began.elapsed();
-            top_up_at = Instant::now() + spent * REST_PER_PASS;
-            next_pass = next_pass.map(|due| due + spent * (REST_PER_PASS + 1));
-            if !more {
-                top_up = None;
-            }
-        }
-        let now = Instant::now();
-        let poll = owner
+        let poll = early
+            .iter()
             .map(|(from, _)| from.saturating_duration_since(now).max(QUEUE_POLL))
-            .into_iter()
-            .chain(
-                top_up
-                    .is_some()
-                    .then(|| top_up_at.saturating_duration_since(now).max(QUEUE_POLL)),
-            )
-            .chain(check_at.map(|at| at.saturating_duration_since(now)))
             .min();
         let timeout = match (
             next_pass.map(|due| due.saturating_duration_since(now)),
@@ -339,14 +296,14 @@ impl WorkDiscovery {
         checkpoint: Arc<dyn Fn() -> Result<(), String> + Send + Sync>,
     ) -> Self {
         let reconcile_checkpoint = Arc::clone(&checkpoint);
-        let startup_roots = Some((roots.talent.clone(), roots.apps.clone()));
+        let preflight_roots = Some(roots.clone());
         Self::with_reconciler_and_stop(
             journal,
             queue,
             automatic,
             Arc::new(AtomicBool::new(false)),
             checkpoint,
-            startup_roots,
+            preflight_roots,
             move |journal, queue, stopped| {
                 reconcile_pass_with_roots(
                     journal,
@@ -366,13 +323,17 @@ impl WorkDiscovery {
         automatic: bool,
         stopped: Arc<AtomicBool>,
         checkpoint: Arc<dyn Fn() -> Result<(), String> + Send + Sync>,
-        startup_roots: Option<(PathBuf, PathBuf)>,
+        roots: Option<DiscoveryTalentRoots>,
         mut reconcile_pass: impl FnMut(&Path, &TaskQueue, &AtomicBool) -> Result<Backlog, String>
         + Send
         + 'static,
     ) -> Self {
         let (wake, receiver) = mpsc::sync_channel(1);
         let worker_stop = Arc::clone(&stopped);
+        let startup_roots = roots
+            .as_ref()
+            .map(|roots| (roots.talent.clone(), roots.apps.clone()));
+        install_preflight(&journal, &queue, &stopped, &checkpoint, roots);
         let spawned = std::thread::Builder::new()
             .name("journal-work-discovery".into())
             .spawn(move || {
@@ -421,38 +382,29 @@ impl WorkDiscovery {
                     let pass = started.elapsed();
                     let ended = Instant::now();
                     let owner_days = owner_days_in_queue(&journal, &queue);
-                    // The one task trying thinking again says whether it is
-                    // answered, so its end starts a pass as an owner's does.
-                    let trial = queue.thinking_failing_since().is_some()
-                        && queue.thinking_in_queue();
                     let owner_done = || {
                         owner_days
                             .iter()
                             .any(|(day, week)| !owner_work_in_queue(&queue, day, week.as_deref()))
-                            || (trial && !queue.thinking_in_queue())
                     };
-                    let mut published = backlog.published.take();
-                    let told = published
-                        .as_ref()
-                        .and_then(|report| report.next_pass_ms)
-                        .map(|due| {
-                            let left = due - chrono::Utc::now().timestamp_millis();
-                            Instant::now() + Duration::from_millis(left.max(0) as u64)
-                        });
-                    let mut promise = |due: Instant| {
-                        if let Some(report) = published.as_mut() {
-                            repromise(&journal, report, due, checkpoint.as_ref());
-                        }
-                    };
-                    let mut top_up =
-                        || backlog.top_up(&journal, &queue, &worker_stop, checkpoint.as_ref());
+                    // A ranking cut at its limit leaves owed work unranked; once
+                    // the queue has used it up, the rest is worth finding now.
+                    let full = backlog.handed >= RANKED;
+                    let drained = || queue.discovered_len() == 0;
+                    let mut early: Vec<(Instant, &dyn Fn() -> bool)> = Vec::new();
+                    if !owner_days.is_empty() {
+                        early.push((ended + pass, &owner_done));
+                    }
+                    if automatic && full {
+                        early.push((
+                            ended + MIN_REST.max(pass * DRAINED_REST_PER_PASS),
+                            &drained,
+                        ));
+                    }
                     if !rest(
                         &receiver,
                         automatic.then(|| ended + rest_after(pass)),
-                        (!owner_days.is_empty() || trial)
-                            .then_some((ended + pass, &owner_done as &dyn Fn() -> bool)),
-                        automatic.then_some(&mut top_up as &mut dyn FnMut() -> bool),
-                        told.map(|told| (told, &mut promise as &mut dyn FnMut(Instant))),
+                        &early,
                     ) {
                         return;
                     }
@@ -502,84 +454,16 @@ impl Drop for WorkDiscovery {
 
 /// Republish a resting pass's snapshot with a later next pass. It is still the
 /// snapshot as of its pass; only the promise moves.
-fn repromise(
-    journal: &Path,
-    report: &mut WorkInventory,
-    due: Instant,
-    checkpoint: &dyn Fn() -> Result<(), String>,
-) {
-    report.next_pass_ms = Some(
-        chrono::Utc::now().timestamp_millis()
-            + due.saturating_duration_since(Instant::now()).as_millis() as i64,
-    );
-    if let Err(error) = report.publish_checked(journal, checkpoint) {
-        log::warn!("work discovery: {error}");
-    }
-}
-
-/// What the last pass handed the queue, the rest of its ranking in order, and
-/// the snapshot it published.
+/// What the last pass handed the queue.
 #[derive(Default)]
 struct Backlog {
-    admitted: Vec<DiscoveredTask>,
-    ranked: VecDeque<DiscoveredTask>,
+    /// How many ranked tasks the pass handed over.
+    handed: usize,
+    /// What the pass handed over, and the snapshot it published.
+    #[cfg(test)]
+    offered: Vec<DiscoveredTask>,
+    #[cfg(test)]
     published: Option<WorkInventory>,
-    roots: Option<DiscoveryTalentRoots>,
-}
-
-impl Backlog {
-    /// Once admitted work has left the queue, admit the next ranked work that
-    /// is still owed in its place, without another pass. Returns whether any
-    /// ranked work remains.
-    fn top_up(
-        &mut self,
-        journal: &Path,
-        queue: &TaskQueue,
-        stopped: &AtomicBool,
-        checkpoint: &dyn Fn() -> Result<(), String>,
-    ) -> bool {
-        if checkpoint().is_err() || stopped.load(Ordering::Acquire) {
-            return false;
-        }
-        if self.ranked.is_empty() {
-            return false;
-        }
-        // Nothing here tries thinking again: the next pass does, once it is due.
-        if queue.thinking_failing_since().is_some() {
-            self.ranked.clear();
-            return false;
-        }
-        let present = self
-            .admitted
-            .iter()
-            .filter(|task| queue.contains_reference(&task.request.reference))
-            .cloned()
-            .collect::<Vec<_>>();
-        if present.len() == self.admitted.len() {
-            return true;
-        }
-        let mut report = WorkInventory::default();
-        match admit(
-            journal,
-            queue,
-            stopped,
-            present,
-            &mut self.ranked,
-            &mut report,
-            self.roots.as_ref(),
-            checkpoint,
-        ) {
-            Ok(admitted) => self.admitted = admitted,
-            Err(error) => {
-                log::warn!("work discovery: {error}");
-                self.ranked.clear();
-            }
-        }
-        for error in report.unreadable {
-            log::warn!("work discovery: {error}");
-        }
-        !self.ranked.is_empty()
-    }
 }
 
 struct DayWork {
@@ -786,6 +670,46 @@ fn retry_imported(unit: &Unit, imports: &[ImportThinking]) -> bool {
 /// Read native writer evidence on the discovery worker. The permission ledger
 /// keeps the original failed input; it does not make this scan authoritative.
 #[allow(clippy::too_many_arguments)]
+/// The place a held unit's retry takes: an owner's ask is waited on, a
+/// declared fix completes the journal, and imported material keeps its own.
+fn retry_band(cause: Option<&str>, imported: bool) -> Option<WorkBand> {
+    match cause {
+        Some(cause) if cause.starts_with("owner:") => Some(WorkBand::Waiting),
+        Some(cause) if cause.starts_with("fix:") => Some(WorkBand::Completing),
+        _ => imported.then_some(WorkBand::Import),
+    }
+}
+
+/// The run that retries one held unit under the cause that granted it.
+fn retry_task(
+    kind: &str,
+    day: &str,
+    id: &str,
+    cause: &str,
+    priority: WorkPriority,
+) -> DiscoveredTask {
+    DiscoveredTask {
+        request: BusTaskRequest {
+            cmd: TaskArgv::from_wire(canonical_journal_command([
+                "think",
+                "--day",
+                day,
+                "--retry-unit",
+                id,
+                "--retry-cause",
+                cause,
+            ]))
+            .expect("retry command"),
+            reference: format!("supervisor-retry-{kind}-{day}-{id}"),
+            day: Some(day.into()),
+            scheduler_name: None,
+            queue_if_active_cmd_differs: false,
+            priority: Some(priority),
+            daily_catchup_provenance: None,
+        },
+    }
+}
+
 fn raw_retries(
     journal: &Path,
     day: &str,
@@ -823,9 +747,7 @@ fn raw_retries(
                 solstone_core_journal_io::SegmentLayout::Direct
             ),
         };
-        if work_retry::read(journal, &unit.id()?)?.is_some() {
-            continue;
-        }
+        // Only a capped talent is observed here, so test that before reading.
         if capped.contains(&solstone_core_system_health::TerminalUnit {
             day: day.into(),
             mode: "segment".into(),
@@ -834,7 +756,8 @@ fn raw_retries(
             stream: Some(segment.stream.clone()),
             segment: Some(segment.key.clone()),
             activity: None,
-        }) {
+        }) && work_retry::read(journal, &unit.id()?)?.is_none()
+        {
             match work_retry::input::current(journal, &unit) {
                 Ok(input) => work_retry::observe_held_checked(
                     journal,
@@ -871,11 +794,7 @@ fn raw_retries(
         let record = work_retry::read(journal, &id)?.ok_or("missing native hold")?;
         let grant = record.permission(&evidence.input, work_retry::DECLARED_FIXES);
         let imported = retry_imported(&record.unit, imports);
-        let explicit = match grant.as_ref().map(|a| a.cause.as_str()) {
-            Some(cause) if cause.starts_with("owner:") => Some(WorkBand::Waiting),
-            Some(cause) if cause.starts_with("fix:") => Some(WorkBand::Completing),
-            _ => imported.then_some(WorkBand::Import),
-        };
+        let explicit = retry_band(grant.as_ref().map(|a| a.cause.as_str()), imported);
         let p = priority(day, Some(&segment.key), today, explicit);
         report.holds.push(WorkHold {
             retry_unit: Some(id.clone()),
@@ -894,26 +813,7 @@ fn raw_retries(
             continue;
         }
         report.band(p.band).eligible += 1;
-        tasks.push(DiscoveredTask {
-            request: BusTaskRequest {
-                cmd: TaskArgv::from_wire(canonical_journal_command([
-                    "think",
-                    "--day",
-                    day,
-                    "--retry-unit",
-                    &id,
-                    "--retry-cause",
-                    &grant.cause,
-                ]))
-                .expect("native retry command"),
-                reference: format!("supervisor-retry-raw-{day}-{id}"),
-                day: Some(day.into()),
-                scheduler_name: None,
-                queue_if_active_cmd_differs: false,
-                priority: Some(p),
-                daily_catchup_provenance: None,
-            },
-        });
+        tasks.push(retry_task("raw", day, &id, &grant.cause, p));
     }
     Ok(tasks)
 }
@@ -957,11 +857,7 @@ fn daily_retries(
         let record = work_retry::read(journal, &id)?.ok_or("daily permission missing")?;
         let grant = record.permission(&input, work_retry::DECLARED_FIXES);
         let imported = retry_imported(&record.unit, imports);
-        let explicit = match grant.as_ref().map(|a| a.cause.as_str()) {
-            Some(cause) if cause.starts_with("owner:") => Some(WorkBand::Waiting),
-            Some(cause) if cause.starts_with("fix:") => Some(WorkBand::Completing),
-            _ => imported.then_some(WorkBand::Import),
-        };
+        let explicit = retry_band(grant.as_ref().map(|a| a.cause.as_str()), imported);
         let mut p = priority(day, None, today, explicit);
         p.band = ask.band(p.band);
         if !covered.state.is_owed() {
@@ -988,26 +884,7 @@ fn daily_retries(
             continue;
         }
         report.band(p.band).eligible += 1;
-        candidates.push(DiscoveredTask {
-            request: BusTaskRequest {
-                cmd: TaskArgv::from_wire(canonical_journal_command([
-                    "think",
-                    "--day",
-                    day,
-                    "--retry-unit",
-                    &id,
-                    "--retry-cause",
-                    &grant.cause,
-                ]))
-                .expect("daily retry command"),
-                reference: format!("supervisor-retry-daily-{day}-{id}"),
-                day: Some(day.into()),
-                scheduler_name: None,
-                queue_if_active_cmd_differs: false,
-                priority: Some(p),
-                daily_catchup_provenance: None,
-            },
-        });
+        candidates.push(retry_task("daily", day, &id, &grant.cause, p));
     }
     Ok(candidates)
 }
@@ -1059,11 +936,7 @@ fn talent_retries(
             .as_ref()
             .and_then(|input| record.permission(input, work_retry::DECLARED_FIXES));
         let imported = retry_imported(&record.unit, imports);
-        let explicit = match grant.as_ref().map(|a| a.cause.as_str()) {
-            Some(cause) if cause.starts_with("owner:") => Some(WorkBand::Waiting),
-            Some(cause) if cause.starts_with("fix:") => Some(WorkBand::Completing),
-            _ => imported.then_some(WorkBand::Import),
-        };
+        let explicit = retry_band(grant.as_ref().map(|a| a.cause.as_str()), imported);
         let (segment, stream) = match &record.unit {
             Unit::Segment {
                 segment, stream, ..
@@ -1096,26 +969,7 @@ fn talent_retries(
             continue;
         }
         report.band(p.band).eligible += 1;
-        candidates.push(DiscoveredTask {
-            request: BusTaskRequest {
-                cmd: TaskArgv::from_wire(canonical_journal_command([
-                    "think",
-                    "--day",
-                    day,
-                    "--retry-unit",
-                    &id,
-                    "--retry-cause",
-                    &grant.cause,
-                ]))
-                .expect("talent retry command"),
-                reference: format!("supervisor-retry-talent-{day}-{id}"),
-                day: Some(day.into()),
-                scheduler_name: None,
-                queue_if_active_cmd_differs: false,
-                priority: Some(p),
-                daily_catchup_provenance: None,
-            },
-        });
+        candidates.push(retry_task("talent", day, &id, &grant.cause, p));
     }
     Ok(candidates)
 }
@@ -1627,6 +1481,49 @@ impl solstone_core_system_health::SegmentSource for ExactSegmentSource<'_> {
     }
 }
 
+/// Have the queue check discovered work as still owed just before it starts,
+/// with the same reading a pass uses. Unreadable work does not start; the next
+/// pass reports it.
+fn install_preflight(
+    journal: &Path,
+    queue: &TaskQueue,
+    stopped: &Arc<AtomicBool>,
+    checkpoint: &Arc<dyn Fn() -> Result<(), String> + Send + Sync>,
+    roots: Option<DiscoveryTalentRoots>,
+) {
+    queue.install_discovered_preflight(discovered_preflight(journal, stopped, checkpoint, roots));
+}
+
+fn discovered_preflight(
+    journal: &Path,
+    stopped: &Arc<AtomicBool>,
+    checkpoint: &Arc<dyn Fn() -> Result<(), String> + Send + Sync>,
+    roots: Option<DiscoveryTalentRoots>,
+) -> solstone_core_system::queue::DiscoveredPreflight {
+    let journal = journal.to_path_buf();
+    let stopped = Arc::clone(stopped);
+    let checkpoint = Arc::clone(checkpoint);
+    Arc::new(move |task| {
+        let checkpoint = || {
+            if stopped.load(Ordering::Acquire) {
+                Err("work discovery stopped".to_owned())
+            } else {
+                checkpoint()
+            }
+        };
+        if checkpoint().is_err() {
+            return false;
+        }
+        match still_owed(&journal, task, roots.as_ref(), &checkpoint) {
+            Ok(owed) => owed,
+            Err(error) => {
+                log::warn!("work discovery: {error}");
+                false
+            }
+        }
+    })
+}
+
 fn still_owed(
     journal: &Path,
     candidate: &DiscoveredTask,
@@ -1753,52 +1650,6 @@ fn still_owed(
     Ok(coverage.state.is_owed()
         && runnable_owed(journal, day, &coverage)?
         && solstone_core_system_health::day_unpublished_segments(journal, day)?.is_some())
-}
-
-/// Hand the queue `current` and then the best of `ranked` still owed, up to
-/// its admission bound, replacing the discovered work it has not started.
-/// Returns what was handed over; `ranked` keeps what was not examined.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Admission retains the pass resources and publication checkpoint."
-)]
-fn admit(
-    journal: &Path,
-    queue: &TaskQueue,
-    stopped: &AtomicBool,
-    mut current: Vec<DiscoveredTask>,
-    ranked: &mut VecDeque<DiscoveredTask>,
-    report: &mut WorkInventory,
-    roots: Option<&DiscoveryTalentRoots>,
-    checkpoint: &dyn Fn() -> Result<(), String>,
-) -> Result<Vec<DiscoveredTask>, String> {
-    if stopped.load(Ordering::Acquire) {
-        return Ok(Vec::new());
-    }
-    let room = queue.discovered_room(SystemTime::now());
-    while current.len() < room
-        && let Some(candidate) = ranked.pop_front()
-    {
-        if stopped.load(Ordering::Acquire) {
-            return Ok(Vec::new());
-        }
-        match still_owed(journal, &candidate, roots, checkpoint) {
-            Ok(true) => {
-                current.push(candidate);
-            }
-            Ok(false) => {}
-            Err(error) => {
-                report.unreadable.push(error);
-                report.complete = false;
-            }
-        }
-    }
-    if stopped.load(Ordering::Acquire) {
-        return Ok(Vec::new());
-    }
-    checkpoint()?;
-    queue.replace_discovered(current.clone());
-    Ok(current)
 }
 
 /// Where a segment's unfinished thinking stands when every talent it still
@@ -2227,11 +2078,9 @@ fn reconcile_pass_with_roots(
     let mut observed_intents = BTreeMap::new();
     let mut fulfilled_segments = BTreeSet::new();
     let mut fulfilled_days = BTreeSet::new();
-    // The early work last handed to the queue, and the references it was
-    // chosen from. Checking whether work is still owed can read a whole day,
-    // so the early work is admitted again only when it could change.
+    // The early work last handed to the queue. It is handed again only when
+    // it changes, and never withdraws the ranking the queue already holds.
     let mut early_considered: Option<BTreeSet<String>> = None;
-    let mut early_admitted: Vec<DiscoveredTask> = Vec::new();
     // Check owner requests before the history pass and between days. Source
     // reads run only here, never on the supervisor's event loop.
     let mut ordered = days.keys().rev().cloned().collect::<VecDeque<_>>();
@@ -2452,8 +2301,11 @@ fn reconcile_pass_with_roots(
             report.publish_checked(journal, checkpoint)?;
             last_publish = Instant::now();
         }
-        // Reconstruct an independent copy; TaskQueue owns submissions.
-        let mut early = candidates
+        // Newest work (bands 1-2) goes to the queue as soon as it is found,
+        // beside the older work it already holds, which keeps running while
+        // the pass walks history. The queue checks each as still owed when it
+        // starts, so handing it over again changes nothing.
+        let early = candidates
             .iter()
             .filter(|task| {
                 task.request
@@ -2461,40 +2313,15 @@ fn reconcile_pass_with_roots(
                     .is_some_and(|p| p.band <= WorkBand::Waiting)
             })
             .cloned()
-            .collect::<VecDeque<_>>();
-        if owner_wakeup || !early.is_empty() {
-            // Admit again only when an owner asked, this day changed the early
-            // work, or early work handed over before has left the queue.
-            // Otherwise the result is the one already handed over, and checking
-            // it again after every older day re-reads the newest days each time.
-            let considered = early
-                .iter()
-                .map(|task| task.request.reference.clone())
-                .collect::<BTreeSet<_>>();
-            if owner_wakeup
-                || early_considered.as_ref() != Some(&considered)
-                || early_admitted
-                    .iter()
-                    .any(|task| !queue.contains_reference(&task.request.reference))
-            {
-                // Track only what the queue actually took: work it skipped
-                // because the same command is already queued or running under
-                // another reference never "leaves", and must not re-trigger.
-                early_admitted = admit(
-                    journal,
-                    queue,
-                    stopped,
-                    Vec::new(),
-                    &mut early,
-                    &mut report,
-                    roots,
-                    checkpoint,
-                )?
-                .into_iter()
-                .filter(|task| queue.contains_reference(&task.request.reference))
-                .collect();
-                early_considered = Some(considered);
-            }
+            .collect::<Vec<_>>();
+        let considered = early
+            .iter()
+            .map(|task| task.request.reference.clone())
+            .collect::<BTreeSet<_>>();
+        if !early.is_empty() && (owner_wakeup || early_considered.as_ref() != Some(&considered)) {
+            checkpoint()?;
+            queue.add_discovered(early);
+            early_considered = Some(considered);
         }
     }
     let seed_errors = asks.errors().len();
@@ -2536,20 +2363,20 @@ fn reconcile_pass_with_roots(
         }
     }
     report.complete = report.unreadable.is_empty() && report.days_inspected == report.days_total;
-    let mut ranked = VecDeque::from(candidates);
-    let admitted = admit(
-        journal,
-        queue,
-        stopped,
-        Vec::new(),
-        &mut ranked,
-        &mut report,
-        roots,
-        checkpoint,
-    )?;
     if stopped.load(Ordering::Acquire) {
         return Ok(Backlog::default());
     }
+    checkpoint()?;
+    let handed = candidates.len();
+    #[cfg(test)]
+    let offered = candidates.clone();
+    queue.replace_discovered(candidates);
+    log::info!(
+        "work discovery: pass took {} ms over {} of {} days; ranked {handed} tasks for the queue",
+        pass_started.elapsed().as_millis(),
+        report.days_inspected,
+        report.days_total,
+    );
     report.as_of_ms = chrono::Utc::now().timestamp_millis();
     report.next_pass_ms =
         automatic.then(|| report.as_of_ms + rest_after(pass_started.elapsed()).as_millis() as i64);
@@ -2569,10 +2396,11 @@ fn reconcile_pass_with_roots(
     }
     report.publish_checked(journal, checkpoint)?;
     Ok(Backlog {
-        admitted,
-        ranked,
+        handed,
+        #[cfg(test)]
+        offered,
+        #[cfg(test)]
         published: Some(report),
-        roots: roots.cloned(),
     })
 }
 
@@ -2880,9 +2708,8 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(holds, vec![units[1].id().unwrap()]);
         let offered = backlog
-            .admitted
+            .offered
             .iter()
-            .chain(&backlog.ranked)
             .map(|task| task.request.reference.clone())
             .collect::<Vec<_>>();
         assert!(
@@ -2951,7 +2778,7 @@ mod tests {
                 apps: PathBuf::from(&payload).join("solstone/apps"),
             };
             let root = fixture("local");
-            for second in 0..solstone_core_system::queue::DISCOVERED_ADMISSION + 2 {
+            for second in 0..6 {
                 segment(root.path(), "19990101", &format!("1200{second:02}_60"));
             }
             let queue = queue(root.path());
@@ -2965,7 +2792,7 @@ mod tests {
                     .iter()
                     .any(|error| { error.contains("could not locate packaged talent roots") })
             );
-            let mut backlog = reconcile_pass_with_roots(
+            let backlog = reconcile_pass_with_roots(
                 root.path(),
                 &queue,
                 &stopped,
@@ -2977,20 +2804,20 @@ mod tests {
             let inventory = backlog.published.as_ref().unwrap();
             assert!(inventory.complete, "{:?}", inventory.unreadable);
             assert!(inventory.unreadable.is_empty());
-            assert_eq!(
-                backlog.admitted.len(),
-                solstone_core_system::queue::DISCOVERED_ADMISSION
+            // The queue holds the whole ranking, not a few tasks of it.
+            assert!(backlog.offered.len() >= 6, "{}", backlog.offered.len());
+            assert_eq!(queue.discovered_len(), backlog.offered.len());
+            for task in &backlog.offered {
+                assert!(queue.contains_reference(&task.request.reference));
+            }
+            let preflight_stop = Arc::new(AtomicBool::new(false));
+            let preflight = discovered_preflight(
+                root.path(),
+                &preflight_stop,
+                &(Arc::new(|| Ok(())) as Arc<dyn Fn() -> Result<(), String> + Send + Sync>),
+                Some(resources.clone()),
             );
-            let next = backlog
-                .ranked
-                .front()
-                .expect("ranked work beyond admission")
-                .request
-                .reference
-                .clone();
-            queue.replace_discovered(Vec::new());
-            backlog.top_up(root.path(), &queue, &stopped, &|| Ok(()));
-            assert!(queue.contains_reference(&next));
+            assert!(preflight(&backlog.offered[0]));
 
             // The daily refill/retry reads must use those same resources, rather
             // than falling back to current_exe after the first pass succeeds.
@@ -3016,7 +2843,7 @@ mod tests {
             record.reason_code = Some("schema_invalid".into());
             solstone_core_journal_io::save_daily_unit_record(root.path(), &record).unwrap();
             assert!(observe_daily_retry(root.path(), &unit, None, &|| Ok(())).is_err());
-            let input = observe_daily_retry(root.path(), &unit, backlog.roots.as_ref(), &|| Ok(()))
+            let input = observe_daily_retry(root.path(), &unit, Some(&resources), &|| Ok(()))
                 .unwrap()
                 .unwrap();
             assert!(
@@ -3052,7 +2879,7 @@ mod tests {
                     daily_catchup_provenance: None,
                 },
             };
-            assert!(still_owed(root.path(), &retry, backlog.roots.as_ref(), &|| Ok(())).unwrap());
+            assert!(still_owed(root.path(), &retry, Some(&resources), &|| Ok(())).unwrap());
             assert!(still_owed(root.path(), &retry, None, &|| Ok(())).is_err());
             reconcile_pass_with_roots(
                 root.path(),
@@ -3068,15 +2895,11 @@ mod tests {
                 unit.day(),
                 unit.id().unwrap()
             )));
-            queue.replace_discovered(Vec::new());
-            backlog.ranked = VecDeque::from([retry.clone()]);
-            backlog.top_up(root.path(), &queue, &stopped, &|| Ok(()));
-            assert!(queue.contains_reference(&retry.request.reference));
-            queue.replace_discovered(Vec::new());
-            backlog.ranked = VecDeque::from([retry.clone()]);
-            stopped.store(true, Ordering::Release);
-            assert!(!backlog.top_up(root.path(), &queue, &stopped, &|| Ok(())));
-            assert!(!queue.contains_reference(&retry.request.reference));
+            // The start-time check reads with the same resources, and a
+            // stopped discovery starts nothing.
+            assert!(preflight(&retry));
+            preflight_stop.store(true, Ordering::Release);
+            assert!(!preflight(&retry));
             let missing = DiscoveryTalentRoots {
                 rebuild_recovery: false,
                 talent: root.path().join("missing-payload"),
@@ -3756,9 +3579,10 @@ mod tests {
         assert_eq!(report.days_inspected, 6);
         assert_eq!(report.oldest_day.as_deref(), Some("19990101"));
         assert_eq!(report.bands[4].segments_owed, 6);
-        assert_eq!(queue.collect_queue_counts()["pending"], 4);
+        // The queue holds the whole ranking, the oldest segment included.
+        assert_eq!(queue.discovered_len(), 6);
         assert!(queue.contains_reference("supervisor-work-20040101-notes-120000_60"));
-        assert!(!queue.contains_reference("supervisor-work-19990101-notes-120000_60"));
+        assert!(queue.contains_reference("supervisor-work-19990101-notes-120000_60"));
         assert!(!queue.contains_reference("supervisor-work-20040101-daily"));
     }
 
@@ -3992,8 +3816,16 @@ mod tests {
         std::fs::write(directory.join("broken.json"), "{").unwrap();
         let queue = queue(root.path());
         for _ in 0..3 {
-            reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
-            assert_eq!(queue.collect_queue_counts()["pending"], 4);
+            let backlog =
+                reconcile_pass(root.path(), &queue, &AtomicBool::new(false), false).unwrap();
+            // Six never-made dailies, then the six old activity retries.
+            assert_eq!(queue.discovered_len(), 12);
+            let bands = backlog
+                .offered
+                .iter()
+                .map(|task| task.request.priority.unwrap().band)
+                .collect::<Vec<_>>();
+            assert!(bands.is_sorted(), "{bands:?}");
             let report = solstone_core_system::work_inventory::read(root.path())
                 .unwrap()
                 .unwrap();
@@ -4008,11 +3840,7 @@ mod tests {
             // Never-made daily outputs now precede these old activity retries.
             assert!(report.bands[4].daily_units_owed > 0);
             assert!(queue.contains_reference("supervisor-work-20040101-daily"));
-            assert!(
-                !queue.any_reference(
-                    |reference| reference.starts_with("supervisor-activity-19990101-")
-                )
-            );
+            assert_eq!(bands.last(), Some(&WorkBand::Remake));
         }
         work_intent::register(root.path(), "19990101", false).unwrap();
         reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
@@ -4023,7 +3851,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(report.bands[1].activities_owed, 1);
-        assert_eq!(queue.collect_queue_counts()["pending"], 4);
+        assert_eq!(queue.discovered_len(), 12);
     }
 
     #[test]
@@ -4417,8 +4245,8 @@ mod tests {
     }
 
     /// Owner-requested daily work is early work, and checking whether it is still
-    /// owed reads the whole day. A pass must not check it again after every
-    /// older day it inspects when nothing about the early work has changed.
+    /// owed reads the whole day. A pass hands it to the queue as soon as it is
+    /// found and never checks it itself: the queue does, once, as it starts.
     #[test]
     fn early_work_is_not_checked_again_after_every_older_day() {
         let root = fixture("local");
@@ -4442,10 +4270,8 @@ mod tests {
         reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
         let checks = STILL_OWED_CHECKS.with(|checks| checks.get());
         assert!(queue.contains_reference(&format!("supervisor-work-{recent_day}-daily")));
-        // One early admission after the recent day, then the final admission of the
-        // ranking: a few checks, not one more per older day.
-        assert!(
-            checks < older,
+        assert_eq!(
+            checks, 0,
             "{checks} still-owed checks for {older} older days"
         );
     }
@@ -4914,7 +4740,7 @@ mod tests {
         .to_string();
         assert!(stored == early || stored == late, "{stored} {early} {late}");
         let mut owed = BTreeSet::new();
-        for task in backlog.admitted.iter().chain(backlog.ranked.iter()) {
+        for task in backlog.offered.iter() {
             let wire = task.request.cmd.as_wire();
             if wire.iter().any(|arg| arg == "--daily-only")
                 && let Some(day) = task.request.day.clone()
@@ -5728,67 +5554,27 @@ mod tests {
     /// promised one arrives, once; with nothing moved, they hear nothing.
     #[cfg(feature = "full-tests")]
     #[test]
-    fn a_resting_worker_tells_readers_when_top_ups_move_the_next_pass_back() {
+    fn a_resting_worker_wakes_for_each_early_reason_only_from_its_own_time() {
         let (_wake, receiver) = mpsc::sync_channel(1);
-        let promised = Instant::now() + Duration::from_millis(200);
-        let mut told = Vec::new();
-        let mut tell = |due: Instant| told.push(due);
-        let mut calls = 0;
-        let mut top_up = || {
-            calls += 1;
-            if calls == 1 {
-                std::thread::sleep(Duration::from_millis(150));
-            }
-            true
-        };
+        let started = Instant::now();
+        let ready = || true;
+        let never = || false;
+        // A reason already true still waits for its own time.
         assert!(rest(
             &receiver,
-            Some(promised),
-            None,
-            Some(&mut top_up as &mut dyn FnMut() -> bool),
-            Some((promised, &mut tell as &mut dyn FnMut(Instant))),
+            Some(started + Duration::from_secs(30)),
+            &[
+                (started + Duration::from_millis(300), &ready),
+                (started, &never),
+            ],
         ));
-        let returned = Instant::now();
-        assert_eq!(told.len(), 1);
-        assert!(told[0] >= promised + Duration::from_millis(1_400));
-        assert!(returned >= told[0]);
-        let mut told = Vec::new();
-        let mut tell = |due: Instant| told.push(due);
+        let woke = started.elapsed();
+        assert!(woke >= Duration::from_millis(300), "{woke:?}");
+        assert!(woke < Duration::from_secs(10), "{woke:?}");
+        // With no early reason, the automatic pass is the wake.
         let due = Instant::now() + Duration::from_millis(200);
-        assert!(rest(
-            &receiver,
-            Some(due),
-            None,
-            None,
-            Some((due, &mut tell as &mut dyn FnMut(Instant))),
-        ));
-        assert!(told.is_empty());
-    }
-
-    #[test]
-    fn a_later_next_pass_is_published_without_refreshing_the_snapshot() {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(root.path().join("health")).unwrap();
-        let mut report = WorkInventory {
-            as_of_ms: 1_000,
-            next_pass_ms: Some(2_000),
-            ..WorkInventory::default()
-        };
-        report.publish(root.path()).unwrap();
-        let before = chrono::Utc::now().timestamp_millis();
-        repromise(
-            root.path(),
-            &mut report,
-            Instant::now() + Duration::from_secs(600),
-            &|| Ok(()),
-        );
-        let after = chrono::Utc::now().timestamp_millis();
-        let read = solstone_core_system::work_inventory::read(root.path())
-            .unwrap()
-            .unwrap();
-        assert_eq!(read.as_of_ms, 1_000);
-        let due = read.next_pass_ms.unwrap();
-        assert!(due >= before + 599_000 && due <= after + 600_000, "{due}");
+        assert!(rest(&receiver, Some(due), &[]));
+        assert!(Instant::now() >= due);
     }
 
     #[cfg(feature = "full-tests")]
