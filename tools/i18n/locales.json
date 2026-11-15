@@ -157,6 +157,10 @@
     {
       "namespace": "solpbc",
       "owner": "solpbc-org"
+    },
+    {
+      "namespace": "windows",
+      "owner": "windows"
     }
   ],
   "bundles": [
@@ -227,6 +231,12 @@
     },
     {
       "id": "solpbc-org",
+      "locales": [
+        "en-US"
+      ]
+    },
+    {
+      "id": "windows",
       "locales": [
         "en-US"
       ]
