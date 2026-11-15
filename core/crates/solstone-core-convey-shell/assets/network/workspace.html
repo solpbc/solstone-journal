@@ -1012,6 +1012,8 @@ systemctl --user start solstone-linux</code></div>
     const homeAddressEl = document.getElementById('link-home-address');
     const homeAddressUnusable = document.getElementById('link-home-address-unusable');
     const hostAddressInput = document.getElementById('link-host-address-input');
+    // Whether the host address field holds what the owner typed, not the journal's address.
+    let hostAddressTyped = false;
     const hostAddressApply = document.getElementById('link-host-address-apply');
     const hostAddressClear = document.getElementById('link-host-address-clear');
     const hostAddressError = document.getElementById('link-host-address-error');
@@ -1189,9 +1191,26 @@ systemctl --user start solstone-linux</code></div>
       }
     }
 
+    // A read that would draw what is already on the page leaves the page alone: these write
+    // only on a difference, so a poll that changes nothing replaces no node and a live region
+    // has nothing to read again.
+    function setText(el, text) { if (el && el.textContent !== text) el.textContent = text; }
+    function setHidden(el, hidden) { if (el && el.hidden !== hidden) el.hidden = hidden; }
+    function setClass(el, name, on) { if (el && el.classList.contains(name) !== on) el.classList.toggle(name, on); }
+    function setAttr(el, name, value) { if (el && el.getAttribute(name) !== value) el.setAttribute(name, value); }
+    // A list drawn from a read is drawn again only when what it would show differs from what it
+    // shows, by a description of its rows kept on the list.
+    const drawnRows = new WeakMap();
+    function sameRows(el, rows) {
+      const key = JSON.stringify(rows);
+      if (drawnRows.get(el) === key && el.children.length === rows.length) return true;
+      drawnRows.set(el, key);
+      return false;
+    }
+
     function revealStatusPanel() {
-      if (statusSkeleton) statusSkeleton.hidden = true;
-      statusText.hidden = false;
+      setHidden(statusSkeleton, true);
+      setHidden(statusText, false);
     }
 
 
@@ -1222,18 +1241,17 @@ systemctl --user start solstone-linux</code></div>
 
     function setStatusSentence(key) {
       const sentences = linkCopy.STATUS_SENTENCES || {};
-      statusText.textContent = sentences[key] || sentences.checking || 'checking your journal…';
-      statusDot.classList.remove('is-green', 'is-amber', 'is-red');
-      if (['direct_online', 'direct_online_vpn', 'direct_closed', 'spl_online'].includes(key)) {
-        statusDot.classList.add('is-green');
-      } else if (['offline', 'lan_unreachable'].includes(key)) {
-        statusDot.classList.add('is-red');
-      } else {
-        statusDot.classList.add('is-amber');
-      }
+      setText(statusText, sentences[key] || sentences.checking || 'checking your journal…');
+      const colour = ['direct_online', 'direct_online_vpn', 'direct_closed', 'spl_online'].includes(key) ? 'is-green'
+        : ['offline', 'lan_unreachable'].includes(key) ? 'is-red' : 'is-amber';
+      ['is-green', 'is-amber', 'is-red'].forEach((name) => setClass(statusDot, name, name === colour));
     }
 
     function renderVpnCandidates(candidates) {
+      const rows = candidates
+        .map((candidate) => [typeof candidate?.address === 'string' ? candidate.address : '', candidate?.label])
+        .filter(([address]) => address);
+      if (sameRows(vpnCandidatesEl, rows)) { setHidden(vpnCandidatesRow, rows.length === 0); return; }
       vpnCandidatesEl.textContent = '';
       let rendered = 0;
       for (const candidate of candidates) {
@@ -1257,10 +1275,14 @@ systemctl --user start solstone-linux</code></div>
         vpnCandidatesEl.appendChild(item);
         rendered += 1;
       }
-      vpnCandidatesRow.hidden = rendered === 0;
+      setHidden(vpnCandidatesRow, rendered === 0);
     }
 
     function renderDeviceAddresses(addresses) {
+      const rows = addresses
+        .map((entry) => [typeof entry?.address === 'string' ? entry.address : '', entry?.scope === 'vpn'])
+        .filter(([address]) => address);
+      if (sameRows(deviceAddressesEl, rows)) { setHidden(deviceAddressesRow, rows.length === 0); return; }
       deviceAddressesEl.textContent = '';
       let rendered = 0;
       for (const entry of addresses) {
@@ -1278,7 +1300,7 @@ systemctl --user start solstone-linux</code></div>
         deviceAddressesEl.appendChild(item);
         rendered += 1;
       }
-      deviceAddressesRow.hidden = rendered === 0;
+      setHidden(deviceAddressesRow, rendered === 0);
     }
 
     // The address whose write is out, while the choices are busy.
@@ -1332,8 +1354,25 @@ systemctl --user start solstone-linux</code></div>
         radios[0], hostAddressOverride?.querySelector('summary'));
     }
 
+    // The choices are drawn again only when what they'd show differs: the same addresses, the
+    // same selected one and the same pending write, with the check on the page still where the
+    // last draw put it (a failed write's restore puts it back by drawing again).
+    function checkedCandidate() {
+      return homeCandidatesList.querySelector('input[type="radio"]:checked')?.value ?? null;
+    }
     function drawHomeCandidates(data) {
       if (!homeCandidatesPicker || !homeCandidatesList || !homeCandidatesProblem) return;
+      const key = JSON.stringify([data?.home_candidates_state === 'unavailable',
+        data?.home_candidates_error || '', homeCandidatePending,
+        (Array.isArray(data?.home_candidates) ? data.home_candidates : [])
+          .map((candidate) => [candidate?.address, Boolean(candidate?.selected)])]);
+      const last = drawnRows.get(homeCandidatesList);
+      if (last && last.key === key && last.checked === checkedCandidate()) return;
+      buildHomeCandidates(data);
+      drawnRows.set(homeCandidatesList, { key, checked: checkedCandidate() });
+    }
+
+    function buildHomeCandidates(data) {
       homeCandidatesList.textContent = '';
       homeCandidatesProblem.textContent = '';
       homeCandidatesProblem.hidden = true;
@@ -1393,19 +1432,19 @@ systemctl --user start solstone-linux</code></div>
       const isSpl = data?.posture === 'spl';
       const reachability = data?.reachability;
       const viewingHosted = viewedMode === 'hosted';
-      if (splConnectingNote) splConnectingNote.hidden = !(isSpl && viewingHosted && reachability === 'finishing-setup');
-      if (splCheckAgain) splCheckAgain.hidden = !(isSpl && viewingHosted && reachability === 'offline');
+      setHidden(splConnectingNote, !(isSpl && viewingHosted && reachability === 'finishing-setup'));
+      setHidden(splCheckAgain, !(isSpl && viewingHosted && reachability === 'offline'));
     }
 
     function updateReachSelectorVisibility() {
       if (!reachSelector) return;
-      reachSelector.hidden = isFirstRun && !reachRevealed;
+      setHidden(reachSelector, isFirstRun && !reachRevealed);
     }
 
     function setSegmentSelected(segment, selected) {
       if (!segment) return;
-      segment.classList.toggle('is-selected', selected);
-      segment.setAttribute('aria-checked', String(selected));
+      setClass(segment, 'is-selected', selected);
+      setAttr(segment, 'aria-checked', String(selected));
     }
 
     function renderSelector(data) {
@@ -1415,26 +1454,27 @@ systemctl --user start solstone-linux</code></div>
       const notEnrolled = posture === 'spl' && reachability === 'not-enrolled';
       setSegmentSelected(segByo, mode === 'byo');
       setSegmentSelected(segHosted, mode === 'hosted');
-      if (modeByoBody) modeByoBody.hidden = mode !== 'byo';
-      if (modeHostedSetup) modeHostedSetup.hidden = !(mode === 'hosted' && posture !== 'spl');
-      if (modeHostedNotEnrolled) modeHostedNotEnrolled.hidden = !(mode === 'hosted' && notEnrolled);
-      if (modeHostedActive) modeHostedActive.hidden = !(mode === 'hosted' && posture === 'spl' && !notEnrolled);
-      if (appOnOff) {
-        appOnOff.hidden = reachability !== 'online';
-      }
+      setHidden(modeByoBody, mode !== 'byo');
+      setHidden(modeHostedSetup, !(mode === 'hosted' && posture !== 'spl'));
+      setHidden(modeHostedNotEnrolled, !(mode === 'hosted' && notEnrolled));
+      setHidden(modeHostedActive, !(mode === 'hosted' && posture === 'spl' && !notEnrolled));
+      setHidden(appOnOff, reachability !== 'online');
       if (appOnOffSub && appOnOff) {
-        appOnOffSub.textContent = posture === 'spl'
+        setText(appOnOffSub, posture === 'spl'
           ? appOnOff.dataset.hostedSub || ''
-          : (localNetworkClosed ? linkCopy?.APP_ONOFF_SUB_BYO_CLOSED : appOnOff.dataset.byoSub) || '';
+          : (localNetworkClosed ? linkCopy?.APP_ONOFF_SUB_BYO_CLOSED : appOnOff.dataset.byoSub) || '');
       }
       renderSplState(data);
     }
 
     function renderHomeAddress(data) {
       const homeAddress = typeof data?.home_address === 'string' ? data.home_address : '';
-      if (homeAddressEl) homeAddressEl.textContent = homeAddress;
-      if (homeAddressRow) homeAddressRow.hidden = !homeAddress;
-      if (hostAddressInput && document.activeElement !== hostAddressInput) {
+      setText(homeAddressEl, homeAddress);
+      setHidden(homeAddressRow, !homeAddress);
+      // An address the owner has typed stays until a write sends one; otherwise "apply" after a
+      // read would send the journal's address back instead of theirs.
+      if (hostAddressInput && document.activeElement !== hostAddressInput && !hostAddressTyped
+          && hostAddressInput.value !== homeAddress) {
         hostAddressInput.value = homeAddress;
       }
       if (homeAddressUnusable) {
@@ -1445,11 +1485,11 @@ systemctl --user start solstone-linux</code></div>
             linkCopy?.[unusableKey] ||
             (homeAddressUnusable.dataset?.copy ? linkCopy?.[homeAddressUnusable.dataset.copy] : '') ||
             '';
-          homeAddressUnusable.textContent = text;
-          homeAddressUnusable.hidden = false;
+          setText(homeAddressUnusable, text);
+          setHidden(homeAddressUnusable, false);
         } else {
-          homeAddressUnusable.textContent = '';
-          homeAddressUnusable.hidden = true;
+          setText(homeAddressUnusable, '');
+          setHidden(homeAddressUnusable, true);
         }
       }
     }
@@ -1479,6 +1519,7 @@ systemctl --user start solstone-linux</code></div>
       });
       if (ctx.disposed) return true;
       setHostAddressError('');
+      hostAddressTyped = false;
       return await refreshStatus();
     }
 
@@ -1548,23 +1589,23 @@ systemctl --user start solstone-linux</code></div>
     function setPrivateLinkOperation(headline, detail = '', options = {}) {
       if (!privateLinkOperation || !privateLinkOperationHeadline || !privateLinkOperationDetail) return;
       privateLinkRetryAction = typeof options.retryAction === 'function' ? options.retryAction : null;
-      privateLinkOperation.hidden = !headline;
-      privateLinkOperationHeadline.textContent = headline || '';
-      privateLinkOperationDetail.textContent = detail || '';
-      privateLinkOperationDetail.hidden = !detail;
+      setHidden(privateLinkOperation, !headline);
+      setText(privateLinkOperationHeadline, headline || '');
+      setText(privateLinkOperationDetail, detail || '');
+      setHidden(privateLinkOperationDetail, !detail);
       if (privateLinkOperationLink) {
         const subscribeUrl = typeof options.subscribeUrl === 'string' ? options.subscribeUrl : '';
         const portalUrl = !subscribeUrl && typeof options.portalUrl === 'string' ? options.portalUrl : '';
         const linkUrl = subscribeUrl || portalUrl;
-        privateLinkOperationLink.hidden = !linkUrl;
-        privateLinkOperationLink.href = linkUrl;
-        privateLinkOperationLink.textContent = subscribeUrl
+        setHidden(privateLinkOperationLink, !linkUrl);
+        setAttr(privateLinkOperationLink, 'href', linkUrl);
+        setText(privateLinkOperationLink, subscribeUrl
           ? linkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA || 'open the services portal'
-          : linkCopy.PRIVATE_LINK_PORTAL_CTA || 'continue to approve →';
+          : linkCopy.PRIVATE_LINK_PORTAL_CTA || 'continue to approve →');
       }
       if (privateLinkOperationRetry) {
-        privateLinkOperationRetry.hidden = !privateLinkRetryAction;
-        privateLinkOperationRetry.textContent = linkCopy.PRIVATE_LINK_RETRY_CTA || 'try again';
+        setHidden(privateLinkOperationRetry, !privateLinkRetryAction);
+        setText(privateLinkOperationRetry, linkCopy.PRIVATE_LINK_RETRY_CTA || 'try again');
       }
     }
 
@@ -1572,7 +1613,7 @@ systemctl --user start solstone-linux</code></div>
       latestPrivateLink = data || {};
       const operation = latestPrivateLink.operation;
       if (privateLinkSetup) {
-        privateLinkSetup.hidden = !!operation && !PRIVATE_LINK_TERMINAL_PHASES.has(operation.phase);
+        setHidden(privateLinkSetup, !!operation && !PRIVATE_LINK_TERMINAL_PHASES.has(operation.phase));
       }
       if (!operation) {
         if (latestPrivateLink.state === 'inconsistent') {
@@ -1721,7 +1762,7 @@ systemctl --user start solstone-linux</code></div>
 
     hostAddressApply?.addEventListener('click', applyHostAddressOverride);
     hostAddressClear?.addEventListener('click', clearHostAddressOverride);
-    hostAddressInput?.addEventListener('input', () => setHostAddressError(''));
+    hostAddressInput?.addEventListener('input', () => { hostAddressTyped = true; setHostAddressError(''); });
     splCheckAgain?.addEventListener('click', () => {
       refreshStatus();
       refreshPrivateLinkStatus();
@@ -2059,6 +2100,9 @@ systemctl --user start solstone-linux</code></div>
     }
 
     let clientsEpoch = 0;
+    // What the devices list last drew, and from which rows.
+    let drawnClients = null;
+    let lastClients = null;
     const clientLabels = window.NetworkRender.createClientLabels({
       request: async (cid, label) => {
         ++clientsEpoch;
@@ -2129,6 +2173,9 @@ systemctl --user start solstone-linux</code></div>
         clientLabels.input(form.dataset.labelCid, event.target.value);
         const status = form.closest('.client-label-section')?.querySelector('.client-label-status');
         if (status) status.textContent = clientLabels.editor(form.dataset.labelCid)?.message || '';
+        // The list now shows what it would draw with this draft, so a poll that brings nothing new
+        // leaves the field being typed in alone.
+        if (drawnClients && lastClients) drawnClients.html = renderClients(lastClients);
       }
     });
     clientsList.addEventListener('submit', (event) => {
@@ -2215,6 +2262,11 @@ systemctl --user start solstone-linux</code></div>
         }
         if (epoch !== clientsEpoch) return;
         const clients = clientLabels.receive(payload.clients);
+        // A list that would draw what it shows is left alone: its cards and their controls stay
+        // the same nodes, with their open details and asks as the owner left them.
+        const html = renderClients(clients);
+        if (!focusFrom && drawnClients && drawnClients.html === html && clientsList.firstChild === drawnClients.first
+            && clientsList.lastChild === drawnClients.last && clientsList.childNodes.length === drawnClients.count) return;
 
         // Rebuild on every poll so grouped headers stay aligned with server ordering.
         const activeEl = document.activeElement;
@@ -2249,12 +2301,14 @@ systemctl --user start solstone-linux</code></div>
         }
         const scrollTop = clientsList.scrollTop;
 
-        clientsList.innerHTML = renderClients(clients);
+        clientsList.innerHTML = html;
         clientsList.querySelectorAll('details').forEach(el => { el.open = openDetails.has(el.dataset.clientDetails); });
         clientsList.querySelectorAll('.client-forget').forEach(el => {
           setForgetAsking(el, openForgets.has(el.dataset.forgetCid));
         });
         clientsList.scrollTop = scrollTop;
+        drawnClients = { html, first: clientsList.firstChild, last: clientsList.lastChild, count: clientsList.childNodes.length };
+        lastClients = clients;
 
         let restored = false;
         if (focusSelector) {

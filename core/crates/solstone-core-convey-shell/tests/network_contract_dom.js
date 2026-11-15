@@ -600,6 +600,7 @@ function makePage(env, address = '/app/network/', { answers, arrival = null } = 
     const call = {
       url: u.pathname + u.search,
       method: String(opts?.method || 'GET').toUpperCase(),
+      body: opts?.body,
       kind, aborted: false, settled: false,
       answer(body, status = 200) {
         if (call.settled) return;
@@ -1104,10 +1105,16 @@ module.exports = async function networkContractCases(manifestDir) {
   });
 
   await test('the 15 s status poll keeps a focused home address choice, and leaves focus outside network alone', async () => {
-    const answers = journal(copy, { 'GET /app/network/api/status': () => TWO('192.168.1.5:7657') });
+    let status = TWO('192.168.1.5:7657');
+    const answers = journal(copy, { 'GET /app/network/api/status': () => status });
     const p = await boot(env, '/app/network/', { answers });
     const [, second] = radios(p);
     second.focus();
+    p.clock.advance(15000);
+    await settle();
+    assert.ok(p.doc.activeElement === second, `a read that changes nothing leaves the focused choice the same node (on ${focusOn(p)})`);
+    // The journal now has the other address chosen: the choices are drawn again.
+    status = TWO('10.0.0.5:7657');
     p.clock.advance(15000);
     await settle();
     const active = p.doc.activeElement;
@@ -1272,7 +1279,7 @@ module.exports = async function networkContractCases(manifestDir) {
     }
   });
 
-  await test('the clients poll keeps a focused card, and (kept) a card\'s details and forget', async () => {
+  await test('a clients poll that changes nothing leaves a focused card, its details and forget the same nodes', async () => {
     const p = await listPage([DELIVERED, SECOND, NEVER]);
     const reFocus = (selector) => { const node = p.q(selector); node.focus(); return node; };
     for (const selector of [`.client-card[data-cid="${SECOND.cid}"]`, `details[data-client-details="${SECOND.cid}"] > summary`]) {
@@ -1280,13 +1287,120 @@ module.exports = async function networkContractCases(manifestDir) {
       p.clock.advance(30000);
       await settle();
       const after = p.q(selector);
-      assert.ok(after !== before && p.doc.activeElement === after, `the poll keeps ${selector} (on ${focusOn(p)})`);
+      assert.ok(after === before && p.doc.activeElement === after, `the poll leaves ${selector} as it was (on ${focusOn(p)})`);
     }
     openDetails(p, 'group-never');
     const ask = reFocus(`.client-forget[data-forget-cid="${NEVER.cid}"] [data-forget-action="ask"]`);
     p.clock.advance(30000);
     await settle();
-    assert.ok(p.doc.activeElement !== ask && p.doc.activeElement.dataset.forgetAction === 'ask', `the poll keeps forget (on ${focusOn(p)})`);
+    assert.ok(p.doc.activeElement === ask, `the poll leaves forget as it was (on ${focusOn(p)})`);
+  });
+
+  // Every node under network's root, text nodes included, in order.
+  function pageNodes(p) {
+    const out = [];
+    const walk = (node) => { out.push(node); (node.childNodes || []).forEach(walk); };
+    walk(p.byId('link-workspace-root'));
+    return out;
+  }
+  function sameNodes(p, before, why) {
+    const after = pageNodes(p);
+    const moved = after.length === before.length ? after.findIndex((node, i) => node !== before[i]) : -2;
+    assert.ok(moved === -1, `${why} (${moved === -2 ? `${before.length} → ${after.length} nodes` : `node ${moved} replaced`})`);
+  }
+
+  await test('the status, private link and devices polls that change nothing replace nothing, write nothing, and focus stays on its node', async () => {
+    const status = Object.assign(TWO('192.168.1.5:7657'), {
+      device_addresses: [{ address: '192.168.1.5:7657', scope: 'lan' }],
+      vpn: { active: null, candidates: [{ address: '100.64.0.2:7657', label: 'tailnet' }] },
+    });
+    const answers = journal(copy, {
+      'GET /app/network/api/status': () => status,
+      'GET /app/network/api/private-link': () => ({ state: 'inconsistent' }),
+    });
+    const p = await boot(env, '/app/network/', { answers });
+    const [, second] = radios(p);
+    second.focus();
+    const before = pageNodes(p);
+    const reads = p.calls.filter((c) => c.method === 'GET').length;
+    // Every attribute the polls write on the page, the same value or not.
+    const root = p.byId('link-workspace-root');
+    const writes = [];
+    const { setAttribute, removeAttribute } = Element.prototype;
+    Element.prototype.setAttribute = function (k, v) { if (root.contains(this)) writes.push(`${this.id || this.tagName} ${k}`); return setAttribute.call(this, k, v); };
+    Element.prototype.removeAttribute = function (k) { if (root.contains(this) && this.hasAttribute(k)) writes.push(`${this.id || this.tagName} -${k}`); return removeAttribute.call(this, k); };
+    try {
+      p.clock.advance(15000);
+      await settle();
+      p.clock.advance(15000);
+      await settle();
+    } finally {
+      Element.prototype.setAttribute = setAttribute;
+      Element.prototype.removeAttribute = removeAttribute;
+    }
+    assert.ok(writes.length === 0, `the polls wrote no attribute (${writes.join(', ')})`);
+    const urls = p.calls.filter((c) => c.method === 'GET').slice(reads).map((c) => c.url);
+    assert.ok(['/app/network/api/status', '/app/network/api/private-link', '/app/network/api/clients'].every((u) => urls.includes(u)), `every poll read (${urls.join(', ')})`);
+    assert.ok(p.doc.activeElement === second, `focus is on the same node (on ${focusOn(p)})`);
+    sameNodes(p, before, 'nothing on the page was replaced');
+  });
+
+  await test('a host address typed, then "apply" after a status read, sends what was typed', async () => {
+    const p = await boot(env);
+    p.byId('link-host-address-override').open = true;
+    const field = p.byId('link-host-address-input');
+    field.focus();
+    field.value = '10.9.9.9:7657';
+    p.doc.dispatch(field, { type: 'input' });
+    const apply = p.byId('link-host-address-apply');
+    apply.focus();
+    p.clock.advance(15000);
+    await settle();
+    assert.ok(field.value === '10.9.9.9:7657', `the status read leaves the typed address (${field.value})`);
+    keyPress(p, apply);
+    await settle();
+    const sent = JSON.parse(lastCall(p, 'POST', '/app/network/host-address').body);
+    assert.ok(sent.home_address === '10.9.9.9:7657', `"apply" sends the typed address (${sent.home_address})`);
+    // Once a write has gone, the field shows the journal's address again.
+    assert.ok(field.value === '192.168.1.5:7657', `after the write, the journal's address (${field.value})`);
+  });
+
+  await test('a device name being typed stays the same field through a clients poll that brings nothing new', async () => {
+    const p = await listPage([DELIVERED, SECOND, NEVER]);
+    openDetails(p, SECOND.cid);
+    const input = p.q(`.client-card[data-cid="${SECOND.cid}"] [data-label-action="input"]`);
+    input.focus();
+    input.value = 'pixel 9';
+    p.doc.dispatch(input, { type: 'input' });
+    input.setSelectionRange?.(3, 5);
+    p.clock.advance(30000);
+    await settle();
+    assert.ok(p.q(`.client-card[data-cid="${SECOND.cid}"] [data-label-action="input"]`) === input, 'the same field');
+    assert.ok(p.doc.activeElement === input && input.value === 'pixel 9', `with its text and focus (on ${focusOn(p)})`);
+  });
+
+  await test('a forget whose next list still shows the device puts focus on its card, not the page', async () => {
+    const p = await listPage([DELIVERED, NEVER]);
+    openDetails(p, 'group-never');
+    const row = p.q(`.client-forget[data-forget-cid="${NEVER.cid}"]`);
+    keyPress(p, row.querySelector('[data-forget-action="ask"]'));
+    await settle();
+    keyPress(p, row.querySelector('[data-forget-action="confirm"]'));
+    await settle();
+    await settle();
+    const card = p.q(`.client-card[data-cid="${NEVER.cid}"]`);
+    assert.ok(card && p.doc.activeElement && p.doc.activeElement !== p.doc.body && card.contains(p.doc.activeElement), `focus is on that card (on ${focusOn(p)})`);
+  });
+
+  await test('a clients poll that changes a card draws the list again and keeps focus on that card', async () => {
+    const p = await listPage([DELIVERED, SECOND, NEVER]);
+    const card = p.q(`.client-card[data-cid="${SECOND.cid}"]`);
+    card.focus();
+    p.state.clients = [DELIVERED, Object.assign({}, SECOND, { failing: true }), NEVER];
+    p.clock.advance(30000);
+    await settle();
+    const now = p.q(`.client-card[data-cid="${SECOND.cid}"]`);
+    assert.ok(now !== card && p.doc.activeElement === now, `drawn again, focus on the same card (on ${focusOn(p)})`);
   });
 
   async function dialogPage(nonce) {
