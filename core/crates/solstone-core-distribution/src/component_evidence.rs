@@ -3855,18 +3855,13 @@ mod tests {
         let version = env!("CARGO_PKG_VERSION");
         let target = "macos-arm64";
         let basename = format!("solstone-journal-{version}-{target}");
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let root = PathBuf::from(format!(
-            "/var/tmp/solstone-dist-test-macos-model-{}-{nanos}",
-            std::process::id()
-        ));
-        let dest = root.join("dest");
-        let work = root.join("work");
-        let stage = root.join("chain-stage");
-        let _ = fs::remove_dir_all(&root);
+        let root = tempfile::Builder::new()
+            .prefix("solstone-dist-test-macos-model-")
+            .tempdir()
+            .unwrap();
+        let dest = root.path().join("dest");
+        let work = root.path().join("work");
+        let stage = root.path().join("chain-stage");
 
         let executable = fixture(&FixtureSpec::default());
         let dylib = fixture(&FixtureSpec {
@@ -3965,8 +3960,6 @@ mod tests {
                     .unwrap()
             })
             .map_err(|error| error.to_string());
-        let _ = fs::remove_dir_all(&root);
-        let _ = fs::remove_dir_all(&evidence_dir);
         (provenance, member_dest, model_sha)
     }
 
