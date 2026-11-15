@@ -1,10 +1,42 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-// Dashboard module for client-side rendering
-const Dashboard = (function() {
+// Stats, on the view contract. This script only registers: `mountStats(ctx)`
+// draws the view each time it is mounted, and everything it adds outside its
+// own markup goes through `ctx`. The functions above the mount draw only into
+// the elements they are given and keep nothing between mounts.
+(function() {
   'use strict';
-  const reportStatsReady = window.createViewReady('stats');
+
+  const STATS_URL = '/app/stats/api/stats';
+
+  // Owner copy for the backlog section.
+  const BACKLOG_COPY = Object.freeze({
+    ACTION_PROCESS_NOW: "process now",
+    ACTION_REDO_SCRATCH: "redo from scratch",
+    CONFIRM_REDO_SCRATCH: "redo this whole day from scratch? this repeats completed processing, so it'll take longer.",
+    QUEUED_FEEDBACK: "queued, working on it now",
+    VERDICT_CAUGHT_UP: "your journal's all caught up.",
+    VERDICT_STUCK_ONLY_PLURAL: "caught up except {stuck_n} days that need a hand.",
+    VERDICT_STUCK_ONLY_SINGULAR: "caught up except 1 day that needs a hand.",
+    VERDICT_PENDING_ONLY_PLURAL: "{pending_n} days are still catching up.",
+    VERDICT_PENDING_ONLY_SINGULAR: "1 day is still catching up.",
+    VERDICT_MIXED_STUCK_PLURAL: "{stuck_n} days need a hand",
+    VERDICT_MIXED_STUCK_SINGULAR: "1 day needs a hand",
+    VERDICT_MIXED_PENDING_PLURAL: "{pending_n} more days are still catching up",
+    VERDICT_MIXED_PENDING_SINGULAR: "1 more day is still catching up",
+    VERDICT_CANT_TELL: "it's unclear whether your journal is caught up right now.",
+    BUCKET_HEADING: "days that need a hand",
+    BUCKET_DESCRIPTION: "some days retry automatically; others need your help. each day shows its current status.",
+    DAY_BADGE: "stuck",
+    REASON_FAILING_STEP: "a processing step keeps failing. try again",
+    WHY_NEVER_ATTEMPTED: "not looked at yet",
+    WHY_FAILED: "couldn't finish, will retry",
+    WHY_SENSED_NOT_THOUGHT: "taken in, not yet thought through",
+    CATCHING_UP_DAY: "catching up",
+    CATCHING_UP_AGGREGATE: "{pending_n} day(s) catching up",
+    CATCHING_UP_TAIL: "processing continues automatically, freshest day first.",
+  });
 
   const EXPECTED_SCHEMA_VERSION = 10;
   const DISPLAY_LABELS = { transcript: 'audio', percept: 'screen' };
@@ -709,7 +741,7 @@ const Dashboard = (function() {
   }
 
   function backlogCopy() {
-    return window.BACKLOG_COPY || {};
+    return BACKLOG_COPY;
   }
 
   function fmt(template, vals = {}) {
@@ -819,31 +851,6 @@ const Dashboard = (function() {
     return `/app/transcripts/${encodeURIComponent(day.day)}`;
   }
 
-  function requestBacklogReprocess(day, flavor, buttons, statusEl, queuedFeedback) {
-    buttons.forEach(button => { button.disabled = true; });
-    statusEl.textContent = '';
-    return window.apiJson('/app/health/api/reprocess', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({day, flavor})
-    })
-      .then(result => {
-        if (result && (result.status === 'already_complete' || result.status === 'current_degraded' || result.status === 'held_by_backoff')) {
-          statusEl.textContent = result.message || '';
-          buttons.forEach(button => { button.disabled = false; });
-          return;
-        }
-        statusEl.textContent = queuedFeedback;
-      })
-      .catch(err => {
-        buttons.forEach(button => { button.disabled = false; });
-        if (window.logError) {
-          window.logError(err, {context: 'stats: reprocess failed'});
-        }
-        statusEl.textContent = err && err.serverMessage ? err.serverMessage : 'try again';
-      });
-  }
-
   function backlogRow(day, C, bl, options = {}) {
     const depth = backlogDepth(day);
     const copy = options.copy || dayCopy(day, C);
@@ -879,17 +886,11 @@ const Dashboard = (function() {
       );
     }
 
-    const processButton = el('button', {type: 'button', className: 'backlog-action'}, [C.ACTION_PROCESS_NOW]);
-    const redoButton = el('button', {type: 'button', className: 'backlog-action'}, [C.ACTION_REDO_SCRATCH]);
-    const statusEl = el('span', {className: 'backlog-action-status'});
-    const buttons = [processButton, redoButton];
-    processButton.addEventListener('click', () => {
-      requestBacklogReprocess(day.day, 'process-now', buttons, statusEl, C.QUEUED_FEEDBACK);
-    });
-    redoButton.addEventListener('click', () => {
-      if (!window.confirm(C.CONFIRM_REDO_SCRATCH)) return;
-      requestBacklogReprocess(day.day, 'from-scratch', buttons, statusEl, C.QUEUED_FEEDBACK);
-    });
+    // The view's one click handler takes these presses (mountStats); each
+    // button names its day and what it asks for.
+    const processButton = el('button', {type: 'button', className: 'backlog-action', 'data-backlog-day': day.day, 'data-backlog-flavor': 'process-now'}, [C.ACTION_PROCESS_NOW]);
+    const redoButton = el('button', {type: 'button', className: 'backlog-action', 'data-backlog-day': day.day, 'data-backlog-flavor': 'from-scratch'}, [C.ACTION_REDO_SCRATCH]);
+    const statusEl = el('span', {className: 'backlog-action-status', 'data-backlog-status': day.day});
     children.push(
       el('div', {className: 'backlog-row-actions'}, [
         processButton,
@@ -898,7 +899,7 @@ const Dashboard = (function() {
       ])
     );
 
-    return el('div', {className: 'backlog-row'}, children);
+    return el('div', {className: 'backlog-row', 'data-backlog-row': day.day}, children);
   }
 
   function stuckBucket(bl, C) {
@@ -1024,8 +1025,9 @@ const Dashboard = (function() {
     });
   }
 
-  // Main render function
-  function render(data) {
+  // Main render function. `hooks` are the mount's: the freshness line it
+  // keeps, and the token card's rollup.
+  function render(data, hooks) {
     if (!data) return;
 
     const stats = data.stats || {};
@@ -1073,26 +1075,11 @@ const Dashboard = (function() {
       return;
     }
 
-    // Freshness indicator
-    const freshnessEl = document.getElementById('statsFreshness');
-    if (freshnessEl) {
-      freshnessEl.textContent = stats.generated_at
-        ? 'updated ' + relativeTime(Date.now() - new Date(stats.generated_at).getTime()) + ' ago'
-        : '';
-      const refreshButton = el('button', {
-        type: 'button',
-        className: 'stats-refresh'
-      }, ['refresh']);
-      refreshButton.addEventListener('click', function() {
-        const statsUrl = document.querySelector('.dashboard').dataset.statsUrl;
-        if (statsUrl) Dashboard.load(statsUrl);
-      });
-      freshnessEl.appendChild(refreshButton);
-    }
+    // Freshness indicator, and the one "refresh" button the mount keeps
+    hooks.freshness(stats.generated_at);
 
-    document.dispatchEvent(new CustomEvent('stats:token-rollup', {
-      detail: stats.tokens.by_day || {}
-    }));
+    // The selected-day token card draws its 30-day rollup from this read.
+    hooks.rollup(stats.tokens.by_day || {});
 
     // Handle empty data
     if (!stats.days || Object.keys(stats.days).length === 0) {
@@ -1253,12 +1240,201 @@ const Dashboard = (function() {
     }
   }
 
-  // Public API
-  return {
-    load: function(url) {
-      fetch(url, {
-        credentials: 'same-origin'
+  function readFailure(retryAgain) {
+    document.getElementById('loading').style.display = 'none';
+    const notice = document.getElementById('notice');
+    const previous = document.getElementById('stats-read-error');
+    if (previous) previous.remove();
+    const retry = el('button', {type: 'button', className: 'stats-refresh', 'data-stats-action': 'try-again'}, ['try again']);
+    retry.addEventListener('click', () => {
+      // Busy while its read is out, never disabled: focus stays on it.
+      if (window.SolFocus.isBusy(retry)) return;
+      retryAgain(retry);
+    });
+    notice.appendChild(el('div', {id: 'stats-read-error', className: 'alert alert-error', role: 'alert'}, [
+      "couldn't load statistics. try again to refresh this view. ", retry
+    ]));
+    return retry;
+  }
+
+  // What an answer draws, without what moves with the clock alone: the
+  // file's time, when the stats were made (the freshness line says that), and
+  // the freshness word the page never shows. Today's date is in it, so the
+  // relative day labels still change at midnight.
+  function drawnKey(data) {
+    const copy = JSON.parse(JSON.stringify(data || {}));
+    delete copy.file_mtime;
+    if (copy.stats && typeof copy.stats === 'object') {
+      delete copy.stats.generated_at;
+      if (copy.stats.journal_status && typeof copy.stats.journal_status === 'object') {
+        delete copy.stats.journal_status.freshness;
+      }
+    }
+    const today = window.JournalClock?.today?.() || '';
+    return today + '\u0000' + JSON.stringify(copy);
+  }
+
+  // A control the owner may be on when an answer redraws, named by what it
+  // is, so the same control can take focus back once it is drawn again.
+  function controlKey(node, root) {
+    if (!node || !root.contains(node)) return null;
+    const backlog = node.closest('[data-backlog-flavor]');
+    if (backlog) return `[data-backlog-day="${backlog.dataset.backlogDay}"][data-backlog-flavor="${backlog.dataset.backlogFlavor}"]`;
+    const rollupBar = node.closest('[data-tokens-day]');
+    if (rollupBar) return `[data-tokens-day="${rollupBar.dataset.tokensDay}"]`;
+    const chart = node.closest('.chart');
+    if (chart && chart.id) {
+      if (node.matches('select')) return `#${chart.id} select`;
+      const bar = node.closest('.bar');
+      if (bar) return {chart: chart.id, bar: Array.from(bar.parentElement.children).indexOf(bar)};
+    }
+    const cell = node.closest('.heatmap-cell');
+    if (cell) return {heatmap: Array.from(root.querySelectorAll('.heatmap-cell')).indexOf(cell)};
+    const summary = node.closest('summary');
+    if (summary) {
+      const row = summary.closest('[data-backlog-row]');
+      if (row) return `[data-backlog-row="${row.dataset.backlogRow}"] summary`;
+      if (summary.parentElement?.classList?.contains('backlog-list')) return '.backlog-list > summary';
+    }
+    const link = node.closest('a[href]');
+    if (link) return `a[href="${link.getAttribute('href')}"]`;
+    return null;
+  }
+
+  function findControl(key, root) {
+    if (!key) return null;
+    if (typeof key === 'string') return root.querySelector(key);
+    if (key.chart) return root.querySelector(`#${key.chart} .bar-chart`)?.children?.[key.bar] || null;
+    if (key.heatmap !== undefined) return root.querySelectorAll('.heatmap-cell')[key.heatmap] || null;
+    return null;
+  }
+
+  function mountStats(ctx) {
+    const root = document.querySelector('.dashboard[data-stats-url]');
+    if (!root) throw new Error('stats markup is missing');
+    const C = backlogCopy();
+    const freshnessEl = root.querySelector('#statsFreshness');
+    const freshnessText = document.createElement('span');
+    freshnessText.className = 'stats-freshness-text';
+    const refreshButton = el('button', {type: 'button', className: 'stats-refresh', 'data-stats-action': 'refresh', hidden: ''}, ['refresh']);
+    freshnessEl.replaceChildren(freshnessText, refreshButton);
+
+    let reported = false;
+    let drawn = null;
+    let loading = null;
+    // Reprocess writes by day: 'busy' while out, 'queued' once taken; and
+    // the line that says what happened. A redraw draws them again.
+    const writes = new Map();
+
+    const card = window.StatsTokenCard
+      ? window.StatsTokenCard.mount(ctx, root)
+      : { rollup() {}, dispose() {} };
+    ctx.onDispose(() => card.dispose());
+
+    function ready(state) {
+      if (reported) return;
+      reported = true;
+      ctx.ready(state);
+    }
+
+    const hooks = {
+      freshness(generatedAt) {
+        const text = generatedAt
+          ? 'updated ' + relativeTime(Date.now() - new Date(generatedAt).getTime()) + ' ago'
+          : '';
+        if (freshnessText.textContent !== text) freshnessText.textContent = text;
+        if (refreshButton.hidden) refreshButton.hidden = false;
+      },
+      rollup(byDay) { card.rollup(byDay); }
+    };
+
+    function applyWrite(day) {
+      const entry = writes.get(day);
+      root.querySelectorAll('[data-backlog-flavor]').forEach(button => {
+        if (button.dataset.backlogDay !== day) return;
+        if (entry?.state === 'busy') {
+          window.SolFocus.setBusy(button, true);
+        } else if (entry?.state === 'queued') {
+          // Taken: the day can't be asked for twice. It isn't busy any more.
+          button.setAttribute('aria-disabled', 'true');
+          button.removeAttribute('aria-busy');
+        } else {
+          window.SolFocus.setBusy(button, false);
+        }
+      });
+      root.querySelectorAll('[data-backlog-status]').forEach(status => {
+        if (status.dataset.backlogStatus !== day) return;
+        const text = entry?.text || '';
+        if (status.textContent !== text) status.textContent = text;
+      });
+    }
+
+    function reprocess(button) {
+      const day = button.dataset.backlogDay;
+      const flavor = button.dataset.backlogFlavor;
+      if (window.SolFocus.isBusy(button)) return;
+      if (flavor === 'from-scratch' && !window.confirm(C.CONFIRM_REDO_SCRATCH)) return;
+      writes.set(day, {state: 'busy', text: ''});
+      applyWrite(day);
+      ctx.read('/app/health/api/reprocess', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({day, flavor})
       })
+        .then(result => {
+          if (ctx.disposed) return;
+          if (result && (result.status === 'already_complete' || result.status === 'current_degraded' || result.status === 'held_by_backoff')) {
+            writes.set(day, {state: null, text: result.message || ''});
+          } else {
+            writes.set(day, {state: 'queued', text: C.QUEUED_FEEDBACK});
+          }
+          applyWrite(day);
+        })
+        .catch(err => {
+          if (ctx.disposed) return;
+          if (window.logError) {
+            window.logError(err, {context: 'stats: reprocess failed'});
+          }
+          writes.set(day, {state: null, text: err && err.serverMessage ? err.serverMessage : 'try again'});
+          applyWrite(day);
+        });
+    }
+
+    // Draws an answer. One that draws what is already drawn leaves the page
+    // alone but for the freshness line. When it does draw, the control the
+    // owner was on takes focus back, else "refresh".
+    function draw(data) {
+      const key = drawnKey(data);
+      if (key === drawn) {
+        hooks.freshness(data.stats?.generated_at);
+        return;
+      }
+      const active = document.activeElement;
+      const held = controlKey(active, root);
+      const wasInside = root.contains(active);
+      // A disclosure the owner opened stays open through the redraw.
+      const open = Array.from(root.querySelectorAll('.backlog-list[open], [data-backlog-row] details[open]'))
+        .map(node => node.classList.contains('backlog-list') ? '.backlog-list' : `[data-backlog-row="${node.closest('[data-backlog-row]').dataset.backlogRow}"] details`);
+      render(data, hooks);
+      drawn = key;
+      open.forEach(selector => {
+        const node = root.querySelector(selector);
+        if (node) node.open = true;
+      });
+      writes.forEach((_, day) => applyWrite(day));
+      if (wasInside) {
+        window.SolFocus.refocus(document, true, [findControl(held, root), refreshButton]);
+      }
+    }
+
+    function load(pressed) {
+      if (loading) return loading;
+      if (pressed) window.SolFocus.setBusy(pressed, true);
+      const done = () => {
+        loading = null;
+        if (pressed) window.SolFocus.setBusy(pressed, false);
+      };
+      loading = ctx.fetch(STATS_URL, {credentials: 'same-origin'})
         .then(response => {
           if (!response.ok) {
             if (response.status === 401 || response.redirected) {
@@ -1271,26 +1447,46 @@ const Dashboard = (function() {
           return response.json();
         })
         .then(data => {
-          if (data) { render(data); reportStatsReady('content'); }
+          done();
+          if (!data || ctx.disposed) return;
+          const error = document.getElementById('stats-read-error');
+          const fromError = error && error.contains(document.activeElement);
+          if (error) error.remove();
+          draw(data);
+          if (fromError) {
+            // The error is gone; "refresh" took its place, else the heading.
+            window.SolFocus.refocus(document, true, [refreshButton, root.querySelector('h1')]);
+          }
+          ready('content');
         })
         .catch(() => {
-          document.getElementById('loading').style.display = 'none';
-          const notice = document.getElementById('notice');
-          const previous = document.getElementById('stats-read-error');
-          if (previous) previous.remove();
-          const retry = el('button', {type: 'button', className: 'stats-refresh'}, ['try again']);
-          retry.addEventListener('click', () => {
-            retry.disabled = true;
-            Dashboard.load(url);
-          });
-          notice.appendChild(el('div', {id: 'stats-read-error', className: 'alert alert-error', role: 'alert'}, [
-            "couldn't load statistics. try again to refresh this view. ", retry
-          ]));
-          reportStatsReady('error');
+          done();
+          if (ctx.disposed) return;
+          const fromError = (document.getElementById('stats-read-error') || {contains: () => false}).contains(document.activeElement);
+          const retry = readFailure(again => load(again));
+          if (fromError) window.SolFocus.refocus(document, true, [retry]);
+          ready('error');
         });
+      return loading;
     }
-  };
-})();
 
-// Export for use in templates
-window.Dashboard = Dashboard;
+    ctx.on(root, 'click', event => {
+      const target = event.target;
+      if (!target || typeof target.closest !== 'function') return;
+      const backlog = target.closest('[data-backlog-flavor]');
+      if (backlog && root.contains(backlog)) {
+        reprocess(backlog);
+        return;
+      }
+      const refresh = target.closest('[data-stats-action="refresh"]');
+      if (refresh && root.contains(refresh)) {
+        if (window.SolFocus.isBusy(refresh)) return;
+        load(refresh);
+      }
+    });
+
+    load(null);
+  }
+
+  window.SolViews.register('stats', { mount: mountStats });
+})();

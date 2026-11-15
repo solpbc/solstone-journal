@@ -3,34 +3,42 @@
 
 // The selected-day token detail is scoped to stats. It never changes the
 // page-wide journal day or navigates to the retired token app.
-(function () {
+//
+// Stats is on the view contract, so this script only defines a factory:
+// `StatsTokenCard.mount(ctx, root)` starts the card inside the view's markup
+// and returns `{ rollup(byDay), dispose() }`. Nothing is kept here between
+// mounts; everything a mount adds outside its markup goes through `ctx`.
+(function (global) {
   'use strict';
 
-  const card = document.querySelector('.token-card');
-  if (!card) return;
+  const OWN_PATH = '/app/stats/';
 
-  const rollup = document.querySelector('#tokenRollup');
-  const heading = document.querySelector('#tokenDayHeading');
-  const summary = document.querySelector('#tokenSummary');
-  const status = document.querySelector('#tokenCardStatus');
-  const comparison = document.querySelector('#tokenTypeComparison');
-  const dateNavHost = document.querySelector('#statsDateNav');
+  function mount(ctx, root) {
+  const card = root.querySelector('.token-card');
+  if (!card) return { rollup() {}, dispose() {} };
+
+  const rollup = root.querySelector('#tokenRollup');
+  const heading = root.querySelector('#tokenDayHeading');
+  const summary = root.querySelector('#tokenSummary');
+  const status = root.querySelector('#tokenCardStatus');
+  const comparison = root.querySelector('#tokenTypeComparison');
+  const dateNavHost = root.querySelector('#statsDateNav');
   const tableBodies = {
-    providers: document.querySelector('#tokenProviders'),
-    models: document.querySelector('#tokenModels')
+    providers: root.querySelector('#tokenProviders'),
+    models: root.querySelector('#tokenModels')
   };
   const tableData = { providers: [], models: [] };
   const tableHosts = {
-    providers: document.querySelector('[data-token-table-host="providers"]'),
-    models: document.querySelector('[data-token-table-host="models"]')
+    providers: root.querySelector('[data-token-table-host="providers"]'),
+    models: root.querySelector('[data-token-table-host="models"]')
   };
   const tableSummaries = {
-    providers: document.querySelector('[data-token-summary="providers"]'),
-    models: document.querySelector('[data-token-summary="models"]')
+    providers: root.querySelector('[data-token-summary="providers"]'),
+    models: root.querySelector('[data-token-summary="models"]')
   };
   const tableNotes = {
-    providers: document.querySelector('[data-token-note="providers"]'),
-    models: document.querySelector('[data-token-note="models"]')
+    providers: root.querySelector('[data-token-note="providers"]'),
+    models: root.querySelector('[data-token-note="models"]')
   };
   const sorts = {
     providers: { key: 'tokens', direction: 'descending' },
@@ -44,6 +52,8 @@
   let scopedDateNav = null;
   let usageSequence = 0;
   let usageRead = null;
+  // The scroll hosts whose edge fades follow the window's width.
+  const fadeHosts = new Set();
 
   function validDay(value) {
     return /^\d{8}$/.test(value || '');
@@ -54,7 +64,7 @@
   }
 
   function initialDay() {
-    const query = new URLSearchParams(location.search).get('tokens');
+    const query = new URLSearchParams(ctx.route?.search || '').get('tokens');
     return validDay(query) ? query : today();
   }
 
@@ -314,8 +324,10 @@
     usageRead = read;
     selected = day;
     if (options.syncNav !== false) scopedDateNav?.setDay(day);
-    if (options.push) history.pushState({}, '', `?tokens=${day}#tokens`);
-    return fetch(`/app/stats/api/usage?day=${day}`, read ? { signal: read.signal } : undefined)
+    // The card's own entry, on stats' own path, through the router so the
+    // entry keeps its id and its scroll.
+    if (options.push) ctx.history.push(`${OWN_PATH}?tokens=${day}#tokens`);
+    return ctx.fetch(`/app/stats/api/usage?day=${day}`, read ? { signal: read.signal } : undefined)
       .then(response => {
         if (!response.ok) throw new Error('usage');
         return response.json();
@@ -324,7 +336,7 @@
         if (sequence !== usageSequence) return;
         renderUsage(data);
         if (options.focus) heading.focus();
-        document.querySelectorAll('[data-tokens-day]').forEach(button => {
+        root.querySelectorAll('[data-tokens-day]').forEach(button => {
           button.setAttribute('aria-pressed', String(button.dataset.tokensDay === day));
         });
       })
@@ -385,7 +397,7 @@
     if (!el.dataset.scrollFadeBound) {
       el.dataset.scrollFadeBound = 'true';
       el.addEventListener('scroll', () => updateScrollFade(el), {passive: true});
-      addEventListener('resize', () => updateScrollFade(el));
+      fadeHosts.add(el);
     }
     updateScrollFade(el);
   }
@@ -395,7 +407,7 @@
     return body && body.closest('.token-table-scroll');
   }
 
-  document.querySelectorAll('.token-sort').forEach(button => {
+  root.querySelectorAll('.token-sort').forEach(button => {
     button.addEventListener('click', () => {
       const name = button.dataset.tokenTable;
       const key = button.dataset.tokenKey;
@@ -406,12 +418,15 @@
         key,
         direction: prior.key === key && prior.direction === first ? flipped : first
       };
-      document.querySelectorAll(`[data-token-table="${name}"]`).forEach(other => {
+      root.querySelectorAll(`[data-token-table="${name}"]`).forEach(other => {
         other.closest('th').setAttribute('aria-sort', other === button ? sorts[name].direction : 'none');
       });
       renderTable(name);
     });
   });
+
+  // One resize listener for every bound host, taken back with the view.
+  ctx.on(window, 'resize', () => fadeHosts.forEach(updateScrollFade));
 
   scopedDateNav = window.DateNav && window.DateNav.mountScoped({
     host: dateNavHost,
@@ -419,19 +434,20 @@
     initialDay: selected,
     onSelect: day => select(day, { push: true, focus: true, syncNav: false })
   });
+  // The scoped day control is one per page: it goes with the view, and with
+  // a mount that throws part-way.
+  if (scopedDateNav) ctx.onDispose(() => scopedDateNav.unmount());
 
-  document.addEventListener('stats:token-rollup', event => renderRollup(event.detail));
-  // This card's own data (api/usage, below) can resolve and render before
-  // dashboard.js reveals #mainContent (display:none -> block); bindScrollFade
-  // would then measure a hidden, zero-size ancestor and never recheck, since
-  // nothing else fires a scroll or resize event afterward — exactly the
-  // direct-390-load case where the fade never appears (G2-44). The rollup
-  // above doesn't hit this because renderRollup only ever runs from this same
-  // event, which dashboard.js fires after #mainContent is already visible;
-  // give the two tables that same "now visible" recheck.
-  document.addEventListener('stats:token-rollup', () => {
+  // The rollup comes from the stats read, after #mainContent is shown. This
+  // card's own data (api/usage, below) can resolve and render before that;
+  // bindScrollFade would then measure a hidden, zero-size ancestor and never
+  // recheck, since nothing else fires a scroll or resize event afterward:
+  // exactly the direct-390-load case where the fade never appears (G2-44).
+  // The rollup's draw gives the two tables that "now visible" recheck too.
+  function rollupFromStats(byDay) {
+    renderRollup(byDay);
     ['providers', 'models'].forEach(name => bindScrollFade(scrollHostFor(name)));
-  });
+  }
 
   // The selected day's own data (api/usage) is typically an order of
   // magnitude faster than the 30-day coverage probe (api/index) — fetch them
@@ -441,7 +457,7 @@
   // undo a day that already rendered successfully.
   state('loading', 'loading token activity…');
   select(selected);
-  fetch('/app/stats/api/index')
+  ctx.fetch('/app/stats/api/index')
     .then(response => {
       if (!response.ok) throw new Error('index');
       return response.json();
@@ -449,8 +465,22 @@
     .catch(() => { coverageFailed = true; })
     .then(() => applyCardState());
 
-  addEventListener('popstate', () => {
-    const day = new URLSearchParams(location.search).get('tokens');
+  // A back or forward between the card's own entries. A back that leaves
+  // stats is the router's, and the card draws nothing for it.
+  ctx.on(window, 'popstate', () => {
+    if (window.location.pathname !== OWN_PATH) return;
+    const day = new URLSearchParams(window.location.search).get('tokens');
     select(validDay(day) ? day : today(), { focus: true });
   });
-}());
+
+  return {
+    rollup: rollupFromStats,
+    dispose() {
+      usageRead?.abort();
+      usageRead = null;
+    }
+  };
+  }
+
+  global.StatsTokenCard = { mount };
+}(window));

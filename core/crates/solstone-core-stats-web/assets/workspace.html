@@ -1,4 +1,5 @@
 <!-- first-read: /app/stats/ -> /app/stats/api/stats -->
+<!-- view-contract -->
 <link rel="stylesheet" href="/static/date-nav.css">
 <script src="/static/date-nav.js"></script>
 <style>
@@ -81,6 +82,12 @@ h1 {
 
 .stats-refresh:active {
   opacity: 0.7;
+}
+
+/* Busy while its read is out; never disabled, so focus stays on it. */
+.stats-refresh[aria-disabled="true"] {
+  cursor: progress;
+  opacity: 0.8;
 }
 
 /* Stats grid */
@@ -329,14 +336,20 @@ h1 {
   padding: 0.35em 0.65em;
 }
 
-.backlog-action:hover:not(:disabled) {
+.backlog-action:hover:not([aria-disabled="true"]) {
   background: var(--cream-bright);
   border-color: var(--hairline-2);
 }
 
-.backlog-action:disabled {
+/* A day whose reprocess is out (busy) or taken can't be asked for again. It
+   keeps focus: the button is never disabled. */
+.backlog-action[aria-disabled="true"] {
   cursor: default;
-  opacity: 0.65;
+  opacity: 0.8;
+}
+
+.backlog-action[aria-busy="true"] {
+  cursor: progress;
 }
 
 .backlog-action-status {
@@ -1173,37 +1186,5 @@ h1 {
   </div>
 </div>
 
-<script>
-  window.BACKLOG_COPY = {
-    ACTION_PROCESS_NOW: "process now",
-    ACTION_REDO_SCRATCH: "redo from scratch",
-    CONFIRM_REDO_SCRATCH: "redo this whole day from scratch? this repeats completed processing, so it'll take longer.",
-    QUEUED_FEEDBACK: "queued, working on it now",
-    VERDICT_CAUGHT_UP: "your journal's all caught up.",
-    VERDICT_STUCK_ONLY_PLURAL: "caught up except {stuck_n} days that need a hand.",
-    VERDICT_STUCK_ONLY_SINGULAR: "caught up except 1 day that needs a hand.",
-    VERDICT_PENDING_ONLY_PLURAL: "{pending_n} days are still catching up.",
-    VERDICT_PENDING_ONLY_SINGULAR: "1 day is still catching up.",
-    VERDICT_MIXED_STUCK_PLURAL: "{stuck_n} days need a hand",
-    VERDICT_MIXED_STUCK_SINGULAR: "1 day needs a hand",
-    VERDICT_MIXED_PENDING_PLURAL: "{pending_n} more days are still catching up",
-    VERDICT_MIXED_PENDING_SINGULAR: "1 more day is still catching up",
-    VERDICT_CANT_TELL: "it's unclear whether your journal is caught up right now.",
-    BUCKET_HEADING: "days that need a hand",
-    BUCKET_DESCRIPTION: "some days retry automatically; others need your help. each day shows its current status.",
-    DAY_BADGE: "stuck",
-    REASON_FAILING_STEP: "a processing step keeps failing. try again",
-    WHY_NEVER_ATTEMPTED: "not looked at yet",
-    WHY_FAILED: "couldn't finish, will retry",
-    WHY_SENSED_NOT_THOUGHT: "taken in, not yet thought through",
-    CATCHING_UP_DAY: "catching up",
-    CATCHING_UP_AGGREGATE: "{pending_n} day(s) catching up",
-    CATCHING_UP_TAIL: "processing continues automatically, freshest day first.",
-  };
-</script>
-<script src="/app/stats/static/dashboard.js"></script>
 <script src="/app/stats/static/token-card.js"></script>
-<script>
-  // Load dashboard data when page loads
-  Dashboard.load('/app/stats/api/stats');
-</script>
+<script src="/app/stats/static/dashboard.js"></script>
