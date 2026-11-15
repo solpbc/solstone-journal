@@ -1132,6 +1132,25 @@ module.exports = async function thinkingContractCases(crateDir) {
     assert.ok(p.byId('byoKeyInput').value === 'typed in the new thinking', 'the late answer clears nothing in the new thinking');
   });
 
+  await test('a key check that answers after the owner left sends no save', async () => {
+    const p = await boot(env, '/app/thinking/#byo-setup', { phase: 'none', overrides: { 'POST /app/thinking/api/keys/check': { valid: true } } });
+    const isCheck = (call) => call.method === 'POST' && call.url === '/app/thinking/api/keys/check';
+    p.holds.push(isCheck);
+    p.press(p.q('[data-byo-provider="openai"]'));
+    await settle();
+    p.byId('byoKeyInput').value = 'sk-lab';
+    p.press(p.byId('byoSaveKey'));
+    await settle();
+    const check = p.calls.find((c) => isCheck(c) && !c.settled);
+    assert.ok(check, 'the check is out');
+    p.leave();
+    await settle();
+    check.answer({ valid: true });
+    await run(p, 5000);
+    assert.ok(!check.aborted, 'the check itself was not cut');
+    assert.ok(!p.writes().some((c) => c.method === 'PUT' && c.url === '/app/thinking/api/keys'), 'the save it would send next is never sent');
+  });
+
   await test('a confidential turn-on that answers after the owner left opens no consent window, and the return follows it', async () => {
     const overrides = {};
     const p = await boot(env, '/app/thinking/#confidential-setup', { overrides });

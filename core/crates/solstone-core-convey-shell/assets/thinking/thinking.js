@@ -1104,6 +1104,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     // Every address is absolute, so a read still answers for this view's API
     // whatever the page's address is by then.
     const url = String(path).startsWith('/') ? path : `${THINKING_PATH}${path}`;
+    // A write already out when the view goes still finishes. One its code
+    // would send next, after that one answers (a key's save after its check),
+    // is never sent, as it never was once the page had gone.
+    const method = String(options.method || 'GET').toUpperCase();
+    if (ctx.disposed && method !== 'GET') return window.SolStore.never();
     let payload;
     try {
       payload = await ctx.read(url, {
