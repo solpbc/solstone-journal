@@ -76,21 +76,28 @@ fn binding(raw: &Path, screen_digest: &str) -> Result<String> {
         .as_nanos();
     Ok(format!("{}:{modified}:{screen_digest}", m.len()))
 }
+/// A recording whose screen output was never written, or was torn by an
+/// interrupted write (a row that does not parse, or bytes that are not UTF-8),
+/// is not a candidate: the face helper reads the same output strictly and
+/// would fail on it. Neither stops the history; the catch-up moves on.
 fn meeting_frames(screen: &Path) -> Result<bool> {
-    let text = solstone_core_journal_io::read_optional_text(screen)
-        .map_err(|e| e.to_string())?
-        .ok_or("screen disappeared")?;
-    for line in text.lines().skip(1) {
-        let row: Value = serde_json::from_str(line).map_err(|e| e.to_string())?;
-        if row
-            .pointer("/content/meeting/participants")
-            .and_then(Value::as_array)
-            .is_some_and(|p| !p.is_empty())
-        {
-            return Ok(true);
-        }
+    let bytes = solstone_core_journal_io::read_bytes(screen, vec![]).map_err(|e| e.to_string())?;
+    let Ok(text) = String::from_utf8(bytes) else {
+        return Ok(false);
+    };
+    // Every row, the header included, must parse before any meeting row counts.
+    let mut meeting = false;
+    for (index, line) in text.lines().enumerate() {
+        let Ok(row) = serde_json::from_str::<Value>(line) else {
+            return Ok(false);
+        };
+        meeting |= index > 0
+            && row
+                .pointer("/content/meeting/participants")
+                .and_then(Value::as_array)
+                .is_some_and(|p| !p.is_empty());
     }
-    Ok(false)
+    Ok(meeting)
 }
 fn valid_sidecar(raw: &Path, digest: &str) -> Result<bool> {
     let path = sidecar_path(raw);
