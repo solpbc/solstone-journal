@@ -6519,6 +6519,7 @@ dependencies = [
  "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-system",
+ "solstone-core-trash",
 ]
 
 [[package]]
@@ -6755,6 +6756,8 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-assets",
+ "solstone-core-backup",
+ "solstone-core-backup-runtime",
  "solstone-core-convey-http",
  "solstone-core-describe-categories",
  "solstone-core-entity",
@@ -6764,6 +6767,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-offload",
  "solstone-core-processing-record",
  "solstone-core-removals",
  "solstone-core-retention",
@@ -7343,6 +7347,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "solstone-core-backup",
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-io",

@@ -2555,6 +2555,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "solstone-core-backup",
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
