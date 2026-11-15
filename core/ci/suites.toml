@@ -5642,3 +5642,19 @@ timeout = "standard"
 default_full = true
 runtime = "none"
 features = ["full-tests"]
+
+[[suites]]
+id = "solstone-core-maintenance::backup_erase_native"
+package = "solstone-core-maintenance"
+target = "backup_erase_native"
+set = "component"
+areas = ["backup", "retention"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+# Every test is #[ignore]: it needs a native restic with its restic-erase helper
+# beside it and rclone, named by SOLSTONE_NATIVE_RESTIC and SOLSTONE_NATIVE_RCLONE,
+# and runs by hand with --ignored. The routine run builds it and runs nothing.
+default_full = true
+required_features = []
+runtime = "none"
