@@ -161,6 +161,10 @@
     {
       "namespace": "windows",
       "owner": "windows"
+    },
+    {
+      "namespace": "macos",
+      "owner": "macos"
     }
   ],
   "bundles": [
@@ -237,6 +241,12 @@
     },
     {
       "id": "windows",
+      "locales": [
+        "en-US"
+      ]
+    },
+    {
+      "id": "macos",
       "locales": [
         "en-US"
       ]
