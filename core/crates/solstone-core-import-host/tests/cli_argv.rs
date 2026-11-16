@@ -607,6 +607,7 @@ fn production_audio_import_runtime_waits_on_a_bound_callosum_socket() {
         setting: None,
         wait_for_processing: true,
         stall_timeout: Duration::from_millis(50),
+        stall_audio_factor: 0.0,
         poll_interval: Duration::from_millis(5),
     };
     let runtime = audio_import_runtime().expect("audio import runtime");
@@ -703,6 +704,7 @@ fn run_wait_cli(wait: ProcessingWaitFn) -> CliRun {
         setting: None,
         wait_for_processing: true,
         stall_timeout: Duration::from_millis(50),
+        stall_audio_factor: 0.0,
         poll_interval: Duration::from_millis(5),
     };
     let runtime = audio_import_runtime().expect("audio import runtime");
@@ -1016,6 +1018,7 @@ fn place_audio(
         setting: None,
         wait_for_processing: false,
         stall_timeout: Duration::from_millis(1),
+        stall_audio_factor: 0.0,
         poll_interval: Duration::from_millis(1),
     };
     runtime.block_on(import_audio_with_seams(
@@ -1121,6 +1124,7 @@ fn wait_success_still_reports_complete() {
         setting: None,
         wait_for_processing: true,
         stall_timeout: Duration::from_millis(50),
+        stall_audio_factor: 0.0,
         poll_interval: Duration::from_millis(5),
     };
     let runtime = audio_import_runtime().expect("audio import runtime");
@@ -1167,6 +1171,7 @@ fn partial_remux_without_failed_or_stalled_wait_still_succeeds() {
         setting: None,
         wait_for_processing: true,
         stall_timeout: Duration::from_millis(50),
+        stall_audio_factor: 0.0,
         poll_interval: Duration::from_millis(5),
     };
     let runtime = audio_import_runtime().expect("audio import runtime");
