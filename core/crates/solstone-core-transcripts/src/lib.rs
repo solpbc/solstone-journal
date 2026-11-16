@@ -1573,7 +1573,7 @@ pub fn labelled_audio_source(dir: &Path) -> Option<String> {
 }
 
 /// Run numbers for each embedded audio source among `files`, keyed by stem.
-fn run_numbers_by_source(
+pub fn run_numbers_by_source(
     segment: &Path,
     files: &[PathBuf],
 ) -> BTreeMap<String, BTreeMap<i64, i64>> {

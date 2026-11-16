@@ -1683,8 +1683,6 @@ fn compute_context(root: &Path, record: &SuggestionRecord) -> (Value, Value, Val
             let place = json!({"kind":"segment", "title":first.and_then(|act|act.get("title")), "day":day,
                 "start":first.and_then(|act|act.get("start")), "end":first.and_then(|act|act.get("end")),
                 "facets":affected.iter().map(|(facet,_,_,_)|facet).collect::<BTreeSet<_>>()});
-            let source = record.target.get("source").and_then(Value::as_str);
-            let who = solstone_core_transcripts::load_who_spoke(&directory, source, None);
             let targets: BTreeSet<i64> = record
                 .target
                 .get("sentences")
@@ -1693,16 +1691,64 @@ fn compute_context(root: &Path, record: &SuggestionRecord) -> (Value, Value, Val
                 .flatten()
                 .filter_map(|line| line.get("sentence_id").and_then(Value::as_i64))
                 .collect();
-            let lines = super::submit::load_segment_statements(&directory)
-                .ok()
-                .map(|(lines, _)| lines)
+            let parsed = super::submit::load_segment_statements(&directory).unwrap_or_default();
+            let who =
+                solstone_core_transcripts::load_who_spoke(&directory, Some(&parsed.source), None);
+            let voices = solstone_core_talent_runtime::voice_names(root);
+            let numbers = voices
+                .as_ref()
+                .map(|_| {
+                    solstone_core_transcripts::run_numbers_by_source(
+                        &directory,
+                        &[directory.join(format!("{}.jsonl", parsed.source))],
+                    )
+                    .remove(&parsed.source)
+                    .unwrap_or_default()
+                })
                 .unwrap_or_default();
-            let now_lines: Vec<Value> = lines.into_iter().filter(|line|targets.contains(&line.sentence_id)).map(|line| {
-                let speaker = who.rows.iter().find(|row|row.get("sentence_id").and_then(Value::as_i64) == Some(line.sentence_id))
-                    .and_then(|row|row.get("speaker")).and_then(Value::as_str);
-                json!({"time":line.time,"speaker":speaker.map(|id|speaker_name(root,id)).unwrap_or_default(),"text":line.text})
-            }).collect();
-            (json!(""), json!(now_lines), place, impact(&affected))
+            let rel = format!("{day}/{stream}/{segment}/{}.jsonl", parsed.source);
+            let now_lines: Vec<Value> = parsed
+                .statements
+                .into_iter()
+                .filter(|line| targets.contains(&line.sentence_id))
+                .map(|line| {
+                    let named = voices.as_ref().and_then(|voices| {
+                        who.rows
+                            .iter()
+                            .find(|row| {
+                                row.get("sentence_id").and_then(Value::as_i64)
+                                    == Some(line.sentence_id)
+                            })
+                            .and_then(|row| voices.name_for(row))
+                    });
+                    let mut raw = Map::new();
+                    if let Some(speaker) = line.speaker {
+                        raw.insert("speaker".to_owned(), speaker);
+                    }
+                    if let Some(name) = named {
+                        raw.insert("speaker".to_owned(), json!(name));
+                    } else if let Some(number) = raw
+                        .get("speaker")
+                        .and_then(Value::as_i64)
+                        .and_then(|number| numbers.get(&number))
+                    {
+                        raw.insert("speaker".to_owned(), json!(number));
+                    }
+                    let speaker = solstone_core_format::content::audio_speaker_label(
+                        &rel,
+                        parsed.metadata.as_ref(),
+                        &raw,
+                    )
+                    .unwrap_or_default();
+                    json!({"time":line.time,"speaker":speaker,"text":line.text})
+                })
+                .collect();
+            let now = now_lines
+                .iter()
+                .filter_map(|line| line.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n");
+            (json!(now), json!(now_lines), place, impact(&affected))
         }
         "name" => {
             let entity = solstone_core_entity::read_entity_identity(root, text("entity_id"))
@@ -2110,9 +2156,11 @@ pub(crate) fn line_baseline(root: &Path, target: &Value, value: &Value) -> Optio
     if target.get("source").and_then(Value::as_str) != Some(source.as_str()) {
         return None;
     }
-    let (statements, false) = super::submit::load_segment_statements(directory.path()).ok()? else {
+    let parsed = super::submit::load_segment_statements(directory.path()).ok()?;
+    if parsed.untimed {
         return None;
-    };
+    }
+    let statements = parsed.statements;
     let ids: BTreeSet<i64> = target
         .get("sentences")?
         .as_array()?

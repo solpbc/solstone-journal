@@ -1006,9 +1006,11 @@ fn execute_admitted(
 
             // Line selector resolution
             let segment_dir = seg_entry.path();
-            let Ok((statements, is_untimed)) = load_segment_statements(segment_dir) else {
+            let Ok(parsed) = load_segment_statements(segment_dir) else {
                 return refusal;
             };
+            let statements = &parsed.statements;
+            let is_untimed = parsed.untimed;
             if is_untimed {
                 return refusal;
             }
@@ -1595,11 +1597,20 @@ pub(crate) struct ParsedStatement {
     pub sentence_id: i64,
     pub time: String,
     pub text: String,
+    pub speaker: Option<Value>,
+}
+
+#[derive(Default)]
+pub(crate) struct ParsedSegmentStatements {
+    pub statements: Vec<ParsedStatement>,
+    pub untimed: bool,
+    pub source: String,
+    pub metadata: Option<Map<String, Value>>,
 }
 
 pub(crate) fn load_segment_statements(
     segment_dir: &Path,
-) -> Result<(Vec<ParsedStatement>, bool), DispatchError> {
+) -> Result<ParsedSegmentStatements, DispatchError> {
     let source = solstone_core_speaker_resolve::owner_line_labels::agreed_source(segment_dir)
         .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
     let bytes = fs::read_to_string(segment_dir.join(format!("{source}.jsonl")))
@@ -1607,11 +1618,15 @@ pub(crate) fn load_segment_statements(
     let mut ordinal = 0;
     let mut statements = Vec::new();
     let mut untimed = false;
+    let mut metadata = None;
     for line in bytes.lines() {
         let Ok(Value::Object(record)) = serde_json::from_str::<Value>(line) else {
             continue;
         };
         untimed |= record.get("untimed").and_then(Value::as_bool) == Some(true);
+        if metadata.is_none() && !record.contains_key("start") {
+            metadata = Some(record.clone());
+        }
         let Some(sentence_id) =
             solstone_core_transcripts::next_statement_ordinal(line, &mut ordinal)
         else {
@@ -1633,7 +1648,13 @@ pub(crate) fn load_segment_statements(
             sentence_id,
             time: time.to_owned(),
             text: text.to_owned(),
+            speaker: record.get("speaker").cloned(),
         });
     }
-    Ok((statements, untimed))
+    Ok(ParsedSegmentStatements {
+        statements,
+        untimed,
+        source,
+        metadata,
+    })
 }

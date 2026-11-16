@@ -13,7 +13,7 @@ mod ai_chat;
 mod audio;
 pub mod body_records;
 pub mod granola;
-pub use audio::OTHER_VOICE;
+pub use audio::{OTHER_VOICE, audio_speaker_label};
 mod browser;
 mod day_accumulator;
 mod desktop_activity;

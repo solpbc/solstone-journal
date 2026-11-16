@@ -80,6 +80,24 @@ fn audio_source(rel: &str, metadata: Option<&JsonObject>) -> Option<AudioSource>
     })
 }
 
+fn speaker_label(record: &JsonObject, heard_from: Option<AudioSource>) -> Option<String> {
+    match record.get("speaker") {
+        Some(Value::Number(value)) => Some(format!("Speaker {value}")),
+        Some(value) => Some(display_value(value)),
+        None if heard_from == Some(AudioSource::Computer) => Some(OTHER_VOICE.to_owned()),
+        None => None,
+    }
+}
+
+/// The same speaker label used by the canonical audio formatter.
+pub fn audio_speaker_label(
+    rel: &str,
+    metadata: Option<&JsonObject>,
+    record: &JsonObject,
+) -> Option<String> {
+    speaker_label(record, audio_source(rel, metadata))
+}
+
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let metadata = records
         .first()
@@ -129,15 +147,11 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         if !source.is_empty() {
             parts.push(format!("({source})"));
         }
-        match record.get("speaker") {
-            Some(Value::Number(value)) => parts.push(format!("Speaker {value}:")),
-            Some(value) => parts.push(format!("{}:", display_value(value))),
-            // No microphone was recorded, so a line no voice was matched to is someone else's.
-            None if heard_from == Some(AudioSource::Computer) => {
-                parts.push(format!("{OTHER_VOICE}:"))
-            }
-            None => parts.push(String::new()),
-        }
+        parts.push(
+            speaker_label(record, heard_from)
+                .map(|label| format!("{label}:"))
+                .unwrap_or_default(),
+        );
 
         let text = truthy_display(record, "corrected")
             .or_else(|| truthy_display(record, "text"))

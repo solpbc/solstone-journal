@@ -2289,3 +2289,71 @@ async fn account_card_shows_the_journals_story_and_regeneration_stales_it() {
         assert_eq!(fs::read_to_string(path).unwrap(), format!("{activity}\n"));
     }
 }
+
+#[tokio::test]
+async fn line_card_uses_canonical_numbers_and_only_voice_or_owner_names() {
+    use solstone_core_speaker_resolve::owner_line_labels::{
+        LineSpeaker, OwnerLine, set_owner_line_labels,
+    };
+    set_test_suggestions_ready(true);
+    let journal = init_test_journal();
+    let root = journal.path();
+    let day = "20261114";
+    setup_activity(root, "work", day, "meeting_1", "");
+    setup_entity(root, "work", "ada", "Ada", &[]);
+    setup_entity(root, "work", "bob", "Bob", &[]);
+    setup_entity(root, "work", "owner", "Synthetic Owner", &[]);
+    let owner_path = root.join("entities/owner/entity.json");
+    let mut owner: Value = serde_json::from_slice(&fs::read(&owner_path).unwrap()).unwrap();
+    owner["is_principal"] = json!(true);
+    fs::write(owner_path, owner.to_string()).unwrap();
+    setup_transcript_segment(
+        root,
+        day,
+        "default",
+        "090000_300",
+        &[("09:00:10", "A sentence from the journal")],
+    );
+    let directory =
+        solstone_core_segment::SegmentDir::resolve(root, day, "090000_300", "default").unwrap();
+    fs::write(directory.path().join("audio.jsonl"), format!("{}\n{}\n", json!({"source":"recording"}), json!({"start":"09:00:10","speaker":2,"sentence_id":1,"text":"A sentence from the journal"}))).unwrap();
+    let target = crate::names::segment_name(root, day, "default", "090000_300").unwrap();
+    let principal = DispatchPrincipal {
+        connection: "bearer:test-agent",
+        agent_identity: "bearer:test-agent",
+    };
+    let queued = dispatch_authenticated_tool_call(root, principal, ToolName::SuggestCorrection,
+        Some(&json!({"kind":"who_said_it","target":{"reference":target,"lines":[{"time":"09:00:10","starts_with":"A sentence"}]},"value":{"speaker":"ada@work"},"basis":"owner_said","reason":"The owner identified Ada.","operation_id":"displayed-speaker"})), Utc::now()).unwrap().value;
+    assert_eq!(queued["status"], "pending", "{queued}");
+    let record = read_record(root, queued["suggestion_id"].as_str().unwrap())
+        .unwrap()
+        .unwrap();
+    let card = || super::owner::project_card(root, &record);
+    assert_eq!(card()["now_lines"][0]["speaker"], "Speaker 2");
+    assert_eq!(card()["now"], "A sentence from the journal");
+    fs::create_dir_all(directory.path().join("talents")).unwrap();
+    let labels = directory.path().join("talents/speaker_labels.json");
+    fs::write(
+        &labels,
+        json!({"labels":[{"sentence_id":1,"speaker":"bob","method":"contextual"}]}).to_string(),
+    )
+    .unwrap();
+    assert_eq!(card()["now_lines"][0]["speaker"], "Speaker 2");
+    fs::write(
+        labels,
+        json!({"labels":[{"sentence_id":1,"speaker":"bob","method":"acoustic"}]}).to_string(),
+    )
+    .unwrap();
+    assert_eq!(card()["now_lines"][0]["speaker"], "Bob");
+    set_owner_line_labels(
+        root,
+        &[OwnerLine {
+            segment_dir: directory.path().to_path_buf(),
+            source: "audio".to_owned(),
+            sentence_id: 1,
+        }],
+        &LineSpeaker::Person("ada".to_owned()),
+    )
+    .unwrap();
+    assert_eq!(card()["now_lines"][0]["speaker"], "Ada");
+}
