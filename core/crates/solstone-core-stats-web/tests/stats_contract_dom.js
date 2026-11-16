@@ -299,10 +299,20 @@ class Element extends Target {
     [...this.childNodes].forEach((n) => this.removeChild(n));
     this.append(...nodes);
   }
+  // Walked without a closure, so the matches live only on this call's stack.
+  // A closure over them is a heap context, and while the engine compiles that
+  // closure in the background it keeps it, and through `parentNode` the whole
+  // tree the matches came from: a gone view's markup then outlives the
+  // collection cases' `gc()` rounds.
   querySelectorAll(selector) {
     const out = [];
-    const walk = (el) => el.children.forEach((c) => { if (matches(c, selector)) out.push(c); walk(c); });
-    walk(this);
+    const pending = this.children.reverse();
+    while (pending.length) {
+      const el = pending.pop();
+      if (matches(el, selector)) out.push(el);
+      const kids = el.children;
+      for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
+    }
     return out;
   }
   // `:last-of-type` is modelled as the last match, which is how the view uses it.

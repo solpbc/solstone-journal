@@ -30,8 +30,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - when you use your own model endpoint, the thinking page and connection test now wait for your journal's running request instead of reporting a failure while it is busy.
-
 - recordings tagged with dominant television or music no longer add voice samples to a person. speech with light background music can still contribute samples. existing samples stay available for you to review.
 
 - on linux, after an update that stopped part-way, `solstone update --check` and the status pane now say an update is still available, and running `solstone update` again finishes it. before, they could say your journal was up to date while the solstone app was still on its older version.
@@ -39,7 +39,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a connected agent that may see entities now also finds, by name, the activities an earlier merge labelled with an internal id.
 - the speakers page no longer lists you under "known voices" when voice samples were saved to you, for example by merging another person into you. your own voice stays under "your voice".
 - new conversation could be treated as unchanged when it ran about as long as the one before it, so who said each line, and the people detected in it, weren't worked out for that stretch. any new speech now counts as a change.
-- security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
