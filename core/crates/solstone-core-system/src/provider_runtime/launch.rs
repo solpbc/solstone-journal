@@ -4377,14 +4377,17 @@ mod tests {
                     match listener.accept() {
                         Ok(pair) => break pair,
                         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                            if Instant::now() >= accept_deadline {
-                                return;
-                            }
+                            assert!(
+                                Instant::now() < accept_deadline,
+                                "warmup fixture accept timed out"
+                            );
                             thread::sleep(Duration::from_millis(5));
                         }
                         Err(error) => panic!("warmup fixture accept: {error}"),
                     }
                 };
+                // Accepted sockets inherit the listener's nonblocking mode on Windows.
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(2)))
                     .unwrap();
@@ -4392,7 +4395,15 @@ mod tests {
                     .set_write_timeout(Some(Duration::from_secs(2)))
                     .unwrap();
                 let mut request = [0; 512];
-                let _ = stream.read(&mut request);
+                let mut received = 0;
+                while !request[..received].ends_with(b"\r\n\r\n") {
+                    assert!(received < request.len(), "warmup fixture request too large");
+                    let count = stream
+                        .read(&mut request[received..])
+                        .expect("warmup fixture request read");
+                    assert_ne!(count, 0, "warmup fixture request ended before its headers");
+                    received += count;
+                }
                 if stream
                     .write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
                     .is_err()
@@ -4415,11 +4426,9 @@ mod tests {
             } else {
                 Duration::from_secs(2)
             };
-            assert_eq!(
-                warmup_props_probe_until(port, "token", Instant::now() + budget),
-                expected
-            );
+            let health = warmup_props_probe_until(port, "token", Instant::now() + budget);
             peer.join().unwrap();
+            assert_eq!(health, expected);
         }
     }
 
