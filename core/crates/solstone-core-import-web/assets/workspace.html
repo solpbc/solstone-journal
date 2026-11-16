@@ -963,12 +963,16 @@ function writeClass(el, name, on) {
 const IMPORT_KEEP = '[data-saved-start-slot]';
 const IMPORT_SKIP = '[data-zone-note]';
 // A control's busy marks are the press's, not the markup's, so a busy control
-// is kept, and stays busy, through a draw.
+// is kept, and stays busy, through a draw. A drawer the owner opened stays
+// open, as the shell's Drawer.preserveOpen keeps it on the other views.
 const IMPORT_PRESS_ATTRS = new Set(['aria-busy', 'aria-disabled']);
+function importOwnAttr(el, name) {
+  return IMPORT_PRESS_ATTRS.has(name) || (name === 'open' && el.tagName === 'DETAILS');
+}
 function importSameShell(a, b) {
   if (a.nodeType !== 1 || b.nodeType !== 1 || a.tagName !== b.tagName) return false;
-  const names = a.getAttributeNames().filter(name => !IMPORT_PRESS_ATTRS.has(name));
-  const others = b.getAttributeNames().filter(name => !IMPORT_PRESS_ATTRS.has(name));
+  const names = a.getAttributeNames().filter(name => !importOwnAttr(a, name));
+  const others = b.getAttributeNames().filter(name => !importOwnAttr(b, name));
   return names.length === others.length && names.every(name => a.getAttribute(name) === b.getAttribute(name));
 }
 // Brings `el`'s children to `next`'s, in order, and says whether it wrote
@@ -992,6 +996,11 @@ function importMorph(el, next) {
     const here = old[at];
     if (here && importSameShell(here, node)) {
       if (!here.matches(IMPORT_KEEP) && importMorph(here, node)) wrote = true;
+      // Markup that opens a drawer still opens it.
+      if (here.tagName === 'DETAILS' && node.hasAttribute('open') && !here.hasAttribute('open')) {
+        here.setAttribute('open', '');
+        wrote = true;
+      }
       at += 1;
       continue;
     }

@@ -698,7 +698,8 @@ function makePage(env, address = '/app/import/', { answers, folders = false } = 
     serverMessageFrom: (error) => error?.serverMessage || '',
   };
   window.ApiError = class ApiError extends Error {};
-  window.Drawer = { render: (options) => `<div class="drawer"><p class="drawer-line">${options.line}</p>${options.bodyHtml}</div>` };
+  // As the shell's: a disclosure, open when the import's state asks for it.
+  window.Drawer = { render: (options) => `<details class="drawer"${options.open ? ' open' : ''}><summary><p class="drawer-line">${options.line}</p></summary>${options.bodyHtml}</details>` };
   window.logError = (error, context) => { errors.push({ error, context }); };
   window.showError = (message) => { errors.push({ error: new Error(String(message)), context: 'showError' }); };
   window.ConveyModalLayer = { reconciles: 0, reconcile() { this.reconciles += 1; } };
@@ -1575,6 +1576,26 @@ module.exports = async function importContractCases(crateDir) {
     await settle();
     same(p.q('[data-import-delete]'), del, 'the delete is kept');
     same(p.doc.activeElement, del, 'and focused');
+    // A drawer the owner opened stays open through events, and they write nothing.
+    const drawer = p.q('details.drawer');
+    drawer.open = true;
+    mark = mutationMark();
+    listen(p).fn({ event: 'status', import_id: DONE });
+    await settle();
+    same(p.q('details.drawer'), drawer, 'the drawer is kept');
+    assert.ok(drawer.open, 'and stays open');
+    assert.ok(under(p, '#importDetailView', mark) === 0, `an open drawer: nothing new wrote ${mutationsSeen(p.q('#importDetailView'), mark)}`);
+    // And a state that opens it in the markup opens a kept, closed one: a
+    // running import that fails.
+    const run = { extra: { status: 'running' } };
+    const r = await bootList(`/app/import/${RUNNING}`, { [`GET /app/import/api/${RUNNING}`]: () => detailAnswer(RUNNING, run.extra) });
+    const closed = r.q('details.drawer');
+    assert.ok(closed && !closed.open, 'a running import draws its drawer closed');
+    run.extra = { status: 'failed', error: 'it stopped' };
+    listen(r).fn({ event: 'status', import_id: RUNNING });
+    await settle();
+    same(r.q('details.drawer'), closed, 'the drawer is kept');
+    assert.ok(closed.open, 'and the failure opens it, as the base drew it');
     // A saved start's slot is the flow's: a redraw of the overview leaves it.
     const saved = { timestamp: SAVED, status: 'pending', saved_start: { state: 'eligible', active: false },
       import_json: { import_id: SAVED, file_path: '/journal/imports/x/n.txt', source_timestamp: SAVED, file_size: 6, is_local_path: false, source_hint: 'chatgpt' } };
