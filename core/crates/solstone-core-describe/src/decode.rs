@@ -18,7 +18,7 @@ const INPUT_FORMATS: &str = "matroska,mov";
 /// Still images describe reads as one frame: a screenshot.
 const STILL_EXTENSIONS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
 
-fn is_still(path: &Path) -> bool {
+pub(crate) fn is_still(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| {
@@ -101,6 +101,9 @@ pub struct DescribeResult {
     /// Frames kept because their text changed under the hash threshold. A later open of
     /// the same video replays these instead of reading text again, so frame ids agree.
     pub text_changed: BTreeSet<u64>,
+    /// The first frame's id and timestamp when it matched the winnow's start reference and
+    /// was not kept: the screen was unchanged since the previous segment.
+    pub carried_frame: Option<(u64, f64)>,
 }
 
 pub fn process_video(path: &Path, config: WinnowConfig) -> DescribeResult {
@@ -611,6 +614,8 @@ fn receive_frames(
                 }
                 let hash = dhash(&frame);
                 let hashed = HashedFrame { timestamp, hash };
+                let first = result.first_hash.is_none();
+                let carried = first && state.has_reference();
                 let mut verdict = state.decide(hashed);
                 let promote = match gate.live.as_deref_mut() {
                     Some(live) => live.frame(timestamp, &frame, verdict),
@@ -620,13 +625,19 @@ fn receive_frames(
                     verdict = state.promote(hashed);
                     result.text_changed.insert(*frame_id);
                 }
-                if matches!(
+                let kept = matches!(
                     verdict,
                     WinnowVerdict::Kept | WinnowVerdict::SceneCut | WinnowVerdict::TextChanged
-                ) {
-                    if result.first_hash.is_none() {
-                        result.first_hash = Some(hash);
+                );
+                if first {
+                    // The video's own first frame, kept or not: what the next segment and
+                    // change detection compare across the boundary.
+                    result.first_hash = Some(hash);
+                    if carried && !kept {
+                        result.carried_frame = Some((*frame_id, timestamp));
                     }
+                }
+                if kept {
                     result.last_hash = Some(hash);
                     let keep_png = png.retain.is_none_or(|ids| ids.contains(frame_id));
                     result.qualified_frames.push(QualifiedFrame {
@@ -969,6 +980,7 @@ mod text_gate_tests {
                 dhash_threshold: 0,
                 scene_cut_threshold: 0,
                 min_stride_seconds: 0.,
+                start_reference: None,
             },
         );
         let expected = all
@@ -1033,6 +1045,47 @@ mod text_gate_tests {
             &|| false,
         );
         assert!(png.is_ok_and(|png| !png.is_empty()));
+    }
+
+    #[test]
+    fn a_video_carried_from_its_predecessor_drops_a_matching_first_frame_on_every_open() {
+        let video = fixture("stride_floor_vp8_screen.webm");
+        let plain = super::process_video_metadata(&video, WinnowConfig::default());
+        let first = plain.first_hash.expect("fixture has a first frame");
+        let carried = WinnowConfig {
+            start_reference: Some(first),
+            ..WinnowConfig::default()
+        };
+        let mut pull =
+            FramePull::open(&video, carried, false).unwrap_or_else(|_| panic!("fixture opens"));
+        let kept = drain(&mut pull, None);
+        let result = pull.metadata();
+        // The unchanged first frame is not kept, but stays the video's first hash.
+        assert_eq!(kept.iter().map(|(id, _)| *id).collect::<Vec<_>>(), [2]);
+        assert_eq!(result.first_hash, Some(first));
+        assert_eq!(
+            result.carried_frame,
+            Some((1, plain.qualified_frames[0].timestamp))
+        );
+        assert_eq!(result.last_hash, plain.last_hash);
+        let png = redecode_frame(
+            &video,
+            carried,
+            &BTreeSet::new(),
+            kept[0].0,
+            kept[0].1,
+            &|| false,
+        );
+        assert!(png.is_ok_and(|png| !png.is_empty()));
+
+        // A screen that changed across the boundary keeps exactly today's frames.
+        let changed = WinnowConfig {
+            start_reference: Some(!first),
+            ..WinnowConfig::default()
+        };
+        let result = super::process_video_metadata(&video, changed);
+        assert_eq!(result.carried_frame, None);
+        assert_eq!(result.qualified_frames, plain.qualified_frames);
     }
 
     const VP9_WEBM: &[u8] = &[
@@ -1155,6 +1208,7 @@ mod text_gate_tests {
                 dhash_threshold: 0,
                 scene_cut_threshold: 0,
                 min_stride_seconds: 0.0,
+                start_reference: None,
             },
         );
         assert!(!decoded.decode_failed);

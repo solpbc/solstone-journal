@@ -4309,6 +4309,141 @@ mod tests {
         assert_eq!(change["predecessor"]["segment"], "090500_300");
     }
 
+    fn write_screen(segment: &Path, row: Value) {
+        let header = serde_json::json!({
+            "raw": "center_DP-1_screen.webm",
+            "first_hash": "0000000000000000",
+            "last_hash": "0000000000000000",
+            "qualified_count": 1,
+            "_solstone_processing": {
+                "schema": "solstone.processing.v1",
+                "state": "analyzed",
+                "reason_code": "ok",
+                "handler": "describe"
+            }
+        });
+        fs::write(
+            segment.join("center_DP-1_screen.jsonl"),
+            format!("{header}\n{row}\n"),
+        )
+        .unwrap();
+    }
+
+    /// A described, silent predecessor whose Sense said the owner was working.
+    fn thought_predecessor(journal: &Path, segment: &str) {
+        let previous = segment_dir(journal, "20260813", segment);
+        write_screen(
+            &previous,
+            serde_json::json!({"frame_id": 1, "timestamp": 0, "analysis": {}}),
+        );
+        let sensors = solstone_core_system_health::detect_segment_change(
+            journal,
+            "20260813",
+            Some("default"),
+            segment,
+            &previous,
+            None,
+            "2026-08-13T00:00:00+00:00",
+        )["sensors"]
+            .clone();
+        fs::create_dir_all(previous.join("talents")).unwrap();
+        fs::write(
+            previous.join("talents/change.json"),
+            serde_json::to_vec(&serde_json::json!({"sensors": sensors})).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            previous.join("talents/sense.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "density": "active",
+                "content_type": "work",
+                "activity_summary": "Editing a report.",
+                "facets": []
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn carried_row(from: &str) -> Value {
+        serde_json::json!({
+            "frame_id": 1, "timestamp": 0, "analysis": {},
+            "carried_from": {"segment": from, "frame_id": 1}
+        })
+    }
+
+    #[test]
+    fn a_silent_segment_carried_whole_continues_its_predecessors_sense() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, _) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+        );
+        thought_predecessor(journal.path(), "090500_300");
+        let current = segment_dir(journal.path(), "20260813", "091000_300");
+        write_screen(&current, carried_row("090500_300"));
+
+        // No Sense output is staged: had the model been asked, this would fail.
+        let result = run_segment(&context, journal.path(), "091000_300", false, false);
+        assert_eq!((result.success, result.failed), (0, 0));
+        let sense =
+            serde_json::from_slice::<Value>(&fs::read(current.join("talents/sense.json")).unwrap())
+                .unwrap();
+        assert_eq!(sense["content_type"], "work");
+        assert_eq!(sense["activity_summary"], "Editing a report.");
+        assert_eq!(sense["continuation_of"], "090500_300");
+        let change = serde_json::from_slice::<Value>(
+            &fs::read(current.join("talents/change.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(change["change_class"], "redundant");
+    }
+
+    #[test]
+    fn sense_runs_when_a_screen_was_described_speech_was_heard_or_refresh_asked() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, _) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+        );
+        let fresh = serde_json::json!({"density": "active", "content_type": "browsing"});
+        // Same screen, but describe looked at it again rather than carrying it.
+        thought_predecessor(journal.path(), "090500_300");
+        let described = segment_dir(journal.path(), "20260813", "091000_300");
+        write_screen(
+            &described,
+            serde_json::json!({"frame_id": 1, "timestamp": 0, "analysis": {}}),
+        );
+        // Carried whole, but the owner spoke.
+        thought_predecessor(journal.path(), "100000_300");
+        let spoken = segment_dir(journal.path(), "20260813", "100500_300");
+        write_screen(&spoken, carried_row("100000_300"));
+        fs::write(spoken.join("imported.md"), "a few new words").unwrap();
+        // Carried whole and silent, but the owner asked for a fresh look.
+        thought_predecessor(journal.path(), "110000_300");
+        let refreshed = segment_dir(journal.path(), "20260813", "110500_300");
+        write_screen(&refreshed, carried_row("110000_300"));
+
+        for (segment, dir, refresh) in [
+            ("091000_300", &described, false),
+            ("100500_300", &spoken, false),
+            ("110500_300", &refreshed, true),
+        ] {
+            write_sense_output(&context, segment, fresh.clone());
+            let result = run_segment(&context, journal.path(), segment, refresh, false);
+            assert_eq!((result.success, result.failed), (1, 0), "{segment}");
+            let sense =
+                serde_json::from_slice::<Value>(&fs::read(dir.join("talents/sense.json")).unwrap())
+                    .unwrap();
+            assert_eq!(sense["content_type"], "browsing", "{segment}");
+            assert!(sense.get("continuation_of").is_none(), "{segment}");
+        }
+    }
+
     #[test]
     fn idle_segment_dispatches_only_sense() {
         let journal = tempdir().unwrap();

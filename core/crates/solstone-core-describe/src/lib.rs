@@ -5,6 +5,7 @@
 
 mod bound;
 mod bounding;
+mod carry;
 pub mod categories;
 mod decode;
 pub mod detect;

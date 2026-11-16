@@ -75,6 +75,23 @@ impl<'a> TextGate<'a> {
         }
     }
 
+    /// A gate whose anchor is the previous segment's last kept frame of the same screen,
+    /// already read: `occurrences` are that frame's stored lines. Nothing is known about
+    /// motion since then, so the first frame the hash drops is read and compared.
+    pub(crate) fn carried(
+        factory: &'a mut dyn OcrWorkerFactory,
+        occurrences: &[RawOccurrence],
+    ) -> Self {
+        let mut gate = Self::new(factory);
+        gate.anchor = Some(Anchor {
+            timestamp: f64::NEG_INFINITY,
+            pixels: None,
+            lines: Some(Lines::from_occurrences(occurrences)),
+        });
+        gate.moved = true;
+        gate
+    }
+
     /// Sees every decoded frame with its hash verdict. `true` keeps a below-threshold frame.
     pub(crate) fn frame(
         &mut self,
@@ -498,5 +515,31 @@ mod tests {
             comparable("Re: The Plan, v2!").as_deref(),
             Some("re the plan v2")
         );
+    }
+    #[test]
+    fn a_carried_anchor_keeps_a_first_frame_with_new_text_and_drops_the_same_text() {
+        let carried = INBOX.map(|text| RawOccurrence {
+            line_order: 0,
+            text: text.to_owned(),
+            confidence: Some(0.99),
+            geometry: Vec::new(),
+            recurrence: 0,
+        });
+        let next: Vec<&str> = INBOX.iter().chain(&NEW_ROWS).copied().collect();
+        let mut pages = Pages::new(&[&next, &INBOX]);
+        let reads = pages.clone();
+        {
+            // The first frame of the video is read at once and holds four new rows.
+            let mut gate = TextGate::carried(&mut pages, &carried);
+            assert!(gate.frame(0.0, &screen(10), BelowThreshold));
+            assert_eq!(reads.reads(), 1);
+        }
+        let mut gate = TextGate::carried(&mut pages, &carried);
+        assert!(!gate.frame(0.0, &screen(10), BelowThreshold));
+        // Nothing moved after that read, so a still screen is not read again.
+        for second in 1..600 {
+            assert!(!gate.frame(f64::from(second), &screen(10), BelowThreshold));
+        }
+        assert_eq!(reads.reads(), 2);
     }
 }

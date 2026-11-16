@@ -255,6 +255,7 @@ Example frame record:
   ```
 
 - `error` – present when processing failed after retries
+- `carried_from` – present on the first row when the screen had not changed since the previous segment. The row copies the described row's content with its own `frame_id` and `timestamp`; `{"segment": "<segment>", "frame_id": <id>}` names the segment and frame that were described, which may be further back than the previous segment, and `requests` is empty because no model was asked again.
 
 **Category-specific content (inside `content` object):**
 Each category file in `solstone/observe/categories/*.md` carries an extraction prompt; results are keyed by category name. `meeting` emits structured JSON, and other categories emit formatted markdown.

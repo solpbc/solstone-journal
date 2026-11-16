@@ -5548,6 +5548,7 @@ dependencies = [
  "solstone-core-segment",
  "solstone-core-speakers-onnx",
  "solstone-core-system",
+ "solstone-core-system-health",
  "solstone-core-transcribe",
  "toml_edit",
  "unicode-normalization",

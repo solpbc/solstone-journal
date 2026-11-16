@@ -14,7 +14,6 @@ use solstone_core_format::segment::{is_date_key, segment_parse, segment_start_an
 use solstone_core_journal_io::{DEFAULT_STREAM, PathOrDay, iter_segments};
 
 const SCREEN_DHASH_THRESHOLD: u32 = 8;
-const TRANSCRIPT_WORD_DELTA_FLOOR: usize = 5;
 const GAP_THRESHOLD_SECONDS: i64 = 600;
 
 /// Assemble current sensor state without writing any journal data.
@@ -172,7 +171,9 @@ pub(crate) fn compare_transcript(previous: &Value, current: &Value) -> Value {
     let Some((before, after)) = before.zip(after) else {
         return json!({"present": true, "changed": true});
     };
-    json!({"present": true, "changed": before != after && word_count(current).abs_diff(word_count(previous)) > TRANSCRIPT_WORD_DELTA_FLOOR})
+    // The predecessor is a different segment with different audio, so any
+    // difference in the transcript is new speech.
+    json!({"present": true, "changed": before != after})
 }
 
 pub(crate) fn classify(vectors: &Value) -> (String, Vec<String>) {
@@ -268,9 +269,6 @@ fn screen_monitors(value: &Value) -> BTreeMap<String, Value> {
                 .collect()
         })
         .unwrap_or_default()
-}
-fn word_count(value: &Value) -> usize {
-    value.get("word_count").and_then(Value::as_u64).unwrap_or(0) as usize
 }
 fn python_truthy(value: &Value) -> bool {
     match value {
@@ -569,16 +567,16 @@ mod tests {
         let eight = json!({"monitors":{"main":{"first_hash":"00000000000000ff"}}});
         assert!(!compare_screen(&prior, &seven)["changed"].as_bool().unwrap());
         assert!(compare_screen(&prior, &eight)["changed"].as_bool().unwrap());
-        let earlier = json!({"present":true,"content_hash":"a","word_count":2});
-        let five = json!({"present":true,"content_hash":"b","word_count":7});
-        let six = json!({"present":true,"content_hash":"b","word_count":8});
+        let earlier = json!({"present":true,"content_hash":"a","word_count":7});
+        let repeated = json!({"present":true,"content_hash":"a","word_count":7});
+        let new_speech_same_length = json!({"present":true,"content_hash":"b","word_count":7});
         assert!(
-            !compare_transcript(&earlier, &five)["changed"]
+            !compare_transcript(&earlier, &repeated)["changed"]
                 .as_bool()
                 .unwrap()
         );
         assert!(
-            compare_transcript(&earlier, &six)["changed"]
+            compare_transcript(&earlier, &new_speech_same_length)["changed"]
                 .as_bool()
                 .unwrap()
         );

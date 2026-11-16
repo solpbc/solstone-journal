@@ -13,6 +13,10 @@ pub struct WinnowConfig {
     pub dhash_threshold: u32,
     pub scene_cut_threshold: u32,
     pub min_stride_seconds: f64,
+    /// The hash of the same screen's last kept frame in the previous segment. The first
+    /// frame is compared with it instead of being kept outright, so a screen that has not
+    /// changed across the boundary is not described again. `None` keeps the first frame.
+    pub start_reference: Option<u64>,
 }
 
 impl Default for WinnowConfig {
@@ -21,6 +25,7 @@ impl Default for WinnowConfig {
             dhash_threshold: 8,
             scene_cut_threshold: 25,
             min_stride_seconds: 5.0,
+            start_reference: None,
         }
     }
 }
@@ -54,11 +59,23 @@ pub struct WinnowState {
 
 impl WinnowState {
     pub fn new(config: WinnowConfig) -> Self {
+        // The previous segment's frame was kept long before this video began, so the
+        // stride floor never holds back this video's first change.
+        let last_kept = config.start_reference.map(|hash| HashedFrame {
+            timestamp: f64::NEG_INFINITY,
+            hash,
+        });
         Self {
             config,
-            last_kept: None,
+            last_kept,
             counters: WinnowCounters::default(),
         }
+    }
+
+    /// Whether a later frame is compared with something: a kept frame, or the start
+    /// reference before any frame was kept.
+    pub fn has_reference(&self) -> bool {
+        self.last_kept.is_some()
     }
 
     pub fn decide(&mut self, frame: HashedFrame) -> WinnowVerdict {
@@ -128,6 +145,7 @@ mod tests {
             dhash_threshold: 3,
             scene_cut_threshold: 8,
             min_stride_seconds: 5.0,
+            start_reference: None,
         }
     }
 
@@ -286,5 +304,43 @@ mod tests {
                 WinnowVerdict::Kept
             ]
         );
+    }
+    #[test]
+    fn a_screen_unchanged_since_the_previous_segment_is_not_kept_again() {
+        let carried = WinnowConfig {
+            start_reference: Some(0),
+            ..config()
+        };
+        let frame = |timestamp, hash| HashedFrame { timestamp, hash };
+        // Two bits from the previous segment's last kept frame: nothing new to describe.
+        let (verdicts, counters) = winnow(&[frame(0.0, 0b11), frame(9.0, 0b1)], &carried);
+        assert_eq!(
+            verdicts,
+            [WinnowVerdict::BelowThreshold, WinnowVerdict::BelowThreshold]
+        );
+        assert_eq!(counters.kept, 0);
+        // A screen that changed across the boundary is kept as its first frame always was.
+        let changed = 0b1_1111_1111;
+        let (verdicts, _) = winnow(&[frame(0.0, changed), frame(1.0, changed)], &carried);
+        assert_eq!(
+            verdicts,
+            [WinnowVerdict::SceneCut, WinnowVerdict::BelowThreshold]
+        );
+    }
+
+    #[test]
+    fn the_stride_floor_does_not_reach_back_into_the_previous_segment() {
+        let carried = WinnowConfig {
+            start_reference: Some(0),
+            ..config()
+        };
+        let frame = HashedFrame {
+            timestamp: 0.0,
+            hash: 0b111,
+        };
+        let mut state = WinnowState::new(carried);
+        assert!(state.has_reference());
+        assert_eq!(state.decide(frame), WinnowVerdict::Kept);
+        assert_eq!(state.counters().stride_dropped, 0);
     }
 }
