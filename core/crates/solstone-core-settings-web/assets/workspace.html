@@ -1,4 +1,5 @@
 <!-- first-read: /app/settings/ -> /app/settings/api/state -->
+<!-- view-contract -->
 <style>
 /* Settings app - vertical nav layout */
 .settings-wrap {
@@ -2601,7 +2602,7 @@ button:focus:not(:focus-visible) {
 
       <form class="settings-form" onsubmit="return false;">
       <div style="margin-bottom: 1em;">
-        <button type="button" id="revalidateAllKeys" class="btn-secondary" onclick="revalidateAllKeys()">re-validate all keys</button>
+        <button type="button" id="revalidateAllKeys" class="btn-secondary">re-validate all keys</button>
         <span id="revalidateStatus" style="margin-left: 0.5em; font-size: 0.85em;"></span>
       </div>
       <div class="settings-field">
@@ -3417,7 +3418,340 @@ button:focus:not(:focus-visible) {
 </div>
 
 <script>
-  const reportSettingsReady = window.createViewReady('settings');
+// Settings on the view contract. The script only registers the view: the
+// sections (/app/settings/, a section by its hash) and a facet's page
+// (/app/settings/facets/<slug>) draw when it is mounted, and whatever either
+// adds outside its markup goes through `ctx` and goes with it. The two pages
+// are two addresses of the one view, so a move between them is the router's
+// and mounts settings again; a move between sections is the view's, by hash.
+(() => {
+  window.SolViews.register('settings', { mount: mountSettings });
+
+  // ========== FACET RECEIPT ==========
+  // A facet delete's receipt can stay up after settings has gone, and its
+  // buttons can be pressed from another view. They are built here, from plain
+  // values and the copy, so a receipt never keeps a mount. While settings'
+  // index is showing, they go through it: its list reloads after a recover,
+  // and "open trash" is its own section switch.
+  let settingsListHooks = null;
+
+const FACET_DELETE_COPY = {
+  noun: 'facet',
+  button: 'delete this facet',
+  last: "your journal needs at least one facet that isn't muted. to delete this one, unmute or add another facet first.",
+  move: {
+    title: 'delete this facet?',
+    reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
+    lead: 'this moves everything in the facet:',
+    stays: 'segments sorted into it, and the entities attached to it, stay in your journal. summaries elsewhere in your journal stay where they are and may still mention it.',
+    newName: 'a new facet you give this name will hold those segments.',
+  },
+  erase: {
+    title: 'erase this facet now?',
+    reach: "it leaves your journal now and can't be recovered.",
+    lead: 'this erases everything in the facet:',
+    stays: "segments sorted into it, and the entities attached to it, stay in your journal. summaries elsewhere in your journal aren't erased and may still mention it.",
+    newName: 'a new facet you give this name will hold those segments.',
+  },
+  list: [
+    'its settings and the activities it looks for',
+    'the activities it found, and what was written about them',
+    'the notes it keeps about its entities',
+    'its activity log',
+  ],
+  recovering: "if you recover it, what came into your journal while it was in the trash isn't sorted into it, and a segment it shared with another facet may not come back to it.",
+  buttons: {
+    eraseNow: 'erase now',
+    cancel: 'cancel',
+    moveToTrash: 'move to trash',
+    back: 'back',
+    recover: 'recover',
+    openTrash: 'open trash',
+  },
+  // What a refused one says, keyed by the journal's reason.
+  refused: {
+    busy: 'something else is changing it right now. try again in a minute.',
+    gone: "it's no longer in your journal.",
+    last_facet: "your journal needs at least one facet that isn't muted.",
+  },
+  receipt: {
+    moved: { title: 'moved to the trash', message: 'erases {date} unless you recover it.' },
+    recovered: { title: '{noun} recovered', message: "it's back in your journal." },
+    erased: { title: '{noun} erased from your journal' },
+    recoverFailed: { title: "couldn't recover that {noun}", message: "it's still in the trash. you can try again from there." },
+    moveRefused: { title: "couldn't move that to the trash", message: "it's still in your journal." },
+    eraseRefused: { title: "couldn't erase that {noun}", message: "it's still in your journal." },
+    eraseFailed: { title: "couldn't erase that {noun}", message: "it's in the trash. you can try again from there." },
+    noAnswerMove: { title: "your journal didn't answer", message: 'it may already be in the trash. reload to check.' },
+    noAnswerErase: { title: "your journal didn't answer", message: 'it may already be erased. reload to check.' },
+    noAnswerRecover: { title: "your journal didn't answer", message: 'it may already be back in your journal. reload to check.' },
+  },
+};
+
+const FACET_RECEIPT_LIFE = 10000;
+
+function facetDeleteFill(template, values = {}) {
+  return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
+}
+
+// The erase date on the journal's own clock, worded as the trash page words it.
+function facetEraseDate(eraseAt) {
+  const instant = new Date(eraseAt);
+  if (!eraseAt || Number.isNaN(instant.getTime()) || !window.JournalClock) return '';
+  return window.JournalFormat.day(window.JournalClock.dayKey(instant)).toLowerCase();
+}
+
+  function settingsOpenTrash() {
+    if (settingsListHooks) {
+      settingsListHooks.openSection('trash');
+      return;
+    }
+    if (!window.solRouter?.navigate?.('/app/settings/#trash')) window.location.href = '/app/settings#trash';
+  }
+
+function facetReceipt(copy, fill = {}, buttons = [], options = {}) {
+  if (!window.AppServices || !window.AppServices.notifications) return;
+  const put = text => facetDeleteFill(text, { noun: FACET_DELETE_COPY.noun, ...fill });
+  const notice = {
+    app: 'settings',
+    icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
+    title: put(copy.title),
+    dismissible: true,
+    buttons,
+  };
+  const message = options.message !== undefined ? options.message : copy.message && put(copy.message);
+  if (message) notice.message = message;
+  // A refused or failed card stays until the owner dismisses it.
+  if (options.settled) notice.autoDismiss = FACET_RECEIPT_LIFE;
+  window.AppServices.notifications.show(notice);
+}
+
+function facetOpenTrashButton() {
+  return {
+    label: FACET_DELETE_COPY.buttons.openTrash,
+    onClick: settingsOpenTrash,
+  };
+}
+
+function showFacetReceipt(outcome, erase, clause = '') {
+  const R = FACET_DELETE_COPY.receipt;
+  switch (outcome.kind) {
+    case 'moved': {
+      const date = facetEraseDate(outcome.eraseAt);
+      facetReceipt(R.moved, { date }, [
+        { label: FACET_DELETE_COPY.buttons.recover, onClick: () => recoverFacet(outcome.trashId) },
+        facetOpenTrashButton(),
+      ], { settled: true, message: date ? undefined : '' });
+      return;
+    }
+    case 'erased':
+      facetReceipt(R.erased, {}, [], clause ? { settled: true, message: clause } : { settled: true });
+      return;
+    case 'eraseFailed':
+      facetReceipt(R.eraseFailed, {}, [facetOpenTrashButton()]);
+      return;
+    case 'refused': {
+      const fallback = erase ? R.eraseRefused : R.moveRefused;
+      facetReceipt({ title: fallback.title, message: FACET_DELETE_COPY.refused[outcome.reason] || fallback.message });
+      return;
+    }
+    default:
+      facetReceipt(erase ? R.noAnswerErase : R.noAnswerMove);
+  }
+}
+
+// The receipt's recover is the trash page's recover; the facet list reloads.
+async function recoverFacet(trashId) {
+  const R = FACET_DELETE_COPY.receipt;
+  if (!trashId) return;
+  let response;
+  try {
+    response = await fetch('/app/settings/api/trash/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [trashId] }),
+    });
+  } catch (_) {
+    facetReceipt(R.noAnswerRecover);
+    return;
+  }
+  const data = response.ok ? await response.json().catch(() => null) : null;
+  if (response.ok && !data) {
+    facetReceipt(R.noAnswerRecover);
+    return;
+  }
+  if (settingsListHooks) await settingsListHooks.reloadFacets();
+  if (Array.isArray(data && data.done) && data.done.includes(trashId)) {
+    facetReceipt(R.recovered, {}, [], { settled: true, icon: 'undo-2' });
+  } else {
+    facetReceipt(R.recoverFailed, {}, [facetOpenTrashButton()]);
+  }
+}
+  // ========== END FACET RECEIPT ==========
+
+  function mountSettings(ctx) {
+// What the mount reads and writes through. Everything below runs per mount,
+// in its own scope.
+const settingsPage = window.document;
+const settingsNodes = Array.from(settingsPage.getElementById('main-content')?.children || []);
+// Lookups read the page while settings is up, and its own markup once it has
+// gone, so a late answer never reaches the next view. A plain object, so a
+// member nothing listed here would read is undefined, and a listener has to
+// go through `ctx.on` with `window.document`.
+const document = Object.freeze({
+  getElementById: id => (ctx.disposed ? settingsGoneOne(`[id="${String(id).replace(/["\\]/g, '\\$&')}"]`) : settingsPage.getElementById(id)),
+  querySelector: selector => (ctx.disposed ? settingsGoneOne(selector) : settingsPage.querySelector(selector)),
+  querySelectorAll: selector => (ctx.disposed ? settingsGoneAll(selector) : settingsPage.querySelectorAll(selector)),
+  get activeElement() { return settingsPage.activeElement; },
+  get body() { return settingsPage.body; },
+  get visibilityState() { return settingsPage.visibilityState; },
+  contains: node => settingsPage.contains(node),
+  createElement: tag => settingsPage.createElement(tag),
+  createTextNode: text => settingsPage.createTextNode(text),
+});
+function settingsGoneAll(selector) {
+  const found = [];
+  settingsNodes.forEach(node => {
+    if (node.nodeType !== 1) return;
+    if (node.matches(selector)) found.push(node);
+    found.push(...node.querySelectorAll(selector));
+  });
+  return found;
+}
+function settingsGoneOne(selector) {
+  return settingsGoneAll(selector)[0] || null;
+}
+
+// Every timer is the mount's, and goes with it. A frame asked for while
+// settings was up does nothing once it has gone.
+const setTimeout = (fn, ms) => ctx.setTimeout(fn, ms);
+const clearTimeout = id => ctx.clearTimeout(id);
+const requestAnimationFrame = fn => window.requestAnimationFrame(() => {
+  if (!ctx.disposed) fn();
+});
+
+// The index's address. A full load of /app/settings is answered by a redirect
+// to it that keeps the hash; in the page there is none, so the view takes it.
+const SETTINGS_PATH = '/app/settings/';
+if (ctx.route.pathname === '/app/settings') {
+  ctx.history.replace(`${SETTINGS_PATH}${window.location.search}${window.location.hash}`);
+}
+
+// Reads are the store's: aborted when settings goes, and never answered after.
+// A write goes out uncut, as it would on a page that is leaving, but none
+// starts once settings has gone, and its answer is handled only while settings
+// is up: after that it resolves to a promise that never settles, so nothing
+// draws, moves or says anything.
+function settingsIsWrite(init) {
+  return String(init?.method || 'GET').toUpperCase() !== 'GET' || !!init?.body;
+}
+function settingsWrite(send) {
+  if (ctx.disposed) return window.SolStore.never();
+  return send().then(
+    value => (ctx.disposed ? window.SolStore.never() : value),
+    error => (ctx.disposed ? window.SolStore.never() : Promise.reject(error)),
+  );
+}
+function settingsApi(url, opts) {
+  return settingsIsWrite(opts) ? settingsWrite(() => window.apiJson(url, opts)) : ctx.read(url, opts);
+}
+function settingsFetch(input, init) {
+  return settingsIsWrite(init) ? settingsWrite(() => window.fetch(input, init)) : ctx.fetch(input, init);
+}
+
+// A move settings makes itself: in the page where the router takes it.
+function settingsGo(url, how) {
+  if (ctx.disposed) return;
+  if (window.solRouter?.navigate?.(url)) return;
+  if (how === 'assign') window.location.assign(url);
+  else window.location.href = url;
+}
+
+// Ready once per mount, whichever page and however many tries.
+let settingsReported = false;
+function reportSettingsReady(state) {
+  if (settingsReported) return;
+  settingsReported = true;
+  ctx.ready(state);
+}
+
+// A field's save waits half a second after its change. The owner who changed
+// it and then left meant it, so leaving sends it now.
+const pendingSaves = new Map();
+function pendingSave(key, run) {
+  let ran = false;
+  const once = () => {
+    if (ran) return undefined;
+    ran = true;
+    if (pendingSaves.get(key) === once) pendingSaves.delete(key);
+    return run();
+  };
+  pendingSaves.set(key, once);
+  return once;
+}
+
+// Every dialog settings opens, closed without putting focus back: by a back
+// between settings' own entries, and when settings goes.
+const SETTINGS_MODALS = ['ownerVoiceConsentModal', 'facesClearModal', 'customActivityModal', 'iconPickerModal', 'colorPickerModal', 'cleanupModal', 'trashConfirmModal', 'cleanupLogsModal', 'facetCreateModal'];
+function closeSettingsDialogs() {
+  let closed = false;
+  SETTINGS_MODALS.forEach(id => {
+    const modal = document.getElementById(id);
+    if (modal && modal.style.display && modal.style.display !== 'none') {
+      modal.style.display = 'none';
+      closed = true;
+    }
+  });
+  trashConfirmed = null;
+  if (facetDialog) {
+    closeFacetDeleteDialog(false);
+    closed = true;
+  }
+  if (closed) window.ConveyModalLayer?.reconcile?.({ restore: false });
+}
+
+// After a back or forward between sections, focus that was in the section the
+// entry left goes to the shown section's own place: its tab, the narrow
+// layout's select, or its heading. Focus still on something shown stays.
+function settingsShown(node) {
+  if (!node || !node.isConnected || node === settingsPage.body || node.closest('[hidden]')) return false;
+  return typeof node.getClientRects !== 'function' || node.getClientRects().length > 0;
+}
+function settingsSectionFocus(focused) {
+  if (settingsShown(focused) && settingsPage.activeElement === focused) return;
+  const section = document.querySelector('.settings-section.active');
+  const name = section ? section.id.replace(/^section-/, '') : '';
+  const place = [document.getElementById(`tab-${name}`), document.getElementById('navSelect'), section && section.querySelector('h2, h3')]
+    .find(settingsShown);
+  if (!place) return;
+  if (place.matches('h2, h3') && !place.hasAttribute('tabindex')) place.setAttribute('tabindex', '-1');
+  place.focus({ preventScroll: true });
+}
+
+let settingsDisposed = false;
+function disposeSettings() {
+  if (settingsDisposed) return;
+  settingsDisposed = true;
+  if (settingsListHooks && settingsListHooks.mount === ctx) settingsListHooks = null;
+  // A mount that threw can come here before the state below was declared.
+  try {
+    // Sent while settings is still up, so the write goes out; its answer
+    // comes after, and is dropped.
+    saveTimeouts.forEach(id => clearTimeout(id));
+    saveTimeouts.clear();
+    Array.from(pendingSaves.values()).forEach(run => run());
+    pendingSaves.clear();
+  } catch (error) {
+    if (!(error instanceof ReferenceError)) throw error;
+  }
+  try {
+    closeSettingsDialogs();
+  } catch (error) {
+    if (!(error instanceof ReferenceError)) throw error;
+  }
+}
+// A mount that throws part-way runs it too.
+ctx.onDispose(disposeSettings);
 
 let INSTALL_COPY = {};
 const IN_FLIGHT_INSTALL_STATES = ['resolving', 'downloading', 'verifying', 'installing'];
@@ -3559,7 +3893,7 @@ async function loadAbout() {
     const retry = document.getElementById('settingsAboutRetry');
     retry.hidden = true;
     try {
-      const facts = await window.apiJson('/api/system/about');
+      const facts = await settingsApi('/api/system/about');
       if (typeof facts.about !== "string" || !facts.about) throw new Error("invalid about response");
       settingsAbout = facts.about;
       block.textContent = settingsAbout;
@@ -3576,7 +3910,7 @@ async function loadAbout() {
     const deviceRetry = document.getElementById('settingsAboutDevicesRetry');
     deviceRetry.hidden = true;
     try {
-      const response = await window.apiJson('/app/network/api/clients');
+      const response = await settingsApi('/app/network/api/clients');
       if (!Array.isArray(response.clients)) throw new Error('invalid clients response');
       devices.replaceChildren();
       deviceFeedback.textContent = response.clients.length ? '' : 'no paired devices.';
@@ -3615,7 +3949,7 @@ document.getElementById('settingsAboutDevicesRetry').addEventListener('click', l
 function switchSection(sectionId, updateHash = true, loadSection = true, replaceHash = false) {
   if (sectionId === 'support') {
     if (replaceHash) window.location.replace('/app/support/');
-    else window.location.assign('/app/support/');
+    else settingsGo('/app/support/', 'assign');
     return;
   }
   // Validate section exists
@@ -3657,8 +3991,8 @@ function switchSection(sectionId, updateHash = true, loadSection = true, replace
       // replaceHash rewrites the address instead of adding a history entry,
       // so a corrected address is not a new place Back has to step through
       // (F-19).
-      if (replaceHash) history.replaceState(null, '', nextHash);
-      else history.pushState(null, '', nextHash);
+      if (replaceHash) ctx.history.replace(`${SETTINGS_PATH}${window.location.search}${nextHash}`);
+      else ctx.history.push(`${SETTINGS_PATH}${window.location.search}${nextHash}`);
     }
   }
 
@@ -3669,7 +4003,7 @@ async function loadFacetsList() {
   const container = document.getElementById('facetsList');
   if (!container) return;
   try {
-    const response = await fetch('/app/settings/api/facets?all=true');
+    const response = await settingsFetch('/app/settings/api/facets?all=true');
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || 'failed to load facets');
     renderFacetsList(data.facets || []);
@@ -3799,7 +4133,7 @@ function setupFacetCreateModal() {
     }
     submit.disabled = true;
     try {
-      const response = await fetch('/app/settings/api/facet', {
+      const response = await settingsFetch('/app/settings/api/facet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, color: facetCreateColor })
@@ -3809,7 +4143,7 @@ function setupFacetCreateModal() {
         throw new Error(result.error || 'failed to add facet');
       }
       modal._closeAccessible();
-      window.location.href = `/app/settings/facets/${encodeURIComponent(result.facet)}`;
+      settingsGo(`/app/settings/facets/${encodeURIComponent(result.facet)}`);
     } catch (err) {
       notifyError('creation failed', err.message);
     } finally {
@@ -3906,14 +4240,19 @@ function initFromHash() {
   }
 }
 
-window.addEventListener('hashchange', () => {
+ctx.on(window, 'hashchange', () => {
   const raw = window.location.hash.slice(1);
   if (redirectRetiredSection(raw)) return;
+  // A back or forward between settings' own entries leaves no dialog open
+  // over the section it shows.
+  closeSettingsDialogs(false);
+  const focused = document.activeElement;
   if (raw && VALID_SECTIONS.includes(raw)) {
     switchSection(raw, false, true, true);
   } else if (!raw) {
     switchSection('guide', false);
   }
+  settingsSectionFocus(focused);
 });
 
 // ========== CONFIG LOADING ==========
@@ -3922,7 +4261,7 @@ async function loadConfig() {
     // Load transcribe backends first (populates select options)
     await loadTranscribeBackends();
 
-    const journalConfig = await window.apiJson('api/config');
+    const journalConfig = await settingsApi('/app/settings/api/config');
     configData = journalConfig;
     populateFields(configData);
     ownerVoice.stored = configData?.transcribe?.owner_voice_only === true;
@@ -4071,7 +4410,7 @@ async function revalidateAllKeys() {
   status.textContent = 'validating…';
   status.className = 'key-status-validating';
   try {
-    const response = await fetch('api/validate-keys', { method: 'POST' });
+    const response = await settingsFetch('/app/settings/api/validate-keys', { method: 'POST' });
     const result = await response.json();
     if (result.error) throw new Error(result.detail || result.error);
     keyValidationData = result.key_validation || {};
@@ -4107,7 +4446,7 @@ function applySavedConfigResult(result, runtimeEnv) {
 }
 
 async function saveConfigValue(section, key, value) {
-  const result = await window.apiJson('api/config', {
+  const result = await settingsApi('/app/settings/api/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ section, data: { [key]: value } })
@@ -4174,7 +4513,7 @@ function handleFieldChange(el) {
 function saveField(el, section, key, value) {
   const timeoutKey = el?.id || `${section}:${key}`;
   clearTimeout(saveTimeouts.get(timeoutKey));
-  saveTimeouts.set(timeoutKey, setTimeout(async () => {
+  saveTimeouts.set(timeoutKey, setTimeout(pendingSave(timeoutKey, async () => {
     saveTimeouts.delete(timeoutKey);
     const runtimeEnv = configData?.runtime_env || {};
 
@@ -4229,7 +4568,7 @@ function saveField(el, section, key, value) {
     } catch (_) {
       // intentionally empty — see comment above
     }
-  }, 500));
+  }), 500));
 }
 
 // Store original helper text and timeout per field
@@ -4308,7 +4647,7 @@ function hydrateFacetDetail(facet) {
   facetDetailSlugState = facet.facet || facet.name || facetDetailSlugState;
   facetConfig = facet.config || {};
   facetDetailTabLoaded = new Set();
-  window.SettingsRender.renderFacetDetailPage(document, {
+  if (!ctx.disposed) window.SettingsRender.renderFacetDetailPage(settingsPage, {
     facet: facetDetailSlugState,
     config: facetConfig
   });
@@ -4319,7 +4658,7 @@ function hydrateFacetDetail(facet) {
 }
 
 function refreshFacetDetailHeader() {
-  window.SettingsRender.renderFacetDetailPage(document, {
+  if (!ctx.disposed) window.SettingsRender.renderFacetDetailPage(settingsPage, {
     facet: facetDetailSlugState,
     config: facetConfig || {}
   });
@@ -4467,7 +4806,7 @@ async function loadIconDisplaySvg(iconName) {
   }
 
   try {
-    const response = await fetch(`/app/settings/api/icons?q=${encodeURIComponent(iconName)}&limit=80`);
+    const response = await settingsFetch(`/app/settings/api/icons?q=${encodeURIComponent(iconName)}&limit=80`);
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || 'icon lookup failed');
     const match = (data.icons || []).find(icon => icon.name === iconName);
@@ -4581,7 +4920,7 @@ function setupIconPicker() {
     const requestId = ++searchRequestId;
     showIconMessage('loading icons…');
     try {
-      const response = await fetch(`/app/settings/api/icons?q=${encodeURIComponent(query)}`);
+      const response = await settingsFetch(`/app/settings/api/icons?q=${encodeURIComponent(query)}`);
       const data = await response.json();
       if (requestId !== searchRequestId) return;
       if (!response.ok || data.error) throw new Error(data.error || 'icon search failed');
@@ -4775,7 +5114,7 @@ async function saveFacetField(field, value, triggerEl) {
   }
 
   try {
-    const response = await fetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}`, {
+    const response = await settingsFetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [field]: value })
@@ -4803,84 +5142,20 @@ async function saveFacetField(field, value, triggerEl) {
 // Deleting a facet from its own page. The dialog, its erase step and the
 // receipts are the trash's own, as the transcripts and import pages have
 // them; what moves is everything in the facet's folder.
-const FACET_DELETE_COPY = {
-  noun: 'facet',
-  button: 'delete this facet',
-  last: "your journal needs at least one facet that isn't muted. to delete this one, unmute or add another facet first.",
-  move: {
-    title: 'delete this facet?',
-    reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
-    lead: 'this moves everything in the facet:',
-    stays: 'segments sorted into it, and the entities attached to it, stay in your journal. summaries elsewhere in your journal stay where they are and may still mention it.',
-    newName: 'a new facet you give this name will hold those segments.',
-  },
-  erase: {
-    title: 'erase this facet now?',
-    reach: "it leaves your journal now and can't be recovered.",
-    lead: 'this erases everything in the facet:',
-    stays: "segments sorted into it, and the entities attached to it, stay in your journal. summaries elsewhere in your journal aren't erased and may still mention it.",
-    newName: 'a new facet you give this name will hold those segments.',
-  },
-  list: [
-    'its settings and the activities it looks for',
-    'the activities it found, and what was written about them',
-    'the notes it keeps about its entities',
-    'its activity log',
-  ],
-  recovering: "if you recover it, what came into your journal while it was in the trash isn't sorted into it, and a segment it shared with another facet may not come back to it.",
-  buttons: {
-    eraseNow: 'erase now',
-    cancel: 'cancel',
-    moveToTrash: 'move to trash',
-    back: 'back',
-    recover: 'recover',
-    openTrash: 'open trash',
-  },
-  // What a refused one says, keyed by the journal's reason.
-  refused: {
-    busy: 'something else is changing it right now. try again in a minute.',
-    gone: "it's no longer in your journal.",
-    last_facet: "your journal needs at least one facet that isn't muted.",
-  },
-  receipt: {
-    moved: { title: 'moved to the trash', message: 'erases {date} unless you recover it.' },
-    recovered: { title: '{noun} recovered', message: "it's back in your journal." },
-    erased: { title: '{noun} erased from your journal' },
-    recoverFailed: { title: "couldn't recover that {noun}", message: "it's still in the trash. you can try again from there." },
-    moveRefused: { title: "couldn't move that to the trash", message: "it's still in your journal." },
-    eraseRefused: { title: "couldn't erase that {noun}", message: "it's still in your journal." },
-    eraseFailed: { title: "couldn't erase that {noun}", message: "it's in the trash. you can try again from there." },
-    noAnswerMove: { title: "your journal didn't answer", message: 'it may already be in the trash. reload to check.' },
-    noAnswerErase: { title: "your journal didn't answer", message: 'it may already be erased. reload to check.' },
-    noAnswerRecover: { title: "your journal didn't answer", message: 'it may already be back in your journal. reload to check.' },
-  },
-};
 const FACET_DELETE_REASONS = new Set(['last_facet', 'busy', 'gone']);
 const FACET_RECEIPT_KEY = 'journal-facet-delete-receipt';
-const FACET_RECEIPT_LIFE = 10000;
-const FACET_LIST_PAGE = '/app/settings#facets';
+const FACET_LIST_PAGE = '/app/settings/#facets';
 // Every facet, muted or not, as the facet page last read them; null until read
 // or when the read failed.
 let facetDeleteRoster = null;
 // The open dialog: what it deletes, its step, and where focus goes back to.
 let facetDialog = null;
 
-function facetDeleteFill(template, values = {}) {
-  return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
-}
-
 function facetDeleteEl(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text != null) node.textContent = text;
   return node;
-}
-
-// The erase date on the journal's own clock, worded as the trash page words it.
-function facetEraseDate(eraseAt) {
-  const instant = new Date(eraseAt);
-  if (!eraseAt || Number.isNaN(instant.getTime()) || !window.JournalClock) return '';
-  return window.JournalFormat.day(window.JournalClock.dayKey(instant)).toLowerCase();
 }
 
 // Whether this facet is the last one that isn't muted: the journal refuses
@@ -4908,7 +5183,7 @@ function renderFacetDeleteFoot() {
 // A failed read leaves the button: the journal still refuses the last one.
 async function loadFacetDeleteFoot() {
   try {
-    const response = await fetch('/app/settings/api/facets?all=true');
+    const response = await settingsFetch('/app/settings/api/facets?all=true');
     const data = await response.json();
     facetDeleteRoster = response.ok && Array.isArray(data && data.facets) ? data.facets : null;
   } catch (_) {
@@ -5025,7 +5300,7 @@ function wireFacetDeleteDialog(nodes) {
   nodes.modal.addEventListener('click', event => {
     if (event.target === nodes.modal) closeFacetDeleteDialog();
   });
-  document.addEventListener('keydown', event => {
+  ctx.on(window.document, 'keydown', event => {
     if (event.key === 'Escape' && facetDialog) {
       event.preventDefault();
       closeFacetDeleteDialog();
@@ -5063,7 +5338,7 @@ function closeFacetDeleteDialog(restoreFocus = true) {
 async function deleteOneFacet(slug, erase) {
   let response;
   try {
-    response = await fetch(`/app/settings/api/facet/${encodeURIComponent(slug)}`, {
+    response = await settingsFetch(`/app/settings/api/facet/${encodeURIComponent(slug)}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(erase ? { consent: true, erase: true, backups: facetEraseBackups.chosen } : { consent: true }),
@@ -5082,57 +5357,6 @@ async function deleteOneFacet(slug, erase) {
   return { kind: 'moved', trashId: data.trash && data.trash.id, eraseAt: data.trash && data.trash.erase_at };
 }
 
-function facetReceipt(copy, fill = {}, buttons = [], options = {}) {
-  if (!window.AppServices || !window.AppServices.notifications) return;
-  const put = text => facetDeleteFill(text, { noun: FACET_DELETE_COPY.noun, ...fill });
-  const notice = {
-    app: 'settings',
-    icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
-    title: put(copy.title),
-    dismissible: true,
-    buttons,
-  };
-  const message = options.message !== undefined ? options.message : copy.message && put(copy.message);
-  if (message) notice.message = message;
-  // A refused or failed card stays until the owner dismisses it.
-  if (options.settled) notice.autoDismiss = FACET_RECEIPT_LIFE;
-  window.AppServices.notifications.show(notice);
-}
-
-function facetOpenTrashButton() {
-  return {
-    label: FACET_DELETE_COPY.buttons.openTrash,
-    onClick: () => { window.location.href = '/app/settings#trash'; },
-  };
-}
-
-function showFacetReceipt(outcome, erase) {
-  const R = FACET_DELETE_COPY.receipt;
-  switch (outcome.kind) {
-    case 'moved': {
-      const date = facetEraseDate(outcome.eraseAt);
-      facetReceipt(R.moved, { date }, [
-        { label: FACET_DELETE_COPY.buttons.recover, onClick: () => recoverFacet(outcome.trashId) },
-        facetOpenTrashButton(),
-      ], { settled: true, message: date ? undefined : '' });
-      return;
-    }
-    case 'erased':
-      facetReceipt(R.erased, {}, [], facetEraseBackups.clause ? { settled: true, message: facetEraseBackups.clause } : { settled: true });
-      return;
-    case 'eraseFailed':
-      facetReceipt(R.eraseFailed, {}, [facetOpenTrashButton()]);
-      return;
-    case 'refused': {
-      const fallback = erase ? R.eraseRefused : R.moveRefused;
-      facetReceipt({ title: fallback.title, message: FACET_DELETE_COPY.refused[outcome.reason] || fallback.message });
-      return;
-    }
-    default:
-      facetReceipt(erase ? R.noAnswerErase : R.noAnswerMove);
-  }
-}
-
 // After a move or an erase the page goes to the facet list, which reloads and
 // shows the receipt; a refusal stays on the facet's page with its card.
 async function runFacetDelete(slug, erase) {
@@ -5141,10 +5365,10 @@ async function runFacetDelete(slug, erase) {
     try {
       window.sessionStorage.setItem(FACET_RECEIPT_KEY, JSON.stringify({ at: Date.now(), erase, outcome }));
     } catch (_) { /* the receipt is a courtesy; the list still reloads */ }
-    window.location.href = FACET_LIST_PAGE;
+    settingsGo(FACET_LIST_PAGE);
     return outcome;
   }
-  showFacetReceipt(outcome, erase);
+  showFacetReceipt(outcome, erase, facetEraseBackups.clause);
   return outcome;
 }
 
@@ -5160,33 +5384,6 @@ function showStashedFacetReceipt() {
   showFacetReceipt(stashed.outcome, stashed.erase === true);
 }
 
-// The receipt's recover is the trash page's recover; the facet list reloads.
-async function recoverFacet(trashId) {
-  const R = FACET_DELETE_COPY.receipt;
-  if (!trashId) return;
-  let response;
-  try {
-    response = await fetch('/app/settings/api/trash/recover', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: [trashId] }),
-    });
-  } catch (_) {
-    facetReceipt(R.noAnswerRecover);
-    return;
-  }
-  const data = response.ok ? await response.json().catch(() => null) : null;
-  if (response.ok && !data) {
-    facetReceipt(R.noAnswerRecover);
-    return;
-  }
-  await loadFacetsList();
-  if (Array.isArray(data && data.done) && data.done.includes(trashId)) {
-    facetReceipt(R.recovered, {}, [], { settled: true, icon: 'undo-2' });
-  } else {
-    facetReceipt(R.recoverFailed, {}, [facetOpenTrashButton()]);
-  }
-}
 // ========== END FACET DELETE ==========
 
 // ========== ACTIVITY LOG ==========
@@ -5195,7 +5392,7 @@ function loadLogs(facetName, cursor = null) {
     ? `/app/settings/api/facet/${facetName}/logs?cursor=${cursor}`
     : `/app/settings/api/facet/${facetName}/logs`;
 
-  fetch(url)
+  settingsFetch(url)
     .then(r => r.json())
     .then(data => {
       renderLogDay(data, !cursor);
@@ -5393,7 +5590,7 @@ async function saveTranscribeProcessing(value) {
   transcribeProcessing.busy = true;
   renderTranscribeProcessing();
   try {
-    const response = await fetch('api/config', {
+    const response = await settingsFetch('/app/settings/api/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ section: 'transcribe', data: { backend, confidential_audio: value === 'confidential' } }),
@@ -5410,7 +5607,7 @@ async function saveTranscribeProcessing(value) {
   } catch (err) {
     // An interrupted response can follow a successful write. Read the stored choice.
     try {
-      const stored = await window.apiJson('api/config');
+      const stored = await settingsApi('/app/settings/api/config');
       configData = stored;
       readTranscribeProcessing(stored);
     } catch (readError) {
@@ -5498,7 +5695,7 @@ function renderTranscribeResourceNotice(resource) {
 
 async function loadTranscribeBackends() {
   try {
-    const data = await window.apiJson('api/transcribe');
+    const data = await settingsApi('/app/settings/api/transcribe');
     transcribeBackends = data.backends || [];
     transcribeApiKeys = data.api_keys || {};
     transcribeRuntimeLabel = data.runtime_label || 'unsupported';
@@ -5589,7 +5786,7 @@ document.getElementById('field-transcribe-backend').addEventListener('change', a
   switchTranscribeBackend(backend, configData);
 
   try {
-    const response = await fetch('api/config', {
+    const response = await settingsFetch('/app/settings/api/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ section: 'transcribe', data: { backend } })
@@ -5664,7 +5861,7 @@ function renderOwnerVoice() {
 
 async function loadOwnerVoiceStatus() {
   try {
-    const data = await window.apiJson('api/transcribe/owner-voice');
+    const data = await settingsApi('/app/settings/api/transcribe/owner-voice');
     ownerVoice.available = data.available === true;
     ownerVoice.today = data.today || null;
     ownerVoice.pending = Number(data.pending_deletions || 0);
@@ -5685,7 +5882,7 @@ async function saveOwnerVoice(value) {
   try {
     const body = { section: 'transcribe', data: { owner_voice_only: value } };
     if (value) body.owner_voice_consent = true;
-    const response = await fetch('api/config', {
+    const response = await settingsFetch('/app/settings/api/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -5699,7 +5896,7 @@ async function saveOwnerVoice(value) {
   } catch (err) {
     // A write can land and still report an error: show what is stored, never a guess.
     try {
-      const stored = await window.apiJson('api/config');
+      const stored = await settingsApi('/app/settings/api/config');
       configData = stored;
       ownerVoice.stored = stored?.transcribe?.owner_voice_only === true;
       ownerVoice.known = true;
@@ -5808,7 +6005,7 @@ async function saveFacesSetting(value) {
   renderFacesSetting();
   try {
     const body = { section: 'faces', data: { enabled: value } };
-    const response = await fetch('api/config', {
+    const response = await settingsFetch('/app/settings/api/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -5822,7 +6019,7 @@ async function saveFacesSetting(value) {
   } catch (err) {
     // A write can land and still report an error: show what is stored, never a guess.
     try {
-      const stored = await window.apiJson('api/config');
+      const stored = await settingsApi('/app/settings/api/config');
       configData = stored;
       facesSetting.stored = stored?.faces?.enabled !== false;
       facesSetting.known = true;
@@ -5847,7 +6044,7 @@ async function clearFaceData() {
   facesSetting.result = null;
   renderFacesSetting();
   try {
-    const result = await window.apiJson('/app/entities/api/journal/faces/clear', {
+    const result = await settingsApi('/app/entities/api/journal/faces/clear', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -5914,7 +6111,7 @@ document.getElementById('plaudApiKeysLink')?.addEventListener('click', (e) => {
     const value = key === 'timeout_sec' ? Number(e.target.value) : e.target.value;
 
     try {
-      const response = await fetch('api/config', {
+      const response = await settingsFetch('/app/settings/api/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ section: 'transcribe', data: { parakeet: { [key]: value } } })
@@ -5937,7 +6134,7 @@ document.getElementById('field-parakeet-cpp-device')?.addEventListener('change',
   const value = e.target.value;
 
   try {
-    const response = await fetch('api/config', {
+    const response = await settingsFetch('/app/settings/api/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ section: 'transcribe', data: { 'parakeet-cpp': { device: value } } })
@@ -5959,7 +6156,7 @@ document.getElementById('field-parakeet-cpp-device')?.addEventListener('change',
 async function loadSync() {
   loadGranola();
   try {
-    const data = await window.apiJson('api/sync');
+    const data = await settingsApi('/app/settings/api/sync');
     setLoadState('syncLoadState');
     setSyncControlsDisabled(false);
     populateSync(data);
@@ -6006,11 +6203,11 @@ document.getElementById('field-plaud-sync-enabled').addEventListener('change', a
     await window.saveControl({
       el: this,
       errorHost,
-      fetchArgs: ['api/sync', {
+      fetchArgs: () => settingsApi('/app/settings/api/sync', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plaud: { enabled } }),
-      }],
+      }),
       onSuccess: () => showFieldStatus(this, 'saved'),
     });
   } catch (_) {
@@ -6130,7 +6327,7 @@ function renderGranola() {
 
 async function loadGranola() {
   try {
-    granola.data = await window.apiJson('api/granola');
+    granola.data = await settingsApi('/app/settings/api/granola');
     granolaEl('granolaLoadError').hidden = true;
     renderGranola();
   } catch (_) {
@@ -6164,7 +6361,7 @@ async function connectGranola() {
   granolaKeyError('');
   renderGranola();
   try {
-    await window.apiJson('api/granola', {
+    await settingsApi('/app/settings/api/granola', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key: value }),
@@ -6183,7 +6380,7 @@ async function checkGranola() {
   granola.busy = 'check';
   renderGranola();
   try {
-    await window.apiJson('api/granola/sync', { method: 'POST' });
+    await settingsApi('/app/settings/api/granola/sync', { method: 'POST' });
   } catch (_) {
     // Already checking, or nothing to check: the status below says which.
   } finally {
@@ -6196,7 +6393,7 @@ async function disconnectGranola() {
   granola.busy = 'disconnect';
   renderGranola();
   try {
-    await window.apiJson('api/granola', { method: 'DELETE' });
+    await settingsApi('/app/settings/api/granola', { method: 'DELETE' });
     granola.replacing = false;
   } catch (error) {
     granolaEl('granolaLoadError').textContent = error?.serverMessage || "couldn't disconnect Granola. try again.";
@@ -6227,7 +6424,7 @@ granolaEl('granolaCancelKey').addEventListener('click', () => {
 granolaEl('granolaGuide').addEventListener('toggle', event => {
   if (event.isTrusted) event.target.dataset.touched = '1';
 });
-document.addEventListener('visibilitychange', () => {
+ctx.on(window.document, 'visibilitychange', () => {
   if (document.visibilityState === 'visible' && document.getElementById('section-sync')?.classList.contains('active')) loadGranola();
 });
 
@@ -6236,7 +6433,7 @@ let visionData = null;
 
 async function loadVision() {
   try {
-    const response = await fetch('api/vision');
+    const response = await settingsFetch('/app/settings/api/vision');
     visionData = await response.json();
     if (visionData.error) throw new Error(visionData.error);
     setLoadState('visionLoadState');
@@ -6500,7 +6697,7 @@ async function saveVisionCategory(category, importance, extraction, remove = fal
       }
     }
 
-    const response = await fetch('api/vision', {
+    const response = await settingsFetch('/app/settings/api/vision', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ categories })
@@ -6528,7 +6725,7 @@ async function saveMaxExtractions() {
   }
 
   try {
-    const response = await fetch('api/vision', {
+    const response = await settingsFetch('/app/settings/api/vision', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ max_extractions: value })
@@ -6645,7 +6842,7 @@ function removeRedactRule(index) {
 
 async function saveRedactRules(rules) {
   try {
-    const response = await fetch('api/vision', {
+    const response = await settingsFetch('/app/settings/api/vision', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ redact: rules })
@@ -6710,7 +6907,7 @@ async function loadActivities(facetName) {
   if (!facetName) return;
 
   try {
-    const response = await fetch(`/app/settings/api/facet/${facetName}/activities`);
+    const response = await settingsFetch(`/app/settings/api/facet/${facetName}/activities`);
     activitiesData = await response.json();
     if (activitiesData.error) throw new Error(activitiesData.error);
     renderActivities(activitiesData);
@@ -6868,7 +7065,7 @@ async function addDefaultActivity(activityId) {
   if (!facetDetailSlugState) return;
 
   try {
-    const response = await fetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities`, {
+    const response = await settingsFetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: activityId })
@@ -6888,7 +7085,7 @@ async function updateActivity(activityId, updates) {
   if (!facetDetailSlugState) return;
 
   try {
-    const response = await fetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities/${activityId}`, {
+    const response = await settingsFetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities/${activityId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)
@@ -6907,7 +7104,7 @@ async function removeActivity(activityId) {
   if (!facetDetailSlugState) return;
 
   try {
-    const response = await fetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities/${activityId}`, {
+    const response = await settingsFetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities/${activityId}`, {
       method: 'DELETE'
     });
     const result = await response.json();
@@ -6953,7 +7150,7 @@ document.getElementById('saveCustomActivityBtn').addEventListener('click', async
   if (!facetDetailSlugState) return;
 
   try {
-    const response = await fetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities`, {
+    const response = await settingsFetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, description, emoji: emoji || undefined, instructions: instructions || undefined })
@@ -7013,11 +7210,11 @@ async function saveEmptyAudioConfig() {
       revertOnError: false,
       readValue: () => null,
       writeValue: () => {},
-      fetchArgs: ['api/storage', {
+      fetchArgs: () => settingsApi('/app/settings/api/storage', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ empty_audio: requested ? 'keep' : 'processed' }),
-      }],
+      }),
     });
 
     const expected = requested ? 'keep' : 'processed';
@@ -7076,7 +7273,7 @@ function deriveRetention(daysValue, dontRetain, keepEmptyAudio) {
 async function loadStorage() {
   const snapshot = emptyAudio.generation;
   try {
-    storageData = await window.apiJson('api/storage/config');
+    storageData = await settingsApi('/app/settings/api/storage/config');
     setLoadState('storageLoadState');
     storageLoadedOnce = true;
     populateStorage(storageData, snapshot);
@@ -7117,7 +7314,7 @@ async function measureStorage() {
       document.getElementById('storageMeasurementState').textContent = 'measuring storage use… you can edit retention settings while this runs.';
       card.setAttribute('aria-busy', 'true');
       try {
-        const data = await window.apiJson('api/storage');
+        const data = await settingsApi('/app/settings/api/storage');
         if (!currentView()) return;
         populateStorageMeasurement(data);
         document.getElementById('storageMeasurementState').textContent = '';
@@ -7369,11 +7566,11 @@ async function saveLogRetentionConfig() {
       errorHost,
       readValue: () => null,
       writeValue: () => {},
-      fetchArgs: ['api/storage', {
+      fetchArgs: () => settingsApi('/app/settings/api/storage', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ journal_logs: journalLogs }),
-      }],
+      }),
       onSuccess: () => {
         if (storageData) {
           storageData.retention = storageData.retention || {};
@@ -7403,11 +7600,11 @@ async function saveRetentionConfig(data) {
       errorHost,
       readValue: () => null,
       writeValue: () => {},
-      fetchArgs: ['api/storage', {
+      fetchArgs: () => settingsApi('/app/settings/api/storage', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      }],
+      }),
       onSuccess: () => {
         if (storageData) {
           storageData.retention = {
@@ -7513,7 +7710,7 @@ async function runCleanupMark() {
   previewDiv.style.display = '';
 
   try {
-    const response = await fetch('api/storage/list', {
+    const response = await settingsFetch('/app/settings/api/storage/list', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -7665,7 +7862,7 @@ async function runLogCleanupPreview() {
   previewDiv.style.display = '';
 
   try {
-    const response = await fetch('api/storage/prune-logs', {
+    const response = await settingsFetch('/app/settings/api/storage/prune-logs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -7696,7 +7893,7 @@ async function runLogCleanupExecute() {
   previewDiv.style.display = '';
 
   try {
-    const response = await fetch('api/storage/prune-logs', {
+    const response = await settingsFetch('/app/settings/api/storage/prune-logs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -7747,11 +7944,11 @@ function applySettingsState(state) {
     throw new Error('settings renderer unavailable');
   }
   INSTALL_COPY = state.install_copy || {};
-  window.SettingsRender.applyCopy(document, mergedSettingsCopy(state));
+  window.SettingsRender.applyCopy(settingsPage, mergedSettingsCopy(state));
 }
 
 function facetDetailSlug() {
-  const match = window.location.pathname.match(/^\/app\/settings\/facets\/([^/]+)\/?$/);
+  const match = ctx.route.pathname.match(/^\/app\/settings\/facets\/([^/]+)\/?$/);
   return match ? decodeURIComponent(match[1]) : '';
 }
 
@@ -7801,7 +7998,7 @@ function showSettingsStateError(err) {
 }
 
 async function loadSettingsState() {
-  return await window.apiJson('/app/settings/api/state', { headers: { accept: 'application/json' } });
+  return await settingsApi('/app/settings/api/state', { headers: { accept: 'application/json' } });
 }
 
 async function initSettingsWorkspace() {
@@ -7811,7 +8008,7 @@ async function initSettingsWorkspace() {
     if (slug) {
       const [state, facet] = await Promise.all([
         loadSettingsState(),
-        window.apiJson(`/app/settings/api/facet/${encodeURIComponent(slug)}`, { headers: { accept: 'application/json' } }),
+        settingsApi(`/app/settings/api/facet/${encodeURIComponent(slug)}`, { headers: { accept: 'application/json' } }),
       ]);
       applySettingsState(state || {});
       hydrateFacetDetail(facet || {});
@@ -7841,7 +8038,7 @@ let localAccess = null;
 async function loadLocalAccess() {
   let response;
   try {
-    response = await fetch(LOCAL_ACCESS_ROUTE, { cache: 'no-store' });
+    response = await settingsFetch(LOCAL_ACCESS_ROUTE, { cache: 'no-store' });
   } catch (_) {
     return;
   }
@@ -7893,7 +8090,7 @@ async function showCloseLocalAccess() {
   detail.appendChild(intro);
   const list = document.createElement('ul');
   try {
-    const census = await window.apiJson('/app/health/api/local-programs');
+    const census = await settingsApi('/app/health/api/local-programs');
     for (const item of census.items || []) {
       const row = document.createElement('li');
       row.textContent = item.program;
@@ -7937,7 +8134,7 @@ async function saveLocalAccess(open) {
   const result = document.getElementById('localAccessResult');
   result.textContent = '';
   try {
-    const response = await fetch(LOCAL_ACCESS_ROUTE, {
+    const response = await settingsFetch(LOCAL_ACCESS_ROUTE, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(open ? { open: true, consent: true } : { open: false }),
@@ -8313,7 +8510,7 @@ function renderRemovalHistory(history) {
 async function loadRemovalHistory() {
   let history = null;
   try {
-    history = await window.apiJson('api/storage/removals');
+    history = await settingsApi('/app/settings/api/storage/removals');
   } catch (err) {
     history = null;
   }
@@ -8940,7 +9137,7 @@ function trashBackupsSentence(backups) {
 async function loadTrash() {
   let payload = null;
   try {
-    payload = await window.apiJson('api/trash');
+    payload = await settingsApi('/app/settings/api/trash');
   } catch (err) {
     payload = null;
   }
@@ -9062,7 +9259,7 @@ async function runTrashAct(act, chosen, choice = null) {
   else options.body = JSON.stringify({ ids: chosen.map(item => item.id) });
   let answer = null;
   try {
-    answer = await window.apiJson(`api/trash/${act}`, options);
+    answer = await settingsApi(`/app/settings/api/trash/${act}`, options);
   } catch (err) {
     answer = null;
   }
@@ -9091,6 +9288,7 @@ async function openTrashConfirm(act, items, trigger) {
   document.getElementById('trashConfirmBody').replaceChildren(...copy.paragraphs.map(text => removalEl('p', '', text)));
   // The choice sits where the thing becomes unrecoverable: erase now and empty.
   const choice = act !== 'replace' && window.BackupErase ? await window.BackupErase.row(items.length) : null;
+  if (ctx.disposed) return;
   document.getElementById('trashConfirmChoice').replaceChildren(...(choice ? [choice] : []));
   const confirm = document.getElementById('trashConfirmErase');
   confirm.textContent = copy.confirm;
@@ -9193,9 +9391,10 @@ function initSettings() {
   });
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initSettingsWorkspace);
-} else {
-  initSettingsWorkspace();
-}
+// The index's list hooks, for a receipt pressed while it shows.
+if (!facetDetailSlug()) settingsListHooks = { mount: ctx, reloadFacets: loadFacetsList, openSection: section => switchSection(section) };
+initSettingsWorkspace();
+return disposeSettings;
+  }
+})();
 </script>
