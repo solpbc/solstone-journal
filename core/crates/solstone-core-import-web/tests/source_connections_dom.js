@@ -66,7 +66,7 @@ function harness(crateDir, source = 'audio') {
     const sourceUrl=source => '/api/journal/sources/'+source;
     const scheduleUrl=source => '/api/journal/recurrences/source/'+source;
     const row={source:${JSON.stringify(source)},node,busy:false,readable:true,connection:null,schedule:null,revision:0,syncPending:false}; rows.set(row.source,row);`, context);
-  for (const name of ['retained', 'read', 'live', 'status', 'controls', 'showConnection', 'showSchedule', 'refresh', 'validConnection', 'change', 'sync', 'checkSync', 'schedule', 'returned', 'leaving', 'dispose']) {
+  for (const name of ['writeText', 'writeDisabled', 'retained', 'read', 'live', 'status', 'controls', 'showConnection', 'showSchedule', 'refresh', 'validConnection', 'change', 'sync', 'checkSync', 'schedule', 'returned', 'leaving', 'dispose']) {
     vm.runInContext(functionSource(script, name), context);
   }
   const run = code => vm.runInContext(code, context);

@@ -909,6 +909,92 @@ function importGoneOne(selector) {
 function importOwns(target) {
   return importNodes.some(node => node === target || (node.nodeType === 1 && node.contains(target)));
 }
+
+// ---- drawing only what changed
+//
+// Import draws by markup. A draw writes only what differs from what the page
+// already shows, so a poll or a stream whose answer changed nothing leaves the
+// page as it is: no node is replaced, and a screen reader doesn't read the
+// focused control again. The same three setters are in source_connections.js
+// and import_detail.js.
+function writeText(el, text) {
+  if (!el) return;
+  const next = String(text ?? '');
+  // Equal text over a link or other markup is still a change.
+  const nodes = el.childNodes;
+  const same = el.textContent === next && (!nodes || (nodes.length === 0 ? next === '' : nodes.length === 1 && nodes[0].nodeType === 3));
+  if (!same) el.textContent = next;
+}
+// An attribute set to its own value still counts as a change to the page.
+function writeAttr(el, name, value) {
+  if (!el) return;
+  if (value === null || value === undefined || value === false) {
+    if (el.hasAttribute(name)) el.removeAttribute(name);
+    return;
+  }
+  const next = value === true ? '' : String(value);
+  if (el.getAttribute(name) !== next) el.setAttribute(name, next);
+}
+function writeHidden(el, hidden) {
+  if (el && el.hidden !== !!hidden) el.hidden = !!hidden;
+}
+function writeDisabled(el, disabled) {
+  if (el && el.disabled !== !!disabled) el.disabled = !!disabled;
+}
+// A class put on or taken off only when it changes, and no empty class left behind.
+function writeClass(el, name, on) {
+  if (!el || el.classList.contains(name) === !!on) return;
+  el.classList.toggle(name, !!on);
+  if (el.getAttribute('class') === '') el.removeAttribute('class');
+}
+
+// What `drawMarkup` keeps as it is: a part another script draws into (a saved
+// start's flow), and the time zone note the shell's clock puts beside a time.
+const IMPORT_KEEP = '[data-saved-start-slot]';
+const IMPORT_SKIP = '[data-zone-note]';
+function importSameShell(a, b) {
+  if (a.nodeType !== 1 || b.nodeType !== 1 || a.tagName !== b.tagName) return false;
+  const names = a.getAttributeNames();
+  return names.length === b.getAttributeNames().length && names.every(name => a.getAttribute(name) === b.getAttribute(name));
+}
+// Brings `el`'s children to `next`'s, in order, and says whether it wrote
+// anything. A child equal to the new one is kept, an element with the same tag
+// and attributes is kept and its own children brought over the same way, and
+// anything else is replaced. A kept node never moves: a moved node loses focus.
+function importMorph(el, next) {
+  let wrote = false;
+  const old = Array.from(el.childNodes).filter(node => !(node.nodeType === 1 && node.matches(IMPORT_SKIP)));
+  let at = 0;
+  for (const node of Array.from(next.childNodes)) {
+    let match = -1;
+    for (let i = at; i < old.length; i += 1) {
+      if (old[i].isEqualNode(node)) { match = i; break; }
+    }
+    if (match >= 0) {
+      for (let i = at; i < match; i += 1) { old[i].remove(); wrote = true; }
+      at = match + 1;
+      continue;
+    }
+    const here = old[at];
+    if (here && importSameShell(here, node)) {
+      if (!here.matches(IMPORT_KEEP) && importMorph(here, node)) wrote = true;
+      at += 1;
+      continue;
+    }
+    el.insertBefore(node, here || null);
+    wrote = true;
+  }
+  for (let i = at; i < old.length; i += 1) { old[i].remove(); wrote = true; }
+  return wrote;
+}
+// Draws `html` into `el`, writing only what differs from what it shows, and
+// says whether it wrote anything.
+function drawMarkup(el, html) {
+  if (!el) return false;
+  const holder = document.createElement('template');
+  holder.innerHTML = String(html ?? '');
+  return importMorph(el, holder.content || holder);
+}
 const never = () => window.SolStore.never();
 // A write the owner started finishes, uncut, and its answer is handled only
 // while import is up: once it has gone, nothing after the write runs, as a
@@ -1181,7 +1267,7 @@ async function loadSourceGrid() {
   // listener reads it, the same way the repeat button does. An inline onclick
   // builds a line of JavaScript out of a server string, and an attribute escape
   // is the only thing standing between that string and the script context.
-  grid.innerHTML = cachedSources.map(source => {
+  drawMarkup(grid, cachedSources.map(source => {
     const cardAttr = source.name === 'quick'
       ? 'data-import-quick="true"'
       : `data-import-source="${escapeHtml(source.name)}"`;
@@ -1192,7 +1278,7 @@ async function loadSourceGrid() {
         <div class="import-source-card-desc">${escapeHtml(source.description || '')}</div>
       </button>
     `;
-  }).join('');
+  }).join(''));
 }
 
 function showQuickImport() {
@@ -1394,8 +1480,13 @@ function sourceFilterOptionsHtml() {
   ].join('');
 }
 
+// Drawn as select mode paints it, so a re-read that changes nothing finds the
+// page already as it would draw it.
 function buildHistoryHeader(total, totalEntriesWritten) {
   const sourceOptions = sourceFilterOptionsHtml();
+  const C = IMPORT_DELETE_COPY;
+  const on = importPick.on;
+  const count = importPick.ids.size;
 
   const importsLabel = total === 1 ? 'import' : 'imports';
   const entriesPart = (totalEntriesWritten === null || totalEntriesWritten === undefined)
@@ -1411,17 +1502,17 @@ function buildHistoryHeader(total, totalEntriesWritten) {
         <select id="importSourceFilter">
           ${sourceOptions}
         </select>
-        <button type="button" class="import-secondary-btn import-select-btn" id="importSelectBtn" hidden></button>
+        <button type="button" class="import-secondary-btn import-select-btn" id="importSelectBtn"${on ? ' hidden' : ''}>${escapeHtml(C.select)}</button>
       </div>
     </div>
-    <div class="trash-bar import-pick-bar" id="importPickBar" tabindex="-1" hidden>
-      <div class="trash-bar-group" id="importPickIdle">
-        <label class="trash-all"><input type="checkbox" id="importPickAll"> <span id="importPickAllLabel"></span></label>
-        <span class="trash-bar-actions"><button type="button" class="import-secondary-btn" id="importPickDoneIdle"></button></span>
+    <div class="trash-bar import-pick-bar" id="importPickBar" tabindex="-1"${on ? '' : ' hidden'}>
+      <div class="trash-bar-group" id="importPickIdle"${count > 0 ? ' hidden' : ''}>
+        <label class="trash-all"><input type="checkbox" id="importPickAll"> <span id="importPickAllLabel">${escapeHtml(C.selectAll)}</span></label>
+        <span class="trash-bar-actions"><button type="button" class="import-secondary-btn" id="importPickDoneIdle">${escapeHtml(C.done)}</button></span>
       </div>
-      <div class="trash-bar-group" id="importPickSome" hidden>
-        <span class="trash-count" id="importPickCount"></span>
-        <span class="trash-bar-actions"><button type="button" class="import-secondary-btn" id="importPickDelete"></button><button type="button" class="import-secondary-btn" id="importPickDoneSome"></button></span>
+      <div class="trash-bar-group" id="importPickSome"${count === 0 ? ' hidden' : ''}>
+        <span class="trash-count" id="importPickCount">${escapeHtml(importDeleteFill(C.selected, { n: count }))}</span>
+        <span class="trash-bar-actions"><button type="button" class="import-secondary-btn" id="importPickDelete">${escapeHtml(C.delete)}</button><button type="button" class="import-secondary-btn" id="importPickDoneSome">${escapeHtml(C.done)}</button></span>
       </div>
     </div>
   `;
@@ -1518,7 +1609,9 @@ function renderImportRow(imp, picking = false) {
   }
   const encodedId = encodeURIComponent(imp.timestamp);
 
-  let html = `<tr data-import-id="${escapeHtml(imp.timestamp)}" data-source-type="${escapeHtml(imp.source_type || '')}" data-deletable="${imp.deletable === true}"`;
+  const picked = picking && importPick.ids.has(imp.timestamp);
+  const note = picking ? importPick.notes.get(imp.timestamp) : null;
+  let html = `<tr${picked ? ' class="import-row--picked"' : ''} data-import-id="${escapeHtml(imp.timestamp)}" data-source-type="${escapeHtml(imp.source_type || '')}" data-deletable="${imp.deletable === true}"`;
   if (isArchive) {
     html += ` data-saved="${imp.saved ?? 0}" data-remaining="${imp.remaining ?? 0}" data-left-out="${imp.left_out ?? 0}" data-processing="${imp.processing ?? 0}" data-unavailable="${imp.unavailable_parts ?? 0}"`;
   }
@@ -1534,7 +1627,7 @@ function renderImportRow(imp, picking = false) {
     html += '—';
   }
   html += '</td>';
-  html += `<td class="import-file-cell">${escapeHtml(fileDisplay)}</td>`;
+  html += `<td class="import-file-cell">${escapeHtml(fileDisplay)}${note ? `<div class="import-row-note">${escapeHtml(IMPORT_DELETE_COPY.notes[note] || IMPORT_DELETE_COPY.notes.other)}</div>` : ''}</td>`;
   html += `<td class="source-cell">${sourceCell}</td>`;
   html += `<td class="status-cell"><span class="import-status ${statusClass}">${statusText}</span>${statusDetail}</td>`;
   html += `<td class="stats-cell import-stats-cell">${statsText}</td>`;
@@ -2205,23 +2298,23 @@ function paintImportPick() {
   const selectBtn = byId('importSelectBtn');
   const bar = byId('importPickBar');
   if (selectBtn) {
-    selectBtn.textContent = C.select;
-    selectBtn.hidden = importPick.on;
+    writeText(selectBtn, C.select);
+    writeHidden(selectBtn, importPick.on);
     selectBtn.onclick = enterImportPick;
   }
   if (bar) {
     const count = importPick.ids.size;
-    bar.hidden = !importPick.on;
-    byId('importPickIdle').hidden = count > 0;
-    byId('importPickSome').hidden = count === 0;
-    byId('importPickAllLabel').textContent = C.selectAll;
+    writeHidden(bar, !importPick.on);
+    writeHidden(byId('importPickIdle'), count > 0);
+    writeHidden(byId('importPickSome'), count === 0);
+    writeText(byId('importPickAllLabel'), C.selectAll);
     byId('importPickAll').checked = false;
     byId('importPickAll').onchange = selectAllImports;
-    byId('importPickCount').textContent = importDeleteFill(C.selected, { n: count });
-    byId('importPickDelete').textContent = C.delete;
+    writeText(byId('importPickCount'), importDeleteFill(C.selected, { n: count }));
+    writeText(byId('importPickDelete'), C.delete);
     byId('importPickDelete').onclick = deleteChosenImports;
     for (const id of ['importPickDoneIdle', 'importPickDoneSome']) {
-      byId(id).textContent = C.done;
+      writeText(byId(id), C.done);
       byId(id).onclick = exitImportPick;
     }
   }
@@ -2230,11 +2323,14 @@ function paintImportPick() {
     const picked = importPick.on && importPick.ids.has(id);
     const box = row.querySelector('input[data-import-pick]');
     if (box) box.checked = picked;
-    row.classList.toggle('import-row--picked', picked);
-    row.querySelector('.import-row-note')?.remove();
+    writeClass(row, 'import-row--picked', picked);
     const note = importPick.on ? importPick.notes.get(id) : null;
+    const words = note ? (C.notes[note] || C.notes.other) : '';
+    const shown = row.querySelector('.import-row-note');
+    if (shown && shown.textContent === words) return;
+    shown?.remove();
     const fileCell = row.querySelector('.import-file-cell');
-    if (note && fileCell) fileCell.append(importDeleteEl('div', 'import-row-note', C.notes[note] || C.notes.other));
+    if (words && fileCell) fileCell.append(importDeleteEl('div', 'import-row-note', words));
   });
 }
 
@@ -2399,12 +2495,12 @@ async function loadImports() {
     clearImportListErrors();
 
     if (imports.length === 0 && !currentSourceFilter) {
-      container.innerHTML = window.SurfaceState.empty({
+      drawMarkup(container, window.SurfaceState.empty({
         icon: window.ConveyIcons.svg('inbox'),
         heading: 'no imports yet',
         desc: 'import from any source above.',
         action: '<a href="#" data-import-scroll-grid style="color: var(--orange-text-aa); font-weight: 600;">choose a source →</a>'
-      });
+      }));
       importPick.on = false;
       importPick.ids.clear();
       importPick.notes.clear();
@@ -2447,7 +2543,7 @@ async function loadImports() {
       `;
     }
     const restoreFilterFocus = document.activeElement?.id === 'importSourceFilter';
-    container.innerHTML = html;
+    drawMarkup(container, html);
     reportImportReady(imports.length ? 'content' : 'empty');
 
     const sourceFilter = document.getElementById('importSourceFilter');
@@ -2545,10 +2641,10 @@ async function loadMoreImports() {
     const loadMoreContainer = document.getElementById('importLoadMore');
     if (loadMoreContainer) {
       if (data.page < data.pages) {
-        loadMoreContainer.innerHTML = `
+        drawMarkup(loadMoreContainer, `
           <button class="import-primary-btn" data-import-load-more>
             load more (${importsCache.length} of ${data.total} shown)
-          </button>`;
+          </button>`);
       } else {
         loadMoreContainer.remove();
       }
@@ -2579,10 +2675,10 @@ function markRowStalled(importId) {
   const safeId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(importId) : importId;
   const row = document.querySelector(`tr[data-import-id="${safeId}"]`);
   if (row) {
-    row.classList.add('import-row--stalled');
+    writeClass(row, 'import-row--stalled', true);
     const statusCell = row.querySelector('.status-cell');
     if (statusCell) {
-      statusCell.innerHTML = `<span class="import-status stalled">stalled</span><button type="button" class="import-retry-btn" data-import-check-status="${escapeHtml(importId)}">check status</button><div class="progress-detail import-stalled-meta">stalled: no updates in 10 minutes. import id: ${escapeHtml(importId)}. ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`;
+      drawMarkup(statusCell, `<span class="import-status stalled">stalled</span><button type="button" class="import-retry-btn" data-import-check-status="${escapeHtml(importId)}">check status</button><div class="progress-detail import-stalled-meta">stalled: no updates in 10 minutes. import id: ${escapeHtml(importId)}. ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`);
     }
   }
 
@@ -2708,7 +2804,7 @@ function updateImportRow(importId, eventData, options = {}) {
 
   if (IMPORT_ROW_EVENTS.has(eventData.event)) {
     if (!importEvents[importId]?.stalled) {
-      row.classList.remove('import-row--stalled');
+      writeClass(row, 'import-row--stalled', false);
     }
   }
 
@@ -2717,10 +2813,10 @@ function updateImportRow(importId, eventData, options = {}) {
       || sourceMetadataByName[eventData.source_type]?.display_name
       || eventData.source_type
       || '';
-    sourceCell.innerHTML = displayText
+    drawMarkup(sourceCell, displayText
       ? renderSourceDisplay(eventData.source_type || '', displayText, displayText)
-      : '—';
-    row.dataset.sourceType = eventData.source_type || '';
+      : '—');
+    writeAttr(row, 'data-source-type', eventData.source_type || '');
   }
 
   const status = eventData.status || (eventData.event === 'completed' ? 'success' : eventData.event === 'error' ? 'failed' : null);
@@ -2728,15 +2824,15 @@ function updateImportRow(importId, eventData, options = {}) {
 
   if (status === 'unconfirmed') {
     if (statusCell) {
-      statusCell.innerHTML = `<span class="import-status unconfirmed">unconfirmed</span>${gapDetail}`;
+      drawMarkup(statusCell, `<span class="import-status unconfirmed">unconfirmed</span>${gapDetail}`);
     }
   } else if (status === 'unavailable') {
     if (statusCell) {
-      statusCell.innerHTML = `<span class="import-status unavailable">status unavailable</span>${gapDetail}`;
+      drawMarkup(statusCell, `<span class="import-status unavailable">status unavailable</span>${gapDetail}`);
     }
   } else if (eventData.event === 'started') {
     if (statusCell) {
-      statusCell.innerHTML = `<span class="import-status running">${escapeHtml(humanStageName(eventData.stage, eventData.source_display))}</span>${gapDetail}`;
+      drawMarkup(statusCell, `<span class="import-status running">${escapeHtml(humanStageName(eventData.stage, eventData.source_display))}</span>${gapDetail}`);
     }
   } else if (eventData.event === 'status') {
     if (statusCell) {
@@ -2745,21 +2841,21 @@ function updateImportRow(importId, eventData, options = {}) {
       if (progressStats.length) {
         detailParts.push(progressStats.join(' • '));
       }
-      statusCell.innerHTML = `<span class="import-status running">${escapeHtml(humanStageName(eventData.stage, eventData.source_display))}</span><div class="progress-detail">${escapeHtml(detailParts.join(' • '))}</div>${gapDetail}`;
+      drawMarkup(statusCell, `<span class="import-status running">${escapeHtml(humanStageName(eventData.stage, eventData.source_display))}</span><div class="progress-detail">${escapeHtml(detailParts.join(' • '))}</div>${gapDetail}`);
     }
   } else if (eventData.event === 'completed' || status === 'success') {
     if (statusCell) {
-      statusCell.innerHTML = `<span class="import-status success">completed</span>${gapDetail}`;
+      drawMarkup(statusCell, `<span class="import-status success">completed</span>${gapDetail}`);
     }
     if (statsCell) {
-      statsCell.textContent = formatImportStats(eventData.entries_written, eventData.entities_seeded);
+      writeText(statsCell, formatImportStats(eventData.entries_written, eventData.entities_seeded));
     }
     ctx.setTimeout(() => { loadImports().then(() => refreshInlineProgress(importId)); }, 1000);
   } else if (eventData.event === 'error' || status === 'failed') {
     // An Apple Health import's end names its own state, which the row then reads.
     const bodyLabel = bodyStateLabel(eventData.body_state || eventData.stage);
     if (statusCell) {
-      statusCell.innerHTML = `<span class="import-status failed">${escapeHtml(bodyLabel || 'failed')}</span><div class="progress-detail">${escapeHtml(eventData.error || 'unknown error')}</div>${gapDetail}`;
+      drawMarkup(statusCell, `<span class="import-status failed">${escapeHtml(bodyLabel || 'failed')}</span><div class="progress-detail">${escapeHtml(eventData.error || 'unknown error')}</div>${gapDetail}`);
     }
     if (bodyLabel) ctx.setTimeout(() => loadImports(), 1000);
   }
@@ -3992,7 +4088,7 @@ function showProgressView(importId, eventData = null) {
   // tabindex="-1" is the landing place for focus when an answer repaints this
   // panel out from under the button that asked for it: without somewhere to go,
   // focus falls to <body> and a keyboard owner starts the page over.
-  guideSteps.innerHTML = `
+  drawMarkup(guideSteps, `
     <div class="import-progress-panel" tabindex="-1">
       <div class="import-step-number">progress</div>
       <h3 class="import-progress-title">${escapeHtml(displayName)}</h3>
@@ -4003,7 +4099,7 @@ function showProgressView(importId, eventData = null) {
       <div class="import-thinking-progress" role="status" aria-live="polite">${renderThinkingProgress(currentEvent?.thinking)}</div>
       ${completionHtml}
     </div>
-  `;
+  `);
 }
 
 startBtn.addEventListener('click', async () => {
@@ -4116,7 +4212,7 @@ function scheduleThinkingProgress() {
         const panel = document.querySelector('.import-thinking-progress');
         // Keep controls in place during background refresh so focus stays put.
         const markup = renderThinkingProgress(res?.thinking);
-        if (panel && panel.innerHTML !== markup && !panel.contains(document.activeElement)) panel.innerHTML = markup;
+        if (panel && !panel.contains(document.activeElement)) drawMarkup(panel, markup);
       }
     } catch (_) { /* The next read can recover without replacing the last known progress. */ }
     scheduleThinkingProgress();
@@ -4716,8 +4812,9 @@ function loadImportDetail(keepSavedStart = false) {
       reportImportReady('content');
       const overview = document.getElementById('overviewContent');
       const restoreFocus = Boolean(overview.querySelector('[data-saved-start-slot]')?.contains(document.activeElement));
-      document.getElementById('importMeta').innerHTML = window.ImportDetail.renderMeta(data);
-      overview.innerHTML = window.ImportDetail.renderDetail(data);
+      // A re-read that says nothing new leaves the page as it is.
+      const metaDrawn = drawMarkup(document.getElementById('importMeta'), window.ImportDetail.renderMeta(data));
+      const overviewDrawn = drawMarkup(overview, window.ImportDetail.renderDetail(data));
       window.ImportDetail.mountSavedStart(overview, data, () => loadImportDetail(true), restoreFocus);
       if (restoreFocus && !overview.querySelector('[data-saved-start-slot]')) {
         const heading = document.getElementById('importDetailHeading');
@@ -4726,7 +4823,7 @@ function loadImportDetail(keepSavedStart = false) {
       }
       const detailView = document.getElementById('importDetailView');
       const firstWallTime = detailView?.querySelector('[data-wall-time]');
-      if (firstWallTime && window.JournalClock?.placeNote) {
+      if ((metaDrawn || overviewDrawn) && firstWallTime && window.JournalClock?.placeNote) {
         window.JournalClock.placeNote(firstWallTime, { inside: false });
       }
     })

@@ -66,8 +66,25 @@ var importDraft = globalThis.importDraft || {
 };
 `;
 
+// The mount's draw helpers over this file's plain stand-ins: each writes what
+// it's given, as the base's direct writes did. import_contract_dom.js runs the
+// real ones over its small document.
+const DRAW_STAND_INS = {
+  drawMarkup: (el, html) => { if (!el) return false; el.innerHTML = String(html ?? ''); return true; },
+  writeText: (el, text) => { if (el) el.textContent = String(text ?? ''); },
+  writeAttr: (el, name, value) => {
+    if (!el) return;
+    const off = value === null || value === undefined || value === false;
+    if (typeof el.setAttribute === 'function') { if (off) el.removeAttribute?.(name); else el.setAttribute(name, value === true ? '' : String(value)); return; }
+    if (name.startsWith('data-') && el.dataset) el.dataset[name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = off ? undefined : String(value);
+  },
+  writeHidden: (el, hidden) => { if (el) el.hidden = !!hidden; },
+  writeDisabled: (el, disabled) => { if (el) el.disabled = !!disabled; },
+  writeClass: (el, name, on) => { const list = el?.classList; if (!list) return; if (on) list.add?.(name); else list.remove?.(name); },
+};
+
 function makeContext(globals) {
-  const context = vm.createContext({ reportImportReady() {}, importEvents: {}, guidedFolderBusy: false, document: { getElementById: () => null, addEventListener: () => {} }, showError: message => { throw new Error(message); }, setTimeout: () => 0, clearTimeout: () => {}, ...globals });
+  const context = vm.createContext({ ...DRAW_STAND_INS, reportImportReady() {}, importEvents: {}, guidedFolderBusy: false, document: { getElementById: () => null, addEventListener: () => {} }, showError: message => { throw new Error(message); }, setTimeout: () => 0, clearTimeout: () => {}, ...globals });
   context.__HostURL = URL;
   vm.runInContext(MOUNT_SCOPE, context);
   const source = scriptFromWorkspace();
@@ -754,7 +771,10 @@ function runHistoryHeaderSummary() {
   ].join('\n'), context);
   installRealEscapeHtml(context);
   assertEscaperIsReal(context);
-  for (const name of ['sourceLabel', 'sourceFilterOptionsHtml', 'buildHistoryHeader']) {
+  // The header is drawn as select mode paints it, so it reads the mode and its words.
+  vm.runInContext(`const IMPORT_DELETE_COPY = { select: 'select', selectAll: 'select all', selected: '{n} selected', delete: 'delete', done: 'done' };
+    const importPick = { on: false, ids: new Set(), notes: new Map() };`, context);
+  for (const name of ['sourceLabel', 'sourceFilterOptionsHtml', 'importDeleteFill', 'buildHistoryHeader']) {
     vm.runInContext(functionSource(workspace, name), context);
   }
 
@@ -2778,12 +2798,14 @@ function runEveryOwnerSinkEscapes() {
     "let currentSourceFilter = '';",
     `let importSourceOptions = [${JSON.stringify(ESCAPE_PAYLOAD)}];`,
     `let importsCache = [{ timestamp: 'h0', source_type: ${JSON.stringify(ESCAPE_PAYLOAD)}, source_display: ${JSON.stringify(ESCAPE_PAYLOAD)} }];`,
+    "const IMPORT_DELETE_COPY = { select: 'select', selectAll: 'select all', selected: '{n} selected', delete: 'delete', done: 'done' };",
+    'const importPick = { on: false, ids: new Set(), notes: new Map() };',
   ].join('\n'), historyContext);
   installRealEscapeHtml(historyContext);
   assertEscaperIsReal(historyContext);
   for (const name of [
     'capitalizeStage', 'renderSourceDisplay', 'formatImportStats', 'sourceLabel', 'bodyStateLabel', 'renderImportRow',
-    'sourceFilterOptionsHtml', 'buildHistoryHeader',
+    'sourceFilterOptionsHtml', 'importDeleteFill', 'buildHistoryHeader',
   ]) {
     vm.runInContext(functionSource(workspace, name), historyContext);
   }
@@ -4392,6 +4414,10 @@ function importDeleteHarness({ rows = [], fetchAnswers = {} } = {}) {
   const context = vm.createContext({ console, window, document: deleteDocument, fetch, Date, JSON, Promise, Set, Map, Number, Array, Object, String });
   context.__HostURL = URL;
   vm.runInContext(MOUNT_SCOPE, context);
+  // The mount's own setters, over this harness's nodes.
+  for (const name of ['writeText', 'writeAttr', 'writeHidden', 'writeDisabled', 'writeClass']) {
+    vm.runInContext(functionSource(workspace, name), context);
+  }
   vm.runInContext(importReceiptsBlock(), context);
   installRealEscapeHtml(context);
   vm.runInContext(`const sourceMetadataByName = { chatgpt: { display_name: 'CARD:chatgpt' } };

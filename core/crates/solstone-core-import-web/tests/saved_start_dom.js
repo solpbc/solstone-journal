@@ -48,6 +48,9 @@ module.exports = async function savedStartCases(crateDir) {
             if (node.button === document.activeElement) document.activeElement = null;
             node.button = { disabled: false, attributes: {}, textContent: '',
               setAttribute(key, value) { this.attributes[key] = value; },
+              getAttribute(key) { return key in this.attributes ? this.attributes[key] : null; },
+              hasAttribute(key) { return key in this.attributes; },
+              removeAttribute(key) { delete this.attributes[key]; },
               focus() { if (!this.disabled) document.activeElement = this; }, onclick: null };
           } };
           if (!value) this.button = null;

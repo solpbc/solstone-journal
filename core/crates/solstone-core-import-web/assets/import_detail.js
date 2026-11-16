@@ -4,6 +4,28 @@
 (function () {
   'use strict';
 
+  // A draw writes only what differs from what the page already shows, so a
+  // re-read that changes nothing leaves the page as it is. The same setters
+  // are in import's own script and source_connections.js.
+  function writeText(el, text) {
+    if (!el) return;
+    const next = String(text ?? '');
+    // Equal text over a link or other markup is still a change.
+    const nodes = el.childNodes;
+    const same = el.textContent === next && (!nodes || (nodes.length === 0 ? next === '' : nodes.length === 1 && nodes[0].nodeType === 3));
+    if (!same) el.textContent = next;
+  }
+  // An attribute set to its own value still counts as a change to the page.
+  function writeAttr(el, name, value) {
+    if (!el) return;
+    if (value === null || value === undefined || value === false) {
+      if (el.hasAttribute(name)) el.removeAttribute(name);
+      return;
+    }
+    const next = value === true ? '' : String(value);
+    if (el.getAttribute(name) !== next) el.setAttribute(name, next);
+  }
+
   // --- owner-facing strings ---
   const strings = Object.freeze({
     unknown: '—',
@@ -799,14 +821,18 @@
           + '<div class="import-action-row" data-saved-start-actions></div>'
           + '<div role="alert" data-saved-start-error></div></section>';
       }
-      flow.slot.querySelector('[data-saved-start-actions]').innerHTML = '<button type="button" class="import-primary-btn" data-saved-start-action></button>';
-      const button = flow.slot.querySelector('[data-saved-start-action]');
-      button.textContent = label;
-      button.setAttribute('aria-disabled', String(busy));
-      flow.slot.querySelector('[data-saved-start-status]').textContent = busy ? label : flow.summary;
-      flow.slot.querySelector('[data-saved-start-error]').textContent = flow.error;
+      // The button is drawn once and kept, so its focus stays on the same node.
+      let button = flow.slot.querySelector('[data-saved-start-action]');
+      if (!button) {
+        flow.slot.querySelector('[data-saved-start-actions]').innerHTML = '<button type="button" class="import-primary-btn" data-saved-start-action></button>';
+        button = flow.slot.querySelector('[data-saved-start-action]');
+      }
+      writeText(button, label);
+      writeAttr(button, 'aria-disabled', String(busy));
+      writeText(flow.slot.querySelector('[data-saved-start-status]'), busy ? label : flow.summary);
+      writeText(flow.slot.querySelector('[data-saved-start-error]'), flow.error);
       button.onclick = () => act(button);
-      if (focused) button.focus();
+      if (focused && document.activeElement !== button) button.focus();
     }
     async function act(button) {
       if (!current() || flow.slot.querySelector('button') !== button

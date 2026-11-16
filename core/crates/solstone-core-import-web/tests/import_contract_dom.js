@@ -67,6 +67,8 @@ class TextNode {
   get textContent() { return this.data; }
   set textContent(v) { this.data = String(v); }
   get isConnected() { return !!this.parentNode && this.parentNode.isConnected; }
+  isEqualNode(other) { return !!other && other.nodeType === 3 && other.data === this.data; }
+  remove() { if (this.parentNode) this.parentNode.removeChild(this); }
 }
 
 function simpleMatch(el, part) {
@@ -196,6 +198,14 @@ class Element extends Target {
   setAttribute(k, v) { this.attrs.set(k, String(v)); if (k === 'style') this._style = null; }
   getAttribute(k) { return this.attrs.has(k) ? this.attrs.get(k) : null; }
   hasAttribute(k) { return this.attrs.has(k); }
+  getAttributeNames() { return [...this.attrs.keys()]; }
+  // As a browser's: the same kind, tag, attributes and children, in order.
+  isEqualNode(other) {
+    if (!other || other.nodeType !== 1 || other.tagName !== this.tagName) return false;
+    if (other.attrs.size !== this.attrs.size || [...this.attrs].some(([k, v]) => other.attrs.get(k) !== v)) return false;
+    if (other.childNodes.length !== this.childNodes.length) return false;
+    return this.childNodes.every((node, i) => node.isEqualNode(other.childNodes[i]));
+  }
   removeAttribute(k) { this.attrs.delete(k); }
   toggleAttribute(k, on) { if (on) this.setAttribute(k, ''); else this.removeAttribute(k); }
   get textContent() { return this.childNodes.map((n) => n.textContent).join(''); }
@@ -486,17 +496,32 @@ function abortError() {
 // Every change the page makes to a connected node is counted once (what a
 // change does inside this stand-in isn't), so a case can say a redraw left
 // the page alone.
+// Each record keeps the node it changed (an attribute's element, a child
+// list's parent), so a case can count the records under one part of the page,
+// as a MutationObserver on it would. Taking off an attribute that isn't there
+// is no change, as in a browser.
 let mutations = 0;
 let depth = 0;
-function counted(original) {
+const mutationLog = [];
+function counted(original, name) {
   return function (...args) {
-    if (depth === 0 && this.isConnected) mutations += 1;
+    const real = !(name === 'removeAttribute' && !this.attrs.has(args[0]));
+    if (depth === 0 && this.isConnected && real) {
+      mutations += 1;
+      // Held weakly, so the log keeps no gone markup alive.
+      mutationLog.push(new WeakRef(this));
+    }
     depth += 1;
     try { return original.apply(this, args); } finally { depth -= 1; }
   };
 }
 for (const name of ['append', 'removeChild', 'insertBefore', 'setAttribute', 'removeAttribute']) {
-  Element.prototype[name] = counted(Element.prototype[name]);
+  Element.prototype[name] = counted(Element.prototype[name], name);
+}
+// The records since `from` (a mark from `mutationMark()`) under `region`.
+function mutationMark() { return mutationLog.length; }
+function mutationsUnder(region, from) {
+  return mutationLog.slice(from).map((ref) => ref.deref()).filter((node) => node && (node === region || region.contains(node))).length;
 }
 const textContent = Object.getOwnPropertyDescriptor(Element.prototype, 'textContent');
 Object.defineProperty(Element.prototype, 'textContent', { get: textContent.get, set: counted(textContent.set) });

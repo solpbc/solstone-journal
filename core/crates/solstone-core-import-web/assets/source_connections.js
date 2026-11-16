@@ -50,21 +50,39 @@
     return !disposed && root?.isConnected && rows.get(row.source) === row;
   }
 
-  function status(row, message) {
-    if (live(row)) row.node.querySelector('[data-source-status]').textContent = message;
+  // A draw writes only what differs from what the page already shows, so the
+  // sync check that finds nothing new leaves the page as it is. The same
+  // setters are in import's own script and import_detail.js.
+  function writeText(el, text) {
+    if (!el) return;
+    const next = String(text ?? '');
+    // Equal text over a link or other markup is still a change.
+    const nodes = el.childNodes;
+    const same = el.textContent === next && (!nodes || (nodes.length === 0 ? next === '' : nodes.length === 1 && nodes[0].nodeType === 3));
+    if (!same) el.textContent = next;
+  }
+  function writeDisabled(el, disabled) {
+    if (el && el.disabled !== !!disabled) el.disabled = !!disabled;
   }
 
+  function status(row, message) {
+    if (live(row)) writeText(row.node.querySelector('[data-source-status]'), message);
+  }
+
+  // Each control's state is worked out first and written once.
   function controls(row) {
-    for (const button of row.node.querySelectorAll('button')) button.disabled = row.busy;
+    const off = new Map();
+    for (const button of row.node.querySelectorAll('button')) off.set(button, row.busy);
     const connected = row.source === 'plaud' ? row.available === true
       : row.connection?.remembered === true && row.connection.access_state === 'ready';
-    row.node.querySelector('[data-source-sync]').disabled = row.busy || !row.readable || !connected || row.syncPending;
+    off.set(row.node.querySelector('[data-source-sync]'), row.busy || !row.readable || !connected || row.syncPending);
     for (const button of row.node.querySelectorAll('[data-source-change]')) {
-      button.disabled = row.busy || !row.readable || !window.JournalOwnerSources;
+      off.set(button, row.busy || !row.readable || !window.JournalOwnerSources);
     }
     for (const control of row.node.querySelectorAll('[data-source-schedule] input, [data-source-schedule] select, [data-source-schedule] button')) {
-      control.disabled = row.busy || !row.schedule;
+      off.set(control, row.busy || !row.schedule);
     }
+    off.forEach((disabled, control) => writeDisabled(control, disabled));
   }
 
   function showConnection(row) {
