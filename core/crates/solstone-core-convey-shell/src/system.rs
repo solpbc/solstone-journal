@@ -33,14 +33,17 @@ const UPDATE_CHECK_TICK: std::time::Duration = std::time::Duration::from_secs(15
 
 /// Start the update check, once per process, on a schedule of its own: its
 /// requests follow this process and the clock, never whether a page is open.
-pub(crate) fn start_update_check() {
+/// The same tick tells the owner when automatic updates have stopped.
+pub(crate) fn start_update_check(journal: PathBuf) {
+    #[cfg(not(target_os = "linux"))]
+    let _ = journal;
     #[cfg(target_os = "linux")]
     {
         static STARTED: std::sync::Once = std::sync::Once::new();
         STARTED.call_once(|| {
             let spawned = std::thread::Builder::new()
                 .name("update-check".to_owned())
-                .spawn(run_update_check);
+                .spawn(move || run_update_check(&journal));
             if let Err(error) = spawned {
                 log::warn!("update check did not start: {error}");
             }
@@ -49,13 +52,71 @@ pub(crate) fn start_update_check() {
 }
 
 #[cfg(target_os = "linux")]
-fn run_update_check() {
+fn run_update_check(journal: &std::path::Path) {
     let mut verified_at = None;
     loop {
         if update_check_due(verified_at, std::time::SystemTime::now()) && refresh_update_listing() {
             verified_at = Some(std::time::SystemTime::now());
         }
+        #[cfg(feature = "host")]
+        if let Some(data_dir) = solstone_core_update::owner_data_dir() {
+            reconcile_paused_notice(journal, &data_dir, &send_owner_notice);
+        }
+        #[cfg(not(feature = "host"))]
+        let _ = journal;
         std::thread::sleep(UPDATE_CHECK_TICK);
+    }
+}
+
+/// The owner-notice family for automatic updates, which is also the push kind.
+#[cfg(all(target_os = "linux", feature = "host"))]
+const AUTOMATIC_FAMILY: &str = "automatic_update";
+#[cfg(all(target_os = "linux", feature = "host"))]
+const PAUSED_KEY: &str = "automatic_update:paused";
+
+/// Tell the owner once when automatic updates stop after failing twice, and end
+/// the notice when they run again. Read from the kept state, so a pause that
+/// happened while the journal was down is still told.
+#[cfg(all(target_os = "linux", feature = "host"))]
+fn reconcile_paused_notice(
+    journal: &std::path::Path,
+    data_dir: &std::path::Path,
+    send: &dyn Fn(&std::path::Path, &Value),
+) {
+    use solstone_core_update::automatic;
+    let paused = automatic::read_choice(data_dir) == automatic::Choice::On
+        && automatic::read_state(data_dir).paused;
+    let active = solstone_core_push::owner_notice::active_keys(journal, AUTOMATIC_FAMILY)
+        .iter()
+        .any(|key| key == PAUSED_KEY);
+    if paused && !active {
+        send(
+            journal,
+            &json!({
+                "tract": "owner_notice",
+                "event": "raise",
+                "key": PAUSED_KEY,
+                "title": "automatic updates stopped",
+                "message": "your journal couldn't install an update twice in a row, so it stopped trying. the version you have keeps running.",
+                "action": "/app/home/",
+            }),
+        );
+    } else if !paused && active {
+        send(
+            journal,
+            &json!({"tract": "owner_notice", "event": "clear", "key": PAUSED_KEY}),
+        );
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "host"))]
+fn send_owner_notice(journal: &std::path::Path, row: &Value) {
+    let sender = solstone_core_callosum::CallosumOneShotSender::new(
+        journal.join("health/callosum.sock"),
+        std::time::Duration::from_secs(1),
+    );
+    if sender.send_line(&format!("{row}\n")).is_err() {
+        log::debug!("automatic update owner notice unavailable");
     }
 }
 
@@ -141,9 +202,13 @@ pub async fn status(journal_root: PathBuf) -> Response {
                     .unwrap_or(solstone_core_update::HoldState::Unknown),
             )
         });
-
-        let version_report = with_running_version(version_report);
-        return Json(status_body(json!(version_report), json!(capture))).into_response();
+        let version = tokio::task::spawn_blocking({
+            let current_exe = std::env::current_exe();
+            move || linux_version_value(with_running_version(version_report), current_exe.ok())
+        })
+        .await
+        .unwrap_or_else(|_| json!({"current": env!("CARGO_PKG_VERSION")}));
+        return Json(status_body(version, json!(capture))).into_response();
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -170,6 +235,207 @@ fn with_running_version(
         .current
         .get_or_insert_with(|| env!("CARGO_PKG_VERSION").to_owned());
     report
+}
+
+/// The version status with what automatic updates and a package install add:
+/// a newer journal already installed and waiting for the next start, the
+/// owner's switch, and where a package install gets its updates.
+#[cfg(target_os = "linux")]
+fn linux_version_value(
+    report: solstone_core_update::UpdateReport,
+    executable: Option<PathBuf>,
+) -> Value {
+    use solstone_core_update::{Availability, OwnershipResult, PackageProbe, RouteKind, automatic};
+    let Some(data_dir) = solstone_core_update::owner_data_dir() else {
+        return json!(report);
+    };
+    let etc_dir = std::path::Path::new("/etc");
+    let probe = RememberedProbe {
+        inner: &solstone_core_update::RealPackageProbe,
+        answers: &PAYLOAD_ANSWERS,
+    };
+    let report = executable.as_deref().map_or(report.clone(), |exe| {
+        with_pending_restart(report, exe, &data_dir)
+    });
+    let ownership = executable
+        .as_deref()
+        .map(|exe| solstone_core_update::classify_ownership(exe, &data_dir, etc_dir, &probe));
+    let pos = match &ownership {
+        Some(OwnershipResult::Positive(pos)) => Some(pos),
+        _ => None,
+    };
+    let mut automatic = automatic::status(pos, &data_dir);
+    // A tree install whose newer journal waits for the next start is the same
+    // install, so it can update itself as before.
+    automatic.eligible |= report.availability == Availability::Installed;
+    let mut value = json!(report);
+    value["automatic"] = json!(automatic);
+    let package = pos.is_some_and(|pos| {
+        matches!(
+            pos.route_kind,
+            RouteKind::PlatformPackage | RouteKind::PlatformMixed
+        ) && pos
+            .components
+            .iter()
+            .any(|c| (c.name == "journal" || c.name == "cli") && c.route != "tree")
+    });
+    if package {
+        value["package"] = json!({"repository": probe.has_repo_source(etc_dir)});
+    }
+    value
+}
+
+/// A journal still running the version an update replaced is not "unknown":
+/// the newer one is installed and starts the next time the journal does.
+#[cfg(target_os = "linux")]
+fn with_pending_restart(
+    mut report: solstone_core_update::UpdateReport,
+    executable: &std::path::Path,
+    data_dir: &std::path::Path,
+) -> solstone_core_update::UpdateReport {
+    if report.code.as_deref() != Some("install-not-owned") {
+        return report;
+    }
+    let Some(installed) =
+        solstone_core_update::pending_restart(executable, data_dir, env!("CARGO_PKG_VERSION"))
+    else {
+        return report;
+    };
+    report.availability = solstone_core_update::Availability::Installed;
+    report.current = Some(env!("CARGO_PKG_VERSION").to_owned());
+    report.target = Some(solstone_core_update::UpdateTarget {
+        platform_version: None,
+        journal_version: installed,
+    });
+    report.code = None;
+    report.message = None;
+    report
+}
+
+/// `POST /api/system/updates/automatic` with `{"on": true|false}`: the pane's
+/// one-time question and its switch. The newest installed journal answers, so
+/// a journal waiting for its next start can still change it.
+#[allow(clippy::needless_return)]
+pub async fn set_automatic(body: Option<Json<Value>>) -> Response {
+    #[cfg(target_os = "linux")]
+    {
+        let Some(on) = body.and_then(|Json(body)| body.get("on").and_then(Value::as_bool)) else {
+            return update_error(
+                "invalid_request",
+                "send {\"on\": true} or {\"on\": false}.",
+                axum::http::StatusCode::BAD_REQUEST,
+            );
+        };
+        let ran = tokio::task::spawn_blocking(move || {
+            let data_dir = solstone_core_update::owner_data_dir()?;
+            let cli = solstone_core_update::automatic::current_tree_solstone(&data_dir).or_else(
+                || {
+                    std::env::current_exe()
+                        .ok()
+                        .map(|exe| exe.with_file_name("solstone"))
+                },
+            )?;
+            std::process::Command::new(cli)
+                .args([
+                    "update",
+                    "--automatic",
+                    if on { "on" } else { "off" },
+                    "--json",
+                ])
+                .stdin(std::process::Stdio::null())
+                .output()
+                .ok()
+        })
+        .await
+        .ok()
+        .flatten();
+        return match ran {
+            Some(output) if output.status.success() => {
+                Json(json!({"ok": true, "on": on})).into_response()
+            }
+            Some(output) => {
+                let reply: Value = serde_json::from_slice(&output.stdout).unwrap_or(Value::Null);
+                update_error(
+                    reply["code"].as_str().unwrap_or("automatic_update_failed"),
+                    reply["message"]
+                        .as_str()
+                        .unwrap_or("couldn't change automatic updates."),
+                    axum::http::StatusCode::CONFLICT,
+                )
+            }
+            None => update_error(
+                "automatic_update_failed",
+                "couldn't change automatic updates.",
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        };
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = body;
+        axum::http::StatusCode::NOT_FOUND.into_response()
+    }
+}
+
+/// `POST /api/system/updates/retry`: the pane's "try again" after a pause.
+#[allow(clippy::needless_return)]
+pub async fn retry_automatic() -> Response {
+    #[cfg(target_os = "linux")]
+    {
+        let done = tokio::task::spawn_blocking(|| {
+            let data_dir = solstone_core_update::owner_data_dir().ok_or(())?;
+            solstone_core_update::automatic::try_again(
+                &data_dir,
+                &solstone_core_update::automatic::RealSystemctl,
+            )
+            .map_err(|_| ())
+        })
+        .await;
+        return match done {
+            Ok(Ok(())) => Json(json!({"ok": true})).into_response(),
+            _ => update_error(
+                "automatic_update_failed",
+                "couldn't start the update.",
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        };
+    }
+    #[cfg(not(target_os = "linux"))]
+    axum::http::StatusCode::NOT_FOUND.into_response()
+}
+
+/// `POST /api/system/restart`: the owner's press on "restart your journal".
+/// The restart is queued, not waited for: it ends this process too.
+#[allow(clippy::needless_return)]
+pub async fn restart_journal() -> Response {
+    #[cfg(target_os = "linux")]
+    {
+        let queued = tokio::task::spawn_blocking(|| {
+            std::process::Command::new("systemctl")
+                .args(["--user", "--no-block", "restart", "solstone.service"])
+                .stdin(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success())
+        })
+        .await
+        .unwrap_or(false);
+        return if queued {
+            (axum::http::StatusCode::ACCEPTED, Json(json!({"ok": true}))).into_response()
+        } else {
+            update_error(
+                "restart_failed",
+                "couldn't restart your journal. run solstone journal service restart.",
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        };
+    }
+    #[cfg(not(target_os = "linux"))]
+    axum::http::StatusCode::NOT_FOUND.into_response()
+}
+
+#[cfg(target_os = "linux")]
+fn update_error(code: &str, message: &str, status: axum::http::StatusCode) -> Response {
+    solstone_core_convey_http::envelope::error_envelope(code, message, code, status).into_response()
 }
 
 #[cfg(target_os = "linux")]
@@ -382,6 +648,7 @@ mod update_tests {
                     platform_version: "2.0.49-r2".to_owned(),
                     journal_version: "2.0.49".to_owned(),
                     desktop_version: None,
+                    installer: None,
                 })
             } else {
                 Err(CatalogueRefusal {

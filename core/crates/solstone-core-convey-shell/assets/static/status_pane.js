@@ -244,6 +244,7 @@ window.whenShellReady(() => {
             renderCaptureSection(data.capture);
             renderVersionSection(data.version);
             renderSecuritySection(data.security);
+            renderAutomaticUpdate(data.version);
           }
         } else {
           lastCaptureStatusForPane = 'unknown';
@@ -413,14 +414,98 @@ window.whenShellReady(() => {
       span.style.color = 'var(--warn-ink)';
       span.textContent = 'update available (v' + targetVer + ')';
       text.appendChild(span);
+      const how = automaticSuffix(version, true);
+      if (how) text.appendChild(document.createTextNode(' · ' + how));
+      text.style.color = '';
+    } else if (version?.availability === 'installed') {
+      text.textContent = 'v' + (version?.current || '?') + ' · v' + (version?.target?.journal_version || '?')
+        + ' is installed and starts the next time your journal does';
       text.style.color = '';
     } else if (version?.availability === 'not_available') {
-      text.textContent = 'v' + (version?.current || 'unknown') + ' · up to date';
+      const how = automaticSuffix(version, false);
+      text.textContent = 'v' + (version?.current || 'unknown') + ' · up to date' + (how ? ' · ' + how : '');
       text.style.color = '';
     } else {
       text.textContent = 'update status unknown';
       text.style.color = '';
     }
+  }
+
+  // How an update gets here, said after the version when the journal updates itself.
+  function automaticSuffix(version, available) {
+    const automatic = version?.automatic;
+    if (automatic?.choice !== 'on' || automatic.paused) return '';
+    if (!available) return 'updates automatically';
+    if (automatic.last_result === 'metered') return "installs on a connection that isn't metered";
+    if (automatic.last_result === 'held') return 'updates are held';
+    return 'installs automatically';
+  }
+
+  function postSystem(path, body) {
+    return fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    }).then(r => r.ok).catch(() => false).then(fetchSystemStatus);
+  }
+
+  function actionButton(label, onPress) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.style.marginRight = '8px';
+    button.addEventListener('click', function () {
+      button.disabled = true;
+      onPress();
+    });
+    return button;
+  }
+
+  // Automatic updates: the one-time question, a pause after two tries that
+  // didn't work, and where a package install gets its updates.
+  function renderAutomaticUpdate(version) {
+    const box = document.getElementById('automatic-update-text');
+    if (!box) return;
+    box.textContent = '';
+    const automatic = version?.automatic;
+    const line = text => {
+      const div = document.createElement('div');
+      div.textContent = text;
+      box.appendChild(div);
+      return div;
+    };
+    if (version?.package) {
+      if (version.package.repository) {
+        line("installed from a package. updates come through your system's updater.");
+      } else {
+        const div = line("installed from a package. to get updates through your system's updater, add the solstone repository: ");
+        const link = document.createElement('a');
+        link.href = 'https://solstone.app/install#linux-packages';
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        link.referrerPolicy = 'no-referrer';
+        link.textContent = 'solstone.app/install#linux-packages';
+        div.appendChild(link);
+      }
+    } else if (automatic?.eligible && automatic.choice === 'unasked') {
+      const ask = line('update your journal automatically?');
+      ask.style.fontWeight = '600';
+      line(automatic.with_app
+        ? 'once a day your journal and the solstone app check for a new version and install it in the background. your journal never restarts on its own.'
+        : 'once a day your journal checks for a new version and installs it in the background. it never restarts on its own.');
+      const buttons = document.createElement('div');
+      buttons.style.marginTop = '4px';
+      buttons.appendChild(actionButton('turn on', () => postSystem('/api/system/updates/automatic', { on: true })));
+      buttons.appendChild(actionButton('no thanks', () => postSystem('/api/system/updates/automatic', { on: false })));
+      box.appendChild(buttons);
+    } else if (automatic?.choice === 'on' && automatic.paused) {
+      line("automatic updates stopped after two tries that didn't work.").style.color = 'var(--warn-ink)';
+      const buttons = document.createElement('div');
+      buttons.style.marginTop = '4px';
+      buttons.appendChild(actionButton('try again', () => postSystem('/api/system/updates/retry')));
+      box.appendChild(buttons);
+    }
+    box.style.display = box.childNodes.length ? '' : 'none';
   }
 
   // What the security advisory check found. Nothing shows while it checks
@@ -435,6 +520,15 @@ window.whenShellReady(() => {
       text.style.color = 'var(--warn-ink)';
       flags.forEach(function (flag) {
         const line = document.createElement('div');
+        if (flag?.restart) {
+          line.textContent = 'a security update is installed. restart your journal to finish it.';
+          text.appendChild(line);
+          const buttons = document.createElement('div');
+          buttons.style.marginTop = '4px';
+          buttons.appendChild(actionButton('restart your journal', () => postSystem('/api/system/restart')));
+          text.appendChild(buttons);
+          return;
+        }
         line.textContent = (flag?.subject === 'journal'
           ? 'your journal is missing a security fix'
           : 'the solstone app on ' + (flag?.device || 'one of your devices') + ' is missing a security fix')

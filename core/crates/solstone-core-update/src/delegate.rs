@@ -44,7 +44,27 @@ impl InstallerRunner for RealInstallerRunner {
         // An installation stays in the foreground until its owner exits;
         // timing out a privileged package manager could return while it is
         // still changing the system.
-        run_installer(program, args, stdin)
+        run_installer(program, args, stdin, &[])
+    }
+}
+
+/// Runs the installer for an automatic update: no terminal, and the signal
+/// the journal's setup reads to leave the service as it is.
+pub struct UnattendedInstallerRunner;
+
+impl InstallerRunner for UnattendedInstallerRunner {
+    fn run(
+        &self,
+        program: &Path,
+        args: &[OsString],
+        _stdin: StdinMode,
+    ) -> std::io::Result<InstallerOutput> {
+        run_installer(
+            program,
+            args,
+            StdinMode::Closed,
+            &[(crate::automatic::UNATTENDED_ENV, "1")],
+        )
     }
 }
 
@@ -72,9 +92,11 @@ fn run_installer(
     program: &Path,
     args: &[OsString],
     stdin: StdinMode,
+    envs: &[(&str, &str)],
 ) -> std::io::Result<InstallerOutput> {
     let mut cmd = Command::new(program);
     cmd.args(args)
+        .envs(envs.iter().copied())
         .stdin(match stdin {
             StdinMode::Closed => Stdio::null(),
             StdinMode::Inherit => Stdio::inherit(),

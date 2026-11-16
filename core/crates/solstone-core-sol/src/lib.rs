@@ -377,6 +377,24 @@ pub(crate) fn run_with_update_seams(
         }
     };
 
+    if matches!(
+        update_args.mode,
+        solstone_core_update::CommandMode::AutomaticOn
+            | solstone_core_update::CommandMode::AutomaticOff
+            | solstone_core_update::CommandMode::AutomaticStatus
+            | solstone_core_update::CommandMode::Unattended
+    ) {
+        return run_automatic_mode(
+            &update_args,
+            os_linux,
+            executable,
+            data_dir,
+            etc_dir,
+            catalogue,
+            probe,
+        );
+    }
+
     let result = if let Some(data_dir) = data_dir {
         solstone_core_update::perform(
             catalogue,
@@ -415,6 +433,181 @@ pub(crate) fn run_with_update_seams(
             stderr: String::new(),
             exit: exit_code,
         }
+    }
+}
+
+/// `solstone update --automatic on|off|status` and `--unattended`.
+fn run_automatic_mode(
+    update_args: &solstone_core_update::UpdateArgs,
+    os_linux: bool,
+    executable: &Path,
+    data_dir: Option<&Path>,
+    etc_dir: &Path,
+    catalogue: &dyn solstone_core_update::PlatformCatalogue,
+    probe: &dyn solstone_core_update::PackageProbe,
+) -> CommandOutput {
+    use solstone_core_update::CommandMode;
+    use solstone_core_update::automatic;
+
+    let render = |value: serde_json::Value, human: String, exit: i32| CommandOutput {
+        stdout: if update_args.json {
+            format!("{value}\n")
+        } else {
+            format!("{human}\n")
+        },
+        stderr: String::new(),
+        exit,
+    };
+    let refused = |code: &str, message: &str| {
+        render(
+            json!({"status": "refused", "code": code, "message": message}),
+            message.to_owned(),
+            1,
+        )
+    };
+    let (Some(data_dir), Some(home)) = (data_dir, env::var_os("HOME").map(PathBuf::from)) else {
+        return refused(
+            "owner-context-unknown",
+            "couldn't find your data directory.",
+        );
+    };
+    if !os_linux {
+        return refused(
+            "non-linux",
+            "automatic updates by solstone update are on linux.",
+        );
+    }
+    let systemctl = automatic::RealSystemctl;
+    let ownership = solstone_core_update::classify_ownership(executable, data_dir, etc_dir, probe);
+    let positive = match &ownership {
+        solstone_core_update::OwnershipResult::Positive(pos) => Some(pos),
+        _ => None,
+    };
+    match update_args.mode {
+        CommandMode::AutomaticOn => {
+            let Some(pos) = positive.filter(|pos| automatic::eligible(pos)) else {
+                let message =
+                    automatic::ineligible_message(&ownership, probe.has_repo_source(etc_dir));
+                return refused("not-eligible", &message);
+            };
+            match automatic::turn_on(pos, data_dir, &home, &systemctl) {
+                Ok(()) => render(
+                    json!({"status": "on"}),
+                    "automatic updates are on. your journal never restarts on its own; a new version starts the next time it does.".to_owned(),
+                    0,
+                ),
+                Err(refusal) => refused(refusal.code, &refusal.message),
+            }
+        }
+        CommandMode::AutomaticOff => match automatic::turn_off(data_dir, &home, &systemctl) {
+            Ok(()) => render(
+                json!({"status": "off"}),
+                "automatic updates are off. to update, run solstone update.".to_owned(),
+                0,
+            ),
+            Err(refusal) => refused(refusal.code, &refusal.message),
+        },
+        CommandMode::AutomaticStatus => {
+            let status = automatic::status(positive, data_dir);
+            let human = automatic_status_line(&status);
+            render(json!(status), human, 0)
+        }
+        _ => {
+            let now_unix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            let floor = automatic::StoredAdvisoryFloor {
+                journal: automatic_journal_path(&home),
+                now_unix,
+            };
+            let outcome = automatic::UnattendedRun {
+                catalogue,
+                copy_fetch: &automatic::RealInstallerCopyFetch,
+                runner: &solstone_core_update::UnattendedInstallerRunner,
+                probe,
+                meter: &automatic::NetworkManagerMeter,
+                floor: &floor,
+                executable,
+                data_dir,
+                etc_dir,
+                now_unix,
+            }
+            .run();
+            let human = format!(
+                "automatic update: {}",
+                automatic_result_words(&outcome.result)
+            );
+            render(json!(outcome), human, 0)
+        }
+    }
+}
+
+/// The journal folder, found the way the journal finds it.
+fn automatic_journal_path(home: &Path) -> PathBuf {
+    let env_journal = env::var_os("SOLSTONE_JOURNAL");
+    let config = solstone_core_journal::read_config_journal(home)
+        .ok()
+        .flatten();
+    solstone_core_journal::resolve_journal_path(
+        env_journal.as_deref(),
+        config.as_deref(),
+        None,
+        home,
+    )
+    .path
+}
+
+fn automatic_status_line(status: &solstone_core_update::automatic::AutomaticStatus) -> String {
+    use solstone_core_update::automatic::Choice;
+    let choice = match status.choice {
+        Choice::On if status.paused => "stopped after two tries that didn't work",
+        Choice::On => "on",
+        Choice::Off => "off",
+        Choice::Unasked => "not turned on",
+    };
+    let mut line = format!("automatic updates: {choice}");
+    if let Some(at) = status.last_check_unix {
+        line.push_str(&format!(" · last checked {}", utc_date(at)));
+    }
+    if let Some(ref result) = status.last_result {
+        line.push_str(&format!(" · {}", automatic_result_words(result)));
+    }
+    line
+}
+
+/// `YYYY-MM-DD` in UTC for a Unix time (days-from-civil, inverted).
+fn utc_date(unix: u64) -> String {
+    let days = i64::try_from(unix / 86_400).unwrap_or(0) + 719_468;
+    let era = days.div_euclid(146_097);
+    let day_of_era = days.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_index = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
+    let month = if month_index < 10 {
+        month_index + 3
+    } else {
+        month_index - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+/// Owner words for a run's result. A failure keeps its code, for support.
+fn automatic_result_words(result: &str) -> String {
+    match result {
+        "up-to-date" => "up to date".to_owned(),
+        "installed" => "installed a new version".to_owned(),
+        "off" => "automatic updates are off".to_owned(),
+        "paused" => "stopped after two tries that didn't work".to_owned(),
+        "held" | "hold-unknown" => "updates are held".to_owned(),
+        "offline" => "couldn't reach the update service".to_owned(),
+        "metered" => "waiting for a connection that isn't metered".to_owned(),
+        "waiting-for-signed-installer" => "waiting for the next release".to_owned(),
+        "busy" => "another update was running".to_owned(),
+        "not-eligible" => "this install can't update itself".to_owned(),
+        code => format!("the update didn't work ({code})"),
     }
 }
 
@@ -993,6 +1186,14 @@ impl BuildIdentityProvider for RealBuildIdentityProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_check_time_reads_as_its_utc_day() {
+        assert_eq!(utc_date(0), "1970-01-01");
+        assert_eq!(utc_date(951_782_400), "2000-02-29");
+        assert_eq!(utc_date(1_794_787_199), "2026-11-15");
+        assert_eq!(utc_date(1_794_787_200), "2026-11-16");
+    }
 
     const CLI_BOUNDARY_JSON: &str =
         include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
@@ -2191,6 +2392,7 @@ mod tests {
                 platform_version: "2.0.49-r1".to_owned(),
                 journal_version: "2.0.49".to_owned(),
                 desktop_version: None,
+                installer: None,
             })
         }
     }

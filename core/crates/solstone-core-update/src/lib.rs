@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[cfg(all(feature = "update-test-origin", not(debug_assertions)))]
+compile_error!("update-test-origin is for qualification rigs and never builds optimized");
+
 pub mod advisory;
+pub mod automatic;
 pub mod catalogue;
 pub mod command;
 pub mod delegate;
@@ -21,7 +25,7 @@ pub use catalogue::{
 pub use command::{CommandMode, CommandParseError, UpdateArgs, parse_args, render_help};
 pub use delegate::{
     InstallerOutput, InstallerRunner, PlatformInvocation, RealInstallerRunner, StdinMode,
-    build_native_mutation_argv, build_platform_mutation_invocations,
+    UnattendedInstallerRunner, build_native_mutation_argv, build_platform_mutation_invocations,
 };
 pub use downgrade::{
     ReleaseMetadata, RollbackRefusal, check_target_admissibility, compare_semver_3part,
@@ -33,7 +37,8 @@ pub use hold::{
 };
 pub use ownership::{
     OwnershipResult, PackageProbe, PositiveOwnership, RealPackageProbe, RecordedComponent,
-    RouteKind, ServicePolicy, classify_ownership, normalize_executable_path, positive_tree_release,
+    RouteKind, ServicePolicy, classify_ownership, normalize_executable_path, pending_restart,
+    positive_tree_release,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,6 +47,8 @@ pub enum Availability {
     Available,
     NotAvailable,
     Unknown,
+    /// A newer journal is installed and starts the next time the journal does.
+    Installed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -467,6 +474,13 @@ pub fn perform(
         && pos.prefix.as_deref().is_some_and(is_standalone_prefix);
     match args.mode {
         CommandMode::Help => return Ok(report),
+        // These have their own entry points in `automatic`.
+        CommandMode::AutomaticOn
+        | CommandMode::AutomaticOff
+        | CommandMode::AutomaticStatus
+        | CommandMode::Unattended => {
+            return Err(refusal("mode-unsupported", "this mode is not an update."));
+        }
         CommandMode::Hold | CommandMode::Unhold => {
             let held = args.mode == CommandMode::Hold;
             let result = if held {
@@ -508,8 +522,20 @@ pub fn perform(
             report.message = match report.availability {
                 Availability::Available => Some("an update is available.".to_owned()),
                 Availability::NotAvailable => Some("your journal is up to date.".to_owned()),
-                Availability::Unknown => return Err((report, 1)),
+                Availability::Unknown | Availability::Installed => return Err((report, 1)),
             };
+            // A package install updates through the system's updater.
+            if pos
+                .components
+                .iter()
+                .any(|c| (c.name == "journal" || c.name == "cli") && c.route != "tree")
+                && let Some(message) = report.message.as_mut()
+            {
+                message.push(' ');
+                message.push_str(automatic::package_route_message(
+                    probe.has_repo_source(etc_dir),
+                ));
+            }
             return Ok(report);
         }
         _ => {}
@@ -730,6 +756,9 @@ pub fn perform(
     report.availability = Availability::NotAvailable;
     report.target = None;
     report.components = Some(components);
+    if pos.route_kind != RouteKind::NativeTree || moves_to_platform {
+        automatic::record_owner_update(data_dir, report.platform_version.as_deref());
+    }
     report.message = Some(
         if moves_to_platform {
             "updated your journal. it now updates with the solstone installer, from where it is."
@@ -868,6 +897,7 @@ mod tests {
                 platform_version: platform.to_owned(),
                 journal_version: journal.to_owned(),
                 desktop_version: None,
+                installer: None,
             }),
             asked: Mutex::new(Vec::new()),
         }
@@ -1862,6 +1892,7 @@ esac
                 platform_version: "2.0.76-r2".to_owned(),
                 journal_version: "2.0.76".to_owned(),
                 desktop_version: Some("2.0.41".to_owned()),
+                installer: None,
             }),
             asked: Mutex::new(Vec::new()),
         };

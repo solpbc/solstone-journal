@@ -12,9 +12,8 @@ use std::sync::Mutex;
 
 use minisign::PublicKey;
 
-use crate::fetch::{UPDATE_ORIGIN, download_bytes};
+use crate::fetch::{download_bytes, update_origin};
 
-const CATALOGUE_HOST: &str = "updates.solstone.app";
 const LATEST_MAX_BYTES: u64 = 86;
 const MANIFEST_MAX_BYTES: u64 = 4 * 1024 * 1024;
 const SIGNATURE_MAX_BYTES: u64 = 16 * 1024;
@@ -27,6 +26,19 @@ pub struct CatalogueListing {
     pub platform_version: String,
     pub journal_version: String,
     pub desktop_version: Option<String>,
+    /// The installer copy published beside this catalogue, as the signed
+    /// catalogue names it. Catalogues from before installer revision 22 name
+    /// none, and nothing runs an installer for them unattended.
+    pub installer: Option<InstallerCopy>,
+}
+
+/// An installer copy a signed catalogue names: published at
+/// `solstone/<lane>/<coordinate>/<filename>` on the update origin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallerCopy {
+    pub filename: String,
+    pub sha256: String,
+    pub revision: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,7 +75,8 @@ struct HttpCatalogueBytes;
 
 impl CatalogueBytes for HttpCatalogueBytes {
     fn get(&self, path: &str, max_bytes: u64) -> std::io::Result<Vec<u8>> {
-        download_bytes(&format!("{UPDATE_ORIGIN}{path}"), CATALOGUE_HOST, max_bytes)
+        let (origin, host) = update_origin();
+        download_bytes(&format!("{origin}{path}"), host, max_bytes)
     }
 }
 
@@ -75,7 +88,7 @@ impl PlatformCatalogue for RealPlatformCatalogue {
         lane: &str,
         version: Option<&str>,
     ) -> Result<CatalogueListing, CatalogueRefusal> {
-        let key = solstone_core_installed_payload::platform_pin().map_err(|_| {
+        let key = crate::fetch::update_platform_key().ok_or_else(|| {
             CatalogueRefusal::new(
                 "pin-invalid",
                 "the release key in this build is unreadable.",
@@ -254,6 +267,13 @@ fn read_manifest(
             "the release catalogue does not match the requested release.",
         ));
     }
+    let installer = match value.get("installer") {
+        None => None,
+        Some(block) if value["schema_version"].as_u64() == Some(2) => {
+            Some(read_installer_copy(block).ok_or_else(|| invalid("bad installer"))?)
+        }
+        Some(_) => return Err(invalid("installer in an unsupported schema")),
+    };
     let keynum: [u8; 8] = key.keynum().try_into().map_err(|_| invalid("key id"))?;
     if value["platform_key_id"].as_str()
         != Some(format!("{:016X}", u64::from_le_bytes(keynum)).as_str())
@@ -267,6 +287,26 @@ fn read_manifest(
         platform_version: coordinate,
         journal_version: journal.to_owned(),
         desktop_version,
+        installer,
+    })
+}
+
+fn read_installer_copy(block: &serde_json::Value) -> Option<InstallerCopy> {
+    let fields = block.as_object()?;
+    if fields.len() != 3 {
+        return None;
+    }
+    let filename = fields.get("filename")?.as_str()?;
+    let sha256 = fields.get("sha256")?.as_str()?;
+    let revision = fields.get("revision")?.as_u64()?;
+    let digest_ok = sha256.len() == 64
+        && sha256
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    (filename == "install.sh" && digest_ok && revision > 0).then(|| InstallerCopy {
+        filename: filename.to_owned(),
+        sha256: sha256.to_owned(),
+        revision,
     })
 }
 
@@ -333,6 +373,7 @@ mod tests {
             platform_version: "2.0.65-r1".to_owned(),
             journal_version: "2.0.65".to_owned(),
             desktop_version: None,
+            installer: None,
         };
         let refusal = CatalogueRefusal::new("signature-invalid", "refused");
         let origin = Answers(Mutex::new(vec![Ok(listing.clone()), Err(refusal.clone())]));
@@ -419,8 +460,49 @@ mod tests {
                 platform_version: "2.0.59-r1".to_owned(),
                 journal_version: "2.0.59".to_owned(),
                 desktop_version: Some("2.0.29".to_owned()),
+                installer: None,
             })
         );
+    }
+
+    #[test]
+    fn a_signed_catalogue_names_its_installer_copy_and_a_malformed_name_is_refused() {
+        let pair = KeyPair::generate_unencrypted_keypair().unwrap();
+        let with = |installer: serde_json::Value| {
+            let mut value: serde_json::Value = serde_json::from_slice(&manifest(&pair.pk)).unwrap();
+            value["installer"] = installer;
+            serde_json::to_vec(&value).unwrap()
+        };
+        let digest = "ab".repeat(32);
+        let bytes =
+            with(serde_json::json!({"filename": "install.sh", "revision": 22, "sha256": digest}));
+        let site = served(&bytes, &sign(&pair, &bytes));
+        assert_eq!(
+            verified_listing(&site, &pair.pk, "release", None)
+                .unwrap()
+                .installer,
+            Some(InstallerCopy {
+                filename: "install.sh".to_owned(),
+                sha256: digest.clone(),
+                revision: 22,
+            })
+        );
+        for block in [
+            serde_json::json!({"filename": "other.sh", "revision": 22, "sha256": digest}),
+            serde_json::json!({"filename": "install.sh", "revision": 22, "sha256": "AB".repeat(32)}),
+            serde_json::json!({"filename": "install.sh", "revision": "22", "sha256": digest}),
+            serde_json::json!({"filename": "install.sh", "revision": 22, "sha256": digest, "url": "x"}),
+            serde_json::json!("install.sh"),
+        ] {
+            let bytes = with(block);
+            let site = served(&bytes, &sign(&pair, &bytes));
+            assert_eq!(
+                verified_listing(&site, &pair.pk, "release", None)
+                    .unwrap_err()
+                    .code,
+                "schema-invalid"
+            );
+        }
     }
 
     #[test]

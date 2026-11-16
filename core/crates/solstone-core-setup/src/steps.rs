@@ -2116,6 +2116,17 @@ fn skipped_result(
 }
 
 fn step_service(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
+    // An automatic update never starts, stops or restarts the journal: a
+    // running journal keeps running its version, and one the owner stopped
+    // stays stopped. The new version starts the next time the journal does.
+    if context.args.unattended_update {
+        return Ok(skipped_result(
+            StepName::Service,
+            Vec::new(),
+            (context.now)(),
+            SkipReason::UnattendedUpdate,
+        ));
+    }
     step_service_with_guard(context, None)
 }
 
@@ -2251,6 +2262,14 @@ fn resume_service(
     // its legacy health admission without probing or starting an OS service.
     if context.args.skip_service {
         return Ok(None);
+    }
+    if context.args.unattended_update {
+        return Ok(Some(skipped_result(
+            StepName::Service,
+            paths,
+            (context.now)(),
+            SkipReason::UnattendedUpdate,
+        )));
     }
     if context.sol_already_keeps_journal() {
         narrate(context, SOL_ALREADY_KEEPS_JOURNAL_NARRATION);
@@ -3654,6 +3673,43 @@ mod tests {
             runner.requests[0].program,
             solstone_executable(&root.join("bin"))
         );
+    }
+    #[test]
+    fn an_automatic_update_leaves_the_journal_service_as_it_is() {
+        let (mut args, resolved, root, home) = fixture("unattended-update-service", &[]);
+        args.unattended_update = true;
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let mut ops = SequenceServiceOps {
+            installed: VecDeque::from([true]),
+            healthy: VecDeque::from([false]),
+            restarts: 0,
+            up: 0,
+        };
+        let mut setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        setup.service_ops = &mut ops;
+
+        // Neither the step itself nor its resume after a prior run starts,
+        // stops or restarts anything, even for a journal that isn't healthy.
+        let result = step_service(&mut setup).expect("service step");
+        assert_eq!(result.status, StepStatus::Skipped);
+        assert_eq!(result.reason.as_deref(), Some("unattended_update"));
+        let resumed = resume_service(&mut setup, Vec::new())
+            .expect("resume")
+            .expect("a result, not a rerun");
+        assert_eq!(resumed.reason.as_deref(), Some("unattended_update"));
+        drop(setup);
+        assert!(runner.requests.is_empty());
+        assert_eq!((ops.restarts, ops.up), (0, 0));
+        assert_eq!(ops.installed.len(), 1, "the service was not even probed");
     }
     #[cfg(unix)]
     #[test]

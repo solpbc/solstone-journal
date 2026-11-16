@@ -380,6 +380,42 @@ pub fn positive_tree_release(prefix: &Path) -> Option<(String, PathBuf)> {
     Some((version, target_path))
 }
 
+/// The journal an update installed beside this running one, when this process
+/// runs an older retained version of the same owned tree. The newer version
+/// starts the next time the journal does. Only what is shown depends on this.
+pub fn pending_restart(executable: &Path, data_dir: &Path, running: &str) -> Option<String> {
+    let ini = parse_ini_file(&data_dir.join("install.conf")).ok()?;
+    let header = ini.sections.get("solstone")?;
+    if header.get("route").map(String::as_str) != Some("tree")
+        || header.get("phase").map(String::as_str) != Some("complete")
+    {
+        return None;
+    }
+    let journal = ini
+        .sections
+        .get("component:journal")
+        .or_else(|| ini.sections.get("component:cli"))?;
+    if journal.get("route").map(String::as_str) != Some("tree")
+        || journal.get("status").map(String::as_str) != Some("installed")
+    {
+        return None;
+    }
+    let prefix = PathBuf::from(journal.get("prefix").or_else(|| header.get("prefix"))?);
+    if !prefix.is_absolute() {
+        return None;
+    }
+    let (installed, current) = positive_tree_release(&prefix)?;
+    let versions = fs::canonicalize(prefix.join("versions")).ok()?;
+    let executable = fs::canonicalize(normalize_executable_path(executable)).ok()?;
+    let bin = executable.parent()?;
+    let version_dir = bin.parent()?;
+    if bin.file_name()? != "bin" || version_dir.parent()? != versions || version_dir == current {
+        return None;
+    }
+    (crate::compare_semver_3part(&installed, running) == Some(std::cmp::Ordering::Greater))
+        .then_some(installed)
+}
+
 fn executable_matches_prefix(executable: &Path, prefix: &Path) -> bool {
     let Some((_, dest)) = positive_tree_release(prefix) else {
         return false;
@@ -516,7 +552,8 @@ pub fn classify_ownership(
     for ini in [&tree_ini, &pkg_ini].into_iter().flatten() {
         let valid = ini.sections.get("solstone").is_some_and(|header| {
             header.get("schema_version").map(String::as_str) == Some("1")
-                && header.get("origin").map(String::as_str) == Some(crate::fetch::UPDATE_ORIGIN)
+                && header.get("origin").map(String::as_str)
+                    == Some(crate::fetch::update_origin().0.as_str())
                 && header
                     .get("lane")
                     .is_some_and(|lane| ["release", "staging", "dev"].contains(&lane.as_str()))
