@@ -8,7 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- on linux, a journal installed with `https://solstone.app/install.sh` now updates itself once a day. it checks the signed release catalogue, checks the installer that catalogue names before running it, and installs a newer version in the background. it never restarts your journal: the new version starts the next time your journal does. a new install turns this on and says so, and a journal you already have asks you once in its status pane. `solstone update --automatic off` turns it off.
+- on linux, a journal installed with `https://solstone.app/install.sh` on its default route now updates itself once a day. it checks the signed release catalogue, checks the installer that catalogue names before running it, and installs a newer version in the background. it never restarts your journal: the new version starts the next time your journal does. a new install turns this on and says so, and a journal you already have asks you once in its status pane. `solstone update --automatic off` turns it off.
 - on linux, if an automatic update doesn't work twice in a row, your journal stops trying, tells you, and keeps running the version it has. the status pane has a button to try again.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.

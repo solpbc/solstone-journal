@@ -376,7 +376,7 @@ pub fn ineligible_message(ownership: &OwnershipResult, has_repository: bool) -> 
     if package {
         package_route_message(has_repository).to_owned()
     } else {
-        "this install can't update itself. updates by itself work on an install from https://solstone.app/install.sh.".to_owned()
+        "this install can't update itself. automatic updates work on an install from https://solstone.app/install.sh.".to_owned()
     }
 }
 

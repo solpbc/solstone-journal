@@ -438,15 +438,34 @@ window.whenShellReady(() => {
     if (!available) return 'updates automatically';
     if (automatic.last_result === 'metered') return "installs on a connection that isn't metered";
     if (automatic.last_result === 'held') return 'updates are held';
+    // Nothing is promised while the release names no installer yet, or while
+    // the hold can't be read.
+    if (automatic.last_result === 'waiting-for-signed-installer' || automatic.last_result === 'hold-unknown') return '';
     return 'installs automatically';
   }
 
-  function postSystem(path, body) {
+  // A failed press says why under the button's own section; a pressed button
+  // otherwise just shows the new state.
+  function postSystem(path, body, box) {
     return fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body || {})
-    }).then(r => r.ok).catch(() => false).then(fetchSystemStatus);
+    })
+      .then(r => r.ok ? null : r.json().then(reply => (typeof reply?.error === 'string' ? reply.error : ''), () => ''))
+      .catch(() => '')
+      .then(failed => {
+        if (failed === null) {
+          fetchSystemStatus();
+          return;
+        }
+        if (box && failed) {
+          const line = document.createElement('div');
+          line.textContent = failed;
+          line.style.color = 'var(--warn-ink)';
+          box.appendChild(line);
+        }
+      });
   }
 
   function actionButton(label, onPress) {
@@ -495,14 +514,14 @@ window.whenShellReady(() => {
         : 'once a day your journal checks for a new version and installs it in the background. it never restarts on its own.');
       const buttons = document.createElement('div');
       buttons.style.marginTop = '4px';
-      buttons.appendChild(actionButton('turn on', () => postSystem('/api/system/updates/automatic', { on: true })));
-      buttons.appendChild(actionButton('no thanks', () => postSystem('/api/system/updates/automatic', { on: false })));
+      buttons.appendChild(actionButton('turn on', () => postSystem('/api/system/updates/automatic', { on: true }, box)));
+      buttons.appendChild(actionButton('no thanks', () => postSystem('/api/system/updates/automatic', { on: false }, box)));
       box.appendChild(buttons);
     } else if (automatic?.choice === 'on' && automatic.paused) {
       line("automatic updates stopped after two tries that didn't work.").style.color = 'var(--warn-ink)';
       const buttons = document.createElement('div');
       buttons.style.marginTop = '4px';
-      buttons.appendChild(actionButton('try again', () => postSystem('/api/system/updates/retry')));
+      buttons.appendChild(actionButton('try again', () => postSystem('/api/system/updates/retry', {}, box)));
       box.appendChild(buttons);
     }
     box.style.display = box.childNodes.length ? '' : 'none';
@@ -525,7 +544,7 @@ window.whenShellReady(() => {
           text.appendChild(line);
           const buttons = document.createElement('div');
           buttons.style.marginTop = '4px';
-          buttons.appendChild(actionButton('restart your journal', () => postSystem('/api/system/restart')));
+          buttons.appendChild(actionButton('restart your journal', () => postSystem('/api/system/restart', {}, text)));
           text.appendChild(buttons);
           return;
         }

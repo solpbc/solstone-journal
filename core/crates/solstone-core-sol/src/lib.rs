@@ -474,7 +474,7 @@ fn run_automatic_mode(
     if !os_linux {
         return refused(
             "non-linux",
-            "automatic updates by solstone update are on linux.",
+            "automatic updates work on linux.",
         );
     }
     let systemctl = automatic::RealSystemctl;
@@ -601,7 +601,8 @@ fn automatic_result_words(result: &str) -> String {
         "installed" => "installed a new version".to_owned(),
         "off" => "automatic updates are off".to_owned(),
         "paused" => "stopped after two tries that didn't work".to_owned(),
-        "held" | "hold-unknown" => "updates are held".to_owned(),
+        "held" => "updates are held".to_owned(),
+        "hold-unknown" => "the update hold can't be read".to_owned(),
         "offline" => "couldn't reach the update service".to_owned(),
         "metered" => "waiting for a connection that isn't metered".to_owned(),
         "waiting-for-signed-installer" => "waiting for the next release".to_owned(),
