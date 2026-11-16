@@ -860,9 +860,23 @@ fn discover_served_window<T: EndpointTransport>(
 /// a refused key when one is set, a missing one when none is. A confidential
 /// endpoint that answers 401 indicates access has ended. The bundled lane keeps
 /// the generic reason.
+///
+/// An owner-supplied endpoint's other refusals are named as the cloud presets
+/// name them: a missing model, a rate limit and a server error each set the work
+/// aside to wait, rather than reading as a bad answer that is sent again at once.
+/// Ollama's MLX runner answers every structured request with a 501, which no
+/// number of immediate retries changes.
 fn non_success_reason(endpoint: &ByoEndpoint, status: u16) -> &'static str {
     if status != 401 {
-        return "provider_response_invalid";
+        if endpoint.is_bundled || endpoint.is_confidential {
+            return "provider_response_invalid";
+        }
+        return match status {
+            404 => "model_not_found",
+            429 => "provider_quota_exceeded",
+            500..=599 => "provider_unavailable",
+            _ => "provider_response_invalid",
+        };
     }
     if endpoint.is_confidential {
         return "confidential_access_ended";
@@ -1492,7 +1506,7 @@ mod tests {
     }
 
     #[test]
-    fn an_endpoint_refusing_the_owners_credential_is_a_key_problem() {
+    fn an_owner_endpoints_refusals_are_named_like_the_presets() {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         let keyed = ByoEndpoint {
@@ -1507,8 +1521,12 @@ mod tests {
             (keyed.clone(), 401, "provider_key_invalid"),
             (endpoint("http://endpoint"), 401, "provider_key_missing"),
             (keyed.clone(), 403, "provider_response_invalid"),
-            (keyed, 500, "provider_response_invalid"),
-            (bundled, 401, "provider_response_invalid"),
+            (keyed.clone(), 404, "model_not_found"),
+            (keyed.clone(), 429, "provider_quota_exceeded"),
+            (keyed.clone(), 500, "provider_unavailable"),
+            (keyed, 501, "provider_unavailable"),
+            (bundled.clone(), 401, "provider_response_invalid"),
+            (bundled, 501, "provider_response_invalid"),
         ];
         for (target, status, expected) in cases {
             let mut transport = StubTransport {

@@ -162,7 +162,12 @@ pub fn classify_schema_reply(response: Result<GenerateResponse, ClientError>) ->
                 Some("provider_request_rejected") => SchemaCheck::NotFollowed,
                 // It answered with an error, such as Ollama's MLX runner's 501, or
                 // a passing 500; the image check tells the two apart.
-                Some("provider_response_invalid") => SchemaCheck::Errored,
+                Some(
+                    "provider_response_invalid"
+                    | "provider_unavailable"
+                    | "model_not_found"
+                    | "provider_quota_exceeded",
+                ) => SchemaCheck::Errored,
                 _ => SchemaCheck::Unchecked {
                     reason: refusal_reason(code),
                 },
@@ -239,8 +244,15 @@ mod tests {
     #[test]
     fn an_error_reply_counts_only_when_the_endpoint_answers_otherwise() {
         // Ollama's MLX runner answers every `response_format` with HTTP 501,
-        // which reaches here as an invalid response, and still reads images.
-        let errored = classify_schema_reply(refused("provider_response_invalid"));
+        // which reaches here as an unavailable provider, and still reads images.
+        for code in [
+            "provider_response_invalid",
+            "model_not_found",
+            "provider_quota_exceeded",
+        ] {
+            assert_eq!(classify_schema_reply(refused(code)), SchemaCheck::Errored);
+        }
+        let errored = classify_schema_reply(refused("provider_unavailable"));
         assert_eq!(errored, SchemaCheck::Errored);
         assert_eq!(
             errored.clone().settle(&ImageCheck::Read),

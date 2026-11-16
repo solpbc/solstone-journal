@@ -274,7 +274,15 @@ pub(crate) fn refusal_reason(code: Option<&str>) -> CheckReason {
         Some("local_queue_timeout") => CheckReason::Busy,
         Some("provider_key_invalid" | "provider_key_missing") => CheckReason::Key,
         Some("provider_request_rejected" | "context_window_exceeded") => CheckReason::Rejected,
-        Some("thinking_consumed_budget" | "provider_response_invalid") => CheckReason::Unusable,
+        // An owner endpoint's missing model, rate limit and server error are named
+        // like the presets'; to this check each is still an unusable reply.
+        Some(
+            "thinking_consumed_budget"
+            | "provider_response_invalid"
+            | "provider_unavailable"
+            | "model_not_found"
+            | "provider_quota_exceeded",
+        ) => CheckReason::Unusable,
         None => CheckReason::Unusable,
         _ => CheckReason::Other,
     }
@@ -535,6 +543,9 @@ mod tests {
             ("context_window_exceeded", CheckReason::Rejected),
             ("thinking_consumed_budget", CheckReason::Unusable),
             ("provider_response_invalid", CheckReason::Unusable),
+            ("provider_unavailable", CheckReason::Unusable),
+            ("model_not_found", CheckReason::Unusable),
+            ("provider_quota_exceeded", CheckReason::Unusable),
             ("context_budget_exceeded", CheckReason::Other),
             ("unrecognized_wire_code_123", CheckReason::Other),
         ];

@@ -50,6 +50,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - fixed another android permission error when downloading a journal archive.
 - fixed a failure when downloading a journal archive in the android and iphone development apps.
 - dimming the journal on iphone hides the keyboard and page controls until you wake it.
+- with your own endpoint, when the server answers that it doesn't have the model, that you've hit a rate limit, or with a server error, your journal now waits and tries that work again later. before, it could send the same request several times in a row.
 - the journal on iphone keeps its folder permissions private when opening a new or existing journal.
 - fixed the stats page failing to open when your journal runs on android or ios.
 - reduced unnecessary background work while the journal on a phone is idle.
