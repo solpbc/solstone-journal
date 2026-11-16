@@ -70,6 +70,11 @@ const ALLOWLIST: &[AllowlistRow] = &[
         reason: "catalog CUDA upstream_url rows",
     },
     AllowlistRow {
+        path: "core/crates/solstone-core-assets/src/lib.rs",
+        marker: "restic-erase",
+        reason: "catalog backup erase helper upstream_url rows",
+    },
+    AllowlistRow {
         path: "core/crates/solstone-core/src/install_provider.rs",
         marker: "PARAKEET_DOWNLOAD_DISCLOSURE",
         reason: "disclosure copy",
