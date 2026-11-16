@@ -9,10 +9,13 @@
 //! supervisor over a private local socket instead of attesting a channel of its
 //! own. Without the supervisor's socket a call connects directly, as before.
 //!
-//! The socket lives in the journal's `health/` directory, readable and writable
-//! by the owner's account alone. Each connection carries one call: a length-
-//! framed request and its priority one way, the framed response the other. A
-//! caller that goes away cancels its call.
+//! On Mac and Linux the channel is a socket in the journal's `health/`
+//! directory, readable and writable by the owner's account alone. On Windows it
+//! is a named pipe named for that same path, which admits the owner's account
+//! alone and a caller that answers the journal's pipe secret. Each connection
+//! carries one call: a length-framed request and its priority one way, the
+//! framed response the other. A caller that goes away, or cancels, cancels
+//! its call.
 
 use std::path::{Path, PathBuf};
 
@@ -23,75 +26,202 @@ pub fn broker_socket_path(journal: &Path) -> PathBuf {
 
 /// The largest frame either side accepts: a Generate request's own ceiling
 /// plus room for its envelope.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const MAX_FRAME_BYTES: u32 = 65 * 1024 * 1024;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 static SERVING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-#[cfg(all(test, unix))]
+#[cfg(all(test, any(unix, windows)))]
 static SERVED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Whether this process serves confidential calls itself, so its own calls
 /// use its channel directly instead of reaching it through the socket.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub(crate) fn serving_here() -> bool {
     SERVING.load(std::sync::atomic::Ordering::Acquire)
 }
 
+/// The platform's private channel: how the supervisor listens and how a caller
+/// reaches it. Everything above it is the same on every platform.
+#[cfg(unix)]
+mod channel {
+    use std::io;
+    use std::path::{Path, PathBuf};
+
+    pub(super) type Reader = std::os::unix::net::UnixStream;
+    pub(super) type Writer = std::os::unix::net::UnixStream;
+
+    pub(super) struct Listener {
+        listener: std::os::unix::net::UnixListener,
+        path: PathBuf,
+        /// The bound socket's identity, so a stop never removes another's.
+        identity: (u64, u64),
+    }
+
+    pub(super) struct Pending(std::os::unix::net::UnixStream);
+
+    impl Listener {
+        pub(super) fn bind(path: &Path) -> io::Result<Self> {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+            let health = path.parent().expect("socket has a parent");
+            std::fs::create_dir_all(health)?;
+            // Bind in a private directory and move the socket into place only
+            // once its mode admits the owner alone, so it is never reachable
+            // more widely.
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let staging = health.join(format!(
+                ".generate-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            // One left by a supervisor that crashed with this process id is ours.
+            let _ = std::fs::remove_dir_all(&staging);
+            std::fs::create_dir(&staging)?;
+            let staged = staging.join("s");
+            let bound = (|| {
+                std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o700))?;
+                let listener = std::os::unix::net::UnixListener::bind(&staged)?;
+                std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o600))?;
+                // A socket left by a supervisor that exited is replaced.
+                std::fs::rename(&staged, path)?;
+                Ok::<_, io::Error>(listener)
+            })();
+            let _ = std::fs::remove_file(&staged);
+            let _ = std::fs::remove_dir(&staging);
+            let listener = bound?;
+            let metadata = std::fs::symlink_metadata(path)?;
+            // Polled, so a stop needs no connection to wake it.
+            listener.set_nonblocking(true)?;
+            Ok(Self {
+                listener,
+                path: path.to_path_buf(),
+                identity: (metadata.dev(), metadata.ino()),
+            })
+        }
+
+        pub(super) fn accept(&self) -> io::Result<Option<Pending>> {
+            match self.listener.accept() {
+                Ok((stream, _)) => Ok(Some(Pending(stream))),
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(None),
+                Err(error) => Err(error),
+            }
+        }
+    }
+
+    impl Drop for Listener {
+        fn drop(&mut self) {
+            use std::os::unix::fs::MetadataExt;
+            if std::fs::symlink_metadata(&self.path)
+                .is_ok_and(|metadata| (metadata.dev(), metadata.ino()) == self.identity)
+            {
+                let _ = std::fs::remove_file(&self.path);
+            }
+        }
+    }
+
+    impl Pending {
+        /// The caller's two directions. Its first frame must come within a
+        /// minute; `call_read` then lifts the limit for the watch that follows.
+        pub(super) fn open(self) -> io::Result<(Reader, Writer)> {
+            self.0.set_nonblocking(false)?;
+            self.0
+                .set_read_timeout(Some(std::time::Duration::from_secs(60)))?;
+            Ok((self.0.try_clone()?, self.0))
+        }
+    }
+
+    pub(super) fn call_read(reader: &Reader) -> io::Result<()> {
+        reader.set_read_timeout(None)
+    }
+
+    /// A caller's two directions; `None` when no supervisor serves this journal.
+    pub(super) fn connect(path: &Path) -> Option<(Reader, Writer)> {
+        let stream = std::os::unix::net::UnixStream::connect(path).ok()?;
+        Some((stream.try_clone().ok()?, stream))
+    }
+
+    /// Leave a call from another thread: the supervisor sees the caller go,
+    /// and the caller's own read returns at once.
+    pub(super) fn abandon(writer: &mut Writer) {
+        let _ = writer.shutdown(std::net::Shutdown::Both);
+    }
+}
+
+#[cfg(windows)]
+mod channel {
+    use std::io::{self, Write};
+    use std::path::Path;
+    use std::time::Duration;
+
+    pub(super) type Reader = Box<dyn io::Read + Send>;
+    pub(super) type Writer = Box<dyn io::Write + Send>;
+
+    pub(super) struct Listener(solstone_core_callosum::private_pipe::PrivatePipeListener);
+
+    pub(super) struct Pending(solstone_core_callosum::private_pipe::PendingCaller);
+
+    impl Listener {
+        pub(super) fn bind(path: &Path) -> io::Result<Self> {
+            std::fs::create_dir_all(path.parent().expect("pipe path has a parent"))?;
+            solstone_core_callosum::private_pipe::PrivatePipeListener::bind(path).map(Self)
+        }
+
+        pub(super) fn accept(&self) -> io::Result<Option<Pending>> {
+            Ok(self.0.accept()?.map(Pending))
+        }
+    }
+
+    impl Pending {
+        /// Challenge the caller, then its two directions.
+        pub(super) fn open(self) -> io::Result<(Reader, Writer)> {
+            let (reader, writer) =
+                solstone_core_callosum::private_pipe::split_private_pipe(self.0.admit()?);
+            Ok((Box::new(reader), Box::new(writer)))
+        }
+    }
+
+    pub(super) fn call_read(_reader: &Reader) -> io::Result<()> {
+        Ok(())
+    }
+
+    /// A caller's two directions; `None` when no supervisor serves this
+    /// journal or none answered in time.
+    pub(super) fn connect(path: &Path) -> Option<(Reader, Writer)> {
+        let stream = solstone_core_callosum::private_pipe::connect_private_pipe(
+            path,
+            Duration::from_secs(2),
+        )
+        .ok()??;
+        let (reader, writer) = solstone_core_callosum::private_pipe::split_private_pipe(stream);
+        Some((Box::new(reader), Box::new(writer)))
+    }
+
+    /// Leave a call from another thread. A pipe cannot be shut down across
+    /// threads, so the caller sends one byte, which the supervisor reads as the
+    /// caller gone; the caller then reads the supervisor's cancelled answer.
+    pub(super) fn abandon(writer: &mut Writer) {
+        let _ = writer.write_all(&[0]).and_then(|()| writer.flush());
+    }
+}
+
 /// A running confidential-call server. Dropping it stops accepting calls and
 /// removes its socket; calls already accepted finish.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub struct ConfidentialBroker {
-    path: PathBuf,
-    /// The bound socket's identity, so a stop never removes another's.
-    identity: (u64, u64),
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     accept: Option<std::thread::JoinHandle<()>>,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl ConfidentialBroker {
     /// Serve the journal's confidential calls from this process.
     ///
     /// # Errors
-    /// Returns the bind error when the socket cannot be created; callers then
+    /// Returns the bind error when the channel cannot be created; callers then
     /// keep connecting directly.
     pub fn start(journal: &Path) -> std::io::Result<Self> {
-        use std::os::unix::fs::PermissionsExt;
-        let path = broker_socket_path(journal);
-        let health = path.parent().expect("socket has a parent");
-        std::fs::create_dir_all(health)?;
-        // Bind in a private directory and move the socket into place only once
-        // its mode admits the owner alone, so it is never reachable more widely.
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let staging = health.join(format!(
-            ".generate-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ));
-        // One left by a supervisor that crashed with this process id is ours.
-        let _ = std::fs::remove_dir_all(&staging);
-        std::fs::create_dir(&staging)?;
-        let staged = staging.join("s");
-        let bound = (|| {
-            std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o700))?;
-            let listener = std::os::unix::net::UnixListener::bind(&staged)?;
-            std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o600))?;
-            // A socket left by a supervisor that exited is replaced.
-            std::fs::rename(&staged, &path)?;
-            Ok::<_, std::io::Error>(listener)
-        })();
-        let _ = std::fs::remove_file(&staged);
-        let _ = std::fs::remove_dir(&staging);
-        let listener = bound?;
-        let identity = {
-            use std::os::unix::fs::MetadataExt;
-            let metadata = std::fs::symlink_metadata(&path)?;
-            (metadata.dev(), metadata.ino())
-        };
-        // Polled, so a stop needs no connection to wake it.
-        listener.set_nonblocking(true)?;
+        let listener = channel::Listener::bind(&broker_socket_path(journal))?;
         let journal = journal.to_path_buf();
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let accept = {
@@ -103,113 +233,101 @@ impl ConfidentialBroker {
         SERVING.store(true, std::sync::atomic::Ordering::Release);
         log::info!("confidential calls: one connection, served by this process");
         Ok(Self {
-            path,
-            identity,
             stop,
             accept: Some(accept),
         })
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl Drop for ConfidentialBroker {
     fn drop(&mut self) {
-        use std::os::unix::fs::MetadataExt;
         SERVING.store(false, std::sync::atomic::Ordering::Release);
         self.stop.store(true, std::sync::atomic::Ordering::Release);
+        // The accept loop owns the listener; joining it closes the channel.
         if let Some(accept) = self.accept.take() {
             let _ = accept.join();
-        }
-        if std::fs::symlink_metadata(&self.path)
-            .is_ok_and(|metadata| (metadata.dev(), metadata.ino()) == self.identity)
-        {
-            let _ = std::fs::remove_file(&self.path);
         }
     }
 }
 
 /// Calls one broker serves at once.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const MAX_SERVED_CALLS: usize = 4;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 static SERVING_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn accept_calls(
-    listener: &std::os::unix::net::UnixListener,
+    listener: &channel::Listener,
     journal: &Path,
     stop: &std::sync::atomic::AtomicBool,
 ) {
     while !stop.load(std::sync::atomic::Ordering::Acquire) {
-        let stream = match listener.accept() {
-            Ok((stream, _)) => stream,
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::sleep(std::time::Duration::from_millis(20));
-                continue;
-            }
-            Err(_) => {
+        let pending = match listener.accept() {
+            Ok(Some(pending)) => pending,
+            Ok(None) | Err(_) => {
                 std::thread::sleep(std::time::Duration::from_millis(20));
                 continue;
             }
         };
-        if stream.set_nonblocking(false).is_err() {
-            continue;
-        }
-        // Callers take turns in the call line, so only a caller that left
-        // mid-call overlaps the next; more than a few at once is a fault.
-        if SERVING_CALLS.load(std::sync::atomic::Ordering::Acquire) >= MAX_SERVED_CALLS {
-            let mut stream = stream;
-            let _ = write_frame(&mut stream, b"econfidential calls are busy");
-            continue;
-        }
-        SERVING_CALLS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        // The handshake and the call's first frame wait on the caller, so they
+        // run off this loop; a caller that stalls there holds only its thread.
         let journal = journal.to_path_buf();
         let spawned = std::thread::Builder::new()
             .name("confidential-call".into())
             .spawn(move || {
-                serve_call(stream, &journal);
-                SERVING_CALLS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+                if let Ok((reader, writer)) = pending.open() {
+                    serve_call(reader, writer, &journal);
+                }
             });
         if let Err(error) = spawned {
-            SERVING_CALLS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
             log::warn!("confidential calls: could not serve a call: {error}");
         }
     }
 }
 
-#[cfg(unix)]
-fn serve_call(mut stream: std::os::unix::net::UnixStream, journal: &Path) {
-    // A caller sends its call at once; one that never does is let go.
-    if stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(60)))
-        .is_err()
-    {
-        return;
-    }
-    let (priority, request) = match read_frame(&mut stream).and_then(|frame| decode_call(&frame)) {
+#[cfg(any(unix, windows))]
+fn serve_call(mut reader: channel::Reader, mut writer: channel::Writer, journal: &Path) {
+    let (priority, request) = match read_frame(&mut reader).and_then(|frame| decode_call(&frame)) {
         Ok(call) => call,
         Err(error) => {
             log::warn!("confidential calls: refused an unreadable call: {error}");
             let _ = write_frame(
-                &mut stream,
+                &mut writer,
                 format!("ecall was unreadable: {error}").as_bytes(),
             );
             return;
         }
     };
-    if stream.set_read_timeout(None).is_err() {
+    if channel::call_read(&reader).is_err() {
         return;
     }
+    // Callers take turns in the call line, so only a caller that left mid-call
+    // overlaps the next; more than a few at once is a fault. The call has been
+    // read, so its caller is waiting for this answer.
+    if SERVING_CALLS.fetch_add(1, std::sync::atomic::Ordering::AcqRel) >= MAX_SERVED_CALLS {
+        SERVING_CALLS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        let _ = write_frame(&mut writer, b"econfidential calls are busy");
+        return;
+    }
+    struct Served;
+    impl Drop for Served {
+        fn drop(&mut self) {
+            SERVING_CALLS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        }
+    }
+    let _served = Served;
     // The caller writes nothing more, so a read returns only when it leaves.
     let gone = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    if let Ok(mut watch) = stream.try_clone() {
+    {
         let gone = std::sync::Arc::clone(&gone);
         let _ = std::thread::Builder::new()
             .name("confidential-call-watch".into())
             .spawn(move || {
                 let mut byte = [0u8; 1];
-                let _ = std::io::Read::read(&mut watch, &mut byte);
+                let _ = std::io::Read::read(&mut reader, &mut byte);
                 gone.store(true, std::sync::atomic::Ordering::Release);
             });
     }
@@ -232,10 +350,10 @@ fn serve_call(mut stream: std::os::unix::net::UnixStream, journal: &Path) {
     };
     match encoded {
         Ok(encoded) => {
-            let _ = write_frame(&mut stream, format!("r{encoded}").as_bytes());
+            let _ = write_frame(&mut writer, format!("r{encoded}").as_bytes());
         }
         Err(detail) => {
-            let _ = write_frame(&mut stream, format!("e{detail}").as_bytes());
+            let _ = write_frame(&mut writer, format!("e{detail}").as_bytes());
         }
     }
 }
@@ -246,7 +364,7 @@ fn serve_call(mut stream: std::os::unix::net::UnixStream, journal: &Path) {
 /// # Errors
 /// Returns an error when the supervisor took the call but no response came
 /// back; the call is not repeated, since it may already have reached the engine.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub(crate) fn forward(
     journal: &Path,
     request: &solstone_core_generate::GenerateRequest,
@@ -258,39 +376,39 @@ pub(crate) fn forward(
     forward_to_supervisor(journal, request, context)
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn forward_to_supervisor(
     journal: &Path,
     request: &solstone_core_generate::GenerateRequest,
     context: &crate::GenerateCallContext<'_>,
 ) -> Option<Result<solstone_core_generate::GenerateResponse, String>> {
-    let mut stream = std::os::unix::net::UnixStream::connect(broker_socket_path(journal)).ok()?;
+    let (mut reader, mut writer) = channel::connect(&broker_socket_path(journal))?;
     let call = match encode_call(context.priority, request) {
         Ok(call) => call,
         Err(detail) => return Some(Err(detail)),
     };
-    if write_frame(&mut stream, &call).is_err() {
+    if write_frame(&mut writer, &call).is_err() {
         // Nothing reached the supervisor, so the caller may connect directly.
         return None;
     }
     let done = std::sync::atomic::AtomicBool::new(false);
     let reply = std::thread::scope(|scope| {
-        if let Ok(watch) = stream.try_clone() {
-            let done = &done;
-            scope.spawn(move || {
-                while !done.load(std::sync::atomic::Ordering::Acquire) {
-                    if context.cancellation.is_cancelled() {
-                        let _ = watch.shutdown(std::net::Shutdown::Both);
-                        return;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(50));
+        let done = &done;
+        let writer = &mut writer;
+        scope.spawn(move || {
+            while !done.load(std::sync::atomic::Ordering::Acquire) {
+                if context.cancellation.is_cancelled() {
+                    channel::abandon(writer);
+                    return;
                 }
-            });
-        }
-        let reply = read_frame(&mut stream);
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        });
+        let reply = read_frame(&mut reader);
         done.store(true, std::sync::atomic::Ordering::Release);
         reply
     });
+    drop(writer);
     if context.cancellation.is_cancelled() {
         return Some(Ok(solstone_core_generate::GenerateResponse::Cancelled));
     }
@@ -300,7 +418,7 @@ fn forward_to_supervisor(
     })
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub(crate) fn forward(
     _journal: &Path,
     _request: &solstone_core_generate::GenerateRequest,
@@ -309,7 +427,7 @@ pub(crate) fn forward(
     None
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn encode_call(
     priority: solstone_core_journal_config::work_priority::WorkPriority,
     request: &solstone_core_generate::GenerateRequest,
@@ -318,7 +436,7 @@ fn encode_call(
     Ok(format!("{priority}\n{request}").into_bytes())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn decode_call(
     frame: &[u8],
 ) -> std::io::Result<(
@@ -337,7 +455,7 @@ fn decode_call(
     Ok((priority, request))
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn decode_reply(frame: &[u8]) -> Result<solstone_core_generate::GenerateResponse, String> {
     let text = std::str::from_utf8(frame).map_err(|error| error.to_string())?;
     match text.split_at_checked(1) {
@@ -347,7 +465,7 @@ fn decode_reply(frame: &[u8]) -> Result<solstone_core_generate::GenerateResponse
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn write_frame(stream: &mut impl std::io::Write, body: &[u8]) -> std::io::Result<()> {
     let length = u32::try_from(body.len())
         .ok()
@@ -358,7 +476,7 @@ fn write_frame(stream: &mut impl std::io::Write, body: &[u8]) -> std::io::Result
     stream.flush()
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn read_frame(stream: &mut impl std::io::Read) -> std::io::Result<Vec<u8>> {
     let mut length = [0u8; 4];
     stream.read_exact(&mut length)?;
@@ -374,7 +492,7 @@ fn read_frame(stream: &mut impl std::io::Read) -> std::io::Result<Vec<u8>> {
     Ok(body)
 }
 
-#[cfg(all(test, unix))]
+#[cfg(all(test, any(unix, windows)))]
 mod tests {
     use super::*;
 
@@ -398,6 +516,15 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let journal = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(journal.path().join("config")).unwrap();
+        // Windows names the pipe for the journal's installation; a test names
+        // it as Callosum's native tests do.
+        #[cfg(windows)]
+        let _namespace = {
+            std::fs::create_dir_all(journal.path().join("health")).unwrap();
+            solstone_core_callosum::private_pipe::test_pipe_namespace(&broker_socket_path(
+                journal.path(),
+            ))
+        };
         // A confidential engine nothing serves: the call fails the same way
         // wherever it runs, so only who answered it differs.
         let config = serde_json::json!({
@@ -484,6 +611,56 @@ mod tests {
         drop(broker);
     }
 
+    #[test]
+    fn a_full_broker_reads_the_call_then_answers_busy() {
+        let _serial = SERIAL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let journal = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(journal.path().join("health")).unwrap();
+        #[cfg(windows)]
+        let _namespace = solstone_core_callosum::private_pipe::test_pipe_namespace(
+            &broker_socket_path(journal.path()),
+        );
+        let broker = ConfidentialBroker::start(journal.path()).unwrap();
+        SERVING_CALLS.fetch_add(MAX_SERVED_CALLS, std::sync::atomic::Ordering::AcqRel);
+        let request = solstone_core_generate::GenerateRequest {
+            id: Some("busy".into()),
+            context: "test.broker".into(),
+            contents: vec![solstone_core_generate::ContentPart::Text {
+                text: "hello".into(),
+            }],
+            system_instruction: None,
+            temperature: 0.0,
+            max_output_tokens: 8,
+            timeout_s: Some(5.0),
+            json_output: false,
+            json_schema: None,
+            attempt_index: 0,
+            exclusive_admission: false,
+            overflow_text: None,
+            transport_retries: None,
+        };
+        let context = crate::GenerateCallContext {
+            priority: "5:1".parse().unwrap(),
+            cancellation: &solstone_core_generate::Cancellation::never(),
+        };
+        // The answer comes back at once, neither end waiting on the other.
+        let (sent, answered) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                let _ = sent.send(forward_to_supervisor(journal.path(), &request, &context));
+            });
+            let answer = answered
+                .recv_timeout(std::time::Duration::from_secs(30))
+                .expect("a busy broker answers");
+            assert!(matches!(answer, Some(Err(detail)) if detail.contains("busy")));
+        });
+        SERVING_CALLS.fetch_sub(MAX_SERVED_CALLS, std::sync::atomic::Ordering::AcqRel);
+        drop(broker);
+    }
+
+    #[cfg(unix)]
     #[test]
     fn the_socket_admits_the_owner_alone_and_leaves_with_the_server() {
         let _serial = SERIAL

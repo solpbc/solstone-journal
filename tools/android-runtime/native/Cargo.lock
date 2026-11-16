@@ -5783,6 +5783,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-brain",
+ "solstone-core-callosum",
  "solstone-core-chatgpt-auth",
  "solstone-core-generate",
  "solstone-core-installed-payload",

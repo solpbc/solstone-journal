@@ -982,7 +982,7 @@ pub(super) fn bind_windows_listener(
 
     let pipe_name = crate::windows::pipe_name(socket_path)?;
     let secret = crate::windows::create_or_read_secret(socket_path)?;
-    let descriptor = current_user_pipe_security_descriptor()?;
+    let descriptor = crate::windows::current_user_pipe_security_descriptor()?;
     let name = pipe_name.to_fs_name::<NamedPipe>()?;
     // interprocess 2.4.3 source proof:
     // src/os/windows/named_pipe/local_socket/tokio/listener.rs:23-28 starts with
@@ -994,29 +994,6 @@ pub(super) fn bind_windows_listener(
         .security_descriptor(descriptor)
         .create_tokio()?;
     Ok((listener, secret))
-}
-
-#[cfg(windows)]
-fn current_user_pipe_sddl() -> std::io::Result<String> {
-    // This current-user-SID DACL, with remote clients rejected at listener creation, protects
-    // cross-user/cross-identity and remote-network access—not same-SID malware, which is out of scope.
-    let sid = crate::windows::sid::current_user_sid()?;
-    Ok(format!("O:{sid}D:P(A;;GA;;;{sid})"))
-}
-
-#[cfg(windows)]
-fn current_user_pipe_security_descriptor()
--> std::io::Result<interprocess::os::windows::security_descriptor::SecurityDescriptor> {
-    use widestring::U16CString;
-
-    let sddl = current_user_pipe_sddl()?;
-    let sddl = U16CString::from_str(&sddl).map_err(|_| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Callosum SDDL contains NUL",
-        )
-    })?;
-    interprocess::os::windows::security_descriptor::SecurityDescriptor::deserialize(sddl.as_ucstr())
 }
 
 #[cfg(windows)]
@@ -1210,15 +1187,13 @@ mod windows_native_tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::time::{sleep, timeout};
 
-    use super::{
-        CallosumSocketServer, current_user_pipe_sddl, current_user_pipe_security_descriptor,
-        windows_peer_is_admitted,
-    };
+    use super::{CallosumSocketServer, windows_peer_is_admitted};
     use crate::CallosumOneShotSender;
     use crate::windows::{
         PIPE_CHALLENGE_LEN, PIPE_HANDSHAKE_LEN, client_proof, pipe_name, read_secret,
         server_greeting,
     };
+    use crate::windows::{current_user_pipe_sddl, current_user_pipe_security_descriptor};
 
     fn socket_path(label: &str) -> (PathBuf, crate::windows::namespace_fixture::Guard) {
         let unique = SystemTime::now()

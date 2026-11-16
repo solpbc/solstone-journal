@@ -30,7 +30,7 @@ pub use anthropic::{
     AnthropicFailure, AnthropicGenerated, AnthropicResult, AnthropicTransport,
     UreqAnthropicTransport, anthropic_generate,
 };
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use broker::ConfidentialBroker;
 pub use broker::broker_socket_path;
 pub use bundled::{

@@ -235,6 +235,13 @@ call :run_exact_library "solstone-core-journal-config-write" "bound_commit::cred
 call :run_exact_library "solstone-core-journal-config-write" "bound_commit::credential_publication_tests::unrelated_mutation_has_no_credential_transition_or_brain_directory" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-brain" "writer::tests::first_rejection_publishes_its_binding_with_initially_absent_key" "full-tests" || exit /b 1
 
+echo === cargo test --locked (confidential calls reach the supervisor over a private pipe) ===
+call :run_exact_library "solstone-core-callosum" "private_pipe::tests::a_caller_with_the_secret_is_admitted_and_both_ends_talk" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-callosum" "private_pipe::tests::a_caller_without_the_secret_is_refused" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-callosum" "private_pipe::tests::a_pipe_no_one_serves_reads_as_absent" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-generate-wire" "broker::tests::a_handed_over_call_is_answered_by_the_supervisor_as_it_would_answer_directly" || exit /b 1
+call :run_exact_library "solstone-core-generate-wire" "broker::tests::a_full_broker_reads_the_call_then_answers_busy" || exit /b 1
+
 echo === cargo test --locked --no-run (solstone-core Windows library harness) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core --lib --features test-hooks,journal-mcp-endpoint --no-run || exit /b 1
 

@@ -1950,7 +1950,6 @@ pub(crate) async fn boot_and_tick(
     );
     // The supervisor keeps the journal's one confidential connection; other
     // processes' calls reach it here, or connect directly if this fails.
-    #[cfg(unix)]
     let _confidential_broker =
         match solstone_core_generate_wire::ConfidentialBroker::start(&journal) {
             Ok(broker) => Some(broker),
