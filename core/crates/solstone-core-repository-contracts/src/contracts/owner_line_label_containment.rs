@@ -46,7 +46,7 @@ const LOADER_TOKENS: [&str; 1] = ["load_who_spoke"];
 
 /// Production sources allowed to call the who-spoke loader: the loader itself
 /// and the readers that show who spoke, relative to `core/crates`.
-const LOADER_ALLOWED: [&str; 6] = [
+const LOADER_ALLOWED: [&str; 8] = [
     "solstone-core-transcripts/src/who_spoke.rs",
     // The talent transcript view and the owner's own lines.
     "solstone-core-transcripts/src/lib.rs",
@@ -58,6 +58,10 @@ const LOADER_ALLOWED: [&str; 6] = [
     "solstone-core-talent-runtime/src/participation.rs",
     // Linked sharing.
     "solstone-core-linked-share/src/source.rs",
+    // A who-said-it suggestion's review card and its staleness baseline.
+    "solstone-core-mcp-endpoint/src/suggestions/owner.rs",
+    // A who-said-it suggestion's "already true" check.
+    "solstone-core-mcp-endpoint/src/suggestions/submit.rs",
 ];
 
 fn is_test_source(path: &Path) -> bool {
