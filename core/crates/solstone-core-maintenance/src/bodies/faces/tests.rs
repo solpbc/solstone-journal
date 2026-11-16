@@ -58,7 +58,7 @@ fn discovery_resumes_after_cursor_and_unsupported_inputs_are_not_retried() {
     backfill.cursor = Some(all[1].key.clone());
     backfill
         .unsupported
-        .insert(all[2].key.clone(), all[2].binding.clone());
+        .insert(all[2].key.clone(), unsupported_mark(&all[2].binding));
     stats = Stats::default();
     let pending = discover(root, &mut backfill, &mut stats).unwrap();
     assert_eq!(pending.len(), 3);
@@ -204,9 +204,63 @@ fn a_changed_screen_or_sidecar_is_read_again() {
     std::fs::write(&fresh, "{}\n{\"frame_id\":2,\"content\":{}}\n").unwrap();
     discover(root, &mut cross::Backfill::default(), &mut Stats::default()).unwrap();
     discover(root, &mut cross::Backfill::default(), &mut Stats::default()).unwrap();
-    // The two pending meetings (screen + sidecar each) on both passes, and the
-    // fresh output on both passes.
-    assert_eq!(reads(), 2 * (4 + 1));
+    // The two owed meetings are remembered, so only the fresh output is read,
+    // on both passes.
+    assert_eq!(reads(), 2);
+}
+
+#[test]
+fn an_owed_meeting_costs_a_stat_and_a_new_version_retries_an_unsupported_one() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let dir = root.join("chronicle/20260101/000000_300");
+    std::fs::create_dir_all(&dir).unwrap();
+    let raw = dir.join("screen.webm");
+    std::fs::write(&raw, b"synthetic").unwrap();
+    let meeting =
+        json!({"frame_id":1,"content":{"meeting":{"participants":[{"name":"synthetic"}]}}});
+    std::fs::write(dir.join("screen.jsonl"), format!("{{}}\n{meeting}\n")).unwrap();
+    age(&dir.join("screen.jsonl"), 600);
+    age(&raw, 600);
+    let mut state = cross::Backfill::default();
+    reads();
+    let first = discover(root, &mut state, &mut Stats::default()).unwrap();
+    assert_eq!((first.len(), reads()), (1, 2));
+    // Still owed and unchanged: found again from the cache.
+    let again = discover(root, &mut state, &mut Stats::default()).unwrap();
+    assert_eq!((again.len(), reads()), (1, 0));
+    assert_eq!(again[0].binding, first[0].binding);
+    // Found unsupported by this version: skipped, still without a read.
+    state
+        .unsupported
+        .insert(first[0].key.clone(), unsupported_mark(&first[0].binding));
+    let mut stats = Stats::default();
+    assert!(discover(root, &mut state, &mut stats).unwrap().is_empty());
+    assert_eq!((stats.already_skipped, reads()), (1, 0));
+    // Found unsupported by an older version, which may have decoded less.
+    state.unsupported.insert(
+        first[0].key.clone(),
+        format!("{} 2.0.0-older", first[0].binding),
+    );
+    assert_eq!(
+        discover(root, &mut state, &mut Stats::default())
+            .unwrap()
+            .len(),
+        1
+    );
+    // A sidecar appearing is read, and the meeting counts as described.
+    let digest = solstone_core_segment::screen_body_digest(&dir.join("screen.jsonl")).unwrap();
+    std::fs::write(
+        sidecar_path(&raw),
+        json!({"schema_version":1,"source_name":"screen.webm","screen_body_sha256":digest})
+            .to_string(),
+    )
+    .unwrap();
+    age(&sidecar_path(&raw), 600);
+    reads();
+    let mut stats = Stats::default();
+    assert!(discover(root, &mut state, &mut stats).unwrap().is_empty());
+    assert_eq!((stats.valid, reads()), (1, 2));
 }
 
 #[test]
@@ -221,13 +275,19 @@ fn a_removed_sidecar_or_recording_leaves_the_scan_cache() {
     let mut stats = Stats::default();
     let pending = discover(root, &mut cross::Backfill::default(), &mut stats).unwrap();
     assert_eq!((pending.len(), stats.valid), (1, 0));
-    assert_eq!(load_scan(root).len(), 2);
+    let scan = load_scan(root);
+    let owed = scan
+        .iter()
+        .find(|(k, _)| k.contains("000002_300"))
+        .unwrap()
+        .1;
+    assert!(owed.ends_with(" -"), "remembered as owed, with no sidecar");
     // A recording no longer in the journal drops out of the cache.
     std::fs::remove_dir_all(plain.parent().unwrap()).unwrap();
     discover(root, &mut cross::Backfill::default(), &mut Stats::default()).unwrap();
     let scan = load_scan(root);
-    assert_eq!(scan.len(), 1);
-    assert!(scan.keys().all(|k| k.contains("000000_300")));
+    assert_eq!(scan.len(), 2);
+    assert!(!scan.keys().any(|k| k.contains("000001_300")));
     // Turned off, the catch-up keeps nothing of its own.
     std::fs::create_dir_all(root.join("config")).unwrap();
     std::fs::write(

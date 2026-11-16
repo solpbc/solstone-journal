@@ -16,12 +16,15 @@ use std::{
 pub const BATCH_SIZE: usize = 64;
 const BUDGET: Duration = Duration::from_secs(solstone_core_segment::face_backfill::MAX_SECONDS);
 /// Recording key -> the stamps of what a pass read to settle it: the screen
-/// output of a recording that is not a meeting, or the screen output and
-/// sidecar of a meeting already described. Unchanged since, it costs a stat on
-/// later passes, not a read. A cache only: a miss, a damaged or a lost file just
-/// reads again. Under `cache/`, so backups and portable copies leave it out.
-/// Changing what `meeting_frames` or `valid_sidecar` accepts must bump the
-/// version in this name, or old entries keep their old answer.
+/// output of a recording that is not a meeting; the screen output and sidecar
+/// of a meeting already described; or, for a meeting still owed (pending or
+/// unsupported), the screen output, its body digest and the sidecar's stamp or
+/// `-` when there is none. Unchanged since, it costs a stat on later passes,
+/// not a read. A cache only: a miss, a damaged or a lost file just reads
+/// again. Under `cache/`, so backups and portable copies leave it out.
+/// Changing what `meeting_frames` or `valid_sidecar` accepts, or how
+/// `screen_body_digest` is computed, must bump the version in this name, or
+/// old entries keep their old answer.
 const SCAN_CACHE: &str = "cache/faces/backfill-scan-v1.json";
 /// A file modified this recently could change again inside one timestamp tick
 /// without its stamp moving, so it is read again on the next pass instead.
@@ -88,6 +91,21 @@ fn stamp(path: &Path) -> Option<String> {
     }
     let nanos = modified.duration_since(UNIX_EPOCH).ok()?.as_nanos();
     Some(format!("{}:{nanos}", m.len()))
+}
+/// The sidecar's part of an owed meeting's memo: its stamp, or `-` when the
+/// meeting has none. `None` while it is still being written.
+fn sidecar_token(raw: &Path) -> Option<String> {
+    let path = sidecar_path(raw);
+    if path.exists() {
+        stamp(&path)
+    } else {
+        Some("-".into())
+    }
+}
+/// A recording found unsupported is not tried again by the same journal
+/// version. A new version may decode more, so it tries each one once more.
+fn unsupported_mark(binding: &str) -> String {
+    format!("{binding} {}", env!("CARGO_PKG_VERSION"))
 }
 fn load_scan(journal: &Path) -> BTreeMap<String, String> {
     contained_path(journal, SCAN_CACHE)
@@ -232,42 +250,61 @@ fn discover(
                     let screen_stamp = stamp(screen);
                     let sidecar_stamp = stamp(&sidecar_path(&raw));
                     let memo = scanned.remove(&key);
+                    let mut owed = None;
                     if let (Some(now), Some(memo)) = (&screen_stamp, &memo) {
-                        match memo.split_once(' ') {
-                            None if memo == now => {
+                        match memo.split(' ').collect::<Vec<_>>()[..] {
+                            [screen] if screen == now => {
                                 seen.insert(key, memo.clone());
                                 continue;
                             }
-                            Some((screen, sidecar))
+                            [screen, sidecar]
                                 if screen == now && Some(sidecar) == sidecar_stamp.as_deref() =>
                             {
                                 stats.valid += 1;
                                 seen.insert(key, memo.clone());
                                 continue;
                             }
+                            [screen, digest, sidecar]
+                                if screen == now
+                                    && Some(sidecar) == sidecar_token(&raw).as_deref() =>
+                            {
+                                owed = Some(digest.to_owned());
+                                seen.insert(key.clone(), memo.clone());
+                            }
                             _ => {}
                         }
                     }
-                    changed |= memo.is_some();
-                    if !meeting_frames(screen)? {
-                        if let Some(now) = screen_stamp {
-                            seen.insert(key, now);
-                            changed = true;
+                    let digest = match owed {
+                        Some(digest) => digest,
+                        None => {
+                            changed |= memo.is_some();
+                            if !meeting_frames(screen)? {
+                                if let Some(now) = screen_stamp {
+                                    seen.insert(key, now);
+                                    changed = true;
+                                }
+                                continue;
+                            }
+                            let digest = solstone_core_segment::screen_body_digest(screen)
+                                .map_err(|e| e.to_string())?;
+                            if valid_sidecar(&raw, &digest)? {
+                                stats.valid += 1;
+                                if let (Some(now), Some(sidecar)) = (screen_stamp, sidecar_stamp) {
+                                    seen.insert(key, format!("{now} {sidecar}"));
+                                    changed = true;
+                                }
+                                continue;
+                            }
+                            if let (Some(now), Some(sidecar)) = (screen_stamp, sidecar_token(&raw))
+                            {
+                                seen.insert(key.clone(), format!("{now} {digest} {sidecar}"));
+                                changed = true;
+                            }
+                            digest
                         }
-                        continue;
-                    }
-                    let digest = solstone_core_segment::screen_body_digest(screen)
-                        .map_err(|e| e.to_string())?;
-                    if valid_sidecar(&raw, &digest)? {
-                        stats.valid += 1;
-                        if let (Some(now), Some(sidecar)) = (screen_stamp, sidecar_stamp) {
-                            seen.insert(key, format!("{now} {sidecar}"));
-                            changed = true;
-                        }
-                        continue;
-                    }
+                    };
                     let binding = binding(&raw, &digest)?;
-                    if backfill.unsupported.get(&key) == Some(&binding) {
+                    if backfill.unsupported.get(&key) == Some(&unsupported_mark(&binding)) {
                         stats.already_skipped += 1;
                         continue;
                     }
@@ -414,7 +451,7 @@ fn run(
             Ok(solstone_core_segment::face_backfill::UNSUPPORTED) => {
                 backfill
                     .unsupported
-                    .insert(candidate.key.clone(), current_binding);
+                    .insert(candidate.key.clone(), unsupported_mark(&current_binding));
                 stats.skipped_unsupported += 1;
                 stats.pending -= 1;
             }

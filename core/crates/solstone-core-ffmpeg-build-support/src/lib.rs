@@ -159,8 +159,9 @@ const AUDIO_REMUX_COMPONENT_INVENTORY: &[&str] = &[
 ];
 
 // Describe needs only image extraction from the journal screen recording
-// containers. Its distinct GNU lane therefore never inherits the audio import
-// remux surface merely because the two products share the vendored build script.
+// containers. This set applies when nothing in the build enables swresample; a
+// build that also compiles the audio importer unifies that feature, so its
+// describe gets the audio remux set, which carries these decoders too.
 const VIDEO_DECODE_COMPONENT_ARGS: &[&str] = &[
     "--disable-everything",
     "--disable-network",
