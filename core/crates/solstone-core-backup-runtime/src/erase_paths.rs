@@ -82,9 +82,8 @@ pub fn journal_root(journal: &Path) -> Option<String> {
 pub const ORIGINS_FILE: &str = "config/backup-origins.json";
 
 /// Record that this journal was restored from `snapshot_id`, a backup of it at
-/// `path` (restic's tree form): by the founder's 11-10 ruling a restored
-/// journal is the same journal, so backups at that place are its own, and an
-/// erase reaches them. Write-once per path; the first snapshot named is kept.
+/// `path` (restic's tree form): a restored journal is the same journal, so
+/// backups at that place are its own, and an erase reaches them. Write-once per path; the first snapshot named is kept.
 pub fn record_origin(
     journal: &Path,
     snapshot_id: &str,

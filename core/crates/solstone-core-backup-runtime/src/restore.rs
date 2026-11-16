@@ -1455,9 +1455,9 @@ fn restore_journal_with(
             ),
         );
     }
-    // A journal restored from a backup of it is the same journal (founder,
-    // 11-10): the place that backup came from is this journal's own, for
-    // erases that also remove from the backups.
+    // A journal restored from a backup of it is the same journal: the place
+    // that backup came from is this journal's own, for erases that also
+    // remove from the backups.
     // Recorded only where the selection is the snapshot's own place: a
     // subtree inside it would name a different place.
     let own_place = crate::restic_tree_path(Path::new(&snapshot.path));

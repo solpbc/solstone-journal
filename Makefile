@@ -1484,6 +1484,9 @@ clean-install: clean
 
 CI_FORBIDDEN_INTERPRETERS := python python3 pytest ruff uv
 DISTRIBUTION_FORBIDDEN_TOOLS := $(CI_FORBIDDEN_INTERPRETERS) maturin pip pipx setuptools twine dpkg-deb rpmbuild ar rpm tar cpio curl wget
+# A gate never reads a terminal: stdin is /dev/null, so a test whose code asks
+# a question when a terminal is there cannot wait on one when the gate is run
+# from an interactive shell.
 define run-rust-gate-under-poison
 	@set -eu; \
 	shim_dir=$$(mktemp -d); \
@@ -1497,7 +1500,7 @@ define run-rust-gate-under-poison
 		chmod 755 "$$shim_dir/$$interpreter"; \
 	done; \
 	PATH="$$shim_dir:$$PATH" SOLSTONE_CI_POISONED=1 SOLSTONE_POISON_LOG="$$shim_dir/poison.log" \
-		$(MAKE) CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 $(1)
+		$(MAKE) CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 $(1) < /dev/null
 endef
 
 # Test scratch space inside the contained Linux gate is memory-backed: the unit

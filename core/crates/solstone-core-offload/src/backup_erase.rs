@@ -576,7 +576,8 @@ pub fn run(journal: &Path, services: &BackupServices<'_>) -> Report {
         .filter(|id| !ours.contains(id.as_str()))
         .collect();
     // The journal's place now, and the places setup restores recorded it at
-    // before: by the founder's 11-10 ruling, the same journal's backups.
+    // before: a restored journal is the same journal, so all of them hold
+    // its own backups.
     let mut roots = vec![root.clone()];
     // Origins: places restores recorded. One is sent only while its old place
     // is gone from this device and nothing has backed up there since the
