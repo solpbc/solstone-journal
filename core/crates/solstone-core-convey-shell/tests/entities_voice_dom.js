@@ -12,7 +12,8 @@ module.exports = async function(manifestDir) {
   const workspace = fs.readFileSync(path.join(manifestDir,'assets/entities/workspace.html'),'utf8');
   const copy = JSON.parse(fs.readFileSync(path.join(manifestDir,'../solstone-core-entities/src/data/entities_copy.json'),'utf8'));
   const section = new Node(null,'section');
-  const doc = { createElement: tag => new Node(doc,tag), getElementById: id => id === 'journal-detail-voice-samples' ? section : null };
+  const previewPanel = new Node(null,'div');
+  const doc = { createElement: tag => new Node(doc,tag), getElementById: id => id === 'journal-detail-voice-samples' ? section : id === 'journal-detail-merge-preview' ? previewPanel : null };
   let fail = true;
   let samples = [{key:'selected', day:'20261112', stream:'mic', stream_layout:'named', segment_key:'120000_300', source:'audio', sentence_id:7}];
   const calls = [];
@@ -30,6 +31,9 @@ module.exports = async function(manifestDir) {
     }};
   vm.createContext(context);
   vm.runInContext(workspace.slice(workspace.indexOf('let voiceSamplesRequest ='), workspace.indexOf('function openFacesPanel(')),context);
+  vm.runInContext(workspace.slice(workspace.indexOf('function renderJournalEntityMergePreview('),workspace.indexOf('async function commitJournalEntityMerge(')),context);
+  context.renderJournalEntityMergePreview('source','target','Target',{aliases_added:0,emails_added:0,voiceprints_added:4,voiceprints_target_total:6,notes_on_source:2,speaker_labels:3,activity_records:1});
+  check(previewPanel.children[1].textContent.includes('4') && previewPanel.children[2].tagName==='BUTTON','the four samples to add are visible before the confirmation control');
   await context.loadVoiceSamples(entity);
   let rows = section.all(n => n.className === 'voice-sample-row');
   check(rows.length===1,'the owner sees the saved row');
@@ -45,10 +49,6 @@ module.exports = async function(manifestDir) {
   check(JSON.parse(calls.find(c=>c.init.method==='POST').init.body).key==='selected','only the selected provenance is sent');
   check(section.all(n=>n.className==='voice-sample-row').length===0,'successful removal refreshes the list and count');
   check(section.textContent.includes('(0)'), 'the remaining count is zero');
-  const previewPanel = new Node(doc,'div');
-  doc.getElementById = id => id === 'journal-detail-merge-preview' ? previewPanel : null;
-  vm.runInContext(workspace.slice(workspace.indexOf('function renderJournalEntityMergePreview('),workspace.indexOf('async function commitJournalEntityMerge(')),context);
-  context.renderJournalEntityMergePreview('source','target','Target',{aliases_added:0,emails_added:0,voiceprints_added:4,voiceprints_target_total:6,notes_on_source:2,speaker_labels:3,activity_records:1});
-  check(previewPanel.children[1].textContent.includes('4') && previewPanel.children[2].tagName==='BUTTON','the four samples to add are visible before the confirmation control');
+  check(previewPanel.hidden && previewPanel.children.length===0, 'removing a sample clears the stale merge count and confirmation, requiring a fresh preview');
   return cases;
 };

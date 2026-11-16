@@ -9232,6 +9232,8 @@ async function loadVoiceSamples(entity, cursor = 0, append = false) {
           const result = await apiJson(`${base}/remove`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key: sample.key})});
           if (row.parentNode !== panel || ctx.disposed || currentDetailEntity?.id !== entity.id) return;
           if (!result.removed) throw new Error(ENT_COPY.ENT_VOICE_CHANGED);
+          const mergePreview = document.getElementById('journal-detail-merge-preview');
+          if (mergePreview) { mergePreview.replaceChildren(); mergePreview.hidden = true; }
           await loadVoiceSamples(entity);
           if (currentDetailEntity?.id === entity.id) document.getElementById('voice-samples-heading')?.focus();
         } catch (e) {
