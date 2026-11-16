@@ -14,11 +14,15 @@ unsafe_code = "deny"
 
 [features]
 full-tests = []
+# Qualification rigs only: read the update origin and platform key from the
+# environment. It refuses to build optimized, so no release can carry it.
+update-test-origin = []
 
 [dependencies]
 minisign.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+sha2.workspace = true
 ureq = { workspace = true, features = ["rustls"] }
 solstone-core-installed-payload.workspace = true
 solstone-core-journal.workspace = true

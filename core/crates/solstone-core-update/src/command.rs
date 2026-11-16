@@ -11,6 +11,10 @@ pub enum CommandMode {
     Unhold,
     Rollback,
     Help,
+    AutomaticOn,
+    AutomaticOff,
+    AutomaticStatus,
+    Unattended,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,7 +40,7 @@ impl std::fmt::Display for CommandParseError {
 impl std::error::Error for CommandParseError {}
 
 pub fn render_help() -> String {
-    "usage: solstone update [--check] [--json] [--lane release|staging|dev] [--version VER] [--hold] [--unhold] [--rollback] [--yes] [--help]\n\
+    "usage: solstone update [--check] [--json] [--lane release|staging|dev] [--version VER] [--hold] [--unhold] [--rollback] [--yes] [--automatic on|off|status] [--help]\n\
      \n\
      update your installed solstone journal and apps.\n\
      \n\
@@ -49,6 +53,7 @@ pub fn render_help() -> String {
      \x20 --unhold     release update hold\n\
      \x20 --rollback   roll back to an earlier retained installation\n\
      \x20 --yes        accept unattended update prompts\n\
+     \x20 --automatic  on, off or status: whether your journal updates itself once a day\n\
      \x20 --help       show this help message\n"
         .to_owned()
 }
@@ -63,6 +68,8 @@ pub fn parse_args(args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
     let mut rollback = false;
     let mut yes = false;
     let mut help = false;
+    let mut automatic = None;
+    let mut unattended = false;
 
     let mut iter = args.iter().peekable();
     while let Some(arg) = iter.next() {
@@ -84,6 +91,29 @@ pub fn parse_args(args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
             rollback = true;
         } else if s == "--yes" || s == "-y" {
             yes = true;
+        } else if s == "--unattended" {
+            unattended = true;
+        } else if s == "--automatic" || s.starts_with("--automatic=") {
+            let value = match s.strip_prefix("--automatic=") {
+                Some(value) => value.to_owned(),
+                None => iter
+                    .next()
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| CommandParseError {
+                        message: "--automatic requires on, off or status".to_owned(),
+                    })?
+                    .to_owned(),
+            };
+            automatic = Some(match value.as_str() {
+                "on" => CommandMode::AutomaticOn,
+                "off" => CommandMode::AutomaticOff,
+                "status" => CommandMode::AutomaticStatus,
+                _ => {
+                    return Err(CommandParseError {
+                        message: format!("--automatic takes on, off or status, not '{value}'"),
+                    });
+                }
+            });
         } else if s == "--lane" {
             let next_val = iter.next().ok_or_else(|| CommandParseError {
                 message: "--lane requires a value".to_owned(),
@@ -142,6 +172,26 @@ pub fn parse_args(args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
     if mode_flags_count > 1 {
         return Err(CommandParseError {
             message: "choose only one of --check, --hold, --unhold, or --rollback".to_owned(),
+        });
+    }
+
+    if let Some(mode) = automatic.or(unattended.then_some(CommandMode::Unattended)) {
+        if mode_flags_count > 0
+            || yes
+            || lane.is_some()
+            || version.is_some()
+            || (automatic.is_some() && unattended)
+        {
+            return Err(CommandParseError {
+                message: "--automatic and --unattended can only be combined with --json".to_owned(),
+            });
+        }
+        return Ok(UpdateArgs {
+            mode,
+            json,
+            lane,
+            version,
+            yes,
         });
     }
 
@@ -288,6 +338,38 @@ mod tests {
         for v in bad {
             let args = vec![OsString::from("--version"), OsString::from(v)];
             assert!(parse_args(&args).is_err(), "expected error for {v}");
+        }
+    }
+
+    #[test]
+    fn automatic_and_unattended_stand_alone() {
+        let parse =
+            |args: &[&str]| parse_args(&args.iter().map(OsString::from).collect::<Vec<_>>());
+        assert_eq!(
+            parse(&["--automatic", "on"]).unwrap().mode,
+            CommandMode::AutomaticOn
+        );
+        assert_eq!(
+            parse(&["--automatic=off"]).unwrap().mode,
+            CommandMode::AutomaticOff
+        );
+        assert_eq!(
+            parse(&["--automatic", "status", "--json"]).unwrap().mode,
+            CommandMode::AutomaticStatus
+        );
+        assert_eq!(
+            parse(&["--unattended"]).unwrap().mode,
+            CommandMode::Unattended
+        );
+        for bad in [
+            &["--automatic"][..],
+            &["--automatic", "yes"],
+            &["--unattended", "--yes"],
+            &["--unattended", "--version", "2.0.80"],
+            &["--automatic", "on", "--check"],
+            &["--automatic", "on", "--unattended"],
+        ] {
+            assert!(parse(bad).is_err(), "expected error for {bad:?}");
         }
     }
 

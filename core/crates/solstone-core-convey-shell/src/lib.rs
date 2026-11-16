@@ -791,7 +791,7 @@ async fn bind_embedded_router(
     }
     let _ = door.ensure_started().await;
     let local_network_task = tokio::spawn(local_network::watch(door.clone()));
-    system::start_update_check();
+    system::start_update_check(service_root.clone());
     security_advisory::start(service_root.clone());
     let (link_health_task, service_token_renewal_task) = start_relay_health_tasks(
         service_root.clone(),
@@ -1073,7 +1073,7 @@ pub async fn bind_with_authorization(
         tokio::spawn(async move { serve_loopback(listeners, loopback_router).await });
     let _ = door.ensure_started().await;
     let local_network_task = tokio::spawn(local_network::watch(door.clone()));
-    system::start_update_check();
+    system::start_update_check(options.journal_root.clone());
     security_advisory::start(options.journal_root.clone());
     let door_outcome = door.clone_outcome().expect("door start records an outcome");
     Ok(ConveyServeHandle {
@@ -1570,6 +1570,9 @@ fn router_with_roots(
                 move || system::status(journal_root.clone())
             }),
         )
+        .route("/api/system/updates/automatic", post(system::set_automatic))
+        .route("/api/system/updates/retry", post(system::retry_automatic))
+        .route("/api/system/restart", post(system::restart_journal))
         .route(
             "/sse/events",
             get({

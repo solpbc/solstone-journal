@@ -86,6 +86,9 @@ pub struct SetupArgs {
     pub initial_start_at_sign_in: Option<InitialStartAtSignIn>,
     /// Private phase marker used by the archive installer transaction.
     pub(crate) installer_transaction: bool,
+    /// Set by `solstone update --unattended` for the installer it runs: an
+    /// automatic update never starts, stops or restarts the journal.
+    pub(crate) unattended_update: bool,
     supplied: SuppliedFlags,
 }
 
@@ -156,6 +159,8 @@ pub fn parse_args_at(arguments: &[OsString], cwd: &Path) -> Result<SetupArgs, Us
         clean_uninstall: false,
         initial_start_at_sign_in: None,
         installer_transaction: false,
+        unattended_update: env::var_os("SOLSTONE_UPDATE_UNATTENDED").as_deref()
+            == Some(OsStr::new("1")),
         supplied: SuppliedFlags::default(),
     };
     let mut index = 0;

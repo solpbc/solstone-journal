@@ -140,6 +140,10 @@ pub enum SkipReason {
     PriorRunOk,
     /// This reason accompanies a service `ok` result, not a skipped result.
     ResumedAfterRestart,
+    /// An automatic update installs the new journal beside the running one
+    /// and leaves the service as it is: the new version starts the next time
+    /// the journal does.
+    UnattendedUpdate,
 }
 
 impl SkipReason {
@@ -169,6 +173,7 @@ impl SkipReason {
             Self::SolAlreadyKeepsJournal => "the journal already lives on this mac",
             Self::PriorRunOk => "prior_run_ok",
             Self::ResumedAfterRestart => "resumed_after_restart",
+            Self::UnattendedUpdate => "unattended_update",
         }
     }
 }
@@ -460,6 +465,7 @@ mod tests {
                 SkipReason::SolAlreadyKeepsJournal,
                 SkipReason::PriorRunOk,
                 SkipReason::ResumedAfterRestart,
+                SkipReason::UnattendedUpdate,
             ],
             |reason| match reason {
                 SkipReason::SkipModels
@@ -478,7 +484,8 @@ mod tests {
                 | SkipReason::JournalNotCreatedYet
                 | SkipReason::SolAlreadyKeepsJournal
                 | SkipReason::PriorRunOk
-                | SkipReason::ResumedAfterRestart => {}
+                | SkipReason::ResumedAfterRestart
+                | SkipReason::UnattendedUpdate => {}
             },
         );
         let statuses: Vec<&str> = [

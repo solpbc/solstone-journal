@@ -60,6 +60,9 @@ pub(crate) struct Flag {
     version: String,
     fixed_in: String,
     notes: String,
+    /// The fixed version is already installed; only a restart is missing.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    restart: bool,
     #[serde(skip)]
     key: String,
 }
@@ -131,12 +134,13 @@ fn run(journal: &Path) {
             }
             current(journal, key, now_unix)
         });
-        let report = compare(
+        let mut report = compare(
             current.as_ref(),
             std::env::consts::OS,
             env!("CARGO_PKG_VERSION"),
             &paired_devices(journal),
         );
+        mark_installed_fix(&mut report, installed_journal().as_deref());
         reconcile(journal, &report, &send);
         *REPORT.lock().unwrap_or_else(|p| p.into_inner()) = Some(report);
         std::thread::sleep(TICK);
@@ -257,6 +261,7 @@ pub(crate) fn compare(
             version: journal_version.to_owned(),
             fixed_in: floor.fixed_in.clone(),
             notes: floor.notes.clone(),
+            restart: false,
             key: format!("{FAMILY}:journal:{journal_version}"),
         });
     }
@@ -274,6 +279,7 @@ pub(crate) fn compare(
                 version: version.to_owned(),
                 fixed_in: floor.fixed_in.clone(),
                 notes: floor.notes.clone(),
+                restart: false,
                 key: format!("{FAMILY}:device:{}:{version}", device.cid),
             });
         }
@@ -281,6 +287,36 @@ pub(crate) fn compare(
     Report {
         state: "confirmed",
         flags,
+    }
+}
+
+/// A newer journal an update installed beside this running one, on Linux.
+fn installed_journal() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        let executable = std::env::current_exe().ok()?;
+        let data_dir = solstone_core_update::owner_data_dir()?;
+        solstone_core_update::pending_restart(&executable, &data_dir, env!("CARGO_PKG_VERSION"))
+    }
+    #[cfg(not(target_os = "linux"))]
+    None
+}
+
+/// When the journal's fix is already installed and waits for the next start,
+/// its flag asks for a restart instead of an update, as its own episode.
+pub(crate) fn mark_installed_fix(report: &mut Report, installed: Option<&str>) {
+    let Some(installed) = installed else {
+        return;
+    };
+    for flag in report
+        .flags
+        .iter_mut()
+        .filter(|flag| flag.subject == "journal")
+    {
+        if !advisory::is_below(installed, &flag.fixed_in) {
+            flag.restart = true;
+            flag.key = format!("{FAMILY}:journal-restart:{}", flag.version);
+        }
     }
 }
 
@@ -306,6 +342,10 @@ fn reconcile(journal: &Path, report: &Report, send: &dyn Fn(&Path, &Value)) {
 
 fn raise(flag: &Flag) -> Value {
     let (title, message) = match flag.device.as_deref().map(notice_name) {
+        None if flag.restart => (
+            "restart to finish a security update".to_owned(),
+            "a security update is installed. restart your journal to finish it.".to_owned(),
+        ),
         None => (
             "a security update is ready for your journal".to_owned(),
             format!(
@@ -544,6 +584,28 @@ mod tests {
     }
 
     #[test]
+    fn an_installed_fix_asks_for_a_restart_as_its_own_notice() {
+        let flagged = || compare(Some(&advisory()), "linux", "2.0.60", &[]);
+        let floor = flagged().flags[0].fixed_in.clone();
+
+        let mut waiting = flagged();
+        mark_installed_fix(&mut waiting, Some(&floor));
+        let flag = &waiting.flags[0];
+        assert!(flag.restart);
+        assert_eq!(flag.key, "security_update:journal-restart:2.0.60");
+        assert_eq!(raise(flag)["title"], "restart to finish a security update");
+
+        // Installed but still below the floor, or nothing installed: the
+        // update notice stays as it was.
+        for installed in [Some("2.0.61"), None] {
+            let mut report = flagged();
+            mark_installed_fix(&mut report, installed);
+            assert!(!report.flags[0].restart);
+            assert_eq!(report.flags[0].key, "security_update:journal:2.0.60");
+        }
+    }
+
+    #[test]
     fn a_long_or_odd_device_name_stays_out_of_the_push() {
         let flag = |label: &str| Flag {
             subject: "device",
@@ -551,6 +613,7 @@ mod tests {
             version: "2.0.1".to_owned(),
             fixed_in: "2.0.2".to_owned(),
             notes: "https://solstone.app/n".to_owned(),
+            restart: false,
             key: "security_update:device:x:2.0.1".to_owned(),
         };
         assert_eq!(

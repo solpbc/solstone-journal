@@ -54,7 +54,8 @@
     "choose \"install local model\" on the thinking page once you've created your journal",
     "the journal already lives on this mac",
     "prior_run_ok",
-    "resumed_after_restart"
+    "resumed_after_restart",
+    "unattended_update"
   ],
   "statuses": [
     "ok",

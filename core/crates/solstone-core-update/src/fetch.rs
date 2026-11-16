@@ -14,6 +14,31 @@ pub const PLATFORM_HOST: &str = "solstone.app";
 pub const NATIVE_BOOTSTRAP_URL: &str = "https://updates.solstone.app/solstone-journal/install.sh";
 pub const NATIVE_HOST: &str = "updates.solstone.app";
 
+/// Where update requests go, and the one host they may reach: the update
+/// origin. A build with the test-only `update-test-origin` feature takes a
+/// loopback origin from `SOLSTONE_UPDATE_TEST_ORIGIN` instead.
+pub fn update_origin() -> (String, &'static str) {
+    #[cfg(feature = "update-test-origin")]
+    if let Some(origin) = std::env::var("SOLSTONE_UPDATE_TEST_ORIGIN")
+        .ok()
+        .filter(|origin| origin.starts_with("http://127.0.0.1:"))
+    {
+        return (origin, "127.0.0.1");
+    }
+    (UPDATE_ORIGIN.to_owned(), NATIVE_HOST)
+}
+
+/// The key the catalogue and the advisory are signed with: the compiled
+/// platform release key, or with `update-test-origin`, the key in
+/// `SOLSTONE_UPDATE_TEST_PLATFORM_PUB`.
+pub fn update_platform_key() -> Option<minisign::PublicKey> {
+    #[cfg(feature = "update-test-origin")]
+    if let Ok(key) = std::env::var("SOLSTONE_UPDATE_TEST_PLATFORM_PUB") {
+        return minisign::PublicKey::from_base64(key.trim()).ok();
+    }
+    solstone_core_installed_payload::platform_pin().ok()
+}
+
 pub const MAX_REDIRECT_HOPS: u8 = 5;
 pub const MAX_SCRIPT_SIZE: u64 = 1024 * 1024; // 1 MiB
 
@@ -79,7 +104,12 @@ fn parse_absolute_url(url: &str) -> std::io::Result<AbsoluteUrl> {
     })?;
 
     let scheme = scheme.to_ascii_lowercase();
-    if scheme != "https" {
+    #[cfg(feature = "update-test-origin")]
+    let scheme_allowed = scheme == "https"
+        || (scheme == "http" && rest.starts_with("127.0.0.1:") && update_origin().1 == "127.0.0.1");
+    #[cfg(not(feature = "update-test-origin"))]
+    let scheme_allowed = scheme == "https";
+    if !scheme_allowed {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "URL scheme must be https",
@@ -263,6 +293,69 @@ pub fn download_installer(initial_url: &str, expected_host: &str) -> std::io::Re
     }
     file.as_file().sync_all()?;
     let (_file, path) = file.keep().map_err(std::io::Error::other)?;
+    Ok(path)
+}
+
+/// Why an installer copy was not fetched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CopyFetchError {
+    /// The origin could not be reached.
+    Offline,
+    /// The origin answered, but not with the copy.
+    Unavailable,
+    /// The bytes are not the ones the signed catalogue names.
+    DigestMismatch,
+}
+
+/// Download the installer copy at `url` into a private temporary file, and
+/// keep it only if its SHA-256 is `expected_sha256`.
+pub fn download_installer_copy(
+    url: &str,
+    expected_host: &str,
+    expected_sha256: &str,
+) -> Result<PathBuf, CopyFetchError> {
+    use sha2::{Digest, Sha256};
+    let body = open_confined(url, expected_host).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::ConnectionRefused {
+            CopyFetchError::Offline
+        } else {
+            CopyFetchError::Unavailable
+        }
+    })?;
+    let mut reader = body.into_reader();
+    let mut file = tempfile::Builder::new()
+        .prefix("solstone-installer-")
+        .suffix(".sh")
+        .tempfile()
+        .map_err(|_| CopyFetchError::Unavailable)?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0_u8; 32 * 1024];
+    let mut total_read = 0_u64;
+    loop {
+        let n = reader.read(&mut buf).map_err(|_| CopyFetchError::Offline)?;
+        if n == 0 {
+            break;
+        }
+        total_read += n as u64;
+        if total_read > MAX_SCRIPT_SIZE {
+            return Err(CopyFetchError::DigestMismatch);
+        }
+        hasher.update(&buf[..n]);
+        file.write_all(&buf[..n])
+            .map_err(|_| CopyFetchError::Unavailable)?;
+    }
+    let digest: String = hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    if digest != expected_sha256 {
+        return Err(CopyFetchError::DigestMismatch);
+    }
+    file.as_file()
+        .sync_all()
+        .map_err(|_| CopyFetchError::Unavailable)?;
+    let (_file, path) = file.keep().map_err(|_| CopyFetchError::Unavailable)?;
     Ok(path)
 }
 

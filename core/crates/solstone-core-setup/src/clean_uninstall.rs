@@ -586,6 +586,7 @@ fn remove_service(
         }
         Ok(_) => {}
     }
+    stop_automatic_updates(context);
     if let Err(reason) = (context.identity_hold)(IdentityHold::Reacquire) {
         return result("service", CleanUninstallState::Failed, path, Some(reason));
     }
@@ -616,6 +617,34 @@ fn remove_service(
             Some(error.to_string()),
         ),
         None => unreachable!(),
+    }
+}
+
+/// A journal whose setup is removed no longer updates itself: its daily update
+/// would otherwise set it up again. The journal's own switch removes the timer;
+/// if that can't run, the unit files go, so the timer finds nothing to start.
+fn stop_automatic_updates(context: &mut CleanUninstallContext<'_>) {
+    if context.platform != PlatformTag::Linux {
+        return;
+    }
+    let units = context.home_dir.join(".config/systemd/user");
+    let timer = units.join("solstone-update.timer");
+    if !present(&timer) {
+        return;
+    }
+    let switched_off = context
+        .runner
+        .run(&CommandRequest {
+            program: solstone_executable(&context.executable_dir),
+            args: vec!["update".into(), "--automatic".into(), "off".into()],
+            timeout_seconds: Some(60),
+            idle_timeout_seconds: None,
+            env: Vec::new(),
+        })
+        .is_ok_and(|output| output.exit_code == 0);
+    if !switched_off {
+        let _ = fs::remove_file(&timer);
+        let _ = fs::remove_file(units.join("solstone-update.service"));
     }
 }
 
@@ -1535,6 +1564,13 @@ mod tests {
         }
     }
 
+    impl<'a> CleanUninstallContext<'a> {
+        fn with_runner(mut self, runner: &'a mut dyn CommandRunner) -> Self {
+            self.runner = runner;
+            self
+        }
+    }
+
     fn held_context<'a>(
         root: &Path,
         runner: &'a mut RecordingRunner,
@@ -1617,6 +1653,53 @@ mod tests {
         assert_eq!(*events.borrow(), ["release", "child", "reacquire"]);
         assert_eq!(outcome.exit_code, 0, "{outcome:?}");
         assert!(!root.join("config.toml").exists());
+    }
+
+    struct UpdateSwitchRunner(Rc<RefCell<Vec<Vec<String>>>>, i32);
+    impl CommandRunner for UpdateSwitchRunner {
+        fn run(&mut self, request: &CommandRequest) -> Result<crate::steps::CommandOutput, String> {
+            self.0.borrow_mut().push(request.args.clone());
+            let switch = request.args == ["update", "--automatic", "off"];
+            Ok(crate::steps::CommandOutput {
+                exit_code: if switch { self.1 } else { 0 },
+                stdout: String::new(),
+                stderr: String::new(),
+                timed_out: false,
+            })
+        }
+    }
+
+    #[test]
+    fn a_removed_setup_no_longer_updates_itself() {
+        for switch_exit in [0, 1] {
+            let root = root(&format!("automatic-off-{switch_exit}"));
+            fs::write(root.join("config.toml"), "journal = \"x\"\n").unwrap();
+            let units = root.join("home/.config/systemd/user");
+            fs::create_dir_all(&units).unwrap();
+            fs::write(units.join("solstone-update.timer"), "[Timer]\n").unwrap();
+            fs::write(units.join("solstone-update.service"), "[Service]\n").unwrap();
+            let calls = Rc::new(RefCell::new(Vec::new()));
+            let mut runner = UpdateSwitchRunner(calls.clone(), switch_exit);
+            let mut confirm = || true;
+            let mut hold = |_| Ok(());
+            let mut unused = RecordingRunner(Rc::default(), 0);
+            let mut context =
+                held_context(&root, &mut unused, &mut confirm, &mut hold).with_runner(&mut runner);
+            let outcome = run_clean_uninstall(&mut context);
+            assert_eq!(outcome.exit_code, 0, "{outcome:?}");
+            assert_eq!(
+                calls.borrow().as_slice(),
+                [
+                    vec!["journal", "service", "uninstall"],
+                    vec!["update", "--automatic", "off"]
+                ]
+            );
+            // The switch takes the units away; when it can't run, they go anyway.
+            if switch_exit != 0 {
+                assert!(!units.join("solstone-update.timer").exists());
+                assert!(!units.join("solstone-update.service").exists());
+            }
+        }
     }
 
     #[test]

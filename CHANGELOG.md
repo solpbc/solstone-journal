@@ -11,6 +11,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a person's page now lists saved voice samples with their date, time and a link to the recording. you can remove a sample that belongs to someone else.
 - merge previews now show voice samples added, notes under the name being merged, speaker labels and activities affected.
 
+- on linux, a journal installed with `https://solstone.app/install.sh` on its default route now updates itself once a day. it checks the signed release catalogue, checks the installer that catalogue names before running it, and installs a newer version in the background. it never restarts your journal: the new version starts the next time your journal does. a new install turns this on and says so, and a journal you already have asks you once in its status pane. `solstone update --automatic off` turns it off.
+- on linux, if an automatic update doesn't work twice in a row, your journal stops trying, tells you, and keeps running the version it has. the status pane has a button to try again.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -18,6 +20,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- on linux, when a newer version is installed and waiting, the status pane now says it starts the next time your journal does. before, it said the update status was unknown.
+- on linux, when a security update is installed and only a restart is missing, your journal now says so and has a button to restart it.
+- on linux, `solstone update --check` and the status pane on a package install now say how updates arrive: through your system's updater, once the solstone repository is set up.
 - the journal no longer describes a screen again when it looks the same as it did a few minutes earlier. it keeps the earlier description, so a quiet desk uses much less of the thinking you chose. when no screen changed and nothing was said, it also keeps its earlier account of what you were doing.
 - on windows, with confidential processing your journal now keeps one secure connection open instead of opening a new one for each step, so each step starts sooner.
 - the import page now works like home, transcripts and search: moving between it and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
@@ -26,6 +31,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - recordings tagged with dominant television or music no longer add voice samples to a person. speech with light background music can still contribute samples. existing samples stay available for you to review.
 
+- on linux, after an update that stopped part-way, `solstone update --check` and the status pane now say an update is still available, and running `solstone update` again finishes it. before, they could say your journal was up to date while the solstone app was still on its older version.
 - after you merge two entities, the activities that named the one you merged away now name the one you kept, not an internal id, and an activity that already named the one you kept lists it once.
 - a connected agent that may see entities now also finds, by name, the activities an earlier merge labelled with an internal id.
 - new conversation could be treated as unchanged when it ran about as long as the one before it, so who said each line, and the people detected in it, weren't worked out for that stretch. any new speech now counts as a change.

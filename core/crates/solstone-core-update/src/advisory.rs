@@ -18,9 +18,8 @@ use std::path::Path;
 pub use minisign::PublicKey;
 use serde::{Deserialize, Serialize};
 
-use crate::fetch::{UPDATE_ORIGIN, download_bytes};
+use crate::fetch::{download_bytes, update_origin};
 
-const ADVISORY_HOST: &str = "updates.solstone.app";
 pub const ADVISORY_PATH: &str = "/security/advisory.json";
 pub const SIGNATURE_PATH: &str = "/security/advisory.json.minisig";
 const ADVISORY_MAX_BYTES: u64 = 64 * 1024;
@@ -145,7 +144,8 @@ fn parse(document: &[u8]) -> Result<Advisory, AdvisoryRefusal> {
 /// no version and nothing about the owner is sent.
 pub fn fetch() -> Result<(Vec<u8>, Vec<u8>), AdvisoryRefusal> {
     let get = |path: &str, max: u64| {
-        download_bytes(&format!("{UPDATE_ORIGIN}{path}"), ADVISORY_HOST, max)
+        let (origin, host) = update_origin();
+        download_bytes(&format!("{origin}{path}"), host, max)
             .map_err(|_| AdvisoryRefusal::FetchFailed)
     };
     Ok((
@@ -156,7 +156,7 @@ pub fn fetch() -> Result<(Vec<u8>, Vec<u8>), AdvisoryRefusal> {
 
 /// The compiled platform release key, which signs the advisory.
 pub fn platform_key() -> Result<PublicKey, AdvisoryRefusal> {
-    solstone_core_installed_payload::platform_pin().map_err(|_| AdvisoryRefusal::PinInvalid)
+    crate::fetch::update_platform_key().ok_or(AdvisoryRefusal::PinInvalid)
 }
 
 /// Whether `installed` is below `fixed_in`. An installed version this cannot
