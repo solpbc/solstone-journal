@@ -597,6 +597,19 @@ pub fn run_segment_with_lease(
     )
 }
 
+/// A meeting row's timestamp does not match the frame this decoder gives its
+/// `frame_id`: the screen output was described from another decode of the
+/// recording (an earlier describe), so no row can be bound to a frame.
+const UNALIGNED_RECORDING: &str = "meeting frame timestamp differs from raw recording";
+
+/// Face backfill treats a recording whose screen rows do not line up with its
+/// decoded frames as unsupported by this version, not as a failure that
+/// repeats every hour. The developer face-pass entry still fails on it; live
+/// describe pairs rows and frames from one decode and never reaches this check.
+pub fn unaligned_recording(error: &str) -> bool {
+    error == UNALIGNED_RECORDING
+}
+
 /// Ask the exact decoder registry used by describe, without decoding frames.
 /// An unreadable container is an error, not an unsupported-codec disposition.
 pub fn recording_supported(video: &Path) -> PassResult<bool> {
@@ -690,7 +703,7 @@ fn run_segment_with_ocr(
                         .and_then(Value::as_f64)
                         .ok_or("meeting timestamp missing")?;
                     if (ts - frame.timestamp).abs() > 0.002 {
-                        return Err("meeting frame timestamp differs from raw recording".into());
+                        return Err(UNALIGNED_RECORDING.into());
                     }
                     pass.add_frame(&row, &frame.png, cached.as_ref(), ocr)
                         .map_err(|e| e.to_string())?;
@@ -984,6 +997,68 @@ pub(crate) mod tests {
             fs::read(root.path().join(&new.crops[0].0)).unwrap(),
             new.crops[0].1
         );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn screen_rows_from_another_decode_read_as_unaligned_not_any_failure() {
+        let video = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/describe_corpus/static_vp8_screen.webm");
+        let config = crate::WinnowConfig {
+            dhash_threshold: 0,
+            scene_cut_threshold: 0,
+            min_stride_seconds: 0.,
+        };
+        let mut pull = crate::decode::FramePull::open(&video, config, true).unwrap();
+        pull.select_native_frames([1].into_iter().collect());
+        let crate::decode::PullNext::Frame(first) = pull.next(&|| false) else {
+            panic!("fixture has a first frame");
+        };
+        let journal = tempfile::tempdir().unwrap();
+        fs::create_dir(journal.path().join("config")).unwrap();
+        fs::write(
+            journal.path().join("config/journal.json"),
+            json!({"faces":{"enabled":true}}).to_string(),
+        )
+        .unwrap();
+        let raw = journal.path().join("screen.webm");
+        fs::copy(&video, &raw).unwrap();
+        let screen = raw.with_extension("jsonl");
+        let row = |timestamp: f64| {
+            format!(
+                "{}\n{}\n",
+                json!({"header": true}),
+                json!({
+                    "frame_id": first.frame_id,
+                    "timestamp": timestamp,
+                    "content": {"meeting": {"participants": [{"name": "synthetic"}]}},
+                })
+            )
+        };
+        // Suze's pre-native VP9 rows sat 0.47–0.85 s off their decoded frames.
+        fs::write(&screen, row(first.timestamp + 0.7)).unwrap();
+        let unaligned = with_models(false, || {
+            run_segment(journal.path(), &raw, &screen, &|| false)
+        });
+        assert!(
+            unaligned
+                .as_ref()
+                .is_err_and(|error| unaligned_recording(error)),
+            "{unaligned:?}"
+        );
+        assert!(!sidecar_path(&raw).exists());
+        // The same row on the decoder's own timeline is never read as unaligned.
+        fs::write(&screen, row(first.timestamp)).unwrap();
+        let aligned = with_models(false, || {
+            run_segment(journal.path(), &raw, &screen, &|| false)
+        });
+        assert!(
+            !aligned
+                .as_ref()
+                .is_err_and(|error| unaligned_recording(error)),
+            "{aligned:?}"
+        );
+        assert!(!unaligned_recording("could not decode recording"));
     }
 
     #[cfg(feature = "full-tests")]

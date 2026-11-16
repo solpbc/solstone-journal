@@ -223,6 +223,9 @@ fn run_face_backfill(args: &[OsString]) -> Result<(), CliError> {
     match faces::run_segment_with_lease(journal, raw, &screen, &stop, lease) {
         Ok(_) => Ok(()),
         Err(_) if stop() => Err(CliError::FaceExit(face_backfill::YIELDED as u8)),
+        Err(e) if faces::unaligned_recording(&e) => {
+            Err(CliError::FaceExit(face_backfill::UNSUPPORTED as u8))
+        }
         Err(e) => Err(CliError::Internal(e)),
     }
 }
