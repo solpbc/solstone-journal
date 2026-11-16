@@ -68,8 +68,19 @@ class Node {
   }
   setAttribute(name, value) { this.attributes[name] = String(value); }
   getAttribute(name) { return Object.hasOwn(this.attributes, name) ? this.attributes[name] : null; }
-  walk(visit) { this.children.forEach((child) => { visit(child); child.walk(visit); }); }
-  all(predicate) { const out = []; this.walk((node) => { if (predicate(node)) out.push(node); }); return out; }
+  // Walked in a loop, not a callback that closes over the matches: while the
+  // engine compiles such a closure it keeps the matches, and through
+  // `parentElement` the tree they came from.
+  all(predicate) {
+    const out = [];
+    const pending = [this];
+    while (pending.length) {
+      const node = pending.pop();
+      if (node !== this && predicate(node)) out.push(node);
+      for (let i = node.children.length - 1; i >= 0; i -= 1) pending.push(node.children[i]);
+    }
+    return out;
+  }
   action(name) { return this.all((node) => node.dataset.facesAction === name); }
   click() { if (!this.disabled && this.onclick) return this.onclick({preventDefault() {}}); return undefined; }
   scrollIntoView() {}

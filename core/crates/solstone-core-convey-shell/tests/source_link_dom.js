@@ -93,19 +93,22 @@ class Node {
     nodes.forEach((n) => this.appendChild(n));
   }
 
+  // Walked in a loop, not a closure: while the engine compiles a closure in
+  // the background it keeps the closure's matches, and through `parentNode`
+  // the tree they came from.
   querySelectorAll(selector) {
     const target = selector.toUpperCase();
     const results = [];
-    function walk(n) {
-      if (n.nodeType === 1 && n.tagName === target) {
+    const pending = [this];
+    while (pending.length) {
+      const n = pending.pop();
+      if (n !== this && n.nodeType === 1 && n.tagName === target) {
         results.push(n);
       }
-      if (n.childNodes) {
-        n.childNodes.forEach(walk);
+      const kids = n.childNodes;
+      if (kids) {
+        for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
       }
-    }
-    if (this.childNodes) {
-      this.childNodes.forEach(walk);
     }
     return results;
   }
@@ -305,15 +308,17 @@ const document = {
   querySelectorAll: () => [],
   referrer: '',
   createTreeWalker(root, _whatToShow) {
+    // Collected in a loop, not a closure, as `querySelectorAll` walks.
     const textNodes = [];
-    function collect(n) {
+    const pending = [root];
+    while (pending.length) {
+      const n = pending.pop();
       if (n.nodeType === 3) {
         textNodes.push(n);
       } else if (n.childNodes) {
-        n.childNodes.forEach(collect);
+        for (let i = n.childNodes.length - 1; i >= 0; i -= 1) pending.push(n.childNodes[i]);
       }
     }
-    collect(root);
     let idx = -1;
     return {
       currentNode: null,

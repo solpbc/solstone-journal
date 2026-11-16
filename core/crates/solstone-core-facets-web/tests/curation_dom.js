@@ -103,11 +103,17 @@ function queryAll(root, selector) {
   let candidates = [root];
   for (const piece of selector.trim().split(/\s+/).filter((part) => part !== '>')) {
     const next = [];
-    const visit = (element) => element.children.forEach((child) => {
-      if (selectorMatches(child, piece)) next.push(child);
-      visit(child);
-    });
-    candidates.forEach(visit);
+    // A loop, not a closure: a closure over `next` keeps the matches, and
+    // through `parentNode` their tree, while the engine compiles it.
+    for (const candidate of candidates) {
+      const pending = [candidate];
+      while (pending.length) {
+        const node = pending.pop();
+        if (node !== candidate && selectorMatches(node, piece)) next.push(node);
+        const kids = node.children;
+        for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
+      }
+    }
     candidates = next;
   }
   return candidates;

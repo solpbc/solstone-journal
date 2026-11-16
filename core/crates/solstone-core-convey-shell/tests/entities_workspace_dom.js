@@ -121,15 +121,18 @@ class Element {
     return this.querySelectorAll(selector)[0] || null;
   }
 
+  // Walked in a loop, not a closure: while the engine compiles a closure in
+  // the background it keeps the closure's matches, and through `parentNode`
+  // the tree they came from.
   querySelectorAll(selector) {
     const matches = [];
-    const visit = (node) => {
-      node.children.forEach((child) => {
-        if (child.matches(selector)) matches.push(child);
-        visit(child);
-      });
-    };
-    visit(this);
+    const pending = [this];
+    while (pending.length) {
+      const node = pending.pop();
+      if (node !== this && node.matches(selector)) matches.push(node);
+      const kids = node.children;
+      for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
+    }
     return matches;
   }
 }
@@ -209,15 +212,38 @@ class PickNode {
   }
   focus() { this.ownerDocument.activeElement = this; }
   scrollIntoView() {}
-  walk(fn) { this.children.forEach((child) => { fn(child); child.walk(fn); }); }
+  // Every node under this one, in document order, from a loop: a callback
+  // that closes over its matches keeps them, and through `parentElement`
+  // their tree, while the engine compiles it.
+  descendants() {
+    const out = [];
+    const pending = [this];
+    while (pending.length) {
+      const node = pending.pop();
+      if (node !== this) out.push(node);
+      for (let i = node.children.length - 1; i >= 0; i -= 1) pending.push(node.children[i]);
+    }
+    return out;
+  }
   matches(selector) {
     if (selector === 'input[data-entity-pick]') return this.tagName === 'INPUT' && this.dataset.entityPick === 'true';
     if (selector.startsWith('.')) return this.classList.contains(selector.slice(1));
     return false;
   }
-  querySelector(selector) { let found = null; this.walk((node) => { if (!found && node.matches(selector)) found = node; }); return found; }
-  querySelectorAll(selector) { const out = []; this.walk((node) => { if (node.matches(selector)) out.push(node); }); return out; }
-  all(cls) { const out = []; this.walk((node) => { if (node.classList.contains(cls)) out.push(node); }); return out; }
+  querySelector(selector) {
+    for (const node of this.descendants()) if (node.matches(selector)) return node;
+    return null;
+  }
+  querySelectorAll(selector) {
+    const out = [];
+    for (const node of this.descendants()) if (node.matches(selector)) out.push(node);
+    return out;
+  }
+  all(cls) {
+    const out = [];
+    for (const node of this.descendants()) if (node.classList.contains(cls)) out.push(node);
+    return out;
+  }
 }
 
 function pickHarness() {

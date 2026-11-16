@@ -55,20 +55,29 @@ function matchesSelector(element, selector) {
 
 function queryAll(root, selector) {
   if (selector.includes(',')) {
+    // Loops, not closures over `seen`: see the walk below.
     const seen = new Set();
-    return selector.split(',').flatMap((part) => queryAll(root, part.trim())).filter((el) => !seen.has(el) && seen.add(el));
+    const out = [];
+    for (const part of selector.split(',')) {
+      for (const el of queryAll(root, part.trim())) {
+        if (!seen.has(el)) { seen.add(el); out.push(el); }
+      }
+    }
+    return out;
   }
   let candidates = [root];
   for (const piece of selector.trim().split(/\s+/)) {
     const next = [];
     for (const candidate of candidates) {
-      const visit = (element) => {
-        for (const child of element.children) {
-          if (matchesSelector(child, piece) && !next.includes(child)) next.push(child);
-          visit(child);
-        }
-      };
-      visit(candidate);
+      // A loop, not a closure: a closure over `next` keeps the matches, and
+      // through `parentNode` their tree, while the engine compiles it.
+      const pending = [candidate];
+      while (pending.length) {
+        const node = pending.pop();
+        if (node !== candidate && matchesSelector(node, piece) && !next.includes(node)) next.push(node);
+        const kids = node.children;
+        for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
+      }
     }
     candidates = next;
   }

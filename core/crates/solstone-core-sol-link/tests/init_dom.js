@@ -146,8 +146,13 @@ class Element {
     }
     const single = parts[0] || '';
     const res = [];
-    const walk = (node) => {
-      for (const c of node.children) {
+    // Walked in a loop, not a closure: while the engine compiles a closure in
+    // the background it keeps the closure's matches, and through `parentNode`
+    // the tree they came from.
+    const pending = [this];
+    while (pending.length) {
+      const c = pending.pop();
+      if (c !== this) {
         let match = false;
         if (single.startsWith('#') && c.id === single.slice(1)) match = true;
         else if (single === 'span:not(.mark-sep)' && c.tag === 'span' && !c.classList.contains('mark-sep')) match = true;
@@ -161,10 +166,10 @@ class Element {
         else if (single.startsWith('input[name="') && c.tag === 'input' && c.name === single.slice(12, -2)) match = true;
         else if (single.startsWith('input[value="') && c.tag === 'input' && c.value === single.slice(13, -2)) match = true;
         if (match) res.push(c);
-        walk(c);
       }
-    };
-    walk(this);
+      const kids = c.children;
+      for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
+    }
     return res;
   }
 }

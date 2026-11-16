@@ -220,16 +220,24 @@ class DomElement extends DomNode {
 
   querySelectorAll(selector) {
     const results = [];
-    walk(this, element => { if (matches(element, selector)) results.push(element); });
+    for (const element of descendants(this)) if (matches(element, selector)) results.push(element);
     return results;
   }
 }
 
-function walk(node, visit) {
-  for (const child of node.childNodes) {
-    visit(child);
-    if (child.childNodes) walk(child, visit);
+// Every node under `node`, in document order, from a loop: a callback that
+// closes over its matches keeps them, and through `parentNode` the tree they
+// came from, while the engine compiles it.
+function descendants(node) {
+  const out = [];
+  const pending = [node];
+  while (pending.length) {
+    const at = pending.pop();
+    if (at !== node) out.push(at);
+    const kids = at.childNodes;
+    if (kids) for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
   }
+  return out;
 }
 
 function matches(element, selector) {
@@ -275,7 +283,9 @@ function query(root, selector) {
   let current = [root];
   for (const part of selector.trim().split(/\s+/)) {
     const next = [];
-    for (const node of current) walk(node, element => { if (matches(element, part)) next.push(element); });
+    for (const node of current) {
+      for (const element of descendants(node)) if (matches(element, part)) next.push(element);
+    }
     current = next;
   }
     return current[0] || null;
@@ -332,7 +342,7 @@ const document = {
   },
   getElementById(id) {
     let found = null;
-    walk(document.body, element => { if (element.id === id) found = element; });
+    for (const element of descendants(document.body)) if (element.id === id) found = element;
     return found;
   },
   execCommand() {
@@ -691,9 +701,9 @@ function visible(element) {
 
 function buttons() {
   const found = [];
-  walk(document.body, element => {
+  for (const element of descendants(document.body)) {
     if (element.tagName === 'BUTTON' && visible(element)) found.push(element);
-  });
+  }
   return found;
 }
 
