@@ -350,7 +350,10 @@ function createHarness() {
   const windowListeners = {};
   const historyEntries = [''];
   let historyIndex = 0;
-  const window = { createViewReady: () => () => {},
+  let registered = null;
+  const window = {
+    SolViews: { register(name, definition) { registered = { name, definition }; } },
+    SolStore: { never: () => new Promise(() => {}) },
     document,
     Element,
     HTMLInputElement,
@@ -372,8 +375,12 @@ function createHarness() {
     history: {
       pushState(_state, _title, next) {
         historyEntries.splice(historyIndex + 1);
-        historyEntries.push(String(next));
+        historyEntries.push(new URL(String(next), 'http://journal' + window.location.pathname).hash);
         historyIndex = historyEntries.length - 1;
+        window.location.hash = historyEntries[historyIndex];
+      },
+      replaceState(_state, _title, next) {
+        historyEntries[historyIndex] = new URL(String(next), 'http://journal' + window.location.pathname).hash;
         window.location.hash = historyEntries[historyIndex];
       },
       back() {
@@ -474,15 +481,41 @@ function createHarness() {
     history: window.history,
     requestAnimationFrame: window.requestAnimationFrame,
   });
+  // The mount sends its own fetches through `window.fetch`; a case that
+  // swaps the page's fetch swaps it for those too.
+  Object.defineProperty(window, 'fetch', { get: () => context.fetch, set: (value) => { context.fetch = value; }, configurable: true });
   vm.runInContext(fs.readFileSync(path.join(crateDir, '..', 'solstone-core-convey-shell', 'assets', 'static', 'api.js'), 'utf8'), context, { filename: 'api.js' });
   vm.runInContext(fs.readFileSync(path.join(crateDir, 'assets', 'settings.js'), 'utf8'), context, { filename: 'settings.js' });
   vm.runInContext(fs.readFileSync(path.join(crateDir, '..', 'solstone-core-convey-shell', 'assets', 'static', 'date_format.js'), 'utf8'), context, { filename: 'date_format.js' });
-  vm.runInContext(scriptMatch[1], context, { filename: 'workspace.html' });
-  return { context, document, facets, requests, window, windowListeners };
+  // Settings registers its view; the harness mounts it with a small ctx at
+  // the page's address, and runs each case's expression inside the mount.
+  // Each case starts the workspace itself, so the mount's own start is left
+  // out here (settings_contract_dom.js covers it).
+  const mountAnchor = '\ninitSettingsWorkspace();\nreturn disposeSettings;';
+  assert.ok(scriptMatch[1].includes(mountAnchor), 'the mount starts the workspace and returns its dispose');
+  vm.runInContext(scriptMatch[1].replace(mountAnchor, '\nctx.__eval = (code) => eval(code);\nreturn disposeSettings;'), context, { filename: 'workspace.html' });
+  assert.ok(registered && registered.name === 'settings', 'settings registers its view');
+  const ctx = {
+    get route() { return { view: 'settings', pathname: window.location.pathname, search: '', hash: window.location.hash }; },
+    disposed: false,
+    on(target, type, fn, options) { target.addEventListener(type, fn, options); return () => {}; },
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (id) => clearTimeout(id),
+    read: (url, options) => window.apiJson(url, options),
+    fetch: (url, options) => window.fetch(url, options),
+    history: {
+      push: (url) => window.history.pushState(null, '', url),
+      replace: (url) => window.history.replaceState(null, '', url),
+    },
+    ready() {},
+    onDispose() {},
+  };
+  registered.definition.mount(ctx);
+  return { context, ctx, document, facets, requests, window, windowListeners };
 }
 
 async function run(harness, expression) {
-  return await vm.runInContext(expression, harness.context);
+  return await harness.ctx.__eval(expression);
 }
 
 async function settle() {
@@ -536,7 +569,7 @@ async function testCase(name, fn) {
     select.value = 'local';
     select.dispatchEvent(event('change', { bubbles: true }));
     await settle();
-    assert.deepStrictEqual(writes, [{ url: 'api/config', body: { section: 'transcribe', data: { backend: 'parakeet-cpp', confidential_audio: false } } }]);
+    assert.deepStrictEqual(writes, [{ url: '/app/settings/api/config', body: { section: 'transcribe', data: { backend: 'parakeet-cpp', confidential_audio: false } } }]);
     assert.strictEqual(select.value, 'local');
     assert.strictEqual(select.disabled, false);
     assert.strictEqual(await run(h, 'configData.transcribe.backend'), 'parakeet-cpp');
@@ -930,7 +963,7 @@ async function testCase(name, fn) {
     await click(byId('facetDeleteModalConfirm'));
     await settle();
     assert.deepStrictEqual(deletes[0], { url: '/app/settings/api/facet/work-life', body: { consent: true } });
-    assert.strictEqual(harness.window.location.href, '/app/settings#facets', 'after a move the page goes to the facet list');
+    assert.strictEqual(harness.window.location.href, '/app/settings/#facets', 'after a move the page goes to the facet list');
     const stash = JSON.parse(stored.get('journal-facet-delete-receipt'));
     assert.strictEqual(stash.outcome.kind, 'moved');
     assert.strictEqual(stash.outcome.trashId, 'T-facet');
@@ -1102,8 +1135,8 @@ async function testCase(name, fn) {
     let scans = 0;
     h.window.logError = () => {};
     h.window.apiJson = url => {
-      if (url === 'api/storage/config') return Promise.resolve(config);
-      assert.strictEqual(url, 'api/storage');
+      if (url === '/app/settings/api/storage/config') return Promise.resolve(config);
+      assert.strictEqual(url, '/app/settings/api/storage');
       scans++;
       return new Promise(resolve => { resolveScan = resolve; });
     };
@@ -1114,8 +1147,8 @@ async function testCase(name, fn) {
     const input = h.document.getElementById('retentionDaysInput');
     assert.strictEqual(input.value, 14);
     input.value = '45';
-    vm.runInContext('void measureStorage()', h.context);
-    vm.runInContext('void measureStorage()', h.context);
+    h.ctx.__eval('void measureStorage()');
+    h.ctx.__eval('void measureStorage()');
     assert.strictEqual(scans, 1);
     resolveScan({summary: {raw_media_human: '4 GiB', derived_human: '2 MiB', total_segments: 3, segments_with_raw: 2, segments_purged: 1}, warnings: [], retention: {...config.retention, raw_media_days: 7}});
     await settle();
@@ -1227,7 +1260,7 @@ async function testCase(name, fn) {
     await run(h, 'loadStorage()');
     await run(h, 'setupStorageListeners()');
     assert.strictEqual(recordedRequests[0].method, 'GET');
-    assert.strictEqual(recordedRequests[0].url, 'api/storage/config');
+    assert.strictEqual(recordedRequests[0].url, '/app/settings/api/storage/config');
     assert.strictEqual(recordedPuts.length, 0);
 
     const toggle = h.document.getElementById('emptyAudioKeep');
@@ -1543,6 +1576,9 @@ async function testCase(name, fn) {
     }
     assert.strictEqual(rejected, true, '500 error envelope must reject with ApiError through saveControl');
   });
+
+  // Settings on the view contract, through the real contract, store and router.
+  cases += await require('./settings_contract_dom.js')(crateDir);
 
   process.stdout.write('DOM CASES: ' + cases + ' passed\n', () => process.exit(0));
 })().catch((error) => {
