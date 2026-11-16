@@ -31,6 +31,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
+- security fix: an agent suggesting a correction could use the reply to check guesses about your answers or a speaker the transcript did not name.
 - when you use your own model endpoint, the thinking page and connection test now wait for your journal's running request instead of reporting a failure while it is busy.
 - recordings tagged with dominant television or music no longer add voice samples to a person. speech with light background music can still contribute samples. existing samples stay available for you to review.
 

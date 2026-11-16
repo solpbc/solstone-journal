@@ -263,6 +263,7 @@ pub fn receipt_tree_prefix(data_dir: &Path) -> Option<PathBuf> {
 /// `systemctl` can be ended by that stop before it exits: ended that way, the
 /// restart has started.
 pub fn restart_journal() -> bool {
+    #[cfg(unix)]
     use std::os::unix::process::ExitStatusExt;
     std::process::Command::new("systemctl")
         .args(["--user", "--no-block", "restart", "solstone.service"])
@@ -270,7 +271,13 @@ pub fn restart_journal() -> bool {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .is_ok_and(|status| status.success() || status.signal() == Some(15))
+        .is_ok_and(|status| {
+            #[cfg(unix)]
+            let stopped_by_service = status.signal() == Some(15);
+            #[cfg(not(unix))]
+            let stopped_by_service = false;
+            status.success() || stopped_by_service
+        })
 }
 
 pub fn read_choice(data_dir: &Path) -> Choice {
@@ -307,6 +314,7 @@ pub fn write_state(data_dir: &Path, state: &State) -> io::Result<()> {
 
 fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
     use std::io::Write;
+    #[cfg(unix)]
     use std::os::unix::fs::OpenOptionsExt;
     let dir = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(dir)?;
@@ -315,12 +323,11 @@ fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
         path.file_name().and_then(|n| n.to_str()).unwrap_or("next"),
         std::process::id()
     ));
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&next)?;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(&next)?;
     file.write_all(bytes)?;
     file.sync_all()?;
     fs::rename(&next, path)

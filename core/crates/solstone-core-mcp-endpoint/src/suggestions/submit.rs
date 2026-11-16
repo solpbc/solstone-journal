@@ -608,37 +608,7 @@ fn execute_admitted(
                 ));
             }
 
-            // 6. already_true check
-            if request.kind == "recording" {
-                if act_record.get("playback").and_then(Value::as_bool) == Some(true) {
-                    return Ok(Prepared::new(
-                        json!({
-                            "schema": SUGGESTION_RESULT_SCHEMA,
-                            "status": "already_true",
-                            "operation_id": request.operation_id,
-                            "message": "the suggested change is already in place",
-                        }),
-                        1,
-                        Vec::new(),
-                    ));
-                }
-            } else if let ValidatedValue::WhatHappened { text } = &request.value {
-                let live_details = super::owner::activity_account(&act_record);
-                if normalize_suggestion_text(live_details) == normalize_suggestion_text(text) {
-                    return Ok(Prepared::new(
-                        json!({
-                            "schema": SUGGESTION_RESULT_SCHEMA,
-                            "status": "already_true",
-                            "operation_id": request.operation_id,
-                            "message": "the suggested change is already in place",
-                        }),
-                        1,
-                        Vec::new(),
-                    ));
-                }
-            }
-
-            // 7. owner_answered check
+            // An owner answer never validates a new proposal about its value.
             if let Some(edits) = act_record.get("edits").and_then(Value::as_array) {
                 for edit in edits {
                     if edit
@@ -675,6 +645,36 @@ fn execute_admitted(
                             ));
                         }
                     }
+                }
+            }
+
+            // Only derived state can answer already_true.
+            if request.kind == "recording" {
+                if act_record.get("playback").and_then(Value::as_bool) == Some(true) {
+                    return Ok(Prepared::new(
+                        json!({
+                            "schema": SUGGESTION_RESULT_SCHEMA,
+                            "status": "already_true",
+                            "operation_id": request.operation_id,
+                            "message": "the suggested change is already in place",
+                        }),
+                        1,
+                        Vec::new(),
+                    ));
+                }
+            } else if let ValidatedValue::WhatHappened { text } = &request.value {
+                let live_details = super::owner::activity_account(&act_record);
+                if normalize_suggestion_text(live_details) == normalize_suggestion_text(text) {
+                    return Ok(Prepared::new(
+                        json!({
+                            "schema": SUGGESTION_RESULT_SCHEMA,
+                            "status": "already_true",
+                            "operation_id": request.operation_id,
+                            "message": "the suggested change is already in place",
+                        }),
+                        1,
+                        Vec::new(),
+                    ));
                 }
             }
 
@@ -1043,43 +1043,6 @@ fn execute_admitted(
                 matched_sentences.push((m.sentence_id, m.time.clone(), m.text.clone()));
             }
 
-            let source =
-                solstone_core_speaker_resolve::owner_line_labels::agreed_source(segment_dir).ok();
-            let who =
-                solstone_core_transcripts::load_who_spoke(segment_dir, source.as_deref(), None);
-            if who.owner_unreadable.is_some() {
-                return refusal;
-            }
-            let desired = if speaker_token == "owner" {
-                solstone_core_entity::read_journal_principal(journal_root)
-                    .ok()
-                    .flatten()
-                    .and_then(|identity| {
-                        identity
-                            .get("id")
-                            .and_then(Value::as_str)
-                            .map(str::to_owned)
-                    })
-            } else {
-                person_entity_id.clone()
-            };
-            if (speaker_token != "owner" || desired.is_some())
-                && matched_sentences.iter().all(|(id, _, _)| {
-                    who.rows.iter().any(|row| {
-                        row.get("sentence_id").and_then(Value::as_i64) == Some(*id)
-                            && row.get("speaker").and_then(Value::as_str) == desired.as_deref()
-                    })
-                })
-            {
-                return Ok(Prepared::new(
-                    json!({"schema":SUGGESTION_RESULT_SCHEMA,"status":"already_true",
-                    "operation_id":request.operation_id,"message":"the suggested change is already in place"}),
-                    1,
-                    Vec::new(),
-                ));
-            }
-            matched_sentences.sort_by_key(|(id, _, _)| *id);
-            matched_sentences.dedup_by_key(|(id, _, _)| *id);
             // Owner answered check
             let owner_entries =
                 solstone_core_speaker_resolve::owner_line_labels::current_owner_line_entries(
@@ -1101,6 +1064,52 @@ fn execute_admitted(
                 }
             }
 
+            let source =
+                solstone_core_speaker_resolve::owner_line_labels::agreed_source(segment_dir).ok();
+            let who = solstone_core_transcripts::load_who_spoke(
+                segment_dir,
+                source.as_deref(),
+                Some(solstone_core_transcripts::MAX_TRANSCRIPT_PAGE_BYTES),
+            );
+            if who.owner_unreadable.is_some() {
+                return refusal;
+            }
+            let desired = if speaker_token == "owner" {
+                solstone_core_entity::read_journal_principal(journal_root)
+                    .ok()
+                    .flatten()
+                    .and_then(|identity| {
+                        identity
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned)
+                    })
+            } else {
+                person_entity_id.clone()
+            };
+            let speakers = solstone_core_talent_runtime::agent_speakers(journal_root);
+            // A hidden label must not validate an agent's guess, including an
+            // anonymous row: only identities named on the transcript are comparable.
+            if desired.is_some()
+                && matched_sentences.iter().all(|(id, _, _)| {
+                    who.rows.iter().any(|row| {
+                        row.get("sentence_id").and_then(Value::as_i64) == Some(*id)
+                            && row.get("speaker").and_then(Value::as_str) == desired.as_deref()
+                            && speakers
+                                .as_ref()
+                                .is_some_and(|speakers| speakers.voices.name_for(row).is_some())
+                    })
+                })
+            {
+                return Ok(Prepared::new(
+                    json!({"schema":SUGGESTION_RESULT_SCHEMA,"status":"already_true",
+                    "operation_id":request.operation_id,"message":"the suggested change is already in place"}),
+                    1,
+                    Vec::new(),
+                ));
+            }
+            matched_sentences.sort_by_key(|(id, _, _)| *id);
+            matched_sentences.dedup_by_key(|(id, _, _)| *id);
             let segment_origin = format!("{}/{}/{}", seg_day, seg_stream, seg_segment);
             let mut sorted_ids: Vec<i64> = matched_sentences.iter().map(|(id, _, _)| *id).collect();
             sorted_ids.sort();
@@ -1350,26 +1359,6 @@ fn execute_admitted(
                 return refusal;
             };
 
-            // 6. already_true check
-            let query_norm = normalize_resolution_query(text);
-            let live_name_norm = normalize_resolution_query(live_name);
-            let name_matches = live_name_norm == query_norm;
-            let aka_matches = live_aka
-                .iter()
-                .any(|a| normalize_resolution_query(a) == query_norm);
-            if name_matches || aka_matches {
-                return Ok(Prepared::new(
-                    json!({
-                        "schema": SUGGESTION_RESULT_SCHEMA,
-                        "status": "already_true",
-                        "operation_id": request.operation_id,
-                        "message": "the suggested change is already in place",
-                    }),
-                    1,
-                    Vec::new(),
-                ));
-            }
-
             // Owner acceptance is the owner's answer, including an unchanged name or alias.
             let history =
                 solstone_core_entity::read_visible_history(journal_root, &target_entity_id)
@@ -1389,6 +1378,26 @@ fn execute_admitted(
                 return Ok(Prepared::new(
                     json!({"schema":SUGGESTION_RESULT_SCHEMA,"status":"owner_answered",
                     "operation_id":request.operation_id,"message":"the owner has already answered this question"}),
+                    1,
+                    Vec::new(),
+                ));
+            }
+
+            // Only derived state can answer already_true.
+            let query_norm = normalize_resolution_query(text);
+            let live_name_norm = normalize_resolution_query(live_name);
+            let name_matches = live_name_norm == query_norm;
+            let aka_matches = live_aka
+                .iter()
+                .any(|a| normalize_resolution_query(a) == query_norm);
+            if name_matches || aka_matches {
+                return Ok(Prepared::new(
+                    json!({
+                        "schema": SUGGESTION_RESULT_SCHEMA,
+                        "status": "already_true",
+                        "operation_id": request.operation_id,
+                        "message": "the suggested change is already in place",
+                    }),
                     1,
                     Vec::new(),
                 ));
