@@ -11,7 +11,7 @@ use crate::error::GpuAppraisalReason;
 use crate::ios_service_tools::{IosVerifierRefusal, admitted_ios_verifier};
 use crate::nvgpu::appraise::evidence_json;
 use crate::nvgpu::{
-    GpuAppraisal, GpuProfile, ManifestSet, NvattestAcceptance, NvattestVerdict, StatusExpectation,
+    GpuAppraisal, GpuProfile, NvattestAcceptance, NvattestVerdict, StatusExpectation,
     StatusMode,
 };
 use crate::snp::AppraisalStep;
@@ -659,16 +659,7 @@ pub fn appraise_ios_gpu(
     // ManifestSet equality is pointer identity. Const promotion can give the
     // same qualified set a different address across code generation units.
     // Compare the complete pinned contents at this platform boundary.
-    if !profile
-        .manifests()
-        .entries()
-        .iter()
-        .map(|rim| (rim.filename(), rim.sha256(), rim.xml()))
-        .eq(ManifestSet::QUALIFIED_595_71_05
-            .entries()
-            .iter()
-            .map(|rim| (rim.filename(), rim.sha256(), rim.xml())))
-    {
+    if !crate::nvgpu::is_production_manifest_set(profile.manifests()) {
         return Err(GpuAppraisalReason::NvattestUnavailable);
     }
     if profile.status() == StatusMode::OnlineNonce {

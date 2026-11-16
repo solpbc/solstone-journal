@@ -469,7 +469,7 @@ pub fn ios_admission_decision(
         ));
     }
 
-    let qualified_rims = crate::nvgpu::ManifestSet::QUALIFIED_595_71_05.entries();
+    let qualified_rims = crate::nvgpu::production_rims();
     let receipt_rims = receipt
         .rims
         .iter()
@@ -482,7 +482,7 @@ pub fn ios_admission_decision(
             receipt.rims.len()
         )));
     }
-    for expected in qualified_rims {
+    for expected in &qualified_rims {
         if receipt_rims.get(expected.filename()).copied() != Some(expected.sha256()) {
             return Err(IosVerifierRefusal::PinMismatch(format!(
                 "rim mismatch for {}: expected {}, got {:?}",
@@ -574,7 +574,7 @@ pub fn ios_admission_decision(
             )));
         }
     }
-    for rim in qualified_rims {
+    for rim in &qualified_rims {
         let path = format!(
             "{IOS_HELPER_RELATIVE_PATH}/{IOS_RIM_DIRECTORY}/{}",
             rim.filename()
@@ -633,7 +633,7 @@ pub fn ios_admission_decision(
             }
         } else {
             // Check if it's an expected RIM
-            for rim in qualified_rims {
+            for rim in &qualified_rims {
                 if member.relative_path
                     == format!(
                         "{IOS_HELPER_RELATIVE_PATH}/{IOS_RIM_DIRECTORY}/{}",

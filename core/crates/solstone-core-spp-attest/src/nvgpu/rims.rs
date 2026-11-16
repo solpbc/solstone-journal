@@ -154,6 +154,36 @@ const PRODUCTION_PROFILES: &[(&str, ManifestSet, StatusMode)] = &[(
     StatusMode::OfflineSignedAge,
 )];
 
+/// Every reference manifest a production profile uses, once each, in profile
+/// order. Packaged clients ship and check exactly this set.
+#[must_use]
+pub fn production_rims() -> Vec<&'static PackagedRim> {
+    let mut rims: Vec<&'static PackagedRim> = Vec::new();
+    for (_, manifests, _) in PRODUCTION_PROFILES {
+        for rim in manifests.0 {
+            if !rims.iter().any(|seen| seen.filename == rim.filename) {
+                rims.push(rim);
+            }
+        }
+    }
+    rims
+}
+
+/// Whether `set` has exactly the contents of a production profile's manifests.
+/// Content, not address: const promotion can give one set two addresses.
+#[must_use]
+pub fn is_production_manifest_set(set: ManifestSet) -> bool {
+    let contents = |set: ManifestSet| {
+        set.0
+            .iter()
+            .map(|rim| (rim.filename, rim.sha256, rim.xml))
+            .collect::<Vec<_>>()
+    };
+    PRODUCTION_PROFILES
+        .iter()
+        .any(|(_, manifests, _)| contents(*manifests) == contents(set))
+}
+
 /// The GPU profiles a verifier may select from after CPU verification.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GpuProfiles(Vec<GpuProfile>);

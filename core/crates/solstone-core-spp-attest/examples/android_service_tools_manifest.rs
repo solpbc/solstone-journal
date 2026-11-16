@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     };
     fs::create_dir_all(resources)?;
-    for rim in solstone_core_spp_attest::nvgpu::ManifestSet::QUALIFIED_595_71_05.entries() {
+    for rim in solstone_core_spp_attest::nvgpu::production_rims() {
         fs::write(resources.join(rim.filename()), rim.xml())?;
     }
     let rendered =

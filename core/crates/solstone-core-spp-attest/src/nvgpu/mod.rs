@@ -26,7 +26,10 @@ pub use claims::{
     GpuAppraisal, GpuStatusAuthorization, NvattestAcceptance, NvattestRejection, NvattestVerdict,
     StatusExpectation, build_gpu_appraisal, classify_nvattest_result, parse_nvattest_stdout,
 };
-pub use rims::{GpuProfile, GpuProfiles, ManifestSet, StatusMode};
+pub use rims::{
+    GpuProfile, GpuProfiles, ManifestSet, PackagedRim, StatusMode, is_production_manifest_set,
+    production_rims,
+};
 
 /// Trusts a fixture signing key for a privately signed Windows payload, so a
 /// test harness can run the real helper through the production locator.

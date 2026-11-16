@@ -993,8 +993,7 @@ pub fn render_android_service_tools_manifest(
         application_profiles: application_profiles_manifest(
             crate::pins::PUBLISHED_APPLICATION_PCR_PROFILES,
         ),
-        rims: crate::nvgpu::ManifestSet::QUALIFIED_595_71_05
-            .entries()
+        rims: crate::nvgpu::production_rims()
             .iter()
             .map(|rim| AndroidPackagedRimEntry {
                 filename: rim.filename().to_owned(),
@@ -1063,7 +1062,7 @@ pub fn render_android_service_tools_manifest(
         role: None,
     });
 
-    for rim in crate::nvgpu::ManifestSet::QUALIFIED_595_71_05.entries() {
+    for rim in crate::nvgpu::production_rims() {
         let rim_path = resolve_member(resource_root, rim.filename())
             .map_err(|e| map_payload_refusal(e, rim.filename(), None))?;
         let rim_bytes = read_member(&rim_path, rim.filename())
@@ -1184,7 +1183,7 @@ pub fn admit_android_service_tools(
         crate::pins::PUBLISHED_APPLICATION_PCR_PROFILES,
     )?;
 
-    let qualified_rims = crate::nvgpu::ManifestSet::QUALIFIED_595_71_05.entries();
+    let qualified_rims = crate::nvgpu::production_rims();
     if raw.identity.rims.len() != qualified_rims.len() {
         return Err(AndroidServiceToolsRefusal::PinMismatch { field: "rim" });
     }
