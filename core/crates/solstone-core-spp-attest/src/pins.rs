@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     pcr_appraisal::{ApplicationExpectations, ApplicationPcrPolicy, ApplicationPcrProfiles},
-    snp::{PcrMode, Policy},
+    snp::{PcrMode, Policy, TcbFloor},
 };
 
 // Image 5 was reboot-qualified on 2026-10-29 in the post-roll state only.
@@ -105,9 +105,21 @@ pub fn production_policy() -> Policy {
             .collect(),
         id_key_digests: Some(PRODUCTION_ID_KEY_DIGEST_PINS.iter().copied().collect()),
         application_pcrs: Some(published_application_pcr_profiles()),
+        min_vcek_tcb: Some(PRODUCTION_MIN_VCEK_TCB),
         ..Policy::default()
     }
 }
+
+/// The lowest AMD firmware an engine may run, read from its VCEK. It is the
+/// level the qualified serving hosts report, so it admits them and refuses an
+/// older platform.
+pub const PRODUCTION_MIN_VCEK_TCB: TcbFloor = TcbFloor {
+    boot_loader: Some(10),
+    tee: Some(0),
+    snp: Some(27),
+    microcode: Some(88),
+    fmc: None,
+};
 
 /// Decodes a lowercase hex constant at compile time.
 const fn decode_hex<const N: usize>(hex: &str) -> [u8; N] {

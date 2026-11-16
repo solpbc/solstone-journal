@@ -196,6 +196,10 @@ pub enum SnpVerifyError {
     },
     #[error("SNP TCB policy label is unknown")]
     PolicyTcbLabelUnknown,
+    #[error("VCEK carries no single AMD {field} TCB extension")]
+    VcekTcbMissing { field: &'static str },
+    #[error("VCEK TCB differs from the report's reported TCB")]
+    VcekTcbMismatch,
 }
 
 /// A PCR fingerprint did not match the configured pinned policy.

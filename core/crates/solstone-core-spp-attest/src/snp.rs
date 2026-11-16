@@ -160,6 +160,9 @@ pub struct Policy {
     pub allowed_vmpl: BTreeSet<u32>,
     pub require_debug_disabled: bool,
     pub min_tcb: BTreeMap<String, TcbFloor>,
+    /// Minimum TCB read from the VCEK certificate's AMD extensions, which AMD's
+    /// key service signs. A report's own TCB fields are not the evidence here.
+    pub min_vcek_tcb: Option<TcbFloor>,
     pub pcr_mode: PcrMode,
     pub pcr_pins: BTreeSet<String>,
     /// SHA-384 digests of the ID keys allowed to have signed the launch.
@@ -179,6 +182,7 @@ impl Default for Policy {
             allowed_vmpl: [0].into_iter().collect(),
             require_debug_disabled: true,
             min_tcb: BTreeMap::new(),
+            min_vcek_tcb: None,
             pcr_mode: PcrMode::Record,
             pcr_pins: BTreeSet::new(),
             id_key_digests: None,
@@ -572,6 +576,18 @@ fn appraise_cpu_leg_at(
         stage: CpuAppraisalStage::SnpPolicy,
         source,
     })?;
+    if let Some(floor) = &policy.min_vcek_tcb {
+        floor
+            .check(&amd_verification.vcek_tcb, "vcek")
+            .map_err(|source| CpuLegError::SnpVerify {
+                stage: CpuAppraisalStage::SnpPolicy,
+                source,
+            })?;
+        steps.push(ok_step(
+            "snp-tcb-floor",
+            format!("VCEK TCB {:?} meets the floor", amd_verification.vcek_tcb),
+        ));
+    }
     steps.push(ok_step(
         "snp-policy",
         format!(
@@ -724,6 +740,8 @@ fn python_bool(value: bool) -> &'static str {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AmdReportVerification {
     pub vcek_issuer_cn: String,
+    /// The TCB the VCEK is certified for; equal to the report's reported TCB.
+    pub vcek_tcb: TcbVersion,
 }
 
 /// All evidence bytes required for the CPU leg of SPP attestation.
@@ -804,8 +822,47 @@ pub fn verify_amd_chain_and_report(
     }
     reject_mismatched_bundle_cas(&certs, &ark, &ask)?;
     verify_report_signature(report, vcek)?;
+    // AMD derives the signing VCEK for the report's reported TCB, so the two agree.
+    let vcek_tcb = vcek_tcb(&vcek.der, report.generation)?;
+    if vcek_tcb != report.reported_tcb {
+        return Err(SnpVerifyError::VcekTcbMismatch);
+    }
     Ok(AmdReportVerification {
         vcek_issuer_cn: vcek.issuer_cn.clone(),
+        vcek_tcb,
+    })
+}
+
+const VCEK_TCB_OID_PREFIX: &str = "1.3.6.1.4.1.3704.1.3.";
+
+/// The TCB AMD's key service certified the VCEK for, from its X.509 extensions.
+fn vcek_tcb(der: &[u8], generation: Generation) -> Result<TcbVersion, SnpVerifyError> {
+    let (_, certificate) =
+        X509Certificate::from_der(der).map_err(|_| SnpVerifyError::CertificateParse)?;
+    let field = |arc: &str, name: &'static str| -> Result<u8, SnpVerifyError> {
+        let oid = format!("{VCEK_TCB_OID_PREFIX}{arc}");
+        let mut values = certificate
+            .extensions()
+            .iter()
+            .filter(|extension| extension.oid.to_id_string() == oid);
+        let (Some(extension), None) = (values.next(), values.next()) else {
+            return Err(SnpVerifyError::VcekTcbMissing { field: name });
+        };
+        match extension.value {
+            [0x02, 0x01, value] if *value < 0x80 => Ok(*value),
+            [0x02, 0x02, 0x00, value] if *value >= 0x80 => Ok(*value),
+            _ => Err(SnpVerifyError::VcekTcbMissing { field: name }),
+        }
+    };
+    Ok(TcbVersion {
+        boot_loader: Some(field("1", "boot_loader")?),
+        tee: Some(field("2", "tee")?),
+        snp: Some(field("3", "snp")?),
+        microcode: Some(field("8", "microcode")?),
+        fmc: match generation {
+            Generation::Turin => Some(field("9", "fmc")?),
+            Generation::PreTurin => None,
+        },
     })
 }
 
@@ -1100,7 +1157,8 @@ mod tests {
     use x509_parser::pem::parse_x509_pem;
 
     use super::{
-        CpuAppraisalStage, CpuEvidence, CpuLegError, HCL_REPORT_OFFSET, PcrMode, Policy,
+        BINDING_DOMAIN, CpuAppraisalStage, CpuBundle, CpuEvidence, CpuLegError, HCL_REPORT_OFFSET,
+        PcrMode, Policy, TcbFloor, TcbVersion,
         SNP_OFF_MEASUREMENT, SNP_OFF_VERSION, SnpParseError, SnpReport, SnpVerifyError,
         appraise_cpu_evidence, check_pcr_fingerprint, check_policy_with, embedded_root_pairs,
         hex_lower, parse_hcla, select_root_generation, verify_amd_chain_and_report,
@@ -1426,6 +1484,86 @@ mod tests {
                 root.ask_pem.as_bytes(),
                 fs::read(source_root.join("ask.pem")).expect("source ASK is readable")
             );
+        }
+    }
+
+    #[test]
+    fn vcek_tcb_is_read_from_the_certificate_and_matches_the_report() {
+        let inputs = fixture_inputs();
+        let vcek = super::parse_pem_certificate(&fixture_bytes("certs/vcek.pem"))
+            .expect("fixture VCEK parses");
+        let report = SnpReport::parse(&parse_hcla(&inputs.hcl_report).expect("hcla").report)
+            .expect("fixture report parses");
+        let tcb = super::vcek_tcb(&vcek.der, report.generation).expect("VCEK TCB extensions");
+        assert_eq!(
+            tcb,
+            TcbVersion {
+                boot_loader: Some(10),
+                tee: Some(0),
+                snp: Some(27),
+                microcode: Some(88),
+                fmc: None,
+            }
+        );
+        assert_eq!(tcb, report.reported_tcb);
+        let ark = super::parse_pem_certificate(embedded_root_pairs()[1].ark_pem.as_bytes())
+            .expect("embedded ARK parses");
+        assert_eq!(
+            super::vcek_tcb(&ark.der, report.generation),
+            Err(SnpVerifyError::VcekTcbMissing { field: "boot_loader" })
+        );
+    }
+
+    #[test]
+    fn the_vcek_floor_admits_the_qualified_level_and_refuses_one_above_it() {
+        let inputs = fixture_inputs();
+        let cert_pems = fixture_cert_refs(&inputs);
+        let appraise = |floor: TcbFloor| {
+            let evidence = cpu_evidence(
+                &inputs,
+                &cert_pems,
+                Some(&inputs.report),
+                &inputs.ak_public_key_pem,
+                &inputs.envelope_tlv,
+            );
+            super::appraise_cpu_leg_at(
+                CpuBundle {
+                    hcl_report: evidence.hcl_report,
+                    standalone_report: evidence.standalone_report,
+                    cert_pems: evidence.cert_pems,
+                    ak_public_key_pem: evidence.ak_public_key_pem,
+                    nonce: evidence.nonce,
+                    quote_message: evidence.quote_message,
+                    quote_signature: evidence.quote_signature,
+                    quote_pcrs: evidence.quote_pcrs,
+                },
+                evidence.envelope_tlv,
+                evidence.channel_binding,
+                BINDING_DOMAIN,
+                Some(&Policy {
+                    min_vcek_tcb: Some(floor),
+                    ..Policy::default()
+                }),
+                None,
+                VALID_NOW_UNIX_SECONDS,
+            )
+        };
+        let qualified = crate::pins::PRODUCTION_MIN_VCEK_TCB;
+        let appraisal = appraise(qualified.clone()).expect("the qualified level is admitted");
+        assert!(appraisal.steps.iter().any(|step| step.name == "snp-tcb-floor"));
+        for above in [
+            TcbFloor { snp: Some(28), ..qualified.clone() },
+            TcbFloor { microcode: Some(89), ..qualified.clone() },
+            TcbFloor { boot_loader: Some(11), ..qualified.clone() },
+            TcbFloor { tee: Some(1), ..qualified.clone() },
+        ] {
+            assert!(matches!(
+                appraise(above),
+                Err(CpuLegError::SnpVerify {
+                    stage: CpuAppraisalStage::SnpPolicy,
+                    source: SnpVerifyError::PolicyTcbBelowFloor { .. },
+                })
+            ));
         }
     }
 

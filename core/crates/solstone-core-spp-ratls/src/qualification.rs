@@ -68,6 +68,8 @@ pub fn qualification_policy(mode: PcrMode, pins: BTreeSet<String>) -> Policy {
     Policy {
         pcr_mode: mode,
         pcr_pins: pins,
+        // A qualified host must clear the same firmware floor production enforces.
+        min_vcek_tcb: Some(solstone_core_spp_attest::pins::PRODUCTION_MIN_VCEK_TCB),
         ..Policy::default()
     }
 }
