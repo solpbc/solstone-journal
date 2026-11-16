@@ -53,6 +53,7 @@ fn request(temp: &TempDir, import_id: &str) -> AudioImportRequest {
         setting: None,
         wait_for_processing: false,
         stall_timeout: Duration::from_secs(600),
+        stall_audio_factor: 0.0,
         poll_interval: Duration::from_secs(1),
     }
 }
@@ -1919,4 +1920,37 @@ async fn utc_metadata_keeps_the_second_repeated_hour_for_audio_chunks() {
             .collect::<Vec<_>>(),
         expected
     );
+}
+
+/// A computer without a GPU can take longer than the fixed floor to transcribe one segment.
+/// The wait grows with the audio still owed, so a segment that lands after the floor but
+/// inside that window is finished work, not a stall.
+#[tokio::test]
+async fn a_slow_segment_inside_its_audio_window_is_not_a_stall() {
+    let temp = TempDir::new().unwrap();
+    let mut req = request(&temp, "slow");
+    req.wait_for_processing = true;
+    req.stall_timeout = Duration::from_millis(20);
+    req.stall_audio_factor = 0.05;
+    req.poll_interval = Duration::from_millis(5);
+    let finish_late = async {
+        let sidecar = loop {
+            if let Some(segment) = read_audio_import_record(&req.journal_root, &req.import_id)
+                .ok()
+                .flatten()
+                .and_then(|record| record.created_segments.into_iter().next())
+            {
+                break segment.file_path.with_extension("jsonl");
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        };
+        // Well past the floor, well inside 20 ms + 0.05 x 30 s of audio.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        write_analyzed_processing_record(&sidecar);
+    };
+    let import = fake_import(req.clone(), 30.0, None, Rc::new(RefCell::new(Vec::new())));
+    let (outcome, ()) = tokio::join!(import, finish_late);
+    let outcome = outcome.unwrap();
+    assert!(created(&outcome).processing.stalled_segments.is_empty());
+    assert!(created(&outcome).processing.failed_segments.is_empty());
 }

@@ -55,6 +55,8 @@ pub struct AudioImportRequest {
     pub setting: Option<String>,
     pub wait_for_processing: bool,
     pub stall_timeout: Duration,
+    /// Added to `stall_timeout` per second of the longest segment still owed.
+    pub stall_audio_factor: f64,
     pub poll_interval: Duration,
 }
 
@@ -1220,7 +1222,7 @@ async fn wait_for_processing(
             return Ok(processing_outcome(record));
         }
         let now = Instant::now();
-        let deadline = last_progress + request.stall_timeout;
+        let deadline = last_progress + stall_window(request, record);
         if now >= deadline {
             break;
         }
@@ -1353,6 +1355,22 @@ fn apply_observed_event(
         AudioProcessingState::Succeeded
     };
     true
+}
+
+/// How long the wait goes without a segment finishing before it calls the rest
+/// stalled. A segment takes time in proportion to its audio, and a computer
+/// without a GPU can transcribe slower than real time, so the window grows with
+/// the longest segment still owed rather than staying fixed.
+fn stall_window(request: &AudioImportRequest, record: &AudioImportRecord) -> Duration {
+    let longest = record
+        .created_segments
+        .iter()
+        .filter(|segment| is_pending(segment))
+        .map(|segment| segment.duration_seconds)
+        .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
+        .fold(0.0_f64, f64::max);
+    request.stall_timeout
+        + Duration::try_from_secs_f64(longest * request.stall_audio_factor).unwrap_or_default()
 }
 
 fn is_pending(segment: &AudioImportRecordSegment) -> bool {

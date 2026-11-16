@@ -23,6 +23,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- while photos of people catch up, older meetings still waiting for one are no longer read again every hour, and some older meeting recordings, in a video format earlier versions couldn't read, now get photos of people too.
+- importing an audio file from the command line on a computer without a graphics card could stop waiting after 30 seconds and report the import as still processing. it now waits longer for longer recordings.
 - dashboard questions now appear in the page, so actions such as unpairing a device or renaming an agent key work even when the app showing your journal doesn't draw browser dialogs.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.

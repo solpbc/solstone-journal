@@ -1084,6 +1084,10 @@ pub fn audio_import_runtime() -> Result<tokio::runtime::Runtime, String> {
         .map_err(|error| error.to_string())
 }
 
+/// The importer waits 30 seconds plus twice the longest segment's audio for a
+/// segment to finish: room for a computer that transcribes at half real time.
+const STALL_AUDIO_FACTOR: f64 = 2.0;
+
 fn run_audio(
     media: &str,
     options: &Options,
@@ -1124,6 +1128,7 @@ fn run_audio(
             setting: options.setting.clone(),
             wait_for_processing: false,
             stall_timeout: Duration::from_secs(30),
+            stall_audio_factor: STALL_AUDIO_FACTOR,
             poll_interval: Duration::from_millis(250),
         };
         return (
@@ -1223,6 +1228,7 @@ fn run_audio(
         // each one's outcome in its own state, hands processing to the journal and moves on.
         wait_for_processing,
         stall_timeout: Duration::from_secs(30),
+        stall_audio_factor: STALL_AUDIO_FACTOR,
         poll_interval: Duration::from_millis(250),
     };
     let outcome = runtime.block_on(import_audio(request));
