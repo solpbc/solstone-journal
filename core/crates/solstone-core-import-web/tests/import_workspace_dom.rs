@@ -19,6 +19,8 @@ fn import_workspace_dom_contract() {
     }
 
     let output = Command::new("node")
+        // The contract cases check that a gone view's markup is collected.
+        .arg("--expose-gc")
         .arg(format!(
             "{}/tests/import_workspace_dom.js",
             env!("CARGO_MANIFEST_DIR")
