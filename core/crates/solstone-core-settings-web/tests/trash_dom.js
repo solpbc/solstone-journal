@@ -65,6 +65,9 @@ const sandbox = {
   loadRemovalHistory: () => {},
   showFieldStatus: (el, type, message) => statuses.push({ type, message }),
   saveField: (el, section, key, value) => saves.push({ section, key, value }),
+  // The mount's read and write, and its state, as the trash block sees them.
+  settingsApi: (url, options) => window.apiJson(url, options),
+  ctx: { disposed: false },
 };
 vm.createContext(sandbox);
 vm.runInContext(`${sourceNames}\n${html.slice(start, end)};this.api={TRASH_COPY,TRASH_WORDS,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,renderTrashBackups,trashSelected,trashWord,trashRowNote,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
@@ -80,14 +83,14 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 (async () => {
   // Error is never the empty line.
-  answers['api/trash'] = new Error('down');
+  answers['/app/settings/api/trash'] = new Error('down');
   assert.strictEqual(await api.loadTrash(), false);
   assert.strictEqual(byId.trashList.children[0].textContent, C.error);
   assert.strictEqual(byId.trashBar.hidden, true);
   assert.strictEqual(api.renderTrash({ not: 'a list' }), false);
 
   // Empty.
-  answers['api/trash'] = { erase_after_days: 7, items: [] };
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [] };
   await api.loadTrash();
   assert.strictEqual(byId.trashList.children[0].textContent, C.empty);
   assert.strictEqual(byId.trashBar.hidden, true);
@@ -96,7 +99,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.strictEqual(byId.trashEraseAfterDays.disabled, false);
 
   // Rows: a segment names its stream and size, a memory does neither.
-  answers['api/trash'] = { erase_after_days: 7, items: [seg('a', { replaces: true }), mem('b')] };
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [seg('a', { replaces: true }), mem('b')] };
   await api.loadTrash();
   assert.strictEqual(byId.trashBar.hidden, false);
   assert.strictEqual(byId.trashBarIdle.hidden, false);
@@ -110,7 +113,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 
   // An import names its source, its own file name and the day it came in, then
   // its segments and size; its returned line is its own.
-  answers['api/trash'] = { erase_after_days: 7, items: [imp('i', { replaces: true }), imp('j', { label: null, source: 'not-a-source', segments: 1 })] };
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [imp('i', { replaces: true }), imp('j', { label: null, source: 'not-a-source', segments: 1 })] };
   await api.loadTrash();
   const [impRow, bareRow] = byId.trashList.children;
   const quals = (row) => row.all('removal-qual').map((node) => node.textContent);
@@ -126,7 +129,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.strictEqual(api.trashWord([imp('i'), imp('j')], 2), api.TRASH_WORDS.import[1]);
   assert.ok(!Object.values(api.TRASH_WORDS).flat().includes(api.trashWord([imp('i'), seg('a')], 2)), 'a mixed selection takes neither kind\'s word');
   assert.strictEqual(api.trashWord([{ kind: 'workout' }], 1), api.TRASH_WORDS.workout[0]);
-  answers['api/trash'] = { erase_after_days: 7, items: [seg('a', { replaces: true }), mem('b')] };
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [seg('a', { replaces: true }), mem('b')] };
   await api.loadTrash();
 
   // The date: never in the past.
@@ -144,17 +147,17 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.strictEqual(document.activeElement, byId.trashRecoverBtn, 'select all moves focus to the reversible act');
 
   // Recover has no confirm, and sends the selected ids.
-  answers['api/trash/recover'] = { done: ['a', 'b'], failed: [] };
-  answers['api/trash'] = { erase_after_days: 7, items: [] };
+  answers['/app/settings/api/trash/recover'] = { done: ['a', 'b'], failed: [] };
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [] };
   byId.trashRecoverBtn.fire('click');
   await flush();
-  const recover = calls.find((call) => call.url === 'api/trash/recover');
+  const recover = calls.find((call) => call.url === '/app/settings/api/trash/recover');
   assert.deepStrictEqual(JSON.parse(recover.options.body).ids, ['a', 'b']);
   assert.strictEqual(modal.open, undefined);
   assert.strictEqual(byId.trashResult.hidden, false);
 
   // Erase now always confirms, and only the confirm acts.
-  answers['api/trash'] = { erase_after_days: 7, items: [seg('a')] };
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [seg('a')] };
   await api.loadTrash();
   byId.trashSelectAll.fire('change');
   calls.length = 0;
@@ -165,22 +168,22 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.strictEqual(modal.open, false);
   assert.strictEqual(calls.length, 0);
   byId.trashEraseBtn.fire('click');
-  answers['api/trash/erase'] = { done: ['a'], failed: [] };
-  answers['api/trash'] = { erase_after_days: 7, items: [] };
+  answers['/app/settings/api/trash/erase'] = { done: ['a'], failed: [] };
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [] };
   byId.trashConfirmErase.fire('click');
   await flush();
-  assert.ok(calls.some((call) => call.url === 'api/trash/erase'));
+  assert.ok(calls.some((call) => call.url === '/app/settings/api/trash/erase'));
 
   // Empty confirms too, and posts no selection.
-  answers['api/trash'] = { erase_after_days: 7, items: [seg('a')] };
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [seg('a')] };
   await api.loadTrash();
   calls.length = 0;
   byId.trashEmptyBtn.fire('click');
   assert.strictEqual(modal.open, true);
-  answers['api/trash/empty'] = { done: ['a'], failed: [] };
+  answers['/app/settings/api/trash/empty'] = { done: ['a'], failed: [] };
   byId.trashConfirmErase.fire('click');
   await flush();
-  assert.deepStrictEqual(JSON.parse(calls.find((call) => call.url === 'api/trash/empty').options.body), { backups: false }, 'empty sends only the backups choice');
+  assert.deepStrictEqual(JSON.parse(calls.find((call) => call.url === '/app/settings/api/trash/empty').options.body), { backups: false }, 'empty sends only the backups choice');
 
   // Confirm wording follows count and kind.
   const K = (act, items) => { const copy = api.trashConfirmCopy(act, items); return { title: copy.title, paragraphs: Array.from(copy.paragraphs) }; };
@@ -201,7 +204,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   const fac = (id, extra = {}) => ({ id, kind: 'facet', label: 'work 2024', name: 'work-2024', replaces: false, trashed_at: '2026-11-09T10:00:00Z', erase_at: LATER, bytes: 10, ...extra });
   const wipe = (id) => ({ id, kind: 'speakers', files: 12, trashed_at: '2026-11-05T10:00:00Z', erase_at: LATER, bytes: 5 * 1024 * 1024 });
   const merge = (id, state, title) => ({ id, kind: 'facet_file', dest: 'work', dest_state: state, dest_title: title, files: 4, trashed_at: '2026-11-05T10:00:00Z', erase_at: LATER, bytes: 99 });
-  const rowOf = (item) => { answers['api/trash'] = { erase_after_days: 7, items: [item] }; return api.loadTrash().then(() => byId.trashList.children[0]); };
+  const rowOf = (item) => { answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [item] }; return api.loadTrash().then(() => byId.trashList.children[0]); };
   const lines = (row, cls) => row.all(cls).map((node) => node.textContent);
   {
     const row = await rowOf(ent('e1'));
@@ -256,7 +259,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.ok(!Object.values(api.TRASH_WORDS).flat().includes(api.trashWord([ent('a'), fac('b')], 2)), 'a mix takes things');
 
   // Rows that stopped part way lead the list, with no box, and nothing counts them.
-  answers['api/trash'] = { erase_after_days: 7, items: [seg('a')], stopped: [{ ...ent('s1'), state: 'detaching' }, { ...fac('s2'), state: 'attaching' }, { ...seg('s3'), state: 'erasing' }] };
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [seg('a')], stopped: [{ ...ent('s1'), state: 'detaching' }, { ...fac('s2'), state: 'attaching' }, { ...seg('s3'), state: 'erasing' }] };
   await api.loadTrash();
   {
     const [first, second, third] = byId.trashList.children;
@@ -270,7 +273,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     byId.trashSelectAll.fire('change');
     assert.deepStrictEqual([...api.trashSelected], ['a'], 'select all leaves stopped rows out');
   }
-  answers['api/trash'] = { erase_after_days: 7, items: [], stopped: [{ ...ent('s1'), state: 'attaching' }] };
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [], stopped: [{ ...ent('s1'), state: 'attaching' }] };
   await api.loadTrash();
   assert.ok(!byId.trashList.children.some((row) => row.className === 'log-empty'), 'only stopped rows: the trash is not empty');
   assert.strictEqual(byId.trashBar.hidden, true, 'and there is nothing to act on');
@@ -278,10 +281,10 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   // A refused recover: the row says why, from the code and what it names.
   {
     const items = [ent('p1'), ent('p2'), wipe('w1'), fac('f1'), ent('p3'), merge('m1', 'gone', null), fac('f9')];
-    answers['api/trash'] = { erase_after_days: 7, items };
+    answers['/app/settings/api/trash'] = { erase_after_days: 7, items };
     await api.loadTrash();
     byId.trashSelectAll.fire('change');
-    answers['api/trash/recover'] = { done: [], failed: [
+    answers['/app/settings/api/trash/recover'] = { done: [], failed: [
       { id: 'p1', reason: 'waits_facets', detail: { code: 'waits_facets', title: 'clients', others: 0 } },
       { id: 'p2', reason: 'waits_facets', detail: { code: 'waits_facets', title: 'clients', others: 2 } },
       { id: 'w1', reason: 'waits_wipe', detail: { code: 'waits_wipe', segments: 3, imports: 0, people: 2, name: 'Ada' } },
@@ -303,7 +306,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     assert.deepStrictEqual(note('f9'), [], 'an unknown code adds no note');
     assert.ok(!JSON.stringify(byId.trashList).includes('has no words'), 'no server reason shows');
     assert.strictEqual(byId.trashResult.textContent, C.recoverFailedMany, 'something here could change: try again');
-    answers['api/trash/recover'] = { done: [], failed: [{ id: 'p3', reason: 'taken' }, { id: 'f1', reason: 'name_redirected' }] };
+    answers['/app/settings/api/trash/recover'] = { done: [], failed: [{ id: 'p3', reason: 'taken' }, { id: 'f1', reason: 'name_redirected' }] };
     byId.trashSelectAll.fire('change');
     byId.trashRecoverBtn.fire('click');
     await flush();
@@ -344,7 +347,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     assert.ok(!Object.values(api.TRASH_WORDS).flat().includes(api.trashWord([orig('a'), orig('b')], 2)), 'and things');
 
     // A stopped one reads as part 2a's stopped rows.
-    answers['api/trash'] = { erase_after_days: 7, items: [], stopped: [{ ...orig('s1', { modalities: ['screen'] }), state: 'detaching' }] };
+    answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [], stopped: [{ ...orig('s1', { modalities: ['screen'] }), state: 'detaching' }] };
     await api.loadTrash();
     const stoppedRow = byId.trashList.children[0];
     assert.strictEqual(stoppedRow.className, 'trash-row trash-row--stopped');
@@ -355,10 +358,10 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     // A recover its segment refuses: the row that already says why takes no note,
     // one whose view didn't carry the state does, and trying again won't help.
     const items = [orig('r1', { segment_state: 'trashed' }), orig('r2', { segment_state: undefined }), orig('r3', { segment_state: 'gone' })];
-    answers['api/trash'] = { erase_after_days: 7, items };
+    answers['/app/settings/api/trash'] = { erase_after_days: 7, items };
     await api.loadTrash();
     byId.trashSelectAll.fire('change');
-    answers['api/trash/recover'] = { done: [], failed: [
+    answers['/app/settings/api/trash/recover'] = { done: [], failed: [
       { id: 'r1', reason: 'recording_in_trash', detail: { code: 'recording_in_trash' } },
       { id: 'r2', reason: 'recording_in_trash', detail: { code: 'recording_in_trash' } },
       { id: 'r3', reason: 'segment_gone', detail: { code: 'segment_gone' } },
@@ -388,10 +391,10 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     assert.deepStrictEqual(lines(await rowOf(own('i3', 'gone')), 'trash-returned'), [C.importGone]);
     assert.deepStrictEqual(lines(await rowOf(own('i4', 'live')), 'trash-returned'), [], 'its import is in the journal: nothing new');
     const items = [own('r1', 'trashed'), seg('r2'), own('r3', 'gone')];
-    answers['api/trash'] = { erase_after_days: 7, items };
+    answers['/app/settings/api/trash'] = { erase_after_days: 7, items };
     await api.loadTrash();
     byId.trashSelectAll.fire('change');
-    answers['api/trash/recover'] = { done: [], failed: [
+    answers['/app/settings/api/trash/recover'] = { done: [], failed: [
       { id: 'r1', reason: 'import_in_trash', detail: { code: 'import_in_trash' } },
       { id: 'r2', reason: 'import_in_trash', detail: { code: 'import_in_trash' } },
       { id: 'r3', reason: 'import_gone', detail: { code: 'import_gone' } },
@@ -404,7 +407,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     assert.deepStrictEqual(note('r3'), [], 'a gone import is said by the row');
     assert.strictEqual(byId.trashResult.textContent, C.recoverStuckMany, 'no try again');
     const upload = { id: 'u1', kind: 'import', source: 'audio', import_id: '20261110_090000', label: 'standup.m4a', imported_day: '20261110', segments: 1, days: ['20261110', '20261110'], trashed_at: '2026-11-10T10:00:00Z', erase_at: LATER, bytes: 1024, surface: 'transcripts', takes: 2 };
-    answers['api/trash'] = { erase_after_days: 7, items: [upload, own('w1', 'trashed'), own('w2', 'trashed')] };
+    answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [upload, own('w1', 'trashed'), own('w2', 'trashed')] };
     await api.loadTrash();
     assert.ok(K('erase', [upload]).paragraphs.includes(C.waitingOwnOneMany.replace('{w}', 2)));
     assert.ok(!K('erase', [upload, own('w1', 'trashed')]).paragraphs.includes(C.waitingOwnOneMany.replace('{w}', 2)), 'a picked segment is listed already');
@@ -413,7 +416,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 
   // A facet recovered over another of its name confirms first; nothing else does.
   {
-    answers['api/trash'] = { erase_after_days: 7, items: [fac('f1', { replaces: true }), ent('e1'), fac('f2')] };
+    answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [fac('f1', { replaces: true }), ent('e1'), fac('f2')] };
     await api.loadTrash();
     calls.length = 0;
     byId.trashList.children[0].children[0].checked = true;
@@ -431,21 +434,21 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     assert.deepStrictEqual(K2([fac('a', { replaces: true }), fac('b', { replaces: true })]), [C.replaceSomeMany.replace('{k}', 2)]);
     byId.trashSelectAll.fire('change');
     byId.trashRecoverBtn.fire('click');
-    answers['api/trash/recover'] = { done: ['f1', 'e1', 'f2'], failed: [] };
-    answers['api/trash'] = { erase_after_days: 7, items: [] };
+    answers['/app/settings/api/trash/recover'] = { done: ['f1', 'e1', 'f2'], failed: [] };
+    answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [] };
     byId.trashConfirmErase.fire('click');
     await flush();
-    const recover = calls.find((call) => call.url === 'api/trash/recover');
+    const recover = calls.find((call) => call.url === '/app/settings/api/trash/recover');
     assert.deepStrictEqual(JSON.parse(recover.options.body).ids, ['f1', 'e1', 'f2'], 'the confirm recovers');
-    answers['api/trash'] = { erase_after_days: 7, items: [ent('e1'), ent('e2', { same_name: true })] };
+    answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [ent('e1'), ent('e2', { same_name: true })] };
     await api.loadTrash();
     byId.trashSelectAll.fire('change');
     modal.open = false;
-    answers['api/trash/recover'] = { done: ['e1', 'e2'], failed: [] };
+    answers['/app/settings/api/trash/recover'] = { done: ['e1', 'e2'], failed: [] };
     byId.trashRecoverBtn.fire('click');
     assert.strictEqual(modal.open, false, 'people keep both, so no confirm');
     await flush();
-    answers['api/trash'] = { erase_after_days: 7, items: [seg('a')] };
+    answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [seg('a')] };
     await api.loadTrash();
     byId.trashSelectAll.fire('change');
     byId.trashEraseBtn.fire('click');

@@ -1584,7 +1584,8 @@ function aboutHarness() {
     convey: {copyToClipboard: async text => copies.push(text)},
     logError() {},
   };
-  const context = vm.createContext({document, window});
+  // The about block reads through settings' mount (`settingsApi`).
+  const context = vm.createContext({document, window, settingsApi: (url, options) => window.apiJson(url, options)});
   const source = fs.readFileSync(path.join(crateDir, '../solstone-core-settings-web/assets/workspace.html'), 'utf8');
   const start = source.indexOf("let settingsAbout = '';");
   const end = source.indexOf('function switchSection', start);
@@ -1731,7 +1732,7 @@ asyncCase('settings has no devices section and its old links land on network dev
     assert.ok(!source.includes(marker), marker);
   }
   const start = source.indexOf('function redirectRetiredSection(raw) {');
-  const end = source.indexOf("window.addEventListener('hashchange'", start);
+  const end = source.indexOf("ctx.on(window, 'hashchange'", start);
   assert.ok(start > 0 && end > start, 'test exercises the production redirect and hash entry');
   for (const [hash, expected] of [['devices', '/app/network/#devices'], ['observer', '/app/network/#devices'], ['vision', null]]) {
     const replaced = [];
