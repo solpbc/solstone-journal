@@ -853,7 +853,7 @@ mod tests {
             let journal = journal(&format!("explicit-priority-{}", band as u8));
             let request = request();
             let endpoint = endpoint(1);
-            let runtime = EndpointRuntime::default();
+            let runtime = EndpointRuntime::new(1);
             let config = Map::new();
             let context = crate::GenerateCallContext {
                 priority: WorkPriority {
@@ -1207,7 +1207,7 @@ mod tests {
     fn fresh_attestation_uses_one_channel_request_with_confidential_qwen_controls() {
         let written = Rc::new(RefCell::new(Vec::new()));
         let written_for_channel = written.clone();
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let path = journal("success");
         let endpoint = endpoint(1);
         let response_body = r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"#;
@@ -1270,7 +1270,7 @@ mod tests {
         let unauthed_written_for_channel = unauthed_written.clone();
         let mut unauthed = endpoint.clone();
         unauthed.credential = None;
-        let unauthed_runtime = EndpointRuntime::default();
+        let unauthed_runtime = EndpointRuntime::new(1);
         let unauthed_result = confidential_generate_with(
             ConfidentialCall {
                 request: &request(),
@@ -1304,7 +1304,7 @@ mod tests {
 
     #[test]
     fn readiness_failure_refuses_without_attempting_a_channel() {
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let attempts = AtomicUsize::new(0);
         let path = journal("not-verified");
         let result = confidential_generate_with(
@@ -1349,7 +1349,7 @@ mod tests {
     #[test]
     fn channel_failure_refuses_without_an_endpoint_request() {
         for cause in ["tls_handshake_failed", "gpu_nonce_mismatch"] {
-            let runtime = EndpointRuntime::default();
+            let runtime = EndpointRuntime::new(1);
             let attempts = AtomicUsize::new(0);
             let path = journal("failed");
             let result = confidential_generate_with(
@@ -1383,7 +1383,7 @@ mod tests {
     /// a long-lived generate session unable to reach the lane again after one idle stretch.
     #[test]
     fn stale_session_reattests_and_generates_on_the_fresh_channel() {
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         runtime
             .attestation_state()
             .record_attestation_verified(AttestationSession {
@@ -1438,7 +1438,7 @@ mod tests {
     /// and drops the stale session, so the next call attests again rather than reusing it.
     #[test]
     fn stale_session_refuses_and_writes_nothing_when_its_fresh_attestation_fails() {
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         runtime
             .attestation_state()
             .record_attestation_verified(AttestationSession {
@@ -1523,7 +1523,7 @@ mod tests {
 
             let written = Rc::new(RefCell::new(Vec::new()));
             let written_for_channel = written.clone();
-            let runtime = EndpointRuntime::default();
+            let runtime = EndpointRuntime::new(1);
             let path = journal("gen-destination");
             let response_body = r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"#;
             let recorded_target = Rc::new(RefCell::new(None));
@@ -1663,7 +1663,7 @@ mod tests {
                         let path = journal(&format!("private-selected-{index}"));
                         let config = active_spp_config();
                         setup_journal(&path, &config);
-                        let runtime = EndpointRuntime::default().with_brain_observation(Some(sink));
+                        let runtime = EndpointRuntime::new(1).with_brain_observation(Some(sink));
                         let endpoint = endpoint(9099);
                         let req = request();
                         let result = confidential_generate_with_control(
@@ -1803,7 +1803,7 @@ mod tests {
         let cancelled = AtomicBool::new(false);
         let check = || cancelled.load(Ordering::Acquire);
         let cancellation = solstone_core_generate::Cancellation::from_fn(&check);
-        let runtime = EndpointRuntime::default().with_brain_observation(Some(sink));
+        let runtime = EndpointRuntime::new(1).with_brain_observation(Some(sink));
         let req = request();
         let endpoint = endpoint(9099);
         let result = confidential_generate_with_control(
@@ -1851,7 +1851,7 @@ mod tests {
             setup_journal(&path, &config);
             let (emitter, mut rows) = solstone_core_callosum::test_support::diagnostic_fixture(128);
             let sink = solstone_core_brain::BrainObservationSink::new(emitter);
-            let runtime = EndpointRuntime::default().with_brain_observation(Some(sink));
+            let runtime = EndpointRuntime::new(1).with_brain_observation(Some(sink));
             let mut endpoint = endpoint(9099);
             if case == "target" {
                 endpoint.base_url = "invalid-target".into();
@@ -1938,7 +1938,7 @@ mod tests {
 
     #[test]
     fn confidential_generate_attestation_failure_records_refusal_in_brain() {
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let path = journal("generate-attest-refusal");
         let config_map = active_spp_config();
         setup_journal(&path, &config_map);
@@ -2020,7 +2020,7 @@ mod tests {
 
     #[test]
     fn confidential_generate_readiness_failure_records_refusal() {
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let path = journal("generate-readiness-refusal");
         let config_map = active_spp_config();
         setup_journal(&path, &config_map);
@@ -2072,7 +2072,7 @@ mod tests {
 
     #[test]
     fn confidential_generate_invalid_ratls_target_records_refusal() {
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let path = journal("generate-invalid-ratls");
         let config_map = active_spp_config();
         setup_journal(&path, &config_map);
@@ -2120,7 +2120,7 @@ mod tests {
 
     #[test]
     fn confidential_generate_health_probe_during_begin_refresh_preserves_permit() {
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let path = journal("generate-health-probe-refresh");
         let config_map = active_spp_config();
         setup_journal(&path, &config_map);
@@ -2176,7 +2176,7 @@ mod tests {
 
     #[test]
     fn confidential_generate_ordinary_request_during_begin_refresh_causes_conflict() {
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let path = journal("generate-ordinary-refresh-conflict");
         let config_map = active_spp_config();
         setup_journal(&path, &config_map);
@@ -2239,7 +2239,7 @@ mod tests {
     fn confidential_generate_http_400_does_not_write_attestation_refusal() {
         let written = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         let written_for_channel = written.clone();
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let path = journal("generate-400-no-refusal");
         let config_map = active_spp_config();
         setup_journal(&path, &config_map);
@@ -2275,7 +2275,7 @@ mod tests {
 
     #[test]
     fn confidential_generate_config_changed_to_none_skips_recording() {
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let path = journal("generate-config-none");
         let config_map = active_spp_config();
         setup_journal(&path, &config_map);
@@ -2316,7 +2316,7 @@ mod tests {
 
     #[test]
     fn confidential_generate_missing_key_skips_recording() {
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let path = journal("generate-missing-key");
         let config_map = active_spp_config();
         std::fs::create_dir_all(path.join("config")).unwrap();
@@ -2357,7 +2357,7 @@ mod tests {
 
     #[test]
     fn confidential_admission_probe_failure_writes_zero_application_bytes() {
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let path = journal("generate-probe-zero-bytes");
         let config_map = active_spp_config();
         setup_journal(&path, &config_map);
@@ -2492,7 +2492,7 @@ mod tests {
 
     #[test]
     fn confidential_admission_probe_status_and_io_edge_cases() {
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let path = journal("generate-probe-edge-cases");
         let config_map = active_spp_config();
         setup_journal(&path, &config_map);
@@ -2677,7 +2677,7 @@ mod tests {
 
     #[test]
     fn probe_timeout_prevents_chat_completion_post() {
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let path = journal("probe-timeout-prevents-chat");
         let config_map = active_spp_config();
         setup_journal(&path, &config_map);
@@ -2807,7 +2807,7 @@ mod tests {
 fn confidential_generate_contract_400_is_provider_request_rejected() {
     let written = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let written_for_channel = written.clone();
-    let runtime = EndpointRuntime::default();
+    let runtime = EndpointRuntime::new(1);
     let path = tests::journal("confidential_400");
     let endpoint = tests::endpoint(1);
     let error_body = "unexpected contract error";
