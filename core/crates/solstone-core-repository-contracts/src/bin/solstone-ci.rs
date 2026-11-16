@@ -1684,12 +1684,35 @@ fn check_prerequisite(repo: &Path, prerequisite: &str) -> Result<(), String> {
             &["--no-print-directory", "check-rust-ios-ready"],
         )?,
         "host-tools" => host_tools_ready(repo)?,
+        "backup-bridge-archive" => {
+            return backup_bridge_archive_supplied(
+                env::var("RUSTFLAGS").ok().as_deref(),
+                env::var("CARGO_ENCODED_RUSTFLAGS").ok().as_deref(),
+            );
+        }
         other => return Err(format!("runner does not know prerequisite {other}")),
     };
     if success {
         Ok(())
     } else {
         Err("not prepared; run the corresponding make ci-full-prep target".to_owned())
+    }
+}
+
+/// The backup bridge archive is built and linked by the caller, never by
+/// ci-full-prep, so the runner can only see whether the flags name it.
+fn backup_bridge_archive_supplied(
+    rustflags: Option<&str>,
+    encoded_rustflags: Option<&str>,
+) -> Result<(), String> {
+    if [rustflags, encoded_rustflags]
+        .into_iter()
+        .flatten()
+        .any(|flags| flags.contains("restic_bridge"))
+    {
+        Ok(())
+    } else {
+        Err("no restic_bridge archive in RUSTFLAGS; the caller links the maintained Go archive and its system libraries".to_owned())
     }
 }
 
@@ -1782,6 +1805,23 @@ fn repo_root() -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backup_bridge_archive_blocks_until_the_caller_links_it() {
+        assert!(backup_bridge_archive_supplied(None, None).is_err());
+        assert!(backup_bridge_archive_supplied(Some("-C debuginfo=1"), None).is_err());
+        assert!(
+            backup_bridge_archive_supplied(
+                Some("-L /tmp/bridge -l static=restic_bridge -l resolv"),
+                None
+            )
+            .is_ok()
+        );
+        assert!(
+            backup_bridge_archive_supplied(None, Some("-Clink-arg=/tmp/librestic_bridge.a"))
+                .is_ok()
+        );
+    }
 
     fn registry() -> Registry {
         Registry {

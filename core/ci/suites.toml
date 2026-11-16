@@ -2,7 +2,7 @@ version = 1
 sets = ["component", "native", "differential", "race", "live", "policy", "package", "platform"]
 areas = ["audio", "backup", "body", "cognition", "commands", "core", "entities", "facets", "formats", "health", "home", "import", "indexing", "ingest", "journal", "media", "observation", "platform", "records", "repository", "retention", "services", "stats", "support", "system", "talents", "transfer", "trust", "workspace"]
 platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache", "cargo-deny", "msrv", "onnx-runtime", "pdf-runtime", "apple-sdk", "ios-onnx-runtime", "host-tools"]
+prerequisites = ["cargo-cache", "cargo-deny", "msrv", "onnx-runtime", "pdf-runtime", "apple-sdk", "ios-onnx-runtime", "host-tools", "backup-bridge-archive"]
 # local-services serializes builders and consumers of core/target/debug/solstone-core
 # (or its CARGO_TARGET_DIR equivalent). It includes the native-runtime members
 # because shipped-binaries touches both resources; preserve both exclusions.
@@ -2187,7 +2187,8 @@ required_features = []
 runtime = "none"
 
 # Opt-in real C-archive reader effects. The caller supplies the source-bound
-# maintained Go archive and system libraries through RUSTFLAGS before selection.
+# maintained Go archive and system libraries through RUSTFLAGS before selection;
+# without them the entry reports BLOCKED rather than a link failure.
 [[suites]]
 id = "solstone-core-backup::native_archive_readback"
 package = "solstone-core-backup"
@@ -2195,7 +2196,7 @@ target = "native_archive_readback"
 set = "native"
 areas = ["backup"]
 platforms = ["linux"]
-prerequisites = ["cargo-cache", "host-tools"]
+prerequisites = ["cargo-cache", "host-tools", "backup-bridge-archive"]
 timeout = "standard"
 serial_group = "host-contention"
 default_full = false
