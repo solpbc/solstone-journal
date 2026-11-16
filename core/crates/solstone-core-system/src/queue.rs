@@ -3655,6 +3655,7 @@ fn read_work_policy(inner: &QueueInner) -> WorkPolicy {
 #[derive(Clone, Copy)]
 struct Selection {
     allowed: bool,
+    own_endpoint: bool,
     today: chrono::NaiveDate,
     spending: WorkPolicy,
 }
@@ -3664,6 +3665,15 @@ impl Selection {
         let journal = &inner.options.journal_root;
         Self {
             allowed: crate::processing::processing_allowed(journal),
+            own_endpoint: solstone_core_journal_config::read_journal_config(journal)
+                .ok()
+                .and_then(|read| read.config)
+                .is_some_and(|config| {
+                    solstone_core_brain::derive_active_brain_lane(&config)
+                        .lane
+                        .as_deref()
+                        == Some("byo-endpoint")
+                }),
             today: selection_day(journal),
             spending: read_work_policy(inner),
         }
@@ -3768,6 +3778,7 @@ enum Pick {
 fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
     let Selection {
         allowed,
+        own_endpoint,
         today,
         spending,
     } = selection;
@@ -3776,12 +3787,27 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
         return dispatches;
     }
     loop {
-        let thinking = allowed
-            && state.local_analysis_pauses == 0
-            && !state
-                .running
-                .values()
-                .any(|slot| is_analysis_command(&slot.command));
+        let model_busy = state.running.values().any(|slot| {
+            is_analysis_command(&slot.command) || (own_endpoint && is_model_check(&slot.command))
+        });
+        let thinking = allowed && state.local_analysis_pauses == 0 && !model_busy;
+        // A check gets the next turn after running thinking, before another
+        // background task. Its execution budget starts only when it runs.
+        // It remains available when the owner pauses ordinary processing.
+        let check = (own_endpoint && !model_busy)
+            .then(|| {
+                state.queues.iter().find_map(|(partition, queue)| {
+                    (!state.running.contains_key(partition) && !state.held.contains_key(partition))
+                        .then(|| {
+                            queue
+                                .iter()
+                                .position(|entry| is_model_check(&entry.command))
+                        })
+                        .flatten()
+                        .map(|index| Pick::Queued(partition.clone(), index))
+                })
+            })
+            .flatten();
         // A lane busy with other work does not disqualify thinking here: the
         // best thinking waits for its own lane rather than letting lower
         // thinking start ahead of it.
@@ -3837,12 +3863,13 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
                 };
                 !state.running.contains_key(partition)
             });
-        let pick = analysis.or_else(|| {
+        let pick = check.or(analysis).or_else(|| {
             state.queues.iter().find_map(|(partition, queue)| {
                 (!state.running.contains_key(partition)
                     && !state.held.contains_key(partition)
                     && queue.front().is_some_and(|entry| {
                         !is_analysis_command(&entry.command)
+                            && !(own_endpoint && is_model_check(&entry.command))
                             && !(state.local_analysis_pauses != 0
                                 && is_local_analysis_command(&entry.command))
                             && !index_daily_conflict(state, &entry.command)
@@ -3920,7 +3947,11 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
                 (sources, submission, references, preflight)
             }
         };
-        let priority = submission.priority.resolve(&submission.command, today);
+        let priority = if own_endpoint && is_model_check(&submission.command) {
+            WorkPriority::default()
+        } else {
+            submission.priority.resolve(&submission.command, today)
+        };
         state.running.insert(
             submission.partition.clone(),
             RunningSlot {
@@ -4033,6 +4064,13 @@ fn asks_for_thinking(command: &[String]) -> bool {
 
 fn is_analysis_command(command: &[String]) -> bool {
     journal_verb(command).is_some_and(|verb| verb == "think")
+}
+
+fn is_model_check(command: &[String]) -> bool {
+    let command = crate::partition::journal_alias_form(command);
+    matches!(command.as_ref(), [journal, brain, action, ..]
+        if journal == "journal" && brain == "brain"
+            && matches!(action.as_str(), "refresh" | "renew-prerequisites"))
 }
 
 /// The daily catch-all and daily talents share the corpus. Keep their scheduled
@@ -6470,6 +6508,7 @@ mod tests {
     fn selection(today: chrono::NaiveDate, spending: WorkPolicy) -> Selection {
         Selection {
             allowed: true,
+            own_endpoint: false,
             today,
             spending,
         }
@@ -7343,6 +7382,7 @@ mod tests {
             state,
             Selection {
                 allowed: true,
+                own_endpoint: false,
                 today: selection_day(Path::new("")),
                 spending: WorkPolicy {
                     lane,
@@ -7380,6 +7420,76 @@ mod tests {
                 normalize_request(request, queue.inner.options.cap_resolver.as_ref()),
             );
         }
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn own_endpoint_health_waits_as_a_task_then_checks_before_more_thinking_even_when_paused() {
+        use crate::request::{ScheduledArgv, ScheduledRequest};
+        for action in ["refresh", "renew-prerequisites"] {
+            let queue = queue(false, 10, VecDeque::new());
+            let mut state = ready_state(&queue);
+            let mut selection = selection(selection_day(Path::new("")), local_spending());
+            selection.own_endpoint = true;
+            enqueue_ranked(&queue, &mut state, &[("running", "--segment", "1:1")]);
+            assert_eq!(take_ready(&mut state, selection).len(), 1);
+            enqueue_ranked(&queue, &mut state, &[("background", "--segment", "5:1")]);
+            let mut check = ScheduledRequest::new(
+                ScheduledArgv::from_wire(vec!["journal".into(), "brain".into(), action.into()])
+                    .unwrap(),
+                "check",
+                "brain-refresh",
+            );
+            check.max_runtime = Some(Duration::from_secs(300));
+            enqueue_locked(
+                &mut state,
+                normalize_request(
+                    ExecutionRequest::Scheduled(check),
+                    queue.inner.options.cap_resolver.as_ref(),
+                ),
+            );
+            assert!(take_ready(&mut state, selection).is_empty());
+            assert!(!state.running.values().any(|slot| slot.reference == "check"));
+            // No check process or callable frame exists yet, so its five-minute
+            // runtime cap cannot tick while the first task keeps working.
+            state.running.clear();
+            selection.allowed = false;
+            selection.spending.lane = ThinkingLane::Unavailable;
+            let selected = take_ready(&mut state, selection);
+            assert_eq!(selected.len(), 1);
+            assert_eq!(selected[0].submission.reference, "check");
+            assert_eq!(selected[0].submission.cap, Duration::from_secs(300));
+            assert_eq!(selected[0].priority, WorkPriority::default());
+            selection.allowed = true;
+            selection.spending = local_spending();
+            assert!(take_ready(&mut state, selection).is_empty());
+            state.running.clear();
+            assert_eq!(
+                take_ready(&mut state, selection)[0].submission.reference,
+                "background"
+            );
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn other_lanes_keep_health_checks_available_beside_thinking() {
+        let queue = queue(false, 10, VecDeque::new());
+        let mut state = ready_state(&queue);
+        enqueue_ranked(&queue, &mut state, &[("running", "--segment", "1:1")]);
+        let selection = selection(selection_day(Path::new("")), local_spending());
+        assert_eq!(take_ready(&mut state, selection).len(), 1);
+        enqueue_locked(
+            &mut state,
+            normalize_request(
+                command_request(&["journal", "brain", "refresh"], "check", None),
+                queue.inner.options.cap_resolver.as_ref(),
+            ),
+        );
+        assert_eq!(
+            take_ready(&mut state, selection)[0].submission.reference,
+            "check"
+        );
     }
 
     #[cfg(all(test, feature = "full-tests"))]
