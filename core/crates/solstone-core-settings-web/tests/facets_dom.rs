@@ -134,6 +134,7 @@ fn facets_dom_contract() {
     }
     let output = Command::new("node")
         .arg("--max-old-space-size=512")
+        .arg("--expose-gc")
         .arg(format!(
             "{}/tests/facets_dom.js",
             env!("CARGO_MANIFEST_DIR")
