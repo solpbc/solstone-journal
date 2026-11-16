@@ -241,7 +241,8 @@ Only the owner's provider test and the health check go straight through.
 
 Confidential calls also share one attested connection per journal. The
 supervisor keeps it, and a Generate process hands its confidential call to the
-supervisor over the owner-only `health/generate.sock` instead of attesting a
+supervisor over the owner-only `health/generate.sock` (on Windows, an
+authenticated private pipe named for that path) instead of attesting a
 channel of its own. Without the supervisor's socket a call connects directly.
 
 Bundled local inference also holds the local device lock under

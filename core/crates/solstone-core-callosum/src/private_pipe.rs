@@ -13,6 +13,9 @@ use std::io::{self, Read, Write};
 use std::path::Path;
 use std::time::Duration;
 
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+
 use interprocess::local_socket::traits::{Listener as _, Stream as _};
 use interprocess::local_socket::{
     ConnectOptions, Listener, ListenerNonblockingMode, ListenerOptions, Stream, ToFsName,
@@ -26,6 +29,20 @@ use crate::windows::{
 
 /// A connected private pipe, both ways.
 pub type PrivatePipeStream = Stream;
+
+/// The server answers the caller's own challenge too, so a caller never sends
+/// a call to whatever took the pipe's name first.
+const SERVER_PROOF_DOMAIN: &[u8] = b"solstone-private-pipe-server-proof-v1\0";
+
+fn server_proof(
+    secret: &[u8; PIPE_CHALLENGE_LEN],
+    challenge: &[u8; PIPE_CHALLENGE_LEN],
+) -> [u8; 32] {
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("HMAC takes any key length");
+    mac.update(SERVER_PROOF_DOMAIN);
+    mac.update(challenge);
+    mac.finalize().into_bytes().into()
+}
 
 /// Accepts callers of one private pipe. Accepting never blocks.
 pub struct PrivatePipeListener {
@@ -85,22 +102,28 @@ impl PendingCaller {
         self.stream.flush()?;
         let mut proof = [0_u8; PIPE_HANDSHAKE_LEN];
         self.stream.read_exact(&mut proof)?;
-        if verify_client_proof(&self.secret, &greeting, &proof) {
-            Ok(self.stream)
-        } else {
-            Err(io::Error::new(
+        if !verify_client_proof(&self.secret, &greeting, &proof) {
+            return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "private pipe caller failed the challenge",
-            ))
+            ));
         }
+        let mut theirs = [0_u8; PIPE_CHALLENGE_LEN];
+        self.stream.read_exact(&mut theirs)?;
+        self.stream
+            .write_all(&server_proof(&self.secret, &theirs))?;
+        self.stream.flush()?;
+        Ok(self.stream)
     }
 }
 
-/// Connect to the private pipe named for `socket_path` and answer its
-/// challenge. `None` means no one serves that pipe.
+/// Connect to the private pipe named for `socket_path`, answer its
+/// challenge and check the server's answer to ours. `None` means no one
+/// serves that pipe, or no one answered within `wait`; the caller then works
+/// without it.
 ///
 /// # Errors
-/// Returns an error when a server answered but the challenge failed.
+/// Returns an error when the server failed to prove it holds the secret.
 pub fn connect_private_pipe(
     socket_path: &Path,
     wait: Duration,
@@ -111,20 +134,37 @@ pub fn connect_private_pipe(
     let Ok(secret) = read_secret(socket_path) else {
         return Ok(None);
     };
-    let mut stream = match ConnectOptions::new()
-        .name(name)
-        .wait_mode(interprocess::ConnectWaitMode::Timeout(wait))
-        .connect_sync()
-    {
-        Ok(stream) => stream,
-        Err(_) => return Ok(None),
-    };
-    let mut greeting = [0_u8; PIPE_HANDSHAKE_LEN];
-    stream.read_exact(&mut greeting)?;
-    let proof = client_proof(&secret, &greeting)?;
-    stream.write_all(&proof)?;
-    stream.flush()?;
-    Ok(Some(stream))
+    // A blocking connect waits without limit for a busy pipe, and a greeting
+    // read has no timeout, so both run on a thread the caller stops waiting for.
+    let (sent, answered) = std::sync::mpsc::channel();
+    let name = name.into_owned();
+    std::thread::Builder::new()
+        .name("private-pipe-connect".into())
+        .spawn(move || {
+            let outcome = (|| {
+                let Ok(mut stream) = ConnectOptions::new().name(name).connect_sync() else {
+                    return Ok(None);
+                };
+                let mut greeting = [0_u8; PIPE_HANDSHAKE_LEN];
+                stream.read_exact(&mut greeting)?;
+                stream.write_all(&client_proof(&secret, &greeting)?)?;
+                let mut ours = [0_u8; PIPE_CHALLENGE_LEN];
+                getrandom::fill(&mut ours).map_err(|error| io::Error::other(error.to_string()))?;
+                stream.write_all(&ours)?;
+                stream.flush()?;
+                let mut answer = [0_u8; 32];
+                stream.read_exact(&mut answer)?;
+                if answer != server_proof(&secret, &ours) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "private pipe server failed the challenge",
+                    ));
+                }
+                Ok(Some(stream))
+            })();
+            let _ = sent.send(outcome);
+        })?;
+    answered.recv_timeout(wait).unwrap_or(Ok(None))
 }
 
 /// Split a connected pipe into its receiving and sending halves.
@@ -181,12 +221,38 @@ mod tests {
     }
 
     #[test]
+    fn a_caller_without_the_secret_is_refused() {
+        let journal = tempfile::tempdir().unwrap();
+        let health = journal.path().join("health");
+        std::fs::create_dir_all(&health).unwrap();
+        let socket = health.join("refused-test.sock");
+        let _namespace = crate::windows::namespace_fixture::Guard::register(&socket);
+        let listener = PrivatePipeListener::bind(&socket).unwrap();
+        // The caller holds a different secret than the server's.
+        std::fs::write(crate::windows::secret_path(&socket).unwrap(), [7_u8; 32]).unwrap();
+        let client = {
+            let socket = socket.clone();
+            std::thread::spawn(move || connect_private_pipe(&socket, Duration::from_secs(5)))
+        };
+        let pending = loop {
+            if let Some(pending) = listener.accept().unwrap() {
+                break pending;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert!(pending.admit().is_err());
+        assert!(!matches!(client.join().unwrap(), Ok(Some(_))));
+    }
+
+    #[test]
     fn a_pipe_no_one_serves_reads_as_absent() {
         let journal = tempfile::tempdir().unwrap();
         let health = journal.path().join("health");
         std::fs::create_dir_all(&health).unwrap();
         let socket = health.join("absent-test.sock");
         let _namespace = crate::windows::namespace_fixture::Guard::register(&socket);
+        // As in a journal, the pipe secret exists; only the server is missing.
+        create_or_read_secret(&socket).unwrap();
         assert!(
             connect_private_pipe(&socket, Duration::from_millis(100))
                 .unwrap()

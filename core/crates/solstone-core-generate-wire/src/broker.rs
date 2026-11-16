@@ -14,8 +14,8 @@
 //! is a named pipe named for that same path, which admits the owner's account
 //! alone and a caller that answers the journal's pipe secret. Each connection
 //! carries one call: a length-framed request and its priority one way, the
-//! framed response the other. A caller that goes away cancels its call, except
-//! on Windows, where an abandoned call runs to its end.
+//! framed response the other. A caller that goes away, or cancels, cancels
+//! its call.
 
 use std::path::{Path, PathBuf};
 
@@ -135,23 +135,22 @@ mod channel {
         reader.set_read_timeout(None)
     }
 
-    /// A caller's two directions, and a way to abandon the call from another
-    /// thread; `None` when no supervisor serves this journal.
-    pub(super) fn connect(path: &Path) -> Option<(Reader, Writer, Option<Reader>)> {
+    /// A caller's two directions; `None` when no supervisor serves this journal.
+    pub(super) fn connect(path: &Path) -> Option<(Reader, Writer)> {
         let stream = std::os::unix::net::UnixStream::connect(path).ok()?;
-        let reader = stream.try_clone().ok()?;
-        let abandon = stream.try_clone().ok();
-        Some((reader, stream, abandon))
+        Some((stream.try_clone().ok()?, stream))
     }
 
-    pub(super) fn abandon(handle: &Reader) {
-        let _ = handle.shutdown(std::net::Shutdown::Both);
+    /// Leave a call from another thread: the supervisor sees the caller go,
+    /// and the caller's own read returns at once.
+    pub(super) fn abandon(writer: &mut Writer) {
+        let _ = writer.shutdown(std::net::Shutdown::Both);
     }
 }
 
 #[cfg(windows)]
 mod channel {
-    use std::io;
+    use std::io::{self, Write};
     use std::path::Path;
     use std::time::Duration;
 
@@ -186,19 +185,24 @@ mod channel {
         Ok(())
     }
 
-    /// A caller's two directions. A Windows pipe offers no way to abandon a
-    /// call from another thread, so the third is always `None`.
-    pub(super) fn connect(path: &Path) -> Option<(Reader, Writer, Option<Reader>)> {
+    /// A caller's two directions; `None` when no supervisor serves this
+    /// journal or none answered in time.
+    pub(super) fn connect(path: &Path) -> Option<(Reader, Writer)> {
         let stream = solstone_core_callosum::private_pipe::connect_private_pipe(
             path,
             Duration::from_secs(2),
         )
         .ok()??;
         let (reader, writer) = solstone_core_callosum::private_pipe::split_private_pipe(stream);
-        Some((Box::new(reader), Box::new(writer), None))
+        Some((Box::new(reader), Box::new(writer)))
     }
 
-    pub(super) fn abandon(_handle: &Reader) {}
+    /// Leave a call from another thread. A pipe cannot be shut down across
+    /// threads, so the caller sends one byte, which the supervisor reads as the
+    /// caller gone; the caller then reads the supervisor's cancelled answer.
+    pub(super) fn abandon(writer: &mut Writer) {
+        let _ = writer.write_all(&[0]).and_then(|()| writer.flush());
+    }
 }
 
 /// A running confidential-call server. Dropping it stops accepting calls and
@@ -268,25 +272,17 @@ fn accept_calls(
                 continue;
             }
         };
-        // Callers take turns in the call line, so only a caller that left
-        // mid-call overlaps the next; more than a few at once is a fault.
-        let busy = SERVING_CALLS.load(std::sync::atomic::Ordering::Acquire) >= MAX_SERVED_CALLS;
-        SERVING_CALLS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        // The handshake and the call's first frame wait on the caller, so they
+        // run off this loop; a caller that stalls there holds only its thread.
         let journal = journal.to_path_buf();
         let spawned = std::thread::Builder::new()
             .name("confidential-call".into())
             .spawn(move || {
-                if let Ok((reader, mut writer)) = pending.open() {
-                    if busy {
-                        let _ = write_frame(&mut writer, b"econfidential calls are busy");
-                    } else {
-                        serve_call(reader, writer, &journal);
-                    }
+                if let Ok((reader, writer)) = pending.open() {
+                    serve_call(reader, writer, &journal);
                 }
-                SERVING_CALLS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
             });
         if let Err(error) = spawned {
-            SERVING_CALLS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
             log::warn!("confidential calls: could not serve a call: {error}");
         }
     }
@@ -308,6 +304,21 @@ fn serve_call(mut reader: channel::Reader, mut writer: channel::Writer, journal:
     if channel::call_read(&reader).is_err() {
         return;
     }
+    // Callers take turns in the call line, so only a caller that left mid-call
+    // overlaps the next; more than a few at once is a fault. The call has been
+    // read, so its caller is waiting for this answer.
+    if SERVING_CALLS.fetch_add(1, std::sync::atomic::Ordering::AcqRel) >= MAX_SERVED_CALLS {
+        SERVING_CALLS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        let _ = write_frame(&mut writer, b"econfidential calls are busy");
+        return;
+    }
+    struct Served;
+    impl Drop for Served {
+        fn drop(&mut self) {
+            SERVING_CALLS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        }
+    }
+    let _served = Served;
     // The caller writes nothing more, so a read returns only when it leaves.
     let gone = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     {
@@ -371,7 +382,7 @@ fn forward_to_supervisor(
     request: &solstone_core_generate::GenerateRequest,
     context: &crate::GenerateCallContext<'_>,
 ) -> Option<Result<solstone_core_generate::GenerateResponse, String>> {
-    let (mut reader, mut writer, abandon) = channel::connect(&broker_socket_path(journal))?;
+    let (mut reader, mut writer) = channel::connect(&broker_socket_path(journal))?;
     let call = match encode_call(context.priority, request) {
         Ok(call) => call,
         Err(detail) => return Some(Err(detail)),
@@ -382,18 +393,17 @@ fn forward_to_supervisor(
     }
     let done = std::sync::atomic::AtomicBool::new(false);
     let reply = std::thread::scope(|scope| {
-        if let Some(abandon) = abandon {
-            let done = &done;
-            scope.spawn(move || {
-                while !done.load(std::sync::atomic::Ordering::Acquire) {
-                    if context.cancellation.is_cancelled() {
-                        channel::abandon(&abandon);
-                        return;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(50));
+        let done = &done;
+        let writer = &mut writer;
+        scope.spawn(move || {
+            while !done.load(std::sync::atomic::Ordering::Acquire) {
+                if context.cancellation.is_cancelled() {
+                    channel::abandon(writer);
+                    return;
                 }
-            });
-        }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        });
         let reply = read_frame(&mut reader);
         done.store(true, std::sync::atomic::Ordering::Release);
         reply
@@ -598,6 +608,55 @@ mod tests {
             solstone_core_generate::encode_one_shot_response(&forwarded).unwrap(),
             solstone_core_generate::encode_one_shot_response(&direct).unwrap()
         );
+        drop(broker);
+    }
+
+    #[test]
+    fn a_full_broker_reads_the_call_then_answers_busy() {
+        let _serial = SERIAL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let journal = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(journal.path().join("health")).unwrap();
+        #[cfg(windows)]
+        let _namespace = solstone_core_callosum::private_pipe::test_pipe_namespace(
+            &broker_socket_path(journal.path()),
+        );
+        let broker = ConfidentialBroker::start(journal.path()).unwrap();
+        SERVING_CALLS.fetch_add(MAX_SERVED_CALLS, std::sync::atomic::Ordering::AcqRel);
+        let request = solstone_core_generate::GenerateRequest {
+            id: Some("busy".into()),
+            context: "test.broker".into(),
+            contents: vec![solstone_core_generate::ContentPart::Text {
+                text: "hello".into(),
+            }],
+            system_instruction: None,
+            temperature: 0.0,
+            max_output_tokens: 8,
+            timeout_s: Some(5.0),
+            json_output: false,
+            json_schema: None,
+            attempt_index: 0,
+            exclusive_admission: false,
+            overflow_text: None,
+            transport_retries: None,
+        };
+        let context = crate::GenerateCallContext {
+            priority: "5:1".parse().unwrap(),
+            cancellation: &solstone_core_generate::Cancellation::never(),
+        };
+        // The answer comes back at once, neither end waiting on the other.
+        let (sent, answered) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                let _ = sent.send(forward_to_supervisor(journal.path(), &request, &context));
+            });
+            let answer = answered
+                .recv_timeout(std::time::Duration::from_secs(30))
+                .expect("a busy broker answers");
+            assert!(matches!(answer, Some(Err(detail)) if detail.contains("busy")));
+        });
+        SERVING_CALLS.fetch_sub(MAX_SERVED_CALLS, std::sync::atomic::Ordering::AcqRel);
         drop(broker);
     }
 
