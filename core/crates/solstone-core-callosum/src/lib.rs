@@ -8,6 +8,8 @@
 mod local_inference;
 mod model;
 mod oneshot;
+#[cfg(windows)]
+pub mod private_pipe;
 mod reader;
 mod registry;
 #[cfg(unix)]

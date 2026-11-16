@@ -240,7 +240,7 @@ pub(crate) fn pipe_name_from_utf16(
 }
 
 // The wire server is its only caller outside tests.
-#[cfg(any(test, feature = "wire"))]
+#[cfg(any(test, windows))]
 pub(crate) fn server_greeting(challenge: [u8; PIPE_CHALLENGE_LEN]) -> [u8; PIPE_HANDSHAKE_LEN] {
     let mut greeting = [0_u8; PIPE_HANDSHAKE_LEN];
     greeting[..4].copy_from_slice(&PIPE_MAGIC);
@@ -271,7 +271,7 @@ pub(crate) fn client_proof(
 }
 
 // The wire server is its only caller outside tests.
-#[cfg(any(test, feature = "wire"))]
+#[cfg(any(test, windows))]
 pub(crate) fn verify_client_proof(
     secret: &[u8; PIPE_CHALLENGE_LEN],
     greeting: &[u8; PIPE_HANDSHAKE_LEN],
@@ -328,7 +328,7 @@ pub(crate) fn read_secret(socket_path: &Path) -> io::Result<[u8; PIPE_CHALLENGE_
     })
 }
 
-#[cfg(all(windows, feature = "wire"))]
+#[cfg(windows)]
 pub(crate) fn create_or_read_secret(socket_path: &Path) -> io::Result<[u8; PIPE_CHALLENGE_LEN]> {
     use std::fs::OpenOptions;
     use std::io::Write;
@@ -347,6 +347,26 @@ pub(crate) fn create_or_read_secret(socket_path: &Path) -> io::Result<[u8; PIPE_
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => read_secret(socket_path),
         Err(error) => Err(error),
     }
+}
+
+/// A DACL granting the owner's account alone. With remote clients refused at
+/// listener creation, it keeps out other accounts and the network, not
+/// same-account software, which is out of scope.
+#[cfg(windows)]
+pub(crate) fn current_user_pipe_sddl() -> io::Result<String> {
+    let sid = sid::current_user_sid()?;
+    Ok(format!("O:{sid}D:P(A;;GA;;;{sid})"))
+}
+
+#[cfg(windows)]
+pub(crate) fn current_user_pipe_security_descriptor()
+-> io::Result<interprocess::os::windows::security_descriptor::SecurityDescriptor> {
+    use widestring::U16CString;
+
+    let sddl = current_user_pipe_sddl()?;
+    let sddl = U16CString::from_str(&sddl)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Callosum SDDL contains NUL"))?;
+    interprocess::os::windows::security_descriptor::SecurityDescriptor::deserialize(sddl.as_ucstr())
 }
 
 #[cfg(windows)]

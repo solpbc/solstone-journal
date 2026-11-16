@@ -152,13 +152,13 @@ enum Turn {
     Wait { may_forward: bool },
     /// The supervisor serving a confidential call another process has taken
     /// its turn for: waiting again would wait on that caller.
-    #[cfg_attr(not(unix), allow(dead_code))]
+    #[cfg_attr(not(any(unix, windows)), allow(dead_code))]
     Held,
 }
 
 /// Serve a confidential call handed over by a process that already holds its
 /// turn in the call line, on this process's one channel.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub(crate) fn respond_in_held_turn(
     request: &solstone_core_generate::GenerateRequest,
     endpoint_runtime: &crate::EndpointRuntime,

@@ -31,6 +31,9 @@ solstone-core-tokens.workspace = true
 solstone-core-spp-ratls.workspace = true
 ureq = { workspace = true, features = ["rustls"] }
 
+[target.'cfg(windows)'.dependencies]
+solstone-core-callosum = { workspace = true }
+
 [features]
 full-tests = []
 test-hooks = []
@@ -54,7 +57,7 @@ name = "provider_environment_isolation"
 path = "tests/provider_environment_isolation.rs"
 
 [dev-dependencies]
-solstone-core-callosum = { workspace = true, features = ["wire", "test-hooks"] }
+solstone-core-callosum = { workspace = true, features = ["wire", "test-hooks", "full-tests"] }
 tempfile = "3.24.0"
 rcgen = { workspace = true }
 rustls = { workspace = true }
