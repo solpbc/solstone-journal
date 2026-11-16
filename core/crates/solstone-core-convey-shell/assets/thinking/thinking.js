@@ -220,21 +220,82 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     return document.getElementById(id);
   }
 
-  function setText(id, message) {
-    const el = $(id);
+  // Every draw writes only what differs from what the page already shows, so
+  // a poll whose answer changed nothing leaves the page as it is: no node is
+  // replaced, and a screen reader doesn't read the focused control again.
+  function writeText(el, text) {
     if (!el) return;
-    el.textContent = message || '';
+    const next = String(text || '');
+    // Equal text over a link or other markup is still a change.
+    const nodes = el.childNodes;
+    const same = el.textContent === next && (!nodes
+      || (nodes.length === 0 ? next === '' : nodes.length === 1 && nodes[0].nodeType === 3));
+    if (!same) el.textContent = next;
+  }
+
+  function hasAttr(el, name) {
+    return typeof el.hasAttribute === 'function' ? el.hasAttribute(name) : el.getAttribute?.(name) != null;
+  }
+
+  // An attribute set to its own value still counts as a change to the page.
+  // A link's own properties are written as properties, as before.
+  const LINK_PROPERTIES = new Set(['href', 'target', 'rel']);
+  function writeAttr(el, name, value) {
+    if (!el) return;
+    if (value === null || value === undefined || value === false) {
+      if (hasAttr(el, name)) el.removeAttribute(name);
+      return;
+    }
+    const next = value === true ? '' : String(value);
+    if (el.getAttribute?.(name) === next) return;
+    if (LINK_PROPERTIES.has(name)) el[name] = next;
+    else el.setAttribute(name, next);
+  }
+
+  function externalLink(el, href) {
+    writeAttr(el, 'href', href);
+    writeAttr(el, 'target', '_blank');
+    writeAttr(el, 'rel', 'noopener noreferrer');
+  }
+
+  function writeHidden(el, hidden) {
+    if (el && el.hidden !== !!hidden) el.hidden = !!hidden;
+  }
+
+  function writeDisabled(el, disabled) {
+    if (el && el.disabled !== !!disabled) el.disabled = !!disabled;
+  }
+
+  // A part built from several values is built again only when they change,
+  // or when something else has written into it since it was built.
+  const drawnParts = new WeakMap();
+  function drawPart(el, values, build) {
+    if (!el) return;
+    const key = JSON.stringify(values);
+    const drawn = drawnParts.get(el);
+    const nodes = Array.from(el.childNodes || el.children || []);
+    if (drawn && drawn.key === key && drawn.nodes.length === nodes.length
+      && drawn.nodes.every((node, i) => node === nodes[i])) return;
+    build();
+    drawnParts.set(el, {key, nodes: Array.from(el.childNodes || el.children || [])});
+  }
+
+  function setText(id, message) {
+    writeText($(id), message);
+  }
+
+  function writeMessage(el, message, tone = '') {
+    if (!el) return;
+    writeText(el, message);
+    if (tone) {
+      if (el.getAttribute?.('data-tone') !== tone || el.dataset?.tone !== tone) el.dataset.tone = tone;
+    } else if (hasAttr(el, 'data-tone') || el.dataset?.tone !== undefined) {
+      el.removeAttribute('data-tone');
+    }
   }
 
   function setMessage(id, message, tone = '') {
-    const el = $(id);
-    if (!el) return;
-    el.textContent = message || '';
-    if (tone) {
-      el.dataset.tone = tone;
-    } else {
-      el.removeAttribute('data-tone');
-    }
+    writeMessage($(id), message, tone);
   }
 
   function showLocalSetupError(message, tone = 'error') {
@@ -309,21 +370,25 @@ window.SolViews.register('thinking', { mount: (ctx) => {
 
   function setElementData(el, key, attr, value) {
     if (!el) return;
+    if (typeof el.getAttribute === 'function' && el.getAttribute(attr) === String(value)
+      && (!el.dataset || el.dataset[key] === String(value))) return;
     if (el.dataset) el.dataset[key] = value;
     if (typeof el.setAttribute === 'function') el.setAttribute(attr, value);
   }
 
   function removeElementData(el, key, attr) {
     if (!el) return;
+    if (!hasAttr(el, attr) && el.dataset?.[key] === undefined) return;
     if (el.dataset) delete el.dataset[key];
     if (typeof el.removeAttribute === 'function') el.removeAttribute(attr);
   }
 
   function setLocalReason(el, text) {
     if (!el) return;
-    el.textContent = text;
+    writeText(el, text);
     setElementData(el, 'localReason', 'data-local-reason', '');
-    el.classList?.remove('error', 'error-message');
+    // classList.remove writes the attribute even when neither class is there.
+    ['error', 'error-message'].forEach((name) => el.classList?.toggle(name, false));
   }
 
   function clearLocalReason(el) {
@@ -334,15 +399,13 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   function setLink(id, url, text) {
     const el = $(id);
     if (!el) return;
-    el.hidden = !url;
-    el.href = url || '';
-    el.textContent = url ? text : '';
+    writeHidden(el, !url);
+    writeAttr(el, 'href', url || '');
+    writeText(el, url ? text : '');
   }
 
   function setHidden(id, hidden) {
-    const el = $(id);
-    if (!el) return;
-    el.hidden = !!hidden;
+    writeHidden($(id), hidden);
   }
 
   function setButtonState(id, visible, disabled) {
@@ -355,14 +418,12 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         fallback.focus();
       }
     }
-    button.hidden = willHide;
-    button.disabled = !!disabled;
+    writeHidden(button, willHide);
+    writeDisabled(button, disabled);
   }
 
   function setButtonText(id, text) {
-    const button = $(id);
-    if (!button) return;
-    button.textContent = text || '';
+    writeText($(id), text);
   }
 
   function installIsInFlight(status) {
@@ -1200,7 +1261,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     let previous = '';
     markup().querySelectorAll('#providers [data-view]').forEach((section) => {
       if (!previous && !section.hidden) previous = section.dataset.view;
-      section.hidden = section.dataset.view !== target;
+      writeHidden(section, section.dataset.view !== target);
     });
     if (target !== 'main') {
       stopLocalConfirmation();
@@ -2797,7 +2858,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       }
       glance.classList.toggle('none', brain.state === 'unknown' && !brain.reason_code);
     }
-    if (glanceLabel) glanceLabel.hidden = false;
+    writeHidden(glanceLabel, false);
     setText('thinkingActiveLane', 'right now');
     setText('thinkingActiveValue', activeValue);
 
@@ -2825,12 +2886,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         setText('chatgptGlanceUsageTitle', chatgptText.usage_limit_title || '');
         setText('chatgptGlanceUsageBody', chatgptText.usage_limit_body || '');
         setText('chatgptGlanceUsageManage', chatgptText.manage_usage_link || '');
-        const usageManage = $('chatgptGlanceUsageManage');
-        if (usageManage) {
-          usageManage.href = 'https://chatgpt.com/settings/usage';
-          usageManage.target = '_blank';
-          usageManage.rel = 'noopener noreferrer';
-        }
+        externalLink($('chatgptGlanceUsageManage'), 'https://chatgpt.com/settings/usage');
         setHidden('brainCheckAction', true);
       } else if (reasonCode === 'chatgpt_not_eligible') {
         setText('thinkingActiveDetail', chatgptText.not_eligible || '');
@@ -2859,12 +2915,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         setHidden('chatgptGlancePlan', false);
         setText('chatgptGlancePlanLabel', chatgptText.plan || '');
         setText('chatgptGlancePlanManage', chatgptText.manage_usage_link || '');
-        const planManage = $('chatgptGlancePlanManage');
-        if (planManage) {
-          planManage.href = 'https://chatgpt.com/settings/usage';
-          planManage.target = '_blank';
-          planManage.rel = 'noopener noreferrer';
-        }
+        externalLink($('chatgptGlancePlanManage'), 'https://chatgpt.com/settings/usage');
         setHidden('chatgptGlanceReminder', false);
         setText('chatgptGlanceReminder', chatgptText.reminder || '');
       }
@@ -2906,12 +2957,12 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (!button) return;
     // "open thinking" is for other pages; on this page it would go nowhere.
     if (!action?.label || (action.href && action.href.startsWith('/app/thinking'))) {
-      button.hidden = true;
+      writeHidden(button, true);
       button.onclick = null;
       return;
     }
-    button.hidden = false;
-    button.textContent = action.label;
+    writeHidden(button, false);
+    writeText(button, action.label);
     if (action.href) {
       button.onclick = () => {
         // Another view of the page opens in it where it can.
@@ -2944,14 +2995,13 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const card = $(`lane-${lane}`);
     if (!card) return;
     card.classList.toggle('active', active);
-    const tag = $(`${lane}ActiveTag`);
-    if (tag) tag.hidden = !active;
+    writeHidden($(`${lane}ActiveTag`), !active);
   }
 
   function setPill(id, label, tone = '') {
     const pill = $(id);
     if (!pill) return;
-    pill.textContent = label;
+    writeText(pill, label);
     pill.classList.toggle('hot', tone === 'hot');
     pill.classList.toggle('bad', tone === 'bad');
   }
@@ -2980,7 +3030,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const audioToggle = $('confidentialAudioToggle');
     if (audioToggle) {
       audioToggle.checked = audioKnown && audio.on;
-      audioToggle.disabled = !audioKnown;
+      writeDisabled(audioToggle, !audioKnown);
     }
     setText('confidentialAudioLabel', audio.label);
     setText('confidentialAudioDescription', audio.description);
@@ -3150,9 +3200,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     setCardActive('local', localActive);
     $('localLaneStatus')?.removeAttribute('data-tone');
     if (localCard) {
-      localCard.hidden = bundledLocalUnavailable() || (gpuBlocked && !localActive);
+      writeHidden(localCard, bundledLocalUnavailable() || (gpuBlocked && !localActive));
       localCard.classList.toggle('greyed', endpointOverride);
-      localCard.setAttribute('aria-disabled', 'false');
+      writeAttr(localCard, 'aria-disabled', 'false');
     }
     if (capabilityBlocked) {
       setPill('localLanePill', 'unavailable');
@@ -3198,7 +3248,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       } else if (gpuBlocked) {
         setPill('localLanePill', 'unavailable', 'bad');
         const desc = $('localLaneDescription');
-        if (desc) {
+        drawPart(desc, ['gpu'], () => {
           desc.textContent = "your journal's computer can't run a local model yet. it needs a supported GPU. ";
           const link = document.createElement('a');
           link.className = 'textlink';
@@ -3207,7 +3257,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
           link.rel = 'noopener noreferrer';
           link.textContent = 'minimum requirements ↗';
           desc.appendChild(link);
-        }
+        });
         setText('localLaneStatus', 'not available');
       } else if (local.status === 'ready') {
         setPill('localLanePill', 'off');
@@ -3329,9 +3379,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       ? byoText.model_save_restore
       : byoText.model_save;
     setButtonText('byoModelSave', saveCopy || '');
-    if ($('byoModelSave')) {
-      $('byoModelSave').disabled = !String(state.byoSelectedModel || '').trim();
-    }
+    writeDisabled($('byoModelSave'), !String(state.byoSelectedModel || '').trim());
   }
 
   function renderChatGptCard(chatgptText) {
@@ -3343,22 +3391,14 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     setText('chatgptCardTitle', copy.provider_labels?.chatgpt || '');
     const pill = $('prov-chatgpt-pill');
     if (pill) {
-      pill.textContent = picked
+      writeText(pill, picked
         ? 'selected'
-        : (state.chatgpt.status?.signed_in ? (chatgptText.pill_signed_in || '') : 'pick');
+        : (state.chatgpt.status?.signed_in ? (chatgptText.pill_signed_in || '') : 'pick'));
       pill.classList.toggle('hot', picked);
     }
     setText('chatgptCardBody', chatgptText.card_body || '');
     setText('chatgptCardReminder', chatgptText.reminder || '');
-    const cardStatus = $('chatgptCardStatus');
-    if (cardStatus) {
-      cardStatus.textContent = state.chatgpt.notice?.text || '';
-      if (state.chatgpt.notice?.tone) {
-        cardStatus.dataset.tone = state.chatgpt.notice.tone;
-      } else {
-        cardStatus.removeAttribute('data-tone');
-      }
-    }
+    writeMessage($('chatgptCardStatus'), state.chatgpt.notice?.text || '', state.chatgpt.notice?.tone || '');
     const signedIn = !!state.chatgpt.status?.signed_in;
     setHidden('chatgptCardManage', !signedIn);
     setButtonText('chatgptCardManage', chatgptText.manage || '');
@@ -3405,7 +3445,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     setText('chatgptModelSub', chatgptText.model_sub || '');
 
     const choices = $('chatgptModelChoices');
-    if (choices) {
+    drawPart(choices, state.chatgpt.models.map((model) => [model.slug, model.display_name || '']), () => {
       choices.replaceChildren();
       for (const model of state.chatgpt.models) {
         const label = document.createElement('label');
@@ -3429,32 +3469,22 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         }
         choices.appendChild(label);
       }
-    }
+    });
 
-    const modelStatus = $('chatgptModelStatus');
-    if (modelStatus) {
-      modelStatus.textContent = state.chatgpt.notice?.text || '';
-      if (state.chatgpt.notice?.tone) {
-        modelStatus.dataset.tone = state.chatgpt.notice.tone;
-      } else {
-        modelStatus.removeAttribute('data-tone');
-      }
-    }
+    // The picked model can change without the list changing.
+    choices?.querySelectorAll('input[name="chatgptModel"]').forEach((input) => {
+      input.checked = state.chatgpt.selectedModel === input.value;
+    });
+
+    writeMessage($('chatgptModelStatus'), state.chatgpt.notice?.text || '', state.chatgpt.notice?.tone || '');
 
     setHidden('chatgptPlanRow', state.providers?.active?.provider !== 'chatgpt');
     setText('chatgptPanelPlanLabel', chatgptText.plan || '');
     setText('chatgptPanelManageUsage', chatgptText.manage_usage_link || '');
-    const panelManageUsage = $('chatgptPanelManageUsage');
-    if (panelManageUsage) {
-      panelManageUsage.href = 'https://chatgpt.com/settings/usage';
-      panelManageUsage.target = '_blank';
-      panelManageUsage.rel = 'noopener noreferrer';
-    }
+    externalLink($('chatgptPanelManageUsage'), 'https://chatgpt.com/settings/usage');
     setText('chatgptPanelReminder', chatgptText.reminder || '');
     setButtonText('chatgptUseModel', chatgptText.model_save || '');
-    if ($('chatgptUseModel')) {
-      $('chatgptUseModel').disabled = !state.chatgpt.selectedModel;
-    }
+    writeDisabled($('chatgptUseModel'), !state.chatgpt.selectedModel);
     setButtonText('chatgptPanelStartOver', chatgptText.start_over || '');
     setButtonText('chatgptPickOther', chatgptText.pick_other || '');
     setHidden('chatgptPickOther', state.chatgpt.notice?.key !== 'not_eligible');
@@ -3466,13 +3496,15 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const desc = $('prov-openai-desc');
     const template = byoText.openai_card || '';
     if (!desc || !template.includes('{endpoint}')) return;
-    const [before, after] = template.split('{endpoint}');
-    const link = document.createElement('button');
-    link.type = 'button';
-    link.className = 'laneinline';
-    link.textContent = byoText.chooser_endpoint || '';
-    link.addEventListener('click', () => $('byoModeEndpoint')?.click());
-    desc.replaceChildren(document.createTextNode(before), link, document.createTextNode(after));
+    drawPart(desc, [template, byoText.chooser_endpoint || ''], () => {
+      const [before, after] = template.split('{endpoint}');
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'laneinline';
+      link.textContent = byoText.chooser_endpoint || '';
+      link.addEventListener('click', () => $('byoModeEndpoint')?.click());
+      desc.replaceChildren(document.createTextNode(before), link, document.createTextNode(after));
+    });
   }
 
   function renderByo() {
@@ -3505,17 +3537,17 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     setText('byoEndpointHonesty', byoText.endpoint_honesty || '');
     setButtonText('byoSaveKey', byoText.paste_cta || '');
     markup().querySelectorAll('[data-byo-key-link]').forEach((link) => {
-      link.textContent = byoText.get_key || '';
+      writeText(link, byoText.get_key || '');
     });
     const keyModeButton = $('byoModeKey');
     const endpointModeButton = $('byoModeEndpoint');
     if (keyModeButton) {
       keyModeButton.classList.toggle('primary', !endpointMode);
-      keyModeButton.setAttribute('aria-pressed', endpointMode ? 'false' : 'true');
+      writeAttr(keyModeButton, 'aria-pressed', endpointMode ? 'false' : 'true');
     }
     if (endpointModeButton) {
       endpointModeButton.classList.toggle('primary', endpointMode);
-      endpointModeButton.setAttribute('aria-pressed', endpointMode ? 'true' : 'false');
+      writeAttr(endpointModeButton, 'aria-pressed', endpointMode ? 'true' : 'false');
     }
 
     const showChatGptPending = chatgptMode && state.chatgpt.screen === 'pending';
@@ -3542,7 +3574,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       card.classList.toggle('greyed', false);
       const pill = $(`prov-${cardProvider}-pill`);
       if (pill) {
-        pill.textContent = picked ? 'selected' : (state.keys.api_keys?.[cardProvider] ? 'saved' : 'pick');
+        writeText(pill, picked ? 'selected' : (state.keys.api_keys?.[cardProvider] ? 'saved' : 'pick'));
         pill.classList.toggle('hot', picked);
       }
     });
@@ -3563,7 +3595,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       setText('byoKeyLabel', `your ${providerLabel(provider)} key`);
       setText('byoKeyHint', byoText.key_hint || '');
       const terms = $('byoTermsLine');
-      if (terms) {
+      drawPart(terms, [provider, providerLabel(provider), byoText.terms || '', byoText.terms_link || ''], () => {
         terms.textContent = `${formatCopy(byoText.terms, {provider: providerLabel(provider)})} `;
         const link = document.createElement('a');
         link.className = 'textlink';
@@ -3572,11 +3604,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         link.rel = 'noopener noreferrer';
         link.textContent = byoText.terms_link || '';
         terms.appendChild(link);
-      }
+      });
     }
 
-    if ($('byoSaveKey')) $('byoSaveKey').disabled = false;
-    if ($('byoClearKey')) $('byoClearKey').disabled = !configured;
+    writeDisabled($('byoSaveKey'), false);
+    writeDisabled($('byoClearKey'), !configured);
     if (pasteMode && validation && validation.valid === false) {
       const reason = byoReasonCopy(validation.reason_code, 'key', byoText, providerLabel(provider));
       setMessage(
@@ -3638,7 +3670,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     });
     markup().querySelectorAll('[data-thinking-budget-label]').forEach((label) => {
       const value = Number(label.dataset.thinkingBudgetLabel);
-      label.textContent = formatCopy(tuning.choice || '', {budget: thinkingBudgetLabel(value)});
+      writeText(label, formatCopy(tuning.choice || '', {budget: thinkingBudgetLabel(value)}));
     });
     const noteText = showChatGptPanel ? (chatgptText.tuning_note || '') : (text.note || '');
     setText('byoTuningNote', noteText);
@@ -3689,23 +3721,26 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const guidance = state.providers.configuration_guidance;
     const notice = $('byoConfigurationGuidance');
     if (!notice) return;
-    notice.textContent = '';
     if (!guidance) {
+      writeText(notice, '');
       setHidden('byoConfigurationGuidance', true);
       return;
     }
-    const heading = document.createElement('strong');
-    heading.textContent = guidance.heading || '';
-    const action = guidance.action || {};
-    const link = document.createElement('a');
-    link.className = 'textlink';
-    link.href = action.href || '#byo-setup';
-    link.textContent = action.label || '';
-    link.addEventListener('click', (event) => {
-      event.preventDefault();
-      openGoogleModelResolutionGuidance(guidance);
+    drawPart(notice, [guidance], () => {
+      notice.textContent = '';
+      const heading = document.createElement('strong');
+      heading.textContent = guidance.heading || '';
+      const action = guidance.action || {};
+      const link = document.createElement('a');
+      link.className = 'textlink';
+      link.href = action.href || '#byo-setup';
+      link.textContent = action.label || '';
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        openGoogleModelResolutionGuidance(guidance);
+      });
+      notice.append(heading, ' ', link);
     });
-    notice.append(heading, ' ', link);
     setHidden('byoConfigurationGuidance', false);
   }
 
@@ -3979,9 +4014,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     setButtonState('localActivate', local.activate, !local.activate);
     setButtonState('localRefresh', !unavailable, false);
     const links = $('localSetupLinks');
-    if (links) {
+    const showLinks = !unavailable && local.tone === 'bad' && state.install?.install_state !== 'failed' && local.reason !== 'gpu_probe_failed';
+    drawPart(links, [showLinks, showLinks ? activeLaneLabel('byo') : ''], () => {
       links.textContent = '';
-      if (!unavailable && local.tone === 'bad' && state.install?.install_state !== 'failed' && local.reason !== 'gpu_probe_failed') {
+      if (showLinks) {
         const requirements = document.createElement('a');
         requirements.className = 'textlink';
         requirements.href = 'https://support.solstone.app/kb/solstone-memory-and-local-models';
@@ -3996,13 +4032,23 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         byo.addEventListener('click', () => showView('byo-setup'));
         links.append(requirements, document.createTextNode(' or use '), byo);
       }
-    }
+    });
+  }
+
+  // A field shows the journal's saved value when that value changes. Until
+  // then, what the owner has typed in it stays, through any redraw.
+  const savedEndpointDrawn = new WeakMap();
+  function renderEndpointField(el, saved) {
+    if (!el) return;
+    if (savedEndpointDrawn.has(el) && savedEndpointDrawn.get(el) === saved) return;
+    savedEndpointDrawn.set(el, saved);
+    if (el.value !== saved) el.value = saved;
   }
 
   function renderLocalEndpoint() {
     const endpoint = state.providers.local_override || {};
-    if ($('localEndpointUrl')) $('localEndpointUrl').value = endpoint.endpoint_url || '';
-    if ($('localEndpointModel')) $('localEndpointModel').value = endpoint.served_model_id || '';
+    renderEndpointField($('localEndpointUrl'), endpoint.endpoint_url || '');
+    renderEndpointField($('localEndpointModel'), endpoint.served_model_id || '');
   }
 
   function renderLocalModels() {
@@ -4058,13 +4104,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     }
     const primary = $('switchConfirmPrimary');
     if (primary) {
-      primary.dataset.switchLane = target;
-      primary.textContent = switchCopy.confirm || '';
+      writeAttr(primary, 'data-switch-lane', target);
+      writeText(primary, switchCopy.confirm || '');
     }
-    const cancel = $('switchCancel');
-    if (cancel) {
-      cancel.textContent = formatCopy(switchCopy.cancel, {current: currentLabel});
-    }
+    writeText($('switchCancel'), formatCopy(switchCopy.cancel, {current: currentLabel}));
   }
 
   function renderAll() {
@@ -5665,7 +5708,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     }
     const text = copy.devices_invite?.text;
     const link = copy.devices_invite?.link;
-    invite.hidden = !(none && text && link);
+    writeHidden(invite, !(none && text && link));
     if (invite.hidden) return;
     setText('thinkingDevicesInviteText', text);
     setText('thinkingDevicesInviteLink', `${link} →`);

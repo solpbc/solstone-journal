@@ -149,7 +149,8 @@ class Element extends Target {
       add(...cs) { const l = this.list(); cs.forEach((c) => { if (!l.includes(c)) l.push(c); }); self.setAttribute('class', l.join(' ')); },
       remove(...cs) { self.setAttribute('class', this.list().filter((x) => !cs.includes(x)).join(' ')); },
       contains(c) { return this.list().includes(c); },
-      toggle(c, on) { const want = on === undefined ? !this.contains(c) : !!on; if (want) this.add(c); else this.remove(c); return want; },
+      // As in a browser: a toggle that changes nothing writes nothing.
+      toggle(c, on) { const want = on === undefined ? !this.contains(c) : !!on; if (want === this.contains(c)) return want; if (want) this.add(c); else this.remove(c); return want; },
     };
     this.dataset = new Proxy({}, {
       get: (_, key) => self.getAttribute('data-' + String(key).replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())) ?? undefined,
@@ -193,7 +194,8 @@ class Element extends Target {
   setAttribute(k, v) { this.attrs.set(k, String(v)); if (k === 'style') this._style = null; }
   getAttribute(k) { return this.attrs.has(k) ? this.attrs.get(k) : null; }
   hasAttribute(k) { return this.attrs.has(k); }
-  removeAttribute(k) { this.attrs.delete(k); }
+  // Removing an attribute that isn't there changes nothing, in a browser too.
+  removeAttribute(k) { if (!this.attrs.has(k)) return; this.attrs.delete(k); }
   toggleAttribute(k, on) { if (on) this.setAttribute(k, ''); else this.removeAttribute(k); }
   get textContent() { return this.childNodes.map((n) => n.textContent).join(''); }
   set textContent(v) { this.replaceChildren(); if (String(v ?? '')) this.append(String(v)); }
@@ -485,16 +487,17 @@ function abortError() {
 // the page alone.
 let mutations = 0;
 let depth = 0;
-function counted(original) {
+function counted(original, changes = () => true) {
   return function (...args) {
-    if (depth === 0 && this.isConnected) mutations += 1;
+    if (depth === 0 && this.isConnected && changes.apply(this, args)) mutations += 1;
     depth += 1;
     try { return original.apply(this, args); } finally { depth -= 1; }
   };
 }
-for (const name of ['append', 'removeChild', 'insertBefore', 'setAttribute', 'removeAttribute']) {
+for (const name of ['append', 'removeChild', 'insertBefore', 'setAttribute']) {
   Element.prototype[name] = counted(Element.prototype[name]);
 }
+Element.prototype.removeAttribute = counted(Element.prototype.removeAttribute, function (k) { return this.attrs.has(k); });
 const textContent = Object.getOwnPropertyDescriptor(Element.prototype, 'textContent');
 Object.defineProperty(Element.prototype, 'textContent', { get: textContent.get, set: counted(textContent.set) });
 
@@ -1384,6 +1387,75 @@ module.exports = async function thinkingContractCases(crateDir) {
     // follows back into a closed dialog.
     assert.ok(q.reconciles.some((o) => o && o.restore === false), 'the modal layer was told, without a restore');
     assert.ok(focusOn(q) !== 'BODY', `focus is not on the page (${focusOn(q)})`);
+  });
+
+  // ---- a poll whose answer changes nothing leaves the page alone
+
+  const brainChecking = clone(local.get('/app/thinking/api/providers'));
+  brainChecking.brain = Object.assign({}, brainChecking.brain, { state: 'checking', headline: 'checking thinking', action: { label: 'check again', refresh: true } });
+  const runtimePolling = Object.assign(clone(local.get('/app/thinking/api/local/runtime') || {}), { poll: true, status: 'starting', phase: 'starting' });
+  const quietPolls = [
+    ['install status', '/app/thinking/#local-setup', { overrides: { 'GET /app/thinking/api/local/bootstrap/status': installing(local) } }, '/app/thinking/api/local/bootstrap/status', 'localCancel'],
+    ['local runtime', '/app/thinking/#local-setup', { overrides: { 'GET /app/thinking/api/local/runtime': runtimePolling } }, '/app/thinking/api/local/runtime', 'localRefresh'],
+    ['confidential turn-on', '/app/thinking/#confidential-setup', { overrides: { 'GET /app/thinking/api/providers': confidentialTurningOn(local) } }, '/app/thinking/api/providers', 'confidentialLaneOperationLink'],
+    ['ChatGPT sign-in', '/app/thinking/#byo-setup', { storage: { 'solstone.thinking.chatgptAttempt': ATTEMPT }, overrides: { 'GET /app/thinking/api/chatgpt/sign-in/attempt-1': { state: 'pending' } } }, '/app/thinking/api/chatgpt/sign-in/attempt-1', 'chatgptFinish'],
+    ['brain follow', '/app/thinking/', { overrides: { 'GET /app/thinking/api/providers': brainChecking, 'POST /app/thinking/api/brain/check': { brain: brainChecking.brain } } }, '/app/thinking/api/providers', 'brainCheckAction'],
+    ['access re-read', '/app/thinking/', { phase: 'confidential' }, '/app/thinking/api/state', 'thinkingRunsTab'],
+  ];
+  for (const [name, address, options, prefix, focusId] of quietPolls) {
+    await test(`the ${name} poll, answering what the page already shows, writes nothing and keeps the focused node`, async () => {
+      const p = await boot(env, address, options);
+      if (name === 'brain follow') {
+        p.press(p.byId('brainCheckAction'));
+        await settle();
+      }
+      // Each poll's first answer can still differ from the first read; the
+      // ones after it say the same thing.
+      if (name !== 'access re-read') await run(p, 3000);
+      const control = p.byId(focusId);
+      control.focus();
+      assert.ok(focusOn(p) === `${control.tagName}#${focusId}`, `${name}: focus is on ${focusId} (${focusOn(p)})`);
+      const asked = p.reads(prefix).length;
+      const before = p.mutations();
+      await run(p, 4500);
+      assert.ok(p.reads(prefix).length > asked, `${name}: the poll read again`);
+      assert.ok(p.mutations() === before, `${name}: a poll that changes nothing writes nothing (${p.mutations() - before} writes)`);
+      assert.ok(p.doc.activeElement === control, `${name}: the same node keeps focus (${focusOn(p)})`);
+    });
+  }
+
+  await test('a poll that changes something draws it, and focus stays on the same control', async () => {
+    const one = installing(local);
+    const p = await boot(env, '/app/thinking/#local-setup', { overrides: { 'GET /app/thinking/api/local/bootstrap/status': () => one } });
+    await run(p, 3000);
+    const cancel = p.byId('localCancel');
+    cancel.focus();
+    const before = p.mutations();
+    Object.assign(one, { progress_bytes_received: 2e9, progress_bytes_total: 5e9 });
+    await run(p, 3000);
+    assert.ok(p.mutations() > before, 'the new progress is drawn');
+    assert.ok(p.byId('localSetupMessage').textContent.includes('2.0 GB'), 'the line says so');
+    assert.ok(p.doc.activeElement === cancel, `focus stays on cancel (${focusOn(p)})`);
+  });
+
+  await test('a redraw keeps an endpoint the owner is typing, until the journal\'s saved one changes', async () => {
+    const turning = confidentialTurningOn(env.answers('byo_endpoint'));
+    const p = await boot(env, '/app/thinking/#byo-setup', { phase: 'byo_endpoint', overrides: { 'GET /app/thinking/api/providers': () => turning } });
+    p.press(p.byId('byoModeEndpoint'));
+    await settle();
+    const url = p.byId('localEndpointUrl');
+    const model = p.byId('localEndpointModel');
+    url.value = 'http://127.0.0.1:9';
+    url.focus();
+    url.setSelectionRange(3, 5);
+    model.value = 'half-typ';
+    await run(p, 4500);
+    assert.ok(p.reads('/app/thinking/api/providers').length > 1, 'the turn-on poll redrew');
+    assert.ok(url.value === 'http://127.0.0.1:9' && model.value === 'half-typ', `typed text stays (${url.value} · ${model.value})`);
+    assert.ok(p.doc.activeElement === url && url.selectionStart === 3 && url.selectionEnd === 5, 'focus and caret stay');
+    turning.local_override = Object.assign({}, turning.local_override, { endpoint_url: 'http://saved.example/v1', served_model_id: 'saved-model' });
+    await run(p, 3000);
+    assert.ok(url.value === 'http://saved.example/v1' && model.value === 'saved-model', `a new saved endpoint shows (${url.value} · ${model.value})`);
   });
 
   return cases;
