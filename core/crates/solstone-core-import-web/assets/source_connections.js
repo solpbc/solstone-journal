@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+// The import page's sync sources, drawn by import's mount:
+// `ImportSourceConnections.mount(ctx)` draws them into the page's
+// #importSyncSources, and everything it adds outside that goes through `ctx`
+// and goes with the view.
 (() => {
   'use strict';
-  window.ImportSourceConnections?.dispose();
   const sources = { plaud: 'Plaud', audio: 'audio folder' };
+  window.ImportSourceConnections = Object.freeze({ mount: mountSourceConnections });
+
+  function mountSourceConnections(ctx) {
   const rows = new Map();
   let root = null;
   let disposed = false;
@@ -19,8 +25,14 @@
     } catch (error) { return null; }
   }
 
+  // A read is the view's (cut when it goes). A write the owner started
+  // finishes, and its answer is handled only while the view is up; none
+  // starts once it has gone.
   async function read(url, options) {
-    const response = await fetch(url, options);
+    const write = String(options?.method || 'GET').toUpperCase() !== 'GET';
+    if (write && disposed) return window.SolStore.never();
+    const response = await (write ? window.fetch(url, options) : ctx.fetch(url, options));
+    if (disposed) return window.SolStore.never();
     if (response.redirected && response.url) {
       const destination = new URL(response.url, window.location.href);
       const current = new URL(window.location.href);
@@ -199,7 +211,7 @@
   }
 
   async function checkSync(row) {
-    clearTimeout(row.timer);
+    ctx.clearTimeout(row.timer);
     row.timer = null;
     const saved = retained(row.source)?.sync;
     row.syncPending = !!saved;
@@ -222,7 +234,7 @@
         if (result.state === 'unknown') row.syncPending = false;
         status(row, result.state === 'running' ? 'source sync is running.' : ['held', 'accepted'].includes(result.state) ? 'waiting to sync.' : 'could not confirm the sync result. check import history.');
         if (['accepted', 'running', 'held'].includes(result.state) && document.visibilityState !== 'hidden' && !root.hidden) {
-          row.timer = setTimeout(() => { if (live(row)) checkSync(row); }, 5000);
+          row.timer = ctx.setTimeout(() => { if (live(row)) checkSync(row); }, 5000);
         }
       }
     } catch (error) { status(row, 'could not read the sync result. check again before syncing again.'); }
@@ -291,28 +303,26 @@
   function returned() {
     for (const row of rows.values()) {
       if (document.visibilityState === 'hidden' || root?.hidden) {
-        clearTimeout(row.timer);
+        ctx.clearTimeout(row.timer);
         row.timer = null;
       } else if (!row.busy) refresh(row);
     }
   }
   function leaving() {
     window.JournalOwnerSources?.cancel();
-    for (const row of rows.values()) clearTimeout(row.timer);
+    for (const row of rows.values()) ctx.clearTimeout(row.timer);
   }
   function dispose() {
     disposed = true;
     leaving();
-    window.removeEventListener('pageshow', returned);
-    window.removeEventListener('hashchange', returned);
-    window.removeEventListener('pagehide', leaving);
-    document.removeEventListener('visibilitychange', returned);
     rows.clear();
+    root = null;
   }
-  window.ImportSourceConnections = { dispose, refresh: returned };
-  window.addEventListener('pageshow', returned);
-  window.addEventListener('hashchange', returned);
-  window.addEventListener('pagehide', leaving);
-  document.addEventListener('visibilitychange', returned);
+  ctx.onDispose(dispose);
+  ctx.on(window, 'pageshow', returned);
+  ctx.on(window, 'hashchange', returned);
+  ctx.on(window, 'pagehide', leaving);
+  ctx.on(document, 'visibilitychange', returned);
   mount();
+  }
 })();

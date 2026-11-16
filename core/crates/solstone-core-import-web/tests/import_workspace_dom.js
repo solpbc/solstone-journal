@@ -17,8 +17,59 @@ function scriptFromWorkspace() {
   return workspaceScript[1];
 }
 
+// What import's mount gives the functions these cases pull out of it, over
+// the case's own stand-ins: its `ctx` (history entries, timers, listeners,
+// the live stream, reads), its write guard and its draft ids. `ctx.history`
+// writes an entry as the router does, firing no hashchange; the entries it
+// wrote are in `__entries`. The draft ids read and write the case's
+// `window._…` fields, where the cases look for them.
+const MOUNT_SCOPE = `
+var __entries = globalThis.__entries || [];
+function __writeEntry(url) {
+  __entries.push(String(url));
+  const loc = window.location;
+  if (!loc) return;
+  const hash = new __HostURL(String(url), 'http://journal.test/app/import/').hash;
+  if (typeof loc.quiet === 'function') loc.quiet(hash);
+  else loc.hash = hash;
+}
+var ctx = globalThis.ctx || {
+  get disposed() { return !!globalThis.__disposed; },
+  signal: undefined,
+  history: { push: __writeEntry, replace: __writeEntry },
+  setTimeout: (fn, ms, ...args) => setTimeout(fn, ms, ...args),
+  clearTimeout: id => clearTimeout(id),
+  on(target, type, fn, options) {
+    target?.addEventListener?.(type, fn, options);
+    return () => target?.removeEventListener?.(type, fn, options);
+  },
+  listen: (...args) => window.appEvents.listen(...args),
+  onConnectionState: fn => (window.appEvents?.onConnectionState ? window.appEvents.onConnectionState(fn) : () => {}),
+  read: (url, options) => window.apiJson(url, options),
+  fetch: (url, init) => fetch(url, init),
+  ready() {},
+  onDispose() {},
+};
+var importSegment = globalThis.importSegment ?? null;
+globalThis.importListHooks = globalThis.importListHooks ?? null;
+var importDetailHooks = globalThis.importDetailHooks ?? null;
+var importOwns = globalThis.importOwns || (() => true);
+var importWrite = globalThis.importWrite || ((url, init) => fetch(url, init));
+var importMove = globalThis.importMove || (href => { window.location.href = href; });
+var importDraft = globalThis.importDraft || {
+  get quickClientItemId() { return window._quickClientItemId ?? null; },
+  set quickClientItemId(value) { window._quickClientItemId = value; },
+  get quickSaved() { return window._quickSaved ?? null; },
+  set quickSaved(value) { window._quickSaved = value; },
+  get guidedClientItemId() { return window._guidedClientItemId ?? null; },
+  set guidedClientItemId(value) { window._guidedClientItemId = value; },
+};
+`;
+
 function makeContext(globals) {
   const context = vm.createContext({ reportImportReady() {}, importEvents: {}, guidedFolderBusy: false, document: { getElementById: () => null, addEventListener: () => {} }, showError: message => { throw new Error(message); }, setTimeout: () => 0, clearTimeout: () => {}, ...globals });
+  context.__HostURL = URL;
+  vm.runInContext(MOUNT_SCOPE, context);
   const source = scriptFromWorkspace();
   vm.runInContext(`
     const importPreviews = { guided: null, quick: null };
@@ -150,6 +201,24 @@ class QueuedHashLocation {
 
   get hash() {
     return this._hash;
+  }
+
+  get pathname() {
+    return '/app/import/';
+  }
+
+  get search() {
+    return '';
+  }
+
+  get href() {
+    return `http://journal.test/app/import/${this._hash}`;
+  }
+
+  // An entry written through the router's history: the address changes and
+  // no hashchange fires.
+  quiet(hash) {
+    this._hash = normalizeFragment(hash || '');
   }
 
   set hash(value) {
@@ -1731,11 +1800,11 @@ function runAudioContentItemsLinkToTranscriptsInsteadOfExpanding() {
   );
   assert.ok(audioMatch[0].includes('09:00:00'), 'segment time is shown via JournalFormat.segmentTime');
   assert.ok(
-    !audioMatch[0].includes('toggleContentItem') && !audioMatch[0].includes('import-content-item-body'),
+    !audioMatch[0].includes('data-content-toggle') && !audioMatch[0].includes('import-content-item-body'),
     'the audio item carries no expand-in-place affordance alongside its link'
   );
   assert.ok(
-    html.includes('toggleContentItem'),
+    html.includes('data-content-toggle'),
     'a non-audio item in the same list still gets the ordinary expand-in-place markup'
   );
   cases += 1;
@@ -3214,7 +3283,7 @@ async function runSourceCardsCarryNoInlineHandler() {
   clickContext.window = { location: { href: '' } };
   clickContext.document = { addEventListener: () => {} };
   vm.runInContext(
-    `function handleDocumentClick(event) ${arrowBody(workspace, "document.addEventListener('click', event =>")}`,
+    `function handleDocumentClick(event) ${arrowBody(workspace, "ctx.on(importMain, 'click', event =>")}`,
     clickContext
   );
 
@@ -4261,6 +4330,14 @@ class DeleteNode {
 
 let deleteDocument = null;
 
+// The receipts that outlive the view, at the script's module level.
+function importReceiptsBlock() {
+  const start = workspace.indexOf('// ========== IMPORT RECEIPTS ==========');
+  const end = workspace.indexOf('// ========== END IMPORT RECEIPTS ==========');
+  assert.ok(start > 0 && end > start, 'the import receipts block is marked');
+  return workspace.slice(start, end);
+}
+
 function importDeleteBlock() {
   const start = workspace.indexOf('// ========== IMPORT DELETE ==========');
   const end = workspace.indexOf('// ========== END IMPORT DELETE ==========');
@@ -4313,6 +4390,9 @@ function importDeleteHarness({ rows = [], fetchAnswers = {} } = {}) {
     return { ok: status >= 200 && status < 300, status, json: async () => body };
   };
   const context = vm.createContext({ console, window, document: deleteDocument, fetch, Date, JSON, Promise, Set, Map, Number, Array, Object, String });
+  context.__HostURL = URL;
+  vm.runInContext(MOUNT_SCOPE, context);
+  vm.runInContext(importReceiptsBlock(), context);
   installRealEscapeHtml(context);
   vm.runInContext(`const sourceMetadataByName = { chatgpt: { display_name: 'CARD:chatgpt' } };
     let importsCache = ${JSON.stringify(rows)};

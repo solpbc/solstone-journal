@@ -664,19 +664,7 @@
     return `<section class="import-delete"><button type="button" class="import-secondary-btn" data-import-delete="${escapeHtml(data.timestamp)}" data-import-delete-source="${escapeHtml(importSourceType(data))}" data-import-delete-display="${escapeHtml(data?.source_display || '')}">${escapeHtml(strings.delete_import)}</button></section>`;
   }
 
-  if (typeof document !== 'undefined') {
-    document.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-import-delete]');
-      if (!button || typeof window.deleteImportFromPage !== 'function') return;
-      const sourceType = button.getAttribute('data-import-delete-source') || '';
-      const display = button.getAttribute('data-import-delete-display') || '';
-      window.deleteImportFromPage({
-        id: button.getAttribute('data-import-delete'),
-        kind: sourceType,
-        source: typeof window.importSourceName === 'function' ? window.importSourceName(sourceType, display) : display,
-      });
-    });
-  }
+  // The delete button is pressed through import's own mount, which opens its dialog.
 
   function rawBlock(data) {
     // A Strava import's publication record can list tens of thousands of pieces.
@@ -708,6 +696,12 @@
   }
 
   const savedFlows = new Map();
+
+  // Import's dispose: a flow keeps its markup and its page's refresh, so a
+  // gone page's flows go with it, as a page load ended them.
+  function forgetSavedStarts() {
+    savedFlows.clear();
+  }
 
   function savedBinding(data) {
     const metadata = data?.import_json || {};
@@ -890,6 +884,7 @@
   window.ImportDetail = Object.freeze({
     renderDetail,
     mountSavedStart,
+    forgetSavedStarts,
     renderMeta,
     deriveStatus,
     formatDuration,

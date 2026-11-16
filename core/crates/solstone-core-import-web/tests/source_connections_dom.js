@@ -57,6 +57,10 @@ function harness(crateDir, source = 'audio') {
     },
     node,
   });
+  // The mount's context over the case's own stand-ins: reads through
+  // ctx.fetch, writes through window.fetch, timers through ctx.
+  vm.runInContext(`const ctx={fetch:(url,options) => fetch(url,options), setTimeout:(...args) => setTimeout(...args), clearTimeout:id => clearTimeout(id)};
+    window.fetch=(url,options) => fetch(url,options); window.SolStore={never:() => new Promise(() => {})};`, context);
   vm.runInContext(`const rows=new Map(); let disposed=false; const root={isConnected:true};
     const escape=value => window.AppServices.escapeHtml(String(value));
     const sourceUrl=source => '/api/journal/sources/'+source;

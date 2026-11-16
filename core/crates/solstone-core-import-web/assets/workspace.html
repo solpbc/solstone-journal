@@ -1,4 +1,5 @@
 <!-- first-read: /app/import/ -> /app/import/api/sources /app/import/api/list?page=1&per_page=100&source= -->
+<!-- view-contract -->
 <script src="/static/vendor/marked/marked.min.js"></script>
 <script src="/static/vendor/dompurify/dompurify.min.js"></script>
 <style>
@@ -721,7 +722,7 @@
   <section id="importSyncSources" hidden></section>
 
   <div id="importGuide" class="import-guided-flow" style="display:none">
-    <a href="#" class="import-back-link" onclick="showGrid(); return false;">← back to sources</a>
+    <a href="#" class="import-back-link" data-import-show-grid>← back to sources</a>
     <div id="guideSteps"></div>
   </div>
 
@@ -740,7 +741,7 @@
 <div id="detectModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="detectModalTitle">
   <div class="modal-content">
     <h3 id="detectModalTitle">confirm import details</h3>
-    <button class="close" type="button" aria-label="close" onclick="closeDetectModal()">&times;</button>
+    <button class="close" type="button" aria-label="close" data-import-detect-close>&times;</button>
     <div class="confirm-fields">
       <div class="confirm-field">
         <label for="timestampInput">date</label>
@@ -789,7 +790,151 @@
 </div>
 
 <script>
-  const reportImportReady = window.createViewReady('import');
+// Import on the view contract. The script only registers the view: the list
+// and an import's own page draw when it is mounted, and whatever either adds
+// outside its markup goes through `ctx` and goes with it. The list
+// (/app/import/) and an import's page (/app/import/<id>) are two addresses of
+// the one view, so a move between them is the router's and mounts import again.
+(() => {
+  window.SolViews.register('import', { mount: mountImport });
+
+  // ========== IMPORT RECEIPTS ==========
+  // A delete's receipt can stay up after import has gone, and its buttons can
+  // be pressed from another view. They are built here, from plain values and
+  // the copy, so a receipt never keeps a mount. While the import list is
+  // showing, its recover goes through the list, which reloads after it.
+  let importListHooks = null;
+  const IMPORT_RECEIPT_LIFE = 10000;
+
+  function importNoticeFill(template, values = {}) {
+    return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
+  }
+
+  function importNotice(copy, card, fill = {}, buttons = [], options = {}) {
+    const put = text => importNoticeFill(text, { noun: copy.noun, things: copy.things, ...fill });
+    const notice = {
+      app: 'import',
+      icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
+      title: put(card.title),
+      dismissible: true,
+      buttons,
+    };
+    const message = options.message !== undefined ? options.message : card.message && put(card.message);
+    if (message) notice.message = message;
+    // A refused or failed card stays until the owner dismisses it.
+    if (options.settled) notice.autoDismiss = IMPORT_RECEIPT_LIFE;
+    window.AppServices.notifications.show(notice);
+  }
+
+  function importNoticeTrash(copy) {
+    return { label: copy.buttons.openTrash, onClick: () => { window.location.href = '/app/settings#trash'; } };
+  }
+
+  function importNoticeRecover(trashIds, copy) {
+    const ids = trashIds.filter(Boolean);
+    return {
+      label: copy.buttons.recover,
+      onClick: () => (importListHooks ? importListHooks.recover(ids) : importRecover(ids, copy, null)),
+    };
+  }
+
+  // The receipt's recover is the trash page's recover: the same files go back.
+  async function importRecover(trashIds, copy, reload) {
+    const ids = trashIds.filter(Boolean);
+    const one = ids.length === 1;
+    const R = copy.receipt;
+    const S = copy.set;
+    let response;
+    try {
+      response = await fetch('/app/settings/api/trash/recover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, page: 'import' }),
+      });
+    } catch (_) {
+      importNotice(copy, one ? R.noAnswerRecover : S.noAnswerRecover);
+      return;
+    }
+    const data = response.ok ? await response.json().catch(() => null) : null;
+    if (response.ok && !data) {
+      importNotice(copy, one ? R.noAnswerRecover : S.noAnswerRecover);
+      return;
+    }
+    const done = Array.isArray(data?.done) ? ids.filter(id => data.done.includes(id)) : [];
+    if (typeof reload === 'function') await reload();
+    if (done.length && done.length === ids.length) {
+      importNotice(copy, one ? R.recovered : S.recovered, { n: ids.length }, [], { settled: true, icon: 'undo-2' });
+    } else if (done.length) {
+      const others = ids.length - done.length;
+      importNotice(copy, S.partRecovered, { done: done.length, n: ids.length }, [importNoticeTrash(copy)], { message: others === 1 ? S.partRecoveredOne : S.partRecoveredMany });
+    } else {
+      importNotice(copy, one ? R.recoverFailed : S.recoverFailed, {}, [importNoticeTrash(copy)]);
+    }
+  }
+  // ========== END IMPORT RECEIPTS ==========
+
+  function mountImport(ctx) {
+// What the mount reads and writes through. Everything below runs per mount,
+// in its own scope.
+const importPage = window.document;
+const importNodes = Array.from(importPage.getElementById('main-content')?.children || []);
+// Lookups read the page while import is up, and its own markup once it has
+// gone, so a late answer never reaches the next view. A plain object, so a
+// member nothing listed here would read is undefined, and a listener has to
+// go through `ctx.on` with `window.document`.
+const document = Object.freeze({
+  getElementById: id => (ctx.disposed ? importGoneOne(`[id="${String(id).replace(/["\\]/g, '\\$&')}"]`) : importPage.getElementById(id)),
+  querySelector: selector => (ctx.disposed ? importGoneOne(selector) : importPage.querySelector(selector)),
+  querySelectorAll: selector => (ctx.disposed ? importGoneAll(selector) : importPage.querySelectorAll(selector)),
+  get activeElement() { return importPage.activeElement; },
+  get body() { return importPage.body; },
+  get visibilityState() { return importPage.visibilityState; },
+  contains: node => importPage.contains(node),
+  createElement: tag => importPage.createElement(tag),
+});
+function importGoneAll(selector) {
+  const found = [];
+  importNodes.forEach(node => {
+    if (node.nodeType !== 1) return;
+    if (node.matches(selector)) found.push(node);
+    found.push(...node.querySelectorAll(selector));
+  });
+  return found;
+}
+function importGoneOne(selector) {
+  return importGoneAll(selector)[0] || null;
+}
+// Only a press or key inside import's own markup is import's: #main-content
+// is the shell's, and the next view's markup lands there.
+function importOwns(target) {
+  return importNodes.some(node => node === target || (node.nodeType === 1 && node.contains(target)));
+}
+const never = () => window.SolStore.never();
+// A write the owner started finishes, uncut, and its answer is handled only
+// while import is up: once it has gone, nothing after the write runs, as a
+// page load left it at the base. Once gone, no write starts (a chain's next
+// step included). An upload is the exception: leaving aborts it, as a page
+// load does.
+function importWrite(url, init = {}, options = {}) {
+  if (ctx.disposed) return never();
+  const signal = options.upload ? window.SolStore.eitherSignal(init.signal || null, ctx.signal) : init.signal;
+  return window.fetch(url, signal ? { ...init, signal } : init).then(
+    response => (ctx.disposed ? never() : response),
+    error => (ctx.disposed ? never() : Promise.reject(error)),
+  );
+}
+let importReadyReported = false;
+function reportImportReady(state) {
+  if (importReadyReported) return;
+  importReadyReported = true;
+  ctx.ready(state);
+}
+// The page this mount is: the list, or one import's (its id in the path).
+const importSegment = (() => {
+  const part = String(ctx.route?.pathname || '').split('/')[3];
+  return part ? decodeURIComponent(part) : null;
+})();
+ctx.onDispose(disposeImport);
 
 // Keep diagnostic detail out of the message shown to the owner.
 function importErrorMessage(data, fallback) {
@@ -845,9 +990,8 @@ let stravaFacet = null;
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024;
 // The Apple Health preview in flight, so the card can cancel it.
 let applePreviewAbort = null;
-window._quickClientItemId = null;
-window._quickSaved = null;
-window._guidedClientItemId = null;
+// What the quick and guided flows have saved so far, for this mount only.
+const importDraft = { quickClientItemId: null, quickSaved: null, guidedClientItemId: null };
 let importEvents = {};
 const importGenerationFloor = {};
 // One page session's worth of generation floors. The list route's own ceiling is
@@ -909,8 +1053,6 @@ function clearPendingImport(importId) {
   importEventsCleanup.pending.clear(importId);
 }
 
-let navigatingHash = false;
-
 async function navigateTo(view, options = {}) {
   const { updateHash = true } = options;
   const grid = document.getElementById('importGrid');
@@ -957,27 +1099,19 @@ async function navigateTo(view, options = {}) {
     return;
   }
 
-  // hashchange is delivered as a queued task, so a flag raised and dropped
-  // around the assignment is already down by the time the handler reads it:
-  // every programmatic navigation re-entered navigateTo and redid the work it
-  // had just finished -- a second GET for a progress view, and a second
-  // loadGuidedFlow that rewrote guideSteps under the focus repeatSource had
-  // just placed. The handler consumes the flag instead.
-  //
-  // The browser normalises what it stores -- a space, a quote, angle brackets,
-  // a backtick or anything non-ASCII comes back percent-encoded -- so a hash
-  // that looks different from nextHash can still be the same fragment. The
-  // timestamp the quick flow puts in progress/<ts> is free text, so this is
-  // reachable. Reading the hash back after the assignment is the only way to
-  // know whether anything changed: if it did not, no event is coming and the
-  // flag has to come down, or it swallows the owner's next navigation.
-  if (updateHash && window.location.hash !== nextHash) {
-    const before = window.location.hash;
-    navigatingHash = true;
-    window.location.hash = nextHash;
-    if (window.location.hash === before) {
-      navigatingHash = false;
-    }
+  // The entry is import's own, through the router, so it keeps its id and its
+  // scroll. A pushed entry fires no hashchange, so this navigation doesn't come
+  // back through handleHashChange. The browser stores the hash normalised -- a
+  // space, a quote, angle brackets, a backtick or anything non-ASCII comes back
+  // percent-encoded -- and the timestamp the quick flow puts in progress/<ts>
+  // is free text, so the hash is compared as the browser would store it, and a
+  // hash that is already the address writes no second entry.
+  let storedHash = nextHash;
+  try {
+    storedHash = new URL(nextHash || '#', window.location.href).hash;
+  } catch (_) { /* compared as written */ }
+  if (updateHash && !ctx.disposed && window.location.hash !== storedHash) {
+    ctx.history.push(`${window.location.pathname}${window.location.search}${nextHash || ''}`);
   }
 }
 
@@ -987,30 +1121,52 @@ function showGrid() {
   currentGuidedFile = null;
   currentGuidedSaved = null;
   invalidateImportPreview('guided');
-  window._guidedClientItemId = null;
+  importDraft.guidedClientItemId = null;
   navigateTo('grid');
 }
 
-window.addEventListener('hashchange', handleHashChange);
+ctx.on(window, 'hashchange', () => handleHashChange({ traversal: true }));
 
-function handleHashChange() {
-  if (navigatingHash) {
-    navigatingHash = false;
-    return;
-  }
+// The address's view of the list. A back or forward between import's own
+// entries (a `traversal`) closes a dialog open over the entry it leaves, and
+// if the control that had focus is gone with that entry, focus goes to the
+// part the entry shows, never the page.
+async function handleHashChange(options = {}) {
   const hash = (window.location.hash || '').replace(/^#/, '');
-  if (hash.startsWith('guide/')) {
-    navigateTo(hash, { updateHash: false });
-  } else if (hash.startsWith('progress/')) {
-    navigateTo(hash, { updateHash: false });
-  } else {
-    navigateTo('grid', { updateHash: false });
-  }
+  if (options.traversal) closeImportDialogs();
+  const view = hash.startsWith('guide/') || hash.startsWith('progress/') ? hash : 'grid';
+  await navigateTo(view, { updateHash: false });
+  if (options.traversal && !ctx.disposed && window.location.hash.replace(/^#/, '') === hash) focusShownPart(view);
+}
+
+function closeImportDialogs() {
+  const detect = document.getElementById('detectModal');
+  if (detect && detect.style.display === 'block') closeDetectModal(false);
+  if (importDialog) closeImportDeleteDialog(false);
+  window.ConveyModalLayer?.reconcile?.({ restore: false });
+}
+
+function importFocusGone() {
+  const active = document.activeElement;
+  if (!active || active === document.body || !active.isConnected) return true;
+  return typeof active.checkVisibility === 'function' && !active.checkVisibility();
+}
+
+function focusShownPart(view) {
+  if (!importFocusGone()) return;
+  const target = view.startsWith('guide/')
+    ? document.querySelector('#guideSteps .import-guide-title')
+    : view.startsWith('progress/')
+      ? document.querySelector('.import-progress-panel')
+      : document.querySelector('#importGrid .import-source-card');
+  if (!target) return;
+  if (!target.hasAttribute('tabindex') && !/^(A|BUTTON|INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) target.setAttribute('tabindex', '-1');
+  target.focus({ preventScroll: true });
 }
 
 async function loadSourceGrid() {
   if (!cachedSources.length) {
-    const payload = await window.apiJson('/app/import/api/sources');
+    const payload = await ctx.read('/app/import/api/sources');
     cachedSources = payload.items || [];
     sourceMetadataByName = Object.fromEntries(cachedSources.map(source => [source.name, source]));
     sourceIconSvgByName = Object.fromEntries(cachedSources.map(source => [source.name, source.icon_svg || '']));
@@ -1045,6 +1201,7 @@ function showQuickImport() {
 
 let previousDetectFocus = null;
 let detectFocusTrapHandler = null;
+let stopDetectFocusTrap = null;
 
 function isTerminalDuplicate(data) {
   return data?.status === 'duplicate' || data?.recommended_action === 'do_not_start';
@@ -1062,7 +1219,7 @@ function duplicateNoticeText(duplicate = {}, inProgress = false) {
 
 function showDetect(res) {
   invalidateImportPreview('quick');
-  window._quickSaved = res;
+  importDraft.quickSaved = res;
   document.getElementById('timestampInput').value = res.source_timestamp || res.timestamp || '';
   document.getElementById('savedPath').value = res.path;
   const duplicateNotice = document.getElementById('detectDuplicateNotice');
@@ -1105,16 +1262,18 @@ function showDetect(res) {
       first.focus();
     }
   };
-  document.addEventListener('keydown', detectFocusTrapHandler);
+  if (stopDetectFocusTrap) stopDetectFocusTrap();
+  stopDetectFocusTrap = ctx.on(window.document, 'keydown', detectFocusTrapHandler);
 }
 
-function closeDetectModal() {
+function closeDetectModal(restoreFocus = true) {
   document.getElementById('detectModal').style.display = 'none';
-  if (detectFocusTrapHandler) {
-    document.removeEventListener('keydown', detectFocusTrapHandler);
-    detectFocusTrapHandler = null;
+  if (stopDetectFocusTrap) {
+    stopDetectFocusTrap();
+    stopDetectFocusTrap = null;
   }
-  if (previousDetectFocus && previousDetectFocus.isConnected) {
+  detectFocusTrapHandler = null;
+  if (restoreFocus && previousDetectFocus && previousDetectFocus.isConnected) {
     previousDetectFocus.focus();
   }
   previousDetectFocus = null;
@@ -1543,10 +1702,8 @@ const IMPORT_SOURCE_NAMES = {
   strava: 'Strava', evernote: 'Evernote', quick: 'quick import', plaud: 'Plaud', audio: 'audio folder', text: 'text',
   obsidian: 'Obsidian', apple_health: 'Apple Health', oura: 'Oura',
 };
-const IMPORT_TRASH_PAGE = '/app/settings#trash';
 const IMPORT_RECEIPT_KEY = 'journal-import-delete-receipt';
 const IMPORT_SET_SHOWN = 5;
-const IMPORT_RECEIPT_LIFE = 10000;
 // Select mode on the list: whether it is on, the chosen import ids, and the
 // note a refused one carries.
 const importPick = { on: false, ids: new Set(), notes: new Map() };
@@ -1819,7 +1976,7 @@ function wireImportDeleteDialog(nodes) {
   };
   nodes.confirm.addEventListener('click', () => act(false));
   nodes.eraseConfirm.addEventListener('click', () => act(true));
-  document.addEventListener('keydown', event => {
+  ctx.on(window.document, 'keydown', event => {
     if (event.key === 'Escape' && importDialog) {
       event.preventDefault();
       closeImportDeleteDialog();
@@ -1860,7 +2017,7 @@ function importOneSpec(item, act) {
     body: step => importOneBody(step, item, spec.preview),
     act,
   };
-  fetch(`/app/import/api/imports/${encodeURIComponent(item.id)}/delete`)
+  ctx.fetch(`/app/import/api/imports/${encodeURIComponent(item.id)}/delete`)
     .then(response => (response.ok ? response.json() : null))
     .catch(() => null)
     .then(preview => {
@@ -1878,24 +2035,14 @@ function importSetSpec(items, act) {
   };
 }
 
+// The receipts and their buttons are the module's, so one that outlives
+// import keeps no mount.
 function importReceipt(copy, fill = {}, buttons = [], options = {}) {
-  const put = text => importDeleteFill(text, { noun: IMPORT_DELETE_COPY.noun, things: IMPORT_DELETE_COPY.things, ...fill });
-  const notice = {
-    app: 'import',
-    icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
-    title: put(copy.title),
-    dismissible: true,
-    buttons,
-  };
-  const message = options.message !== undefined ? options.message : copy.message && put(copy.message);
-  if (message) notice.message = message;
-  // A refused or failed card stays until the owner dismisses it.
-  if (options.settled) notice.autoDismiss = IMPORT_RECEIPT_LIFE;
-  window.AppServices.notifications.show(notice);
+  importNotice(IMPORT_DELETE_COPY, copy, fill, buttons, options);
 }
 
 function importOpenTrashButton() {
-  return { label: IMPORT_DELETE_COPY.buttons.openTrash, onClick: () => { window.location.href = IMPORT_TRASH_PAGE; } };
+  return importNoticeTrash(IMPORT_DELETE_COPY);
 }
 
 function importNoteKey(key, erase) {
@@ -1909,7 +2056,7 @@ function importNoteKey(key, erase) {
 async function deleteOneImport(item, erase) {
   let response;
   try {
-    response = await fetch(`/app/import/api/imports/${encodeURIComponent(item.id)}`, erase
+    response = await importWrite(`/app/import/api/imports/${encodeURIComponent(item.id)}`, erase
       ? { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ erase: true, backups: importEraseBackups.chosen }) }
       : { method: 'DELETE' });
   } catch (_) {
@@ -1928,7 +2075,7 @@ function showImportOneReceipt(outcome, erase, reload) {
   switch (outcome.kind) {
     case 'moved':
       importReceipt(R.moved, { date: importEraseDate(outcome.eraseAt) }, [
-        { label: IMPORT_DELETE_COPY.buttons.recover, onClick: () => recoverImports([outcome.trashId], reload) },
+        importNoticeRecover([outcome.trashId], IMPORT_DELETE_COPY),
         importOpenTrashButton(),
       ], { settled: true, message: importEraseDate(outcome.eraseAt) ? undefined : '' });
       return;
@@ -1948,36 +2095,7 @@ function showImportOneReceipt(outcome, erase, reload) {
 
 // The receipt's recover is the trash page's recover: the same files go back.
 async function recoverImports(trashIds, reload) {
-  const ids = trashIds.filter(Boolean);
-  const one = ids.length === 1;
-  const R = IMPORT_DELETE_COPY.receipt;
-  const S = IMPORT_DELETE_COPY.set;
-  let response;
-  try {
-    response = await fetch('/app/settings/api/trash/recover', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids, page: 'import' }),
-    });
-  } catch (_) {
-    importReceipt(one ? R.noAnswerRecover : S.noAnswerRecover);
-    return;
-  }
-  const data = response.ok ? await response.json().catch(() => null) : null;
-  if (response.ok && !data) {
-    importReceipt(one ? R.noAnswerRecover : S.noAnswerRecover);
-    return;
-  }
-  const done = Array.isArray(data?.done) ? ids.filter(id => data.done.includes(id)) : [];
-  if (typeof reload === 'function') await reload();
-  if (done.length && done.length === ids.length) {
-    importReceipt(one ? R.recovered : S.recovered, { n: ids.length }, [], { settled: true, icon: 'undo-2' });
-  } else if (done.length) {
-    const others = ids.length - done.length;
-    importReceipt(S.partRecovered, { done: done.length, n: ids.length }, [importOpenTrashButton()], { message: others === 1 ? S.partRecoveredOne : S.partRecoveredMany });
-  } else {
-    importReceipt(one ? R.recoverFailed : S.recoverFailed, {}, [importOpenTrashButton()]);
-  }
+  return importRecover(trashIds, IMPORT_DELETE_COPY, reload);
 }
 
 // What a set's answer says, checked against what the reloaded list still
@@ -2187,7 +2305,7 @@ async function deleteSetFromList(items, erase) {
   const ids = items.map(item => item.id);
   let answer = null;
   try {
-    const response = await fetch('/app/import/api/imports/delete', {
+    const response = await importWrite('/app/import/api/imports/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(erase ? { ids, erase: true, backups: importEraseBackups.chosen } : { ids }),
@@ -2204,7 +2322,7 @@ async function deleteSetFromList(items, erase) {
   importPick.notes = new Map(outcome.keep.filter(([, note]) => note));
   applyImportPickMode();
   const buttons = outcome.buttons.map(name => (name === 'recover'
-    ? { label: IMPORT_DELETE_COPY.buttons.recover, onClick: () => recoverImports(outcome.moved.map(entry => entry.trashId), loadImports) }
+    ? importNoticeRecover(outcome.moved.map(entry => entry.trashId), IMPORT_DELETE_COPY)
     : importOpenTrashButton()));
   const allErased = erase && outcome.settled && importEraseBackups.clause;
   importReceipt(outcome.receipt, outcome.fill, buttons, {
@@ -2223,7 +2341,7 @@ function deleteImportFromPage(item) {
       try {
         window.sessionStorage.setItem(IMPORT_RECEIPT_KEY, JSON.stringify({ at: Date.now(), erase, outcome }));
       } catch (_) { /* the receipt is a courtesy; the list still reloads */ }
-      window.location.href = '/app/import/';
+      importMove('/app/import/');
       return;
     }
     showImportOneReceipt(outcome, erase);
@@ -2263,7 +2381,7 @@ async function loadImports() {
     // after the list, which names its sources. A source list that can't load
     // ends in the history's error state below, not in a loading spinner that
     // never resolves.
-    const listRead = window.apiJson(url);
+    const listRead = ctx.read(url);
     listRead.catch(() => {});
     await loadSourceGrid();
     if (generation !== historyRequestGeneration) return false;
@@ -2285,7 +2403,7 @@ async function loadImports() {
         icon: window.ConveyIcons.svg('inbox'),
         heading: 'no imports yet',
         desc: 'import from any source above.',
-        action: '<a href="#" onclick="scrollToGrid(); return false;" style="color: var(--orange-text-aa); font-weight: 600;">choose a source →</a>'
+        action: '<a href="#" data-import-scroll-grid style="color: var(--orange-text-aa); font-weight: 600;">choose a source →</a>'
       });
       importPick.on = false;
       importPick.ids.clear();
@@ -2322,7 +2440,7 @@ async function loadImports() {
     if (data.page < data.pages) {
       html += `
         <div id="importLoadMore" style="text-align: center; margin: 1.5rem 0;">
-          <button class="import-primary-btn" onclick="loadMoreImports()">
+          <button class="import-primary-btn" data-import-load-more>
             load more (${importsCache.length} of ${data.total} shown)
           </button>
         </div>
@@ -2399,7 +2517,7 @@ async function loadMoreImports() {
   const nextPage = currentPage + 1;
   const url = `/app/import/api/list?page=${nextPage}&per_page=${IMPORT_PAGE_SIZE}&source=${encodeURIComponent(currentSourceFilter)}`;
   try {
-    const data = await window.apiJson(url);
+    const data = await ctx.read(url);
     if (generation !== historyRequestGeneration) return;
     if (!Array.isArray(data.imports) || !Array.isArray(data.source_options) || typeof data.total !== 'number' || typeof data.page !== 'number' || typeof data.pages !== 'number') {
       throw malformedImportHistoryResponse(url);
@@ -2428,7 +2546,7 @@ async function loadMoreImports() {
     if (loadMoreContainer) {
       if (data.page < data.pages) {
         loadMoreContainer.innerHTML = `
-          <button class="import-primary-btn" onclick="loadMoreImports()">
+          <button class="import-primary-btn" data-import-load-more>
             load more (${importsCache.length} of ${data.total} shown)
           </button>`;
       } else {
@@ -2636,14 +2754,14 @@ function updateImportRow(importId, eventData, options = {}) {
     if (statsCell) {
       statsCell.textContent = formatImportStats(eventData.entries_written, eventData.entities_seeded);
     }
-    setTimeout(() => { loadImports().then(() => refreshInlineProgress(importId)); }, 1000);
+    ctx.setTimeout(() => { loadImports().then(() => refreshInlineProgress(importId)); }, 1000);
   } else if (eventData.event === 'error' || status === 'failed') {
     // An Apple Health import's end names its own state, which the row then reads.
     const bodyLabel = bodyStateLabel(eventData.body_state || eventData.stage);
     if (statusCell) {
       statusCell.innerHTML = `<span class="import-status failed">${escapeHtml(bodyLabel || 'failed')}</span><div class="progress-detail">${escapeHtml(eventData.error || 'unknown error')}</div>${gapDetail}`;
     }
-    if (bodyLabel) setTimeout(() => loadImports(), 1000);
+    if (bodyLabel) ctx.setTimeout(() => loadImports(), 1000);
   }
 
   refreshInlineProgress(importId, cleanEventData);
@@ -2673,7 +2791,7 @@ async function loadGuidedFlow(sourceName) {
   currentGuidedFile = null;
   currentGuidedSaved = null;
   invalidateImportPreview('guided');
-  window._guidedClientItemId = null;
+  importDraft.guidedClientItemId = null;
   if (!guideSteps) {
     return;
   }
@@ -2691,7 +2809,7 @@ async function loadGuidedFlow(sourceName) {
   let guideHtml = '';
   let guideStepNumber = 1;
   if (source.has_guide) {
-    const response = await fetch(`/app/import/api/guide/${sourceName}`);
+    const response = await ctx.fetch(`/app/import/api/guide/${sourceName}`);
     if (response.ok) {
       const markdown = await response.text();
       guideHtml = `<li><div class="import-step"><div class="import-step-number">step ${guideStepNumber}</div><div class="import-guide-content">${window.AppServices.renderMarkdown(markdown)}</div></div></li>`;
@@ -2791,7 +2909,7 @@ async function loadGuidedFlow(sourceName) {
       guidedPathInput.addEventListener('input', () => {
         currentGuidedSaved = null;
   invalidateImportPreview('guided');
-        window._guidedClientItemId = crypto.randomUUID();
+        importDraft.guidedClientItemId = crypto.randomUUID();
       });
       guidedPathInput.addEventListener('focus', () => {
         const chooser = window.JournalOwner && window.JournalOwner.chooseFolder;
@@ -2827,7 +2945,7 @@ async function loadStravaFacet(sourceName) {
   if (!slot) return;
   let data = null;
   try {
-    const response = await fetch(sourceName === 'apple_health' ? '/app/import/api/body-facet?source=apple_health' : '/app/import/api/body-facet');
+    const response = await ctx.fetch(sourceName === 'apple_health' ? '/app/import/api/body-facet?source=apple_health' : '/app/import/api/body-facet');
     data = response.ok ? await response.json() : null;
   } catch (_) {
     data = null;
@@ -2888,7 +3006,7 @@ async function answerStravaFacet(answer) {
   buttons.forEach((button) => { button.disabled = true; });
   try {
     // The answer names the question it answers, so one that has changed since is refused.
-    const response = await fetch('/app/import/api/body-facet', {
+    const response = await importWrite('/app/import/api/body-facet', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ answer, offer: stravaFacet && stravaFacet.offer, source: stravaFacet && stravaFacet.source }),
@@ -2983,7 +3101,7 @@ function setupGuidedUploadArea() {
     fileLabel.textContent = file ? file.name : '';
     currentGuidedSaved = null;
     invalidateImportPreview('guided');
-    window._guidedClientItemId = file ? crypto.randomUUID() : null;
+    importDraft.guidedClientItemId = file ? crypto.randomUUID() : null;
     if (document.getElementById('guidedFolderBtn')) {
       folderSelection({name: currentGuideSource}, null);
       const status = document.getElementById('guidedFolderStatus');
@@ -3035,8 +3153,8 @@ function setupQuickImportForm() {
   }
 
   currentFile = null;
-  window._quickClientItemId = null;
-  window._quickSaved = null;
+  importDraft.quickClientItemId = null;
+  importDraft.quickSaved = null;
   invalidateImportPreview('quick');
   dropArea.onclick = () => fileInput.click();
   dropArea.addEventListener('keydown', e => {
@@ -3058,8 +3176,8 @@ function setupQuickImportForm() {
     if (file) {
       currentFile = file;
       fileLabel.textContent = file.name;
-      window._quickClientItemId = crypto.randomUUID();
-      window._quickSaved = null;
+      importDraft.quickClientItemId = crypto.randomUUID();
+      importDraft.quickSaved = null;
   invalidateImportPreview('quick');
     }
   });
@@ -3067,15 +3185,15 @@ function setupQuickImportForm() {
     currentFile = e.target.files[0];
     if (currentFile) {
       fileLabel.textContent = currentFile.name;
-      window._quickClientItemId = crypto.randomUUID();
-      window._quickSaved = null;
+      importDraft.quickClientItemId = crypto.randomUUID();
+      importDraft.quickSaved = null;
   invalidateImportPreview('quick');
     }
   };
   ['input', 'paste'].forEach(eventName => {
     pasteText.addEventListener(eventName, () => {
-      window._quickClientItemId = crypto.randomUUID();
-      window._quickSaved = null;
+      importDraft.quickClientItemId = crypto.randomUUID();
+      importDraft.quickSaved = null;
   invalidateImportPreview('quick');
     });
   });
@@ -3105,7 +3223,7 @@ function setupQuickImportForm() {
       }
       fd.append(
         'client_item_id',
-        window._quickClientItemId || (window._quickClientItemId = crypto.randomUUID())
+        importDraft.quickClientItemId || (importDraft.quickClientItemId = crypto.randomUUID())
       );
 
       const settingValue = quickSettingInput ? quickSettingInput.value.trim() : '';
@@ -3113,7 +3231,7 @@ function setupQuickImportForm() {
         fd.append('setting', settingValue);
       }
 
-      const response = await fetch('/app/import/api/save', { method: 'POST', body: fd });
+      const response = await importWrite('/app/import/api/save', { method: 'POST', body: fd }, { upload: true });
       const data = await response.json();
       validateBtn.disabled = false;
       validateBtn.textContent = 'validate';
@@ -3156,7 +3274,7 @@ async function uploadGuidedSourceFile(source) {
   fd.append('file', currentGuidedFile);
   fd.append(
     'client_item_id',
-    window._guidedClientItemId || (window._guidedClientItemId = crypto.randomUUID())
+    importDraft.guidedClientItemId || (importDraft.guidedClientItemId = crypto.randomUUID())
   );
   if (source && source.name !== 'recording') {
     fd.append('source_hint', source.name);
@@ -3165,10 +3283,10 @@ async function uploadGuidedSourceFile(source) {
     fd.append('setting', guidedSettingInput.value.trim());
   }
 
-  const response = await fetch('/app/import/api/save', {
+  const response = await importWrite('/app/import/api/save', {
     method: 'POST',
     body: fd,
-  });
+  }, { upload: true });
   const data = await response.json();
   if (!response.ok) {
     throw new Error(importErrorMessage(data, 'Failed to save import'));
@@ -3230,7 +3348,7 @@ async function chooseGuidedFolder(source) {
       if (file) file.value = '';
       if (label) label.textContent = '';
       invalidateImportPreview('guided');
-      window._guidedClientItemId = reference;
+      importDraft.guidedClientItemId = reference;
       status.textContent = 'saving folder… this can take a while for a large folder.';
       return true;
     });
@@ -3270,19 +3388,19 @@ async function reconcileGuidedFolder(source, duringReply = false) {
   if (!status || (guidedFolderBusy && !duringReply)) return;
   const retained = folderSelection(source);
   if (!retained?.client_item_id) { folderControls(false); return; }
-  let clientChoice = window._guidedClientItemId;
+  let clientChoice = importDraft.guidedClientItemId;
   if (clientChoice && clientChoice !== retained.client_item_id) { folderControls(false); return; }
   const live = () => currentGuideSource === source.name && document.getElementById('guidedFolderStatus') === status
-    && folderSelection(source)?.client_item_id === retained.client_item_id && window._guidedClientItemId === clientChoice;
+    && folderSelection(source)?.client_item_id === retained.client_item_id && importDraft.guidedClientItemId === clientChoice;
   folderControls(true);
   status.textContent = 'checking import…';
   try {
-    const response = await fetch(`/app/import/api/list?client_item_id=${encodeURIComponent(retained.client_item_id)}`);
+    const response = await ctx.fetch(`/app/import/api/list?client_item_id=${encodeURIComponent(retained.client_item_id)}`);
     if (!response.ok) throw new Error('unavailable');
     const list = await response.json();
     const rows = list.imports?.filter(row => row.client_item_id === retained.client_item_id) || [];
     if (rows.length !== 1) throw new Error('unconfirmed');
-    const detail = await fetch(`/app/import/api/${encodeURIComponent(rows[0].timestamp)}`);
+    const detail = await ctx.fetch(`/app/import/api/${encodeURIComponent(rows[0].timestamp)}`);
     if (!detail.ok) throw new Error('unavailable');
     const metadata = (await detail.json()).import_json;
     if (!metadata || metadata.client_item_id !== retained.client_item_id || metadata.source_hint !== source.name
@@ -3299,7 +3417,7 @@ async function reconcileGuidedFolder(source, duringReply = false) {
     }
     currentGuidedSaved = { path: metadata.file_path, timestamp: rows[0].timestamp,
       source_timestamp: metadata.source_timestamp || rows[0].timestamp, client_item_id: retained.client_item_id };
-    window._guidedClientItemId = retained.client_item_id;
+    importDraft.guidedClientItemId = retained.client_item_id;
     clientChoice = retained.client_item_id;
     status.textContent = `${metadata.original_filename}: saved`;
   } catch (error) {
@@ -3324,14 +3442,14 @@ async function saveGuidedPath(source) {
   const payload = {
     path: pathInput.value.trim(),
     setting,
-    client_item_id: window._guidedClientItemId
-      || (window._guidedClientItemId = crypto.randomUUID()),
+    client_item_id: importDraft.guidedClientItemId
+      || (importDraft.guidedClientItemId = crypto.randomUUID()),
   };
   if (source && source.name !== 'recording') {
     payload.source_hint = source.name;
   }
 
-  const response = await fetch('/app/import/api/save-path', {
+  const response = await importWrite('/app/import/api/save-path', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -3431,7 +3549,7 @@ async function prepareImportPreview(kind, payload, setting, button, sourceName =
   if (apple) showApplePreviewCancel(controller);
   let response;
   try {
-    response = await fetch('/app/import/api/preview', {
+    response = await importWrite('/app/import/api/preview', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       signal: controller ? controller.signal : undefined,
     });
@@ -3511,7 +3629,8 @@ async function prepareImportPreview(kind, payload, setting, button, sourceName =
   return null;
 }
 
-document.addEventListener('input', event => {
+ctx.on(window.document, 'input', event => {
+  if (!importOwns(event.target)) return;
   const id = event.target?.id;
   if (['guidedPathInput', 'guidedFileInput'].includes(id)) currentGuidedSaved = null;
   if (['guidedSettingInput', 'guidedPathInput', 'guidedFileInput', 'guidedArchiveZone', 'guidedArchiveManifest'].includes(id)) invalidateImportPreview('guided');
@@ -3554,7 +3673,7 @@ async function startGuidedImport(source) {
       if (notebook) metaBody.notebook = notebook.value;
     }
 
-    const metaResponse = await fetch('/app/import/api/meta', {
+    const metaResponse = await importWrite('/app/import/api/meta', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(metaBody),
@@ -3579,7 +3698,7 @@ async function startGuidedImport(source) {
     const startBody = { ...payload, preview_token: previewToken };
     // The Apple Health card's go-ahead is the preview its owner saw.
     if (source.name === 'apple_health') startBody.body_confirmed = previewToken;
-    const startResponse = await fetch('/app/import/api/start', {
+    const startResponse = await importWrite('/app/import/api/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(startBody),
@@ -3626,7 +3745,7 @@ async function repeatSource(sourceName) {
   currentGuidedFile = null;
   currentGuidedSaved = null;
   invalidateImportPreview('guided');
-  window._guidedClientItemId = null;
+  importDraft.guidedClientItemId = null;
   const hash = window.location.hash.slice(1);
   if (hash.startsWith('progress/')) {
     const importId = hash.split('/')[1];
@@ -3760,7 +3879,7 @@ function showProgressView(importId, eventData = null) {
         <div class="import-action-row">
           <a class="import-primary-btn" href="/app/body/">see it in the body app →</a>
           <a class="import-secondary-btn" href="/app/import/${encodeURIComponent(done.processed_timestamp || importId)}#content">browse what was imported →</a>
-          <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
         </div>
       </div>
     `;
@@ -3771,7 +3890,7 @@ function showProgressView(importId, eventData = null) {
       <div class="import-completion-summary">
         ${words ? `<div>${escapeHtml(words)}</div>` : ''}
         <div class="import-action-row">
-          <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
         </div>
       </div>
     `;
@@ -3807,7 +3926,7 @@ function showProgressView(importId, eventData = null) {
         <div class="import-action-row">
           <a class="import-secondary-btn" href="/app/import/${encodeURIComponent(completedInfo.processed_timestamp || importId)}#content">browse what was imported →</a>
           ${repeatBtn}
-          <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
         </div>
       </div>
     `;
@@ -3829,7 +3948,7 @@ function showProgressView(importId, eventData = null) {
         <div class="import-action-row">
           <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">check status</button>
           ${browseBtn}
-          <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
         </div>
       </div>
     `;
@@ -3843,7 +3962,7 @@ function showProgressView(importId, eventData = null) {
       <div class="import-completion-summary unavailable">
         <div class="import-action-row">
           <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">check status</button>
-          <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
         </div>
       </div>
     `;
@@ -3853,7 +3972,7 @@ function showProgressView(importId, eventData = null) {
       <div class="import-completion-summary failed">
         <div><strong>error:</strong> ${escapeHtml(errorText)}</div>
         <div class="import-action-row">
-          <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
         </div>
       </div>
     `;
@@ -3864,7 +3983,7 @@ function showProgressView(importId, eventData = null) {
         <div>stalled: no updates in 10 minutes. ${window.CONVEY_COPY.RELOAD_HINT}</div>
         <div class="import-action-row">
           <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">check status</button>
-          <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
+          <a href="#" class="import-secondary-btn" data-import-show-grid>import another source</a>
         </div>
       </div>
     `;
@@ -3899,8 +4018,8 @@ startBtn.addEventListener('click', async () => {
     if (window.showError) showError('the date is required before starting the import.');
     return;
   }
-  if (isTerminalDuplicate(window._quickSaved)) {
-    showDetect(window._quickSaved);
+  if (isTerminalDuplicate(importDraft.quickSaved)) {
+    showDetect(importDraft.quickSaved);
     return;
   }
 
@@ -3909,10 +4028,10 @@ startBtn.addEventListener('click', async () => {
   startBtn.innerHTML = 'starting<span class="spinner"></span>';
 
   try {
-    const response = await fetch('/app/import/api/meta', {
+    const response = await importWrite('/app/import/api/meta', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path, setting, import_id: window._quickSaved?.timestamp }),
+      body: JSON.stringify({ path, setting, import_id: importDraft.quickSaved?.timestamp }),
     });
 
     if (!response.ok) {
@@ -3921,12 +4040,12 @@ startBtn.addEventListener('click', async () => {
     }
 
     if (revision !== previewRevisions.quick) return;
-    const payload = { path, timestamp: ts, import_id: window._quickSaved?.timestamp,
-      timestamp_override: ts !== (window._quickSaved?.source_timestamp || window._quickSaved?.timestamp) };
+    const payload = { path, timestamp: ts, import_id: importDraft.quickSaved?.timestamp,
+      timestamp_override: ts !== (importDraft.quickSaved?.source_timestamp || importDraft.quickSaved?.timestamp) };
     const previewToken = await prepareImportPreview('quick', payload, setting, startBtn);
     preparedPreview = !previewToken && revision === previewRevisions.quick && Boolean(importPreviews.quick?.ready);
     if (!previewToken || revision !== previewRevisions.quick) return;
-    const startResponse = await fetch('/app/import/api/start', {
+    const startResponse = await importWrite('/app/import/api/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...payload, preview_token: previewToken }),
@@ -3936,7 +4055,7 @@ startBtn.addEventListener('click', async () => {
     if (!startResponse.ok) {
       throw new Error(importErrorMessage(started, 'Failed to start import'));
     }
-    const importId = started.import_id || window._quickSaved?.timestamp || ts;
+    const importId = started.import_id || importDraft.quickSaved?.timestamp || ts;
     restoreImportButton('quick', startBtn);
     closeDetectModal();
     // A replayed start found the import already started or finished, so the progress view
@@ -3965,13 +4084,14 @@ startBtn.addEventListener('click', async () => {
   }
 });
 
-window.onclick = e => {
-  if (e.target === document.getElementById('detectModal')) {
+// A press on the detect dialog's backdrop closes it.
+document.getElementById('detectModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) {
     closeDetectModal();
   }
-};
+});
 
-document.addEventListener('keydown', function(e) {
+ctx.on(window.document, 'keydown', function(e) {
   if (e.key === 'Escape' && document.getElementById('detectModal').style.display === 'block') {
     closeDetectModal();
   }
@@ -3979,17 +4099,17 @@ document.addEventListener('keydown', function(e) {
 
 let thinkingProgressTimer = null;
 function scheduleThinkingProgress() {
-  if (thinkingProgressTimer !== null) clearTimeout(thinkingProgressTimer);
+  if (thinkingProgressTimer !== null) ctx.clearTimeout(thinkingProgressTimer);
   const hash = window.location.hash.slice(1);
   if (!hash.startsWith('progress/') || document.visibilityState === 'hidden') { thinkingProgressTimer = null; return; }
   const id = hash.split('/')[1];
   const archive = importEvents[id]?.source_type === 'audio_archive';
   const activeArchive = archive && !['success', 'failed', 'unavailable', 'unconfirmed'].includes(importEvents[id]?.status);
-  thinkingProgressTimer = setTimeout(async () => {
+  thinkingProgressTimer = ctx.setTimeout(async () => {
     thinkingProgressTimer = null;
     if (window.location.hash.slice(1) !== `progress/${id}`) return;
     try {
-      const res = await window.apiJson(`/app/import/api/${encodeURIComponent(id)}`);
+      const res = await ctx.read(`/app/import/api/${encodeURIComponent(id)}`);
       if (window.location.hash.slice(1) === `progress/${id}`) {
         if (archive) await reconcileImportState(id, { quiet: true, observed: res });
         if (importEvents[id]) importEvents[id].thinking = res?.thinking;
@@ -4002,7 +4122,7 @@ function scheduleThinkingProgress() {
     scheduleThinkingProgress();
   }, activeArchive ? 5000 : 30000);
 }
-window.addEventListener('hashchange', scheduleThinkingProgress);
+ctx.on(window, 'hashchange', scheduleThinkingProgress);
 
 const inFlightReconcile = new Set();
 
@@ -4012,7 +4132,7 @@ async function reconcileImportState(importId, options = {}) {
   const { fromStall = false, quiet = false } = options;
   const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
   try {
-    const res = options.observed || await window.apiJson(`/app/import/api/${encodeURIComponent(importId)}`);
+    const res = options.observed || await ctx.read(`/app/import/api/${encodeURIComponent(importId)}`);
     if (!res) return;
     const archiveId = res.archive_run_id;
     if (typeof archiveId === 'string' && /^[0-9]{8}_[0-9]{6}$/.test(archiveId) && archiveId !== importId) {
@@ -4116,17 +4236,52 @@ async function reconcileImportState(importId, options = {}) {
   }
 }
 
-if (typeof window.addEventListener === 'function') {
-  window.addEventListener('online', () => {
-    const hash = window.location.hash.slice(1);
-    if (hash.startsWith('progress/')) {
-      const importId = hash.split('/')[1];
-      reconcileImportState(importId);
-    }
-  });
-}
+ctx.on(window, 'online', () => {
+  const hash = window.location.hash.slice(1);
+  if (hash.startsWith('progress/')) {
+    const importId = hash.split('/')[1];
+    reconcileImportState(importId);
+  }
+});
 
-document.addEventListener('click', event => {
+// One delegated press and key handler for import's markup, on #main-content,
+// so it runs before the router's on the document: a link import takes (an
+// href="#" that shows the grid) is prevented before the router reads it.
+const importMain = importPage.getElementById('main-content');
+ctx.on(importMain, 'click', event => {
+  if (!importOwns(event.target)) return;
+  const showGridLink = event.target.closest('[data-import-show-grid]');
+  if (showGridLink) {
+    event.preventDefault();
+    showGrid();
+    return;
+  }
+  const scrollGridLink = event.target.closest('[data-import-scroll-grid]');
+  if (scrollGridLink) {
+    event.preventDefault();
+    scrollToGrid();
+    return;
+  }
+  if (event.target.closest('[data-import-detect-close]')) {
+    closeDetectModal();
+    return;
+  }
+  if (event.target.closest('[data-import-load-more]')) {
+    loadMoreImports();
+    return;
+  }
+  const deleteBtn = event.target.closest('[data-import-delete]');
+  if (deleteBtn) {
+    const sourceType = deleteBtn.getAttribute('data-import-delete-source') || '';
+    const display = deleteBtn.getAttribute('data-import-delete-display') || '';
+    deleteImportFromPage({
+      id: deleteBtn.getAttribute('data-import-delete'),
+      kind: sourceType,
+      source: importSourceName(sourceType, display),
+    });
+    return;
+  }
+  if (importDetailHooks?.press(event)) return;
   const checkBtn = event.target.closest('[data-import-check-status]');
   if (checkBtn) {
     event.stopPropagation();
@@ -4167,20 +4322,30 @@ document.addEventListener('click', event => {
   const tr = event.target.closest('tr[data-import-link]');
   if (tr && !event.target.closest('a, button, input, select, textarea')) {
     const link = tr.getAttribute('data-import-link');
-    if (link) window.location.href = link;
+    if (link) importMove(link);
   }
 });
 
-document.addEventListener('keydown', event => {
+ctx.on(importMain, 'keydown', event => {
+  if (!importOwns(event.target)) return;
+  if (importDetailHooks?.key(event)) return;
   if (event.key === 'Enter') {
     const tr = event.target.closest('tr[data-import-link]');
     if (tr && event.target === tr && importPick.on && toggleImportPick(tr)) return;
     if (tr && event.target === tr) {
       const link = tr.getAttribute('data-import-link');
-      if (link) window.location.href = link;
+      if (link) importMove(link);
     }
   }
 });
+
+// A move to another of import's addresses, or out of it: in the page where
+// the router takes it, a page load otherwise. Nothing moves once import has gone.
+function importMove(href) {
+  if (ctx.disposed) return;
+  if (window.solRouter?.navigate?.(href)) return;
+  window.location.href = href;
+}
 
 // One live importer event: track or release the pending timer, update the row and panel, and
 // after a terminal event read the durable record once (see below).
@@ -4215,22 +4380,21 @@ function handleImporterEvent(eventData) {
 }
 
 function bindImportReturnRead() {
-  if (typeof window.addEventListener !== 'function') return;
   const returned = () => {
-    if (window._quickClientItemId || window._guidedClientItemId) loadImports();
+    if (importDraft.quickClientItemId || importDraft.guidedClientItemId) loadImports();
     const source = sourceMetadataByName[currentGuideSource];
     if (window.JournalOwnerFolders && source) reconcileGuidedFolder(source);
     const view = window.location.hash.slice(1);
     if (view.startsWith('progress/')) reconcileImportState(view.split('/')[1]);
     scheduleThinkingProgress();
   };
-  window.addEventListener('pageshow', returned);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') returned(); else scheduleThinkingProgress(); });
+  ctx.on(window, 'pageshow', returned);
+  ctx.on(window.document, 'visibilitychange', () => { if (document.visibilityState === 'visible') returned(); else scheduleThinkingProgress(); });
 }
 
 function initImportWorkspace() {
   const listView = document.getElementById('importListView');
-  if (window.solPathContext().segment) {
+  if (importSegment) {
     if (listView) listView.style.display = 'none';
     return;
   }
@@ -4244,8 +4408,8 @@ function initImportWorkspace() {
     importEventsCleanup();
     importEventsCleanup = null;
   }
-  if (window.appEvents && typeof window.appEvents.onConnectionState === 'function') {
-    connectionStateCleanup = window.appEvents.onConnectionState(({ connected }) => {
+  {
+    connectionStateCleanup = ctx.onConnectionState(({ connected }) => {
       if (connected) {
         const hash = window.location.hash.slice(1);
         if (hash.startsWith('progress/')) {
@@ -4256,23 +4420,24 @@ function initImportWorkspace() {
     });
   }
 
-  importEventsCleanup = window.appEvents.listen('importer', {
+  importEventsCleanup = ctx.listen('importer', {
     correlationKey: 'import_id',
     timeout: IMPORT_STALL_TIMEOUT_MS,
     onTimeout: markRowStalled,
   }, handleImporterEvent);
 
-  if (typeof window.addEventListener === 'function') {
-    const teardown = () => {
-      if (typeof importEventsCleanup === 'function') {
-        importEventsCleanup();
-      }
-      if (typeof connectionStateCleanup === 'function') {
-        connectionStateCleanup();
-      }
-    };
-    window.addEventListener('pagehide', teardown);
-  }
+  // A page load out of import (settings' trash) still ends the streams here.
+  const teardown = () => {
+    if (typeof importEventsCleanup === 'function') {
+      importEventsCleanup();
+    }
+    if (typeof connectionStateCleanup === 'function') {
+      connectionStateCleanup();
+    }
+  };
+  ctx.on(window, 'pagehide', teardown);
+  // A receipt's recover, pressed while this list is showing, reloads it.
+  importListHooks = { ctx, recover: ids => recoverImports(ids, loadImports) };
 
   // The progress panel renders from the import list, so the list has to be in
   // hand before the hash is acted on: a reload straight onto #progress/<id> was
@@ -4289,11 +4454,386 @@ function initImportWorkspace() {
     });
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initImportWorkspace);
-} else {
-  initImportWorkspace();
+// ========== IMPORT DETAIL ==========
+// One import's own page, at /app/import/<id>.
+function mountImportDetail() {
+const importDetailTimestamp = importSegment;
+const importDetailPathSegment = importDetailTimestamp ? encodeURIComponent(importDetailTimestamp) : '';
+if (!importDetailTimestamp) {
+  return;
 }
+// Tab switching
+const tabs = document.querySelectorAll('.tab');
+const contents = document.querySelectorAll('.tab-content');
+let contentLoaded = false;
+let contentPage = 1;
+let contentSearch = '';
+let contentMonth = '';
+let searchDebounce = null;
+
+tabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    const target = tab.dataset.target;
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.target === target));
+    contents.forEach(c => c.classList.toggle('active', c.id === target));
+    if (target === 'content' && !contentLoaded) {
+      loadContent(1);
+    }
+  });
+  tab.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      tab.click();
+    }
+  });
+});
+
+function loadContent(page = 1) {
+  const container = document.getElementById('contentContainer');
+  const loading = document.getElementById('contentLoading');
+  loading.textContent = 'loading content…';
+  loading.style.display = 'block';
+
+  const params = new URLSearchParams({page, per_page: 50});
+  if (contentSearch) params.set('q', contentSearch);
+  if (contentMonth) params.set('month', contentMonth);
+
+  ctx.fetch(`/app/import/api/${importDetailPathSegment}/content?${params}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        loading.textContent = data.error;
+        return;
+      }
+      loading.style.display = 'none';
+      container.style.display = 'block';
+      contentPage = data.page;
+      renderContentSummary(data);
+      renderContentMonths(data.months);
+      renderContentItems(data.items);
+      renderContentPagination(data);
+      contentLoaded = true;
+    })
+    .catch(err => {
+      loading.textContent = 'error loading content';
+      console.error('Content load error:', err);
+    });
+}
+
+function renderContentSummary(data) {
+  const el = document.getElementById('contentSummary');
+  const iconSvg = data.source_icon_svg || '';
+  const display = data.source_display || '';
+  const iconHtml = iconSvg ? `<span class="import-content-summary-icon" aria-hidden="true">${iconSvg}</span>` : '';
+  el.innerHTML = `${iconHtml}<strong>${escapeHtml(display)}</strong>, ${data.total} items`;
+}
+
+function renderContentMonths(months) {
+  const select = document.getElementById('contentMonth');
+  const current = select.value;
+  select.innerHTML = '<option value="">all months</option>';
+  for (const [month, count] of Object.entries(months)) {
+    const label = month.slice(0, 4) + '-' + month.slice(4, 6);
+    const opt = document.createElement('option');
+    opt.value = month;
+    opt.textContent = `${label} (${count})`;
+    select.appendChild(opt);
+  }
+  select.value = current;
+}
+
+function renderContentItems(items) {
+  const el = document.getElementById('contentItems');
+  if (!items.length) {
+    el.innerHTML = '<div class="no-data">no items found</div>';
+    return;
+  }
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  let currentMonth = '';
+  let html = '';
+  items.forEach(item => {
+    const itemMonth = item.date ? item.date.slice(0, 6) : '';
+    if (itemMonth && itemMonth !== currentMonth) {
+      currentMonth = itemMonth;
+      const year = itemMonth.slice(0, 4);
+      const monthIdx = parseInt(itemMonth.slice(4, 6), 10) - 1;
+      const monthLabel = monthNames[monthIdx] || '';
+      const monthCount = items.filter(i => (i.date || '').startsWith(itemMonth)).length;
+      html += `<div class="import-content-month-header">${monthLabel} ${year}, ${monthCount} items</div>`;
+    }
+    const typeLabel = {
+      conversation: 'chat',
+      event: 'event',
+      highlight_group: 'highlights',
+      note: 'note',
+    }[item.type] || item.type;
+    const date = item.date ? window.JournalFormat.day(item.date) : '';
+    // Audio has no inline reader: each segment deep-links straight to that segment in
+    // the transcripts app rather than expanding in place, so it gets no toggle/body.
+    if (item.type === 'audio') {
+      const segment = item.segments && item.segments[0];
+      const day = segment?.day || '';
+      const key = segment?.key || '';
+      const stream = segment?.stream || '';
+      if (day && key) {
+        const segmentTime = window.JournalFormat.segmentTime(key);
+        html += `
+          <a class="import-content-item import-content-item-link" href="/app/transcripts/${encodeURIComponent(day)}?stream=${encodeURIComponent(stream)}#${encodeURIComponent(key)}">
+            <div class="import-content-item-header">
+              <span class="import-content-item-type">${typeLabel}</span>
+              <span class="import-content-item-title">${escapeContentHtml(item.title)}</span>
+              <span class="import-content-item-date">${date}${segmentTime ? ` · ${escapeContentHtml(segmentTime)}` : ''}</span>
+              <span class="import-content-item-arrow" aria-hidden="true">→</span>
+            </div>
+          </a>`;
+        return;
+      }
+    }
+    html += `
+      <div class="import-content-item" data-item-id="${item.id}" data-content-toggle tabindex="0" role="button">
+        <div class="import-content-item-header">
+          <span class="import-content-item-type">${typeLabel}</span>
+          <span class="import-content-item-title">${escapeContentHtml(item.title)}</span>
+          <span class="import-content-item-date">${date}</span>
+        </div>
+        <div class="import-content-item-meta">
+          ${item.meta?.message_count ? `${item.meta.message_count} messages` : ''}
+          ${item.meta?.highlight_count ? `${item.meta.highlight_count} highlights` : ''}
+          ${item.meta?.time_range ? `${escapeContentHtml(item.meta.time_range)}` : (item.meta?.duration_minutes ? `${item.meta.duration_minutes} min` : '')}
+          ${item.meta?.attendee_names?.length ? ` · ${item.meta.attendee_names.map(n => escapeContentHtml(n)).join(', ')}` : (item.meta?.attendee_count ? ` · ${item.meta.attendee_count} attendees` : '')}
+          ${item.meta?.location ? ` · ${escapeContentHtml(item.meta.location)}` : ''}
+          ${item.meta?.author ? `· ${escapeContentHtml(item.meta.author)}` : ''}
+          ${item.meta?.tags?.length ? `· ${item.meta.tags.map(t => escapeContentHtml(t)).join(', ')}` : ''}
+        </div>
+        ${item.preview ? `<div class="import-content-item-preview">${escapeContentHtml(stripMarkdown(item.preview))}</div>` : ''}
+        <div class="import-content-item-body"><div class="no-data">loading…</div></div>
+      </div>`;
+  });
+  el.innerHTML = html;
+}
+
+function toggleContentItem(el) {
+  const wasExpanded = el.classList.contains('expanded');
+  document.querySelectorAll('.import-content-item.expanded').forEach(item => {
+    item.classList.remove('expanded');
+  });
+  if (wasExpanded) return;
+
+  el.classList.add('expanded');
+  const body = el.querySelector('.import-content-item-body');
+  const itemId = el.dataset.itemId;
+
+  ctx.fetch(`/app/import/api/${importDetailPathSegment}/content/${encodeURIComponent(itemId)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        body.innerHTML = `<div class="no-data">${escapeContentHtml(data.error)}</div>`;
+        return;
+      }
+      body.innerHTML = renderContentDetail(data);
+    })
+    .catch(() => {
+      body.innerHTML = '<div class="no-data">Error loading content</div>';
+    });
+}
+
+function renderContentDetail(data) {
+  if (!data.content || !data.content.length) {
+    return '<div class="no-data">No content available</div>';
+  }
+
+  return data.content.map(part => {
+    if (part.type === 'markdown') {
+      return `<div class="import-content-markdown">${window.AppServices.renderMarkdown(part.content)}</div>`;
+    }
+    const speaker = part.speaker || 'Unknown';
+    const cls = speaker === 'You' || speaker === 'Human' ? 'human'
+      : speaker === 'Assistant' ? 'assistant' : '';
+    return `<div class="import-content-message"><span class="import-content-speaker ${cls}">${escapeContentHtml(speaker)}:</span> ${escapeContentHtml(part.text || '')}</div>`;
+  }).join('');
+}
+
+function renderContentPagination(data) {
+  const el = document.getElementById('contentPagination');
+  if (data.pages <= 1) {
+    el.innerHTML = '';
+    return;
+  }
+  let html = '';
+  html += `<button ${data.page <= 1 ? 'disabled' : ''} data-content-page="${data.page - 1}">prev</button>`;
+  const start = Math.max(1, data.page - 2);
+  const end = Math.min(data.pages, data.page + 2);
+  for (let i = start; i <= end; i++) {
+    html += `<button class="${i === data.page ? 'active' : ''}" data-content-page="${i}">${i}</button>`;
+  }
+  html += `<button ${data.page >= data.pages ? 'disabled' : ''} data-content-page="${data.page + 1}">next</button>`;
+  el.innerHTML = html;
+}
+
+function escapeContentHtml(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function stripMarkdown(str) {
+  if (!str) return '';
+  return str
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^>\s+/gm, '')
+    .trim();
+}
+
+document.getElementById('contentSearch').addEventListener('input', function() {
+  ctx.clearTimeout(searchDebounce);
+  searchDebounce = ctx.setTimeout(() => {
+    contentSearch = this.value.trim();
+    loadContent(1);
+  }, 300);
+});
+
+document.getElementById('contentMonth').addEventListener('change', function() {
+  contentMonth = this.value;
+  loadContent(1);
+});
+
+// Load import details
+let importDetailRequest = 0;
+function loadImportDetail(keepSavedStart = false) {
+  const request = ++importDetailRequest;
+  return ctx.read(`/app/import/api/${importDetailPathSegment}`)
+    .then(data => {
+      if (request !== importDetailRequest) return;
+      reportImportReady('content');
+      const overview = document.getElementById('overviewContent');
+      const restoreFocus = Boolean(overview.querySelector('[data-saved-start-slot]')?.contains(document.activeElement));
+      document.getElementById('importMeta').innerHTML = window.ImportDetail.renderMeta(data);
+      overview.innerHTML = window.ImportDetail.renderDetail(data);
+      window.ImportDetail.mountSavedStart(overview, data, () => loadImportDetail(true), restoreFocus);
+      if (restoreFocus && !overview.querySelector('[data-saved-start-slot]')) {
+        const heading = document.getElementById('importDetailHeading');
+        heading?.setAttribute('tabindex', '-1');
+        heading?.focus();
+      }
+      const detailView = document.getElementById('importDetailView');
+      const firstWallTime = detailView?.querySelector('[data-wall-time]');
+      if (firstWallTime && window.JournalClock?.placeNote) {
+        window.JournalClock.placeNote(firstWallTime, { inside: false });
+      }
+    })
+    .catch(err => {
+      if (request !== importDetailRequest) return;
+      reportImportReady('error');
+      const serverMessage = window.SurfaceState.serverMessageFrom(err);
+      const escapedMessage = window.AppServices.escapeHtml(serverMessage);
+      document.getElementById('importMeta').innerHTML = `<div class="surface-state-refresh-error">couldn&#39;t load import details.${escapedMessage ? ` ${escapedMessage}` : ''}</div>`;
+      const overview = document.getElementById('overviewContent');
+      if (!overview.querySelector('[data-saved-start-slot]')) {
+        overview.innerHTML = '<div class="no-data">overview unavailable</div>';
+      }
+      if (keepSavedStart) throw err;
+    });
+}
+
+function initImportDetail() {
+  const listView = document.getElementById('importListView');
+  if (listView) listView.style.display = 'none';
+
+  const detailView = document.getElementById('importDetailView');
+  if (detailView) detailView.style.display = '';
+
+  const heading = document.getElementById('importDetailHeading');
+  if (heading) heading.textContent = `import: ${window.JournalFormat.day(importDetailTimestamp.slice(0, 8))} · ${window.JournalFormat.segmentTime(importDetailTimestamp.slice(9))}`;
+
+  loadImportDetail();
+
+  const detailEventsCleanup = ctx.listen('importer', { correlationKey: 'import_id' }, eventData => {
+    if (!IMPORT_ROW_EVENTS.has(eventData.event)) return;
+    if (eventData.import_id !== importDetailTimestamp) return;
+    loadImportDetail();
+  });
+
+  function openContentFromHash() {
+    if (window.location.hash !== '#content' || !detailView?.isConnected) return;
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.target === 'content'));
+    contents.forEach(c => c.classList.toggle('active', c.id === 'content'));
+    if (!contentLoaded) loadContent(1);
+  }
+  const stopContentHash = ctx.on(window, 'hashchange', openContentFromHash);
+  openContentFromHash();
+
+  // A page load out of an import's page still ends its stream here.
+  const detailTeardown = () => {
+    if (typeof detailEventsCleanup === 'function') {
+      detailEventsCleanup();
+    }
+    stopContentHash();
+  };
+  ctx.on(window, 'pagehide', detailTeardown);
+}
+
+// The content pane's presses and keys, from the mount's one delegation.
+importDetailHooks = {
+  press(event) {
+    const page = event.target.closest('[data-content-page]');
+    if (page) {
+      if (!page.disabled) loadContent(Number(page.getAttribute('data-content-page')));
+      return true;
+    }
+    const item = event.target.closest('[data-content-toggle]');
+    if (item && event.target.closest('.import-content-item-header')) {
+      toggleContentItem(item);
+      return true;
+    }
+    return false;
+  },
+  key(event) {
+    const item = event.target.closest('[data-content-toggle]');
+    if (item && event.target === item && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      toggleContentItem(item);
+      return true;
+    }
+    return false;
+  },
+};
+
+initImportDetail();
+}
+// ========== END IMPORT DETAIL ==========
+
+let importDetailHooks = null;
+
+// What dispose ends that isn't the context's: the dialogs (and the page's
+// overflow the delete dialog set), a folder or source chooser the native app
+// has open, the Apple Health preview, the saved-start flows, and the
+// receipts' way back into this list.
+function disposeImport() {
+  if (importListHooks?.ctx === ctx) importListHooks = null;
+  if (importDialog) closeImportDeleteDialog(false);
+  const detect = document.getElementById('detectModal');
+  if (detect && detect.style.display === 'block') closeDetectModal(false);
+  if (applePreviewAbort) applePreviewAbort.abort();
+  window.JournalOwnerFolders?.cancel?.();
+  window.ImportDetail?.forgetSavedStarts?.();
+  window.ConveyModalLayer?.reconcile?.({ restore: false });
+}
+
+// The source rows draw on both pages, as their script did when it loaded.
+window.ImportSourceConnections?.mount(ctx);
+if (importSegment) mountImportDetail();
+else initImportWorkspace();
+  }
+})();
 </script>
 
 <style>
@@ -4446,340 +4986,3 @@ if (document.readyState === 'loading') {
 
 <script src="/app/import/static/source_connections.js"></script>
 <script src="/app/import/static/import_detail.js"></script>
-<script>
-(function() {
-const importDetailTimestamp = window.solPathContext().segment;
-const importDetailPathSegment = importDetailTimestamp ? encodeURIComponent(importDetailTimestamp) : '';
-if (!importDetailTimestamp) {
-  return;
-}
-// Tab switching
-const tabs = document.querySelectorAll('.tab');
-const contents = document.querySelectorAll('.tab-content');
-let contentLoaded = false;
-let contentPage = 1;
-let contentSearch = '';
-let contentMonth = '';
-let searchDebounce = null;
-
-tabs.forEach(tab => {
-  tab.addEventListener('click', () => {
-    const target = tab.dataset.target;
-    tabs.forEach(t => t.classList.toggle('active', t.dataset.target === target));
-    contents.forEach(c => c.classList.toggle('active', c.id === target));
-    if (target === 'content' && !contentLoaded) {
-      loadContent(1);
-    }
-  });
-  tab.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      tab.click();
-    }
-  });
-});
-
-function loadContent(page = 1) {
-  const container = document.getElementById('contentContainer');
-  const loading = document.getElementById('contentLoading');
-  loading.textContent = 'loading content…';
-  loading.style.display = 'block';
-
-  const params = new URLSearchParams({page, per_page: 50});
-  if (contentSearch) params.set('q', contentSearch);
-  if (contentMonth) params.set('month', contentMonth);
-
-  fetch(`/app/import/api/${importDetailPathSegment}/content?${params}`)
-    .then(r => r.json())
-    .then(data => {
-      if (data.error) {
-        loading.textContent = data.error;
-        return;
-      }
-      loading.style.display = 'none';
-      container.style.display = 'block';
-      contentPage = data.page;
-      renderContentSummary(data);
-      renderContentMonths(data.months);
-      renderContentItems(data.items);
-      renderContentPagination(data);
-      contentLoaded = true;
-    })
-    .catch(err => {
-      loading.textContent = 'error loading content';
-      console.error('Content load error:', err);
-    });
-}
-
-function renderContentSummary(data) {
-  const el = document.getElementById('contentSummary');
-  const iconSvg = data.source_icon_svg || '';
-  const display = data.source_display || '';
-  const iconHtml = iconSvg ? `<span class="import-content-summary-icon" aria-hidden="true">${iconSvg}</span>` : '';
-  el.innerHTML = `${iconHtml}<strong>${escapeHtml(display)}</strong>, ${data.total} items`;
-}
-
-function renderContentMonths(months) {
-  const select = document.getElementById('contentMonth');
-  const current = select.value;
-  select.innerHTML = '<option value="">all months</option>';
-  for (const [month, count] of Object.entries(months)) {
-    const label = month.slice(0, 4) + '-' + month.slice(4, 6);
-    const opt = document.createElement('option');
-    opt.value = month;
-    opt.textContent = `${label} (${count})`;
-    select.appendChild(opt);
-  }
-  select.value = current;
-}
-
-function renderContentItems(items) {
-  const el = document.getElementById('contentItems');
-  if (!items.length) {
-    el.innerHTML = '<div class="no-data">no items found</div>';
-    return;
-  }
-  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  let currentMonth = '';
-  let html = '';
-  items.forEach(item => {
-    const itemMonth = item.date ? item.date.slice(0, 6) : '';
-    if (itemMonth && itemMonth !== currentMonth) {
-      currentMonth = itemMonth;
-      const year = itemMonth.slice(0, 4);
-      const monthIdx = parseInt(itemMonth.slice(4, 6), 10) - 1;
-      const monthLabel = monthNames[monthIdx] || '';
-      const monthCount = items.filter(i => (i.date || '').startsWith(itemMonth)).length;
-      html += `<div class="import-content-month-header">${monthLabel} ${year}, ${monthCount} items</div>`;
-    }
-    const typeLabel = {
-      conversation: 'chat',
-      event: 'event',
-      highlight_group: 'highlights',
-      note: 'note',
-    }[item.type] || item.type;
-    const date = item.date ? window.JournalFormat.day(item.date) : '';
-    // Audio has no inline reader: each segment deep-links straight to that segment in
-    // the transcripts app rather than expanding in place, so it gets no toggle/body.
-    if (item.type === 'audio') {
-      const segment = item.segments && item.segments[0];
-      const day = segment?.day || '';
-      const key = segment?.key || '';
-      const stream = segment?.stream || '';
-      if (day && key) {
-        const segmentTime = window.JournalFormat.segmentTime(key);
-        html += `
-          <a class="import-content-item import-content-item-link" href="/app/transcripts/${encodeURIComponent(day)}?stream=${encodeURIComponent(stream)}#${encodeURIComponent(key)}">
-            <div class="import-content-item-header">
-              <span class="import-content-item-type">${typeLabel}</span>
-              <span class="import-content-item-title">${escapeContentHtml(item.title)}</span>
-              <span class="import-content-item-date">${date}${segmentTime ? ` · ${escapeContentHtml(segmentTime)}` : ''}</span>
-              <span class="import-content-item-arrow" aria-hidden="true">→</span>
-            </div>
-          </a>`;
-        return;
-      }
-    }
-    html += `
-      <div class="import-content-item" data-item-id="${item.id}" tabindex="0" role="button" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleContentItem(this)}">
-        <div class="import-content-item-header" onclick="toggleContentItem(this.parentElement)">
-          <span class="import-content-item-type">${typeLabel}</span>
-          <span class="import-content-item-title">${escapeContentHtml(item.title)}</span>
-          <span class="import-content-item-date">${date}</span>
-        </div>
-        <div class="import-content-item-meta">
-          ${item.meta?.message_count ? `${item.meta.message_count} messages` : ''}
-          ${item.meta?.highlight_count ? `${item.meta.highlight_count} highlights` : ''}
-          ${item.meta?.time_range ? `${escapeContentHtml(item.meta.time_range)}` : (item.meta?.duration_minutes ? `${item.meta.duration_minutes} min` : '')}
-          ${item.meta?.attendee_names?.length ? ` · ${item.meta.attendee_names.map(n => escapeContentHtml(n)).join(', ')}` : (item.meta?.attendee_count ? ` · ${item.meta.attendee_count} attendees` : '')}
-          ${item.meta?.location ? ` · ${escapeContentHtml(item.meta.location)}` : ''}
-          ${item.meta?.author ? `· ${escapeContentHtml(item.meta.author)}` : ''}
-          ${item.meta?.tags?.length ? `· ${item.meta.tags.map(t => escapeContentHtml(t)).join(', ')}` : ''}
-        </div>
-        ${item.preview ? `<div class="import-content-item-preview">${escapeContentHtml(stripMarkdown(item.preview))}</div>` : ''}
-        <div class="import-content-item-body"><div class="no-data">loading…</div></div>
-      </div>`;
-  });
-  el.innerHTML = html;
-}
-
-function toggleContentItem(el) {
-  const wasExpanded = el.classList.contains('expanded');
-  document.querySelectorAll('.import-content-item.expanded').forEach(item => {
-    item.classList.remove('expanded');
-  });
-  if (wasExpanded) return;
-
-  el.classList.add('expanded');
-  const body = el.querySelector('.import-content-item-body');
-  const itemId = el.dataset.itemId;
-
-  fetch(`/app/import/api/${importDetailPathSegment}/content/${encodeURIComponent(itemId)}`)
-    .then(r => r.json())
-    .then(data => {
-      if (data.error) {
-        body.innerHTML = `<div class="no-data">${escapeContentHtml(data.error)}</div>`;
-        return;
-      }
-      body.innerHTML = renderContentDetail(data);
-    })
-    .catch(() => {
-      body.innerHTML = '<div class="no-data">Error loading content</div>';
-    });
-}
-
-function renderContentDetail(data) {
-  if (!data.content || !data.content.length) {
-    return '<div class="no-data">No content available</div>';
-  }
-
-  return data.content.map(part => {
-    if (part.type === 'markdown') {
-      return `<div class="import-content-markdown">${window.AppServices.renderMarkdown(part.content)}</div>`;
-    }
-    const speaker = part.speaker || 'Unknown';
-    const cls = speaker === 'You' || speaker === 'Human' ? 'human'
-      : speaker === 'Assistant' ? 'assistant' : '';
-    return `<div class="import-content-message"><span class="import-content-speaker ${cls}">${escapeContentHtml(speaker)}:</span> ${escapeContentHtml(part.text || '')}</div>`;
-  }).join('');
-}
-
-function renderContentPagination(data) {
-  const el = document.getElementById('contentPagination');
-  if (data.pages <= 1) {
-    el.innerHTML = '';
-    return;
-  }
-  let html = '';
-  html += `<button ${data.page <= 1 ? 'disabled' : ''} onclick="loadContent(${data.page - 1})">prev</button>`;
-  const start = Math.max(1, data.page - 2);
-  const end = Math.min(data.pages, data.page + 2);
-  for (let i = start; i <= end; i++) {
-    html += `<button class="${i === data.page ? 'active' : ''}" onclick="loadContent(${i})">${i}</button>`;
-  }
-  html += `<button ${data.page >= data.pages ? 'disabled' : ''} onclick="loadContent(${data.page + 1})">next</button>`;
-  el.innerHTML = html;
-}
-
-function escapeContentHtml(str) {
-  if (!str) return '';
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function stripMarkdown(str) {
-  if (!str) return '';
-  return str
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/^[-*+]\s+/gm, '')
-    .replace(/^\d+\.\s+/gm, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/^>\s+/gm, '')
-    .trim();
-}
-
-document.getElementById('contentSearch').addEventListener('input', function() {
-  clearTimeout(searchDebounce);
-  searchDebounce = setTimeout(() => {
-    contentSearch = this.value.trim();
-    loadContent(1);
-  }, 300);
-});
-
-document.getElementById('contentMonth').addEventListener('change', function() {
-  contentMonth = this.value;
-  loadContent(1);
-});
-
-// Load import details
-let importDetailRequest = 0;
-function loadImportDetail(keepSavedStart = false) {
-  const request = ++importDetailRequest;
-  return window.apiJson(`/app/import/api/${importDetailPathSegment}`)
-    .then(data => {
-      if (request !== importDetailRequest) return;
-      const overview = document.getElementById('overviewContent');
-      const restoreFocus = Boolean(overview.querySelector('[data-saved-start-slot]')?.contains(document.activeElement));
-      document.getElementById('importMeta').innerHTML = window.ImportDetail.renderMeta(data);
-      overview.innerHTML = window.ImportDetail.renderDetail(data);
-      window.ImportDetail.mountSavedStart(overview, data, () => loadImportDetail(true), restoreFocus);
-      if (restoreFocus && !overview.querySelector('[data-saved-start-slot]')) {
-        const heading = document.getElementById('importDetailHeading');
-        heading?.setAttribute('tabindex', '-1');
-        heading?.focus();
-      }
-      const detailView = document.getElementById('importDetailView');
-      const firstWallTime = detailView?.querySelector('[data-wall-time]');
-      if (firstWallTime && window.JournalClock?.placeNote) {
-        window.JournalClock.placeNote(firstWallTime, { inside: false });
-      }
-    })
-    .catch(err => {
-      if (request !== importDetailRequest) return;
-      const serverMessage = window.SurfaceState.serverMessageFrom(err);
-      const escapedMessage = window.AppServices.escapeHtml(serverMessage);
-      document.getElementById('importMeta').innerHTML = `<div class="surface-state-refresh-error">couldn&#39;t load import details.${escapedMessage ? ` ${escapedMessage}` : ''}</div>`;
-      const overview = document.getElementById('overviewContent');
-      if (!overview.querySelector('[data-saved-start-slot]')) {
-        overview.innerHTML = '<div class="no-data">overview unavailable</div>';
-      }
-      if (keepSavedStart) throw err;
-    });
-}
-
-function initImportDetail() {
-  const listView = document.getElementById('importListView');
-  if (listView) listView.style.display = 'none';
-
-  const detailView = document.getElementById('importDetailView');
-  if (detailView) detailView.style.display = '';
-
-  const heading = document.getElementById('importDetailHeading');
-  if (heading) heading.textContent = `import: ${window.JournalFormat.day(importDetailTimestamp.slice(0, 8))} · ${window.JournalFormat.segmentTime(importDetailTimestamp.slice(9))}`;
-
-  loadImportDetail();
-
-  const detailEventsCleanup = window.appEvents.listen('importer', { correlationKey: 'import_id' }, eventData => {
-    if (!IMPORT_ROW_EVENTS.has(eventData.event)) return;
-    if (eventData.import_id !== importDetailTimestamp) return;
-    loadImportDetail();
-  });
-
-  function openContentFromHash() {
-    if (window.location.hash !== '#content' || !detailView?.isConnected) return;
-    tabs.forEach(t => t.classList.toggle('active', t.dataset.target === 'content'));
-    contents.forEach(c => c.classList.toggle('active', c.id === 'content'));
-    if (!contentLoaded) loadContent(1);
-  }
-  window.addEventListener('hashchange', openContentFromHash);
-  openContentFromHash();
-
-  if (typeof window.addEventListener === 'function') {
-    const detailTeardown = () => {
-      if (typeof detailEventsCleanup === 'function') {
-        detailEventsCleanup();
-      }
-      if (typeof window.removeEventListener === 'function') {
-        window.removeEventListener('hashchange', openContentFromHash);
-      }
-    };
-    window.addEventListener('pagehide', detailTeardown);
-  }
-}
-
-window.loadContent = loadContent;
-window.toggleContentItem = toggleContentItem;
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initImportDetail);
-} else {
-  initImportDetail();
-}
-})();
-</script>
