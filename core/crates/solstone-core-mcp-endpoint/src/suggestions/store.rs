@@ -181,13 +181,7 @@ pub fn read_settings(journal_root: &Path) -> Result<SettingsRecord, StoreError> 
         }
         Err(err) => return Err(StoreError::Io { path, source: err }),
     };
-    serde_json::from_slice::<SettingsRecord>(&bytes).map_err(|err| {
-        log::warn!(
-            "suggestions: failed to deserialize {}: {err}",
-            path.display()
-        );
-        StoreError::CorruptSettings
-    })
+    serde_json::from_slice::<SettingsRecord>(&bytes).map_err(|_| StoreError::CorruptSettings)
 }
 
 pub fn write_settings(journal_root: &Path, settings: &SettingsRecord) -> Result<(), StoreError> {
@@ -199,10 +193,6 @@ pub fn write_settings(journal_root: &Path, settings: &SettingsRecord) -> Result<
             source: err,
         })?;
         if serde_json::from_slice::<SettingsRecord>(&bytes).is_err() {
-            log::warn!(
-                "suggestions: refusing to overwrite corrupt {}",
-                path.display()
-            );
             return Err(StoreError::CorruptSettings);
         }
     }
@@ -261,10 +251,8 @@ pub fn read_record(journal_root: &Path, id: &str) -> Result<Option<SuggestionRec
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(err) => return Err(StoreError::Io { path, source: err }),
     };
-    let record = serde_json::from_slice::<SuggestionRecord>(&bytes).map_err(|err| {
-        log::warn!("suggestions: corrupt record at {}: {err}", path.display());
-        StoreError::CorruptRecord(path)
-    })?;
+    let record = serde_json::from_slice::<SuggestionRecord>(&bytes)
+        .map_err(|_| StoreError::CorruptRecord(path))?;
     if record.id != id || record.schema != super::SUGGESTION_SCHEMA {
         return Err(StoreError::CorruptRecord(record_path(journal_root, id)));
     }

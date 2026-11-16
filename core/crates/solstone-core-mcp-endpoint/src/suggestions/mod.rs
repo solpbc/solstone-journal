@@ -6,6 +6,7 @@ pub mod store;
 pub mod submit;
 
 #[cfg(all(test, feature = "full-tests"))]
+#[path = "suggestion_tests.rs"]
 mod tests;
 
 pub const SUGGESTION_SCHEMA: u32 = 1;
