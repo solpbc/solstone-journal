@@ -4407,8 +4407,9 @@ function updateEnvStatus(fieldId, isJournalConfigured, isSystemConfigured) {
 async function revalidateAllKeys() {
   const btn = document.getElementById('revalidateAllKeys');
   const status = document.getElementById('revalidateStatus');
-  if (!btn || !status) return;
-  btn.disabled = true;
+  if (!btn || !status || window.SolFocus.isBusy(btn)) return;
+  // Busy, not disabled, so focus stays on the button while the check is out.
+  window.SolFocus.setBusy(btn, true);
   status.textContent = 'validating…';
   status.className = 'key-status-validating';
   try {
@@ -4429,7 +4430,7 @@ async function revalidateAllKeys() {
     status.textContent = 'error: ' + err.message;
     status.className = 'key-status-invalid';
   } finally {
-    btn.disabled = false;
+    window.SolFocus.setBusy(btn, false);
   }
 }
 document.getElementById('revalidateAllKeys').addEventListener('click', revalidateAllKeys);
