@@ -1234,5 +1234,43 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(!p.notices.some((notice) => notice.icon === 'circle-x'), 'and no failure notice follows a cleanup that ran');
   });
 
+  await test('a press on the gone markup after settings has gone starts no write', async () => {
+    const p = await boot(env, '/app/settings/#apikeys');
+    const gone = p.byId('revalidateAllKeys');
+    p.leave();
+    gone.click();
+    await settle();
+    assert.strictEqual(p.writes().length, 0, 'no write from a gone control');
+  });
+
+  await test("a write's failure that answers after settings has gone says nothing", async () => {
+    const p = await boot(env, '/app/settings/#facets');
+    p.holds.push((call) => call.method === 'POST' && call.url === '/app/settings/api/facet');
+    p.press(p.qa('.facets-list-action')[0]);
+    await settle();
+    p.byId('facetCreateName').value = 'lab late';
+    p.doc.dispatch(p.byId('facetCreateForm'), { type: 'submit' });
+    await settle();
+    const create = p.calls.find((call) => call.method === 'POST' && call.url === '/app/settings/api/facet');
+    assert.ok(create && !create.settled, 'the create is out');
+    p.leave();
+    create.answer({ error: 'facet already exists' }, 400);
+    await settle();
+    assert.strictEqual(p.notices.length, 0, 'no failure notice once settings has gone');
+    assert.deepStrictEqual(p.loads, []);
+  });
+
+  await test('a plain read out when settings goes is cut too', async () => {
+    const p = makePage(env, '/app/settings/#facets');
+    p.holds.push((call) => call.url === '/app/settings/api/facets?all=true');
+    p.loadScripts();
+    p.place();
+    await p.mount();
+    const read = p.calls.find((call) => call.url === '/app/settings/api/facets?all=true');
+    assert.ok(read && read.kind === 'fetch' && !read.settled, 'the facets read is out');
+    p.leave();
+    assert.ok(read.aborted, 'aborted with the view');
+  });
+
   return cases;
 };
