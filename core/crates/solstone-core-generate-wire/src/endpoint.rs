@@ -4,7 +4,6 @@
 //! Bring-your-own local endpoint generation.
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -12,9 +11,6 @@ use regex::Regex;
 use serde_json::{Map, Value};
 use solstone_core_generate::GenerateRequest;
 use solstone_core_journal_config::work_priority::WorkPriority;
-use solstone_core_local::admission::{
-    AdmissionError, LocalSlotPermit, acquire_local_slot, admission_dir,
-};
 use solstone_core_local::{
     ByoEndpoint, HttpResponse, InputBudget, RequestBudget, Usage, build_messages,
     build_request_body, count_image_parts, fit_contents_with_overflow, parse_response,
@@ -148,12 +144,41 @@ impl EndpointTransport for UreqEndpointTransport {
     }
 }
 
-#[derive(Default)]
 pub struct EndpointRuntime {
     brain_observation: Option<solstone_core_brain::BrainObservationSink>,
     served_windows: Mutex<ServedWindowCache>,
     attestation_state: AttestationStateStore,
-    confidential_channels: crate::pool::ConfidentialChannelPool,
+    confidential_channels: std::sync::Arc<crate::pool::ConfidentialChannelPool>,
+}
+
+/// Channels one process may hold at once: the call whose turn it is, a
+/// connection check, which never waits in the call line, and calls whose
+/// callers left mid-call, which finish beside the next.
+const SHARED_CONFIDENTIAL_CHANNELS: usize = 4;
+
+/// Every runtime in a process shares one confidential channel pool, so calls
+/// taking turns in the call line reuse one attested connection.
+fn shared_confidential_channels() -> std::sync::Arc<crate::pool::ConfidentialChannelPool> {
+    static POOL: std::sync::OnceLock<std::sync::Arc<crate::pool::ConfidentialChannelPool>> =
+        std::sync::OnceLock::new();
+    std::sync::Arc::clone(POOL.get_or_init(|| {
+        std::sync::Arc::new(crate::pool::ConfidentialChannelPool::new(
+            SHARED_CONFIDENTIAL_CHANNELS,
+            std::sync::Arc::new(crate::pool::SystemPoolClock),
+        ))
+    }))
+}
+
+impl Default for EndpointRuntime {
+    /// A runtime on this process's shared confidential channel pool.
+    fn default() -> Self {
+        Self {
+            brain_observation: None,
+            served_windows: Mutex::default(),
+            attestation_state: AttestationStateStore::default(),
+            confidential_channels: shared_confidential_channels(),
+        }
+    }
 }
 
 impl EndpointRuntime {
@@ -171,7 +196,6 @@ impl EndpointRuntime {
 
 pub fn endpoint_generate(
     request: &GenerateRequest,
-    journal_path: &Path,
     endpoint: &ByoEndpoint,
     config: &Map<String, Value>,
     runtime: &EndpointRuntime,
@@ -179,7 +203,6 @@ pub fn endpoint_generate(
     let mut transport = UreqEndpointTransport;
     endpoint_generate_with(
         request,
-        journal_path,
         endpoint,
         config,
         runtime,
@@ -190,7 +213,6 @@ pub fn endpoint_generate(
 
 pub(crate) fn endpoint_generate_with_context(
     request: &GenerateRequest,
-    journal_path: &Path,
     endpoint: &ByoEndpoint,
     config: &Map<String, Value>,
     runtime: &EndpointRuntime,
@@ -200,7 +222,6 @@ pub(crate) fn endpoint_generate_with_context(
     let mut unpublished = None;
     let result = endpoint_generate_internal_with_context(
         request,
-        journal_path,
         endpoint,
         config,
         runtime,
@@ -219,7 +240,6 @@ pub(crate) fn endpoint_generate_with_context(
 
 pub fn endpoint_generate_with<T: EndpointTransport>(
     request: &GenerateRequest,
-    journal_path: &Path,
     endpoint: &ByoEndpoint,
     config: &Map<String, Value>,
     runtime: &EndpointRuntime,
@@ -228,7 +248,6 @@ pub fn endpoint_generate_with<T: EndpointTransport>(
 ) -> EndpointResult {
     endpoint_generate_internal(
         request,
-        journal_path,
         endpoint,
         config,
         runtime,
@@ -241,7 +260,6 @@ pub fn endpoint_generate_with<T: EndpointTransport>(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn endpoint_generate_internal<T: EndpointTransport>(
     request: &GenerateRequest,
-    journal_path: &Path,
     endpoint: &ByoEndpoint,
     config: &Map<String, Value>,
     runtime: &EndpointRuntime,
@@ -256,7 +274,6 @@ pub(crate) fn endpoint_generate_internal<T: EndpointTransport>(
     let mut unpublished = None;
     let result = endpoint_generate_internal_with_context(
         request,
-        journal_path,
         endpoint,
         config,
         runtime,
@@ -277,7 +294,6 @@ pub(crate) fn endpoint_generate_internal<T: EndpointTransport>(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn endpoint_generate_internal_with_context<T: EndpointTransport>(
     request: &GenerateRequest,
-    journal_path: &Path,
     endpoint: &ByoEndpoint,
     config: &Map<String, Value>,
     runtime: &EndpointRuntime,
@@ -356,20 +372,6 @@ pub(crate) fn endpoint_generate_internal_with_context<T: EndpointTransport>(
         return failure("local_capacity_exhausted");
     }
     let response = {
-        let _permit = if endpoint.is_confidential {
-            None
-        } else {
-            match acquire_endpoint_slot(
-                journal_path,
-                endpoint,
-                request.exclusive_admission,
-                admission_timeout,
-                context.priority,
-            ) {
-                Ok(permit) => Some(permit),
-                Err(reason_code) => return failure(reason_code),
-            }
-        };
         let mut refits = 0u32;
         let mut window = served_window;
         loop {
@@ -553,9 +555,8 @@ fn prepare_endpoint_request(
     let clamped_max_tokens = max_tokens.min(room);
     let request_budget = Some(RequestBudget {
         window,
-        // Confidential calls create a fresh attested channel, not a
-        // shared local endpoint slot; this only records budget metadata.
-        slots: endpoint.parallel_slots.unwrap_or(1),
+        // Every call takes its turn in the journal's one call line.
+        slots: 1,
         estimated_prompt_tokens,
         image_tokens,
         clamped_max_tokens,
@@ -577,27 +578,6 @@ fn prepare_endpoint_request(
         ),
         input_budget,
         request_budget,
-    })
-}
-
-fn acquire_endpoint_slot(
-    journal_path: &Path,
-    endpoint: &ByoEndpoint,
-    exclusive_admission: bool,
-    timeout: Duration,
-    priority: WorkPriority,
-) -> Result<LocalSlotPermit, &'static str> {
-    acquire_local_slot(
-        &admission_dir(journal_path),
-        // Confidential calls have no shared local admission resource.
-        endpoint.parallel_slots.unwrap_or(1),
-        Some(timeout),
-        exclusive_admission,
-        priority,
-    )
-    .map_err(|error| match error {
-        AdmissionError::Timeout => "local_queue_timeout",
-        AdmissionError::Io(_) => "provider_response_invalid",
     })
 }
 
@@ -762,15 +742,17 @@ pub(crate) fn terminal_request_rejection(body: &str) -> RequestRejection {
 }
 
 impl EndpointRuntime {
+    /// A runtime with a private channel pool of its own, apart from the
+    /// process's shared one.
     pub fn new(max_in_flight: usize) -> Self {
         Self {
             brain_observation: None,
             served_windows: Mutex::new(HashMap::new()),
             attestation_state: AttestationStateStore::new(),
-            confidential_channels: crate::pool::ConfidentialChannelPool::new(
+            confidential_channels: std::sync::Arc::new(crate::pool::ConfidentialChannelPool::new(
                 max_in_flight,
                 std::sync::Arc::new(crate::pool::SystemPoolClock),
-            ),
+            )),
         }
     }
 
@@ -783,7 +765,10 @@ impl EndpointRuntime {
             brain_observation: None,
             served_windows: Mutex::new(HashMap::new()),
             attestation_state: AttestationStateStore::new(),
-            confidential_channels: crate::pool::ConfidentialChannelPool::new(max_in_flight, clock),
+            confidential_channels: std::sync::Arc::new(crate::pool::ConfidentialChannelPool::new(
+                max_in_flight,
+                clock,
+            )),
         }
     }
 
@@ -937,10 +922,7 @@ fn endpoint_request(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Condvar};
-    use std::thread;
 
     use serde_json::json;
     use solstone_core_generate::{ContentPart, ReasonCodeValue};
@@ -948,50 +930,6 @@ mod tests {
     use super::*;
 
     static NEXT_JOURNAL: AtomicUsize = AtomicUsize::new(0);
-
-    #[derive(Default)]
-    struct GateState {
-        current: u32,
-        peak: u32,
-        release: bool,
-        records: Vec<(Value, Duration, bool)>,
-    }
-
-    struct AdmissionGate {
-        inner: Mutex<GateState>,
-        entered: Condvar,
-        released: Condvar,
-    }
-
-    struct GateEntry<'a> {
-        gate: &'a AdmissionGate,
-    }
-
-    impl Drop for GateEntry<'_> {
-        fn drop(&mut self) {
-            let mut state = match self.gate.inner.lock() {
-                Ok(state) => state,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            state.current = state.current.saturating_sub(1);
-            self.gate.entered.notify_all();
-        }
-    }
-
-    struct ReleaseOnDrop {
-        gate: Arc<AdmissionGate>,
-    }
-
-    impl Drop for ReleaseOnDrop {
-        fn drop(&mut self) {
-            let mut state = match self.gate.inner.lock() {
-                Ok(state) => state,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            state.release = true;
-            self.gate.released.notify_all();
-        }
-    }
 
     #[derive(Clone, Default)]
     struct StubTransport {
@@ -1001,7 +939,6 @@ mod tests {
         posts: Vec<Value>,
         get_credentials: Vec<Option<String>>,
         post_credentials: Vec<Option<String>>,
-        gate: Option<Arc<AdmissionGate>>,
     }
 
     impl EndpointTransport for StubTransport {
@@ -1026,30 +963,10 @@ mod tests {
             _path: &str,
             body: &Value,
             credential: Option<&str>,
-            timeout: Duration,
+            _timeout: Duration,
         ) -> Result<HttpResponse, EndpointTransportError> {
             self.posts.push(body.clone());
             self.post_credentials.push(credential.map(str::to_owned));
-            let _entry = self.gate.as_ref().map(|gate| {
-                {
-                    let mut state = gate.inner.lock().expect("admission gate lock");
-                    state.current += 1;
-                    state.peak = state.peak.max(state.current);
-                    let after_release = state.release;
-                    state.records.push((body.clone(), timeout, after_release));
-                    if state.current == 2 {
-                        gate.entered.notify_all();
-                    }
-                }
-                let entry = GateEntry { gate };
-                {
-                    let mut state = gate.inner.lock().expect("admission gate lock");
-                    while !state.release {
-                        state = gate.released.wait(state).expect("admission gate wait");
-                    }
-                }
-                entry
-            });
             if !self.post_script.is_empty() {
                 return self.post_script.remove(0);
             }
@@ -1112,7 +1029,6 @@ mod tests {
             base_url: base_url.to_owned(),
             served_model_id: "served".into(),
             credential: None,
-            parallel_slots: Some(1),
             is_confidential: false,
             is_bundled: false,
         }
@@ -1201,7 +1117,6 @@ mod tests {
         let config = json!({"providers":{"local":{"served_context_window":32_768}}});
         let result = endpoint_generate_with(
             &input,
-            &journal,
             &endpoint("http://endpoint"),
             config.as_object().unwrap(),
             &runtime,
@@ -1276,7 +1191,6 @@ mod tests {
             };
             endpoint_generate_with(
                 &request,
-                &journal,
                 &endpoint,
                 &config,
                 &runtime,
@@ -1366,18 +1280,6 @@ mod tests {
         }
     }
 
-    fn wait_ticket_names(journal: &Path) -> BTreeSet<String> {
-        std::fs::read_dir(admission_dir(journal))
-            .map(|entries| {
-                entries
-                    .filter_map(Result::ok)
-                    .filter_map(|entry| entry.file_name().into_string().ok())
-                    .filter(|name| name.starts_with("wait-") && name.ends_with(".ticket"))
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
     #[test]
     fn zero_or_absent_request_timeout_uses_the_default() {
         for timeout_s in [None, Some(0.0)] {
@@ -1396,7 +1298,6 @@ mod tests {
         };
         let result = endpoint_generate_with(
             &request(None),
-            &journal,
             &endpoint("http://endpoint"),
             &Map::new(),
             &runtime,
@@ -1455,7 +1356,6 @@ mod tests {
         assert!(matches!(
             endpoint_generate_with(
                 &wide,
-                &journal,
                 &endpoint_a,
                 &Map::new(),
                 &runtime,
@@ -1470,7 +1370,6 @@ mod tests {
         assert!(matches!(
             endpoint_generate_with(
                 &wide,
-                &journal,
                 &endpoint_a,
                 &Map::new(),
                 &runtime,
@@ -1485,7 +1384,6 @@ mod tests {
         assert!(matches!(
             endpoint_generate_with(
                 &wide,
-                &journal,
                 &endpoint_b,
                 &Map::new(),
                 &runtime,
@@ -1501,7 +1399,6 @@ mod tests {
         assert!(matches!(
             endpoint_generate_with(
                 &wide,
-                &journal,
                 &endpoint_other,
                 &Map::new(),
                 &runtime,
@@ -1518,7 +1415,6 @@ mod tests {
         assert!(matches!(
             endpoint_generate_with(
                 &wide,
-                &journal,
                 &endpoint_a,
                 &Map::new(),
                 &runtime,
@@ -1537,7 +1433,6 @@ mod tests {
         assert!(matches!(
             endpoint_generate_with(
                 &wide,
-                &journal,
                 &endpoint_a,
                 &Map::new(),
                 &runtime,
@@ -1571,7 +1466,6 @@ mod tests {
         };
         let result = endpoint_generate_with(
             &request,
-            &journal,
             &endpoint("http://endpoint"),
             &served_window_config(),
             &runtime,
@@ -1626,7 +1520,6 @@ mod tests {
             };
             let result = endpoint_generate_with(
                 &request(None),
-                &journal,
                 &target,
                 &served_window_config(),
                 &runtime,
@@ -1658,7 +1551,6 @@ mod tests {
         };
         let result = endpoint_generate_with(
             &request(None),
-            &journal,
             &endpoint("http://endpoint"),
             &served_window_config(),
             &runtime,
@@ -1693,7 +1585,6 @@ mod tests {
         assert!(matches!(
             endpoint_generate_with(
                 &request(None),
-                &journal,
                 &endpoint("http://endpoint"),
                 &served_window_config(),
                 &runtime,
@@ -1725,7 +1616,6 @@ mod tests {
         assert!(matches!(
             endpoint_generate_with(
                 &request(None),
-                &journal,
                 &endpoint("http://endpoint"),
                 &served_window_config(),
                 &runtime,
@@ -1762,7 +1652,6 @@ mod tests {
         assert_eq!(
             endpoint_generate_with(
                 &request(None),
-                &journal,
                 &endpoint("http://endpoint"),
                 &config,
                 &runtime,
@@ -1799,7 +1688,6 @@ mod tests {
         assert!(matches!(
             endpoint_generate_with(
                 &oversized,
-                &journal,
                 &endpoint("http://endpoint"),
                 &served_window_config(),
                 &runtime,
@@ -1836,7 +1724,6 @@ mod tests {
         };
         let _ = endpoint_generate_with(
             &oversized,
-            &journal,
             &endpoint("http://endpoint"),
             &served_window_config(),
             &runtime,
@@ -1857,7 +1744,6 @@ mod tests {
         assert!(matches!(
             endpoint_generate_with(
                 &oversized,
-                &journal,
                 &endpoint("http://endpoint"),
                 &served_window_config(),
                 &runtime,
@@ -1955,7 +1841,6 @@ mod tests {
         };
         let EndpointResult::Generated(generated) = endpoint_generate_with(
             &long_day,
-            &journal,
             &endpoint("http://endpoint"),
             &Map::new(),
             &runtime,
@@ -1989,7 +1874,6 @@ mod tests {
         let journal = journal_path();
         let _ = endpoint_generate_with(
             &request(None),
-            &journal,
             &endpoint("http://endpoint"),
             &config,
             &runtime,
@@ -2019,7 +1903,6 @@ mod tests {
         let journal = journal_path();
         let _ = endpoint_generate_with(
             &request(None),
-            &journal,
             &endpoint("http://endpoint"),
             &served_window_config(),
             &runtime,
@@ -2065,7 +1948,6 @@ mod tests {
         assert!(matches!(
             endpoint_generate_with(
                 &request(None),
-                &journal,
                 &endpoint("http://endpoint"),
                 &served_window_config(),
                 &runtime,
@@ -2102,7 +1984,6 @@ mod tests {
         assert!(matches!(
             endpoint_generate_with(
                 &oversized,
-                &journal,
                 &endpoint("http://endpoint"),
                 &served_window_config(),
                 &runtime,
@@ -2135,7 +2016,6 @@ mod tests {
         assert_eq!(
             endpoint_generate_with(
                 &request(None),
-                &journal,
                 &endpoint("http://endpoint"),
                 &served_window_config(),
                 &runtime,
@@ -2168,7 +2048,6 @@ mod tests {
         };
         let result = endpoint_generate_with(
             &request(None),
-            &journal,
             &endpoint("http://endpoint"),
             &served_window_config(),
             &runtime,
@@ -2221,7 +2100,6 @@ mod tests {
             };
             let EndpointResult::Generated(generated) = endpoint_generate_with(
                 &request,
-                &journal,
                 &endpoint,
                 &Map::new(),
                 &runtime,
@@ -2232,7 +2110,6 @@ mod tests {
             };
             let EndpointResult::Failed(failed) = endpoint_generate_with(
                 &request,
-                &journal,
                 &endpoint,
                 &Map::new(),
                 &runtime,
@@ -2332,7 +2209,6 @@ mod tests {
         };
         let result = endpoint_generate_with(
             &request(None),
-            &journal,
             &endpoint("http://endpoint"),
             &served_window_config(),
             &runtime,
@@ -2457,7 +2333,6 @@ mod tests {
             };
             let result = endpoint_generate_with(
                 &request(None),
-                &journal,
                 &endpoint("http://endpoint"),
                 &served_window_config(),
                 &runtime,
@@ -2500,7 +2375,6 @@ mod tests {
         assert_eq!(
             endpoint_generate_with(
                 &request(None),
-                &journal,
                 &endpoint("http://endpoint"),
                 &served_window_config(),
                 &runtime,
@@ -2526,7 +2400,6 @@ mod tests {
         assert_eq!(
             endpoint_generate_with(
                 &request(None),
-                &journal,
                 &endpoint("http://endpoint"),
                 &served_window_config(),
                 &runtime,
@@ -2545,7 +2418,6 @@ mod tests {
         assert_eq!(
             endpoint_generate_with(
                 &request(None),
-                &journal,
                 &endpoint("http://endpoint"),
                 &served_window_config(),
                 &runtime,
@@ -2557,224 +2429,6 @@ mod tests {
             ),
             failure("local_capacity_exhausted")
         );
-        let _ = std::fs::remove_dir_all(journal);
-    }
-
-    #[test]
-    fn confidential_endpoint_does_not_create_a_local_admission_directory() {
-        let runtime = EndpointRuntime::default();
-        let journal = journal_path();
-        let endpoint = ByoEndpoint {
-            parallel_slots: None,
-            is_confidential: true,
-            ..endpoint("http://endpoint")
-        };
-        let mut transport = StubTransport {
-            post_script: vec![Ok(response())],
-            ..Default::default()
-        };
-
-        assert!(matches!(
-            endpoint_generate_with(
-                &request(None),
-                &journal,
-                &endpoint,
-                &served_window_config(),
-                &runtime,
-                &mut transport,
-                Instant::now(),
-            ),
-            EndpointResult::Generated(_)
-        ));
-        assert!(!admission_dir(&journal).exists());
-        let _ = std::fs::remove_dir_all(journal);
-    }
-
-    #[test]
-    fn admission_limits_concurrency_and_spends_queued_timeout() {
-        let journal = journal_path();
-        let cleanup_journal = journal.clone();
-        let endpoint = ByoEndpoint {
-            parallel_slots: Some(2),
-            ..endpoint("http://endpoint")
-        };
-        let config = served_window_config();
-        let timeout_s = Some(10.0);
-        let gate = Arc::new(AdmissionGate {
-            inner: Mutex::new(GateState::default()),
-            entered: Condvar::new(),
-            released: Condvar::new(),
-        });
-        let _release = ReleaseOnDrop {
-            gate: Arc::clone(&gate),
-        };
-        let template = StubTransport {
-            post_script: vec![Ok(response())],
-            gate: Some(Arc::clone(&gate)),
-            ..Default::default()
-        };
-        let mut workers = Vec::new();
-        for label in ["w1", "w2"] {
-            let journal = journal.clone();
-            let endpoint = endpoint.clone();
-            let mut request = request(timeout_s);
-            request.contents = vec![ContentPart::Text { text: label.into() }];
-            let config = config.clone();
-            let mut transport = template.clone();
-            workers.push(thread::spawn(move || {
-                endpoint_generate_with(
-                    &request,
-                    &journal,
-                    &endpoint,
-                    &config,
-                    &EndpointRuntime::default(),
-                    &mut transport,
-                    Instant::now(),
-                )
-            }));
-        }
-        {
-            let deadline = Instant::now() + Duration::from_secs(30);
-            let mut state = gate.inner.lock().expect("admission gate lock");
-            while state.current < 2 {
-                let left = deadline.saturating_duration_since(Instant::now());
-                if left.is_zero() || workers.iter().any(|worker| worker.is_finished()) {
-                    drop(state);
-                    let finished: Vec<_> = workers
-                        .into_iter()
-                        .filter(|worker| worker.is_finished())
-                        .map(|worker| worker.join().expect("join endpoint worker"))
-                        .collect();
-                    panic!("both workers did not reach the endpoint; finished early: {finished:?}");
-                }
-                state = gate
-                    .entered
-                    .wait_timeout(state, left)
-                    .expect("admission gate wait")
-                    .0;
-            }
-        }
-        let before = wait_ticket_names(&journal);
-        let journal_w3 = journal.clone();
-        let endpoint_w3 = endpoint.clone();
-        let mut request_w3 = request(timeout_s);
-        request_w3.contents = vec![ContentPart::Text { text: "w3".into() }];
-        let config_w3 = config.clone();
-        let mut transport_w3 = template.clone();
-        workers.push(thread::spawn(move || {
-            endpoint_generate_with(
-                &request_w3,
-                &journal_w3,
-                &endpoint_w3,
-                &config_w3,
-                &EndpointRuntime::default(),
-                &mut transport_w3,
-                Instant::now(),
-            )
-        }));
-        while wait_ticket_names(&journal)
-            .difference(&before)
-            .next()
-            .is_none()
-        {
-            thread::yield_now();
-        }
-        {
-            let mut state = gate.inner.lock().expect("admission gate lock");
-            state.release = true;
-            gate.released.notify_all();
-        }
-        for worker in workers {
-            assert!(matches!(
-                worker.join().expect("join endpoint worker"),
-                EndpointResult::Generated(_)
-            ));
-        }
-        let state = gate.inner.lock().expect("admission gate lock");
-        assert_eq!(state.peak, 2, "peak admission depth: {}", state.peak);
-        let after_release = |label: &str| {
-            state
-                .records
-                .iter()
-                .find(|(body, _, _)| body.to_string().contains(label))
-                .map(|(_, _, after)| *after)
-                .expect("labeled post")
-        };
-        assert!(!after_release("w1"));
-        assert!(!after_release("w2"));
-        assert!(after_release("w3"));
-        let queued = state
-            .records
-            .iter()
-            .find(|(body, _, _)| body.to_string().contains("w3"))
-            .map(|(_, timeout, _)| *timeout)
-            .expect("labeled post");
-        assert!(
-            queued < request_timeout(timeout_s, 0),
-            "queued post timeout {queued:?} was not reduced from {:?}",
-            request_timeout(timeout_s, 0)
-        );
-        let _ = std::fs::remove_dir_all(cleanup_journal);
-    }
-
-    #[test]
-    fn transport_timeout_releases_admission_for_the_next_request() {
-        let journal = journal_path();
-        let config = served_window_config();
-        let permit = acquire_local_slot(
-            &admission_dir(&journal),
-            1,
-            Some(Duration::from_secs(2)),
-            false,
-            WorkPriority::default(),
-        )
-        .expect("held permit");
-        assert_eq!(
-            endpoint_generate_with(
-                &request(Some(0.05)),
-                &journal,
-                &endpoint("http://endpoint"),
-                &config,
-                &EndpointRuntime::default(),
-                &mut StubTransport {
-                    post_script: vec![Ok(response())],
-                    ..Default::default()
-                },
-                Instant::now(),
-            ),
-            failure("local_queue_timeout")
-        );
-        drop(permit);
-        assert_eq!(
-            endpoint_generate_with(
-                &request(Some(10.0)),
-                &journal,
-                &endpoint("http://endpoint"),
-                &config,
-                &EndpointRuntime::default(),
-                &mut StubTransport {
-                    post_script: vec![Err(EndpointTransportError::Capacity)],
-                    ..Default::default()
-                },
-                Instant::now(),
-            ),
-            failure("local_capacity_exhausted")
-        );
-        assert!(matches!(
-            endpoint_generate_with(
-                &request(Some(10.0)),
-                &journal,
-                &endpoint("http://endpoint"),
-                &config,
-                &EndpointRuntime::default(),
-                &mut StubTransport {
-                    post_script: vec![Ok(response())],
-                    ..Default::default()
-                },
-                Instant::now(),
-            ),
-            EndpointResult::Generated(_)
-        ));
         let _ = std::fs::remove_dir_all(journal);
     }
 }

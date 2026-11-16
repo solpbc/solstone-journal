@@ -265,7 +265,7 @@ fn acceptance_19_concurrent_and_refresh_recovery() {
 
     let _ = fs::remove_dir_all(journal1);
 
-    // Subtest 2: 401 on T1, holds responses until 6 arrive, then 401s, then 200s T2 with sample
+    // Subtest 2: 401 on T1 for each call, then 200s on T2; the six calls share one refresh
     let journal2 = configured_journal("acceptance-19-2");
     let listener2 = TcpListener::bind("127.0.0.1:0").expect("bind listener");
     let port2 = listener2.local_addr().expect("local addr").port();
@@ -317,19 +317,16 @@ fn acceptance_19_concurrent_and_refresh_recovery() {
                 );
                 let _ = stream.write_all(resp.as_bytes());
             } else if req_str.contains("bearer-t1") {
-                let mut reqs = t1_requests_clone.lock().unwrap();
-                reqs.push(stream);
-                if reqs.len() == 6 {
-                    for mut s in reqs.drain(..) {
-                        let body = r#"{"error":{"message":"unauthorized","code":"invalid_token"}}"#;
-                        let resp = format!(
-                            "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                            body.len(),
-                            body
-                        );
-                        let _ = s.write_all(resp.as_bytes());
-                    }
-                }
+                // Calls take turns in the journal's call line, so T1 requests
+                // arrive one at a time: each is refused as it comes.
+                t1_requests_clone.lock().unwrap().push(());
+                let body = r#"{"error":{"message":"unauthorized","code":"invalid_token"}}"#;
+                let resp = format!(
+                    "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(resp.as_bytes());
             } else if req_str.contains("bearer-t2") {
                 let sse_body = "data: {\"type\":\"response.output_item.done\",\"item\":{\"content\":[{\"type\":\"output_text\",\"text\":\"plan says hello\"}]}}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"model\":\"gpt-test\"}}\n\n";
                 let resp = format!(
@@ -381,6 +378,11 @@ fn acceptance_19_concurrent_and_refresh_recovery() {
     let g2 = grants2.load(Ordering::SeqCst);
     println!("Acceptance 19 part 2 token grant count: {g2}");
     assert_eq!(g2, 2, "Token stub saw grant count {g2}, expected 2");
+    assert_eq!(
+        t1_requests.lock().unwrap().len(),
+        1,
+        "only the first call used the refused token; the rest used the refreshed one"
+    );
 
     let _ = fs::remove_dir_all(journal2);
 }

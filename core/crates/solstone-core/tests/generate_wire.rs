@@ -2094,7 +2094,6 @@ fn confidential_channel_failure_uses_attestation_failed_vector() {
         base_url: format!("http://127.0.0.1:{port}"),
         served_model_id: "served".into(),
         credential: Some("token".into()),
-        parallel_slots: None,
         is_bundled: false,
         is_confidential: true,
     };
@@ -2190,7 +2189,6 @@ fn planted_nvattest_locations_are_never_executed_or_mutated() {
             base_url: format!("http://127.0.0.1:{port}"),
             served_model_id: "served".into(),
             credential: Some("token".into()),
-            parallel_slots: None,
             is_bundled: false,
             is_confidential: true,
         };
@@ -2260,7 +2258,6 @@ fn planted_nvattest_locations_are_never_executed_or_mutated() {
             base_url: format!("http://127.0.0.1:{port}"),
             served_model_id: "served".into(),
             credential: Some("token".into()),
-            parallel_slots: None,
             is_bundled: false,
             is_confidential: true,
         };

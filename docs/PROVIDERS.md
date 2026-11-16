@@ -133,7 +133,6 @@ A configured endpoint uses:
 - `providers.local.endpoint_url`
 - `providers.local.served_model_id`
 - `providers.local.credential` (optional)
-- `providers.local.parallel_slots` (optional)
 - `providers.local.served_context_window` (optional; see
   [Output and Context Budgets](#output-and-context-budgets))
 
@@ -231,19 +230,25 @@ Bundled local fits against the window its own server was launched with, and
 confidential processing against the service's own 262,144. Neither reads
 `served_context_window`, which describes the owner's endpoint only.
 
-## Local Admission
+## Model-Call Line
 
-Bundled local and non-confidential arbitrary endpoints share the governed local
-[admission boundary](../core/crates/solstone-core-local/src/admission.rs). Cloud
-and confidential processing do not use this local slot pool. The
-[tier contract](../core/crates/solstone-core-local/src/tier.rs) keeps capacity
-intentionally small: one slot on the floor tier and two on the capable tier.
-An arbitrary endpoint may instead set `parallel_slots` explicitly.
+Every engine's Generate calls take turns in one line per journal, the
+[model-call line](../core/crates/solstone-core-local/src/admission.rs): one call
+at a time across every journal process, best priority first. It uses `flock`
+ticket files under `health/model-calls/`. Waiting in the line has no deadline
+and takes nothing from the call's own timeout; a cancelled caller leaves it.
+Only the owner's provider test and the health check go straight through.
 
-Admission uses per-slot `flock` files under
-`health/local-inference-admission/`, coordinating independent journal
-processes. Queue time consumes the caller's existing timeout. The local lane
-holds admission during a Generate request and releases it on success or failure.
+Confidential calls also share one attested connection per journal. The
+supervisor keeps it, and a Generate process hands its confidential call to the
+supervisor over the owner-only `health/generate.sock` instead of attesting a
+channel of its own. Without the supervisor's socket a call connects directly.
+
+Bundled local inference also holds the local device lock under
+`health/local-inference-admission/`, which on-device transcription and model
+startup share. The [tier contract](../core/crates/solstone-core-local/src/tier.rs)
+sizes the bundled server: one slot on the floor tier and two on the capable
+tier. `providers.local.parallel_slots` is no longer read.
 
 Generate responses carry inference timing, capacity, retry index, finish reason
 and safe failure codes. Historical `health/local-inference/YYYYMMDD.jsonl`

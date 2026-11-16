@@ -109,7 +109,8 @@ pub fn describe_per_proc_jobs(
         return 10;
     }
     let slots = match resolve_local_endpoint(config) {
-        LocalEndpointResolution::Byo(endpoint) => endpoint.parallel_slots,
+        // An endpoint's calls take turns in the journal's one call line.
+        LocalEndpointResolution::Byo(_) => Some(1),
         LocalEndpointResolution::Bundled => Some(bundled_slots(journal)),
     };
     slots.map_or(10, |slots| {
@@ -173,11 +174,11 @@ mod tests {
         );
     }
     #[test]
-    fn local_byo_fanout_is_sized() {
-        let c = json!({"providers":{"active":{"provider":"local"},"local":{"endpoint_url":"http://x","served_model_id":"x","parallel_slots":2}}});
+    fn local_byo_fanout_keeps_one_call_waiting_behind_the_running_one() {
+        let c = json!({"providers":{"active":{"provider":"local"},"local":{"endpoint_url":"http://x","served_model_id":"x","parallel_slots":4}}});
         assert_eq!(
             describe_per_proc_jobs(c.as_object().unwrap(), 1, Path::new("/unused")),
-            4
+            2
         );
     }
 }

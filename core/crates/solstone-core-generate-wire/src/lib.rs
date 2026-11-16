@@ -4,6 +4,7 @@
 //! Pure request, lane, response, and usage-log logic for the generate wire.
 
 mod anthropic;
+mod broker;
 mod bundled;
 pub mod chatgpt;
 mod confidential;
@@ -29,6 +30,9 @@ pub use anthropic::{
     AnthropicFailure, AnthropicGenerated, AnthropicResult, AnthropicTransport,
     UreqAnthropicTransport, anthropic_generate,
 };
+#[cfg(unix)]
+pub use broker::ConfidentialBroker;
+pub use broker::broker_socket_path;
 pub use bundled::{
     BundledError, LOCAL_MODEL_ID, bundled_generate, bundled_generate_with_authority, bundled_input,
 };

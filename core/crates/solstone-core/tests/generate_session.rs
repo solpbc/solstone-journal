@@ -178,6 +178,15 @@ impl LocalStub {
         wait_for_path(&self.state.observed_path);
     }
 
+    fn observed_ids(&self) -> BTreeSet<String> {
+        self.state
+            .gates
+            .lock()
+            .expect("stub gates")
+            .observed_ids
+            .clone()
+    }
+
     fn wait_for_observed_ids(&self, expected: &[&str]) {
         let expected = expected
             .iter()
@@ -662,8 +671,10 @@ fn session_terminal_drains_simultaneous_completions_into_whole_usage_lines() {
     for index in 0..4 {
         write_request(&mut session.stdin, &request(&format!("request-{index}")));
     }
-    stub.wait_for_observed_ids(&["request-0", "request-1", "request-2", "request-3"]);
-    assert_eq!(stub.maximum_depth(), 4);
+    // Requests take turns in the journal's call line: one reaches the model.
+    stub.wait_for_observed();
+    thread::sleep(Duration::from_millis(200));
+    assert_eq!(stub.maximum_depth(), 1);
     stub.release();
     write_terminal(&mut session.stdin);
     drop(session.stdin);
@@ -680,6 +691,7 @@ fn session_terminal_drains_simultaneous_completions_into_whole_usage_lines() {
         .read_to_string(&mut stderr)
         .expect("read session stderr");
     assert!(stderr.is_empty(), "session stderr: {stderr}");
+    assert_eq!(stub.maximum_depth(), 1);
     let token_lines = journal.token_log_lines();
     assert_eq!(token_lines.len(), 4);
     for line in token_lines {
@@ -696,8 +708,9 @@ fn session_accepts_two_held_requests_and_preserves_response_ids() {
     let mut session = raw_session(&journal, 2);
     write_request(&mut session.stdin, &request("alpha"));
     write_request(&mut session.stdin, &request("beta"));
-    stub.wait_for_observed_ids(&["alpha", "beta"]);
-    assert_eq!(stub.maximum_depth(), 2);
+    stub.wait_for_observed();
+    thread::sleep(Duration::from_millis(200));
+    assert_eq!(stub.maximum_depth(), 1, "the second waits its turn");
 
     stub.release();
     write_terminal(&mut session.stdin);
@@ -723,24 +736,36 @@ fn session_accepts_two_held_requests_and_preserves_response_ids() {
 }
 
 #[test]
-fn session_delivers_out_of_order_completions_by_request_id() {
+fn session_delivers_each_completion_by_request_id_as_calls_take_turns() {
     let stub = LocalStub::start(true);
     let journal = Journal::bundled_local(false);
     journal.set_port(stub.port);
     let mut session = raw_session(&journal, 2);
     write_request(&mut session.stdin, &request("first"));
     write_request(&mut session.stdin, &request("second"));
-    stub.wait_for_observed_ids(&["first", "second"]);
+    // Whichever took its turn first is answered first, by its own id.
+    stub.wait_for_observed();
+    let leading = stub
+        .observed_ids()
+        .into_iter()
+        .next()
+        .expect("one observed");
+    let trailing = if leading == "first" {
+        "second"
+    } else {
+        "first"
+    };
+    stub.release_request(&leading);
+    let answered = generated(read_response(&mut session.stdout));
+    assert_eq!(answered.id.as_deref(), Some(leading.as_str()));
+    assert_eq!(answered.text, stub_text(&leading));
 
-    stub.release_request("second");
-    let second = generated(read_response(&mut session.stdout));
-    assert_eq!(second.id.as_deref(), Some("second"));
-    assert_eq!(second.text, stub_text("second"));
-
-    stub.release_request("first");
-    let first = generated(read_response(&mut session.stdout));
-    assert_eq!(first.id.as_deref(), Some("first"));
-    assert_eq!(first.text, stub_text("first"));
+    stub.wait_for_observed_ids(&[trailing]);
+    stub.release_request(trailing);
+    let answered = generated(read_response(&mut session.stdout));
+    assert_eq!(answered.id.as_deref(), Some(trailing));
+    assert_eq!(answered.text, stub_text(trailing));
+    assert_eq!(stub.maximum_depth(), 1);
     write_terminal(&mut session.stdin);
     drop(session.stdin);
     assert!(wait_for_exit(&mut session.child).success());
@@ -800,8 +825,8 @@ fn malformed_line_aborts_two_held_requests_without_output_or_usage() {
     let mut session = raw_session(&journal, 2);
     write_request(&mut session.stdin, &request("first"));
     write_request(&mut session.stdin, &request("second"));
-    stub.wait_for_observed_ids(&["first", "second"]);
-    assert_eq!(stub.maximum_depth(), 2);
+    stub.wait_for_observed();
+    assert_eq!(stub.maximum_depth(), 1);
     session
         .stdin
         .write_all(b"not-json\n")
@@ -826,7 +851,7 @@ fn one_internal_failure_aborts_three_request_session_without_partial_output() {
     let mut session = raw_session(&journal, 3);
     write_request(&mut session.stdin, &request("held-first"));
     write_request(&mut session.stdin, &request("held-second"));
-    stub.wait_for_observed_ids(&["held-first", "held-second"]);
+    stub.wait_for_observed();
     journal.set_corrupt_config();
     write_request(&mut session.stdin, &request("broken-config"));
 
@@ -845,7 +870,7 @@ fn concurrent_requests_keep_their_own_usage_and_hints() {
     let mut session = raw_session(&journal, 2);
     write_request(&mut session.stdin, &request_with_attempt("plain", 0));
     write_request(&mut session.stdin, &request_with_attempt("retried", 1));
-    stub.wait_for_observed_ids(&["plain", "retried"]);
+    stub.wait_for_observed();
     stub.release();
     write_terminal(&mut session.stdin);
     drop(session.stdin);

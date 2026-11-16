@@ -76,7 +76,6 @@ fn cross_boundary_loopback_400_to_capped_daily_unit_with_detail() {
         base_url: format!("http://127.0.0.1:{port}"),
         served_model_id: "test-model".into(),
         credential: None,
-        parallel_slots: Some(1),
         is_confidential: false,
         is_bundled: false,
     };
@@ -102,9 +101,8 @@ fn cross_boundary_loopback_400_to_capped_daily_unit_with_detail() {
         .unwrap()
         .clone();
     let runtime = solstone_core_generate_wire::EndpointRuntime::default();
-    let result = solstone_core_generate_wire::endpoint_generate(
-        &request, root, &endpoint, &config, &runtime,
-    );
+    let result =
+        solstone_core_generate_wire::endpoint_generate(&request, &endpoint, &config, &runtime);
     let solstone_core_generate_wire::EndpointResult::Failed(failure) = result else {
         panic!("expected failure from 400 endpoint");
     };

@@ -38,11 +38,7 @@ pub async fn get(journal_root: PathBuf) -> Response {
 
 /// A partial update keeps the other condition and its unspecified fields.
 fn merge_processing(target: &mut Map<String, Value>, patch: &Map<String, Value>) {
-    for key in [
-        "mode",
-        "history_confirmed",
-        solstone_core_journal_config::processing::CONFIDENTIAL_HISTORY_REST,
-    ] {
+    for key in ["mode", "history_confirmed"] {
         if let Some(value) = patch.get(key) {
             target.insert(key.into(), value.clone());
         }
@@ -929,8 +925,6 @@ mod tests {
             (json!({"mode":"unknown"}), 400),
             (json!({"history_confirmed":true}), 200),
             (json!({"history_confirmed":"true"}), 400),
-            (json!({"confidential_history_rest_seconds":30}), 200),
-            (json!({"confidential_history_rest_seconds":"30"}), 400),
             (json!({"gate":{"display_powersave":{"enabled":"yes"}}}), 400),
         ] {
             let before = std::fs::read(&path).unwrap();
@@ -963,10 +957,6 @@ mod tests {
             serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
                 .unwrap();
         assert_eq!(public["processing"]["history_confirmed"], true);
-        assert_eq!(
-            public["processing"]["confidential_history_rest_seconds"],
-            30
-        );
         assert_eq!(
             public["processing"]["gate"]["time_window"]["start"],
             "23:00"

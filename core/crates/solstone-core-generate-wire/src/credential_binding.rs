@@ -45,7 +45,7 @@ pub(crate) enum ManagedAdmission {
     Allow,
 }
 
-const CANNED_TEXT: &str = "Reply with the single word OK.";
+pub(crate) const CANNED_TEXT: &str = "Reply with the single word OK.";
 
 pub(crate) fn canned_probe(request: &GenerateRequest) -> bool {
     let context_matches = request.context == "settings.cloud.validate_key"

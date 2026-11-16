@@ -4,7 +4,6 @@
 //! Spending permission is independent of which work is owed and its priority.
 
 use std::path::Path;
-use std::time::Duration;
 
 use serde_json::{Map, Value};
 use solstone_core_journal_config::work_priority::WorkBand;
@@ -21,8 +20,6 @@ pub enum ThinkingLane {
 pub struct WorkPolicy {
     pub lane: ThinkingLane,
     pub history_confirmed: bool,
-    /// The owner's pause between confidential history tasks; zero by default.
-    pub confidential_history_rest: Duration,
 }
 
 impl WorkPolicy {
@@ -75,18 +72,9 @@ impl WorkPolicy {
             .and_then(|v| v.get("history_confirmed"))
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        let confidential_history_rest = Duration::from_secs(
-            processing
-                .and_then(|v| {
-                    v.get(solstone_core_journal_config::processing::CONFIDENTIAL_HISTORY_REST)
-                })
-                .and_then(Value::as_u64)
-                .unwrap_or(0),
-        );
         Ok(Self {
             lane,
             history_confirmed,
-            confidential_history_rest,
         })
     }
 
@@ -169,21 +157,6 @@ mod tests {
     }
 
     #[test]
-    fn confidential_history_rest_defaults_to_zero_and_reads_whole_seconds() {
-        let rest = |processing: serde_json::Value| {
-            let config = json!({ "processing": processing });
-            WorkPolicy::from_config(config.as_object().unwrap())
-                .unwrap()
-                .confidential_history_rest
-        };
-        assert_eq!(rest(json!({})), Duration::ZERO);
-        assert_eq!(
-            rest(json!({"confidential_history_rest_seconds": 45})),
-            Duration::from_secs(45)
-        );
-    }
-
-    #[test]
     fn malformed_endpoint_or_permission_never_grants_local_spending() {
         for local in [
             json!(null),
@@ -199,7 +172,6 @@ mod tests {
             json!({"providers":{"active":{"provider":true}}}),
             json!({"services":{"confidential":false}}),
             json!({"processing":{"history_confirmed":"true"}}),
-            json!({"processing":{"confidential_history_rest_seconds":"30"}}),
         ] {
             assert!(WorkPolicy::from_config(config.as_object().unwrap()).is_err());
         }

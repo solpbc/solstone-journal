@@ -3448,17 +3448,14 @@ mod tests {
         let local = WorkPolicy {
             lane: ThinkingLane::Bundled,
             history_confirmed: false,
-            confidential_history_rest: std::time::Duration::ZERO,
         };
         let own_keys = WorkPolicy {
             lane: ThinkingLane::OwnKeys,
             history_confirmed: false,
-            confidential_history_rest: std::time::Duration::ZERO,
         };
         let confidential = WorkPolicy {
             lane: ThinkingLane::Confidential,
             history_confirmed: false,
-            confidential_history_rest: std::time::Duration::ZERO,
         };
         let mut selected = Vec::new();
         for (day, expected) in [

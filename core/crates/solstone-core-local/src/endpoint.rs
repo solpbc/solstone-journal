@@ -5,8 +5,6 @@
 
 use serde_json::{Map, Value};
 
-const DEFAULT_BYO_PARALLEL_SLOTS: u32 = 2;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LocalEndpointResolution {
     Bundled,
@@ -18,7 +16,6 @@ pub struct ByoEndpoint {
     pub base_url: String,
     pub served_model_id: String,
     pub credential: Option<String>,
-    pub parallel_slots: Option<u32>,
     pub is_confidential: bool,
     pub is_bundled: bool,
 }
@@ -32,7 +29,6 @@ impl std::fmt::Debug for ByoEndpoint {
                 "credential",
                 &self.credential.as_ref().map(|_| "[redacted]"),
             )
-            .field("parallel_slots", &self.parallel_slots)
             .field("is_confidential", &self.is_confidential)
             .field("is_bundled", &self.is_bundled)
             .finish()
@@ -64,11 +60,6 @@ pub fn resolve_local_endpoint(config: &Map<String, Value>) -> LocalEndpointResol
         .and_then(Value::as_object)
         .and_then(|services| services.get("confidential"))
         .is_some_and(Value::is_object);
-    let parallel_slots = if is_confidential {
-        None
-    } else {
-        Some(configured_byo_parallel_slots(local))
-    };
     LocalEndpointResolution::Byo(ByoEndpoint {
         base_url: normalize_endpoint_url(endpoint_url),
         served_model_id: served_model_id.to_owned(),
@@ -77,7 +68,6 @@ pub fn resolve_local_endpoint(config: &Map<String, Value>) -> LocalEndpointResol
             .and_then(Value::as_str)
             .filter(|credential| !credential.is_empty())
             .map(ToOwned::to_owned),
-        parallel_slots,
         is_confidential,
         is_bundled: false,
     })
@@ -116,25 +106,6 @@ pub fn served_window_from_models_response(data: &Value, served_model_id: &str) -
         .get("max_model_len")
         .and_then(Value::as_u64)
         .and_then(|window| u32::try_from(window).ok())
-}
-
-fn configured_byo_parallel_slots(local: Option<&Map<String, Value>>) -> u32 {
-    let Some(value) = local.and_then(|local| local.get("parallel_slots")) else {
-        return DEFAULT_BYO_PARALLEL_SLOTS;
-    };
-    let slots = value
-        .as_u64()
-        .and_then(|slots| u32::try_from(slots).ok())
-        .filter(|slots| *slots >= 1);
-    match slots {
-        Some(slots) => slots,
-        None => {
-            eprintln!(
-                "invalid providers.local.parallel_slots ({value}); defaulting to {DEFAULT_BYO_PARALLEL_SLOTS}"
-            );
-            DEFAULT_BYO_PARALLEL_SLOTS
-        }
-    }
 }
 
 fn normalize_endpoint_url(value: &str) -> String {
@@ -184,33 +155,6 @@ mod tests {
                 LocalEndpointResolution::Bundled
             );
         }
-    }
-
-    #[test]
-    fn byo_parallel_slots_default_unless_confidential() {
-        for value in [None, Some(json!(0)), Some(json!(true)), Some(json!("2"))] {
-            let mut config_value = local_config(json!("https://endpoint"), json!("served"));
-            if let Some(value) = value {
-                config_value["providers"]["local"]["parallel_slots"] = value;
-            }
-            let LocalEndpointResolution::Byo(endpoint) =
-                resolve_local_endpoint(&config(config_value))
-            else {
-                panic!("complete endpoint configuration must resolve to BYO");
-            };
-            assert!(!endpoint.is_confidential);
-            assert_eq!(endpoint.parallel_slots, Some(DEFAULT_BYO_PARALLEL_SLOTS));
-        }
-
-        let mut confidential = local_config(json!("https://endpoint"), json!("served"));
-        confidential["providers"]["local"]["parallel_slots"] = json!(0);
-        confidential["services"] = json!({"confidential": {}});
-        let LocalEndpointResolution::Byo(endpoint) = resolve_local_endpoint(&config(confidential))
-        else {
-            panic!("complete endpoint configuration must resolve to BYO");
-        };
-        assert!(endpoint.is_confidential);
-        assert_eq!(endpoint.parallel_slots, None);
     }
 
     #[test]
@@ -375,7 +319,6 @@ mod tests {
             base_url: "http://127.0.0.1:8080".into(),
             served_model_id: "model".into(),
             credential: Some("private-token-42".into()),
-            parallel_slots: Some(1),
             is_confidential: false,
             is_bundled: true,
         };

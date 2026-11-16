@@ -168,10 +168,6 @@ fn parse_time(value: Option<&str>) -> Option<NaiveTime> {
     value.and_then(|value| NaiveTime::parse_from_str(value, "%H:%M").ok())
 }
 
-/// Seconds confidential processing waits after a history task before starting
-/// the next. Absent means zero: the engine, not the journal, throttles.
-pub const CONFIDENTIAL_HISTORY_REST: &str = "confidential_history_rest_seconds";
-
 /// Reject malformed supplied fields, while absent fields retain their defaults.
 pub fn validate_processing(value: Option<&Value>) -> Result<(), String> {
     let Some(value) = value else { return Ok(()) };
@@ -186,14 +182,6 @@ pub fn validate_processing(value: Option<&Value>) -> Result<(), String> {
         && !matches!(mode.as_str(), Some("realtime" | "deferred"))
     {
         return Err("processing mode must be realtime or deferred".into());
-    }
-    if obj
-        .get(CONFIDENTIAL_HISTORY_REST)
-        .is_some_and(|value| value.as_u64().is_none())
-    {
-        return Err(format!(
-            "processing {CONFIDENTIAL_HISTORY_REST} must be a whole number of seconds"
-        ));
     }
     if let Some(gate) = obj.get("gate") {
         let gate = gate
@@ -343,17 +331,12 @@ mod tests {
             json!({"gate":{"time_window":{"enabled":1}}}),
             json!({"gate":{"time_window":{"start":"25:00"}}}),
             json!({"gate":{"time_window":{"end":"2:00"}}}),
-            json!({"confidential_history_rest_seconds":-1}),
-            json!({"confidential_history_rest_seconds":1.5}),
-            json!({"confidential_history_rest_seconds":"30"}),
-            json!({"confidential_history_rest_seconds":null}),
         ] {
             assert!(validate_processing(Some(&value)).is_err(), "{value}");
         }
-        for seconds in [0, 30] {
-            let value = json!({"confidential_history_rest_seconds": seconds});
-            assert!(validate_processing(Some(&value)).is_ok());
-        }
+        // The retired history rest is ignored wherever an older config left it.
+        let retired = json!({"confidential_history_rest_seconds":"30"});
+        assert!(validate_processing(Some(&retired)).is_ok());
         let config =
             json!({"processing":{"mode":"deferred","gate":{"time_window":{"start":"23:00"}}}});
         let settings = processing_settings(config.as_object().unwrap()).unwrap();

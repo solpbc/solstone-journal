@@ -887,7 +887,6 @@ mod tests {
         use solstone_core_generate_wire::{EndpointRuntime, endpoint_generate_with};
         use solstone_core_local::ByoEndpoint;
 
-        let temp_dir = tempfile::tempdir().expect("tempdir creates");
         let png_bytes = encode_png(Hue::Orange);
         let b64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
         let request = image_request(&b64);
@@ -907,7 +906,6 @@ mod tests {
             base_url: "http://127.0.0.1:8080".to_owned(),
             served_model_id: "vision-model".to_owned(),
             credential: None,
-            parallel_slots: Some(2),
             is_confidential: false,
             is_bundled: false,
         };
@@ -919,7 +917,6 @@ mod tests {
 
         let _ = endpoint_generate_with(
             &request,
-            temp_dir.path(),
             &endpoint,
             &config,
             &runtime,
@@ -970,7 +967,6 @@ mod tests {
         };
         let _ = endpoint_generate_with(
             &request,
-            temp_dir.path(),
             &endpoint,
             &config,
             &runtime,

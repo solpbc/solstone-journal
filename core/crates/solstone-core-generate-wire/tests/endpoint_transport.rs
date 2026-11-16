@@ -54,7 +54,6 @@ fn endpoint(base_url: &str) -> ByoEndpoint {
         base_url: base_url.to_owned(),
         served_model_id: "served".into(),
         credential: None,
-        parallel_slots: Some(1),
         is_confidential: false,
         is_bundled: false,
     }
@@ -194,7 +193,6 @@ fn accepted_then_closed_is_endpoint_unreachable() {
     let journal = journal_path();
     let result = endpoint_generate(
         &request(Some(0.2)),
-        &journal,
         &endpoint(&format!("http://{address}")),
         &served_window_config(),
         &EndpointRuntime::default(),
@@ -246,7 +244,6 @@ fn accepted_but_silent_is_capacity_exhausted_then_released_response_succeeds() {
     };
     let timed_out = endpoint_generate(
         &request(Some(0.2)),
-        &journal,
         &endpoint(&format!("http://{silent_addr}")),
         &config,
         &EndpointRuntime::default(),
@@ -270,7 +267,6 @@ fn accepted_but_silent_is_capacity_exhausted_then_released_response_succeeds() {
     });
     let generated = endpoint_generate(
         &request(Some(2.0)),
-        &journal,
         &endpoint(&format!("http://{live_addr}")),
         &config,
         &EndpointRuntime::default(),

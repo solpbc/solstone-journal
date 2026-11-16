@@ -47,6 +47,7 @@ pub fn respond(
             )?,
             cancellation,
         },
+        Turn::Wait { may_forward: true },
     )
 }
 
@@ -80,6 +81,8 @@ pub fn respond_with_config(
             )?,
             cancellation,
         },
+        // A caller's own configuration is not the supervisor's to serve.
+        Turn::Wait { may_forward: false },
     )
 }
 
@@ -136,6 +139,89 @@ pub fn respond_with_mobile_local_timeout(
         true,
         mobile_local_timeout,
         context,
+        Turn::Wait { may_forward: true },
+    )
+}
+
+/// Whether a call still waits for its turn in the journal's call line, or a
+/// caller elsewhere already holds that turn for it.
+#[derive(Clone, Copy)]
+enum Turn {
+    /// Wait in the line. A confidential call on the journal's own
+    /// configuration may then hand the call to the journal's supervisor.
+    Wait { may_forward: bool },
+    /// The supervisor serving a confidential call another process has taken
+    /// its turn for: waiting again would wait on that caller.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    Held,
+}
+
+/// Serve a confidential call handed over by a process that already holds its
+/// turn in the call line, on this process's one channel.
+#[cfg(unix)]
+pub(crate) fn respond_in_held_turn(
+    request: &solstone_core_generate::GenerateRequest,
+    endpoint_runtime: &crate::EndpointRuntime,
+    journal: &Path,
+    context: &GenerateCallContext<'_>,
+) -> Result<solstone_core_generate::GenerateResponse, String> {
+    let config = read_journal_config(journal)
+        .map_err(|error| format!("could not read journal config: {error}"))?
+        .config
+        .unwrap_or_default();
+    respond_config(
+        request,
+        endpoint_runtime,
+        journal,
+        &config,
+        |_| None,
+        false,
+        true,
+        None,
+        context,
+        Turn::Held,
+    )
+}
+
+/// Whether the supervisor, which reads the journal's saved configuration with
+/// no process overrides, would choose the same confidential engine.
+fn forwardable(config: &serde_json::Map<String, Value>, process_overrides: bool) -> bool {
+    use crate::overrides::{
+        API_KEY_OVERRIDE_ENV, BASE_URL_OVERRIDE_ENV, MODEL_OVERRIDE_ENV, PROVIDER_OVERRIDE_ENV,
+    };
+    !process_overrides
+        || ([
+            API_KEY_OVERRIDE_ENV,
+            BASE_URL_OVERRIDE_ENV,
+            MODEL_OVERRIDE_ENV,
+            PROVIDER_OVERRIDE_ENV,
+        ]
+        .iter()
+        .all(|name| crate::overrides::non_blank_process_env(name).is_none())
+            && matches!(
+                crate::lane::resolve_lane_with(config, |_| None).1,
+                crate::LaneOutcome::ConfidentialEndpoint(_)
+            ))
+}
+
+/// The owner's provider test and the health check: short calls that report
+/// whether an engine answers, not thinking.
+fn connection_check(request: &solstone_core_generate::GenerateRequest) -> bool {
+    crate::credential_binding::canned_probe(request)
+        || request.context == solstone_core_generate::HEALTH_BRAIN_GENERATE_CONTEXT
+}
+
+/// Whether this outcome reaches a model; refusals and missing engines do not.
+fn calls_a_model(outcome: &crate::LaneOutcome) -> bool {
+    matches!(
+        outcome,
+        crate::LaneOutcome::BundledLocal
+            | crate::LaneOutcome::ByoEndpoint(_)
+            | crate::LaneOutcome::ConfidentialEndpoint(_)
+            | crate::LaneOutcome::Anthropic
+            | crate::LaneOutcome::OpenAi
+            | crate::LaneOutcome::Google
+            | crate::LaneOutcome::ChatGpt
     )
 }
 
@@ -150,6 +236,7 @@ fn respond_config(
     admit_content: bool,
     mobile_local_timeout: Option<std::time::Duration>,
     context: &GenerateCallContext<'_>,
+    turn: Turn,
 ) -> Result<solstone_core_generate::GenerateResponse, String> {
     let cancellation = context.cancellation;
     if cancellation.is_cancelled() {
@@ -169,9 +256,40 @@ fn respond_config(
     };
     let routed_request = request_for_lane(request, &outcome, mobile_local_timeout);
     let request = routed_request.as_ref();
-    if !matches!(outcome, crate::LaneOutcome::ConfidentialEndpoint(_)) {
+    // Leaving confidential processing closes its idle connection; a check of
+    // another engine is not leaving it.
+    if !matches!(outcome, crate::LaneOutcome::ConfidentialEndpoint(_)) && !connection_check(request)
+    {
         endpoint_runtime.drain_idle_pool();
     }
+    // Every engine's call takes its turn in the journal's one call line, best
+    // priority first. Only connection checks go straight through, so a health
+    // check or a provider test never waits behind a long call.
+    let _turn = if matches!(turn, Turn::Wait { .. })
+        && calls_a_model(&outcome)
+        && !connection_check(request)
+    {
+        match solstone_core_local::admission::wait_for_model_call(
+            journal,
+            context.priority,
+            &|| cancellation.is_cancelled(),
+        ) {
+            Ok(turn) => Some(turn),
+            Err(solstone_core_local::admission::CheckedAdmissionError::Cancelled) => {
+                return Ok(solstone_core_generate::GenerateResponse::Cancelled);
+            }
+            // The line orders calls; it is no safety boundary. A journal whose
+            // line cannot be opened still makes its call, unordered.
+            Err(solstone_core_local::admission::CheckedAdmissionError::Admission(error)) => {
+                log::warn!(
+                    "model call line is unavailable, so this call runs unordered: {error:?}"
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
     let response = match outcome {
         crate::LaneOutcome::BundledLocal => {
             let mut authority = acquire_local_inference_authority(journal);
@@ -239,7 +357,6 @@ fn respond_config(
         crate::LaneOutcome::ByoEndpoint(endpoint) => endpoint_result_response(
             crate::endpoint::endpoint_generate_with_context(
                 request,
-                journal,
                 &endpoint,
                 config,
                 endpoint_runtime,
@@ -253,43 +370,54 @@ fn respond_config(
             cancellation,
         )?,
         crate::LaneOutcome::ConfidentialEndpoint(endpoint) => {
-            match crate::confidential::confidential_generate_with_context(
-                request,
-                journal,
-                &endpoint,
-                config,
-                endpoint_runtime,
-                context,
-            ) {
-                crate::ConfidentialResult::Generated(success) => endpoint_result_response(
-                    crate::EndpointResult::Generated(success),
+            // A Generate process hands its call to the journal's supervisor,
+            // which keeps the journal's one confidential connection.
+            let forwarded = (matches!(turn, Turn::Wait { may_forward: true })
+                && !connection_check(request)
+                && forwardable(config, process_overrides))
+            .then(|| crate::broker::forward(journal, request, context))
+            .flatten();
+            if let Some(response) = forwarded {
+                response?
+            } else {
+                match crate::confidential::confidential_generate_with_context(
                     request,
                     journal,
-                    &provider,
-                    request_id.clone(),
-                    cancellation,
-                )?,
-                crate::ConfidentialResult::Failed(failure) => endpoint_result_response(
-                    crate::EndpointResult::Failed(failure),
-                    request,
-                    journal,
-                    &provider,
-                    request_id.clone(),
-                    cancellation,
-                )?,
-                crate::ConfidentialResult::AttestationNotVerified(detail) => {
-                    solstone_core_generate::GenerateResponse::Refused(crate::refusal_for(
-                        &crate::LaneOutcome::AttestationNotVerified(detail),
+                    &endpoint,
+                    config,
+                    endpoint_runtime,
+                    context,
+                ) {
+                    crate::ConfidentialResult::Generated(success) => endpoint_result_response(
+                        crate::EndpointResult::Generated(success),
+                        request,
+                        journal,
                         &provider,
                         request_id.clone(),
-                    ))
-                }
-                crate::ConfidentialResult::AttestationFailed(detail) => {
-                    solstone_core_generate::GenerateResponse::Refused(crate::refusal_for(
-                        &crate::LaneOutcome::AttestationFailed(detail),
+                        cancellation,
+                    )?,
+                    crate::ConfidentialResult::Failed(failure) => endpoint_result_response(
+                        crate::EndpointResult::Failed(failure),
+                        request,
+                        journal,
                         &provider,
                         request_id.clone(),
-                    ))
+                        cancellation,
+                    )?,
+                    crate::ConfidentialResult::AttestationNotVerified(detail) => {
+                        solstone_core_generate::GenerateResponse::Refused(crate::refusal_for(
+                            &crate::LaneOutcome::AttestationNotVerified(detail),
+                            &provider,
+                            request_id.clone(),
+                        ))
+                    }
+                    crate::ConfidentialResult::AttestationFailed(detail) => {
+                        solstone_core_generate::GenerateResponse::Refused(crate::refusal_for(
+                            &crate::LaneOutcome::AttestationFailed(detail),
+                            &provider,
+                            request_id.clone(),
+                        ))
+                    }
                 }
             }
         }
@@ -820,6 +948,83 @@ mod tests {
     }
 
     #[test]
+    fn every_call_waits_its_turn_in_the_line_but_a_connection_check_does_not() {
+        let journal = std::env::temp_dir().join(format!(
+            "solstone-dispatch-line-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&journal).unwrap();
+        // An endpoint nothing serves: each call fails at once once it runs.
+        let config = json!({"providers":{"active":{"provider":"local"},"local":{
+            "endpoint_url":"http://127.0.0.1:9","served_model_id":"model"}}});
+        let config = config.as_object().unwrap().clone();
+        let holder = solstone_core_local::admission::wait_for_model_call(
+            &journal,
+            solstone_core_journal_config::work_priority::WorkPriority::default(),
+            &|| false,
+        )
+        .unwrap();
+        let call = |request: solstone_core_generate::GenerateRequest| {
+            let journal = journal.clone();
+            let config = config.clone();
+            std::thread::spawn(move || {
+                respond_with_config(
+                    &request,
+                    &crate::EndpointRuntime::new(1),
+                    &journal,
+                    &config,
+                    |_| None,
+                    &solstone_core_generate::Cancellation::never(),
+                )
+                .unwrap()
+            })
+        };
+        let mut thinking = request();
+        thinking.contents = vec![solstone_core_generate::ContentPart::Text {
+            text: "think".into(),
+        }];
+        // The owner's provider test, exactly as settings sends it.
+        let mut probe = request();
+        probe.context = "settings.cloud.validate_key".into();
+        probe.contents = vec![solstone_core_generate::ContentPart::Text {
+            text: crate::credential_binding::CANNED_TEXT.into(),
+        }];
+        probe.max_output_tokens = 512;
+        probe.transport_retries = Some(0);
+        assert!(connection_check(&probe));
+        let probe = call(probe);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !probe.is_finished() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a connection check must not wait in the line"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let checked = probe.join().unwrap();
+        let waiting = call(thinking);
+        assert!(matches!(
+            checked,
+            solstone_core_generate::GenerateResponse::Refused(_)
+        ));
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(
+            !waiting.is_finished(),
+            "a call waits while another holds the line"
+        );
+        drop(holder);
+        assert!(matches!(
+            waiting.join().unwrap(),
+            solstone_core_generate::GenerateResponse::Refused(_)
+        ));
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
     fn actual_lane_selects_the_mobile_allowance_and_keeps_the_base_request() {
         let credential = "test-credential";
         let confidential = json!({
@@ -909,6 +1114,7 @@ mod tests {
                 false,
                 allowance,
                 &context,
+                Turn::Wait { may_forward: false },
             )
             .unwrap()
         };
