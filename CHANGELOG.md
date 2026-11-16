@@ -61,7 +61,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- while photos of people catch up, older meetings still waiting for one are no longer read again every hour, and some older meeting recordings, in a video format earlier versions couldn't read, now get photos of people too.
+- while photos of people catch up, older meetings still waiting for one are no longer read again every hour.
 - importing an audio file from the command line on a computer without a graphics card could stop waiting after 30 seconds and report the import as still processing. it now waits longer for longer recordings.
 - the dashboard's confirmations and prompts now appear in the page, so actions such as unpairing a device or renaming an agent key work even when the app showing your journal doesn't draw browser dialogs.
 - on the agents and network pages, when the page refreshes itself and nothing has changed, it now stays as it is, so a screen reader no longer reads the button you're on again each time. when it refreshes with something new, what you're typing in the "your own domain" setup on agents stays as you typed it, and so does an address you type under "use a different address" on network. before, a refresh like that could empty or reset it, and on network, "apply" could then send your journal's old address instead of the one you typed. if going back on the agents page closes a box, focus now moves to the start of the page instead of being dropped.
