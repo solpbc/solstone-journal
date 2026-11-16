@@ -29,6 +29,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on linux, after an update that stopped part-way, `solstone update --check` and the status pane now say an update is still available, and running `solstone update` again finishes it. before, they could say your journal was up to date while the solstone app was still on its older version.
 - after you merge two entities, the activities that named the one you merged away now name the one you kept, not an internal id, and an activity that already named the one you kept lists it once.
 - a connected agent that may see entities now also finds, by name, the activities an earlier merge labelled with an internal id.
+- the speakers page no longer lists you under "known voices" when voice samples were saved to you, for example by merging another person into you. your own voice stays under "your voice".
 - new conversation could be treated as unchanged when it ran about as long as the one before it, so who said each line, and the people detected in it, weren't worked out for that stretch. any new speech now counts as a change.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.

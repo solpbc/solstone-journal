@@ -92,7 +92,12 @@ fn known_speakers(
         .filter_map(|(dir, entity)| {
             let entity_id = entity.id;
             let entity = entity.value;
-            if !is_admissible_speaker_entity(&entity) {
+            // The owner's own voice is the "your voice" section, from the
+            // owner profile. Samples on the owner's entity are not someone
+            // else's voice, so they never list here as a known speaker.
+            if !is_admissible_speaker_entity(&entity)
+                || solstone_core_entity::identity_is_principal(&entity)
+            {
                 return None;
             }
             let voiceprints = match load_voiceprints(
@@ -213,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn known_speakers_excludes_non_person_and_blocked_voiceprints() {
+    fn known_speakers_excludes_the_owner_non_person_and_blocked_voiceprints() {
         let root = std::env::temp_dir().join(format!(
             "solstone-known-speaker-admission-{}",
             SystemTime::now()
@@ -227,6 +232,10 @@ mod tests {
             (
                 "blocked",
                 json!({"id":"blocked","type":"Person","blocked":true}),
+            ),
+            (
+                "owner",
+                json!({"id":"owner","type":"Person","is_principal":true}),
             ),
         ] {
             let entity_dir = root.join("entities").join(id);
