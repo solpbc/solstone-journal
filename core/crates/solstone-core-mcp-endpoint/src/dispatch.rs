@@ -2650,7 +2650,7 @@ pub(crate) fn read_scoped_entities(
 }
 
 /// [`read_scoped_entities`] against one request's read of the identity map.
-fn read_scoped_entities_resolved(
+pub(crate) fn read_scoped_entities_resolved(
     journal_root: &Path,
     facet_dir: &str,
     identities: &solstone_core_facets::EntityIdentityMap,

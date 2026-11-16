@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
 use chrono::Offset;
@@ -17,7 +17,7 @@ use super::{
 };
 use crate::dispatch::{
     DispatchError, DispatchPrincipal, Prepared, available_facets, codec, entity_name, fold_literal,
-    read_scoped_entities,
+    read_scoped_entities, read_scoped_entities_resolved,
 };
 use crate::permissions::ConnectionReadSnapshot;
 use crate::references::{
@@ -680,7 +680,12 @@ pub(crate) fn execute_list(
             entity_id: String,
             folded_name: String,
         },
-        Literal(String),
+        /// Words a record's names contain, or the ids of the entities this
+        /// list reaches that the words name exactly.
+        Literal {
+            target: String,
+            entity_ids: HashSet<String>,
+        },
     }
 
     let entity_filter: Option<EntityFilter> = if let Some(ref entity_str) = request.entity {
@@ -738,7 +743,27 @@ pub(crate) fn execute_list(
                 folded_name: fold_literal(&entity_name(&item.identity)),
             })
         } else {
-            Some(EntityFilter::Literal(fold_literal(entity_str)))
+            let target = fold_literal(entity_str);
+            let mut entity_ids = HashSet::new();
+            // A record can name an entity by its id: merges before 2.0.82
+            // wrote the survivor's id where its name belonged. Words that are
+            // a reachable entity's name find those records too, and only for
+            // a connection that reads entities. An aka is never matched: it
+            // stays out of every answer.
+            if snapshot.categories.contains(&AdmittedCategory::Entities) {
+                // It reads every entity in the journal, so once for all facets.
+                let identities = solstone_core_facets::read_identity_map(journal_root)
+                    .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+                for (_, facet_dir, _) in &facets_to_search {
+                    for item in read_scoped_entities_resolved(journal_root, facet_dir, &identities)?
+                    {
+                        if fold_literal(&entity_name(&item.identity)) == target {
+                            entity_ids.insert(item.entity_id);
+                        }
+                    }
+                }
+            }
+            Some(EntityFilter::Literal { target, entity_ids })
         }
     } else {
         None
@@ -907,9 +932,10 @@ pub(crate) fn execute_list(
                     } => entities
                         .iter()
                         .any(|e| e == entity_id || fold_literal(e) == *folded_name),
-                    EntityFilter::Literal(target) => entities
-                        .iter()
-                        .any(|entity| fold_literal(entity).contains(target)),
+                    EntityFilter::Literal { target, entity_ids } => entities.iter().any(|entity| {
+                        entity_ids.contains(entity)
+                            || fold_literal(entity).contains(target.as_str())
+                    }),
                 });
                 let rec_identity =
                     crate::activity_admit::compute_record_identity(&record, &trimmed);

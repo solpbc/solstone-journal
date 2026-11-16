@@ -381,16 +381,23 @@ pub(crate) fn commit_entity_merge_with_injector(
                         stats.segments_files_scanned = result.files_scanned;
                     })
             }
-            "activities" => {
-                merge_activities(journal, source_id, target_id, Some(&mut rollback), injector).map(
-                    |result| {
-                        stats.activities_records_rewritten = result.records_rewritten;
-                        stats.activities_fields_rewritten = result.fields_rewritten;
-                        stats.activities_files_scanned = result.files_scanned;
-                        stats.activities_files_rewritten = result.files_rewritten;
-                    },
-                )
-            }
+            "activities" => merge_activities(
+                journal,
+                &ActivityNames {
+                    source_id,
+                    source_names: &plan.source_names,
+                    target_name: &plan.target_display_name,
+                },
+                target_id,
+                Some(&mut rollback),
+                injector,
+            )
+            .map(|result| {
+                stats.activities_records_rewritten = result.records_rewritten;
+                stats.activities_fields_rewritten = result.fields_rewritten;
+                stats.activities_files_scanned = result.files_scanned;
+                stats.activities_files_rewritten = result.files_rewritten;
+            }),
             "observation relation remap" => merge_observation_relations(
                 journal,
                 source_id,
@@ -556,15 +563,79 @@ pub(crate) struct ActivityMergeStats {
     pub records_rewritten: usize,
     pub fields_rewritten: usize,
 }
+/// How an activity record names the entity merged away. `active_entities`
+/// holds the names the talents wrote, not ids, so a record names the source
+/// by its id only when the two are the same word.
+pub(crate) struct ActivityNames<'a> {
+    pub source_id: &'a str,
+    /// The source's name.
+    pub source_names: &'a [String],
+    /// What a record names the survivor by from now on.
+    pub target_name: &'a str,
+}
+
+fn fold_name(name: &str) -> String {
+    name.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// Rename the source to the survivor in one record's `active_entities`, and
+/// keep the survivor once when the record already named it. Returns how many
+/// names were renamed; a record that doesn't name the source is left as is.
+fn rename_active_entities(active: &mut Vec<Value>, names: &ActivityNames) -> usize {
+    let source = std::iter::once(names.source_id)
+        .chain(names.source_names.iter().map(String::as_str))
+        .map(fold_name)
+        .filter(|name| !name.is_empty())
+        .collect::<HashSet<_>>();
+    let renamed = active
+        .iter()
+        .filter(|value| {
+            value
+                .as_str()
+                .is_some_and(|name| source.contains(&fold_name(name)))
+        })
+        .count();
+    if renamed == 0 {
+        return 0;
+    }
+    let mut seen = HashSet::new();
+    let target = fold_name(names.target_name);
+    *active = std::mem::take(active)
+        .into_iter()
+        .filter_map(|value| {
+            let Some(name) = value.as_str() else {
+                return Some(value);
+            };
+            let folded = fold_name(name);
+            let value = if source.contains(&folded) {
+                Value::String(names.target_name.to_owned())
+            } else {
+                value
+            };
+            let key = if source.contains(&folded) {
+                target.clone()
+            } else {
+                folded
+            };
+            seen.insert(key).then_some(value)
+        })
+        .collect();
+    renamed
+}
+
 pub(crate) fn merge_activities(
     journal: &Path,
-    source_id: &str,
+    names: &ActivityNames,
     target_id: &str,
     mut rollback: Option<&mut MergeRollback>,
     injector: Option<&FailureInjector>,
 ) -> Result<ActivityMergeStats, EntityMergeError> {
     let facets = contained_path(journal, "facets")
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+    let source_id = names.source_id;
     let mut stats = ActivityMergeStats::default();
     let mut artifact_index = 0;
     for facet in
@@ -594,13 +665,9 @@ pub(crate) fn merge_activities(
                         .get_mut("active_entities")
                         .and_then(Value::as_array_mut)
                     {
-                        for value in active.iter_mut() {
-                            if value.as_str() == Some(source_id) {
-                                *value = Value::String(target_id.to_owned());
-                                stats.fields_rewritten += 1;
-                                changed = true;
-                            }
-                        }
+                        let renamed = rename_active_entities(active, names);
+                        stats.fields_rewritten += renamed;
+                        changed |= renamed > 0;
                     }
                     for (container, keys) in [
                         ("participation", &["entity_id"][..]),
@@ -1159,6 +1226,8 @@ struct MergePlan {
     aliases_added: usize,
     emails_added: usize,
     source_display_name: String,
+    /// The source's name, as activity records wrote it.
+    source_names: Vec<String>,
     target_display_name: String,
     principal_transferred: bool,
 }
@@ -1234,6 +1303,14 @@ fn plan_merge(
     let mut alias_values = aliases_before.clone();
     let mut source_aliases = values(&source, "aka");
     alias_values.extend(source_aliases.iter().cloned());
+    // Not its akas: another entity can go by the same word, and a record
+    // naming that one must not become the survivor.
+    let source_names = source
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .into_iter()
+        .collect();
     if options.keep_source_as_aka
         && let Some(name) = source.get("name").and_then(Value::as_str)
     {
@@ -1294,6 +1371,7 @@ fn plan_merge(
         aliases_added: aliases.len().saturating_sub(aliases_before.len()),
         emails_added: emails.len().saturating_sub(emails_before.len()),
         source_display_name,
+        source_names,
         target_display_name,
         principal_transferred,
     })

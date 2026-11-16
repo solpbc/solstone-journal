@@ -9854,6 +9854,22 @@ fn list_activities_entity_filtering_and_tokens() {
     assert_eq!(acts_grace_part.len(), 1);
     assert_eq!(acts_grace_part[0]["title"], "Grace Activity");
 
+    // A record that names Ada by her id, as an older merge wrote it, is
+    // found by her name.
+    let res_ada_name = probe(
+        &journal,
+        "list_activities",
+        json!({
+            "day": "20260308",
+            "entity": "ada lovelace",
+        }),
+    )
+    .unwrap();
+    assert_no_leaked_keys(&res_ada_name);
+    let acts_ada_name = res_ada_name["activities"].as_array().unwrap();
+    assert_eq!(acts_ada_name.len(), 1);
+    assert_eq!(acts_ada_name[0]["title"], "Ada Activity");
+
     PermissionStore::open(journal.path())
         .set_permission(
             CONNECTION,
@@ -9875,6 +9891,18 @@ fn list_activities_entity_filtering_and_tokens() {
     .unwrap();
     assert_no_leaked_keys(&res_grace_no_ent);
     assert_eq!(res_grace_no_ent["activities"].as_array().unwrap().len(), 1);
+
+    // Without entities, a name is only the words a record holds.
+    let res_ada_no_ent = probe(
+        &journal,
+        "list_activities",
+        json!({
+            "day": "20260308",
+            "entity": "Ada Lovelace",
+        }),
+    )
+    .unwrap();
+    assert!(res_ada_no_ent["activities"].as_array().unwrap().is_empty());
 
     assert_eq!(
         probe(

@@ -1181,6 +1181,66 @@ fn a_damaged_owner_line_labels_file_naming_the_id_refuses_the_merge() {
 }
 
 #[test]
+fn a_merged_activity_names_the_survivor_by_name_and_once() {
+    let journal = voiceprint_journal();
+    save_entity_identity(
+        &journal,
+        "dvd",
+        &json!({"id":"dvd","name":"dvd","aka":["Dave V"],"emails":[]}),
+        None,
+    )
+    .unwrap();
+    save_entity_identity(
+        &journal,
+        "david_van_duzer",
+        &json!({"id":"david_van_duzer","name":"David Van Duzer","aka":[],"emails":[]}),
+        None,
+    )
+    .unwrap();
+    let named = journal.join("facets/work/activities/20260102.jsonl");
+    let untouched = journal.join("facets/work/activities/20260103.jsonl");
+    fs::create_dir_all(named.parent().unwrap()).unwrap();
+    fs::write(
+        &named,
+        concat!(
+            "{\"id\":\"a\",\"active_entities\":[\"dvd\"]}\n",
+            "{\"id\":\"b\",\"active_entities\":[\"David Van Duzer\",\"DVD\",\"Ann\"]}\n",
+            "{\"id\":\"c\",\"active_entities\":[\"Dvd\",\"Ann\"]}\n",
+        ),
+    )
+    .unwrap();
+    // An aka is not matched: another entity can go by the same word.
+    let ann = b"{\"id\":\"d\",\"active_entities\":[\"Dave V\",\"Ann\",\"ann\"]}\n";
+    fs::write(&untouched, ann).unwrap();
+    let report = commit_entity_merge(
+        &journal,
+        "dvd",
+        "david_van_duzer",
+        EntityMergeOptions::default(),
+    )
+    .unwrap();
+    let rows = fs::read_to_string(&named)
+        .unwrap()
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line).unwrap()["active_entities"].clone()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        rows,
+        vec![
+            json!(["David Van Duzer"]),
+            json!(["David Van Duzer", "Ann"]),
+            json!(["David Van Duzer", "Ann"]),
+        ]
+    );
+    assert_eq!(fs::read(&untouched).unwrap(), ann);
+    assert_eq!(report.counts["activities"]["records_rewritten"], 3);
+    assert_eq!(report.counts["activities"]["files_rewritten"], 1);
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
 fn commit_rewrites_activity_entity_references() {
     let journal = voiceprint_journal();
     let path = journal.join("facets/work/activities/20260102.jsonl");
