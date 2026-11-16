@@ -1071,7 +1071,6 @@ fn test_endpoint(port: u16) -> ByoEndpoint {
         base_url: format!("http://127.0.0.1:{port}"),
         served_model_id: "qwen-test".into(),
         credential: Some("token".into()),
-        parallel_slots: None,
         is_bundled: false,
         is_confidential: true,
     }
@@ -1187,13 +1186,13 @@ fn oracle_1_sequential_reuse_and_one_shot_runtimes() {
     assert_eq!(nonces1.len(), 1);
     let _ = fs::remove_dir_all(&journal_path1);
 
-    // New server and 3 separate EndpointRuntime::default() calls
+    // New server and 3 separate processes, each with a pool of its own
     let server2 = TestServer::spawn(AppScript::Ok("hello response".to_owned()));
     let endpoint2 = test_endpoint(server2.port);
     let journal_path2 = temp_journal("oracle_1_oneshot");
 
     for i in 1..=3 {
-        let rt = EndpointRuntime::default();
+        let rt = EndpointRuntime::new(1);
         let res = confidential_generate_attested(
             &request(&format!("req-oneshot-{i}")),
             &journal_path2,
@@ -1212,6 +1211,29 @@ fn oracle_1_sequential_reuse_and_one_shot_runtimes() {
     let nonces2: HashSet<_> = server2.nonces.lock().unwrap().iter().cloned().collect();
     assert_eq!(nonces2.len(), 3);
     let _ = fs::remove_dir_all(&journal_path2);
+
+    // Runtimes in one process share its pool: three calls, one channel. This is
+    // the only test here on the shared pool, so no other test drains it.
+    let server3 = TestServer::spawn(AppScript::Ok("hello response".to_owned()));
+    let endpoint3 = test_endpoint(server3.port);
+    let journal_path3 = temp_journal("oracle_1_shared");
+    for i in 1..=3 {
+        let res = confidential_generate_attested(
+            &request(&format!("req-shared-{i}")),
+            &journal_path3,
+            &endpoint3,
+            &config,
+            &EndpointRuntime::default(),
+            &AcceptingCompositeVerifier,
+        );
+        let ConfidentialResult::Generated(gen_resp) = res else {
+            panic!("expected generated");
+        };
+        assert_eq!(gen_resp.text, "hello response");
+    }
+    assert_eq!(server3.stats.prefaces_read.load(Ordering::SeqCst), 1);
+    assert_eq!(server3.stats.app_requests_read.load(Ordering::SeqCst), 3);
+    let _ = fs::remove_dir_all(&journal_path3);
 }
 
 #[test]
@@ -2133,7 +2155,7 @@ fn oracle_8_framing_does_not_reuse() {
             ],
             ..Default::default()
         });
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let endpoint = test_endpoint(server.port);
 
         let mut req1 = request("req-1");
@@ -2213,7 +2235,7 @@ fn oracle_8_framing_does_not_reuse() {
         ],
         ..Default::default()
     });
-    let runtime_cn = EndpointRuntime::default();
+    let runtime_cn = EndpointRuntime::new(1);
     let ep_cn = test_endpoint(server_cn.port);
 
     let res_cn1 = confidential_generate_attested(
@@ -2261,7 +2283,7 @@ fn oracle_8_framing_does_not_reuse() {
         ],
         ..Default::default()
     });
-    let runtime_part = EndpointRuntime::default();
+    let runtime_part = EndpointRuntime::new(1);
     let ep_part = test_endpoint(server_part.port);
 
     let res_p1 = confidential_generate_attested(
@@ -2329,7 +2351,7 @@ fn oracle_9_close_before_and_after_the_request() {
             ],
             ..Default::default()
         });
-        let runtime = EndpointRuntime::default();
+        let runtime = EndpointRuntime::new(1);
         let endpoint = test_endpoint(server.port);
 
         let res1 = confidential_generate_attested(
@@ -2370,7 +2392,7 @@ fn oracle_9_close_before_and_after_the_request() {
         }],
         ..Default::default()
     });
-    let runtime_head = EndpointRuntime::default();
+    let runtime_head = EndpointRuntime::new(1);
     let ep_head = test_endpoint(server_head.port);
 
     let res_warm = confidential_generate_attested(
@@ -2412,7 +2434,7 @@ fn oracle_9_close_before_and_after_the_request() {
         }],
         ..Default::default()
     });
-    let runtime_fresh = EndpointRuntime::default();
+    let runtime_fresh = EndpointRuntime::new(1);
     let ep_fresh = test_endpoint(server_fresh.port);
 
     let res_fresh = confidential_generate_attested(
@@ -2442,7 +2464,7 @@ fn oracle_9_close_before_and_after_the_request() {
         }],
         ..Default::default()
     });
-    let runtime_part = EndpointRuntime::default();
+    let runtime_part = EndpointRuntime::new(1);
     let ep_part = test_endpoint(server_part.port);
 
     let _ = confidential_generate_attested(
@@ -2470,7 +2492,7 @@ fn oracle_9_close_before_and_after_the_request() {
 #[test]
 fn oracle_10_no_bytes_on_refusal_and_drain() {
     let server = TestServer::spawn(AppScript::Ok("hello".to_owned()));
-    let runtime = EndpointRuntime::default();
+    let runtime = EndpointRuntime::new(1);
     let journal_path = temp_journal("oracle_10");
     let endpoint = test_endpoint(server.port);
     let config = Map::new();
@@ -2574,7 +2596,7 @@ fn oracle_11_disabled_resumption_full_handshake() {
         verify_count: verify_count.clone(),
     };
 
-    let rt1 = EndpointRuntime::default();
+    let rt1 = EndpointRuntime::new(1);
     let res1 = confidential_generate_attested(
         &request("req-1"),
         &journal_path,
@@ -2585,7 +2607,7 @@ fn oracle_11_disabled_resumption_full_handshake() {
     );
     assert!(matches!(res1, ConfidentialResult::Generated(_)));
 
-    let rt2 = EndpointRuntime::default();
+    let rt2 = EndpointRuntime::new(1);
     let res2 = confidential_generate_attested(
         &request("req-2"),
         &journal_path,
@@ -2616,7 +2638,7 @@ fn oracle_12_proof_surplus_fails_establishment() {
         },
         ..Default::default()
     });
-    let runtime1 = EndpointRuntime::default();
+    let runtime1 = EndpointRuntime::new(1);
     let ep1 = test_endpoint(server_surplus.port);
 
     let res1 = confidential_generate_attested(
@@ -2646,7 +2668,7 @@ fn oracle_12_proof_surplus_fails_establishment() {
         },
         ..Default::default()
     });
-    let runtime2 = EndpointRuntime::default();
+    let runtime2 = EndpointRuntime::new(1);
     let ep2 = test_endpoint(server_bare.port);
 
     let res2 = confidential_generate_attested(

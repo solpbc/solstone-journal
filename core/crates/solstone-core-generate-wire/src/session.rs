@@ -280,7 +280,8 @@ where
     Observe: Fn(usize, usize),
 {
     let aborting = Arc::new(AtomicBool::new(false));
-    let endpoint_runtime = Arc::new(EndpointRuntime::new(config.max_in_flight));
+    // Requests take turns in the journal's call line and share the process's channels.
+    let endpoint_runtime = Arc::new(EndpointRuntime::default());
     let (input_tx, input_rx) = mpsc::channel();
     let respond = Arc::new(host.respond);
     let fail = Arc::new(host.fail);

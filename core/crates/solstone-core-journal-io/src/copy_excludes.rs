@@ -47,6 +47,8 @@ pub const COPY_EXCLUDES: &[&str] = &[
     "health/callosum.pipe-*",
     "health/parakeet-cpp.placement",
     "health/scheduler.json",
+    // The model-call line's waiting tickets belong to this computer's processes.
+    "health/model-calls",
     "health/**/*.sock",
     "health/**/*.pid",
     "health/**/*.port",
@@ -229,6 +231,8 @@ mod tests {
             "health/brain-fingerprint.key",
             "health/whole-journal-restore.json",
             "health/callosum.sock",
+            "health/generate.sock",
+            "health/model-calls/wait-1-00000000000000000001-00000000000000000001-a.ticket",
             "health/callosum.pipe-secret",
             "health/supervisor.process_instance",
             "health/parent-loss/active-generation.json",

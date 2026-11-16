@@ -104,7 +104,6 @@ mod tests {
                     base_url: "https://endpoint".into(),
                     served_model_id: "served".into(),
                     credential: None,
-                    parallel_slots: None,
                     is_confidential: true,
                     is_bundled: false,
                 }),
@@ -116,7 +115,6 @@ mod tests {
                     base_url: "https://endpoint".into(),
                     served_model_id: "served".into(),
                     credential: None,
-                    parallel_slots: Some(2),
                     is_confidential: false,
                     is_bundled: false,
                 }),
@@ -210,7 +208,6 @@ mod tests {
                     base_url: "https://service.example".into(),
                     served_model_id: "served".into(),
                     credential: None,
-                    parallel_slots: None,
                     is_confidential: true,
                     is_bundled: false,
                 })

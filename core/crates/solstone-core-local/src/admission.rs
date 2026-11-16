@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Cross-process priority admission: bundled local inference's slots, and the
-//! one slot older confidential calls share.
+//! Cross-process priority admission: the journal's one model-call line, and
+//! the local device lock that bundled inference, transcription and startup share.
 
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use solstone_core_journal_config::work_priority::WorkPriority;
 use uuid::Uuid;
@@ -81,126 +81,43 @@ pub fn admission_dir(journal_path: &Path) -> PathBuf {
     journal_path.join("health/local-inference-admission")
 }
 
-/// The engine sends no retry interval, so a failed older confidential call
-/// pauses older work for at least this long. It is the journal's own backoff.
-const FAILURE_PAUSE: Duration = Duration::from_secs(60);
-/// No pause is longer. One that ends further away than this was left by a
-/// clock that has since moved back, and must not stall older work for days.
-const LONGEST_PAUSE: Duration = Duration::from_secs(3600);
-const PAUSE_FILE: &str = "next-call.json";
-
-fn confidential_background_dir(journal_path: &Path) -> PathBuf {
-    journal_path.join("health/confidential-background")
+/// The journal's one line for model calls, apart from the local device lock.
+pub fn model_call_line_dir(journal_path: &Path) -> PathBuf {
+    journal_path.join("health/model-calls")
 }
 
-/// Run one confidential model call. Foreground calls run at once. Older calls
-/// share the journal's one background slot, waiting for it within `timeout`,
-/// and a failed one pauses older work. Nothing here sleeps but the slot wait:
-/// the task queue starts older work only once [`confidential_background_open`],
-/// so the pause spaces older tasks. The rest of a task already running is not
-/// held by it: holding it would hold that task's lane.
-pub fn run_confidential_call<T>(
-    journal_path: &Path,
-    priority: WorkPriority,
-    timeout: Duration,
-    call: impl FnOnce(Duration) -> T,
-    failed: impl FnOnce(&T) -> bool,
-) -> Result<T, String> {
-    run_confidential_call_checked(journal_path, priority, timeout, &|| Ok(()), call, failed)
+/// A turn in the journal's model-call line. Dropping it starts the next call.
+#[derive(Debug)]
+pub struct ModelCallTurn {
+    /// How long this call waited for its turn.
+    pub waited: Duration,
+    _permit: LocalSlotPermit,
 }
 
-pub fn run_confidential_call_checked<T>(
+/// Wait for this journal's one model-call turn. Every engine's calls take
+/// turns here, one at a time across every process, best priority first, so an
+/// interactive call is next whenever it waits. The wait has no deadline and is
+/// no part of a call's own timeout: it ends when the turn comes or `cancelled`
+/// answers true. A process that exits leaves the line with its lock.
+pub fn wait_for_model_call(
     journal_path: &Path,
     priority: WorkPriority,
-    timeout: Duration,
-    checkpoint: &dyn Fn() -> Result<(), String>,
-    call: impl FnOnce(Duration) -> T,
-    failed: impl FnOnce(&T) -> bool,
-) -> Result<T, String> {
-    checkpoint()?;
-    if !priority.band.is_background() {
-        return Ok(call(timeout));
-    }
-    let waiting = Instant::now();
-    let root = confidential_background_dir(journal_path);
-    let _permit = acquire_local_slot(&root, 1, Some(timeout), false, priority)
-        .map_err(|error| format!("confidential background admission: {error:?}"))?;
-    checkpoint()?;
-    let remaining = timeout
-        .checked_sub(waiting.elapsed())
-        .filter(|remaining| !remaining.is_zero())
-        .ok_or("confidential background wait exhausted the request timeout")?;
+    cancelled: &dyn Fn() -> bool,
+) -> Result<ModelCallTurn, CheckedAdmissionError> {
     let started = Instant::now();
-    let result = call(remaining);
-    if failed(&result) {
-        checkpoint()?;
-        let pause = started.elapsed().clamp(FAILURE_PAUSE, LONGEST_PAUSE);
-        let until = SystemTime::now() + pause;
-        // Best effort: the call already failed, and its own result says why.
-        let _ = pause_until(&root, until);
-    }
-    Ok(result)
-}
-
-/// Whether older confidential work may start now: no call holds or awaits the
-/// background slot and no failed call's pause is still running. Never waits.
-/// An unreadable slot fails closed; foreground work never consults it.
-pub fn confidential_background_open(journal_path: &Path) -> bool {
-    let root = confidential_background_dir(journal_path);
-    let now = SystemTime::now();
-    let paused = paused_until(&root);
-    let moved_clock = paused > now + LONGEST_PAUSE + FAILURE_PAUSE;
-    (paused <= now || moved_clock) && is_idle(&root, 1).unwrap_or(false)
-}
-
-fn pause_until(root: &Path, until: SystemTime) -> std::io::Result<()> {
-    // Round up: a pause must not end before the time it was asked for.
-    let millis = until
-        .duration_since(UNIX_EPOCH)
-        .map_err(std::io::Error::other)?
-        .as_nanos()
-        .div_ceil(1_000_000);
-    let staged = root.join(format!(".{PAUSE_FILE}-{}", Uuid::new_v4().simple()));
-    fs::write(&staged, millis.to_string())?;
-    fs::rename(&staged, root.join(PAUSE_FILE)).inspect_err(|_| {
-        let _ = fs::remove_file(&staged);
+    let permit = acquire_local_slot_checked(
+        &model_call_line_dir(journal_path),
+        1,
+        None,
+        false,
+        priority,
+        cancelled,
+        &mut || {},
+    )?;
+    Ok(ModelCallTurn {
+        waited: started.elapsed(),
+        _permit: permit,
     })
-}
-
-/// An unreadable pause is no pause: it is advice, and damage must not stop work.
-fn paused_until(root: &Path) -> SystemTime {
-    fs::read(root.join(PAUSE_FILE))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<u64>(&bytes).ok())
-        .and_then(|millis| UNIX_EPOCH.checked_add(Duration::from_millis(millis)))
-        .unwrap_or(UNIX_EPOCH)
-}
-
-/// Whether a caller could take a slot now without waiting behind anyone. A
-/// held slot or a live waiter answers `false` at once.
-fn is_idle(root: &Path, capacity: u32) -> Result<bool, AdmissionError> {
-    let tickets = match wait_tickets(root) {
-        Err(AdmissionError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(true);
-        }
-        tickets => tickets?,
-    };
-    // A ticket whose lock is free belongs to a waiter that has gone.
-    let slots = (0..capacity).map(|index| root.join(format!("slot-{index}.lock")));
-    for path in tickets.into_iter().chain(slots) {
-        let file = match OpenOptions::new().read(true).write(true).open(&path) {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) if is_delete_pending(&error) => return Ok(false),
-            Err(error) => return Err(error.into()),
-        };
-        match lock_exclusive(file) {
-            Ok(_free) => {}
-            Err(TryLockError::WouldBlock) => return Ok(false),
-            Err(TryLockError::Error(error)) => return Err(error.into()),
-        }
-    }
-    Ok(true)
 }
 
 /// Acquire the highest-ranked waiting call, optionally requiring every slot.
@@ -522,7 +439,6 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
-    use crate::test_support::lock_released;
 
     static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 
@@ -949,186 +865,74 @@ mod tests {
     }
 
     #[test]
-    fn older_confidential_calls_share_one_slot_and_a_failure_pauses_older_work() {
+    fn the_model_call_line_admits_one_call_at_a_time_best_priority_first() {
+        use std::sync::{Arc, Mutex};
         let journal = tempfile::tempdir().unwrap();
-        let root = confidential_background_dir(journal.path());
-        let older: WorkPriority = "5:1".parse().unwrap();
-        assert!(confidential_background_open(journal.path()));
-        let held = acquire_local_slot(&root, 1, Some(ACQUIRE_DEADLINE), false, older).unwrap();
-        assert!(!confidential_background_open(journal.path()));
-        for band in 1..=3 {
-            let priority = format!("{band}:1").parse().unwrap();
-            let ran =
-                run_confidential_call(journal.path(), priority, Duration::ZERO, |_| 7, |_| false);
-            assert_eq!(ran, Ok(7), "foreground band {band} bypasses the slot");
-        }
-        let waited = run_confidential_call(
-            journal.path(),
-            older,
-            Duration::from_millis(30),
-            |_| panic!("the slot is held"),
-            |_: &()| false,
-        );
-        assert!(waited.is_err());
-        drop(held);
-
-        let ran =
-            run_confidential_call(journal.path(), older, ACQUIRE_DEADLINE, |_| "ok", |_| false);
-        assert_eq!(ran, Ok("ok"));
+        let holder = wait_for_model_call(journal.path(), "5:1".parse().unwrap(), &|| false)
+            .expect("first call");
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let waiters = ["6:1", "5:2", "1:3", "3:4"]
+            .into_iter()
+            .map(|priority| {
+                let journal = journal.path().to_path_buf();
+                let order = Arc::clone(&order);
+                let handle = thread::spawn(move || {
+                    let turn = wait_for_model_call(&journal, priority.parse().unwrap(), &|| false)
+                        .expect("turn");
+                    order.lock().unwrap().push(priority);
+                    thread::sleep(Duration::from_millis(20));
+                    drop(turn);
+                });
+                // Each waiter publishes its place before the next arrives.
+                thread::sleep(Duration::from_millis(150));
+                handle
+            })
+            .collect::<Vec<_>>();
         assert!(
-            lock_released(|| confidential_background_open(journal.path())),
-            "success leaves no pause"
+            order.lock().unwrap().is_empty(),
+            "no call starts beside the holder"
         );
-
-        let before = SystemTime::now();
-        let ran =
-            run_confidential_call(journal.path(), older, ACQUIRE_DEADLINE, |_| "no", |_| true);
-        assert_eq!(ran, Ok("no"));
-        assert!(paused_until(&root) >= before + FAILURE_PAUSE);
-        assert!(!confidential_background_open(journal.path()));
-        // The pause is the queue's to honour: an admitted call is not held by it.
-        let ran =
-            run_confidential_call(journal.path(), older, ACQUIRE_DEADLINE, |_| "ok", |_| false);
-        assert_eq!(ran, Ok("ok"));
-    }
-
-    #[test]
-    fn cancellation_after_background_slot_wait_refuses_content_and_preserves_the_positive_twin() {
-        use std::sync::{
-            Arc,
-            atomic::{AtomicBool, AtomicUsize, Ordering},
-            mpsc,
-        };
-        for cancel in [false, true] {
-            let journal = tempfile::tempdir().unwrap();
-            let root = confidential_background_dir(journal.path());
-            let priority: WorkPriority = "4:20200101120000".parse().unwrap();
-            let held =
-                acquire_local_slot(&root, 1, Some(ACQUIRE_DEADLINE), false, priority).unwrap();
-            let cancelled = Arc::new(AtomicBool::new(false));
-            let flag = Arc::clone(&cancelled);
-            let calls = Arc::new(AtomicUsize::new(0));
-            let count = Arc::clone(&calls);
-            let path = journal.path().to_path_buf();
-            let (checking, reached) = mpsc::channel();
-            let (ended, done) = mpsc::channel();
-            let worker = std::thread::spawn(move || {
-                let result = run_confidential_call_checked(
-                    &path,
-                    priority,
-                    ACQUIRE_DEADLINE,
-                    &|| {
-                        checking.send(()).unwrap();
-                        if flag.load(Ordering::Acquire) {
-                            Err("cancelled".into())
-                        } else {
-                            Ok(())
-                        }
-                    },
-                    |_| {
-                        count.fetch_add(1, Ordering::SeqCst);
-                        "ok"
-                    },
-                    |_| false,
-                );
-                ended.send(result).unwrap();
-            });
-            reached.recv_timeout(Duration::from_secs(2)).unwrap();
-            assert!(
-                done.recv_timeout(Duration::from_millis(50)).is_err(),
-                "the real background slot is held"
-            );
-            cancelled.store(cancel, Ordering::Release);
-            drop(held);
-            let result = done.recv_timeout(Duration::from_secs(5)).unwrap();
-            worker.join().unwrap();
-            assert_eq!(calls.load(Ordering::SeqCst), usize::from(!cancel));
-            if cancel {
-                assert_eq!(result.unwrap_err(), "cancelled");
-            } else {
-                assert_eq!(result.unwrap(), "ok");
-            }
-            assert!(
-                lock_released(|| confidential_background_open(journal.path())),
-                "cancellation must not publish a failure pause"
-            );
+        drop(holder);
+        for waiter in waiters {
+            waiter.join().unwrap();
         }
+        assert_eq!(*order.lock().unwrap(), ["1:3", "3:4", "5:2", "6:1"]);
     }
 
     #[test]
-    fn cancellation_after_background_work_does_not_publish_a_late_failure_pause() {
-        use std::cell::Cell;
-        for cancel in [false, true] {
-            let journal = tempfile::tempdir().unwrap();
-            let cancelled = Cell::new(false);
-            let result = run_confidential_call_checked(
-                journal.path(),
-                "4:1".parse().unwrap(),
-                ACQUIRE_DEADLINE,
-                &|| {
-                    if cancelled.get() {
-                        Err("cancelled".into())
-                    } else {
-                        Ok(())
-                    }
-                },
-                |_| {
-                    cancelled.set(cancel);
-                    "failed"
-                },
-                |_| true,
-            );
-            if cancel {
-                assert_eq!(result.unwrap_err(), "cancelled");
-                assert!(lock_released(|| confidential_background_open(
-                    journal.path()
-                )));
-            } else {
-                assert_eq!(result.unwrap(), "failed");
-                assert!(!confidential_background_open(journal.path()));
-            }
-        }
-    }
-
-    #[test]
-    fn the_open_check_never_waits_and_sees_holders_waiters_and_pauses() {
+    fn a_model_call_waits_without_a_deadline_until_cancelled() {
         let journal = tempfile::tempdir().unwrap();
-        let root = confidential_background_dir(journal.path());
-        fs::create_dir_all(&root).unwrap();
-        let live = root.join("wait-5-00000000000000000001-00000000000000000001-live.ticket");
-        let waiter = File::create(&live).unwrap();
-        waiter.try_lock().unwrap();
+        let _holder =
+            wait_for_model_call(journal.path(), WorkPriority::default(), &|| false).unwrap();
+        let started = Instant::now();
+        let cancel_at = started + Duration::from_millis(300);
+        let outcome = wait_for_model_call(journal.path(), WorkPriority::default(), &|| {
+            Instant::now() >= cancel_at
+        });
+        assert!(matches!(outcome, Err(CheckedAdmissionError::Cancelled)));
+        assert!(started.elapsed() >= Duration::from_millis(300));
         assert!(
-            !confidential_background_open(journal.path()),
-            "a live waiter"
-        );
-        drop(waiter);
-        assert!(
-            lock_released(|| confidential_background_open(journal.path())),
-            "a gone waiter"
-        );
-        let pause = |text: &str| fs::write(root.join(PAUSE_FILE), text).unwrap();
-        for damage in ["not a time".to_owned(), u64::MAX.to_string()] {
-            pause(&damage);
-            assert!(
-                confidential_background_open(journal.path()),
-                "damage is no pause"
-            );
-        }
-        let millis = |at: SystemTime| {
-            at.duration_since(UNIX_EPOCH)
+            wait_tickets(&model_call_line_dir(journal.path()))
                 .unwrap()
-                .as_millis()
-                .to_string()
-        };
-        pause(&millis(SystemTime::now() + Duration::from_secs(60)));
-        assert!(!confidential_background_open(journal.path()));
-        pause(&millis(SystemTime::now() - Duration::from_secs(1)));
-        assert!(confidential_background_open(journal.path()));
-        pause(&millis(SystemTime::now() + 2 * LONGEST_PAUSE));
-        assert!(
-            confidential_background_open(journal.path()),
-            "a clock moved back"
+                .is_empty(),
+            "a cancelled waiter leaves the line"
         );
+    }
+
+    #[test]
+    fn the_model_call_line_is_not_the_local_device_lock() {
+        // Local transcription and model startup take the device lock alone; a
+        // model call holding the line must never keep them waiting.
+        let journal = tempfile::tempdir().unwrap();
+        let _turn =
+            wait_for_model_call(journal.path(), WorkPriority::default(), &|| false).unwrap();
+        acquire_local_slot(
+            &admission_dir(journal.path()),
+            1,
+            Some(Duration::from_millis(200)),
+            false,
+            WorkPriority::default(),
+        )
+        .expect("the device lock is free while a call holds the line");
     }
 }

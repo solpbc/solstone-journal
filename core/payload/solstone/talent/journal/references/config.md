@@ -221,8 +221,7 @@ Brain choice is managed in the Thinking app. Your journal stores that choice in
     },
     "local": {
       "endpoint_url": "http://127.0.0.1:8080",
-      "served_model_id": "local-model-name",
-      "parallel_slots": 2
+      "served_model_id": "local-model-name"
     }
   }
 }
@@ -251,7 +250,6 @@ is active only when both fields are present:
 
 Optional local endpoint fields:
 - `credential`
-- `parallel_slots`
 
 ### Talent overrides
 

@@ -32,7 +32,9 @@ pub(crate) fn default_segment_workers(
         return formula;
     }
     let slots = match endpoint {
-        LocalEndpointResolution::Byo(endpoint) => endpoint.parallel_slots,
+        // Calls take turns in the journal's one call line: one runs while
+        // another waits its turn.
+        LocalEndpointResolution::Byo(_) => Some(2),
         LocalEndpointResolution::Bundled => bundled_slots,
     };
     slots.map_or(formula, |slots| formula.min(slots as usize))

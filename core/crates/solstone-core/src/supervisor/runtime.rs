@@ -1948,6 +1948,17 @@ pub(crate) async fn boot_and_tick(
             Err(error) => return Err(abort_pre_ready(&lifecycle, error)),
         },
     );
+    // The supervisor keeps the journal's one confidential connection; other
+    // processes' calls reach it here, or connect directly if this fails.
+    #[cfg(unix)]
+    let _confidential_broker =
+        match solstone_core_generate_wire::ConfidentialBroker::start(&journal) {
+            Ok(broker) => Some(broker),
+            Err(error) => {
+                log::warn!("confidential calls will each connect directly: {error}");
+                None
+            }
+        };
     let mut connection =
         CallosumSocketConnection::new(journal.join("health/callosum.sock"), serde_json::Map::new());
     connection.start();

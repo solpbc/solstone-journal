@@ -1244,112 +1244,120 @@ fn think(reference: &str, mode: &str, priority: &str) -> ExecutionRequest {
     ExecutionRequest::Bus(request)
 }
 
-/// Real queue, real worker processes and the real background slot, at rest
-/// zero: while another process holds the slot, older work waits in the queue
-/// rather than in a lane, newer work in every lane reaches its model call, and
-/// older work resumes on the next tick once the slot is released, one at a time.
+/// Real queue, real worker processes and the real call line, the same on
+/// every engine: thinking runs one task at a time, each next pick is the best
+/// band waiting, and a task's call waits its turn behind another process's.
 #[test]
-fn older_confidential_work_waits_outside_the_lanes_newer_work_needs() {
+fn thinking_runs_one_task_at_a_time_best_band_first_on_every_engine() {
     use solstone_core_system::queue::SubmitOutcome;
-    let bed = Bed::new("confidential-background");
-    confidential_journal(&bed);
-    let log = bed.root.join("model.log");
-    let ready = bed.root.join("holder.ready");
-    let release = bed.root.join("holder.release");
-    struct Holder(std::process::Child);
-    impl Drop for Holder {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
+    for engine in ["confidential", "bundled"] {
+        let bed = Bed::new(&format!("one-at-a-time-{engine}"));
+        if engine == "confidential" {
+            confidential_journal(&bed);
+        } else {
+            fs::create_dir_all(bed.root.join("config")).expect("config directory");
+            fs::write(
+                bed.root.join("config/journal.json"),
+                serde_json::json!({"providers": {"active": {"provider": "local"}}}).to_string(),
+            )
+            .expect("config");
         }
-    }
-    let mut holder = Holder(
-        std::process::Command::new(crate::fixture_binary::path())
-            .arg("hold-background-slot")
-            .args([&bed.root, &ready, &release])
-            .env_remove("SOLSTONE_JOURNAL")
-            .spawn()
-            .expect("slot holder"),
-    );
-    wait_for_ready(&ready);
+        let log = bed.root.join("model.log");
+        let ready = bed.root.join("holder.ready");
+        let release = bed.root.join("holder.release");
+        struct Holder(std::process::Child);
+        impl Drop for Holder {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        // Another process's call, such as an owner's question, holds the line.
+        let mut holder = Holder(
+            std::process::Command::new(crate::fixture_binary::path())
+                .arg("hold-model-call")
+                .args([&bed.root, &ready, &release])
+                .env_remove("SOLSTONE_JOURNAL")
+                .spawn()
+                .expect("call holder"),
+        );
+        wait_for_ready(&ready);
 
-    let sink = Arc::new(QueueCollector::default());
-    let queue = TaskQueue::new(TaskQueueOptions {
-        #[cfg(windows)]
-        read_file_grants: Vec::new(),
-        journal_root: bed.root.clone(),
-        cap_resolver: Arc::new(FixedCap(Duration::from_secs(30))),
-        process_state_probe: Arc::new(SystemProcessStateProbe),
-        queue_sink: Some(sink.clone() as Arc<dyn TaskQueueEventSink>),
-        process_sink: None,
-        ready: true,
-        before_deadline_commit: None,
-        child_environment: BTreeMap::from([
-            ("SOLSTONE_TEST_JOURNAL".into(), bed.root.clone().into()),
-            ("SOLSTONE_TEST_MODEL_LOG".into(), log.clone().into()),
-        ]),
-        task_binary: Some(crate::fixture_binary::path()),
-    });
-    let older = [
-        ("import", "--activity", "4:1"),
-        ("history", "--segment", "5:1"),
-        ("remake", "", "6:1"),
-    ];
-    for (reference, mode, priority) in older {
+        let sink = Arc::new(QueueCollector::default());
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: bed.root.clone(),
+            cap_resolver: Arc::new(FixedCap(Duration::from_secs(30))),
+            process_state_probe: Arc::new(SystemProcessStateProbe),
+            queue_sink: Some(sink.clone() as Arc<dyn TaskQueueEventSink>),
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::from([
+                ("SOLSTONE_TEST_JOURNAL".into(), bed.root.clone().into()),
+                ("SOLSTONE_TEST_MODEL_LOG".into(), log.clone().into()),
+            ]),
+            task_binary: Some(crate::fixture_binary::path()),
+        });
+        // The first task starts at once; every other waits for it to finish.
         assert_eq!(
-            queue.submit(think(reference, mode, priority)),
-            SubmitOutcome::Queued
+            queue.submit(think("import", "--activity", "4:1")),
+            SubmitOutcome::Dispatched,
+            "{engine}"
+        );
+        for (reference, mode, priority) in [
+            ("history", "--segment", "5:1"),
+            ("remake", "", "6:1"),
+            ("recent", "", "3:2"),
+            ("waiting", "--activity", "2:2"),
+            ("now", "--segment", "1:2"),
+        ] {
+            assert_eq!(
+                queue.submit(think(reference, mode, priority)),
+                SubmitOutcome::Queued,
+                "{engine}: {reference} waits for the running task"
+            );
+        }
+        // Six real worker processes run in turn, so these waits are generous.
+        let wait_long = |condition: &dyn Fn() -> bool| {
+            let deadline = std::time::Instant::now() + Duration::from_secs(60);
+            while !condition() {
+                assert!(std::time::Instant::now() < deadline, "{engine}: timed out");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        };
+        wait_long(&|| !started_references(&sink).is_empty());
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(started_references(&sink), ["import"], "{engine}");
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .and_then(|mut file| std::io::Write::write_all(&mut file, b"release\n"))
+            .expect("mark release");
+        fs::write(&release, "").expect("release the line");
+        assert!(holder.0.wait().expect("holder exit").success());
+        wait_long(&|| queue.history().len() >= 6);
+        let lines = fs::read_to_string(&log).expect("model log");
+        assert_eq!(
+            lines.lines().collect::<Vec<_>>(),
+            [
+                "release",
+                "start import",
+                "end import",
+                "start now",
+                "end now",
+                "start waiting",
+                "end waiting",
+                "start recent",
+                "end recent",
+                "start history",
+                "end history",
+                "start remake",
+                "end remake",
+            ],
+            "{engine}: one call at a time, the running task first, then the best band waiting"
         );
     }
-    let newer = [
-        ("now", "--segment", "1:2"),
-        ("waiting", "--activity", "2:2"),
-        ("recent", "", "3:2"),
-    ];
-    // Each is selected the moment it is submitted: none waits behind older work.
-    for (reference, mode, priority) in newer {
-        assert_eq!(
-            queue.submit(think(reference, mode, priority)),
-            SubmitOutcome::Dispatched
-        );
-    }
-    wait_for_history(&queue, 3);
-    let mut started = started_references(&sink);
-    started.sort();
-    assert_eq!(started, ["now", "recent", "waiting"]);
-
-    fs::OpenOptions::new()
-        .append(true)
-        .open(&log)
-        .and_then(|mut file| std::io::Write::write_all(&mut file, b"release\n"))
-        .expect("mark release");
-    fs::write(&release, "").expect("release the slot");
-    assert!(holder.0.wait().expect("holder exit").success());
-    // The supervisor's tick, not a new request, resumes older work.
-    wait_until(|| {
-        queue.resume_processing();
-        queue.history().len() == 6
-    });
-    let lines = fs::read_to_string(&log).expect("model log");
-    let lines = lines.lines().collect::<Vec<_>>();
-    let release_at = lines
-        .iter()
-        .position(|line| *line == "release")
-        .expect("release");
-    for reference in ["now", "waiting", "recent"] {
-        let start = format!("start {reference}");
-        assert!(lines[..release_at].contains(&start.as_str()), "{lines:?}");
-    }
-    assert_eq!(
-        lines[release_at + 1..],
-        [
-            "start import",
-            "end import",
-            "start history",
-            "end history",
-            "start remake",
-            "end remake",
-        ],
-        "older work runs after release, one task at a time, highest band first"
-    );
 }

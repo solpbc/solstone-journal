@@ -55,7 +55,7 @@ fn main() {
         }
         "sleep" => std::thread::sleep(Duration::from_secs(30)),
         "think" => think_worker(),
-        "hold-background-slot" => hold_background_slot(args),
+        "hold-model-call" => hold_model_call(args),
         #[cfg(unix)]
         "fork-member" => {
             let ready_path = args.next().expect("ready path");
@@ -639,7 +639,7 @@ fn publish(path: impl AsRef<std::path::Path>, contents: &str) {
     std::fs::rename(&staged, path).expect("publish fixture file");
 }
 
-/// A stand-in think worker: one model call through confidential admission at
+/// A stand-in think worker: one model call through the journal's call line at
 /// the priority its queue gave it, logged around the call.
 fn think_worker() {
     let journal = PathBuf::from(std::env::var_os("SOLSTONE_TEST_JOURNAL").expect("journal"));
@@ -652,8 +652,8 @@ fn think_worker() {
     });
 }
 
-/// Holds the background slot as a long older call would, until released.
-fn hold_background_slot(mut args: impl Iterator<Item = String>) {
+/// Holds the journal's call line as a long call would, until released.
+fn hold_model_call(mut args: impl Iterator<Item = String>) {
     let journal = PathBuf::from(args.next().expect("journal"));
     let ready = args.next().expect("ready path");
     let release = PathBuf::from(args.next().expect("release path"));
@@ -668,14 +668,9 @@ fn hold_background_slot(mut args: impl Iterator<Item = String>) {
 }
 
 fn model_call(journal: &std::path::Path, priority: WorkPriority, call: impl FnOnce()) {
-    solstone_core_local::admission::run_confidential_call(
-        journal,
-        priority,
-        Duration::from_secs(30),
-        |_| call(),
-        |_| false,
-    )
-    .expect("confidential admission");
+    let _turn = solstone_core_local::admission::wait_for_model_call(journal, priority, &|| false)
+        .expect("model call line");
+    call();
 }
 
 fn log_model(line: &str) {

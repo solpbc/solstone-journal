@@ -27,10 +27,11 @@ const OWNER_MANAGED_PATHS: [&str; 3] = [
     "health/security-advisory.json",
 ];
 
-const NO_SEMANTIC_VARIANTS: [ArtifactId; 12] = [
+const NO_SEMANTIC_VARIANTS: [ArtifactId; 13] = [
     ArtifactId::DirectDoor,
     ArtifactId::DirectDoorGeneration,
     ArtifactId::CallosumSock,
+    ArtifactId::GenerateSock,
     ArtifactId::SpeakersInstallGeneration,
     ArtifactId::SpeakersInstallOwner,
     ArtifactId::ConveyConfig,
@@ -223,6 +224,7 @@ fn every_artifact_has_owning_production_mention_outside_durability() {
                     && combined_source.contains("\"census-refusal.json\"")
             }
             ArtifactId::CallosumSock => combined_source.contains("callosum.sock"),
+            ArtifactId::GenerateSock => combined_source.contains("generate.sock"),
             ArtifactId::SyncHeartbeat => {
                 combined_source.contains("fn classify_heartbeat")
                     || combined_source.contains("classify_heartbeat(")

@@ -6,7 +6,6 @@
 use crate::priority::PriorityIntent;
 use crate::work_policy::{ThinkingLane, WorkPolicy};
 use solstone_core_journal_config::work_priority::{WORK_PRIORITY_ENV, WorkPriority};
-use solstone_core_local::admission::confidential_background_open;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ffi::OsString;
@@ -1206,8 +1205,6 @@ struct QueueState {
     timeout_marked: BTreeSet<String>,
     stopped_ticks: BTreeMap<String, u8>,
     termination_attempts: TerminationAttemptRegistry,
-    /// When the last older analysis task left; the owner's rest counts from it.
-    background_finished_at: Option<Instant>,
     /// Discovery's ranking, best first. It is offered beside direct submissions
     /// at every pick, so a backlog fills any free capacity as work finishes.
     discovered: Vec<DiscoveredEntry>,
@@ -1274,8 +1271,6 @@ fn thinking_taken(state: &QueueState) -> bool {
 struct RunningSlot {
     reference: String,
     command: Vec<String>,
-    /// Older analysis: it counts against the confidential lane's one task.
-    background: bool,
 }
 
 #[derive(Clone)]
@@ -1783,7 +1778,6 @@ impl TaskQueue {
                     timeout_marked: BTreeSet::new(),
                     stopped_ticks: BTreeMap::new(),
                     termination_attempts: TerminationAttemptRegistry::default(),
-                    background_finished_at: None,
                     discovered: Vec::new(),
                     idle: None,
                 }),
@@ -3654,7 +3648,6 @@ fn read_work_policy(inner: &QueueInner) -> WorkPolicy {
     WorkPolicy::read(&inner.options.journal_root).unwrap_or(WorkPolicy {
         lane: ThinkingLane::Unavailable,
         history_confirmed: false,
-        confidential_history_rest: Duration::ZERO,
     })
 }
 
@@ -3664,21 +3657,15 @@ struct Selection {
     allowed: bool,
     today: chrono::NaiveDate,
     spending: WorkPolicy,
-    /// No older confidential call holds or awaits the shared slot, and no
-    /// failed one asked for a pause.
-    background_slot_open: bool,
 }
 
 impl Selection {
     fn read(inner: &QueueInner) -> Self {
         let journal = &inner.options.journal_root;
-        let spending = read_work_policy(inner);
         Self {
             allowed: crate::processing::processing_allowed(journal),
             today: selection_day(journal),
-            spending,
-            background_slot_open: spending.lane != ThinkingLane::Confidential
-                || confidential_background_open(journal),
+            spending: read_work_policy(inner),
         }
     }
 }
@@ -3770,36 +3757,34 @@ enum Pick {
     Discovered(usize),
 }
 
-// One selector for every wakeup. Held lanes are not candidates. Analysis is
-// chosen by priority across direct submissions and discovery's ranking alike,
-// so newer work always wins the next pick and older work fills any room left.
+// One selector for every wakeup. Held lanes are not candidates.
 //
-// On a local or own-key lane, a busy lane's highest waiting analysis is a
-// barrier: lower work cannot reserve other lanes ahead of it, because one model
-// serves them all. On the confidential lane the engine orders and throttles its
-// own calls, so the best analysis that can start does. Independent maintenance
-// remains runnable during any wait.
-//
-// Older confidential work (bands 4-6) shares one engine call at a time per
-// journal. One such task runs at a time, and only while no other call holds or
-// awaits that slot, no failed call asked for a pause, and the owner's rest has
-// passed. Until then older entries are not candidates, so neither they nor a
-// waiting call can hold a lane, or be a barrier, that newer work needs.
+// Thinking runs one task at a time on every engine, and each pick is the best
+// runnable analysis across direct submissions and discovery's ranking alike:
+// newer work wins the next pick, and older work fills the time no newer work
+// needs. Every model call also waits in the journal's one priority-ordered call
+// line, so this is the whole scheduling policy, the same for every engine.
+// Independent maintenance remains runnable while thinking runs.
 fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
     let Selection {
         allowed,
         today,
         spending,
-        background_slot_open,
     } = selection;
     let mut dispatches = Vec::new();
     if !state.ready || state.shutdown || state.callable_paused || state.queue_hold.is_some() {
         return dispatches;
     }
-    let barrier = spending.lane != ThinkingLane::Confidential;
     loop {
-        let background_waits = background_waits_now(state, spending, background_slot_open);
-        let thinking = allowed && state.local_analysis_pauses == 0;
+        let thinking = allowed
+            && state.local_analysis_pauses == 0
+            && !state
+                .running
+                .values()
+                .any(|slot| is_analysis_command(&slot.command));
+        // A lane busy with other work does not disqualify thinking here: the
+        // best thinking waits for its own lane rather than letting lower
+        // thinking start ahead of it.
         let runnable = |partition: &Partition, command: &[String], priority: WorkPriority| {
             !state.held.contains_key(partition)
                 && !state
@@ -3807,8 +3792,6 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
                     .values()
                     .any(|slot| index_daily_pair_conflicts(command, &slot.command))
                 && spending.permits(priority.band)
-                && !(background_waits && priority.band.is_background())
-                && (barrier || !state.running.contains_key(partition))
         };
         let runnable = &runnable;
         let queued = thinking
@@ -3943,8 +3926,6 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
             RunningSlot {
                 reference: submission.reference.clone(),
                 command: submission.command.clone(),
-                background: is_analysis_command(&submission.command)
-                    && priority.band.is_background(),
             },
         );
         dispatches.push(Dispatch {
@@ -3957,27 +3938,14 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
             preflight,
         });
     }
-    note_idle(
-        state,
-        allowed,
-        background_waits_now(state, spending, background_slot_open),
-    );
+    note_idle(state, allowed);
     dispatches
-}
-
-fn background_waits_now(state: &QueueState, spending: WorkPolicy, slot_open: bool) -> bool {
-    spending.lane == ThinkingLane::Confidential
-        && (!slot_open
-            || state.running.values().any(|slot| slot.background)
-            || state
-                .background_finished_at
-                .is_some_and(|at| at.elapsed() < spending.confidential_history_rest))
 }
 
 /// Log, once per change, when owed thinking waits with no thinking running,
 /// and why, so a journal's idle time can be read from its own log. Counts and
 /// reasons only.
-fn note_idle(state: &mut QueueState, allowed: bool, background_waits: bool) {
+fn note_idle(state: &mut QueueState, allowed: bool) {
     let thinking_running = state
         .running
         .values()
@@ -3996,8 +3964,6 @@ fn note_idle(state: &mut QueueState, allowed: bool, background_waits: bool) {
             "local analysis paused"
         } else if !discovered_open(state, SystemTime::now()) && queued == 0 {
             "thinking failing"
-        } else if background_waits {
-            "background slot busy"
         } else {
             "lane held or busy"
         }
@@ -4183,7 +4149,7 @@ fn preflight_then_start(
             start_dispatch(worker_inner, dispatch);
         } else {
             log::debug!("task queue: discovered work no longer owed: {reference}");
-            for next in retire_reservation(&worker_inner, &partition, &reference, false) {
+            for next in retire_reservation(&worker_inner, &partition, &reference) {
                 start_dispatch(Arc::clone(&worker_inner), next);
             }
         }
@@ -4194,7 +4160,7 @@ fn preflight_then_start(
     {
         // The work stays owed on disk, so the next pass finds it again.
         log::warn!("task queue: could not check discovered work: {error}");
-        for next in retire_reservation(&inner, &lane, &held, false) {
+        for next in retire_reservation(&inner, &lane, &held) {
             start_dispatch(Arc::clone(&inner), next);
         }
     }
@@ -5419,17 +5385,11 @@ fn holds_any(state: &QueueState, references: &[String]) -> bool {
 }
 
 fn finish_worker(inner: &QueueInner, partition: &Partition, reference: &str) -> Vec<Dispatch> {
-    retire_reservation(inner, partition, reference, true)
+    retire_reservation(inner, partition, reference)
 }
 
-/// Free a lane and pick again. Work that never ran does not start the
-/// confidential lane's rest.
-fn retire_reservation(
-    inner: &QueueInner,
-    partition: &Partition,
-    reference: &str,
-    ran: bool,
-) -> Vec<Dispatch> {
+/// Free a lane and pick again.
+fn retire_reservation(inner: &QueueInner, partition: &Partition, reference: &str) -> Vec<Dispatch> {
     let selection = Selection::read(inner);
     let (dispatches, events) = {
         let mut state = inner.state.lock().expect("queue state lock poisoned");
@@ -5442,14 +5402,7 @@ fn retire_reservation(
         {
             return Vec::new();
         }
-        if state
-            .running
-            .remove(partition)
-            .is_some_and(|slot| slot.background)
-            && ran
-        {
-            state.background_finished_at = Some(Instant::now());
-        }
+        state.running.remove(partition);
         inner.reaped.notify_all();
         let dispatches = take_ready(&mut state, selection);
         let mut changed = BTreeSet::from([partition.clone()]);
@@ -6510,7 +6463,6 @@ mod tests {
         WorkPolicy {
             lane: ThinkingLane::Bundled,
             history_confirmed: false,
-            confidential_history_rest: Duration::ZERO,
         }
     }
 
@@ -6520,7 +6472,6 @@ mod tests {
             allowed: true,
             today,
             spending,
-            background_slot_open: true,
         }
     }
 
@@ -7105,12 +7056,38 @@ mod tests {
         assert!(state.idle.is_none());
     }
 
-    /// On the confidential lane the best work that can start does, so a busy
-    /// lane's waiting work leaves free lanes working; on a local lane, where
-    /// one model serves every lane, it still holds lower work back.
+    /// Other work busy in the best thinking task's lane holds lower thinking
+    /// back too: the best waits for its lane rather than being overtaken.
     #[cfg(all(test, feature = "full-tests"))]
     #[test]
-    fn free_lanes_fill_on_the_confidential_lane_and_wait_on_a_local_one() {
+    fn the_best_thinking_waits_for_its_lane_instead_of_being_overtaken() {
+        let queue = queue(false, 10, VecDeque::new());
+        let mut state = ready_state(&queue);
+        state.running.insert(
+            Partition::new("segment"),
+            RunningSlot {
+                reference: "other".into(),
+                command: ["journal", "segment", "other"]
+                    .iter()
+                    .map(|arg| (*arg).to_owned())
+                    .collect(),
+            },
+        );
+        enqueue_ranked(
+            &queue,
+            &mut state,
+            &[("now", "--segment", "1:2"), ("remake", "", "6:1")],
+        );
+        assert!(select_on(&mut state, ThinkingLane::Confidential).is_empty());
+        state.running.clear();
+        assert_eq!(select_on(&mut state, ThinkingLane::Confidential), ["now"]);
+    }
+
+    /// A running thinking task holds back every other, on every lane alike,
+    /// whether the waiting work is queued or discovered.
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_running_thinking_task_holds_back_all_other_thinking_on_every_lane() {
         let queue = queue(false, 10, VecDeque::new());
         let mut state = ready_state(&queue);
         let busy = ["journal", "think", "--day", "20260101", "--segment", "busy"];
@@ -7119,7 +7096,6 @@ mod tests {
             RunningSlot {
                 reference: "busy".into(),
                 command: busy.iter().map(|arg| (*arg).to_owned()).collect(),
-                background: false,
             },
         );
         enqueue_ranked(&queue, &mut state, &[("now", "--segment", "1:2")]);
@@ -7128,10 +7104,11 @@ mod tests {
         let mut state = queue.inner.state.lock().unwrap();
         let today = selection_day(Path::new(""));
         assert!(take_ready(&mut state, selection(today, local_spending())).is_empty());
-        assert_eq!(
-            select_confidential(&mut state, Duration::ZERO, true),
-            ["recent"]
-        );
+        for lane in [ThinkingLane::OwnKeys, ThinkingLane::Confidential] {
+            assert!(select_on(&mut state, lane).is_empty(), "{lane:?}");
+        }
+        state.running.clear();
+        assert_eq!(select_on(&mut state, ThinkingLane::Confidential), ["now"]);
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -7196,7 +7173,7 @@ mod tests {
 
     #[cfg(all(test, feature = "full-tests"))]
     #[test]
-    fn ladder_selects_globally_and_completion_wakes_other_lanes() {
+    fn ladder_selects_globally_and_each_completion_starts_the_next_best() {
         let queue = queue(false, 10, VecDeque::new());
         for (reference, mode, priority) in [
             ("old", "", "6:1"),
@@ -7227,34 +7204,27 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["live-newer"]
         );
-        let second = finish_worker(&queue.inner, &Partition::new("segment"), "live-newer");
-        assert_eq!(
-            second
-                .iter()
-                .map(|d| d.submission.reference.as_str())
-                .collect::<Vec<_>>(),
-            ["live-older", "owner"]
-        );
-        // The next segment is waiting behind its running task. Import cannot pass it.
-        let third = finish_worker(&queue.inner, &Partition::new("activity"), "owner");
-        assert!(third.is_empty());
-        let fourth = finish_worker(&queue.inner, &Partition::new("segment"), "live-older");
-        assert_eq!(
-            fourth
-                .iter()
-                .map(|d| d.submission.reference.as_str())
-                .collect::<Vec<_>>(),
-            ["recent", "import"]
-        );
-        assert!(finish_worker(&queue.inner, &Partition::new("activity"), "import").is_empty());
-        let fifth = finish_worker(&queue.inner, &Partition::new("segment"), "recent");
-        assert_eq!(
-            fifth
-                .iter()
-                .map(|d| d.submission.reference.as_str())
-                .collect::<Vec<_>>(),
-            ["missing", "old"]
-        );
+        // Each completion starts the single best task waiting, on any lane.
+        let mut running = ("segment", "live-newer");
+        for (lane, next) in [
+            ("segment", "live-older"),
+            ("activity", "owner"),
+            ("segment", "recent"),
+            ("activity", "import"),
+            ("segment", "missing"),
+            ("daily", "old"),
+        ] {
+            let started = finish_worker(&queue.inner, &Partition::new(running.0), running.1);
+            assert_eq!(
+                started
+                    .iter()
+                    .map(|d| d.submission.reference.as_str())
+                    .collect::<Vec<_>>(),
+                [next]
+            );
+            running = (lane, next);
+        }
+        assert!(finish_worker(&queue.inner, &Partition::new(running.0), running.1).is_empty());
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -7366,25 +7336,18 @@ mod tests {
         );
     }
 
+    /// Selects on the given lane, where history is permitted.
     #[cfg(feature = "full-tests")]
-    fn confidential_spending(rest: Duration) -> WorkPolicy {
-        WorkPolicy {
-            lane: ThinkingLane::Confidential,
-            history_confirmed: false,
-            confidential_history_rest: rest,
-        }
-    }
-
-    /// Selects with the confidential lane and the background slot as given.
-    #[cfg(feature = "full-tests")]
-    fn select_confidential(state: &mut QueueState, rest: Duration, slot_open: bool) -> Vec<String> {
+    fn select_on(state: &mut QueueState, lane: ThinkingLane) -> Vec<String> {
         take_ready(
             state,
             Selection {
                 allowed: true,
                 today: selection_day(Path::new("")),
-                spending: confidential_spending(rest),
-                background_slot_open: slot_open,
+                spending: WorkPolicy {
+                    lane,
+                    history_confirmed: true,
+                },
             },
         )
         .into_iter()
@@ -7421,81 +7384,36 @@ mod tests {
 
     #[cfg(all(test, feature = "full-tests"))]
     #[test]
-    fn older_confidential_work_runs_one_task_and_holds_no_lane_newer_work_needs() {
-        let queue = queue(false, 10, VecDeque::new());
-        let mut state = ready_state(&queue);
-        let older = [
-            ("import", "--activity", "4:1"),
-            ("history", "--segment", "5:1"),
-            ("remake", "", "6:1"),
-        ];
-        enqueue_ranked(&queue, &mut state, &older);
-        // Another call holds or awaits the slot: no older task starts at all.
-        assert!(select_confidential(&mut state, Duration::ZERO, false).is_empty());
-        let newer = [
-            ("now", "--segment", "1:2"),
-            ("waiting", "--activity", "2:2"),
-            ("recent", "", "3:2"),
-        ];
-        enqueue_ranked(&queue, &mut state, &newer);
-        assert_eq!(
-            select_confidential(&mut state, Duration::ZERO, false),
-            ["now", "waiting", "recent"],
-            "newer work submitted after older work waits runs in every lane, in band order"
-        );
-        state.running.clear();
-        // Once the slot opens, older work resumes without a new request, one
-        // task at a time and highest band first; newer work still runs beside it.
-        for (expected, lane) in [
-            ("import", "activity"),
-            ("history", "segment"),
-            ("remake", "daily"),
+    fn every_lane_runs_one_thinking_task_at_a_time_best_band_first() {
+        for lane in [
+            ThinkingLane::Bundled,
+            ThinkingLane::OwnKeys,
+            ThinkingLane::Confidential,
         ] {
-            assert_eq!(
-                select_confidential(&mut state, Duration::ZERO, true),
-                [expected]
+            let queue = queue(false, 10, VecDeque::new());
+            let mut state = ready_state(&queue);
+            enqueue_ranked(
+                &queue,
+                &mut state,
+                &[
+                    ("import", "--activity", "4:1"),
+                    ("history", "--segment", "5:1"),
+                    ("remake", "", "6:1"),
+                    ("recent", "", "3:2"),
+                    ("waiting", "--activity", "2:2"),
+                    ("now", "--segment", "1:2"),
+                ],
             );
-            assert!(select_confidential(&mut state, Duration::ZERO, true).is_empty());
-            let now = format!("now-{lane}");
-            enqueue_ranked(&queue, &mut state, &[(&now, "--settle", "1:3")]);
-            assert_eq!(select_confidential(&mut state, Duration::ZERO, true), [now]);
-            state.running.remove(&Partition::new("flush"));
-            state.running.remove(&Partition::new(lane));
+            for expected in ["now", "waiting", "recent", "import", "history", "remake"] {
+                assert_eq!(select_on(&mut state, lane), [expected], "{lane:?}");
+                assert!(
+                    select_on(&mut state, lane).is_empty(),
+                    "{lane:?}: nothing starts beside a running thinking task"
+                );
+                state.running.clear();
+            }
+            assert!(state.queues.is_empty(), "{lane:?}");
         }
-        assert!(state.queues.is_empty());
-    }
-
-    #[cfg(all(test, feature = "full-tests"))]
-    #[test]
-    fn the_owners_rest_runs_between_older_tasks_and_a_change_applies_at_once() {
-        let queue = queue(false, 10, VecDeque::new());
-        let mut state = ready_state(&queue);
-        state.background_finished_at = Some(Instant::now());
-        enqueue_ranked(
-            &queue,
-            &mut state,
-            &[
-                ("history", "--segment", "5:1"),
-                ("now", "--activity", "1:2"),
-                ("recent", "", "3:2"),
-            ],
-        );
-        let rest = Duration::from_secs(60);
-        assert_eq!(
-            select_confidential(&mut state, rest, true),
-            ["now", "recent"],
-            "newer work never rests"
-        );
-        assert!(select_confidential(&mut state, rest, true).is_empty());
-        assert_eq!(
-            select_confidential(&mut state, Duration::ZERO, true),
-            ["history"],
-            "a change to zero applies at once"
-        );
-        state.running.remove(&Partition::new("segment"));
-        state.background_finished_at = Instant::now().checked_sub(rest + Duration::from_secs(1));
-        enqueue_ranked(&queue, &mut state, &[("remake", "--segment", "6:1")]);
-        assert_eq!(select_confidential(&mut state, rest, true), ["remake"]);
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -7504,16 +7422,16 @@ mod tests {
         let queue = queue(false, 10, VecDeque::new());
         let mut state = ready_state(&queue);
         enqueue_ranked(&queue, &mut state, &[("history", "--segment", "5:1")]);
-        assert!(select_confidential(&mut state, Duration::ZERO, false).is_empty());
         enqueue_ranked(&queue, &mut state, &[("history", "--segment", "1:2")]);
         let dispatched = take_ready(
             &mut state,
-            Selection {
-                allowed: true,
-                today: selection_day(Path::new("")),
-                spending: confidential_spending(Duration::ZERO),
-                background_slot_open: false,
-            },
+            selection(
+                selection_day(Path::new("")),
+                WorkPolicy {
+                    lane: ThinkingLane::Confidential,
+                    history_confirmed: false,
+                },
+            ),
         );
         assert_eq!(dispatched.len(), 1);
         assert_eq!(dispatched[0].references, ["history"]);
@@ -7818,14 +7736,9 @@ mod tests {
             {
                 let mut state = queue.inner.state.lock().unwrap();
                 state.queues.clear();
-                state.running.insert(
-                    Partition::new("daily"),
-                    RunningSlot {
-                        reference,
-                        command,
-                        background: false,
-                    },
-                );
+                state
+                    .running
+                    .insert(Partition::new("daily"), RunningSlot { reference, command });
                 state.running.insert(
                     Partition::new("indexer"),
                     RunningSlot {
@@ -7833,7 +7746,6 @@ mod tests {
                         command: crate::partition::canonical_journal_command([
                             "indexer", "--rescan",
                         ]),
-                        background: false,
                     },
                 );
                 assert!(state.active.is_empty());
@@ -7893,7 +7805,6 @@ mod tests {
                     RunningSlot {
                         reference,
                         command: command.clone(),
-                        background: false,
                     },
                 );
                 assert_eq!(queue.try_read_daily(), Err("queue_observation_ambiguous"));
@@ -7905,7 +7816,6 @@ mod tests {
                 RunningSlot {
                     reference: "active".into(),
                     command: vec!["svc".into()],
-                    background: false,
                 },
             );
             assert!(queue.try_read_daily().is_ok());
@@ -8098,7 +8008,6 @@ mod tests {
                 RunningSlot {
                     reference: "running".to_owned(),
                     command: Vec::new(),
-                    background: false,
                 },
             );
         queue.submit(request("one"));
@@ -8724,7 +8633,6 @@ mod tests {
                 RunningSlot {
                     reference: "already-running-indexer".to_owned(),
                     command: Vec::new(),
-                    background: false,
                 },
             );
 
@@ -9598,7 +9506,6 @@ mod tests {
             RunningSlot {
                 reference: "primary".to_owned(),
                 command: Vec::new(),
-                background: false,
             },
         );
         assert_eq!(queue.submit(request("follower")), SubmitOutcome::Queued);

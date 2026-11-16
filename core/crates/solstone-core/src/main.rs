@@ -3472,6 +3472,27 @@ fn run_local_generate() -> ExitCode {
                 return ExitCode::from(EXIT_IOERR);
             }
         };
+    // A direct local call takes its turn in the journal's one call line too.
+    let priority =
+        match solstone_core_journal_config::work_priority::WorkPriority::from_environment() {
+            Ok(priority) => priority,
+            Err(detail) => {
+                eprintln!("local command failed: {detail}");
+                return ExitCode::from(EXIT_USAGE);
+            }
+        };
+    let _turn = match solstone_core_local::admission::wait_for_model_call(
+        Path::new(&input.journal_path),
+        priority,
+        &|| false,
+    ) {
+        Ok(turn) => Some(turn),
+        // The line orders calls; a journal whose line cannot open still calls.
+        Err(error) => {
+            eprintln!("model call line is unavailable, so this call runs unordered: {error:?}");
+            None
+        }
+    };
     let mut authority = acquire_local_inference_authority(Path::new(&input.journal_path));
     let outcome = solstone_core_local::generate_with_authority(input, authority.as_mut());
     let mut stdout = io::stdout().lock();
