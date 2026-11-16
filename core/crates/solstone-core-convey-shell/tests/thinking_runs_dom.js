@@ -689,6 +689,8 @@ async function main() {
   vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/date_format.js'), 'utf8'), context);
   vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/journal-web-host.js'), 'utf8'), context);
   vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/external-navigation.js'), 'utf8'), context);
+  // The shell's focus helpers, as its boot part carries them.
+  vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/focus.js'), 'utf8'), context);
   // The view contract, as far as these cases need it: the registered mount,
   // and a ctx over this harness's own stand-ins. The contract itself is
   // thinking_contract_dom.js's, through the real shell.
@@ -1800,13 +1802,19 @@ async function main() {
   assert.strictEqual(thinking.localSetupRefusal(ineligible, 'start').localSetupTone, 'error', 'and it reads as an error');
   thinking.state.install = {install_state: 'idle'};
   // Trying again clears the earlier refusal as soon as the new request starts.
-  localResponses.push(() => new Promise(() => {}));
+  let releaseStart;
+  localResponses.push(() => new Promise((_resolve, reject) => { releaseStart = reject; }));
   nodes.get('localBootstrap').emit('click');
   await settle();
   assert.strictEqual(localMessage.textContent, thinking.localCopy().message, 'trying again clears the earlier refusal and the card speaks again');
   assert.strictEqual(localMessage.textContent, '', 'the card leaves the readiness summary to its verdict and notice');
   assert.strictEqual(localMessage.dataset.tone, undefined, 'and the cleared line carries no error tone');
   assert.strictEqual(thinking.state.localSetupError, '', 'the kept refusal is gone from state too');
+  // The press still out keeps its button; answer it so the cases after start clear.
+  releaseStart(new Error('released'));
+  for (let i = 0; i < 6; i += 1) await settle();
+  thinking.state.localSetupError = '';
+  thinking.state.localSetupTone = '';
   localResponses.length = 0;
   thinking.state.providers = savedLocalProviders;
   thinking.state.localAvailability = null;
@@ -3591,14 +3599,22 @@ async function main() {
     settingsResponses.push(() => pendingAudioWrite.promise);
     providerResponses.push(() => Promise.resolve(audioProviders('confidential', true)));
     const savingAudio = thinking.setConfidentialAudio(true);
-    assert.strictEqual(nodes.get('confidentialAudioToggle').disabled, true);
-    assert.strictEqual(nodes.get('confidentialAudioRow').hidden, true);
+    // While its write is out the toggle stays drawn with the owner's choice,
+    // busy rather than turned off, and nothing says where audio goes.
+    assert.strictEqual(nodes.get('confidentialAudioRow').hidden, false);
+    assert.strictEqual(nodes.get('confidentialAudioToggle').disabled, false);
+    assert.strictEqual(nodes.get('confidentialAudioToggle').getAttribute('aria-disabled'), 'true');
+    assert.strictEqual(nodes.get('confidentialAudioToggle').getAttribute('aria-busy'), 'true');
+    assert.strictEqual(nodes.get('confidentialAudioToggle').checked, true);
+    assert.strictEqual(nodes.get('confidentialAudioDescription').textContent, '');
     assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, '');
     await thinking.setConfidentialAudio(false);
+    assert.strictEqual(nodes.get('confidentialAudioToggle').checked, true, 'a second press while busy keeps the first choice');
     assert.strictEqual(apiCalls.filter((call) => call.url === '/app/settings/api/config').length, audioWritesBefore + 1);
     pendingAudioWrite.resolve({success: true});
     await savingAudio;
     assert.strictEqual(nodes.get('confidentialAudioToggle').disabled, false);
+    assert.strictEqual(nodes.get('confidentialAudioToggle').getAttribute('aria-busy'), null);
     assert.strictEqual(nodes.get('confidentialAudioToggle').checked, true);
     // A read begun before a mutation cannot restore its old egress claim.
     thinking.state.providers = audioProviders('parakeet', false);
@@ -3844,6 +3860,8 @@ async function main() {
     assert.strictEqual(saveBtn.disabled, false, 'save button restored');
     assert.strictEqual(clearBtn.disabled, false, 'clear button restored');
     assert.strictEqual(clearFromLocalBtn.disabled, false, 'clearFromLocal button restored');
+    assert.strictEqual(clearBtn.getAttribute('aria-disabled'), null, 'clear button usable again');
+    assert.strictEqual(clearFromLocalBtn.getAttribute('aria-disabled'), null, 'clearFromLocal button usable again');
     assert(!statusNode.textContent.includes('endpoint_image_checking'), 'checking text cleared');
   };
 
@@ -3875,12 +3893,16 @@ async function main() {
     }
     if (url.startsWith('/app/thinking/api/local/endpoint/check') && method === 'POST') {
       checkCalls += 1;
-      assert.strictEqual(saveBtn.disabled, true, 'save button is disabled during check');
-      assert.strictEqual(clearBtn.disabled, true, 'clear button is disabled during check');
+      // Nothing is turned off during the check (that would drop focus): the
+      // two clears can't be used meanwhile, and say so.
+      assert.strictEqual(saveBtn.disabled, false, 'save button stays on during check');
+      assert.strictEqual(clearBtn.disabled, false, 'clear button stays on during check');
+      assert.strictEqual(clearFromLocalBtn.disabled, false, 'clearFromLocal button stays on during check');
+      assert.strictEqual(clearBtn.getAttribute('aria-disabled'), 'true', 'clear button is unusable during check');
       assert.strictEqual(
-        clearFromLocalBtn.disabled,
-        true,
-        'clearFromLocal button is disabled during check'
+        clearFromLocalBtn.getAttribute('aria-disabled'),
+        'true',
+        'clearFromLocal button is unusable during check'
       );
       assert.strictEqual(
         statusNode.textContent,
@@ -4190,12 +4212,12 @@ async function main() {
     await advance(0);
     await settle();
 
-    assert.strictEqual(saveBtn.disabled, true, 'save disabled while pending');
-    assert.strictEqual(clearBtn.disabled, true, 'clear disabled while pending');
+    assert.strictEqual(saveBtn.disabled, false, 'save stays on while pending');
+    assert.strictEqual(clearBtn.getAttribute('aria-disabled'), 'true', 'clear unusable while pending');
     assert.strictEqual(
-      clearFromLocalBtn.disabled,
-      true,
-      'clearFromLocal disabled while pending'
+      clearFromLocalBtn.getAttribute('aria-disabled'),
+      'true',
+      'clearFromLocal unusable while pending'
     );
     assert.strictEqual(
       statusNode.textContent,
@@ -4212,11 +4234,11 @@ async function main() {
     await settle();
 
     assert.strictEqual(saveBtn.disabled, false, 'save re-enabled after leave');
-    assert.strictEqual(clearBtn.disabled, false, 'clear re-enabled after leave');
+    assert.strictEqual(clearBtn.getAttribute('aria-disabled'), null, 'clear usable after leave');
     assert.strictEqual(
-      clearFromLocalBtn.disabled,
-      false,
-      'clearFromLocal re-enabled after leave'
+      clearFromLocalBtn.getAttribute('aria-disabled'),
+      null,
+      'clearFromLocal usable after leave'
     );
     assert(!statusNode.textContent.includes('endpoint_image_not_read'));
     assert(!statusNode.textContent.includes('endpoint_image_checking'));

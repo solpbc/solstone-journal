@@ -1458,5 +1458,285 @@ module.exports = async function thinkingContractCases(crateDir) {
     assert.ok(url.value === 'http://saved.example/v1' && model.value === 'saved-model', `a new saved endpoint shows (${url.value} · ${model.value})`);
   });
 
+  // ---- presses keep focus where the owner is
+
+  // A keyboard press: focus on the control, then its click.
+  async function pressFrom(p, id, ms = 2000) {
+    const el = typeof id === 'string' ? p.byId(id) : id;
+    assert.ok(el && !el.hidden && !el.closest('[hidden]'), `${typeof id === 'string' ? id : el.id} is drawn`);
+    el.focus();
+    assert.ok(p.doc.activeElement === el, `focus is on ${el.id || el.tagName} before its press (${focusOn(p)})`);
+    p.press(el);
+    await run(p, ms);
+    return el;
+  }
+
+  const byoKeys = clone(env.answers('byo_cloud').get('/app/thinking/api/keys'));
+  const noKeys = clone(env.answers('none').get('/app/thinking/api/keys'));
+  const validOpenai = Object.assign(clone(byoKeys), { api_keys: Object.assign({}, byoKeys.api_keys, { openai: true }), key_validation: { openai: { valid: true, timestamp: '2026-11-14T12:00:00Z' } } });
+  const byoProviders = clone(env.answers('byo_cloud').get('/app/thinking/api/providers'));
+  const localProviders = clone(local.get('/app/thinking/api/providers'));
+  const confProviders = clone(env.answers('confidential').get('/app/thinking/api/providers'));
+  const confOff = clone(env.answers('confidential_inactive').get('/app/thinking/api/providers'));
+  confOff.active_lane = Object.assign({}, confOff.active_lane, { confidential_provenance_configured: false, confidential_operation: null, confidential_attestation: { state: 'off' } });
+  const confStarting = clone(confOff);
+  confStarting.active_lane = Object.assign({}, confStarting.active_lane, { confidential_operation: { phase: 'waiting', portal_url: 'https://services.example/consent' } });
+  const signedIn = { signed_in: true, email: 'owner@example.com' };
+  const models = { models: [{ slug: 'gpt-lab', display_name: 'lab model' }] };
+
+  // A journal whose bundled model isn't installed yet.
+  const missingProviders = clone(env.answers('none').get('/app/thinking/api/providers'));
+  missingProviders.provider_status = Object.assign({}, missingProviders.provider_status, { local: { generate_ready: false, issues: ['model_missing'], selected: false } });
+  const notInstalled = {
+    'GET /app/thinking/api/providers': missingProviders,
+    'GET /app/thinking/api/local/availability': { available: false, reason_code: 'model_missing', reason: 'the model is not installed' },
+  };
+  // [row, address, options, steps before the press, the control, expected landing after success, and after failure]
+  const rows = [
+    ['check this key →', '/app/thinking/#byo-setup', { phase: 'none', overrides: { 'POST /app/thinking/api/keys/check': { valid: true }, 'PUT /app/thinking/api/keys': validOpenai } },
+      async (p) => { await pressFrom(p, p.q('[data-byo-provider="openai"]'), 500); p.byId('byoKeyInput').value = 'sk-lab'; }, 'byoSaveKey', 'H3#byoModelHeading',
+      { 'POST /app/thinking/api/keys/check': { valid: false, reason_code: 'invalid' } }, 'BUTTON#byoSaveKey'],
+    ['clear key', '/app/thinking/#byo-setup', { phase: 'byo_cloud', overrides: { 'PUT /app/thinking/api/keys': noKeys } },
+      async (p) => { await pressFrom(p, p.q('[data-byo-provider="openai"]'), 500); await pressFrom(p, 'byoDifferentKey', 500); }, 'byoClearKey', 'INPUT#byoKeyInput',
+      { 'PUT /app/thinking/api/keys': () => { throw Object.assign(new Error('no'), { status: 500 }); } }, 'BUTTON#byoClearKey'],
+    ['use this model', '/app/thinking/#byo-setup', { phase: 'byo_cloud', overrides: { 'POST /app/thinking/api/validate-model': { valid: true }, 'PUT /app/thinking/api/providers': byoProviders } },
+      async (p) => { await pressFrom(p, p.q('[data-byo-provider="openai"]'), 500); p.byId('byoModelInput').value = 'gpt-lab'; p.doc.dispatch(p.byId('byoModelInput'), { type: 'input' }); }, 'byoModelSave', 'BUTTON#byoLaneStatus',
+      { 'POST /app/thinking/api/validate-model': { valid: false, reason_code: 'model_not_found' } }, 'BUTTON#byoModelSave'],
+    ['turn on confidential processing', '/app/thinking/#confidential-setup', { phase: 'confidential_inactive', overrides: { 'GET /app/thinking/api/providers': () => (turnedOn ? confStarting : confOff), 'POST /app/thinking/api/confidential/enable': () => { turnedOn = true; return { operation: { phase: 'waiting', portal_url: 'https://services.example/consent' } }; } } },
+      () => { turnedOn = false; }, 'confidentialEnable', 'A#confidentialLaneOperationLink',
+      { 'POST /app/thinking/api/confidential/enable': () => ({ __status: 500 }) }, 'BUTTON#confidentialEnable'],
+    ['turn off confidential processing', '/app/thinking/#confidential-setup', { phase: 'confidential', overrides: { 'POST /app/thinking/api/confidential/disable': { ok: true } } },
+      null, 'confidentialDisable', 'BUTTON#confidentialLaneStatus',
+      { 'POST /app/thinking/api/confidential/disable': () => ({ __status: 500 }) }, 'BUTTON#confidentialDisable'],
+    ['clear endpoint', '/app/thinking/#byo-setup', { phase: 'byo_endpoint', overrides: { 'DELETE /app/thinking/api/local/endpoint': { local_endpoint: {} } } },
+      async (p) => { await pressFrom(p, 'byoModeEndpoint', 500); }, 'localEndpointClear', 'BUTTON#byoModeEndpoint',
+      { 'DELETE /app/thinking/api/local/endpoint': () => ({ __status: 500 }) }, 'BUTTON#localEndpointClear'],
+    ['Continue with ChatGPT', '/app/thinking/#byo-setup', { phase: 'none', overrides: { 'POST /app/thinking/api/chatgpt/sign-in': { attempt_id: 'attempt-1', authorize_url: 'https://auth.example/authorize' }, 'GET /app/thinking/api/chatgpt/sign-in/attempt-1': { state: 'pending' } } },
+      null, 'chatgptCardContinue', 'H3#chatgptPendingHeading',
+      { 'POST /app/thinking/api/chatgpt/sign-in': () => ({ __status: 500 }) }, 'BUTTON#chatgptCardContinue'],
+    ['sign out (ChatGPT)', '/app/thinking/#byo-setup', { phase: 'none', overrides: { 'GET /app/thinking/api/chatgpt/status': () => signedInNow(), 'GET /app/thinking/api/chatgpt/models': models, 'POST /app/thinking/api/chatgpt/sign-out': () => { signedOut = true; return { revoked: true }; } } },
+      async (p) => { await pressFrom(p, 'chatgptCardManage', 1000); }, 'chatgptSignOut', 'BUTTON#chatgptCardContinue',
+      null, null],
+    ['finish signing in', '/app/thinking/#byo-setup', { phase: 'none', storage: { 'solstone.thinking.chatgptAttempt': ATTEMPT }, overrides: { 'GET /app/thinking/api/chatgpt/sign-in/attempt-1': { state: 'pending' }, 'POST /app/thinking/api/chatgpt/sign-in/attempt-1/finish': () => { finished = true; return { reason: 'signed_in' }; }, 'GET /app/thinking/api/chatgpt/status': () => (finished ? signedIn : { signed_in: false }), 'GET /app/thinking/api/chatgpt/models': models } },
+      (p) => { p.byId('chatgptRedirectUrl').value = 'http://localhost:1455/auth/callback?code=lab'; }, 'chatgptFinish', 'LEGEND#chatgptModelHeading',
+      { 'POST /app/thinking/api/chatgpt/sign-in/attempt-1/finish': { reason: 'refused' } }, 'BUTTON#chatgptFinish'],
+    ['install', '/app/thinking/#local-setup', { phase: 'none', overrides: { ...notInstalled, 'POST /app/thinking/api/local/bootstrap': () => { installStatus = installing(local); return installStatus; }, 'GET /app/thinking/api/local/bootstrap/status': () => installStatus } },
+      () => { installStatus = Object.assign(clone(local.get('/app/thinking/api/local/bootstrap/status') || {}), { install_state: 'idle' }); }, 'localBootstrap', 'BUTTON#localCancel',
+      { 'POST /app/thinking/api/local/bootstrap': () => ({ __status: 500 }) }, 'BUTTON#localBootstrap'],
+    ['cancel the install', '/app/thinking/#local-setup', { phase: 'none', overrides: { ...notInstalled, 'POST /app/thinking/api/local/bootstrap/cancel': () => { installStatus = Object.assign(clone(installStatus), { install_state: 'idle' }); return installStatus; }, 'GET /app/thinking/api/local/bootstrap/status': () => installStatus } },
+      () => { installStatus = Object.assign(installing(local), { attempt_id: 'attempt-9' }); }, 'localCancel', 'BUTTON#localBootstrap',
+      null, null],
+  ];
+  let signedOut = false;
+  let turnedOn = false;
+  let finished = false;
+  let installStatus = null;
+  function signedInNow() { return signedOut ? { signed_in: false } : signedIn; }
+
+  for (const [row, address, options, before, control, landing, failing, failLanding] of rows) {
+    for (const outcome of failing ? ['success', 'failure'] : ['success']) {
+      await test(`${row}: after ${outcome === 'success' ? 'it answers' : 'it fails'}, focus is on ${outcome === 'success' ? landing : failLanding}, never the page`, async () => {
+        const overrides = Object.assign({}, options.overrides, outcome === 'failure' ? failing : {});
+        for (const [key, value] of Object.entries(overrides)) {
+          if (typeof value === 'function') {
+            const fn = value;
+            // The page keeps what it is given, so each answer is its own copy.
+            overrides[key] = (...args) => {
+              const answer = fn(...args);
+              return answer === undefined ? undefined : clone(answer);
+            };
+          }
+        }
+        signedOut = false;
+        turnedOn = false;
+        finished = false;
+        // A step that takes no page sets the journal's state before the load.
+        if (before && before.length === 0) await before();
+        const p = await boot(env, address, Object.assign({}, options, { overrides }));
+        // A failure answer is marked by `__status`.
+        p.statuses.push([(call) => call.method !== 'GET' && Object.keys(failing || {}).includes(`${call.method} ${call.url.split('?')[0]}`) && outcome === 'failure', 500]);
+        if (before && before.length > 0) await before(p);
+        await pressFrom(p, control, 4000);
+        const expected = outcome === 'success' ? landing : failLanding;
+        assert.ok(focusOn(p) === expected, `${row} (${outcome}): focus on ${expected}, not ${focusOn(p)}`);
+        assert.ok(p.byId(control).getAttribute('aria-busy') === null, `${row} (${outcome}): not busy once answered`);
+      });
+    }
+  }
+
+  await test('switch: focus goes to the new lane\'s control', async () => {
+    const ready = clone(localProviders);
+    ready.provider_status = Object.assign({}, ready.provider_status, { local: { generate_ready: true, issues: [], selected: false } });
+    const byo = Object.assign(clone(byoProviders), { provider_status: Object.assign({}, byoProviders.provider_status, { local: { generate_ready: true, issues: [], selected: false } }), local_override: { enabled: false } });
+    let current = byo;
+    const p = await boot(env, '/app/thinking/#local-setup', { phase: 'byo_cloud', overrides: {
+      'GET /app/thinking/api/providers': () => current,
+      'GET /app/thinking/api/local/availability': { available: true, reason_code: 'ready' },
+      'GET /app/thinking/api/local/bootstrap/status': Object.assign(clone(local.get('/app/thinking/api/local/bootstrap/status') || {}), { install_state: 'installed' }),
+      'PUT /app/thinking/api/providers': () => { current = ready; return ready; },
+    } });
+    await pressFrom(p, 'localActivate', 500);
+    assert.ok(shownSections(p).includes('lane-switch'), `the switch is asked (${shownSections(p)})`);
+    await pressFrom(p, 'switchConfirmPrimary', 3000);
+    assert.ok(focusOn(p) === 'BUTTON#localLaneStatus', `focus on the local lane's control (${focusOn(p)})`);
+  });
+
+  await test('turn on local: focus goes to the nearest control left, not the status line', async () => {
+    const ready = clone(localProviders);
+    ready.active_lane = Object.assign({}, ready.active_lane, { lane: 'none' });
+    ready.provider_status = Object.assign({}, ready.provider_status, { local: { generate_ready: true, issues: [], selected: false } });
+    const on = clone(localProviders);
+    on.active_lane = Object.assign({}, on.active_lane, { lane: 'local' });
+    on.provider_status = Object.assign({}, on.provider_status, { local: { generate_ready: true, issues: [], selected: true } });
+    const runtimeReady = Object.assign(clone(local.get('/app/thinking/api/local/runtime') || {}), { status: 'ok', phase: 'ready', poll: false });
+    on.local_runtime = runtimeReady;
+    let current = ready;
+    const p = await boot(env, '/app/thinking/#local-setup', { overrides: {
+      'GET /app/thinking/api/local/runtime': () => (current === on ? runtimeReady : Object.assign(clone(runtimeReady), { phase: 'stopped', status: 'stopped' })),
+      'GET /app/thinking/api/providers': () => current,
+      'GET /app/thinking/api/local/availability': { available: true, reason_code: 'ready' },
+      'GET /app/thinking/api/local/bootstrap/status': Object.assign(clone(local.get('/app/thinking/api/local/bootstrap/status') || {}), { install_state: 'installed' }),
+      'PUT /app/thinking/api/providers': () => { current = on; return on; },
+    } });
+    await pressFrom(p, 'localActivate', 3000);
+    assert.ok(p.byId('localActivate').hidden, 'turn on local is gone');
+    assert.ok(focusOn(p) === 'BUTTON#localRefresh', `focus on "check again" (${focusOn(p)})`);
+  });
+
+  await test('a press held open keeps focus on its control: busy, drawn, not turned off, and a second press sends nothing', async () => {
+    const held = [
+      ['localBootstrap', '/app/thinking/#local-setup', { phase: 'none', overrides: notInstalled }, '/app/thinking/api/local/bootstrap'],
+      ['confidentialDisable', '/app/thinking/#confidential-setup', { phase: 'confidential' }, '/app/thinking/api/confidential/disable'],
+      ['confidentialEnable', '/app/thinking/#confidential-setup', { phase: 'confidential_inactive', overrides: { 'GET /app/thinking/api/providers': confOff } }, '/app/thinking/api/confidential/enable'],
+    ];
+    for (const [id, address, options, write] of held) {
+      const p = await boot(env, address, options);
+      p.holds.push((call) => call.url.startsWith(write));
+      const el = await pressFrom(p, id, 1000);
+      assert.ok(p.doc.activeElement === el, `${id}: focus stays while its write is out (${focusOn(p)})`);
+      assert.ok(el.getAttribute('aria-busy') === 'true' && el.getAttribute('aria-disabled') === 'true' && el.disabled === false, `${id}: busy, not turned off`);
+      p.press(el);
+      await settle();
+      assert.ok(p.writes().filter((c) => c.url.startsWith(write)).length === 1, `${id}: a second press sends nothing`);
+    }
+  });
+
+  await test('save endpoint: busy through its check, the clears unusable meanwhile, and a read lands on the lane', async () => {
+    const p = await boot(env, '/app/thinking/#byo-setup', { phase: 'byo_endpoint', overrides: {
+      'POST /app/thinking/api/local/endpoint': { local_endpoint: { endpoint_url: 'http://127.0.0.1:8080/v1', served_model_id: 'lab' } },
+    } });
+    await pressFrom(p, 'byoModeEndpoint', 500);
+    p.holds.push((call) => call.url.startsWith('/app/thinking/api/local/endpoint/check'));
+    const save = await pressFrom(p, 'localEndpointSave', 1500);
+    assert.ok(p.doc.activeElement === save && save.getAttribute('aria-busy') === 'true' && !save.disabled, `save keeps focus, busy (${focusOn(p)})`);
+    const clear = p.byId('localEndpointClear');
+    assert.ok(clear.getAttribute('aria-disabled') === 'true' && clear.getAttribute('aria-busy') === null && !clear.disabled, 'clear is unusable, not busy, not off');
+    p.press(clear);
+    await settle();
+    assert.ok(!p.writes().some((c) => c.method === 'DELETE'), 'a press on clear does nothing meanwhile');
+    answerHeld(p, (call) => call.url.startsWith('/app/thinking/api/local/endpoint/check'), { image_check: { status: 'read' } });
+    p.holds.length = 0;
+    await run(p, 2000);
+    assert.ok(shownSections(p).includes('main'), 'the form closes back to the lanes');
+    assert.ok(focusOn(p) === 'BUTTON#byoLaneStatus', `focus on the lane's control (${focusOn(p)})`);
+    assert.ok(clear.getAttribute('aria-disabled') === null, 'clear is usable again');
+  });
+
+  await test('the audio toggle stays drawn and busy with the owner\'s choice while its write is out, and keeps focus', async () => {
+    const p = await boot(env, '/app/thinking/#confidential-setup', { phase: 'confidential' });
+    const toggle = p.byId('confidentialAudioToggle');
+    assert.ok(!p.byId('confidentialAudioRow').hidden, 'the row is drawn');
+    const was = toggle.checked;
+    p.holds.push((call) => call.url.startsWith('/app/settings/api/config'));
+    toggle.focus();
+    toggle.checked = !was;
+    p.doc.dispatch(toggle, { type: 'change' });
+    await settle();
+    assert.ok(!p.byId('confidentialAudioRow').hidden && p.doc.activeElement === toggle, `drawn, with focus (${focusOn(p)})`);
+    assert.ok(toggle.checked === !was && toggle.getAttribute('aria-busy') === 'true' && !toggle.disabled, 'the owner\'s choice, busy, not off');
+    assert.ok(p.byId('confidentialAudioDescription').textContent === '' && p.byId('confidentialTrustEgress').textContent === '', 'nothing says where audio goes meanwhile');
+    answerHeld(p, (call) => call.url.startsWith('/app/settings/api/config'), {});
+    p.holds.length = 0;
+    await run(p, 1500);
+    assert.ok(p.doc.activeElement === toggle && toggle.getAttribute('aria-busy') === null, `the same toggle, answered (${focusOn(p)})`);
+  });
+
+  await test('a press whose work throws still applies its kept hide, and one that ends after thinking has gone touches nothing', async () => {
+    const p = await boot(env, '/app/thinking/#confidential-setup', { phase: 'confidential', overrides: { 'POST /app/thinking/api/confidential/disable': { ok: true } } });
+    // The re-read after the write fails: the press throws, the turn-off still hid.
+    let reads = 0;
+    p.statuses.push([(call) => isProviders(call) && (reads += 1) > 0 && p.writes().length > 0, 500]);
+    p.holds.push((call) => call.url.startsWith('/app/thinking/api/confidential/disable'));
+    const off = await pressFrom(p, 'confidentialDisable', 500);
+    const confOffNow = clone(confOff);
+    p.env.lateProviders = confOffNow;
+    answerHeld(p, (call) => call.url.startsWith('/app/thinking/api/confidential/disable'), { ok: true });
+    p.holds.length = 0;
+    await run(p, 2000);
+    assert.ok(off.getAttribute('aria-busy') === null, 'not busy after the throw');
+    assert.ok(focusOn(p) !== 'BODY', `focus is not on the page (${focusOn(p)})`);
+    // Gone before its answer: nothing drawn, no focus moved.
+    const q = await boot(env, '/app/thinking/#confidential-setup', { phase: 'confidential', overrides: { 'POST /app/thinking/api/confidential/disable': { ok: true } } });
+    q.holds.push((call) => call.url.startsWith('/app/thinking/api/confidential/disable'));
+    const gone = await pressFrom(q, 'confidentialDisable', 500);
+    q.leave();
+    await drain(q);
+    const drawn = q.mutations();
+    answerHeld(q, (call) => call.url.startsWith('/app/thinking/api/confidential/disable'), { ok: true });
+    await run(q, 3000);
+    assert.ok(q.mutations() === drawn, 'nothing is drawn after thinking has gone');
+    assert.ok(gone.getAttribute('aria-busy') === 'true', 'the gone markup is left as it was');
+  });
+
+  await test('focus outside thinking is left alone, through a poll and through a press\'s draw', async () => {
+    const one = Object.assign(installing(local), { attempt_id: 'attempt-9' });
+    const p = await boot(env, '/app/thinking/#local-setup', { overrides: { 'GET /app/thinking/api/local/bootstrap/status': () => one, 'POST /app/thinking/api/local/bootstrap/cancel': () => Object.assign(one, { install_state: 'idle' }) } });
+    await run(p, 3000);
+    const rail = p.q('#app-rail a');
+    p.press(p.byId('localCancel'));
+    rail.focus();
+    await run(p, 3000);
+    assert.ok(p.byId('localCancel').hidden, 'cancel went');
+    assert.ok(p.doc.activeElement === rail, `the rail keeps focus (${focusOn(p)})`);
+  });
+
+  // ---- moves inside thinking: a lane's control, and back to the lanes
+
+  for (const [name, phase, control, section, heading] of [
+    ['local', 'bundled_local', 'localLaneStatus', 'local-setup', 'H2#localSetupHeading'],
+    ['confidential', 'confidential', 'confidentialLaneStatus', 'confidential-setup', 'H2#confidentialSetupHeading'],
+    ['confidential ("how it works")', 'confidential', 'confidentialLaneMore', 'confidential-setup', 'H2#confidentialSetupHeading'],
+    ['your own model', 'byo_cloud', 'byoLaneStatus', 'byo-setup', 'H2#byoSetupTitle'],
+  ]) {
+    await test(`opening the ${name} lane lands on its heading, and its back link on the lane's control`, async () => {
+      const p = await boot(env, '/app/thinking/', { phase });
+      await pressFrom(p, control, 1500);
+      assert.ok(shownSections(p).includes(section), `${section} is shown (${shownSections(p)})`);
+      assert.ok(focusOn(p) === heading, `${name}: on its heading (${focusOn(p)})`);
+      const back = section === 'byo-setup' ? p.byId('byoBackLink') : p.q(`section[data-view="${section}"] .backlink`);
+      await pressFrom(p, back, 1500);
+      // From a provider's step, "‹" goes to the providers first.
+      if (section === 'byo-setup' && !shownSections(p).includes('main')) await pressFrom(p, back, 1500);
+      assert.ok(shownSections(p).includes('main'), 'back on the lanes');
+      const laneControl = control === 'confidentialLaneMore' ? 'confidentialLaneStatus' : control;
+      assert.ok(focusOn(p) === `BUTTON#${laneControl}`, `${name}: back on the lane's control (${focusOn(p)})`);
+    });
+  }
+
+  await test('the lane switch\'s back link and "keep" land on the lane that asked', async () => {
+    const byo = Object.assign(clone(byoProviders), { provider_status: Object.assign({}, byoProviders.provider_status, { local: { generate_ready: true, issues: [], selected: false } }), local_override: { enabled: false } });
+    for (const leave of ['back link', 'keep']) {
+      const p = await boot(env, '/app/thinking/#local-setup', { phase: 'byo_cloud', overrides: {
+        'GET /app/thinking/api/providers': byo,
+        'GET /app/thinking/api/local/availability': { available: true, reason_code: 'ready' },
+        'GET /app/thinking/api/local/bootstrap/status': Object.assign(clone(local.get('/app/thinking/api/local/bootstrap/status') || {}), { install_state: 'installed' }),
+      } });
+      await pressFrom(p, 'localActivate', 500);
+      assert.ok(focusOn(p) === 'H2#switchHeading', `the switch's heading (${focusOn(p)})`);
+      await pressFrom(p, leave === 'keep' ? p.byId('switchCancel') : p.q('section[data-view="lane-switch"] .backlink'), 1500);
+      assert.ok(focusOn(p) === 'BUTTON#localLaneStatus', `${leave}: the local lane's control (${focusOn(p)})`);
+    }
+  });
+
   return cases;
 };

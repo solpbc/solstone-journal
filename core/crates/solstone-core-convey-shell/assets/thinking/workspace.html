@@ -338,6 +338,13 @@
       color: var(--danger);
     }
 
+    /* A control whose write is out: it keeps focus and ignores presses, and
+       looks it, without turning off. */
+    .thinking-workspace [aria-disabled="true"] {
+      cursor: progress;
+      opacity: .8;
+    }
+
     /* The "your own model" tuning section: a closed disclosure whose closed
        line carries the live setting. */
     .thinking-workspace .tuning {
@@ -1204,7 +1211,7 @@
       <section class="view" data-view="confidential-setup" hidden>
         <button type="button" class="backlink" data-open-view="main">‹ thinking</button>
         <div class="panelbody">
-          <h2 id="confidentialSetupHeading"></h2>
+          <h2 id="confidentialSetupHeading" tabindex="-1"></h2>
           <p class="intro" id="confidentialSetupSub"></p>
         </div>
 
@@ -1251,7 +1258,7 @@
       <section class="view" data-view="byo-setup" hidden>
         <button type="button" class="backlink" id="byoBackLink">‹ thinking</button>
       <div class="panelbody">
-        <h2 id="byoSetupTitle"></h2>
+        <h2 id="byoSetupTitle" tabindex="-1"></h2>
         <p class="intro" id="byoIntro"></p>
       </div>
 
@@ -1327,7 +1334,7 @@
       </section>
 
       <section class="pastebox" id="chatgptPending" hidden>
-        <h3 id="chatgptPendingHeading"></h3>
+        <h3 id="chatgptPendingHeading" tabindex="-1"></h3>
         <p class="intro" id="chatgptPendingSub"></p>
         <p class="notice" id="chatgptPendingNotice" hidden></p>
         <p class="message" id="chatgptPendingStatus" aria-live="polite"></p>
@@ -1352,7 +1359,7 @@
           <button type="button" class="checknow" id="chatgptSignOut"></button>
         </div>
         <fieldset class="chatgpt-models" id="chatgptModels">
-          <legend id="chatgptModelHeading"></legend>
+          <legend id="chatgptModelHeading" tabindex="-1"></legend>
           <p class="micro" id="chatgptModelSub"></p>
           <div class="chatgpt-model-choices" id="chatgptModelChoices"></div>
         </fieldset>
@@ -1417,7 +1424,7 @@
           <button type="button" class="checknow" id="byoCheckAgain"></button>
         </div>
         <div class="panelbody">
-          <h3 id="byoModelHeading"></h3>
+          <h3 id="byoModelHeading" tabindex="-1"></h3>
           <p class="micro" id="byoModelSub"></p>
         </div>
         <div class="notice" id="byoConfigurationGuidance" hidden></div>
@@ -1456,7 +1463,7 @@
     <section class="view" data-view="local-setup" hidden>
       <button type="button" class="backlink" data-open-view="main">‹ thinking</button>
       <div class="panelbody">
-        <h2>local</h2>
+        <h2 id="localSetupHeading" tabindex="-1">local</h2>
         <p class="intro" id="localSetupIntro">run a thinking model right in your journal.</p>
       </div>
 
@@ -1493,7 +1500,7 @@
     <section class="view" data-view="lane-switch" hidden>
       <button type="button" class="backlink" data-open-view="main">‹ thinking</button>
       <div class="switchcard">
-        <h2 id="switchHeading"></h2>
+        <h2 id="switchHeading" tabindex="-1"></h2>
         <div class="switchflow">
           <div class="switchnode">
             <p class="micro" id="switchCurrentNodeLabel"></p>

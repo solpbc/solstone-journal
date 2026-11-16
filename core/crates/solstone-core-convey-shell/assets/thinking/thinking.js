@@ -16,6 +16,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   // into this markup, out of the page, never into a later mount's.
   const viewRoot = document.getElementById('providers');
   const NO_MARKUP = {querySelector: () => null, querySelectorAll: () => []};
+  // The shell's focus helpers, in its boot part.
+  const SolFocus = window.SolFocus;
   let markupRoot = null;
   let readyReported = false;
 
@@ -126,7 +128,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     },
   };
   let copy = {};
-  const confidentialAudio = {known: true, busy: false, epoch: 0, readSequence: 0};
+  const confidentialAudio = {known: true, busy: false, choice: false, epoch: 0, readSequence: 0};
   const CHATGPT_ATTEMPT_STORAGE_KEY = 'solstone.thinking.chatgptAttempt';
   let chatGptStartGateOwner = null;
 
@@ -259,10 +261,20 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function writeHidden(el, hidden) {
+    const held = heldByPress(el);
+    if (held) {
+      held.hidden = !!hidden;
+      return;
+    }
     if (el && el.hidden !== !!hidden) el.hidden = !!hidden;
   }
 
   function writeDisabled(el, disabled) {
+    const held = heldByPress(el);
+    if (held) {
+      held.disabled = !!disabled;
+      return;
+    }
     if (el && el.disabled !== !!disabled) el.disabled = !!disabled;
   }
 
@@ -278,6 +290,121 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       && drawn.nodes.every((node, i) => node === nodes[i])) return;
     build();
     drawnParts.set(el, {key, nodes: Array.from(el.childNodes || el.children || [])});
+  }
+
+  // ---- focus that stays where the owner is
+  //
+  // Thinking draws by showing, hiding and turning off its own controls, so a
+  // press or a poll can take away the control that has focus. Each draw notes
+  // the focused control first, and if the draw took it away, focus goes to the
+  // first of: where the press that was out says, the nearest control left in
+  // the same part of the page, and that part's heading. Focus anywhere else,
+  // or nowhere, is left alone.
+
+  let drawDepth = 0;
+  const presses = [];
+  const FOCUS_CONTROLS = 'button, a[href], input, select, textarea, summary';
+
+  function heldByPress(el) {
+    return el ? presses.find((entry) => entry.busy && entry.control === el) : undefined;
+  }
+
+  function partOf(el) {
+    return el?.closest?.('[data-view], [data-thinking-section]') || null;
+  }
+
+  function shownView() {
+    return Array.from(markup().querySelectorAll('#providers [data-view]')).find((view) => !view.hidden)?.dataset.view || 'main';
+  }
+
+  function partHeading(view) {
+    return $({
+      main: 'thinkingHeading',
+      'local-setup': 'localSetupHeading',
+      'confidential-setup': 'confidentialSetupHeading',
+      'byo-setup': 'byoSetupTitle',
+      'lane-switch': 'switchHeading',
+    }[view] || 'thinkingHeading');
+  }
+
+  // Back on the lanes from a setup, the lane's own control is where the owner was.
+  function laneControl(lane) {
+    return lane ? $(`${lane}LaneStatus`) : null;
+  }
+
+  function laneOfView(view) {
+    if (view === 'lane-switch') return state.pendingSwitchTarget || '';
+    return {'local-setup': 'local', 'confidential-setup': 'confidential', 'byo-setup': 'byo'}[view] || '';
+  }
+
+  function nearestControls(part, from) {
+    const all = Array.from(part.querySelectorAll(FOCUS_CONTROLS))
+      .filter((el) => el.getAttribute('tabindex') !== '-1' && el.type !== 'hidden');
+    const at = all.indexOf(from);
+    return at < 0 ? all : [...all.slice(at + 1), ...all.slice(0, at).reverse()];
+  }
+
+  function focusTargets(held, finished) {
+    const targets = [];
+    const part = partOf(held);
+    const own = [finished, ...presses].find((entry) => entry
+      && (entry.control === held || (part && partOf(entry.control) === part)));
+    if (own?.landing) targets.push(...own.landing());
+    if (part && SolFocus.isShown(part)) {
+      targets.push(...nearestControls(part, held));
+    } else if (part) {
+      targets.push(laneControl(laneOfView(part.dataset.view)));
+    }
+    targets.push(partHeading(shownView()), $('thinkingHeading'));
+    return targets.filter(Boolean);
+  }
+
+  function settleFocus(held, finished) {
+    if (!held || ctx.disposed) return;
+    if (SolFocus.isShown(held) && !held.disabled) return;
+    const active = document.activeElement;
+    // The owner has moved on to something still shown: leave it.
+    if (active !== held && !SolFocus.focusLost(document)) return;
+    if (active === held) held.blur?.();
+    SolFocus.refocus(document, true, focusTargets(held, finished));
+  }
+
+  // Every draw goes through here; only the outermost one settles focus.
+  function drawn(draw, finished = null) {
+    if (drawDepth > 0) return draw();
+    const active = document.activeElement;
+    const held = active && active !== document.body && viewRoot?.contains(active) ? active : null;
+    drawDepth += 1;
+    try {
+      return draw();
+    } finally {
+      drawDepth -= 1;
+      settleFocus(held, finished);
+    }
+  }
+
+  // A press whose write is out keeps its control: busy, still drawn, and deaf
+  // to a second press, never `disabled`. A draw that would hide or turn it off
+  // meanwhile is kept for the end, so focus moves once, when the press has
+  // finished: to `landing()` if the control has gone, as each press says.
+  async function pressing(control, landing, work, {busy = true} = {}) {
+    if (!control || SolFocus.isBusy(control) || ctx.disposed) return undefined;
+    const entry = {control, landing, busy, hidden: null, disabled: null};
+    presses.push(entry);
+    if (busy) SolFocus.setBusy(control, true);
+    try {
+      return await work();
+    } finally {
+      presses.splice(presses.indexOf(entry), 1);
+      // Once thinking has gone, its markup is out of the page: touch nothing.
+      if (!ctx.disposed) {
+        drawn(() => {
+          if (busy) SolFocus.setBusy(control, false);
+          if (entry.hidden !== null) writeHidden(control, entry.hidden);
+          if (entry.disabled !== null) writeDisabled(control, entry.disabled);
+        }, entry);
+      }
+    }
   }
 
   function setText(id, message) {
@@ -411,14 +538,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   function setButtonState(id, visible, disabled) {
     const button = $(id);
     if (!button) return;
-    const willHide = !visible;
-    if (id.startsWith('local') && (willHide || disabled) && document.activeElement === button) {
-      const fallback = $('localSetupMessage') || $('localRefresh') || $('localSetupTitle');
-      if (fallback && typeof fallback.focus === 'function') {
-        fallback.focus();
-      }
-    }
-    writeHidden(button, willHide);
+    writeHidden(button, !visible);
     writeDisabled(button, disabled);
   }
 
@@ -1224,6 +1344,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function showView(name, options = {}) {
+    return drawn(() => showViewNow(name, options));
+  }
+
+  function showViewNow(name, options = {}) {
     let target = views.has(name) ? name : 'main';
     if (target === 'lane-switch' && !state.pendingSwitchTarget) {
       target = 'main';
@@ -2793,6 +2917,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function renderGlance() {
+    return drawn(() => renderGlanceNow());
+  }
+
+  function renderGlanceNow() {
     const brain = state.providers.brain || {};
     let intro;
     let glanceState = null;
@@ -2971,7 +3099,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       return;
     }
     if (action.refresh) {
-      button.onclick = () => requestBrainCheck().catch((err) => {
+      button.onclick = () => pressing(button, null, requestBrainCheck).catch((err) => {
         setMessage('thinkingActiveDetail', err.message, 'error');
       });
       return;
@@ -3015,25 +3143,33 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function renderConfidentialTrust() {
+    return drawn(() => renderConfidentialTrustNow());
+  }
+
+  function renderConfidentialTrustNow() {
     const beats = copy.confidential?.setup?.trust_beats || {};
     const active = activeLanePayload();
     const attestation = active.confidential_attestation || {state: 'off'};
     const audio = confidentialAudioRender(active, attestation, copy.confidential);
     const audioKnown = confidentialAudio.known && !confidentialAudio.busy;
+    // While its write is out the toggle stays drawn, busy, with the choice the
+    // owner just made. What it says about where audio goes waits for the answer.
+    const audioBusy = confidentialAudio.busy;
     const deferral = audioKnown ? confidentialAudioDeferralLine(active, attestation, copy.confidential) : '';
     setText('confidentialSetupHeading', beats.heading || '');
     setText('confidentialSetupSub', beats.sub || '');
     setText('confidentialTrustHeading', beats.heading || '');
     setText('confidentialTrustSub', beats.sub || '');
     setText('confidentialTrustEgress', audioKnown ? confidentialEgressLine(active, beats) : '');
-    setHidden('confidentialAudioRow', audio.hidden || !audioKnown);
+    setHidden('confidentialAudioRow', audio.hidden || !(audioKnown || audioBusy));
     const audioToggle = $('confidentialAudioToggle');
     if (audioToggle) {
-      audioToggle.checked = audioKnown && audio.on;
-      writeDisabled(audioToggle, !audioKnown);
+      audioToggle.checked = audioBusy ? confidentialAudio.choice : audioKnown && audio.on;
+      writeDisabled(audioToggle, !audioKnown && !audioBusy);
+      if (SolFocus.isBusy(audioToggle) !== audioBusy) SolFocus.setBusy(audioToggle, audioBusy);
     }
     setText('confidentialAudioLabel', audio.label);
-    setText('confidentialAudioDescription', audio.description);
+    setText('confidentialAudioDescription', audioBusy ? '' : audio.description);
     setText('confidentialAudioNote', audio.note);
     setText('confidentialAudioDeferral', deferral);
     setHidden('confidentialAudioDeferral', !deferral);
@@ -3169,6 +3305,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function renderMainLanes() {
+    return drawn(() => renderMainLanesNow());
+  }
+
+  function renderMainLanesNow() {
     const brain = activeBrain();
     const localLane = laneCopy('local');
     const confidentialLane = laneCopy('confidential');
@@ -3508,6 +3648,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function renderByo() {
+    return drawn(() => renderByoNow());
+  }
+
+  function renderByoNow() {
     if (!state.selectedByoProvider) setSelectedByoProvider(defaultByoProvider());
     const byoText = copy.byo_setup || {};
     const chatgptText = byoText.chatgpt || {};
@@ -3975,6 +4119,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function renderLocal() {
+    return drawn(() => renderLocalNow());
+  }
+
+  function renderLocalNow() {
     const unavailable = bundledLocalUnavailable();
     const local = localCopy();
     setHidden('localModelField', unavailable);
@@ -4005,9 +4153,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         : "you're pointed at your own endpoint. clear it to run the bundled model",
     );
     setHidden('localOverrideNotice', !local.endpointOverride);
-    setButtonState('localBootstrap', local.bootstrap, !local.bootstrap || bootstrapPending);
+    setButtonState('localBootstrap', local.bootstrap, !local.bootstrap);
     setButtonText('localBootstrap', local.bootstrapLabel || copy.local_install?.install || '');
-    setButtonState('localCancel', !!local.cancel, !local.cancel || cancelPending);
+    setButtonState('localCancel', !!local.cancel, !local.cancel);
     setButtonText('localCancel', local.cancelLabel || copy.local_install?.cancel || 'cancel');
     setButtonState('localRuntimeRetry', local.retryRuntime, !local.retryRuntime);
     setButtonText('localRuntimeRetry', local.retryRuntimeLabel || copy.local_recovery?.retry || '');
@@ -4075,6 +4223,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function renderLaneSwitch() {
+    return drawn(() => renderLaneSwitchNow());
+  }
+
+  function renderLaneSwitchNow() {
     const brain = activeBrain();
     const switchCopy = copy.lane_switch || {};
     const target = state.pendingSwitchTarget || '';
@@ -4111,6 +4263,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function renderAll() {
+    return drawn(() => renderAllNow());
+  }
+
+  function renderAllNow() {
     if (ctx.disposed) return;
     renderGlance();
     renderMainLanes();
@@ -4470,22 +4626,28 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   async function enableConfidential() {
-    setMessage('confidentialLaneOperation', '');
-    let start;
-    try {
-      start = await api('api/confidential/enable', {method: 'POST'});
-    } catch (err) {
-      setMessage('confidentialLaneOperation', err.message, 'error');
-      // Busy means a turn-on this page didn't know about is open: re-read it so
-      // its "continue in browser" link shows beside the line.
-      if (err.reasonCode === 'service_busy') refreshProviders().catch(() => {});
-      return;
-    }
-    if (state.providers.active_lane) {
-      state.providers.active_lane.confidential_operation = start?.operation || null;
-      renderAll();
-    }
-    openConsentTab(start?.operation);
+    // The press is the turn-on's write and its first draw; the poll that
+    // follows it is not, so focus moves when the turn-on has started.
+    const started = await pressing($('confidentialEnable'), () => [$('confidentialLaneOperationLink')], async () => {
+      setMessage('confidentialLaneOperation', '');
+      let start;
+      try {
+        start = await api('api/confidential/enable', {method: 'POST'});
+      } catch (err) {
+        setMessage('confidentialLaneOperation', err.message, 'error');
+        // Busy means a turn-on this page didn't know about is open: re-read it so
+        // its "continue in browser" link shows beside the line.
+        if (err.reasonCode === 'service_busy') refreshProviders().catch(() => {});
+        return false;
+      }
+      if (state.providers.active_lane) {
+        state.providers.active_lane.confidential_operation = start?.operation || null;
+        renderAll();
+      }
+      openConsentTab(start?.operation);
+      return true;
+    });
+    if (!started) return;
     const completed = await startConfidentialPoll();
     if (completed && confidentialEnableNeedsRecheck(completed.active_lane)) {
       try {
@@ -4520,6 +4682,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         : (['parakeet', 'parakeet-cpp'].includes(active.speech_backend) ? active.speech_backend : 'parakeet');
     }
     confidentialAudio.busy = true;
+    confidentialAudio.choice = !!enabled;
     confidentialAudio.known = false;
     confidentialAudio.epoch += 1;
     stopConfidentialPoll();
@@ -4679,12 +4842,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     await switchLane('byo');
     await Promise.all([refreshProviders(), refreshLocalAvailability()]);
 
-    const saveBtn = $('localEndpointSave');
-    const clearBtn = $('localEndpointClear');
-    const clearFromLocalBtn = $('localEndpointClearFromLocal');
-    if (saveBtn) saveBtn.disabled = true;
-    if (clearBtn) clearBtn.disabled = true;
-    if (clearFromLocalBtn) clearFromLocalBtn.disabled = true;
+    // The save is busy as the press; the two clears can't be used while its
+    // check is out, and stay where they are (`disabled` would drop focus).
+    const clears = [$('localEndpointClear'), $('localEndpointClearFromLocal')];
+    clears.forEach((button) => writeAttr(button, 'aria-disabled', 'true'));
     const checkingMessage = formatCopy(copy.byo_setup?.endpoint_image_checking, {model});
     setMessage('localEndpointStatus', checkingMessage);
 
@@ -4748,9 +4909,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       // The line sits at the foot of the form; on a short window it would be cut off.
       $('localEndpointStatus')?.scrollIntoView?.({block: 'nearest'});
     } finally {
-      if (saveBtn) saveBtn.disabled = false;
-      if (clearBtn) clearBtn.disabled = false;
-      if (clearFromLocalBtn) clearFromLocalBtn.disabled = false;
+      clears.forEach((button) => writeAttr(button, 'aria-disabled', null));
       if ($('localEndpointStatus')?.textContent === checkingMessage) {
         setMessage('localEndpointStatus', '');
       }
@@ -4792,6 +4951,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
 
   let bootstrapPending = false;
   async function startLocalBootstrap() {
+    return pressing($('localBootstrap'), () => [$('localCancel')], startLocalBootstrapNow);
+  }
+
+  async function startLocalBootstrapNow() {
     if (bootstrapPending) return;
     bootstrapPending = true;
     clearLocalSetupError();
@@ -4845,6 +5008,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   async function cancelLocalBootstrap() {
+    return pressing($('localCancel'), () => [$('localBootstrap')], cancelLocalBootstrapNow);
+  }
+
+  async function cancelLocalBootstrapNow() {
     if (cancelPending) return;
     const attemptId = state.install?.attempt_id || '';
     if (!attemptId) return;
@@ -4876,8 +5043,6 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const runtime = state.providers.local_runtime;
     if (!runtime?.can_retry) return;
     clearLocalSetupError();
-    const button = $('localRuntimeRetry');
-    if (button) button.disabled = true;
     try {
       const status = await api('api/local/runtime/retry', {
         method: 'POST',
@@ -5552,11 +5717,12 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       renderMainLanes();
     });
     $('byoThinkingToggle')?.addEventListener('change', (event) => {
+      // A change while its write is out is undone by the redraw at its end.
       // Turning thinking on starts at the smallest budget.
-      setByoThinkingBudget(event.target.checked ? BYO_THINKING_BUDGETS[0] : 0);
+      pressing(event.target, null, () => setByoThinkingBudget(event.target.checked ? BYO_THINKING_BUDGETS[0] : 0));
     });
     markup().querySelectorAll('input[name="byoThinkingBudget"]').forEach((input) => {
-      input.addEventListener('change', () => setByoThinkingBudget(Number(input.value)));
+      input.addEventListener('change', () => pressing(input, null, () => setByoThinkingBudget(Number(input.value))));
     });
     markup().querySelectorAll('[data-byo-provider]').forEach((button) => {
       button.addEventListener('click', () => {
@@ -5567,8 +5733,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       button.addEventListener('click', () => {
         const lane = button.dataset.switchLane;
         if (!lane) return;
-        switchLane(lane)
-          .then(() => showView('main'))
+        pressing(button, () => [laneControl(lane)], () => switchLane(lane).then(() => showView('main')))
           .catch((err) => setMessage('switchStatus', err.message, 'error'));
       });
     });
@@ -5584,14 +5749,17 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       }
       showView('main');
     });
-    $('byoSaveKey')?.addEventListener('click', () => saveByoKey().catch((err) => setMessage('byoKeyStatus', err.message, 'error')));
-    $('byoClearKey')?.addEventListener('click', () => clearByoKey().catch((err) => setMessage('byoKeyStatus', err.message, 'error')));
-    $('byoCheckAgain')?.addEventListener('click', () => recheckByoKey().catch((err) => setMessage('byoModelStatus', err.message, 'error')));
+    // Each write's press, with where focus goes if its control has gone (the
+    // nearest control, then the part's heading, if it doesn't say).
+    const pressed = (id, landing, work) => pressing($(id), landing, work);
+    $('byoSaveKey')?.addEventListener('click', () => pressed('byoSaveKey', () => [$('byoModelHeading')], saveByoKey).catch((err) => setMessage('byoKeyStatus', err.message, 'error')));
+    $('byoClearKey')?.addEventListener('click', () => pressed('byoClearKey', () => [$('byoKeyInput')], clearByoKey).catch((err) => setMessage('byoKeyStatus', err.message, 'error')));
+    $('byoCheckAgain')?.addEventListener('click', () => pressed('byoCheckAgain', null, recheckByoKey).catch((err) => setMessage('byoModelStatus', err.message, 'error')));
     $('byoModelInput')?.addEventListener('input', (event) => {
       state.byoSelectedModel = String(event.target.value || '').trim();
       renderByo();
     });
-    $('byoModelSave')?.addEventListener('click', () => saveByoModel().catch((err) => setMessage('byoModelStatus', err.message, 'error')));
+    $('byoModelSave')?.addEventListener('click', () => pressed('byoModelSave', () => [laneControl('byo')], saveByoModel).catch((err) => setMessage('byoModelStatus', err.message, 'error')));
     $('byoDifferentKey')?.addEventListener('click', () => {
       resetByoDraft();
       state.byoMode = 'paste';
@@ -5599,8 +5767,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (keyInput) keyInput.value = '';
       renderByo();
     });
-    $('chatgptCardContinue')?.addEventListener('click', () => startChatGptSignIn({ startOver: false }));
-    $('chatgptCardStartOver')?.addEventListener('click', () => startChatGptSignIn({ startOver: true }));
+    // The sign-in's panel takes the card's place, and its heading says what's next.
+    const signingIn = () => [$('chatgptPendingHeading')];
+    $('chatgptCardContinue')?.addEventListener('click', () => pressed('chatgptCardContinue', signingIn, () => startChatGptSignIn({ startOver: false })));
+    $('chatgptCardStartOver')?.addEventListener('click', () => pressed('chatgptCardStartOver', signingIn, () => startChatGptSignIn({ startOver: true })));
     $('chatgptCardManage')?.addEventListener('click', () => {
       setSelectedByoProvider('chatgpt');
       state.byoMode = 'chatgpt';
@@ -5610,22 +5780,22 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     });
     $('chatgptReopen')?.addEventListener('click', reopenChatGptTab);
     $('chatgptCancel')?.addEventListener('click', cancelChatGptSignIn);
-    $('chatgptFinish')?.addEventListener('click', finishChatGptSignIn);
-    $('chatgptSignOut')?.addEventListener('click', () => signOutChatGpt({ forget: false }));
-    $('chatgptPanelStartOver')?.addEventListener('click', () => startChatGptSignIn({ startOver: true }));
+    $('chatgptFinish')?.addEventListener('click', () => pressed('chatgptFinish', () => [$('chatgptModelHeading')], finishChatGptSignIn));
+    $('chatgptSignOut')?.addEventListener('click', () => pressed('chatgptSignOut', () => [$('chatgptCardContinue')], () => signOutChatGpt({ forget: false })));
+    $('chatgptPanelStartOver')?.addEventListener('click', () => pressed('chatgptPanelStartOver', signingIn, () => startChatGptSignIn({ startOver: true })));
     $('chatgptPickOther')?.addEventListener('click', () => {
       state.byoMode = 'pick';
       renderByo();
     });
-    $('chatgptUseModel')?.addEventListener('click', saveChatGptModel);
-    $('chatgptGlanceContinue')?.addEventListener('click', () => {
+    $('chatgptUseModel')?.addEventListener('click', () => pressed('chatgptUseModel', null, saveChatGptModel));
+    $('chatgptGlanceContinue')?.addEventListener('click', () => pressed('chatgptGlanceContinue', signingIn, () => {
       showView('byo-setup');
-      startChatGptSignIn({ startOver: false });
-    });
-    $('chatgptGlanceStartOver')?.addEventListener('click', () => {
+      return startChatGptSignIn({ startOver: false });
+    }));
+    $('chatgptGlanceStartOver')?.addEventListener('click', () => pressed('chatgptGlanceStartOver', signingIn, () => {
       showView('byo-setup');
-      startChatGptSignIn({ startOver: true });
-    });
+      return startChatGptSignIn({ startOver: true });
+    }));
     $('chatgptGlancePickOther')?.addEventListener('click', () => {
       showView('byo-setup');
       state.byoMode = 'pick';
@@ -5653,8 +5823,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       }
     });
     $('confidentialEnable')?.addEventListener('click', () => enableConfidential().catch((err) => setMessage('confidentialLaneOperation', err.message, 'error')));
-    $('confidentialRecheck')?.addEventListener('click', () => recheckConfidential().catch((err) => setMessage('confidentialLaneOperation', err.message, 'error')));
-    $('confidentialDisable')?.addEventListener('click', () => disableConfidential().catch((err) => setMessage('confidentialLaneOperation', err.message, 'error')));
+    $('confidentialRecheck')?.addEventListener('click', () => pressed('confidentialRecheck', null, recheckConfidential).catch((err) => setMessage('confidentialLaneOperation', err.message, 'error')));
+    $('confidentialDisable')?.addEventListener('click', () => pressed('confidentialDisable', () => [laneControl('confidential')], disableConfidential).catch((err) => setMessage('confidentialLaneOperation', err.message, 'error')));
     $('confidentialAudioToggle')?.addEventListener('change', (event) => setConfidentialAudio(event.target.checked));
     $('localRefresh')?.addEventListener('click', () => {
       clearLocalSetupError();
@@ -5671,8 +5841,8 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     });
     $('localBootstrap')?.addEventListener('click', () => startLocalBootstrap().catch((err) => showLocalSetupFailure(err)));
     $('localCancel')?.addEventListener('click', () => cancelLocalBootstrap().catch((err) => showLocalSetupFailure(err)));
-    $('localRuntimeRetry')?.addEventListener('click', () => retryLocalRuntime().catch((err) => showLocalSetupFailure(err)));
-    $('localActivate')?.addEventListener('click', () => activateLane('local').catch((err) => showLocalSetupFailure(err)));
+    $('localRuntimeRetry')?.addEventListener('click', () => pressed('localRuntimeRetry', null, retryLocalRuntime).catch((err) => showLocalSetupFailure(err)));
+    $('localActivate')?.addEventListener('click', () => pressed('localActivate', null, () => activateLane('local')).catch((err) => showLocalSetupFailure(err)));
     $('localModelSelect')?.addEventListener('change', () => {
       clearLocalSetupError();
       stopInstallPoll();
@@ -5687,9 +5857,10 @@ window.SolViews.register('thinking', { mount: (ctx) => {
         refreshLocalRuntime({autoResume: true}),
       ]).catch((err) => showLocalSetupFailure(err));
     });
-    $('localEndpointSave')?.addEventListener('click', () => saveLocalEndpoint().catch((err) => setMessage('localEndpointStatus', err.message, 'error')));
-    $('localEndpointClear')?.addEventListener('click', () => clearLocalEndpoint().catch((err) => setMessage('localEndpointStatus', err.message, 'error')));
-    $('localEndpointClearFromLocal')?.addEventListener('click', () => clearLocalEndpoint().catch((err) => showLocalSetupFailure(err)));
+    $('localEndpointSave')?.addEventListener('click', () => pressed('localEndpointSave', () => [laneControl('byo')], saveLocalEndpoint).catch((err) => setMessage('localEndpointStatus', err.message, 'error')));
+    // The chooser's endpoint button is where the owner was once the form goes.
+    $('localEndpointClear')?.addEventListener('click', () => pressed('localEndpointClear', () => [$('byoModeEndpoint')], clearLocalEndpoint).catch((err) => setMessage('localEndpointStatus', err.message, 'error')));
+    $('localEndpointClearFromLocal')?.addEventListener('click', () => pressed('localEndpointClearFromLocal', null, clearLocalEndpoint).catch((err) => showLocalSetupFailure(err)));
     ctx.on(window, 'hashchange', () => routeThinkingHash('history'));
   }
 
