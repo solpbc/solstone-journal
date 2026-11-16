@@ -16,6 +16,7 @@ full-tests = []
 
 [dependencies]
 chrono.workspace = true
+log.workspace = true
 serde_json.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }

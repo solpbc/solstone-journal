@@ -5263,6 +5263,7 @@ name = "solstone-core-brain-owner"
 version = "2.0.81"
 dependencies = [
  "chrono",
+ "log",
  "serde_json",
  "solstone-core-brain",
  "solstone-core-callosum",

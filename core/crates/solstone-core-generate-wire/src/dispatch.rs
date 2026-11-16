@@ -262,16 +262,23 @@ fn respond_config(
     {
         endpoint_runtime.drain_idle_pool();
     }
-    // Every engine's call takes its turn in the journal's one call line, best
-    // priority first. Only connection checks go straight through, so a health
-    // check or a provider test never waits behind a long call.
+    // Own-endpoint save checks must take their turn too: a single-slot server
+    // otherwise spends the check's response timeout waiting behind our call.
+    // Health refresh holds this turn in its parent, before opening its lease.
+    let endpoint_check = matches!(outcome, crate::LaneOutcome::ByoEndpoint(_))
+        && connection_check(request)
+        && request.context != solstone_core_generate::HEALTH_BRAIN_GENERATE_CONTEXT;
     let _turn = if matches!(turn, Turn::Wait { .. })
         && calls_a_model(&outcome)
-        && !connection_check(request)
+        && (!connection_check(request) || endpoint_check)
     {
         match solstone_core_local::admission::wait_for_model_call(
             journal,
-            context.priority,
+            if endpoint_check {
+                solstone_core_journal_config::work_priority::WorkPriority::default()
+            } else {
+                context.priority
+            },
             &|| cancellation.is_cancelled(),
         ) {
             Ok(turn) => Some(turn),
@@ -948,7 +955,8 @@ mod tests {
     }
 
     #[test]
-    fn every_call_waits_its_turn_in_the_line_but_a_connection_check_does_not() {
+    #[cfg(feature = "full-tests")]
+    fn cloud_content_waits_for_the_line_but_a_cloud_connection_check_does_not() {
         let journal = std::env::temp_dir().join(format!(
             "solstone-dispatch-line-{}-{}",
             std::process::id(),
@@ -958,9 +966,8 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&journal).unwrap();
-        // An endpoint nothing serves: each call fails at once once it runs.
-        let config = json!({"providers":{"active":{"provider":"local"},"local":{
-            "endpoint_url":"http://127.0.0.1:9","served_model_id":"model"}}});
+        // An unconfigured cloud key: each call fails at once once it runs.
+        let config = json!({"providers":{"active":{"provider":"google"}}});
         let config = config.as_object().unwrap().clone();
         let holder = solstone_core_local::admission::wait_for_model_call(
             &journal,

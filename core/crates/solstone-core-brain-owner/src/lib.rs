@@ -226,13 +226,12 @@ fn refresh_inner(
     cancelled: &(dyn Fn() -> bool + Send + Sync),
     observation: Option<&BrainObservation>,
 ) -> OwnerRefreshOutcome {
-    let now = Utc::now();
     if options.expected_fingerprint.is_some() && options.expect_active_fingerprint_absent {
         return OwnerRefreshOutcome::StaleExpectedFingerprint {
             view: transient_view("stale_expected_fingerprint", &empty_view()),
         };
     }
-    let config = match read_journal_config(journal) {
+    let mut config = match read_journal_config(journal) {
         Ok(read) => read.config.unwrap_or_default(),
         Err(error) => {
             return OwnerRefreshOutcome::OperationalFailure {
@@ -240,6 +239,54 @@ fn refresh_inner(
             };
         }
     };
+    // This parent owns the health probe's turn, including a Generate child.
+    // Wait before capturing time, credentials or a checking lease: admission
+    // is not part of the probe's deadline or the lifetime of its evidence.
+    let own_endpoint = if probe.process_overrides() {
+        matches!(
+            solstone_core_generate_wire::resolve_lane(&config).1,
+            solstone_core_generate_wire::LaneOutcome::ByoEndpoint(_)
+        )
+    } else {
+        derive_active_brain_lane(&config).lane.as_deref() == Some("byo-endpoint")
+    };
+    let _model_turn = if own_endpoint {
+        if probe_file_lease_held(&brain_refresh_lease_path(journal)).unwrap_or(false) {
+            return OwnerRefreshOutcome::Busy {
+                view: transient_view("busy", &owner_view(journal, &config, Utc::now())),
+            };
+        }
+        let turn = match solstone_core_local::admission::wait_for_model_call(
+            journal,
+            solstone_core_journal_config::work_priority::WorkPriority::default(),
+            cancelled,
+        ) {
+            Ok(turn) => Some(turn),
+            Err(solstone_core_local::admission::CheckedAdmissionError::Cancelled) => {
+                return OwnerRefreshOutcome::Cancelled;
+            }
+            Err(solstone_core_local::admission::CheckedAdmissionError::Admission(error)) => {
+                log::warn!(
+                    "model call line is unavailable, so this check runs unordered: {error:?}"
+                );
+                None
+            }
+        };
+        config = match read_journal_config(journal) {
+            Ok(read) => read.config.unwrap_or_default(),
+            Err(error) => {
+                return OwnerRefreshOutcome::OperationalFailure {
+                    message: format!(
+                        "thinking check failed: could not read journal config: {error}"
+                    ),
+                };
+            }
+        };
+        turn
+    } else {
+        None
+    };
+    let now = Utc::now();
     let before = owner_view(journal, &config, now);
     let initial_resolution = derive_active_brain_lane(&config);
     let bundled_runtime_fingerprint = probe.bundled_runtime_fingerprint(journal, &config);
@@ -3678,3 +3725,6 @@ mod tests {
 
 #[cfg(all(test, feature = "full-tests"))]
 mod observation_tests;
+
+#[cfg(all(test, feature = "full-tests"))]
+mod endpoint_checks_tests;
