@@ -229,17 +229,25 @@ impl InstallerCopyFetch for RealInstallerCopyFetch {
     }
 }
 
-/// The newest installed journal's `solstone`, from the tree receipt: what the
-/// timer runs, and what a running older journal asks to change the switch.
-pub fn current_tree_solstone(data_dir: &Path) -> Option<PathBuf> {
+/// The journal's tree prefix, from the tree receipt, when every recorded
+/// component is on the tree route and one is the journal. This is what the
+/// journal's own switch reads, including while a newer journal waits for its
+/// next start; each unattended run still checks ownership in full first.
+pub fn receipt_tree_prefix(data_dir: &Path) -> Option<PathBuf> {
     let text = fs::read_to_string(data_dir.join("install.conf")).ok()?;
-    let mut section = "";
+    let mut section = String::new();
     let (mut platform_prefix, mut journal_prefix) = (None, None);
+    let mut has_journal = false;
     for line in text.lines().map(str::trim) {
         if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
-            section = name;
+            section = name.to_owned();
+            has_journal |= section == "component:journal" || section == "component:cli";
+        } else if let Some(value) = line.strip_prefix("route=") {
+            if value != "tree" {
+                return None;
+            }
         } else if let Some(value) = line.strip_prefix("prefix=") {
-            match section {
+            match section.as_str() {
                 "solstone" => platform_prefix = Some(value.to_owned()),
                 "component:journal" | "component:cli" => journal_prefix = Some(value.to_owned()),
                 _ => {}
@@ -247,10 +255,15 @@ pub fn current_tree_solstone(data_dir: &Path) -> Option<PathBuf> {
         }
     }
     let prefix = PathBuf::from(journal_prefix.or(platform_prefix)?);
-    prefix
-        .is_absolute()
-        .then(|| prefix.join("current/bin/solstone"))
-        .filter(|path| path.is_file())
+    (has_journal && prefix.is_absolute()).then_some(prefix)
+}
+
+/// Queue a restart of the journal's service, for the owner's press. systemd
+/// runs it after this returns, so the caller is not waited on and ended.
+pub fn restart_journal(systemctl: &dyn Systemctl) -> bool {
+    systemctl
+        .user(&["--no-block", "restart", "solstone.service"])
+        .unwrap_or(false)
 }
 
 pub fn read_choice(data_dir: &Path) -> Choice {
@@ -404,6 +417,16 @@ pub fn turn_on(
         ));
     }
     let prefix = pos.prefix.as_deref().expect("eligible tree has a prefix");
+    turn_on_at(prefix, data_dir, home, systemctl)
+}
+
+/// Turn automatic updates on for the tree at `prefix`.
+pub fn turn_on_at(
+    prefix: &Path,
+    data_dir: &Path,
+    home: &Path,
+    systemctl: &dyn Systemctl,
+) -> Result<(), SwitchRefusal> {
     let service = service_unit(&prefix.join("current/bin/solstone")).ok_or_else(|| {
         SwitchRefusal::new(
             "prefix-unsupported",
@@ -1452,9 +1475,14 @@ mod run_tests {
             None
         );
         assert_eq!(crate::pending_restart(&old, &f.data, "2.0.81"), None);
-        assert_eq!(
-            current_tree_solstone(&f.data),
-            Some(prefix.join("current/bin/solstone"))
-        );
+        assert_eq!(receipt_tree_prefix(&f.data), Some(prefix.clone()));
+        let package = fs::read_to_string(f.data.join("install.conf"))
+            .unwrap()
+            .replace(
+                "[component:journal]\nroute=tree",
+                "[component:journal]\nroute=deb",
+            );
+        fs::write(f.data.join("install.conf"), package).unwrap();
+        assert_eq!(receipt_tree_prefix(&f.data), None);
     }
 }

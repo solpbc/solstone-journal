@@ -267,7 +267,8 @@ fn linux_version_value(
     let mut automatic = automatic::status(pos, &data_dir);
     // A tree install whose newer journal waits for the next start is the same
     // install, so it can update itself as before.
-    automatic.eligible |= report.availability == Availability::Installed;
+    automatic.eligible |= report.availability == Availability::Installed
+        && automatic::receipt_tree_prefix(&data_dir).is_some();
     let mut value = json!(report);
     value["automatic"] = json!(automatic);
     let package = pos.is_some_and(|pos| {
@@ -313,12 +314,13 @@ fn with_pending_restart(
 }
 
 /// `POST /api/system/updates/automatic` with `{"on": true|false}`: the pane's
-/// one-time question and its switch. The newest installed journal answers, so
-/// a journal waiting for its next start can still change it.
+/// one-time question and its switch. It reads the tree receipt, so a journal
+/// waiting for its next start can still change it.
 #[allow(clippy::needless_return)]
 pub async fn set_automatic(body: Option<Json<Value>>) -> Response {
     #[cfg(target_os = "linux")]
     {
+        use solstone_core_update::automatic;
         let Some(on) = body.and_then(|Json(body)| body.get("on").and_then(Value::as_bool)) else {
             return update_error(
                 "invalid_request",
@@ -326,48 +328,39 @@ pub async fn set_automatic(body: Option<Json<Value>>) -> Response {
                 axum::http::StatusCode::BAD_REQUEST,
             );
         };
-        let ran = tokio::task::spawn_blocking(move || {
-            let data_dir = solstone_core_update::owner_data_dir()?;
-            let cli = solstone_core_update::automatic::current_tree_solstone(&data_dir).or_else(
-                || {
-                    std::env::current_exe()
-                        .ok()
-                        .map(|exe| exe.with_file_name("solstone"))
-                },
-            )?;
-            std::process::Command::new(cli)
-                .args([
-                    "update",
-                    "--automatic",
-                    if on { "on" } else { "off" },
-                    "--json",
-                ])
-                .stdin(std::process::Stdio::null())
-                .output()
-                .ok()
+        let switched = tokio::task::spawn_blocking(move || {
+            let (Some(data_dir), Some(home)) = (
+                solstone_core_update::owner_data_dir(),
+                std::env::var_os("HOME").map(PathBuf::from),
+            ) else {
+                return Err((
+                    "owner-context-unknown",
+                    "couldn't find your data directory.".to_owned(),
+                ));
+            };
+            let result = if on {
+                let Some(prefix) = automatic::receipt_tree_prefix(&data_dir) else {
+                    return Err((
+                        "not-eligible",
+                        "this install can't update itself.".to_owned(),
+                    ));
+                };
+                automatic::turn_on_at(&prefix, &data_dir, &home, &automatic::RealSystemctl)
+            } else {
+                automatic::turn_off(&data_dir, &home, &automatic::RealSystemctl)
+            };
+            result.map_err(|refusal| (refusal.code, refusal.message))
         })
         .await
-        .ok()
-        .flatten();
-        return match ran {
-            Some(output) if output.status.success() => {
-                Json(json!({"ok": true, "on": on})).into_response()
-            }
-            Some(output) => {
-                let reply: Value = serde_json::from_slice(&output.stdout).unwrap_or(Value::Null);
-                update_error(
-                    reply["code"].as_str().unwrap_or("automatic_update_failed"),
-                    reply["message"]
-                        .as_str()
-                        .unwrap_or("couldn't change automatic updates."),
-                    axum::http::StatusCode::CONFLICT,
-                )
-            }
-            None => update_error(
+        .unwrap_or_else(|_| {
+            Err((
                 "automatic_update_failed",
-                "couldn't change automatic updates.",
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            ),
+                "couldn't change automatic updates.".to_owned(),
+            ))
+        });
+        return match switched {
+            Ok(()) => Json(json!({"ok": true, "on": on})).into_response(),
+            Err((code, message)) => update_error(code, &message, axum::http::StatusCode::CONFLICT),
         };
     }
     #[cfg(not(target_os = "linux"))]
@@ -383,19 +376,21 @@ pub async fn retry_automatic() -> Response {
     #[cfg(target_os = "linux")]
     {
         let done = tokio::task::spawn_blocking(|| {
-            let data_dir = solstone_core_update::owner_data_dir().ok_or(())?;
+            let data_dir = solstone_core_update::owner_data_dir()
+                .ok_or_else(|| "couldn't find your data directory.".to_owned())?;
             solstone_core_update::automatic::try_again(
                 &data_dir,
                 &solstone_core_update::automatic::RealSystemctl,
             )
-            .map_err(|_| ())
+            .map_err(|refusal| refusal.message)
         })
-        .await;
+        .await
+        .unwrap_or_else(|_| Err("couldn't start the update.".to_owned()));
         return match done {
-            Ok(Ok(())) => Json(json!({"ok": true})).into_response(),
-            _ => update_error(
+            Ok(()) => Json(json!({"ok": true})).into_response(),
+            Err(message) => update_error(
                 "automatic_update_failed",
-                "couldn't start the update.",
+                &message,
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             ),
         };
@@ -411,11 +406,9 @@ pub async fn restart_journal() -> Response {
     #[cfg(target_os = "linux")]
     {
         let queued = tokio::task::spawn_blocking(|| {
-            std::process::Command::new("systemctl")
-                .args(["--user", "--no-block", "restart", "solstone.service"])
-                .stdin(std::process::Stdio::null())
-                .status()
-                .is_ok_and(|status| status.success())
+            solstone_core_update::automatic::restart_journal(
+                &solstone_core_update::automatic::RealSystemctl,
+            )
         })
         .await
         .unwrap_or(false);

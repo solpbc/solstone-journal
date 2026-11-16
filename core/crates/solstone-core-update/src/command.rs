@@ -183,8 +183,7 @@ pub fn parse_args(args: &[OsString]) -> Result<UpdateArgs, CommandParseError> {
             || (automatic.is_some() && unattended)
         {
             return Err(CommandParseError {
-                message: "--automatic and --unattended take no other options except --json"
-                    .to_owned(),
+                message: "--automatic and --unattended can only be combined with --json".to_owned(),
             });
         }
         return Ok(UpdateArgs {

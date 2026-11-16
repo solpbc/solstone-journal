@@ -460,7 +460,10 @@ window.whenShellReady(() => {
           return;
         }
         if (box && failed) {
+          // One reason at a time: pressing again replaces it.
+          box.querySelector('[data-press-failure]')?.remove();
           const line = document.createElement('div');
+          line.dataset.pressFailure = '';
           line.textContent = failed;
           line.style.color = 'var(--warn-ink)';
           box.appendChild(line);

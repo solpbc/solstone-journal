@@ -472,10 +472,7 @@ fn run_automatic_mode(
         );
     };
     if !os_linux {
-        return refused(
-            "non-linux",
-            "automatic updates work on linux.",
-        );
+        return refused("non-linux", "solstone update --automatic works on linux.");
     }
     let systemctl = automatic::RealSystemctl;
     let ownership = solstone_core_update::classify_ownership(executable, data_dir, etc_dir, probe);
