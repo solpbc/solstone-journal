@@ -8,8 +8,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- when you erase something from the trash, you can also remove it from your backups, so restoring your journal from a backup can't bring it back. your backups stay, with everything else in them. it's unticked unless you turn on "also remove erased things from your backups" in trash settings, which also covers what the trash erases on its date. if backup is paused or can't reach your storage, erase still happens on time and your backups follow when they can. it doesn't reach a place your backup lived before, backups made while your journal was in another folder, some older media archives, copies your other devices made, or what was erased before this release. the journal on windows and the iphone app don't offer it yet. `--from-backups` and `--not-from-backups` choose it from the command line.
-- your connected agents can suggest a correction when something in your journal is wrong: who said a line, what actually happened, that it was a recording or video playing, or a person's name. each one waits in suggestions with the agent named, and nothing changes until you accept it. you can edit one before you accept it, undo it afterwards, or turn suggestions off for an agent on its page in agents.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -17,17 +15,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- home's "add your phone" step points to solstone.app/mobile, the page for the solstone app on phones and tablets. the old address still works.
-- the stats and thinking pages now work like home, transcripts and search: moving between them and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 - the import page now works like home, transcripts and search: moving between it and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
-- your journal now keeps working through older recordings and days whenever it has room, rather than pausing for minutes between small batches. newer work still goes first. if thinking stops answering for a while, your journal tries again after five minutes and picks the older work back up as soon as thinking answers, instead of setting it aside until it next goes back through your older days.
-- your journal now thinks one step at a time, whichever model you use, and always takes the most important step next, so a question you ask goes before older work. on mac and linux, with confidential processing it keeps one secure connection open instead of opening a new one for each step, so each step starts sooner. with your own keys or your own endpoint, thinking no longer sends several requests at once. the `confidential_history_rest_seconds` and `parallel_slots` settings are no longer used.
 
 ### Fixed
 
-- while photos of people catch up, older meetings still waiting for one are no longer read again every hour, and some older meeting recordings, in a video format earlier versions couldn't read, now get photos of people too.
-- importing an audio file from the command line on a computer without a graphics card could stop waiting after 30 seconds and report the import as still processing. it now waits longer for longer recordings.
-- dashboard questions now appear in the page, so actions such as unpairing a device or renaming an agent key work even when the app showing your journal doesn't draw browser dialogs.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
@@ -57,10 +48,30 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a first restore on a phone or tablet now waits for work in your journal to finish before copying. if restore is interrupted, you can retry the same backup.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
-- on the agents and network pages, when the page refreshes itself and nothing has changed, it now stays as it is, so a screen reader no longer reads the button you're on again each time. when it refreshes with something new, what you're typing in the "your own domain" setup on agents stays as you typed it, and so does an address you type under "use a different address" on network. before, a refresh like that could empty or reset it, and on network, "apply" could then send your journal's old address instead of yours. if going back on the agents page closes a box, focus now moves to the start of the page instead of being dropped.
-- on the stats page, focus now stays where you were when you press "process now", "redo from scratch", "refresh" or "try again": on the same button, or on "refresh" once the page has loaded after "try again". a refresh that brings nothing new now leaves the page as it is, and "processing details" stays open if you opened it. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 - on the thinking page, focus now stays where you were when you check, clear or save a key, choose a model, switch where the thinking happens, turn confidential processing on or off, or change its audio setting, sign in to ChatGPT or sign out, install local thinking or cancel it, and when you open a choice or go back from it with "‹ thinking": on the same button if it's still there, otherwise on what took its place. a refresh that brings nothing new now leaves the page as it is, and an endpoint you're typing stays as you typed it. before, focus was dropped or landed on a status line, so if you use a keyboard or a screen reader, you lost your place.
 - on the import page, focus now stays where you were when you open a source or go back to the sources, validate, preview or start an import, answer a facet question, delete an import, load more of your history, or turn a page of an import's content: on the same button if it's still there, otherwise on what took its place, such as the import's progress or the next import in your history. a refresh that brings nothing new now leaves the page as it is, and "bookkeeping" on an import's page stays open if you opened it. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
+
+## [2.0.81] - 2026-11-16
+
+### Added
+
+- when you erase something from the trash, you can also remove it from your backups, so restoring your journal from a backup can't bring it back. your backups stay, with everything else in them. the choice starts unticked unless you turn on "also remove erased things from your backups" in trash settings, which also covers what the trash erases on its date. if backup is paused or can't reach your storage, erase still happens on time and your backups follow when they can. it doesn't reach a place your backup lived before, backups made while your journal was in another folder, some media an older version of your journal archived, copies your other devices made, or what was erased before this release. the journal on windows doesn't offer it yet. `--from-backups` and `--not-from-backups` choose it from the command line.
+- your connected agents can suggest a correction when something in your journal is wrong: who said a line, what actually happened, that it was a recording or video playing, or a person's name. each one waits in suggestions with the agent named, and nothing changes until you accept it. you can edit an account of what happened or a name before you accept it, undo it afterwards, or turn suggestions off for an agent on its page in agents.
+
+### Changed
+
+- home's "add your phone" step points to solstone.app/mobile, the page for the solstone app on phones and tablets. the old address still works.
+- the stats and thinking pages now work like home, transcripts and search: moving between them and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+- your journal now keeps working through older recordings and days whenever it has room, rather than pausing for minutes between small batches. newer work still goes first. if the model stops answering for a while, your journal tries again after five minutes and picks the older work back up as soon as the model answers again, instead of setting it aside until it next goes back through your older days.
+- your journal now thinks one step at a time, whichever model you use, and always takes the most important step next, so a question you ask goes before older work. on mac and linux, with confidential processing it keeps one secure connection open instead of opening a new one for each step, so each step starts sooner. with your own keys or your own endpoint, your journal no longer sends several requests at once. the `confidential_history_rest_seconds` and `parallel_slots` settings are no longer used.
+
+### Fixed
+
+- while photos of people catch up, older meetings still waiting for one are no longer read again every hour.
+- importing an audio file from the command line on a computer without a graphics card could stop waiting after 30 seconds and report the import as still processing. it now waits longer for longer recordings.
+- the dashboard's confirmations and prompts now appear in the page, so actions such as unpairing a device or renaming an agent key work even when the app showing your journal doesn't draw browser dialogs.
+- on the agents and network pages, when the page refreshes itself and nothing has changed, it now stays as it is, so a screen reader no longer reads the button you're on again each time. when it refreshes with something new, what you're typing in the "your own domain" setup on agents stays as you typed it, and so does an address you type under "use a different address" on network. before, a refresh like that could empty or reset it, and on network, "apply" could then send your journal's old address instead of the one you typed. if going back on the agents page closes a box, focus now moves to the start of the page instead of being dropped.
+- on the stats page, focus now stays where you were when you press "process now", "redo from scratch", "refresh" or "try again": on the same button, or on "refresh" once the page has loaded after "try again". a refresh that brings nothing new now leaves the page as it is, and "processing details" stays open if you opened it. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 
 ## [2.0.80] - 2026-11-15
 
