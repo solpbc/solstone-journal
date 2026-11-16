@@ -2769,11 +2769,10 @@ mod tests {
         let segment = populated(&bed, "070000_17");
         {
             let _reader = fs::File::open(segment.join("audio.flac")).unwrap();
-            let started = std::time::Instant::now();
+            // The retry budget bounds attempts, not filesystem or scheduler latency.
             let outcome = remove(&bed, &[target("20260805", "field.audio", "070000_17")]);
             assert!(outcome.has_failures(), "{outcome:?}");
-            assert!(started.elapsed() < Duration::from_secs(20));
-            assert!(segment.join("audio.flac").is_file());
+            assert_eq!(fs::read(segment.join("audio.flac")).unwrap(), b"raw");
             assert!(!segment.join(TOMBSTONE_NAME).exists());
             assert!(!segment.with_file_name(".removing_070000_17").exists());
         }
