@@ -2434,7 +2434,6 @@ mod tests {
                 &["entities", "accept-merge-candidate"][..],
                 &["a", "b", "--facet", "work", "--commit"][..],
             ),
-            (&["speakers", "merge-names"][..], &["Bob", "Robert"][..]),
             (&["speakers", "resolve-names"][..], &["--commit"][..]),
         ] {
             let (output, transport) = run_without_transport(path, args);

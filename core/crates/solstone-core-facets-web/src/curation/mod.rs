@@ -785,10 +785,13 @@ async fn entity_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
             ),
         );
     }
-    // The plan computes identity additions only. Keep unmeasured changes
-    // distinct from a measured zero.
+    // Photos and facet links remain unmeasured by this preview.
     match preview_entity_merge(&root, &source, &target, EntityMergeOptions::default()) {
-        Ok(preview) => Json(json!({"status":"preview","kind":"entity_merge","key":entity_key(&facet,&source,&target),"merge":{"would_identity":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added}},"preview":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added,"other_changes_not_previewed":true}})).into_response(),
+        Ok(preview) => Json(json!({"status":"preview","kind":"entity_merge","key":entity_key(&facet,&source,&target),"merge":{"would_identity":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added}},"preview":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added,"voiceprints_added": preview.voiceprints_added,
+        "voiceprints_target_total": preview.voiceprints_target_total,
+        "notes_on_source": preview.notes_on_source,
+        "speaker_labels": preview.speaker_labels,
+        "activity_records": preview.activity_records,"other_changes_not_previewed":true}})).into_response(),
         Err(error) => result_error("entity_merge", entity_key(&facet, &source, &target), &error.to_string()),
     }
 }
@@ -984,9 +987,12 @@ async fn speaker_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
             ),
         );
     }
-    // The plan computes identity additions only. Keep unmeasured changes
-    // distinct from a measured zero.
-    match preview_entity_merge(&root,&source,&target,EntityMergeOptions { keep_source_as_aka: true }) { Ok(preview) => Json(json!({"status":"preview","kind":"speaker_name_variant","key":speaker_key(&source,&target),"merge":{"would_identity":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added}},"preview":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added,"other_changes_not_previewed":true}})).into_response(), Err(error) => result_error("speaker_name_variant",speaker_key(&source,&target),&error.to_string()) }
+    // Photos and facet links remain unmeasured by this preview.
+    match preview_entity_merge(&root,&source,&target,EntityMergeOptions { keep_source_as_aka: true }) { Ok(preview) => Json(json!({"status":"preview","kind":"speaker_name_variant","key":speaker_key(&source,&target),"merge":{"would_identity":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added}},"preview":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added,"voiceprints_added": preview.voiceprints_added,
+        "voiceprints_target_total": preview.voiceprints_target_total,
+        "notes_on_source": preview.notes_on_source,
+        "speaker_labels": preview.speaker_labels,
+        "activity_records": preview.activity_records,"other_changes_not_previewed":true}})).into_response(), Err(error) => result_error("speaker_name_variant",speaker_key(&source,&target),&error.to_string()) }
 }
 
 async fn speaker_accept(State(root): State<PathBuf>, body: Bytes) -> Response {

@@ -237,7 +237,11 @@ pub fn bootstrap_voiceprints(
             continue;
         };
         for source in &segment.sources {
-            if overlaps(&segment.path, source) {
+            if overlaps(&segment.path, source)
+                || !crate::voiceprint_playback::allows_transcript(
+                    &segment.path.join(format!("{source}.jsonl")),
+                )
+            {
                 continue;
             }
             let Ok(Some(embeddings)) =
@@ -346,7 +350,11 @@ pub fn seed_from_imports(
         };
 
         for source in &segment.sources {
-            if overlaps(&segment.path, source) {
+            if overlaps(&segment.path, source)
+                || !crate::voiceprint_playback::allows_transcript(
+                    &segment.path.join(format!("{source}.jsonl")),
+                )
+            {
                 continue;
             }
             let source_path = segment.path.join(format!("{source}.jsonl"));

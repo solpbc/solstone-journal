@@ -60,6 +60,7 @@ pub struct NameVariantAutoMerged {
     pub canonical: String,
     pub alias: String,
     pub similarity: f64,
+    pub preview: solstone_core_entity::EntityMergePreview,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -209,6 +210,20 @@ pub fn resolve_name_variant_candidates(
         ..ResolveNameVariantsStats::default()
     };
     for candidate in scan.candidates {
+        let preview = match solstone_core_entity::preview_entity_merge(
+            journal_root,
+            &candidate.source_id,
+            &candidate.target_id,
+            EntityMergeOptions {
+                keep_source_as_aka: true,
+            },
+        ) {
+            Ok(preview) => preview,
+            Err(error) => {
+                stats.errors.push(error.to_string());
+                continue;
+            }
+        };
         if commit
             && let Err(error) = commit_entity_merge(
                 journal_root,
@@ -230,6 +245,7 @@ pub fn resolve_name_variant_candidates(
             canonical: candidate.target_label,
             alias: candidate.source_label,
             similarity: candidate.similarity,
+            preview,
         });
     }
     stats

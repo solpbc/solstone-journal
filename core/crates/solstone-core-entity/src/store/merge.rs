@@ -68,13 +68,18 @@ pub struct EntityMergeOptions {
     pub keep_source_as_aka: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct EntityMergePreview {
     pub source_id: String,
     pub target_id: String,
     pub target_identity: Value,
     pub aliases_added: usize,
     pub emails_added: usize,
+    pub voiceprints_added: usize,
+    pub voiceprints_target_total: usize,
+    pub notes_on_source: usize,
+    pub speaker_labels: usize,
+    pub activity_records: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -212,13 +217,122 @@ pub fn preview_entity_merge(
 ) -> Result<EntityMergePreview, EntityMergeError> {
     let plan = plan_merge(journal, source_id, target_id, options)?;
     check_facet_links(journal, source_id, target_id)?;
+    let (source, target) = ensure_voiceprint_merge_compatible(journal, source_id, target_id)?;
+    let mut keys = target
+        .as_ref()
+        .map(|a| {
+            a.metadata
+                .iter()
+                .map(|m| voiceprint_key(m))
+                .collect::<Result<HashSet<_>, _>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let mut voiceprints_added = 0;
+    if let Some(source) = source {
+        for (embedding, metadata) in source
+            .embeddings
+            .chunks_exact(EMBEDDING_WIDTH)
+            .zip(&source.metadata)
+        {
+            if keys.insert(voiceprint_key(metadata)?)
+                && embedding.iter().map(|v| v * v).sum::<f32>() > 0.0
+            {
+                voiceprints_added += 1;
+            }
+        }
+    }
+    let voiceprints_target_total = target.map_or(0, |a| a.rows) + voiceprints_added;
+    let (notes_on_source, speaker_labels, activity_records) =
+        preview_related_counts(journal, source_id, target_id, &plan)?;
     Ok(EntityMergePreview {
         source_id: source_id.to_owned(),
         target_id: target_id.to_owned(),
         target_identity: plan.target_after,
         aliases_added: plan.aliases_added,
         emails_added: plan.emails_added,
+        voiceprints_added,
+        voiceprints_target_total,
+        notes_on_source,
+        speaker_labels,
+        activity_records,
     })
+}
+
+/// Counts the existing records a merge will touch without publishing anything.
+fn preview_related_counts(
+    journal: &Path,
+    source: &str,
+    target: &str,
+    plan: &MergePlan,
+) -> Result<(usize, usize, usize), EntityMergeError> {
+    let mut notes = 0;
+    let mut labels = 0;
+    let mut activities = 0;
+    let names = ActivityNames {
+        source_id: source,
+        source_names: &plan.source_names,
+        target_name: &plan.target_display_name,
+    };
+    for facet in
+        list_dir_entries(&contained_path(journal, "facets").map_err(refused)?).map_err(refused)?
+    {
+        if facet.kind != DirEntryKind::Directory {
+            continue;
+        }
+        let name = facet.name.to_string_lossy();
+        let dirs = LinkDirs::for_facet(journal, &name);
+        for folder in source_link_folders(journal, &name, source, target)? {
+            let path = dirs.observations_path(&folder).map_err(refused)?;
+            let text = read_text(&path, String::new()).map_err(refused)?;
+            notes += parse_observation_file(&text, ObservationParseSource::Path(&path))
+                .map_err(refused)?
+                .live_count();
+        }
+        for file in list_dir_entries(&facet.path.join("activities")).map_err(refused)? {
+            if file.kind != DirEntryKind::File
+                || file.path.extension().and_then(|s| s.to_str()) != Some("jsonl")
+            {
+                continue;
+            }
+            let rows: Vec<Value> =
+                read_jsonl(&file.path, Vec::new(), MalformedPolicy::Raise).map_err(refused)?;
+            for mut row in rows {
+                activities += usize::from(rewrite_activity(&mut row, &names, target).0);
+            }
+        }
+    }
+    for day in day_dirs(journal).map_err(refused)?.into_values() {
+        for segment in iter_segments(journal, PathOrDay::Directory(&day)).map_err(refused)? {
+            for (file, list, fields) in [
+                ("speaker_labels.json", "labels", &["speaker"][..]),
+                (
+                    "speaker_corrections.json",
+                    "corrections",
+                    &["original_speaker", "corrected_speaker"][..],
+                ),
+                ("owner_line_labels.json", "entries", &["speaker"][..]),
+            ] {
+                let value: Value = read_json(
+                    segment.path().join("talents").join(file),
+                    Value::Null,
+                    MalformedPolicy::Raise,
+                )
+                .map_err(refused)?;
+                labels += value[list]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|row| {
+                        fields
+                            .iter()
+                            .any(|field| row[*field].as_str() == Some(source))
+                    })
+                    .count();
+            }
+        }
+    }
+    Ok((notes, labels, activities))
 }
 
 pub fn commit_entity_merge(
@@ -626,6 +740,41 @@ fn rename_active_entities(active: &mut Vec<Value>, names: &ActivityNames) -> usi
     renamed
 }
 
+fn rewrite_activity(row: &mut Value, names: &ActivityNames, target_id: &str) -> (bool, usize) {
+    let source_id = names.source_id;
+    let mut fields = 0;
+    let mut changed = false;
+    if let Some(object) = row.as_object_mut() {
+        if let Some(active) = object
+            .get_mut("active_entities")
+            .and_then(Value::as_array_mut)
+        {
+            let renamed = rename_active_entities(active, names);
+            fields += renamed;
+            changed |= renamed > 0;
+        }
+        for (container, keys) in [
+            ("participation", &["entity_id"][..]),
+            ("relations", &["from_entity_id", "to_entity_id"][..]),
+        ] {
+            if let Some(items) = object.get_mut(container).and_then(Value::as_array_mut) {
+                for item in items.iter_mut() {
+                    if let Some(item) = item.as_object_mut() {
+                        for key in keys {
+                            if item.get(*key).and_then(Value::as_str) == Some(source_id) {
+                                item.insert((*key).to_owned(), Value::String(target_id.to_owned()));
+                                fields += 1;
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (changed, fields)
+}
+
 pub(crate) fn merge_activities(
     journal: &Path,
     names: &ActivityNames,
@@ -635,7 +784,6 @@ pub(crate) fn merge_activities(
 ) -> Result<ActivityMergeStats, EntityMergeError> {
     let facets = contained_path(journal, "facets")
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-    let source_id = names.source_id;
     let mut stats = ActivityMergeStats::default();
     let mut artifact_index = 0;
     for facet in
@@ -659,40 +807,8 @@ pub(crate) fn merge_activities(
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
             let mut file_changed = false;
             for row in rows.iter_mut() {
-                let mut changed = false;
-                if let Some(object) = row.as_object_mut() {
-                    if let Some(active) = object
-                        .get_mut("active_entities")
-                        .and_then(Value::as_array_mut)
-                    {
-                        let renamed = rename_active_entities(active, names);
-                        stats.fields_rewritten += renamed;
-                        changed |= renamed > 0;
-                    }
-                    for (container, keys) in [
-                        ("participation", &["entity_id"][..]),
-                        ("relations", &["from_entity_id", "to_entity_id"][..]),
-                    ] {
-                        if let Some(items) = object.get_mut(container).and_then(Value::as_array_mut)
-                        {
-                            for item in items.iter_mut() {
-                                if let Some(item) = item.as_object_mut() {
-                                    for key in keys {
-                                        if item.get(*key).and_then(Value::as_str) == Some(source_id)
-                                        {
-                                            item.insert(
-                                                (*key).to_owned(),
-                                                Value::String(target_id.to_owned()),
-                                            );
-                                            stats.fields_rewritten += 1;
-                                            changed = true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                let (changed, fields) = rewrite_activity(row, names, target_id);
+                stats.fields_rewritten += fields;
                 if changed {
                     stats.records_rewritten += 1;
                     file_changed = true;

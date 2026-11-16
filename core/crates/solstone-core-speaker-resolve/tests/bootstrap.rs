@@ -1383,3 +1383,50 @@ fn bootstrap_deduplicates_canonical_keys_in_mixed_metadata_archives() {
         );
     }
 }
+
+#[test]
+fn playback_admission_covers_bootstrap_and_import_seed() {
+    for imported in [false, true] {
+        for (tags, saved) in [
+            (json!({"Music":0.93,"Speech":0.79,"Television":0.38}), false),
+            (json!({"Television":0.9,"Speech":0.6}), false),
+            (json!({"Music":0.2,"Speech":0.95}), true),
+        ] {
+            let t = Temp::new();
+            entity(t.path(), "principal", "Principal", "Person", true);
+            entity(t.path(), "alex", "Alex", "Person", false);
+            write_owner(t.path());
+            let stream = if imported { "import.granola" } else { "mic" };
+            if imported {
+                import_segment(t.path(), stream, "120000_300", "Alex");
+            } else {
+                segment(t.path(), "120000_300", "Alex");
+            }
+            let path = t
+                .path()
+                .join("chronicle/20260808")
+                .join(stream)
+                .join("120000_300/audio.jsonl");
+            let body = fs::read_to_string(&path).unwrap_or_default();
+            let rest = body.split_once('\n').map(|(_, rest)| rest).unwrap_or("");
+            fs::write(
+                &path,
+                format!(
+                    "{}\n{rest}",
+                    json!({"sound_tags":{"tags":tags},"speaker":"unknown"})
+                ),
+            )
+            .unwrap();
+            if imported {
+                seed_from_imports(&request(t.path())).unwrap();
+            } else {
+                bootstrap_voiceprints(&request(t.path())).unwrap();
+            }
+            assert_eq!(
+                t.path().join("entities/alex/voiceprints.npz").exists(),
+                saved,
+                "imported={imported}"
+            );
+        }
+    }
+}

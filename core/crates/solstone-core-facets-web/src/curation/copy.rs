@@ -13,8 +13,14 @@ pub fn payload() -> Value {
     )
 }
 
-const COPY: [(&str, &str); 52] = [
+const COPY: [(&str, &str); 55] = [
     ("CUR_HEADING", "suggestions"),
+    (
+        "CUR_PREVIEW_NOTES_SOURCE",
+        "notes under the name being merged",
+    ),
+    ("CUR_PREVIEW_LABELS", "speaker labels changed"),
+    ("CUR_PREVIEW_ACTIVITIES", "activity records changed"),
     (
         "CUR_FACET_BODY",
         "journal activity doesn't fit your facets well. create the \"{name}\" facet?",
@@ -119,7 +125,7 @@ const COPY: [(&str, &str); 52] = [
     ("CUR_PREVIEW_VOICEPRINTS_LABEL", "voice samples moved"),
     (
         "CUR_PREVIEW_PARTIAL",
-        "this preview covers alias and email additions; the merge may also change facet links, notes, speaker labels, and voice samples.",
+        "the merge also joins facet links and photos.",
     ),
     ("CUR_REVIEW_RESTORE_ACTION", "restore to review"),
 ];

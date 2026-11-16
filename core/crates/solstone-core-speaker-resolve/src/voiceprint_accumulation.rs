@@ -66,6 +66,7 @@ pub struct AccumulationEmbedding {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub enum AccumulationSkipReason {
     NoisyOverlap,
+    Playback,
     LowConfidence,
     UnsupportedMethod,
     OwnerEntity,
@@ -192,6 +193,15 @@ pub fn accumulate_voiceprints_checked(
     )
     .map_err(|error| AccumulationError::Invalid(error.to_string()))?
     .ok_or_else(|| AccumulationError::Invalid("segment not found".to_string()))?;
+    if !crate::voiceprint_playback::allows_transcript(
+        &segment_dir.join(format!("{}.jsonl", request.source)),
+    ) {
+        increment(&mut skipped, AccumulationSkipReason::Playback);
+        return Ok(AccumulationOutcome::NothingEligible {
+            skipped_rows: skipped,
+            entity_reports: reports,
+        });
+    }
     let overlap = read_overlap_fraction(&segment_dir.join(format!("{}.jsonl", request.source)));
     if overlap > NOISY_FLYWHEEL_OVERLAP_MAX {
         increment(&mut skipped, AccumulationSkipReason::NoisyOverlap);

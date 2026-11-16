@@ -569,6 +569,16 @@ async fn merge_names_ready_path_returns_native_counts() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{value}");
+    assert_eq!(value["status"], "preview");
+    assert_eq!(value["preview"]["voiceprints_added"], 0);
+    assert!(journal.0.join("entities/alias/entity.json").exists());
+    let (status, value) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/merge-names",
+        json!({"alias":"alias","canonical":"canonical","commit":true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{value}");
     assert_eq!(value["merged"], true);
     assert!(value["voiceprints_merged"].is_number());
     assert!(value["segments_scanned"].is_number());

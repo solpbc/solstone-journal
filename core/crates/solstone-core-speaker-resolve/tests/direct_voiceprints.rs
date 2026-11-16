@@ -257,3 +257,53 @@ fn host_local_segment_start_ms() -> i64 {
         .unwrap()
         .timestamp_millis()
 }
+
+#[test]
+fn playback_admission_covers_direct_planning_replay_and_single_row_assignment() {
+    for (tags, saved) in [
+        (json!({"Music":0.93,"Speech":0.79,"Television":0.38}), false),
+        (json!({"Television":0.9,"Speech":0.6}), false),
+        (json!({"Music":0.2,"Speech":0.95}), true),
+    ] {
+        let t = Temp::new();
+        admitted_owner(t.path());
+        entity(t.path(), "target");
+        entity(t.path(), "assigned");
+        let member = member_embeddings(t.path());
+        let before =
+            plan_direct_voiceprints(t.path(), "target", std::slice::from_ref(&member), None, 123)
+                .unwrap();
+        let path = t
+            .path()
+            .join("chronicle/20260808/mic/120000_300/audio.jsonl");
+        fs::write(
+            path,
+            format!(
+                "{}\n",
+                json!({"sound_tags":{"tags":tags},"speaker":"unknown"})
+            ),
+        )
+        .unwrap();
+        let planned = plan_direct_voiceprints(t.path(), "target", &[member], None, 123).unwrap();
+        assert_eq!(!planned.items.is_empty(), saved);
+        let result = execute_direct_voiceprints_phase(t.path(), &before.plan, &encoder()).unwrap();
+        assert_eq!(result.saved_count, usize::from(saved));
+        assert_eq!(
+            load_entity_voiceprints_file(t.path(), "target").is_some(),
+            saved
+        );
+        let item = &before.items[0];
+        solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
+            t.path(),
+            "assigned",
+            item.embedding.clone(),
+            item.metadata.clone(),
+            &encoder(),
+        )
+        .unwrap();
+        assert_eq!(
+            load_entity_voiceprints_file(t.path(), "assigned").is_some(),
+            saved
+        );
+    }
+}

@@ -1666,6 +1666,7 @@ async function main() {
   cases += await require('./entities_contract_dom.js')(manifestDir);
   // Photos of people: the person-page panel, list thumbnails and merge reasons.
   cases += await require('./entities_faces_dom.js')(manifestDir);
+  cases += await require('./entities_voice_dom.js')(manifestDir);
 
   console.log(`DOM CASES: ${cases} passed`);
 }

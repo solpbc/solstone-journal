@@ -296,3 +296,5 @@ module.exports = async function facesCases(manifestDir) {
 
   return cases;
 };
+
+module.exports.Node = Node;

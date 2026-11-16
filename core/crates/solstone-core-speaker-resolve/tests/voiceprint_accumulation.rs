@@ -484,3 +484,34 @@ fn accumulation_deduplicates_canonical_keys_in_mixed_metadata_archives() {
         );
     }
 }
+
+#[test]
+fn playback_admission_covers_automatic_accumulation() {
+    for (tags, saved) in [
+        (json!({"Music":0.93,"Speech":0.79,"Television":0.38}), false),
+        (json!({"Television":0.9,"Speech":0.6}), false),
+        (json!({"Music":0.2,"Speech":0.95}), true),
+    ] {
+        let t = TempDir::new();
+        owner(&t);
+        entity(&t, "alice", "Person", false);
+        source(
+            &t,
+            &format!(
+                "{}\n",
+                json!({"sound_tags":{"tags":tags},"speaker":"unknown"})
+            ),
+        );
+        accumulate_voiceprints(&request(
+            &t,
+            vec![label(1, "alice")],
+            vec![embedding(1, vector(0., 1.))],
+            vec!["alice"],
+        ))
+        .unwrap();
+        assert_eq!(
+            load_entity_voiceprints_file(t.path(), "alice").is_some(),
+            saved
+        );
+    }
+}
