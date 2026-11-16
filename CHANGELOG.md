@@ -16,6 +16,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - the journal no longer describes a screen again when it looks the same as it did a few minutes earlier. it keeps the earlier description, so a quiet desk uses much less of the thinking you chose. when no screen changed and nothing was said, it also keeps its earlier account of what you were doing.
+- on windows, with confidential processing your journal now keeps one secure connection open instead of opening a new one for each step, so each step starts sooner.
 - the import page now works like home, transcripts and search: moving between it and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 
 ### Fixed
