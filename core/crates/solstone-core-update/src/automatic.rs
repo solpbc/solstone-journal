@@ -693,10 +693,15 @@ impl UnattendedRun<'_> {
 
 /// Whether the catalogue offers something newer than this platform install.
 pub fn platform_update_available(pos: &PositiveOwnership, listing: &CatalogueListing) -> bool {
-    if let Some(ref current) = pos.current_platform_version {
-        return compare_platform_versions(&listing.platform_version, current)
-            == Some(Ordering::Greater);
-    }
+    // A run that stopped part-way can record the newer catalogue for its
+    // header while a component stayed on its older version, so each recorded
+    // component is compared too, and a failed component is tried again.
+    let platform_newer = pos
+        .current_platform_version
+        .as_ref()
+        .is_some_and(|current| {
+            compare_platform_versions(&listing.platform_version, current) == Some(Ordering::Greater)
+        });
     let journal_newer =
         compare_semver_3part(&listing.journal_version, &pos.current_journal_version)
             == Some(Ordering::Greater);
@@ -709,7 +714,7 @@ pub fn platform_update_available(pos: &PositiveOwnership, listing: &CatalogueLis
         .is_some_and(|(current, latest)| {
             compare_semver_3part(latest, current) == Some(Ordering::Greater)
         });
-    journal_newer || desktop_newer
+    platform_newer || journal_newer || desktop_newer
 }
 
 /// The installer arguments for an unattended run: every recorded component,
@@ -962,6 +967,40 @@ mod tests {
         mixed.route_kind = RouteKind::PlatformMixed;
         mixed.components[1].route = "deb".to_owned();
         assert!(!eligible(&mixed));
+    }
+
+    #[test]
+    fn a_component_left_behind_by_a_part_way_run_is_still_an_update() {
+        let listing = |platform: &str, desktop: &str| CatalogueListing {
+            platform_version: platform.to_owned(),
+            journal_version: "2.0.80".to_owned(),
+            desktop_version: Some(desktop.to_owned()),
+            installer: None,
+        };
+        let mut pos = owned(&[
+            ("journal", ServicePolicy::Start),
+            ("desktop", ServicePolicy::Start),
+        ]);
+        assert!(!platform_update_available(
+            &pos,
+            &listing("2.0.80-r1", "2.0.80")
+        ));
+        assert!(platform_update_available(
+            &pos,
+            &listing("2.0.80-r2", "2.0.80")
+        ));
+        // The header names r4, but the app stayed on its older version.
+        pos.current_platform_version = Some("2.0.80-r4".to_owned());
+        pos.components[1].version = Some("2.0.46".to_owned());
+        assert!(platform_update_available(
+            &pos,
+            &listing("2.0.80-r4", "2.0.48")
+        ));
+        pos.components[1].version = Some("2.0.48".to_owned());
+        assert!(!platform_update_available(
+            &pos,
+            &listing("2.0.80-r4", "2.0.48")
+        ));
     }
 
     #[test]
@@ -1343,8 +1382,8 @@ mod run_tests {
             ("2.0.99-r9", "catalogue-went-backwards"),
             ("2.0.100", "catalogue-went-backwards"),
         ] {
-            let (core, _) = offered.split_once("-r").unwrap_or((offered, ""));
-            let s = seams(vec![Ok(listing(offered, core, true))]);
+            // The fixture's journal stays at 2.0.80; only the coordinate moves.
+            let s = seams(vec![Ok(listing(offered, "2.0.80", true))]);
             let outcome = run(&f, &s);
             assert_eq!(outcome.result, expected, "{offered}");
             if expected == "installed" {

@@ -351,31 +351,17 @@ fn check_selected(
             components: None,
         }
     } else {
-        // Platform routes compare platform versions when recorded, or installed component versions
-        let is_newer = if let Some(ref current_pver) = pos.current_platform_version {
-            matches!(
-                compare_platform_versions(&latest_platform, current_pver),
-                Some(Ordering::Greater)
-            )
-        } else {
-            let journal_newer = matches!(
-                compare_semver_3part(&latest_journal, &pos.current_journal_version),
-                Some(Ordering::Greater)
-            );
-            let desktop_newer = pos
-                .components
-                .iter()
-                .find(|c| c.name == "desktop")
-                .and_then(|c| c.version.as_deref())
-                .zip(latest_desktop.as_deref())
-                .is_some_and(|(cur_desktop, latest_desktop)| {
-                    matches!(
-                        compare_semver_3part(latest_desktop, cur_desktop),
-                        Some(Ordering::Greater)
-                    )
-                });
-            journal_newer || desktop_newer
-        };
+        // Platform routes compare the recorded platform version and each
+        // installed component's version.
+        let is_newer = automatic::platform_update_available(
+            &pos,
+            &CatalogueListing {
+                platform_version: latest_platform.clone(),
+                journal_version: latest_journal.clone(),
+                desktop_version: latest_desktop.clone(),
+                installer: None,
+            },
+        );
 
         let (avail, target) = if is_newer {
             (
