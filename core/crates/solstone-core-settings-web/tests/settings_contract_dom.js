@@ -1094,6 +1094,32 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(forms.length === 7, `the seven form guards: ${forms.length}`);
   });
 
+  await test('a held re-validate keeps focus on its button, busy, and a second press sends nothing', async () => {
+    const p = await boot(env, '/app/settings/#apikeys');
+    let release = null;
+    p.holds.push((call) => {
+      if (call.url !== '/app/settings/api/validate-keys') return false;
+      release = () => call.answer({ key_validation: {} }, 200);
+      return true;
+    });
+    const btn = p.byId('revalidateAllKeys');
+    btn.focus();
+    p.press(btn);
+    await settle();
+    const checks = () => p.writes().filter((call) => call.url === '/app/settings/api/validate-keys').length;
+    assert.ok(checks() === 1, `one check out: ${checks()}`);
+    assert.ok(btn.getAttribute('aria-disabled') === 'true', 'the button is busy while the check is out');
+    assert.ok(!btn.disabled, 'and not disabled, which would drop focus');
+    assert.ok(p.doc.activeElement === btn, `focus stays on it: ${focusOn(p)}`);
+    p.press(btn);
+    await settle();
+    assert.ok(checks() === 1, `a press while busy sends nothing: ${checks()}`);
+    release();
+    await settle();
+    assert.ok(btn.getAttribute('aria-disabled') === null, 'the answer clears busy');
+    assert.ok(p.doc.activeElement === btn, `focus is still on it: ${focusOn(p)}`);
+  });
+
   await test('each section is an arrival by its hash, the bare path takes the slashed address, and ?facet= shows the index', async () => {
     const sections = ['about', 'guide', 'profile', 'apikeys', 'transcription', 'vision', 'sync', 'storage', 'trash', 'facets', 'localaccess'];
     for (const section of sections) {
