@@ -147,8 +147,15 @@
     return global.JournalFormat?.day ? global.JournalFormat.day(String(dayKey)) : String(dayKey);
   }
 
+  // Inside a sentence the relative days read in lowercase ("about yesterday");
+  // weekday and month names keep their capitals.
+  function dayInSentence(dayKey) {
+    const name = day(dayKey);
+    return /^(Today|Yesterday|Tomorrow)$/.test(name) ? name.toLowerCase() : name;
+  }
+
   function dayList(days) {
-    const names = (Array.isArray(days) ? days : []).filter(Boolean).map(day);
+    const names = (Array.isArray(days) ? days : []).filter(Boolean).map(dayInSentence);
     if (names.length <= 1) return names.join('');
     if (names.length === 2) return `${names[0]} and ${names[1]}`;
     return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
@@ -189,6 +196,17 @@
       return `<ul class="sg-lines">${lines.map((line) => `<li><time>${escapeHtml(clock(line.time))}</time><span class="who">${escapeHtml(line.speaker || '')}</span><span class="said">${escapeHtml(line.text || '')}</span></li>`).join('')}</ul>`;
     }
     return escapeHtml(card.now || '');
+  }
+
+  // A recording's current state is a flag, not words: on a waiting card it is
+  // always off, which the place line and the suggestion already say. When it is
+  // on (the owner marked it first), the journal's words for that are shown.
+  function nowRow(card) {
+    if (card.kind === 'recording') {
+      const on = /^(on|true|yes)$/i.test(String(card.now || '').trim());
+      return on ? `<dt>${escapeHtml(S.now)}</dt><dd>${escapeHtml(S.recordingChange)}</dd>` : '';
+    }
+    return `<dt>${escapeHtml(S.now)}</dt><dd>${nowHtml(card)}</dd>`;
   }
 
   function changeHtml(card) {
@@ -254,7 +272,7 @@
     return `<article class="sg-card" ${attrs(card)}>
       ${headHtml(card)}
       <dl class="sg-grid">
-        <dt>${escapeHtml(S.now)}</dt><dd>${nowHtml(card)}</dd>
+        ${nowRow(card)}
         <dt>${escapeHtml(S.suggested)}</dt><dd class="sg-change">${changeHtml(card)}</dd>
         ${card.reason ? `<dt>${escapeHtml(S.why)}</dt><dd>${basis ? `<span class="sg-whoby">${escapeHtml(fmt(basis, {agent: agentName(card.agent)}))}</span>` : ''}<p class="sg-quote">"${escapeHtml(card.reason)}"</p></dd>` : ''}
         ${then ? `<dt>${escapeHtml(S.then)}</dt><dd class="sg-then">${escapeHtml(then)}</dd>` : ''}
@@ -273,7 +291,7 @@
     return `<article class="sg-card sg-stale" ${attrs(card)}>
       ${headHtml(card, `<span class="sg-chip">${escapeHtml(S.staleChip)}</span>`)}
       <p class="sg-stale-lead">${escapeHtml(fmt(S.stale, {agent: agentName(card.agent)}))}</p>
-      <dl class="sg-grid"><dt>${escapeHtml(S.now)}</dt><dd>${nowHtml(card)}</dd></dl>
+      ${nowRow(card) ? `<dl class="sg-grid">${nowRow(card)}</dl>` : ''}
       <div class="curation-actions">
         <button class="curation-button" type="button" data-action="agent-stale-ok">${escapeHtml(S.ok)}</button>
         ${openHtml(card)}
