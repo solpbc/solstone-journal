@@ -138,7 +138,7 @@ pub fn split_private_pipe(
 /// Callosum's own native tests do. Absent from builds without full-tests.
 #[cfg(feature = "full-tests")]
 #[must_use]
-pub fn test_pipe_namespace(socket_path: &Path) -> impl Drop {
+pub fn test_pipe_namespace(socket_path: &Path) -> impl Drop + use<> {
     crate::windows::namespace_fixture::Guard::register(socket_path)
 }
 
