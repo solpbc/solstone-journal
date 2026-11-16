@@ -405,13 +405,10 @@ pub async fn retry_automatic() -> Response {
 pub async fn restart_journal() -> Response {
     #[cfg(target_os = "linux")]
     {
-        let queued = tokio::task::spawn_blocking(|| {
-            solstone_core_update::automatic::restart_journal(
-                &solstone_core_update::automatic::RealSystemctl,
-            )
-        })
-        .await
-        .unwrap_or(false);
+        let queued =
+            tokio::task::spawn_blocking(solstone_core_update::automatic::restart_journal)
+                .await
+                .unwrap_or(false);
         return if queued {
             (axum::http::StatusCode::ACCEPTED, Json(json!({"ok": true}))).into_response()
         } else {

@@ -258,12 +258,19 @@ pub fn receipt_tree_prefix(data_dir: &Path) -> Option<PathBuf> {
     (has_journal && prefix.is_absolute()).then_some(prefix)
 }
 
-/// Queue a restart of the journal's service, for the owner's press. systemd
-/// runs it after this returns, so the caller is not waited on and ended.
-pub fn restart_journal(systemctl: &dyn Systemctl) -> bool {
-    systemctl
-        .user(&["--no-block", "restart", "solstone.service"])
-        .unwrap_or(false)
+/// Queue a restart of the journal's service, for the owner's press. The caller
+/// runs inside that service, and the restart stops its whole control group, so
+/// `systemctl` can be ended by that stop before it exits: ended that way, the
+/// restart has started.
+pub fn restart_journal() -> bool {
+    use std::os::unix::process::ExitStatusExt;
+    std::process::Command::new("systemctl")
+        .args(["--user", "--no-block", "restart", "solstone.service"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success() || status.signal() == Some(15))
 }
 
 pub fn read_choice(data_dir: &Path) -> Choice {
