@@ -356,6 +356,16 @@
   background: color-mix(in srgb, var(--orange) 65%, var(--surface-dark));
 }
 
+/* A control whose write is out stays drawn and reachable, dimmed and busy;
+   one held while another's write is out (aria-disabled alone) the same. */
+#importListView [aria-disabled="true"],
+#importDetailView [aria-disabled="true"],
+#detectModal [aria-disabled="true"],
+#importDeleteModal [aria-disabled="true"] {
+  opacity: .8;
+  cursor: progress;
+}
+
 .import-secondary-btn {
   display: inline-flex;
   align-items: center;
@@ -952,10 +962,14 @@ function writeClass(el, name, on) {
 // start's flow), and the time zone note the shell's clock puts beside a time.
 const IMPORT_KEEP = '[data-saved-start-slot]';
 const IMPORT_SKIP = '[data-zone-note]';
+// A control's busy marks are the press's, not the markup's, so a busy control
+// is kept, and stays busy, through a draw.
+const IMPORT_PRESS_ATTRS = new Set(['aria-busy', 'aria-disabled']);
 function importSameShell(a, b) {
   if (a.nodeType !== 1 || b.nodeType !== 1 || a.tagName !== b.tagName) return false;
-  const names = a.getAttributeNames();
-  return names.length === b.getAttributeNames().length && names.every(name => a.getAttribute(name) === b.getAttribute(name));
+  const names = a.getAttributeNames().filter(name => !IMPORT_PRESS_ATTRS.has(name));
+  const others = b.getAttributeNames().filter(name => !IMPORT_PRESS_ATTRS.has(name));
+  return names.length === others.length && names.every(name => a.getAttribute(name) === b.getAttribute(name));
 }
 // Brings `el`'s children to `next`'s, in order, and says whether it wrote
 // anything. A child equal to the new one is kept, an element with the same tag
@@ -988,12 +1002,89 @@ function importMorph(el, next) {
   return wrote;
 }
 // Draws `html` into `el`, writing only what differs from what it shows, and
-// says whether it wrote anything.
-function drawMarkup(el, html) {
+// says whether it wrote anything. If the draw took away the control that had
+// focus, focus goes on where the owner was (`importLand`); `landings` names
+// where a press that's out wants it.
+function drawMarkup(el, html, landings = null) {
   if (!el) return false;
+  const held = importHeld(el);
+  const near = held ? nearestControls(el, held) : [];
   const holder = document.createElement('template');
   holder.innerHTML = String(html ?? '');
-  return importMorph(el, holder.content || holder);
+  const wrote = importMorph(el, holder.content || holder);
+  if (held && wrote) importLand(held, el, [...(typeof landings === 'function' ? landings() : landings || []), ...near]);
+  return wrote;
+}
+
+// ---- focus that stays where the owner is
+//
+// Focus that was inside import's markup and is taken away by a draw goes to
+// the first of: the same control drawn again, where the press that drew says,
+// the nearest control left in the gone control's own row, then the part.
+// Focus anywhere else, or nowhere, is left alone.
+const IMPORT_CONTROLS = 'button, a[href], input, select, textarea, summary, [tabindex="0"]';
+// What a control is, so the same one drawn again can be found.
+const IMPORT_KEYS = ['id', 'data-import-id', 'data-import-check-status', 'data-import-load-more', 'data-import-show-grid',
+  'data-import-delete', 'data-source', 'data-import-source', 'data-import-quick', 'data-body-facet-answer'];
+
+// The focused element when it is in import's markup (or in `region`).
+function importHeld(region = null) {
+  const active = document.activeElement;
+  if (!active || active === document.body) return null;
+  if (region) return region.contains(active) ? active : null;
+  return importOwns(active) ? active : null;
+}
+
+function importSuccessor(held, region) {
+  if (!held || !region || !held.tagName) return null;
+  const candidates = Array.from(region.querySelectorAll(held.tagName.toLowerCase())).filter(el => el !== held);
+  const key = IMPORT_KEYS.find(name => held.hasAttribute(name));
+  if (key) return candidates.find(el => el.getAttribute(key) === held.getAttribute(key)) || null;
+  const words = held.textContent.trim();
+  return words ? candidates.find(el => el.textContent.trim() === words) || null : null;
+}
+
+// The control's own row first (next, then previous), then the rest of the part.
+function nearestControls(part, from) {
+  const near = root => {
+    const all = Array.from(root.querySelectorAll(IMPORT_CONTROLS)).filter(el => el.getAttribute('tabindex') !== '-1' && el.type !== 'hidden');
+    const at = all.indexOf(from);
+    return at < 0 ? all : [...all.slice(at + 1), ...all.slice(0, at).reverse()];
+  };
+  const row = from?.parentElement && from.parentElement !== part && part.contains(from.parentElement) ? near(from.parentElement) : [];
+  return [...row, ...near(part)];
+}
+
+// A landing that isn't a control (a heading, the panel) takes focus by tabindex.
+function importFocusable(el) {
+  if (el && !el.hasAttribute('tabindex') && !/^(A|BUTTON|INPUT|SELECT|TEXTAREA|SUMMARY)$/.test(el.tagName)) el.setAttribute('tabindex', '-1');
+  return el;
+}
+
+function importLand(held, region, landings = []) {
+  if (!held || ctx.disposed) return false;
+  // A browser can still report a control it has just turned off as focused.
+  if (document.activeElement === held && held.disabled) held.blur?.();
+  const targets = [importSuccessor(held, region), ...landings, ...(region ? nearestControls(region, held) : [])];
+  return window.SolFocus.refocus(importPage, true, targets.filter(Boolean).map(importFocusable));
+}
+
+// A press whose write is out keeps its control: busy, deaf to a second press,
+// never `disabled`. Without a control the work just runs.
+async function pressing(control, work) {
+  if (!control) return work();
+  if (window.SolFocus.isBusy(control) || ctx.disposed) return undefined;
+  window.SolFocus.setBusy(control, true);
+  try {
+    return await work();
+  } finally {
+    if (!ctx.disposed) window.SolFocus.setBusy(control, false);
+  }
+}
+
+// The list's own heading, where focus goes when nothing nearer is left.
+function importHistoryHeading() {
+  return importFocusable(document.querySelector('.import-list > h2'));
 }
 const never = () => window.SolStore.never();
 // A write the owner started finishes, uncut, and its answer is handled only
@@ -1141,6 +1232,10 @@ function clearPendingImport(importId) {
 
 async function navigateTo(view, options = {}) {
   const { updateHash = true } = options;
+  // Focus this navigation takes away from import's markup goes to the part it
+  // shows; the source the owner was on is where the grid's landing goes.
+  const held = options.held !== undefined ? options.held : importHeld();
+  const leftSource = options.leftSource !== undefined ? options.leftSource : currentGuideSource;
   const grid = document.getElementById('importGrid');
   const guide = document.getElementById('importGuide');
   const connections = document.getElementById('importSyncSources');
@@ -1162,14 +1257,16 @@ async function navigateTo(view, options = {}) {
   if (cleanView.startsWith('guide/')) {
     const source = cleanView.split('/')[1];
     await loadGuidedFlow(source);
+    if (hashAtEntry === window.location.hash) landShownPart(cleanView, held, leftSource);
   } else if (cleanView.startsWith('progress/')) {
     const importId = cleanView.split('/')[1];
     showProgressView(importId);
+    landShownPart(cleanView, held, leftSource);
     if (typeof reconcileImportState === 'function') {
       const resolvedId = await reconcileImportState(importId);
       if (typeof resolvedId === 'string' && resolvedId !== importId) {
         if (window.location.hash !== hashAtEntry) return;
-        return navigateTo(`progress/${resolvedId}`, options);
+        return navigateTo(`progress/${resolvedId}`, { ...options, held, leftSource });
       }
       scheduleThinkingProgress();
     }
@@ -1199,16 +1296,27 @@ async function navigateTo(view, options = {}) {
   if (updateHash && !ctx.disposed && window.location.hash !== storedHash) {
     ctx.history.push(`${window.location.pathname}${window.location.search}${nextHash || ''}`);
   }
+  landShownPart(cleanView || 'grid', held, leftSource);
+}
+
+// When the navigation took the focused control away, the shown part's own
+// place takes focus; focus held elsewhere, or nowhere, stays.
+function landShownPart(view, held, leftSource) {
+  if (!held || ctx.disposed) return;
+  if (document.activeElement === held && held.disabled) held.blur?.();
+  if (!window.SolFocus.focusLost(importPage)) return;
+  focusShownPart(view, leftSource);
 }
 
 function showGrid() {
   if (window.JournalOwnerFolders) window.JournalOwnerFolders.cancel();
+  const leftSource = currentGuideSource;
   currentGuideSource = null;
   currentGuidedFile = null;
   currentGuidedSaved = null;
   invalidateImportPreview('guided');
   importDraft.guidedClientItemId = null;
-  navigateTo('grid');
+  navigateTo('grid', { leftSource });
 }
 
 ctx.on(window, 'hashchange', () => handleHashChange({ traversal: true }));
@@ -1219,10 +1327,11 @@ ctx.on(window, 'hashchange', () => handleHashChange({ traversal: true }));
 // part the entry shows, never the page.
 async function handleHashChange(options = {}) {
   const hash = (window.location.hash || '').replace(/^#/, '');
+  const leftSource = currentGuideSource;
   if (options.traversal) closeImportDialogs();
   const view = hash.startsWith('guide/') || hash.startsWith('progress/') ? hash : 'grid';
-  await navigateTo(view, { updateHash: false });
-  if (options.traversal && !ctx.disposed && window.location.hash.replace(/^#/, '') === hash) focusShownPart(view);
+  await navigateTo(view, { updateHash: false, leftSource });
+  if (options.traversal && !ctx.disposed && window.location.hash.replace(/^#/, '') === hash) focusShownPart(view, leftSource);
 }
 
 function closeImportDialogs() {
@@ -1238,13 +1347,16 @@ function importFocusGone() {
   return typeof active.checkVisibility === 'function' && !active.checkVisibility();
 }
 
-function focusShownPart(view) {
+// The grid's place is the card of the source the owner was on, else its first.
+function focusShownPart(view, leftSource = null) {
   if (!importFocusGone()) return;
+  const cards = () => Array.from(document.querySelectorAll('#importGrid .import-source-card'));
   const target = view.startsWith('guide/')
     ? document.querySelector('#guideSteps .import-guide-title')
     : view.startsWith('progress/')
       ? document.querySelector('.import-progress-panel')
-      : document.querySelector('#importGrid .import-source-card');
+      : (leftSource && cards().find(card => (leftSource === 'quick' ? card.hasAttribute('data-import-quick') : card.getAttribute('data-import-source') === leftSource)))
+        || cards()[0];
   if (!target) return;
   if (!target.hasAttribute('tabindex') && !/^(A|BUTTON|INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) target.setAttribute('tabindex', '-1');
   target.focus({ preventScroll: true });
@@ -2057,15 +2169,18 @@ function wireImportDeleteDialog(nodes) {
     renderImportDeleteStep('move');
     nodes.erase.focus();
   });
+  // The dialog closes onto the control that opened it, which stays busy while
+  // the write is out, so a second delete can't start; then the delete lands.
   const act = erase => {
     if (!importDialog) return;
     const spec = importDialog.spec;
+    const opener = importDialog.returnFocus && importOwns(importDialog.returnFocus) ? importDialog.returnFocus : null;
     const body = importDialogNodes().body;
     importEraseBackups = erase && window.BackupErase
       ? { chosen: window.BackupErase.chosenIn(body), clause: window.BackupErase.receiptIn(body, spec.count || 1) }
       : { chosen: false, clause: '' };
-    closeImportDeleteDialog(false);
-    spec.act(erase);
+    closeImportDeleteDialog(true);
+    pressing(opener, () => spec.act(erase));
   };
   nodes.confirm.addEventListener('click', () => act(false));
   nodes.eraseConfirm.addEventListener('click', () => act(true));
@@ -2098,7 +2213,11 @@ function closeImportDeleteDialog(restoreFocus = true) {
   nodes.modal.style.display = 'none';
   nodes.body.replaceChildren();
   document.body.style.overflow = overflow;
-  if (restoreFocus && returnFocus && document.contains(returnFocus)) returnFocus.focus();
+  if (restoreFocus && returnFocus && document.contains(returnFocus)) {
+    // The page is out from under the dialog before focus goes back.
+    window.ConveyModalLayer?.reconcile?.({ restore: false });
+    returnFocus.focus();
+  }
 }
 
 // One import's dialog. The preview fills its list when it arrives; a preview
@@ -2372,6 +2491,8 @@ function toggleImportPick(row, fromBox = false) {
 }
 
 function deleteChosenImports() {
+  // While a delete is out its "delete" is busy, and starts no other.
+  if (window.SolFocus.isBusy(document.getElementById('importPickDelete'))) return;
   const chosen = importsCache.filter(imp => importPick.ids.has(imp.timestamp)).map(importDeleteItem);
   if (!chosen.length) return;
   if (chosen.length === 1) {
@@ -2381,7 +2502,27 @@ function deleteChosenImports() {
   openImportDeleteDialog({ ...importSetSpec(chosen, erase => deleteSetFromList(chosen, erase)), count: chosen.length });
 }
 
+// Where a delete from the list lands once it has gone: the row after the
+// first deleted one, else the one before, else the list's heading.
+function importDeleteLanding(ids) {
+  const order = importListRows().map(row => row.getAttribute('data-import-id'));
+  const first = Math.max(order.findIndex(id => ids.includes(id)), 0);
+  const after = order.slice(first + 1).filter(id => !ids.includes(id));
+  const before = order.slice(0, first).filter(id => !ids.includes(id)).reverse();
+  return () => {
+    const rows = importListRows();
+    return [...after, ...before].map(id => rows.find(row => row.getAttribute('data-import-id') === id)).filter(Boolean).concat(importHistoryHeading());
+  };
+}
+// The list's redraw lands focus there while a delete is answered.
+let importListLanding = null;
+async function landedLoad(landing) {
+  importListLanding = landing;
+  try { return await loadImports(); } finally { importListLanding = null; }
+}
+
 async function deleteOneFromList(item, erase) {
+  const landing = importDeleteLanding([item.id]);
   const outcome = await deleteOneImport(item, erase);
   if (outcome.kind === 'refused') {
     importPick.notes.set(item.id, importNoteKey(outcome.key, erase));
@@ -2392,13 +2533,15 @@ async function deleteOneFromList(item, erase) {
       importPick.ids.clear();
       importPick.notes.clear();
     }
-    await loadImports();
+    await landedLoad(landing);
   }
   showImportOneReceipt(outcome, erase, loadImports);
 }
 
 async function deleteSetFromList(items, erase) {
   const ids = items.map(item => item.id);
+  const landing = importDeleteLanding(ids);
+  const opener = document.getElementById('importPickDelete');
   let answer = null;
   try {
     const response = await importWrite('/app/import/api/imports/delete', {
@@ -2417,6 +2560,8 @@ async function deleteSetFromList(items, erase) {
   importPick.ids = new Set(outcome.keep.map(([id]) => id));
   importPick.notes = new Map(outcome.keep.filter(([, note]) => note));
   applyImportPickMode();
+  // With every chosen import gone the bar goes too, and the delete lands.
+  if (!importPick.on) importLand(opener, document.getElementById('importListContent'), landing());
   const buttons = outcome.buttons.map(name => (name === 'recover'
     ? importNoticeRecover(outcome.moved.map(entry => entry.trashId), IMPORT_DELETE_COPY)
     : importOpenTrashButton()));
@@ -2543,7 +2688,7 @@ async function loadImports() {
       `;
     }
     const restoreFilterFocus = document.activeElement?.id === 'importSourceFilter';
-    drawMarkup(container, html);
+    drawMarkup(container, html, importListLanding);
     reportImportReady(imports.length ? 'content' : 'empty');
 
     const sourceFilter = document.getElementById('importSourceFilter');
@@ -2630,6 +2775,7 @@ async function loadMoreImports() {
     }
 
     const tbody = document.querySelector('.import-table tbody');
+    const shownRows = importListRows().length;
     if (tbody) {
       let rowsHtml = '';
       data.imports.forEach(imp => {
@@ -2646,7 +2792,10 @@ async function loadMoreImports() {
             load more (${importsCache.length} of ${data.total} shown)
           </button>`);
       } else {
+        // On the last page the button goes: the first row it brought takes its place.
+        const held = importHeld(loadMoreContainer);
         loadMoreContainer.remove();
+        if (held) importLand(held, null, [importListRows()[shownRows]]);
       }
     }
 
@@ -3070,7 +3219,7 @@ function renderStravaFacet() {
       + `<button type="button" class="import-secondary-btn" data-body-facet-answer="no">${escapeHtml(stravaFacetText('no'))}</button>`
       + '</div>';
     slot.querySelectorAll('[data-body-facet-answer]').forEach((button) => {
-      button.addEventListener('click', () => answerStravaFacet(button.getAttribute('data-body-facet-answer')));
+      button.addEventListener('click', () => answerStravaFacet(button.getAttribute('data-body-facet-answer'), button));
     });
     return;
   }
@@ -3097,9 +3246,17 @@ function renderStravaFacet() {
   hint();
 }
 
-async function answerStravaFacet(answer) {
-  const buttons = document.querySelectorAll('[data-body-facet-answer]');
-  buttons.forEach((button) => { button.disabled = true; });
+// The pressed answer is busy and its pair held while the answer is out.
+let facetAnswering = false;
+async function answerStravaFacet(answer, pressed = null) {
+  if (facetAnswering) return;
+  facetAnswering = true;
+  const buttons = Array.from(document.querySelectorAll('[data-body-facet-answer]'));
+  buttons.forEach((button) => {
+    if (button === pressed) window.SolFocus.setBusy(button, true);
+    else writeAttr(button, 'aria-disabled', 'true');
+  });
+  const slot = document.getElementById('guidedFacet');
   try {
     // The answer names the question it answers, so one that has changed since is refused.
     const response = await importWrite('/app/import/api/body-facet', {
@@ -3111,6 +3268,8 @@ async function answerStravaFacet(answer) {
     if (data && data.reason_code === 'body_facet_offer_changed') {
       if (window.showError) showError(data.error || stravaFacetText('offer_changed'));
       await loadStravaFacet(stravaFacet && stravaFacet.source);
+      // The question was drawn again: the same answer in it, else its first control.
+      if (pressed) importLand(pressed, slot);
       return;
     }
     if (!response.ok || !data || !data.offer) throw new Error(stravaFacetText('answer_failed'));
@@ -3120,8 +3279,10 @@ async function answerStravaFacet(answer) {
     const select = document.getElementById('guidedFacetSelect');
     if (select) select.focus();
   } catch (err) {
-    buttons.forEach((button) => { button.disabled = false; });
+    buttons.forEach((button) => { window.SolFocus.setBusy(button, false); });
     if (window.showError) showError(err instanceof Error && err.message ? err.message : stravaFacetText('answer_failed'));
+  } finally {
+    facetAnswering = false;
   }
 }
 
@@ -3297,6 +3458,8 @@ function setupQuickImportForm() {
   importForm.onsubmit = async e => {
     e.preventDefault();
     const validateBtn = document.getElementById('validateBtn');
+    // While its save is out, a second press or an Enter in the form sends nothing.
+    if (window.SolFocus.isBusy(validateBtn)) return;
     const hasFile = currentFile != null;
     const hasText = pasteText.value.trim().length > 0;
 
@@ -3307,7 +3470,7 @@ function setupQuickImportForm() {
       return;
     }
 
-    validateBtn.disabled = true;
+    window.SolFocus.setBusy(validateBtn, true);
     validateBtn.innerHTML = 'validating<span class="spinner"></span>';
 
     try {
@@ -3329,7 +3492,7 @@ function setupQuickImportForm() {
 
       const response = await importWrite('/app/import/api/save', { method: 'POST', body: fd }, { upload: true });
       const data = await response.json();
-      validateBtn.disabled = false;
+      window.SolFocus.setBusy(validateBtn, false);
       validateBtn.textContent = 'validate';
 
       if (!response.ok) {
@@ -3349,7 +3512,7 @@ function setupQuickImportForm() {
       }
       showDetect(data);
     } catch (_err) {
-      validateBtn.disabled = false;
+      window.SolFocus.setBusy(validateBtn, false);
       validateBtn.textContent = 'validate';
       await loadImports();
       if (window.showError) {
@@ -3416,16 +3579,25 @@ function folderSelection(source, value) {
     return JSON.parse(sessionStorage.getItem(folderSelectionKey(source)) || 'null');
   } catch (error) { return null; }
 }
+// Choose folder is busy while its own chooser is out, and held (aria-disabled,
+// not busy) while the guide checks a kept folder. Start is held while either
+// is out, and unavailable with nothing chosen. None is turned off under focus.
 function folderControls(busy) {
   const choose = document.getElementById('guidedFolderBtn');
   const start = document.getElementById('guidedStartBtn');
   const file = document.getElementById('guidedFileInput');
-  if (choose) choose.disabled = busy || guidedFolderBusy;
-  if (file) file.disabled = guidedFolderBusy;
-  if (start) start.disabled = busy || guidedFolderBusy || (!currentGuidedSaved && !file);
+  if (choose) {
+    writeAttr(choose, 'aria-disabled', busy || guidedFolderBusy ? 'true' : null);
+    writeAttr(choose, 'aria-busy', guidedFolderBusy ? 'true' : null);
+  }
+  if (file) writeDisabled(file, guidedFolderBusy);
+  if (start && !importInFlight.guided) {
+    writeAttr(start, 'aria-disabled', busy || guidedFolderBusy ? 'true' : null);
+    writeDisabled(start, !currentGuidedSaved && !file);
+  }
 }
 async function chooseGuidedFolder(source) {
-  if (guidedFolderBusy || currentGuideSource !== source.name) return;
+  if (guidedFolderBusy || currentGuideSource !== source.name || window.SolFocus.isBusy(document.getElementById('guidedFolderBtn'))) return;
   const choose = document.getElementById('guidedFolderBtn');
   const status = document.getElementById('guidedFolderStatus');
   const reference = crypto.randomUUID();
@@ -3573,13 +3745,21 @@ function invalidateImportPreview(kind) {
   const panel = document.getElementById(`${kind}SizePreview`);
   if (panel) panel.textContent = '';
   const button = document.getElementById(kind === 'guided' ? 'guidedStartBtn' : 'startBtn');
-  if (button) { button.textContent = 'preview import'; button.disabled = importInFlight[kind]; }
+  if (button) { button.textContent = 'preview import'; setImportButton(kind, button, false); }
+}
+
+// A start whose own write is out is busy; one with nothing to import is unavailable.
+function setImportButton(kind, button, unavailable) {
+  // Only its own busy: a hold the folder put on it stays.
+  const busyNow = typeof button.getAttribute === 'function' && button.getAttribute('aria-busy') === 'true';
+  if (busyNow !== importInFlight[kind]) window.SolFocus.setBusy(button, importInFlight[kind]);
+  writeDisabled(button, !importInFlight[kind] && unavailable);
 }
 
 function restoreImportButton(kind, button) {
   const preview = importPreviews[kind];
   button.textContent = preview ? 'start import' : 'preview import';
-  button.disabled = importInFlight[kind] || Boolean(preview && !preview.ready);
+  setImportButton(kind, button, Boolean(preview && !preview.ready));
 }
 
 // What the Apple Health card says. Owner copy: reviewed with voice-check.
@@ -3734,14 +3914,15 @@ ctx.on(window.document, 'input', event => {
 });
 
 async function startGuidedImport(source) {
-  if (importInFlight.guided) return;
+  const startButton = document.getElementById('guidedStartBtn');
+  // Busy with its own write, or held while the folder's save or check is out.
+  if (importInFlight.guided || window.SolFocus.isBusy(startButton)) return;
   importInFlight.guided = true;
   const revision = previewRevisions.guided;
   let preparedPreview = false;
-  const startButton = document.getElementById('guidedStartBtn');
   const guidedSettingInput = document.getElementById('guidedSettingInput');
 
-  startButton.disabled = true;
+  setImportButton('guided', startButton, false);
   startButton.innerHTML = 'starting<span class="spinner"></span>';
 
   try {
@@ -4103,7 +4284,7 @@ function showProgressView(importId, eventData = null) {
 }
 
 startBtn.addEventListener('click', async () => {
-  if (importInFlight.quick) return;
+  if (importInFlight.quick || window.SolFocus.isBusy(startBtn)) return;
   const revision = previewRevisions.quick;
   let preparedPreview = false;
   const ts = document.getElementById('timestampInput').value.trim();
@@ -4120,7 +4301,7 @@ startBtn.addEventListener('click', async () => {
   }
 
   importInFlight.quick = true;
-  startBtn.disabled = true;
+  setImportButton('quick', startBtn, false);
   startBtn.innerHTML = 'starting<span class="spinner"></span>';
 
   try {
@@ -4153,7 +4334,9 @@ startBtn.addEventListener('click', async () => {
     }
     const importId = started.import_id || importDraft.quickSaved?.timestamp || ts;
     restoreImportButton('quick', startBtn);
-    closeDetectModal();
+    // The dialog and the guide behind it go; the progress panel takes their place.
+    closeDetectModal(false);
+    window.ConveyModalLayer?.reconcile?.({ restore: false });
     // A replayed start found the import already started or finished, so the progress view
     // shows the journal's own status for it instead of a fresh start.
     if (started.replay !== true && (!importEvents[importId] || !IMPORT_TERMINAL_EVENTS.has(importEvents[importId].event))) {
@@ -4168,7 +4351,7 @@ startBtn.addEventListener('click', async () => {
       };
     }
     loadImports();
-    navigateTo(`progress/${importId}`);
+    navigateTo(`progress/${importId}`, { held: startBtn });
   } catch (err) {
     invalidateImportPreview('quick');
     restoreImportButton('quick', startBtn);
@@ -4367,6 +4550,7 @@ ctx.on(importMain, 'click', event => {
     return;
   }
   const deleteBtn = event.target.closest('[data-import-delete]');
+  if (deleteBtn && window.SolFocus.isBusy(deleteBtn)) return;
   if (deleteBtn) {
     const sourceType = deleteBtn.getAttribute('data-import-delete-source') || '';
     const display = deleteBtn.getAttribute('data-import-delete-display') || '';
@@ -4763,7 +4947,8 @@ function renderContentPagination(data) {
     html += `<button class="${i === data.page ? 'active' : ''}" data-content-page="${i}">${i}</button>`;
   }
   html += `<button ${data.page >= data.pages ? 'disabled' : ''} data-content-page="${data.page + 1}">next</button>`;
-  el.innerHTML = html;
+  // The same control drawn again keeps focus; on the last page, the page it's on.
+  drawMarkup(el, html, () => [el.querySelector('button.active')]);
 }
 
 function escapeContentHtml(str) {

@@ -69,7 +69,15 @@ var importDraft = globalThis.importDraft || {
 // The mount's draw helpers over this file's plain stand-ins: each writes what
 // it's given, as the base's direct writes did. import_contract_dom.js runs the
 // real ones over its small document.
+const SOL_FOCUS = require(path.resolve(crateDir, '../solstone-core-convey-shell/assets/static/focus.js'));
 const DRAW_STAND_INS = {
+  importListLanding: null,
+  currentGuideSource: null,
+  // Focus is the contract harness's to check; these cases leave it alone.
+  importListRows: () => [],
+  importHeld: () => null,
+  importLand: () => false,
+  landShownPart: () => {},
   drawMarkup: (el, html) => { if (!el) return false; el.innerHTML = String(html ?? ''); return true; },
   writeText: (el, text) => { if (el) el.textContent = String(text ?? ''); },
   writeAttr: (el, name, value) => {
@@ -94,7 +102,13 @@ function makeContext(globals) {
     const importInFlight = { guided: false, quick: false };
     let thinkingProgressTimer = null;
   `, context);
-  for (const name of ['invalidateImportPreview', 'restoreImportButton', 'prepareImportPreview', 'renderThinkingProgress', 'scheduleThinkingProgress']) {
+  // The shell's focus helper, as its boot part gives it to every view, on
+  // whichever window a case gives the context, now or later.
+  let caseWindow = context.window;
+  const withFocus = (value) => { if (value && typeof value === 'object' && !value.SolFocus) value.SolFocus = SOL_FOCUS; return value; };
+  withFocus(caseWindow);
+  Object.defineProperty(context, 'window', { configurable: true, enumerable: true, get: () => caseWindow, set: (value) => { caseWindow = withFocus(value); } });
+  for (const name of ['setImportButton', 'invalidateImportPreview', 'restoreImportButton', 'prepareImportPreview', 'renderThinkingProgress', 'scheduleThinkingProgress']) {
     vm.runInContext(functionSource(source, name), context);
   }
   return context;
@@ -316,7 +330,13 @@ class Element {
     this.listeners = {};
     this.classList = { add() {}, remove() {} };
     this.focused = false;
+    this.attrs = {};
   }
+
+  setAttribute(key, value) { this.attrs[key] = String(value); }
+  getAttribute(key) { return key in this.attrs ? this.attrs[key] : null; }
+  hasAttribute(key) { return key in this.attrs; }
+  removeAttribute(key) { delete this.attrs[key]; }
 
   focus() {
     if (this.disabled) return;
@@ -326,6 +346,12 @@ class Element {
   addEventListener(type, listener) {
     (this.listeners[type] ||= []).push(listener);
   }
+}
+
+// A control that can't be pressed right now: turned off (unavailable), or
+// busy or held while a write is out (aria-disabled).
+function shut(el) {
+  return el.disabled === true || (typeof el.getAttribute === 'function' && el.getAttribute('aria-disabled') === 'true');
 }
 
 class CapturedFormData {
@@ -563,7 +589,7 @@ async function runAppleCardCarriesItsGoAheadAndRefusesWhatWontFit() {
     space: { fits: false, need: 9, free: 1, words: 'TOO-FULL', need_words: '9 GB', free_words: '1 GB' } });
   await full.context.startGuidedImport(apple);
   assert.ok(full.elements.guidedSizePreview.textContent.includes('TOO-FULL'));
-  assert.strictEqual(full.elements.guidedStartBtn.disabled, true, 'Start stays shut when it does not fit');
+  assert.strictEqual(shut(full.elements.guidedStartBtn), true, 'Start stays shut when it does not fit');
   await full.context.startGuidedImport(apple);
   assert.ok(!full.requests.some(request => request.url.endsWith('/start')), 'nothing starts when it does not fit');
   cases += 1;
@@ -675,6 +701,7 @@ async function runStravaFacetAnswerNamesItsQuestion() {
   ]) {
     const harness = stravaFacetHarness({});
     harness.elements.guidedFacet = slot;
+    vm.runInContext('let facetAnswering = false;', harness.context);
     for (const name of ['loadStravaFacet', 'answerStravaFacet']) {
       vm.runInContext(functionSource(workspace, name), harness.context);
     }
@@ -3758,14 +3785,14 @@ async function runSourceChangeWhileUploading() {
   await Promise.resolve();
   h.context.currentGuidedFile = { name: 'new.txt' };
   vm.runInContext("invalidateImportPreview('guided')", h.context);
-  assert.strictEqual(h.elements.guidedStartBtn.disabled, true, 'editing does not admit a concurrent start');
+  assert.strictEqual(shut(h.elements.guidedStartBtn), true, 'editing does not admit a concurrent start');
   await h.context.startGuidedImport({ name: 'recording', input_type: 'file_upload' });
   assert.strictEqual(h.requests.length, 1);
   finish({ path: '/old.txt', timestamp: '20261011_120000' });
   await pending;
   assert.strictEqual(vm.runInContext('currentGuidedSaved', h.context), null, 'old upload cannot become the selected source');
   assert.strictEqual(h.requests.length, 1, 'stale upload never previews or starts');
-  assert.strictEqual(h.elements.guidedStartBtn.disabled, false);
+  assert.strictEqual(shut(h.elements.guidedStartBtn), false);
   cases += 1;
 }
 
@@ -3984,7 +4011,7 @@ function runFileChoicePreservesCancelAndRetiresFolderSelection() {
   assert.equal(h.run('currentGuidedSaved'),null);
   assert.equal(h.run("folderSelection({name:'gemini'})"),null,'an explicit file selection supersedes the active folder reference');
   assert.equal(h.fields.guidedFolderStatus.textContent,'');
-  assert.equal(h.fields.guidedStartBtn.disabled,false,'the file remains previewable without a saved folder');
+  assert.equal(shut(h.fields.guidedStartBtn),false,'the file remains previewable without a saved folder');
   cases++;
 }
 
@@ -4063,15 +4090,15 @@ async function runNativeFolderBusyStateSurvivesGuideRemount() {
     await h.run(`loadGuidedFlow('${nextSource}')`);
     assert.equal(h.run('guidedFolderBusy'),true);
     assert.equal(h.fields.guidedFileInput.disabled,true,'replacement view inherits actual native ownership');
-    assert.equal(h.fields.guidedStartBtn.disabled,true);
+    assert.equal(shut(h.fields.guidedStartBtn),true);
     h.fields.guidedFileInput.onchange({target:{files:[{name:'too-early.zip'}]}});
     assert.equal(h.run('currentGuidedFile'),null,'remount cannot admit a conflicting file before native return');
     reply({state:'saved',ok:true,folder_name:'export',import_id:'20261014_090000',value:{path:'saved/tree'}});
     await pending;
     assert.equal(h.run('guidedFolderBusy'),false);
     assert.equal(h.fields.guidedFileInput.disabled,false,'actual return reopens the current controls');
-    assert.equal(h.fields.guidedFolderBtn.disabled,false);
-    assert.equal(h.fields.guidedStartBtn.disabled,false);
+    assert.equal(shut(h.fields.guidedFolderBtn),false);
+    assert.equal(shut(h.fields.guidedStartBtn),false);
     if (nextSource==='gemini') {
       assert.equal(h.run('currentGuidedSaved.path'),'saved/tree','same-source remount re-reads the admitted matching reference');
       assert.equal(reads.length,2);
@@ -4090,8 +4117,8 @@ async function runNativeFolderSelectionAndReturnRead() {
   const script = scriptFromWorkspace();
   for (const scenario of ['cancel', 'saved', 'unconfirmed', 'registration_failed', 'other-source', 'unnotified-cancel', 'storage-denied']) {
     const status = { textContent: 'previous folder: saved' };
-    const choose = { disabled: false, focus() { this.focused = true; } };
-    const start = { disabled: false };
+    const choose = new Element();
+    const start = new Element();
     const storage = new Map();
     const calls = [];
     let selected, resolve;
@@ -4113,7 +4140,7 @@ async function runNativeFolderSelectionAndReturnRead() {
     vm.runInContext("let guidedFolderBusy=false; let currentGuideSource='gemini'; let currentGuidedSaved={path:'prior'};",context);
     for (const name of ['folderSelectionKey','folderSelection','folderControls','chooseGuidedFolder','reconcileGuidedFolder']) vm.runInContext(functionSource(script,name),context);
     const pending=vm.runInContext("chooseGuidedFolder({name:'gemini'})",context);
-    assert.strictEqual(start.disabled,true);
+    assert.strictEqual(shut(start),true);
     assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'prior');
     if (scenario === 'cancel') {
       resolve({state:'cancelled'});
@@ -4162,11 +4189,11 @@ async function runNativeFolderSelectionAndReturnRead() {
     } else if (scenario === 'registration_failed') {
       assert.strictEqual(JSON.parse([...storage.values()][0]).custody,'saved');
       assert.match(status.textContent,/saved, but import setup/);
-      assert.strictEqual(start.disabled,true);
+      assert.strictEqual(shut(start),true);
     } else if (scenario === 'unconfirmed') {
       assert.strictEqual(calls.length,1);
       assert.match(calls[0],/client_item_id=selected-reference/);
-      assert.strictEqual(start.disabled,true);
+      assert.strictEqual(shut(start),true);
     } else {
       assert.strictEqual(vm.runInContext('currentGuidedSaved',context),null,'an old result never populates another source');
     }
@@ -4414,8 +4441,13 @@ function importDeleteHarness({ rows = [], fetchAnswers = {} } = {}) {
   const context = vm.createContext({ console, window, document: deleteDocument, fetch, Date, JSON, Promise, Set, Map, Number, Array, Object, String });
   context.__HostURL = URL;
   vm.runInContext(MOUNT_SCOPE, context);
-  // The mount's own setters, over this harness's nodes.
-  for (const name of ['writeText', 'writeAttr', 'writeHidden', 'writeDisabled', 'writeClass']) {
+  // The mount's own setters and focus helpers, over this harness's nodes.
+  window.SolFocus = SOL_FOCUS;
+  context.importOwns = () => true;
+  context.importPage = deleteDocument;
+  vm.runInContext(/const IMPORT_CONTROLS = [^\n]*\n/.exec(workspace)[0] + /const IMPORT_KEYS = \[[\s\S]*?\];\n/.exec(workspace)[0], context);
+  for (const name of ['writeText', 'writeAttr', 'writeHidden', 'writeDisabled', 'writeClass', 'importHeld', 'importSuccessor',
+    'nearestControls', 'importFocusable', 'importLand', 'pressing', 'importHistoryHeading']) {
     vm.runInContext(functionSource(workspace, name), context);
   }
   vm.runInContext(importReceiptsBlock(), context);

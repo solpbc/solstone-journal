@@ -61,8 +61,34 @@
     const same = el.textContent === next && (!nodes || (nodes.length === 0 ? next === '' : nodes.length === 1 && nodes[0].nodeType === 3));
     if (!same) el.textContent = next;
   }
+  // An attribute set to its own value still counts as a change to the page.
+  function writeAttr(el, name, value) {
+    if (!el) return;
+    if (value === null || value === undefined || value === false) {
+      if (el.hasAttribute(name)) el.removeAttribute(name);
+      return;
+    }
+    const next = value === true ? '' : String(value);
+    if (el.getAttribute(name) !== next) el.setAttribute(name, next);
+  }
   function writeDisabled(el, disabled) {
     if (el && el.disabled !== !!disabled) el.disabled = !!disabled;
+  }
+
+  // The control whose write is out keeps focus: busy, never turned off. The
+  // row's other controls are turned off while it's out, as before.
+  function busy(el, on) {
+    writeAttr(el, 'aria-disabled', on ? 'true' : null);
+    writeAttr(el, 'aria-busy', on ? 'true' : null);
+  }
+
+  // After a press, a control that's now turned off or gone hands focus to the
+  // row's "check status".
+  function settle(row, held) {
+    if (!held || !live(row) || document.activeElement !== held && document.activeElement !== document.body) return;
+    if (held.isConnected && !held.disabled) return;
+    if (document.activeElement === held) held.blur?.();
+    row.node.querySelector('[data-source-refresh]')?.focus();
   }
 
   function status(row, message) {
@@ -82,7 +108,11 @@
     for (const control of row.node.querySelectorAll('[data-source-schedule] input, [data-source-schedule] select, [data-source-schedule] button')) {
       off.set(control, row.busy || !row.schedule);
     }
-    off.forEach((disabled, control) => writeDisabled(control, disabled));
+    off.forEach((disabled, control) => {
+      const pressed = row.busy && row.pressed === control;
+      busy(control, pressed);
+      writeDisabled(control, pressed ? false : disabled);
+    });
   }
 
   function showConnection(row) {
@@ -168,6 +198,7 @@
     if (row.busy || !row.readable || !window.JournalOwnerSources) return;
     const reference = crypto.randomUUID();
     row.busy = true;
+    row.pressed = button || null;
     controls(row);
     try {
       const result = await window.JournalOwnerSources.change(row.source, action, row.connection?.source_identity || null, reference, () => {
@@ -194,6 +225,7 @@
       }
     } finally {
       row.busy = false;
+      row.pressed = null;
       if (live(row)) {
         controls(row);
         // The same card remains in place even when its action buttons changed.
@@ -203,7 +235,7 @@
     }
   }
 
-  async function sync(row) {
+  async function sync(row, button = null) {
     if (row.busy || row.syncPending || !row.readable) return;
     // Keep uncertainty before sending. A lost response is never an automatic
     // retry, including after reload; the pre-saved request ID can recover an accepted reference.
@@ -211,6 +243,7 @@
     const value = retained(row.source, { ...retained(row.source), sync: { request_id: requestId } });
     if (value?.sync?.request_id !== requestId) { status(row, 'this page could not keep the request. reload the page before trying again.'); return; }
     row.busy = true;
+    row.pressed = button;
     row.syncPending = true;
     controls(row);
     status(row, 'sending sync request…');
@@ -224,7 +257,12 @@
       status(row, 'could not confirm this sync request. check import history before syncing again.');
     } finally {
       row.busy = false;
-      if (live(row)) controls(row);
+      row.pressed = null;
+      if (live(row)) {
+        controls(row);
+        // While the sync runs, "sync now" is unavailable.
+        settle(row, button);
+      }
     }
   }
 
@@ -259,12 +297,13 @@
     if (live(row)) controls(row);
   }
 
-  async function schedule(row, method) {
+  async function schedule(row, method, button = null) {
     if (row.busy || !row.schedule) return;
     const form = row.node.querySelector('[data-source-schedule]');
     const every = form.querySelector('select').value;
     if (method === 'PUT' && !every) { status(row, 'choose how often to sync before saving the schedule.'); return; }
     row.busy = true;
+    row.pressed = button;
     controls(row);
     let confirmed = false;
     try {
@@ -279,7 +318,9 @@
         await refresh(row);
         status(row, confirmed ? 'schedule updated.' : 'could not confirm the schedule change. check the current schedule before trying again.');
         row.busy = false;
+        row.pressed = null;
         controls(row);
+        settle(row, button);
       }
     }
   }
@@ -309,11 +350,14 @@
         const button = event.target.closest('button');
         if (!button || button.disabled) return;
         if (button.hasAttribute('data-source-change')) change(row, button.dataset.sourceChange, button);
-        else if (button.hasAttribute('data-source-sync')) sync(row);
+        else if (button.hasAttribute('data-source-sync')) sync(row, button);
         else if (button.hasAttribute('data-source-refresh')) refresh(row);
-        else if (button.hasAttribute('data-source-remove')) schedule(row, 'DELETE');
+        else if (button.hasAttribute('data-source-remove')) schedule(row, 'DELETE', button);
       });
-      node.querySelector('form').addEventListener('submit', event => { event.preventDefault(); schedule(row, 'PUT'); });
+      node.querySelector('form').addEventListener('submit', event => {
+        event.preventDefault();
+        schedule(row, 'PUT', event.submitter || node.querySelector('[data-source-schedule] button[type="submit"]'));
+      });
       refresh(row);
     }
   }

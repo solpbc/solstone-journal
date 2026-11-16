@@ -22,10 +22,12 @@ function harness(crateDir, source = 'audio') {
   const script = fs.readFileSync(path.join(crateDir, 'assets/source_connections.js'), 'utf8');
   const storage = new Map();
   const calls = [];
-  const field = () => ({ textContent: '', innerHTML: '', disabled: false, isConnected: true, focus() { this.focused = true; } });
+  const field = () => ({ textContent: '', innerHTML: '', disabled: false, isConnected: true, attrs: {}, focus() { this.focused = true; },
+    setAttribute(key, value) { this.attrs[key] = String(value); }, getAttribute(key) { return key in this.attrs ? this.attrs[key] : null; },
+    hasAttribute(key) { return key in this.attrs; }, removeAttribute(key) { delete this.attrs[key]; } });
   const fields = Object.fromEntries(['data-source-read-status', 'data-source-change-status', 'data-source-status', 'data-source-connection', 'data-source-connection-actions', 'data-source-schedule-state', 'data-source-conflicts'].map(key => [key, field()]));
-  const select = { value: '', disabled: true, set innerHTML(value) { this.html = value; this.value = /value="([^"]*)" selected/.exec(value)?.[1] || ''; }, get innerHTML() { return this.html || ''; } };
-  const input = { checked: false, disabled: true };
+  const select = { value: '', disabled: true, setAttribute() {}, getAttribute() { return null; }, hasAttribute() { return false; }, removeAttribute() {}, set innerHTML(value) { this.html = value; this.value = /value="([^"]*)" selected/.exec(value)?.[1] || ''; }, get innerHTML() { return this.html || ''; } };
+  const input = { checked: false, disabled: true, setAttribute() {}, getAttribute() { return null; }, hasAttribute() { return false; }, removeAttribute() {} };
   const buttons = Object.fromEntries(['data-source-sync', 'data-source-refresh', 'data-source-remove'].map(key => [key, field()]));
   const form = { querySelector(selector) { if (selector === 'select') return select; if (selector === 'input') return input; return fields[selector.slice(1, -1)]; } };
   const node = {
@@ -66,7 +68,7 @@ function harness(crateDir, source = 'audio') {
     const sourceUrl=source => '/api/journal/sources/'+source;
     const scheduleUrl=source => '/api/journal/recurrences/source/'+source;
     const row={source:${JSON.stringify(source)},node,busy:false,readable:true,connection:null,schedule:null,revision:0,syncPending:false}; rows.set(row.source,row);`, context);
-  for (const name of ['writeText', 'writeDisabled', 'retained', 'read', 'live', 'status', 'controls', 'showConnection', 'showSchedule', 'refresh', 'validConnection', 'change', 'sync', 'checkSync', 'schedule', 'returned', 'leaving', 'dispose']) {
+  for (const name of ['writeText', 'writeAttr', 'writeDisabled', 'busy', 'settle', 'retained', 'read', 'live', 'status', 'controls', 'showConnection', 'showSchedule', 'refresh', 'validConnection', 'change', 'sync', 'checkSync', 'schedule', 'returned', 'leaving', 'dispose']) {
     vm.runInContext(functionSource(script, name), context);
   }
   const run = code => vm.runInContext(code, context);
