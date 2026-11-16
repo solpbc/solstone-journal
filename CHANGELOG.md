@@ -30,6 +30,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix: an agent suggesting a correction could use the reply to check guesses about your answers or a speaker the transcript did not name.
 - recordings tagged with dominant television or music no longer add voice samples to a person. speech with light background music can still contribute samples. existing samples stay available for you to review.
 
 - on linux, after an update that stopped part-way, `solstone update --check` and the status pane now say an update is still available, and running `solstone update` again finishes it. before, they could say your journal was up to date while the solstone app was still on its older version.

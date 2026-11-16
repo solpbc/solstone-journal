@@ -1250,6 +1250,271 @@ fn suggest(root: &Path, kind: &str, target: &str, value: Value, operation: &str)
 }
 
 #[tokio::test]
+async fn owner_answers_do_not_validate_new_suggestion_guesses() {
+    set_test_suggestions_ready(true);
+    let mut failures = Vec::new();
+    for (kind, mode) in [
+        ("recording", ""),
+        ("what_happened", ""),
+        ("name", "replace"),
+        ("name", "also_known_as"),
+    ] {
+        let journal = init_test_journal();
+        let root = journal.path();
+        let (target, value, guesses) = if kind == "name" {
+            setup_entity(root, "work", "dana", "Dana Original", &[]);
+            (
+                crate::names::entity_name("work", "dana").unwrap(),
+                json!({"text":"Dana Accepted","mode":mode}),
+                vec![
+                    json!({"text":"Dana Accepted","mode":mode}),
+                    json!({"text":"Another name","mode":mode}),
+                ],
+            )
+        } else {
+            setup_activity(root, "work", "20261114", "answer", "Original");
+            let value = if kind == "recording" {
+                json!({})
+            } else {
+                json!({"text":"Accepted account"})
+            };
+            let guesses = if kind == "recording" {
+                vec![json!({})]
+            } else {
+                vec![value.clone(), json!({"text":"Another account"})]
+            };
+            (
+                crate::names::activity_name("20261114", "work", "answer").unwrap(),
+                value,
+                guesses,
+            )
+        };
+        let queued = suggest(root, kind, &target, value.clone(), "original");
+        let id = queued["suggestion_id"].as_str().unwrap();
+        let (status, accepted) = owner_call(
+            root,
+            "POST",
+            &format!("/app/agents/api/suggestions/{id}/accept"),
+            None,
+            true,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{accepted}");
+        let replay = suggest(root, kind, &target, value, "original");
+        assert_eq!(replay["status"], "already_exists");
+        assert_eq!(replay["existing_status"], "accepted");
+        for (i, guess) in guesses.into_iter().enumerate() {
+            let result = suggest(root, kind, &target, guess, &format!("guess-{i}"));
+            if result["status"] != "owner_answered" {
+                failures.push((kind, result));
+            }
+        }
+        if kind == "recording" {
+            solstone_core_facets::update_activity_record(
+                root,
+                "work",
+                "20261114",
+                "answer",
+                json!({"playback":false}).as_object().unwrap(),
+                "owner:update",
+                "owner:update",
+                &Utc::now().to_rfc3339(),
+            )
+            .unwrap();
+            let result = suggest(root, kind, &target, json!({}), "guess-owner-false");
+            if result["status"] != "owner_answered" {
+                failures.push((kind, result));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{failures:?}");
+}
+
+#[test]
+fn speaker_suggestion_status_uses_only_admitted_voice_evidence() {
+    use solstone_core_speaker_resolve::owner_line_labels::{
+        LineSpeaker, OwnerLine, set_owner_line_labels,
+    };
+    set_test_suggestions_ready(true);
+    let journal = init_test_journal();
+    let root = journal.path();
+    setup_activity(root, "work", "20261114", "meeting_1", "");
+    setup_entity(root, "work", "ada", "Ada", &[]);
+    setup_entity(root, "work", "owner", "Synthetic Owner", &[]);
+    let owner_path = root.join("entities/owner/entity.json");
+    let mut owner: Value = serde_json::from_slice(&fs::read(&owner_path).unwrap()).unwrap();
+    owner["is_principal"] = json!(true);
+    fs::write(owner_path, owner.to_string()).unwrap();
+    setup_transcript_segment(
+        root,
+        "20261114",
+        "default",
+        "090000_300",
+        &[("09:00:10", "A sentence from the journal")],
+    );
+    let segment =
+        solstone_core_segment::SegmentDir::resolve(root, "20261114", "090000_300", "default")
+            .unwrap();
+    let target = crate::names::segment_name(root, "20261114", "default", "090000_300").unwrap();
+    fs::create_dir_all(segment.path().join("talents")).unwrap();
+    let labels = segment.path().join("talents/speaker_labels.json");
+    let call = |speaker: &str, operation: &str| {
+        dispatch_authenticated_tool_call(root,
+        DispatchPrincipal {connection:"bearer:test-agent",agent_identity:"bearer:test-agent"}, ToolName::SuggestCorrection,
+        Some(&json!({"kind":"who_said_it","target":{"reference":target,"lines":[{"time":"09:00:10","starts_with":"A sentence"}]},"value":{"speaker":speaker},"basis":"owner_said","reason":"A synthetic correction.","operation_id":operation})), Utc::now()).unwrap().value
+    };
+    let mut failures = Vec::new();
+    for (i, (speaker, method, proposed, expected)) in [
+        ("ada", "contextual", "ada@work", "pending"),
+        ("ada", "acoustic", "ada@work", "already_true"),
+        ("owner", "owner_centroid", "owner", "pending"),
+        ("ada", "contextual", "someone_else", "pending"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        fs::write(&labels, json!({"labels":[{"sentence_id":1,"speaker":speaker,"method":method,"owner_margin_declined":true}]}).to_string()).unwrap();
+        let result = call(proposed, &format!("voice-{i}"));
+        if result["status"] != expected {
+            failures.push((method, proposed, result));
+        }
+    }
+    set_owner_line_labels(
+        root,
+        &[OwnerLine {
+            segment_dir: segment.path().to_path_buf(),
+            source: "audio".to_owned(),
+            sentence_id: 1,
+        }],
+        &LineSpeaker::Person("ada".to_owned()),
+    )
+    .unwrap();
+    for (i, speaker) in ["ada@work", "owner", "someone_else"]
+        .into_iter()
+        .enumerate()
+    {
+        let result = call(speaker, &format!("owner-answer-{i}"));
+        if result["status"] != "owner_answered" {
+            failures.push(("owner answer", speaker, result));
+        }
+    }
+    assert!(failures.is_empty(), "{failures:?}");
+}
+
+#[test]
+fn anonymous_speaker_label_shapes_do_not_validate_guesses() {
+    use solstone_core_journal_io::paths::{PathOrDay, iter_segments_skipping_unreadable_streams};
+    set_test_suggestions_ready(true);
+    for shape in [
+        "absent",
+        "null",
+        "contextual",
+        "oversized",
+        "declined",
+        "acoustic",
+        "owner",
+    ] {
+        let journal = init_test_journal();
+        let root = journal.path();
+        setup_activity(root, "work", "20261114", "meeting_1", "");
+        setup_entity(root, "work", "ada", "Ada", &[]);
+        setup_entity(root, "work", "owner", "Synthetic Owner", &[]);
+        let owner_path = root.join("entities/owner/entity.json");
+        let mut owner: Value = serde_json::from_slice(&fs::read(&owner_path).unwrap()).unwrap();
+        owner["is_principal"] = json!(true);
+        fs::write(owner_path, owner.to_string()).unwrap();
+        solstone_core_speaker_resolve::owner_centroid::write_owner_centroid(
+            root,
+            "owner",
+            &solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
+                centroid: vec![1.0, 0.0],
+                cluster_size: 8,
+                timestamp: Utc::now().to_rfc3339(),
+                evidence_tier: "synthetic".to_owned(),
+            },
+        )
+        .unwrap();
+        setup_transcript_segment(
+            root,
+            "20261114",
+            "default",
+            "090000_300",
+            &[("09:00:10", "A synthetic sentence")],
+        );
+        let segment = iter_segments_skipping_unreadable_streams(root, PathOrDay::Day("20261114"))
+            .unwrap()
+            .pop()
+            .unwrap();
+        fs::create_dir_all(segment.path().join("talents")).unwrap();
+        let mut row = json!({"sentence_id":1,"speaker":"ada","method":"acoustic"});
+        match shape {
+            "null" => row["speaker"] = Value::Null,
+            "contextual" => row["method"] = json!("contextual"),
+            "declined" | "owner" => {
+                row["speaker"] = json!("owner");
+                row["method"] = json!("owner_centroid");
+                row["owner_margin_declined"] = json!(shape == "declined");
+            }
+            _ => {}
+        }
+        if shape != "absent" {
+            let mut labels = json!({"labels":[row]});
+            if shape == "oversized" {
+                labels["padding"] =
+                    json!("x".repeat(solstone_core_transcripts::MAX_TRANSCRIPT_PAGE_BYTES));
+            }
+            fs::write(
+                segment.path().join("talents/speaker_labels.json"),
+                labels.to_string(),
+            )
+            .unwrap();
+        }
+        let speakers = solstone_core_talent_runtime::agent_speakers(root).unwrap();
+        assert!(speakers.voices.owner_voice_confirmed);
+        let page = solstone_core_transcripts::read_segment_transcript_page(
+            &segment,
+            None,
+            Some(&speakers),
+            None,
+        )
+        .unwrap();
+        assert!(!page.entries.is_empty());
+        assert_eq!(
+            page.entries.iter().any(|entry| entry.text.contains("Ada:")),
+            shape == "acoustic",
+            "{shape}: {page:?}"
+        );
+        assert_eq!(
+            page.entries
+                .iter()
+                .any(|entry| entry.text.contains("Synthetic Owner")),
+            shape == "owner",
+            "{shape}: {page:?}"
+        );
+        let target = crate::names::segment_name(root, "20261114", "default", "090000_300").unwrap();
+        for (i, proposed) in ["ada@work", "someone_else", "owner"]
+            .into_iter()
+            .enumerate()
+        {
+            let result = dispatch_authenticated_tool_call(root,
+                DispatchPrincipal {connection:"bearer:test-agent",agent_identity:"bearer:test-agent"}, ToolName::SuggestCorrection,
+                Some(&json!({"kind":"who_said_it","target":{"reference":target,"lines":[{"time":"09:00:10","starts_with":"A synthetic"}]},"value":{"speaker":proposed},"basis":"owner_said","reason":"A synthetic correction.","operation_id":format!("shape-{i}")})), Utc::now()).unwrap().value;
+            assert_eq!(
+                result["status"],
+                if (shape == "acoustic" && proposed == "ada@work")
+                    || (shape == "owner" && proposed == "owner")
+                {
+                    "already_true"
+                } else {
+                    "pending"
+                },
+                "{shape}: {result}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn edited_accept_replays_current_decision_and_hidden_target_discloses_nothing() {
     set_test_suggestions_ready(true);
     let journal = init_test_journal();
