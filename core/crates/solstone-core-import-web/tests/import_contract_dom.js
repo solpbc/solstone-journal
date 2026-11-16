@@ -145,7 +145,6 @@ class Element extends Target {
     // with a caret that a new value puts at the end.
     this._value = null;
     this._caret = null;
-    this.disabled = false;
     this.checked = false;
     this._style = null;
     const self = this;
@@ -173,6 +172,7 @@ class Element extends Target {
   get children() { return this.childNodes.filter((n) => n.nodeType === 1); }
   get parentElement() { return this.parentNode && this.parentNode.nodeType === 1 ? this.parentNode : null; }
   get firstElementChild() { return this.children[0] || null; }
+  get firstChild() { return this.childNodes[0] || null; }
   get options() { return this.querySelectorAll('option'); }
   add(option) { this.append(option); }
   get id() { return this.getAttribute('id') || ''; }
@@ -193,6 +193,9 @@ class Element extends Target {
   }
   set href(v) { this.setAttribute('href', v); }
   get target() { return this.getAttribute('target') || ''; }
+  // As a browser's: `disabled` is its attribute, so markup and script agree.
+  get disabled() { return this.hasAttribute('disabled'); }
+  set disabled(v) { if (v) this.setAttribute('disabled', ''); else this.removeAttribute('disabled'); }
   get hidden() { return this.hasAttribute('hidden'); }
   set hidden(v) { if (v) this.setAttribute('hidden', ''); else this.removeAttribute('hidden'); }
   setAttribute(k, v) { this.attrs.set(k, String(v)); if (k === 'style') this._style = null; }
@@ -347,7 +350,7 @@ class Element extends Target {
     if (!this.isConnected || !this.checkVisibility()) return;
     // As in a browser, only a focusable element takes focus: a control, a link, or one with a tabindex.
     const focusable = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY'].includes(this.tagName) || (this.tagName === 'A' && this.hasAttribute('href')) || this.hasAttribute('tabindex');
-    if (!focusable) return;
+    if (!focusable || this.disabled) return;
     // The shell's modal layer: outside an open dialog the page is inert,
     // its ancestors excepted, until the layer reconciles.
     const dialog = this.ownerDocument.inertDialog;
@@ -520,6 +523,11 @@ for (const name of ['append', 'removeChild', 'insertBefore', 'setAttribute', 're
 }
 // The records since `from` (a mark from `mutationMark()`) under `region`.
 function mutationMark() { return mutationLog.length; }
+// What the records since `from` under `region` changed, for a failure's message.
+function mutationsSeen(region, from) {
+  return mutationLog.slice(from).map((ref) => ref.deref()).filter((node) => node && (node === region || region.contains(node)))
+    .map((node) => node.tagName + (node.id ? '#' + node.id : '') + (node.getAttribute('class') ? '.' + node.getAttribute('class').split(' ').join('.') : '')).join(' ');
+}
 function mutationsUnder(region, from) {
   return mutationLog.slice(from).map((ref) => ref.deref()).filter((node) => node && (node === region || region.contains(node))).length;
 }
@@ -1399,5 +1407,484 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(p.streams.find((s) => s.kind === 'listen' && !s.stopped).pending.tracked.has(RUNNING), 'the running import is tracked again');
     assert.ok(p.reads('/api/journal/sources/plaud/sync/req-9').length === 1, 'the source sync is checked again');
   });
+
+  // ---- M9u: presses keep focus, and a draw that changes nothing writes nothing
+
+  const listen = (p) => p.streams.find((s) => s.kind === 'listen' && !s.stopped);
+  const under = (p, selector, from) => mutationsUnder(p.q(selector), from);
+  const rowOf = (p, id) => p.q(`tr[data-import-id="${id}"]`);
+  const same = (a, b, message) => assert.ok(a === b, message);
+  // Every listener on a node in the page, so a case can see a draw bind none twice.
+  const elementListeners = (p) => p.doc.documentElement.querySelectorAll('*').reduce((n, el) => n + el.listenerCount(), 0);
+  // A page whose list answer a case can change between reads.
+  function listPage(address = '/app/import/', extra = {}, options = {}) {
+    const state = { list: listAnswer() };
+    const serve = journal({ 'GET /app/import/api/list': () => state.list, ...extra });
+    // An import's durable record says what its row says, as the journal's does.
+    const answers = (url, opts) => {
+      const u = new URL(url, ORIGIN);
+      const id = /^\/app\/import\/api\/(\d{8}_\d{6})$/.exec(u.pathname)?.[1];
+      const row = id && String(opts?.method || 'GET').toUpperCase() === 'GET' && !(`GET ${u.pathname}` in extra)
+        && state.list.imports.find((imp) => imp.timestamp === id);
+      return row ? detailAnswer(id, row) : serve(url, opts);
+    };
+    const p = makePage(env, address, { answers, ...options });
+    p.state = state;
+    return p;
+  }
+  async function bootList(address, extra, options) {
+    const p = listPage(address, extra, options);
+    p.loadScripts();
+    p.place();
+    await p.mount();
+    await settle();
+    return p;
+  }
+  // The history read again, as the filter's change asks for it (which also
+  // clears a selection, by design).
+  async function reread(p) {
+    p.byId('importSourceFilter').onchange({ target: { value: '' } });
+    await settle();
+  }
+  // The history read again, as the 1 s re-read after a finished import's
+  // event asks for it (an event for a row that already says so).
+  async function rereadKeeping(p) {
+    const done = p.state.list.imports.find((imp) => imp.status === 'success');
+    listen(p).fn({ event: 'completed', import_id: done.timestamp, entries_written: done.entries_written, entities_seeded: done.entities_seeded });
+    await settle();
+    p.clock.advance(1000);
+    await settle();
+  }
+  const THREE = () => listAnswer([importRow('20261031_080000', 'success'), importRow(DONE, 'success'), importRow(RUNNING, 'running')]);
+
+  await test('a re-read that says nothing new writes nothing in the list, the grid or select mode, and focus stays on its node', async () => {
+    const p = await bootList();
+    for (const pick of [false, true]) {
+      if (pick) {
+        p.press(p.byId('importSelectBtn'));
+        const box = p.q(`tr[data-import-id="${DONE}"] input[data-import-pick]`);
+        box.checked = true;
+        p.press(box);
+        await settle();
+      }
+      const row = rowOf(p, DONE);
+      row.focus();
+      const mark = mutationMark();
+      await rereadKeeping(p);
+      assert.ok(under(p, '#importListView', mark) === 0, `nothing written (${pick ? 'select mode' : 'the list'}): ${mutationsSeen(p.q('#importListView'), mark)}`);
+      same(p.doc.activeElement, row, 'focus stays on the same row');
+    }
+  });
+
+  await test('a changed re-read keeps the nodes that are the same: a text change, an inserted first row, a reorder, an attribute change, a removed row with focus', async () => {
+    const p = await bootList();
+    const done = rowOf(p, DONE);
+    done.focus();
+    // Text only: a running row's stats move.
+    p.state.list = listAnswer([importRow(DONE, 'success'), importRow(RUNNING, 'running', { entries_written: 9 })]);
+    const running = rowOf(p, RUNNING);
+    await reread(p);
+    same(rowOf(p, DONE), done, 'the unchanged row is kept');
+    same(rowOf(p, RUNNING), running, 'the changed row is kept, its text brought over');
+    assert.ok(running.querySelector('.import-stats-cell').textContent.includes('9'), 'with the new text');
+    same(p.doc.activeElement, done, 'focus stays');
+    // An inserted first row.
+    p.state.list = THREE();
+    await reread(p);
+    same(rowOf(p, DONE), done, 'the rows below an inserted one are kept');
+    assert.ok(p.qa('.import-table tbody tr')[0].getAttribute('data-import-id') === '20261031_080000', 'the new row is first');
+    same(p.doc.activeElement, done, 'focus stays');
+    // A reorder: the focused row is drawn again, and focus follows it.
+    p.state.list = listAnswer([importRow(RUNNING, 'running', { entries_written: 9 }), importRow(DONE, 'success'), importRow('20261031_080000', 'success')]);
+    await reread(p);
+    assert.deepStrictEqual(p.qa('.import-table tbody tr').map((r) => r.getAttribute('data-import-id')), [RUNNING, DONE, '20261031_080000'], 'the new order');
+    assert.ok(p.doc.activeElement.getAttribute('data-import-id') === DONE, `focus on the same import (${focusOn(p)})`);
+    // An attribute change replaces the row; focus goes to its successor.
+    rowOf(p, RUNNING).focus();
+    p.state.list = listAnswer([importRow(RUNNING, 'success'), importRow(DONE, 'success'), importRow('20261031_080000', 'success')]);
+    await reread(p);
+    assert.ok(p.doc.activeElement.getAttribute('data-import-id') === RUNNING, `focus on the same import (${focusOn(p)})`);
+    // A removed row with focus in it: the next row takes it.
+    rowOf(p, DONE).focus();
+    p.state.list = listAnswer([importRow(RUNNING, 'success'), importRow('20261031_080000', 'success')]);
+    await reread(p);
+    assert.ok(p.doc.activeElement.getAttribute('data-import-id') === '20261031_080000', `focus on the next row (${focusOn(p)})`);
+  });
+
+  await test('twenty changed draws of each region bind nothing twice', async () => {
+    const p = await bootList();
+    const start = elementListeners(p);
+    const page = listenerCounts(p);
+    for (let i = 0; i < 20; i += 1) {
+      p.state.list = listAnswer([importRow(DONE, 'success', { entries_written: i }), importRow(RUNNING, 'running', { entries_written: 20 + i })]);
+      await reread(p);
+      listen(p).fn({ event: 'status', import_id: RUNNING, stage: 'importing', elapsed_ms: 1000 * i, generation: 1 });
+    }
+    await settle();
+    assert.ok(elementListeners(p) === start, `the list's listeners: ${start} → ${elementListeners(p)}`);
+    assert.deepStrictEqual(listenerCounts(p), page, 'the page and main listeners');
+    // The progress panel, the detail's page and its content pages.
+    const q = await bootList(`/app/import/#progress/${RUNNING}`);
+    const qStart = elementListeners(q);
+    for (let i = 0; i < 20; i += 1) listen(q).fn({ event: 'status', import_id: RUNNING, stage: i % 2 ? 'writing' : 'importing', elapsed_ms: 1000 * i, generation: 1 });
+    await settle();
+    assert.ok(elementListeners(q) === qStart, `the panel's listeners: ${qStart} → ${elementListeners(q)}`);
+    const state = { n: 0 };
+    const d = await bootList(`/app/import/${DONE}#content`, { [`GET /app/import/api/${DONE}`]: () => detailAnswer(DONE, { entries_written: state.n }) });
+    const dStart = elementListeners(d);
+    for (let i = 0; i < 20; i += 1) {
+      state.n = i;
+      listen(d).fn({ event: 'status', import_id: DONE });
+      await settle();
+      d.press(d.find('#contentPagination button', i % 2 ? 'prev' : 'next'));
+      await settle();
+    }
+    assert.ok(elementListeners(d) === dStart, `the detail's listeners: ${dStart} → ${elementListeners(d)}`);
+  });
+
+  await test('the progress panel keeps its node and focus through a stream that changes it, and an event with nothing new writes nothing', async () => {
+    const p = await bootList(`/app/import/#progress/${RUNNING}`);
+    const panel = p.q('.import-progress-panel');
+    panel.focus();
+    const event = { event: 'status', import_id: RUNNING, stage: 'importing', elapsed_ms: 5000, generation: 1 };
+    listen(p).fn(event);
+    await settle();
+    same(p.q('.import-progress-panel'), panel, 'the panel is the same node');
+    same(p.doc.activeElement, panel, 'focus stays on it');
+    const mark = mutationMark();
+    listen(p).fn({ ...event });
+    await settle();
+    assert.ok(under(p, '#guideSteps', mark) === 0, `the same event wrote ${under(p, '#guideSteps', mark)}`);
+    listen(p).fn({ ...event, stage: 'writing', elapsed_ms: 9000 });
+    await settle();
+    same(p.q('.import-progress-panel'), panel, 'still the same node after a change');
+    same(p.doc.activeElement, panel, 'and focused');
+  });
+
+  await test("an import's page: an event with nothing new writes nothing, a changed one keeps its delete and the saved start's slot", async () => {
+    const state = { extra: {} };
+    const p = await bootList(`/app/import/${DONE}`, { [`GET /app/import/api/${DONE}`]: () => detailAnswer(DONE, state.extra) });
+    const del = p.q('[data-import-delete]');
+    del.focus();
+    let mark = mutationMark();
+    listen(p).fn({ event: 'status', import_id: DONE });
+    await settle();
+    assert.ok(under(p, '#importDetailView', mark) === 0, `nothing new wrote ${under(p, '#importDetailView', mark)}`);
+    state.extra = { entries_written: 9, has_gaps: true };
+    listen(p).fn({ event: 'status', import_id: DONE });
+    await settle();
+    same(p.q('[data-import-delete]'), del, 'the delete is kept');
+    same(p.doc.activeElement, del, 'and focused');
+    // A saved start's slot is the flow's: a redraw of the overview leaves it.
+    const saved = { timestamp: SAVED, status: 'pending', saved_start: { state: 'eligible', active: false },
+      import_json: { import_id: SAVED, file_path: '/journal/imports/x/n.txt', source_timestamp: SAVED, file_size: 6, is_local_path: false, source_hint: 'chatgpt' } };
+    const s = await bootList(`/app/import/${SAVED}`, { [`GET /app/import/api/${SAVED}`]: () => ({ ...detailAnswer(SAVED), ...saved, ...state.extra }) });
+    const button = s.q('[data-saved-start-action]');
+    assert.ok(button, 'the saved start draws');
+    button.focus();
+    mark = mutationMark();
+    listen(s).fn({ event: 'status', import_id: SAVED });
+    await settle();
+    assert.ok(under(s, '#importDetailView', mark) === 0, `nothing new wrote ${under(s, '#importDetailView', mark)}`);
+    state.extra = { entries_written: 3 };
+    listen(s).fn({ event: 'status', import_id: SAVED });
+    await settle();
+    same(s.q('[data-saved-start-action]'), button, "the saved start's button is kept");
+    same(s.doc.activeElement, button, 'and focused');
+  });
+
+  await test("the source rows' sync check with nothing new writes nothing", async () => {
+    const p = listPage('/app/import/', {}, { folders: true });
+    p.storage.set('journal-source-operation:plaud', JSON.stringify({ sync: { request_id: 'req-9', reference: 'ref-1' } }));
+    p.loadScripts();
+    p.place();
+    await p.mount();
+    await settle();
+    const check = p.q('[data-sync-source="plaud"] [data-source-refresh]');
+    check.focus();
+    const mark = mutationMark();
+    p.clock.advance(5000);
+    await settle();
+    assert.ok(p.reads('/api/journal/sources/plaud/sync/req-9').length >= 2, 'the check ran again');
+    assert.ok(under(p, '#importSyncSources', mark) === 0, `it wrote ${under(p, '#importSyncSources', mark)}`);
+    same(p.doc.activeElement, check, 'focus stays');
+  });
+
+  await test('a source card lands on its guide, and every way back to the grid on the card it came from', async () => {
+    const p = await bootList();
+    p.q('[data-import-source="chatgpt"]').focus();
+    p.press(p.q('[data-import-source="chatgpt"]'));
+    await settle();
+    assert.ok(focusOn(p) === 'H2:ChatGPT', `the guide's heading (${focusOn(p)})`);
+    p.q('.import-back-link').focus();
+    p.press(p.q('.import-back-link'));
+    await settle();
+    assert.ok(p.doc.activeElement.getAttribute('data-import-source') === 'chatgpt', `the card it came from (${focusOn(p)})`);
+    p.q('[data-import-quick]').focus();
+    p.press(p.q('[data-import-quick]'));
+    await settle();
+    assert.ok(focusOn(p) === 'H2:quick import', `the quick guide's heading (${focusOn(p)})`);
+    p.window.history.back();
+    await settle();
+    assert.ok(p.doc.activeElement.hasAttribute('data-import-quick'), `a back lands on the quick card (${focusOn(p)})`);
+  });
+
+  await test('validate stays busy and focused while its save is out, a second press or Enter sends nothing, then the date field', async () => {
+    for (const mode of ['held', 'failed', 'answered']) {
+      const p = await bootList();
+      p.press(p.q('[data-import-quick]'));
+      await settle();
+      const t = (c) => c.url === '/app/import/api/save';
+      if (mode === 'held') p.holds.push(t);
+      if (mode === 'failed') p.statuses.push([t, 500]);
+      p.byId('pasteText').value = 'a note';
+      const validate = p.byId('validateBtn');
+      validate.focus();
+      p.doc.dispatch(p.byId('importForm'), { type: 'submit' });
+      await settle();
+      if (mode === 'held') {
+        same(p.doc.activeElement, validate, 'focus stays on validate');
+        assert.ok(validate.getAttribute('aria-busy') === 'true' && !validate.disabled, 'busy, not disabled');
+        p.doc.dispatch(p.byId('importForm'), { type: 'submit' });
+        p.doc.dispatch(p.byId('importForm'), { type: 'submit' });
+        await settle();
+        assert.ok(p.writes().filter(t).length === 1, 'one save');
+      } else if (mode === 'failed') {
+        same(p.doc.activeElement, validate, 'a failed save leaves focus on validate');
+        assert.ok(validate.getAttribute('aria-busy') === null, 'no longer busy');
+      } else {
+        assert.ok(focusOn(p) === 'INPUT#timestampInput', `the dialog's date (${focusOn(p)})`);
+      }
+    }
+  });
+
+  await test("the detect dialog's preview and start, and guided preview and start: busy while out, the progress panel after a start", async () => {
+    for (const mode of ['held', 'answered']) {
+      const p = await bootList();
+      p.press(p.q('[data-import-quick]'));
+      await settle();
+      p.byId('pasteText').value = 'a note';
+      p.doc.dispatch(p.byId('importForm'), { type: 'submit' });
+      await settle();
+      const start = p.byId('startBtn');
+      if (mode === 'held') p.holds.push((c) => c.url === '/app/import/api/meta');
+      start.focus();
+      p.press(start);
+      await settle();
+      if (mode === 'held') {
+        same(p.doc.activeElement, start, "the dialog's preview keeps focus while out");
+        assert.ok(start.getAttribute('aria-busy') === 'true' && !start.disabled, 'busy, not disabled');
+        continue;
+      }
+      same(p.doc.activeElement, start, 'after the preview, the same button ("start import")');
+      p.press(start);
+      await settle();
+      assert.ok(focusOn(p).startsWith('DIV') && p.doc.activeElement.classList.contains('import-progress-panel'), `the progress panel (${focusOn(p)})`);
+    }
+    for (const mode of ['held', 'answered']) {
+      const p = await bootList();
+      if (mode === 'held') p.holds.push((c) => c.url === '/app/import/api/preview');
+      await startGuided(p);
+      const start = p.byId('guidedStartBtn');
+      start.focus();
+      if (mode === 'held') {
+        same(p.doc.activeElement, start, 'guided preview keeps focus while out');
+        assert.ok(start.getAttribute('aria-busy') === 'true' && !start.disabled, 'busy, not disabled');
+        continue;
+      }
+      p.press(start);
+      await settle();
+      assert.ok(p.doc.activeElement.classList.contains('import-progress-panel'), `guided start lands on the panel (${focusOn(p)})`);
+    }
+  });
+
+  await test("a facet answer: the pressed one busy and its pair held while out, no second answer, then the facet's select", async () => {
+    const strava = { name: 'strava', display_name: 'Strava', description: 'workouts', has_guide: false, input_type: 'file', accept: '.zip' };
+    const facet = { offer: { state: 'ask_new', facet: 'fitness' }, facets: [{ name: 'fitness', title: 'fitness' }],
+      copy: { heading: 'which', ask_new: 'file under {facet}?', no_means: 'no', yes: 'yes', no: 'no', this_import: 'this import', none_option: 'none', none_hint: 'none', files_earlier: 'earlier {facet}' } };
+    for (const mode of ['held', 'answered']) {
+      const p = await bootList('/app/import/#guide/strava', {
+        'GET /app/import/api/sources': () => ({ items: [...sourcesAnswer().items, strava] }),
+        'GET /app/import/api/body-facet': () => facet,
+        'POST /app/import/api/body-facet': () => ({ ...facet, offer: { state: 'chosen', facet: 'fitness' } }),
+      });
+      const t = (c) => c.method === 'POST' && c.url === '/app/import/api/body-facet';
+      if (mode === 'held') p.holds.push(t);
+      const yes = p.q('[data-body-facet-answer="yes"]');
+      const no = p.q('[data-body-facet-answer="no"]');
+      yes.focus();
+      p.press(yes);
+      await settle();
+      if (mode === 'held') {
+        same(p.doc.activeElement, yes, 'focus stays on the answer');
+        assert.ok(yes.getAttribute('aria-busy') === 'true' && no.getAttribute('aria-disabled') === 'true' && no.getAttribute('aria-busy') === null, 'pressed busy, its pair held');
+        assert.ok(!yes.disabled && !no.disabled, 'neither turned off');
+        p.press(no);
+        p.press(yes);
+        await settle();
+        assert.ok(p.writes().filter(t).length === 1, 'one answer');
+      } else {
+        assert.ok(focusOn(p) === 'SELECT#guidedFacetSelect', `the facet's select (${focusOn(p)})`);
+      }
+    }
+  });
+
+  await test("a delete from the list: focus back on the busy opener while out, a second delete can't start, then the next row", async () => {
+    for (const mode of ['held', 'failed', 'answered', 'set']) {
+      const p = await bootList('/app/import/', {
+        'POST /app/import/api/imports/delete': () => ({ done: [{ id: DONE, result: { trash: { id: 't1', erase_at: '2026-12-01T00:00:00Z' } } }, { id: '20261031_080000', result: { trash: { id: 't2', erase_at: '2026-12-01T00:00:00Z' } } }], failed: [] }),
+      });
+      p.state.list = THREE();
+      await reread(p);
+      p.press(p.byId('importSelectBtn'));
+      for (const id of mode === 'set' ? ['20261031_080000', DONE] : [DONE]) {
+        const box = p.q(`tr[data-import-id="${id}"] input[data-import-pick]`);
+        box.checked = true;
+        p.press(box);
+      }
+      await settle();
+      const opener = p.byId('importPickDelete');
+      opener.focus();
+      p.press(opener);
+      await settle();
+      const t = (c) => c.method === 'DELETE' || c.url === '/app/import/api/imports/delete';
+      if (mode === 'held') p.holds.push(t);
+      if (mode === 'failed') p.statuses.push([t, 409]);
+      // The row before the deleted one stays, so the landing has to pick the one after.
+      p.state.list = mode === 'set' ? listAnswer([importRow(RUNNING, 'running')]) : listAnswer([importRow('20261031_080000', 'success'), importRow(RUNNING, 'running')]);
+      p.press(p.byId('importDeleteModalConfirm'));
+      await settle();
+      if (mode === 'held') {
+        same(p.doc.activeElement, opener, 'focus is back on the opener');
+        assert.ok(opener.getAttribute('aria-busy') === 'true', 'which is busy');
+        p.press(opener);
+        await settle();
+        assert.ok(p.byId('importDeleteModal').style.display !== 'flex', 'no second dialog');
+        assert.ok(p.writes().filter(t).length === 1, 'one delete');
+      } else if (mode === 'failed') {
+        assert.ok(focusOn(p) === 'BUTTON#importPickDelete', `a refused delete stays on its opener (${focusOn(p)})`);
+      } else {
+        assert.ok(p.doc.activeElement.getAttribute('data-import-id') === RUNNING, `the next row (${focusOn(p)})`);
+      }
+    }
+    // With nothing after it or before it, the list's heading.
+    const p = await bootList();
+    p.state.list = listAnswer([importRow(DONE, 'success')]);
+    await reread(p);
+    p.press(p.byId('importSelectBtn'));
+    const box = p.q(`tr[data-import-id="${DONE}"] input[data-import-pick]`);
+    box.checked = true;
+    p.press(box);
+    p.byId('importPickDelete').focus();
+    p.press(p.byId('importPickDelete'));
+    await settle();
+    p.state.list = listAnswer([]);
+    p.state.list.total = 0;
+    p.press(p.byId('importDeleteModalConfirm'));
+    await settle();
+    assert.ok(focusOn(p) === 'H2:import history', `the list's heading (${focusOn(p)})`);
+  });
+
+  await test("an import's own delete: focus back on its busy delete while out", async () => {
+    const holder = { extra: {} };
+    const p = await bootList(`/app/import/${DONE}`, { [`GET /app/import/api/${DONE}`]: () => detailAnswer(DONE, holder.extra) });
+    const del = p.q('[data-import-delete]');
+    del.focus();
+    p.press(del);
+    await settle();
+    p.holds.push((c) => c.method === 'DELETE');
+    p.press(p.byId('importDeleteModalConfirm'));
+    await settle();
+    same(p.doc.activeElement, del, 'focus is back on delete import');
+    assert.ok(del.getAttribute('aria-busy') === 'true', 'which is busy');
+    // A stream that redraws the page meanwhile keeps the busy control, busy.
+    holder.extra = { entries_written: 7 };
+    listen(p).fn({ event: 'status', import_id: DONE });
+    await settle();
+    same(p.q('[data-import-delete]'), del, 'a redraw keeps the busy delete');
+    assert.ok(del.getAttribute('aria-busy') === 'true' && p.doc.activeElement === del, 'still busy and focused');
+    p.press(del);
+    await settle();
+    assert.ok(p.byId('importDeleteModal').style.display !== 'flex', 'no second dialog');
+  });
+
+  await test('load more keeps its button, and on the last page the first row it brought takes focus', async () => {
+    for (const pages of [3, 2]) {
+      const p = await bootList('/app/import/', {
+        'GET /app/import/api/list': (u) => (u.searchParams.get('page') === '2'
+          ? { ...listAnswer([importRow('20261020_080000', 'success')]), page: 2, pages }
+          : { ...listAnswer(), pages }),
+      });
+      const button = p.q('[data-import-load-more]');
+      button.focus();
+      p.press(button);
+      await settle();
+      if (pages === 3) same(p.doc.activeElement, button, 'the same button, relabelled');
+      else assert.ok(p.doc.activeElement.getAttribute('data-import-id') === '20261020_080000', `the first new row (${focusOn(p)})`);
+    }
+  });
+
+  await test("a content page keeps its control, and on the last page the page it's on", async () => {
+    const p = await bootList(`/app/import/${DONE}#content`, {
+      [`GET /app/import/api/${DONE}/content`]: (u) => ({ ...contentAnswer(Number(u.searchParams.get('page')) || 1), pages: 3 }),
+    });
+    const next = () => p.find('#contentPagination button', 'next');
+    next().focus();
+    p.press(next());
+    await settle();
+    assert.ok(focusOn(p) === 'BUTTON:next', `next, drawn again (${focusOn(p)})`);
+    p.press(next());
+    await settle();
+    assert.ok(focusOn(p) === 'BUTTON:3', `the last page's own number (${focusOn(p)})`);
+  });
+
+  await test('a sync source: busy while its sync is out, then its check status while the sync runs', async () => {
+    for (const mode of ['held', 'answered']) {
+      const p = listPage('/app/import/', {
+        'POST /api/journal/sources/plaud/sync': (_u, opts) => ({ accepted: true, source: 'plaud', request_id: JSON.parse(opts.body).request_id, reference: 'ref-1' }),
+      }, { folders: true });
+      p.loadScripts();
+      p.place();
+      await p.mount();
+      await settle();
+      const sync = p.q('[data-sync-source="plaud"] [data-source-sync]');
+      if (mode === 'held') p.holds.push((c) => c.url === '/api/journal/sources/plaud/sync');
+      sync.focus();
+      p.press(sync);
+      await settle();
+      if (mode === 'held') {
+        same(p.doc.activeElement, sync, 'focus stays on sync now');
+        assert.ok(sync.getAttribute('aria-busy') === 'true' && !sync.disabled, 'busy, not disabled');
+      } else {
+        assert.ok(sync.disabled, 'sync now is unavailable while the sync runs');
+        assert.ok(p.doc.activeElement.hasAttribute('data-source-refresh'), `check status (${focusOn(p)})`);
+      }
+    }
+  });
+
+  await test('focus outside import is left alone by a changed re-read and a stream', async () => {
+    const p = await bootList();
+    const rail = p.byId('rail-home');
+    rail.focus();
+    p.state.list = THREE();
+    await reread(p);
+    listen(p).fn({ event: 'status', import_id: RUNNING, stage: 'writing', elapsed_ms: 1, generation: 1 });
+    await settle();
+    same(p.doc.activeElement, rail, 'the rail keeps focus');
+  });
+
+  await test("a start with nothing to import stays unavailable, and a held folder's start ignores a press", async () => {
+    const p = await bootList('/app/import/', { 'POST /app/import/api/preview': () => ({ preview_token: 'p', size: { recordings: 0, days: 0 } }) });
+    await startGuided(p);
+    const start = p.byId('guidedStartBtn');
+    assert.ok(start.disabled && start.getAttribute('aria-busy') === null, 'nothing to import: disabled, not busy');
+    const before = p.writes().length;
+    start.disabled = false;
+    start.setAttribute('aria-disabled', 'true');
+    p.press(start);
+    await settle();
+    assert.ok(p.writes().length === before, 'a held start sends nothing');
+  });
+
   return cases;
 };
