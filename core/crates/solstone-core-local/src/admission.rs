@@ -873,7 +873,9 @@ mod tests {
         let order = Arc::new(Mutex::new(Vec::new()));
         let waiters = ["6:1", "5:2", "1:3", "3:4"]
             .into_iter()
-            .map(|priority| {
+            .enumerate()
+            .map(|(index, priority)| {
+                let line = model_call_line_dir(journal.path());
                 let journal = journal.path().to_path_buf();
                 let order = Arc::clone(&order);
                 let handle = thread::spawn(move || {
@@ -884,7 +886,7 @@ mod tests {
                     drop(turn);
                 });
                 // Each waiter publishes its place before the next arrives.
-                thread::sleep(Duration::from_millis(150));
+                await_tickets(&line, index + 1);
                 handle
             })
             .collect::<Vec<_>>();
