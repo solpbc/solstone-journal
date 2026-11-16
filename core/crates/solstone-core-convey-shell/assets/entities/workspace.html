@@ -2125,6 +2125,11 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 @media (max-width: 480px) {
   #entityDeleteModal .trash-dlg-foot button { min-height: 44px; padding-left: 12px; padding-right: 12px; white-space: nowrap; }
 }
+.voice-sample-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--hairline); }
+.voice-sample-row > div { flex: 1 1 240px; overflow-wrap: anywhere; }
+.voice-sample-row a { text-decoration: underline; min-height: 44px; display: inline-flex; align-items: center; }
+.voice-sample-row button { min-height: 46px; }
+.voice-sample-row .error-message { flex-basis: 100%; }
 </style>
 
 <div class="workspace-content">
@@ -2195,6 +2200,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
     </div>
 
     <section class="entity-detail-section entity-faces" id="journal-detail-photo" aria-labelledby="journal-detail-photo-heading" hidden></section>
+    <section class="entity-detail-section" id="journal-detail-voice-samples" aria-live="polite" hidden></section>
 
     <div class="entity-detail-section">
       <h4>facets</h4>
@@ -4577,6 +4583,7 @@ function showJournalDetailView(entityId) {
   renderEntityDeleteAction(null);
   resetJournalTrustSurface();
   resetFacesPanel();
+  voiceSamplesRequest += 1;
 
   // Fetch journal entity details
   fetch(`/app/entities/api/journal/entity/${encodeURIComponent(entityId)}`)
@@ -4820,6 +4827,7 @@ function renderJournalDetailView(entity) {
   }
 
   openFacesPanel(entity);
+  loadVoiceSamples(entity);
   renderConnectionsSection(entity.id, 'journal-detail-connections', isPrincipal);
   renderJournalTrustControls(entity);
   loadJournalTrustDetails(entity.id);
@@ -5174,6 +5182,12 @@ function renderJournalEntityMergePreview(sourceId, targetId, targetName, preview
     emails: preview.emails_added || 0
   });
   panel.appendChild(summary);
+  const counts = document.createElement('p');
+  counts.textContent = entityTrustFormat(ENT_COPY.ENT_TRUST_PREVIEW_COUNTS, {
+    samples: preview.voiceprints_added, total: preview.voiceprints_target_total,
+    notes: preview.notes_on_source, labels: preview.speaker_labels, activities: preview.activity_records
+  });
+  panel.appendChild(counts);
   const commit = document.createElement('button');
   commit.type = 'button';
   commit.className = 'btn btn-primary';
@@ -8598,9 +8612,26 @@ function renderMergeConfirm(plan) {
   body.textContent = "each pair below becomes one entity. a merge can't be undone.";
   const list = document.createElement('ul');
   list.dataset.list = 'kept';
+  const previewLoads = [];
   plan.kept.forEach(member => {
     const li = document.createElement('li');
     li.textContent = `${member.names[0]} → ${member.names[1]}`;
+    const counts = document.createElement('p');
+    counts.setAttribute('aria-busy', 'true');
+    li.append(counts);
+    previewLoads.push(apiJson('/app/entities/api/merge', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({source_slug: member.pair[0], target_slug: member.pair[1]})
+    }).then(preview => {
+      counts.removeAttribute('aria-busy');
+      counts.textContent = entityTrustFormat(ENT_COPY.ENT_TRUST_PREVIEW_COUNTS, {
+        samples: preview.voiceprints_added, total: preview.voiceprints_target_total,
+        notes: preview.notes_on_source, labels: preview.speaker_labels, activities: preview.activity_records
+      });
+    }).catch(error => {
+      counts.textContent = entityErrorMessage(error, ENT_COPY.ENT_TRUST_ACTION_FAILED);
+      throw error;
+    }));
     list.append(li);
   });
   box.append(heading, body, list);
@@ -8631,6 +8662,10 @@ function renderMergeConfirm(plan) {
   confirm.className = 'btn btn-primary';
   confirm.dataset.action = 'dup-merge-confirm';
   confirm.textContent = `merge ${groupedCount(t)}`;
+  confirm.disabled = true;
+  Promise.all(previewLoads).then(() => {
+    if (!ctx.disposed && tidyState.dupConfirm === plan) confirm.disabled = false;
+  }).catch(() => { /* The failed pair stays visible; cancel and retry. */ });
   confirm.onclick = () => runDuplicateMerge(plan);
   actions.append(cancel, confirm);
   box.append(actions);
@@ -9137,8 +9172,100 @@ async function loadFacesPanel(entityId, name, {keep = false} = {}) {
   renderFacesPanel();
 }
 
-/// Open the panel for a newly shown person. Nothing is fetched while the
-/// switch is off or there is nothing to choose from: the page looks as before.
+// Saved voice samples belong to the journal-wide person.
+let voiceSamplesRequest = 0;
+async function loadVoiceSamples(entity, cursor = 0, append = false) {
+  const panel = document.getElementById('journal-detail-voice-samples');
+  if (!panel) return;
+  const request = ++voiceSamplesRequest;
+  panel.hidden = entity.type !== 'Person' && !entity.is_principal;
+  if (panel.hidden) return;
+  if (!append) panel.replaceChildren();
+  const status = document.createElement('p');
+  status.textContent = ENT_COPY.ENT_VOICE_LOADING;
+  panel.appendChild(status);
+  try {
+    const base = `/app/entities/api/journal/entity/${encodeURIComponent(entity.id)}/voice-samples`;
+    const data = await apiJson(`${base}?cursor=${cursor}`);
+    if (request !== voiceSamplesRequest || ctx.disposed || currentDetailEntity?.id !== entity.id) return;
+    status.remove();
+    if (!append) {
+      const heading = document.createElement('h4');
+      heading.id = 'voice-samples-heading';
+      heading.tabIndex = -1;
+      heading.textContent = `${ENT_COPY.ENT_VOICE_HEADING} (${data.total})`;
+      panel.appendChild(heading);
+    }
+    if (!data.total) {
+      const empty = document.createElement('p');
+      empty.textContent = ENT_COPY.ENT_VOICE_EMPTY;
+      panel.appendChild(empty);
+    }
+    for (const sample of data.items) {
+      const row = document.createElement('div');
+      row.className = 'voice-sample-row';
+      const provenance = document.createElement('div');
+      const day = String(sample.day || '');
+      const segment = String(sample.segment_key || '');
+      const time = segment.slice(0, 6).replace(/^(..)(..)(..)$/, '$1:$2:$3');
+      const title = document.createElement('div');
+      title.textContent = `${day.slice(0,4)}-${day.slice(4,6)}-${day.slice(6,8)} · ${time}`;
+      const detail = document.createElement('small');
+      detail.textContent = `${sample.stream || '_default'} / ${segment} · ${sample.source || ''} · ${entityTrustFormat(ENT_COPY.ENT_VOICE_SENTENCE, {id: sample.sentence_id})}`;
+      provenance.append(title, detail);
+      const open = document.createElement('a');
+      const stream = sample.stream || '_default';
+      const layout = sample.stream_layout || (stream === '_default' ? 'direct' : 'named');
+      open.href = `/app/speakers/${encodeURIComponent(day)}#${encodeURIComponent(JSON.stringify([day, layout, stream, segment]))}`;
+      open.textContent = ENT_COPY.ENT_VOICE_OPEN;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-secondary';
+      remove.textContent = ENT_COPY.ENT_VOICE_REMOVE;
+      const error = document.createElement('p');
+      error.className = 'error-message';
+      error.hidden = true;
+      remove.onclick = async () => {
+        remove.disabled = true;
+        error.hidden = true;
+        try {
+          const result = await apiJson(`${base}/remove`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key: sample.key})});
+          if (row.parentNode !== panel || ctx.disposed || currentDetailEntity?.id !== entity.id) return;
+          if (!result.removed) throw new Error(ENT_COPY.ENT_VOICE_CHANGED);
+          const mergePreview = document.getElementById('journal-detail-merge-preview');
+          if (mergePreview) { mergePreview.replaceChildren(); mergePreview.hidden = true; }
+          await loadVoiceSamples(entity);
+          if (currentDetailEntity?.id === entity.id) document.getElementById('voice-samples-heading')?.focus();
+        } catch (e) {
+          if (row.parentNode !== panel || ctx.disposed || currentDetailEntity?.id !== entity.id) return;
+          error.textContent = entityErrorMessage(e, ENT_COPY.ENT_VOICE_ERROR);
+          error.hidden = false;
+          remove.disabled = false;
+        }
+      };
+      row.append(provenance, open, remove, error);
+      panel.appendChild(row);
+    }
+    if (data.cursor !== null) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'btn btn-secondary';
+      more.textContent = ENT_COPY.ENT_VOICE_MORE;
+      more.onclick = () => { more.remove(); loadVoiceSamples(entity, data.cursor, true); };
+      panel.appendChild(more);
+    }
+  } catch (e) {
+    if (request !== voiceSamplesRequest || ctx.disposed || currentDetailEntity?.id !== entity.id) return;
+    status.textContent = ENT_COPY.ENT_VOICE_ERROR;
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'btn btn-secondary';
+    retry.textContent = ENT_COPY.ENT_VOICE_RETRY;
+    retry.onclick = () => loadVoiceSamples(entity);
+    panel.appendChild(retry);
+  }
+}
+
 function openFacesPanel(entity) {
   facesPanel.request += 1;
   facesPanel.entityId = entity.id;

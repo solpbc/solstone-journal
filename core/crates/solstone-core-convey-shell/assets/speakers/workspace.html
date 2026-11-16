@@ -1530,6 +1530,9 @@
   text-decoration: none;
 }
 
+.spk-known-card > a:first-child { display: block; color: inherit; text-decoration: none; }
+.spk-samples-link { display: inline-flex; align-items: center; min-height: 44px; text-decoration: underline; }
+
 .spk-card-title {
   margin: 0 0 8px;
   font-weight: 700;
@@ -1644,7 +1647,7 @@
     width: 100%;
   }
 
-  .spk-known-grid[data-capped] > a.spk-known-card:nth-of-type(n + 13) {
+  .spk-known-grid[data-capped] > .spk-known-card:nth-of-type(n + 13) {
     display: none;
   }
 
@@ -5164,12 +5167,12 @@ function runOverview(ctx, page) {
     const renderCard = (speaker) => {
       const href = `/app/speakers/${TODAY}?speaker=${encodeURIComponent(speaker.entity_id)}`;
       return `
-        <a class="spk-known-card" href="${href}">
+        <div class="spk-known-card"><a href="${href}">
           <h3 class="spk-card-title">${escapeHtml(speaker.name || 'no name yet')}</h3>
           <p class="spk-card-line">${escapeHtml(String(speaker.embedding_count || 0))} ${escapeHtml(pluralize(speaker.embedding_count || 0, 'sample'))} · ${escapeHtml(String(speaker.segment_count || 0))} ${escapeHtml(pluralize(speaker.segment_count || 0, 'segment'))}</p>
           <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_CARD_LAST_HEARD_PREFIX)}: ${relativeTime(speaker.last_seen_ts)}</p>
           ${cohesion(speaker.intra_cosine_p25)}
-        </a>
+        </a><a class="spk-samples-link" href="/app/entities#${encodeURIComponent(speaker.entity_id)}">${escapeHtml(COPY.SPK_VIEW_VOICE_SAMPLES)}</a></div>
       `;
     };
     // Placeholder identities ("Speaker 1", "Speaker 2", ...) are the voices

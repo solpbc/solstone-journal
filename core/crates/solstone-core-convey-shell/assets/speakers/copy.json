@@ -172,5 +172,6 @@
   "SPK_OWNER_UNDO_FAILED": "couldn't remove your voice. try again in a moment.",
   "SPK_OWNER_REDO_BODY": "mark statements that are yours, then update your voice. if they don't match your saved voice closely enough, nothing changes.",
   "SPK_OWNER_BUILD_FAILED": "couldn't save your voice. try again in a moment.",
-  "SPK_ACTION_NOT_NOW": "not now"
+  "SPK_ACTION_NOT_NOW": "not now",
+  "SPK_VIEW_VOICE_SAMPLES": "view voice samples"
 }

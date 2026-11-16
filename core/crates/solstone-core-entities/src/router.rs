@@ -142,6 +142,14 @@ pub fn api_router(journal_root: impl AsRef<Path>) -> Router {
 
 fn api_router_from_state(state: Arc<RouterState>) -> Router {
     Router::new()
+        .route(
+            "/app/entities/api/journal/entity/{entity_id}/voice-samples",
+            get(crate::voice_samples::panel),
+        )
+        .route(
+            "/app/entities/api/journal/entity/{entity_id}/voice-samples/remove",
+            post(crate::voice_samples::remove_route),
+        )
         .route("/app/entities/api/state", get(state_route))
         .route("/app/entities/api/network", get(index_plate_network))
         .route("/app/entities/api/history", get(index_plate_history))
@@ -1443,7 +1451,12 @@ fn merge_preview_value(preview: solstone_core_entity::EntityMergePreview) -> ser
         "target_identity": preview.target_identity,
         "aliases_added": preview.aliases_added,
         "emails_added": preview.emails_added,
-        // The plan computes identity additions only.
+        "voiceprints_added": preview.voiceprints_added,
+        "voiceprints_target_total": preview.voiceprints_target_total,
+        "notes_on_source": preview.notes_on_source,
+        "speaker_labels": preview.speaker_labels,
+        "activity_records": preview.activity_records,
+        // Remaining changes include photos and related links.
         "other_changes_not_previewed": true,
     })
 }
@@ -1588,8 +1601,6 @@ async fn accept_merge_candidate_route(
         })
         .await;
         return match preview {
-            // The plan computes identity additions only. Keep unmeasured
-            // changes distinct from a measured zero.
             Ok(Ok(preview)) => Json(json!({
                 "status": "preview",
                 "kind": "entity_merge",
@@ -1597,6 +1608,11 @@ async fn accept_merge_candidate_route(
                 "fields": {
                     "akas_added": preview.aliases_added,
                     "emails_added_count": preview.emails_added,
+                    "voiceprints_added": preview.voiceprints_added,
+                    "voiceprints_target_total": preview.voiceprints_target_total,
+                    "notes_on_source": preview.notes_on_source,
+                    "speaker_labels": preview.speaker_labels,
+                    "activity_records": preview.activity_records,
                     "other_changes_not_previewed": true,
                 },
             }))

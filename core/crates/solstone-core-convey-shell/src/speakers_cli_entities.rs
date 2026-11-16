@@ -68,6 +68,21 @@ pub async fn merge_names(
             alias_entity_id,
             canonical_entity_id,
         }) => {
+            if body.get("commit").and_then(Value::as_bool) != Some(true) {
+                return match solstone_core_entity::preview_entity_merge(
+                    &root.0,
+                    &alias_entity_id,
+                    &canonical_entity_id,
+                    solstone_core_entity::EntityMergeOptions {
+                        keep_source_as_aka: true,
+                    },
+                ) {
+                    Ok(preview) => {
+                        Json(json!({"status": "preview", "preview": preview})).into_response()
+                    }
+                    Err(error) => merge_error(error),
+                };
+            }
             let encoder = encoder();
             match solstone_core_entity::commit_entity_merge(
                 &root.0,

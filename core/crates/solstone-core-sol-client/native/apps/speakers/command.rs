@@ -1267,12 +1267,6 @@ pub fn merge_names(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
-    // This merges two entities, and merges are permanent.
-    if !parsed.flag("--yes") {
-        return stderr(
-            "A merge can't be undone. Once the owner approves, run it again with --yes to merge.",
-        );
-    }
     let Some(alias) = parsed.positionals.first() else {
         return stderr("Error: missing argument ALIAS");
     };
@@ -1284,7 +1278,7 @@ pub fn merge_names(ctx: CommandContext<'_>) -> CommandOutput {
         HttpMethod::Post,
         "/app/speakers/api/merge-names",
         vec![],
-        Some(json!({"alias": alias, "canonical": canonical})),
+        Some(json!({"alias": alias, "canonical": canonical, "commit": parsed.flag("--yes")})),
     ) {
         Ok(result) => crate::agent_output::literal_output(stdout_json(&result)),
         Err(error) if error.reason_code() == Some("speaker_command_failed") => detail_error(error),
@@ -2094,6 +2088,11 @@ fn render_resolve_names(out: &mut String, stats: &Value) {
             array_field(stats, "matches_found").len()
         ),
     );
+    for item in array_field(stats, "auto_merged") {
+        if let Some(preview) = item.get("preview") {
+            emit(out, preview.to_string());
+        }
+    }
     let auto = array_field(stats, "auto_merged");
     if !auto.is_empty() {
         emit(out, format!("\nAuto-merged ({}):", auto.len()));

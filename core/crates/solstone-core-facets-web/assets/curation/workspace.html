@@ -946,8 +946,11 @@ window.CUR_COPY = CUR_COPY;
     if (preview.labels_rewritten || preview.corrections_rewritten) {
       rows.push(`${CUR_COPY.CUR_PREVIEW_SEGMENTS_LABEL}: ${preview.labels_rewritten || 0} labels, ${preview.corrections_rewritten || 0} corrections`);
     }
-    if (preview.voiceprints_added || preview.voiceprints_target_total) {
+    if (typeof preview.voiceprints_added === 'number') {
       rows.push(`${CUR_COPY.CUR_PREVIEW_VOICEPRINTS_LABEL}: ${preview.voiceprints_added || 0} added, ${preview.voiceprints_target_total || 0} total`);
+    }
+    for (const [field, label] of [['notes_on_source', 'CUR_PREVIEW_NOTES_SOURCE'], ['speaker_labels', 'CUR_PREVIEW_LABELS'], ['activity_records', 'CUR_PREVIEW_ACTIVITIES']]) {
+      if (typeof preview[field] === 'number') rows.push(`${CUR_COPY[label]}: ${preview[field]}`);
     }
     if (preview.other_changes_not_previewed) {
       rows.push(CUR_COPY.CUR_PREVIEW_PARTIAL);

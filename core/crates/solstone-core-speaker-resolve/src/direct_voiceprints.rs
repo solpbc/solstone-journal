@@ -158,6 +158,9 @@ pub fn write_voiceprint(
     if !is_person {
         return Err(DirectVoiceprintMutationError::NotPerson);
     }
+    if !crate::voiceprint_playback::allows_metadata(journal_root, &metadata) {
+        return Ok(());
+    }
     save_voiceprints_batch(
         journal_root,
         entity_id,
@@ -257,6 +260,9 @@ pub fn plan_direct_voiceprints(
             last_seen_ts,
         )
         .to_json();
+        if !crate::voiceprint_playback::allows_metadata(journal_root, &metadata) {
+            continue;
+        }
         entries_to_add.push(DirectVoiceprintEntry {
             key: key.clone(),
             metadata: metadata.clone(),
@@ -314,6 +320,9 @@ pub fn execute_direct_voiceprints_phase(
                 &saved_keys,
             ));
         }
+        if !crate::voiceprint_playback::allows_metadata(journal_root, &entry.metadata) {
+            continue;
+        }
         let Some(embedding) =
             load_member_embedding(journal_root, &entry.source_member, owner.as_ref())?
         else {
@@ -331,10 +340,15 @@ pub fn execute_direct_voiceprints_phase(
 
     if !to_save.is_empty() {
         save_voiceprints_batch(journal_root, &plan.target_entity_id, &to_save, encoder)?;
+        let after = entity_voiceprint_metadata(journal_root, &plan.target_entity_id);
         saved_keys.extend(
             plan.entries_to_add
                 .iter()
-                .filter(|entry| !existing_metadata.contains_key(&entry.key))
+                .filter(|entry| {
+                    after
+                        .get(&entry.key)
+                        .is_some_and(|rows| rows.contains(&entry.metadata))
+                })
                 .map(|entry| entry.key.clone()),
         );
     }

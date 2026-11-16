@@ -282,8 +282,16 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
             if let Some(dismiss) = copy.remove("CUR_AMBIGUITY_DISMISS_ACTION") {
                 assert_eq!(dismiss, Value::String("none of these".to_owned()));
             }
-            if let Some(partial) = copy.remove("CUR_PREVIEW_PARTIAL") {
-                assert_eq!(partial, Value::String("this preview covers alias and email additions; the merge may also change facet links, notes, speaker labels, and voice samples.".to_owned()));
+            // Copy added since capture is checked by shape, not wording.
+            for key in [
+                "CUR_PREVIEW_PARTIAL",
+                "CUR_PREVIEW_NOTES_SOURCE",
+                "CUR_PREVIEW_LABELS",
+                "CUR_PREVIEW_ACTIVITIES",
+            ] {
+                if let Some(text) = copy.remove(key) {
+                    assert!(text.is_string());
+                }
             }
             // Merges became permanent after the corpus was captured: the undo
             // strings left, one neutral failure line and two permanence

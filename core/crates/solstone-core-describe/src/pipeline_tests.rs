@@ -2060,7 +2060,9 @@ fn optional_faces_fail_open_without_changing_screen_rows() {
 fn carry_segment(test: &mut TestRun, segment: &str) {
     let dir = test
         .journal
-        .join("chronicle/20261020/desktop")
+        .join("chronicle")
+        .join("20261020")
+        .join("desktop")
         .join(segment);
     fs::create_dir_all(&dir).unwrap();
     test.video = dir.join("screen.webm");

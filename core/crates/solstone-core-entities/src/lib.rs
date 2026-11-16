@@ -12,6 +12,7 @@ pub mod photos;
 mod router;
 mod tidy;
 mod trash_delete;
+mod voice_samples;
 
 pub use model::{ATTENDANCE_KINDS, ENTITIES_COPY, compose_connections_horizon_note, edge_aliases};
 pub use router::api_router;
@@ -23,3 +24,6 @@ mod router_tests;
 
 #[cfg(all(test, feature = "full-tests"))]
 mod photo_tests;
+
+#[cfg(all(test, feature = "full-tests"))]
+mod voice_samples_tests;

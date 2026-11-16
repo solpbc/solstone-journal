@@ -47,7 +47,7 @@
   "ENT_TRUST_MERGE_ACTION": "preview merge",
   "ENT_TRUST_MERGE_CONFIRM": "merge {source} into {target}? a merge can't be undone.",
   "ENT_TRUST_MERGE_CONFIRM_ACTION": "confirm merge",
-  "ENT_TRUST_PREVIEW_SUMMARY": "preview. aliases added: {aliases}, emails added: {emails}. this preview covers alias and email additions; the merge may also change facet links, notes, speaker labels, and voice samples.",
+  "ENT_TRUST_PREVIEW_SUMMARY": "aliases added: {aliases} · emails added: {emails}",
   "ENT_TRUST_MERGE_DONE": "merged.",
   "ENT_TRUST_SUGGESTIONS_HEADING": "open merge suggestions",
   "ENT_TRUST_SUGGESTIONS_EMPTY": "no open merge suggestions involve this entity.",
@@ -172,5 +172,16 @@
   "ENT_FACES_GONE": "that photo isn't available anymore.",
   "ENT_FACES_FAILED": "that didn't save.",
   "ENT_FACES_FACET_HINT": "choose a photo for {name}",
-  "ENT_FACES_MERGE_REASON": "meeting photos suggest these may be the same person."
+  "ENT_FACES_MERGE_REASON": "meeting photos suggest these may be the same person.",
+  "ENT_TRUST_PREVIEW_COUNTS": "voice samples added: {samples} · samples after merge: {total} · notes under the name being merged: {notes} · speaker labels changed: {labels} · activity records changed: {activities}",
+  "ENT_VOICE_HEADING": "voice samples",
+  "ENT_VOICE_LOADING": "loading voice samples…",
+  "ENT_VOICE_EMPTY": "no voice samples saved for this person.",
+  "ENT_VOICE_ERROR": "those voice samples couldn't be read or changed. try again.",
+  "ENT_VOICE_OPEN": "open recording",
+  "ENT_VOICE_REMOVE": "remove",
+  "ENT_VOICE_MORE": "show more",
+  "ENT_VOICE_RETRY": "try again",
+  "ENT_VOICE_CHANGED": "that sample has changed. refresh the list before removing it.",
+  "ENT_VOICE_SENTENCE": "sentence {id}"
 }

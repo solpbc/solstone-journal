@@ -122,7 +122,8 @@ pub fn plan_retroactive_confirm(
             };
             (dir, layout)
         };
-        if !dir.exists()
+        if !crate::voiceprint_playback::allows_transcript(&dir.join(format!("{kind}.jsonl")))
+            || !dir.exists()
             || read_overlap_fraction(&dir.join(format!("{kind}.jsonl")))
                 > NOISY_FLYWHEEL_OVERLAP_MAX
         {
@@ -199,6 +200,7 @@ pub fn apply_retroactive_confirm_plan(
     let items = plan
         .items
         .iter()
+        .filter(|item| crate::voiceprint_playback::allows_metadata(journal, &item.metadata))
         .filter(|item| key_for_metadata(&item.metadata).is_some_and(|k| !existing.contains(&k)))
         .cloned()
         .collect::<Vec<_>>();

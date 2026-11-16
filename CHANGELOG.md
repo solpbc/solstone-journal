@@ -8,6 +8,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- a person's page now lists saved voice samples with their date, time and a link to the recording. you can remove a sample that belongs to someone else.
+- merge previews now show voice samples added, notes under the name being merged, speaker labels and activities affected.
+
 - on linux, a journal installed with `https://solstone.app/install.sh` on its default route now updates itself once a day. it checks the signed release catalogue, checks the installer that catalogue names before running it, and installs a newer version in the background. it never restarts your journal: the new version starts the next time your journal does. a new install turns this on and says so, and a journal you already have asks you once in its status pane. `solstone update --automatic off` turns it off.
 - on linux, if an automatic update doesn't work twice in a row, your journal stops trying, tells you, and keeps running the version it has. the status pane has a button to try again.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
@@ -25,6 +28,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the import page now works like home, transcripts and search: moving between it and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 
 ### Fixed
+
+- recordings tagged with dominant television or music no longer add voice samples to a person. speech with light background music can still contribute samples. existing samples stay available for you to review.
 
 - on linux, after an update that stopped part-way, `solstone update --check` and the status pane now say an update is still available, and running `solstone update` again finishes it. before, they could say your journal was up to date while the solstone app was still on its older version.
 - after you merge two entities, the activities that named the one you merged away now name the one you kept, not an internal id, and an activity that already named the one you kept lists it once.

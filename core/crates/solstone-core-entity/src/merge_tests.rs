@@ -2923,3 +2923,69 @@ fn merge_carries_the_owner_voice_the_earlier_created_at_and_fills_an_empty_array
     );
     fs::remove_dir_all(journal).unwrap();
 }
+
+#[test]
+fn merge_preview_counts_real_additions_and_preserves_cross_facet_moment_coordinates() {
+    let temp = tempfile::tempdir().unwrap();
+    let journal = temp.path();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            journal,
+            id,
+            &json!({"id":id,"name":id,"type":"Person"}),
+            None,
+        )
+        .unwrap();
+    }
+    write_voiceprints(journal, "target", vec![row(1.)], vec![metadata("shared")]);
+    write_voiceprints(
+        journal,
+        "source",
+        vec![row(1.), row(2.), row(0.)],
+        vec![metadata("shared"), metadata("new"), metadata("zero")],
+    );
+    for facet in ["work", "redhat"] {
+        let path = journal.join(format!("facets/{facet}/activities/20261112.jsonl"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path,json!({"id":"browser", "stream":"screen", "segments":["120000_300"],"level_avg":1,"active_entities":["source"]}).to_string()).unwrap();
+    }
+    let link = journal.join("facets/work/entities/source");
+    fs::create_dir_all(&link).unwrap();
+    fs::write(link.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+    fs::write(
+        link.join("observations.jsonl"),
+        br#"{"content":"a note","observed_at":"2026-11-12"}"#,
+    )
+    .unwrap();
+    let talents = journal.join("chronicle/20261112/mic/120000_300/talents");
+    fs::create_dir_all(&talents).unwrap();
+    fs::write(
+        talents.join("speaker_labels.json"),
+        br#"{"labels":[{"speaker":"source"},{"speaker":"target"}]}"#,
+    )
+    .unwrap();
+    let preview =
+        preview_entity_merge(journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    assert_eq!(preview.voiceprints_added, 1);
+    assert_eq!(preview.voiceprints_target_total, 2);
+    assert_eq!(preview.notes_on_source, 1);
+    assert_eq!(preview.speaker_labels, 1);
+    assert_eq!(preview.activity_records, 2);
+    assert_eq!(read_rows(journal, "target").rows, 1);
+    commit_entity_merge(journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    assert_eq!(
+        read_rows(journal, "target").rows,
+        preview.voiceprints_target_total
+    );
+    for facet in ["work", "redhat"] {
+        let row: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(journal.join(format!("facets/{facet}/activities/20261112.jsonl")))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(row["stream"], "screen");
+        assert_eq!(row["segments"], json!(["120000_300"]));
+        assert_eq!(row["level_avg"], 1);
+        assert_eq!(row["active_entities"], json!(["target"]));
+    }
+}

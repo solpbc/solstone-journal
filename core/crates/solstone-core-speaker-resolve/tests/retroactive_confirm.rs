@@ -316,3 +316,44 @@ fn retroactive_plan_and_apply_deduplicate_canonical_keys_in_mixed_archives() {
         );
     }
 }
+
+#[test]
+fn playback_admission_covers_retroactive_plan_and_prepared_plan_apply() {
+    for (tags, saved) in [
+        (json!({"Music":0.93,"Speech":0.79,"Television":0.38}), false),
+        (json!({"Television":0.9,"Speech":0.6}), false),
+        (json!({"Music":0.2,"Speech":0.95}), true),
+    ] {
+        let t = Temp::new();
+        entity(t.path(), "principal", "Person", true);
+        entity(t.path(), "target", "Person", false);
+        owner(t.path());
+        embeddings(t.path());
+        let mut before =
+            plan_retroactive_confirm(t.path(), &candidate(), &vector(0., 1.), "target", 123)
+                .unwrap();
+        assert_eq!(before.items.len(), 1);
+        fs::write(
+            t.path()
+                .join("chronicle/20260808/mic/120000_300/audio.jsonl"),
+            format!(
+                "{}\n",
+                json!({"sound_tags":{"tags":tags},"speaker":"unknown"})
+            ),
+        )
+        .unwrap();
+        let planned =
+            plan_retroactive_confirm(t.path(), &candidate(), &vector(0., 1.), "target", 123)
+                .unwrap();
+        assert_eq!(!planned.items.is_empty(), saved);
+        before.candidate_id = None;
+        let mut tracker = CandidateTracker::new(t.path());
+        let count =
+            apply_retroactive_confirm_plan(&mut tracker, t.path(), &before, &encoder()).unwrap();
+        assert_eq!(count, usize::from(saved));
+        assert_eq!(
+            solstone_core_entity::load_entity_voiceprints_file(t.path(), "target").is_some(),
+            saved
+        );
+    }
+}
