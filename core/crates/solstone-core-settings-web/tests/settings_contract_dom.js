@@ -1209,5 +1209,30 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(collected, 'the gone trash list was collected');
   });
 
+  await test("the logs cleanup dialog opens, closes by its own ×, and a cleanup that ran doesn't say it failed", async () => {
+    const answers = journal({ '/app/settings/api/storage/prune-logs#POST': { enabled: true, files_deleted: 2, dirs_deleted: 0, retention_log: { lines_removed: 0 } } });
+    const p = await boot(env, '/app/settings/#storage', { answers });
+    const opener = p.byId('cleanupLogsBtn');
+    opener.focus();
+    p.press(opener);
+    p.clock.advance(20);
+    await settle();
+    assert.deepStrictEqual(p.shownModals(), ['cleanupLogsModal']);
+    assert.strictEqual(p.errors.length, 0, 'opening it throws nothing');
+    p.press(p.byId('cleanupLogsModalClose'));
+    await settle();
+    assert.deepStrictEqual(p.shownModals(), [], 'its × closes it');
+    assert.strictEqual(focusOn(p), 'BUTTON#cleanupLogsBtn', 'focus goes back to the button that opened it');
+    p.press(opener);
+    await settle();
+    p.press(p.byId('cleanupLogsPreviewBtn'));
+    await settle();
+    p.press(p.byId('cleanupLogsConfirmBtn'));
+    await settle();
+    assert.ok(p.writes().some((call) => call.url === '/app/settings/api/storage/prune-logs' && JSON.parse(call.body).dry_run === false), 'the cleanup was sent');
+    assert.deepStrictEqual(p.shownModals(), [], 'the dialog closes once it has run');
+    assert.ok(!p.notices.some((notice) => notice.icon === 'circle-x'), 'and no failure notice follows a cleanup that ran');
+  });
+
   return cases;
 };
