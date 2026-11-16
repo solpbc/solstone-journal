@@ -74,9 +74,30 @@ const QUALIFIED_595_71_05: &[PackagedRim] = &[
     },
 ];
 
+const QUALIFIED_595_91_07: &[PackagedRim] = &[
+    PackagedRim {
+        filename: "NV_GPU_DRIVER_GH100_595.91.07.xml",
+        sha256: "062a154aaec72a87cc943b7242b9be32603b3c23f450b854ecab68391c7e1662",
+        xml: include_bytes!("../../rims/NV_GPU_DRIVER_GH100_595.91.07.xml"),
+    },
+    PackagedRim {
+        filename: "NV_GPU_VBIOS_1010_0210_886_96009F0004.xml",
+        sha256: "d5dd2bc3f138713ce9a6bd9ba472cb2833e362316e4528b7f2b5d6890e4315db",
+        xml: include_bytes!("../../rims/NV_GPU_VBIOS_1010_0210_886_96009F0004.xml"),
+    },
+    PackagedRim {
+        filename: "NV_GPU_VBIOS_1010_0210_886_9600880011.xml",
+        sha256: "a948d7b1e183a8dbede96a3288a1a14b54ddf4f8d4e8576dc4ccb2798022b183",
+        xml: include_bytes!("../../rims/NV_GPU_VBIOS_1010_0210_886_9600880011.xml"),
+    },
+];
+
 impl ManifestSet {
     /// Driver 595.71.05 with both qualified H100 VBIOS variants.
     pub const QUALIFIED_595_71_05: Self = Self(QUALIFIED_595_71_05);
+
+    /// Driver 595.91.07 with both qualified H100 VBIOS variants.
+    pub const QUALIFIED_595_91_07: Self = Self(QUALIFIED_595_91_07);
 
     #[must_use]
     pub const fn entries(&self) -> &'static [PackagedRim] {

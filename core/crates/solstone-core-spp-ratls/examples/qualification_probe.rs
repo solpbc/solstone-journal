@@ -61,7 +61,7 @@ impl solstone_core_spp_ratls::CompositeVerifier for RecordingVerifier {
 }
 
 const USAGE: &str = "\
-Usage: qualification_probe --host <HOST> [--port <PORT>] --pcr-mode <record|pin> [--pin <HEX>] --output-dir <DIR> [--model <MODEL>] [--credential-file <PATH>] [--nvattest-dir <DIR>] [--no-content] [--offline-status-profile]
+Usage: qualification_probe --host <HOST> [--port <PORT>] --pcr-mode <record|pin> [--pin <HEX>] --output-dir <DIR> [--model <MODEL>] [--credential-file <PATH>] [--nvattest-dir <DIR>] [--no-content] [--offline-status-profile [--offline-status-driver <VERSION>]]
 
 Manual qualification tool for SPP RA-TLS endpoints.
 
@@ -75,7 +75,8 @@ Options:
   --credential-file <PATH> File holding the owner credential sent as the bearer (required unless --no-content)
   --nvattest-dir <DIR>    Path to nvattest directory (required)
   --request-json <PATH>   Send one custom chat JSON body after admission; save JSON status/body or bounded streaming HTTP wire bytes (no fixed chat/audio probes)\n  --no-content            Captures evidence and does not send chat or transcription
-  --offline-status-profile Stages the packaged 595.71.05 manifests and OfflineSignedAge for --pin only; requires --pcr-mode pin, never changes production admission
+  --offline-status-profile Stages a packaged manifest set and OfflineSignedAge for --pin only; requires --pcr-mode pin, never changes production admission
+  --offline-status-driver <VERSION> Which packaged driver set --offline-status-profile stages: 595.71.05 (default) or 595.91.07
   --help                  Show this help message and exit
 ";
 
@@ -98,6 +99,8 @@ fn main() {
     let mut request_json: Option<PathBuf> = None;
     let mut no_content = false;
     let mut offline_status_profile = false;
+    let mut offline_status_manifests = ManifestSet::QUALIFIED_595_71_05;
+    let mut offline_status_driver_given = false;
 
     let mut seen_flags = BTreeSet::new();
 
@@ -209,6 +212,18 @@ fn main() {
             "--offline-status-profile" => {
                 offline_status_profile = true;
             }
+            "--offline-status-driver" => {
+                i += 1;
+                offline_status_driver_given = true;
+                offline_status_manifests = match args.get(i).map(String::as_str) {
+                    Some("595.71.05") => ManifestSet::QUALIFIED_595_71_05,
+                    Some("595.91.07") => ManifestSet::QUALIFIED_595_91_07,
+                    other => {
+                        eprintln!("error: invalid --offline-status-driver {other:?}, expected 595.71.05 or 595.91.07");
+                        std::process::exit(1);
+                    }
+                };
+            }
             unknown => {
                 eprintln!("error: unknown flag '{unknown}'");
                 std::process::exit(1);
@@ -263,6 +278,10 @@ fn main() {
         _ => unreachable!(),
     }
 
+    if offline_status_driver_given && !offline_status_profile {
+        eprintln!("error: --offline-status-driver requires --offline-status-profile");
+        std::process::exit(1);
+    }
     if offline_status_profile && pcr_mode != PcrMode::Pin {
         eprintln!("error: --offline-status-profile requires --pcr-mode pin and --pin");
         std::process::exit(1);
@@ -326,7 +345,7 @@ fn main() {
         pin.as_ref().map(|pin| {
             GpuProfile::new(
                 pin.clone(),
-                ManifestSet::QUALIFIED_595_71_05,
+                offline_status_manifests,
                 StatusMode::OfflineSignedAge,
             )
         })
