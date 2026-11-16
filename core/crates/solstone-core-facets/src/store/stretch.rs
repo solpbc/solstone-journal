@@ -16,7 +16,7 @@ use serde_json::{Map, Value};
 
 use super::activity_records::{
     ActivityRecord, ActivityRecordStoreError, EDIT_STRETCH, STRETCH_ID, STRETCH_SEGMENTS,
-    edit_removed, is_body_record, load_activity_records, remove_activity_edit,
+    edit_removed, get_activity_record, is_body_record, load_activity_records, remove_activity_edit,
     update_activity_record_noting,
 };
 
@@ -136,34 +136,67 @@ pub fn correct_over_stretch(
     patch: &Map<String, Value>,
     note: &str,
     timestamp: &str,
+    checkpoint: impl FnOnce(&ActivityRecord) -> Result<(), String>,
+    extra: &Map<String, Value>,
 ) -> Result<StretchCorrection, ActivityRecordStoreError> {
     let shared = patch
         .iter()
         .filter(|(key, _)| STRETCH_FIELDS.contains(&key.as_str()))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<Map<_, _>>();
-    let stretch_id = new_stretch_id(facet, record_id, timestamp);
-    let mut mark = Map::new();
-    if !shared.is_empty() {
-        mark.insert(
-            EDIT_STRETCH.to_owned(),
-            Value::Object(Map::from_iter([(
-                STRETCH_ID.to_owned(),
-                Value::String(stretch_id.clone()),
-            )])),
-        );
-    }
-    let record = update_activity_record_noting(
-        root,
-        facet,
-        day,
-        record_id,
-        patch,
-        OWNER_UPDATE,
-        note,
-        timestamp,
-        &mark,
-    )?;
+    let suggestion = extra.get("suggestion_id").and_then(Value::as_str);
+    let existing = suggestion.and_then(|suggestion| {
+        get_activity_record(root, facet, day, record_id)
+            .ok()
+            .flatten()
+            .filter(|record| {
+                record
+                    .get("edits")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .any(|edit| {
+                        edit.get("suggestion_id").and_then(Value::as_str) == Some(suggestion)
+                            && edit.as_object().is_some_and(|edit| !edit_removed(edit))
+                    })
+            })
+    });
+    let stretch_id = existing
+        .as_ref()
+        .and_then(|record| record.get("edits"))
+        .and_then(Value::as_array)
+        .and_then(|edits| {
+            edits
+                .iter()
+                .find(|edit| edit.get("suggestion_id").and_then(Value::as_str) == suggestion)
+        })
+        .and_then(Value::as_object)
+        .and_then(edit_stretch_id)
+        .map(str::to_owned)
+        .unwrap_or_else(|| new_stretch_id(facet, record_id, timestamp));
+    let record = if let Some(record) = existing {
+        Some(record)
+    } else {
+        let mut mark = extra.clone();
+        if !shared.is_empty() {
+            mark.insert(
+                EDIT_STRETCH.to_owned(),
+                serde_json::json!({STRETCH_ID:stretch_id}),
+            );
+        }
+        update_activity_record_noting(
+            root,
+            facet,
+            day,
+            record_id,
+            patch,
+            OWNER_UPDATE,
+            note,
+            timestamp,
+            checkpoint,
+            &mark,
+        )?
+    };
     let mut result = StretchCorrection {
         record,
         copies: Vec::new(),
@@ -177,10 +210,22 @@ pub fn correct_over_stretch(
             facet: other_facet.clone(),
             id: id(&other).to_owned(),
         };
-        let mark = Map::from_iter([(
+        let mut copy_mark = extra.clone();
+        copy_mark.insert(
             EDIT_STRETCH.to_owned(),
             serde_json::json!({ STRETCH_ID: stretch_id, STRETCH_SEGMENTS: covered }),
-        )]);
+        );
+        if suggestion.is_some()
+            && other
+                .get("edits")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .any(|edit| edit.get("suggestion_id").and_then(Value::as_str) == suggestion)
+        {
+            result.copies.push(copy);
+            continue;
+        }
         match update_activity_record_noting(
             root,
             &other_facet,
@@ -190,7 +235,31 @@ pub fn correct_over_stretch(
             OWNER_UPDATE,
             note,
             timestamp,
-            &mark,
+            |current| {
+                if suggestion.is_some()
+                    && current
+                        .get("edits")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .any(|edit| {
+                            edit.get("actor").and_then(Value::as_str) == Some(OWNER_UPDATE)
+                                && edit
+                                    .get("timestamp")
+                                    .and_then(Value::as_str)
+                                    .and_then(|time| {
+                                        chrono::DateTime::parse_from_rfc3339(time).ok()
+                                    })
+                                    .zip(chrono::DateTime::parse_from_rfc3339(timestamp).ok())
+                                    .is_some_and(|(edit, original)| edit > original)
+                        })
+                {
+                    Err("a later owner answer blocks completing the stretch correction".to_owned())
+                } else {
+                    Ok(())
+                }
+            },
+            &copy_mark,
         ) {
             Ok(Some(_)) => result.copies.push(copy),
             Ok(None) => {}

@@ -1265,7 +1265,14 @@ pub(crate) fn apply_result_cancellable(
                     continue;
                 }
                 crate::writers::check_cancellation(cancellation)?;
-                match solstone_core_facets::add_entity_aka(journal, facet, &entity_id, alias) {
+                match solstone_core_facets::add_entity_aka(
+                    journal,
+                    facet,
+                    &entity_id,
+                    alias,
+                    serde_json::json!({}),
+                    |_| Ok(()),
+                ) {
                     Ok(_) => *counts.get_mut("aliased").unwrap() += 1,
                     // A hidden entity keeps the names it was hidden with.
                     Err(

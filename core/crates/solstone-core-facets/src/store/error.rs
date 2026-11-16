@@ -383,6 +383,7 @@ pub enum FacetEntityWriteError {
     /// What the facet keeps hidden can't be read, so nothing is shown or
     /// changed.
     HiddenUndecidable(solstone_core_entity::hidden_names::HideUndecidable),
+    MutationRefused(String),
     Io(io::Error),
 }
 
@@ -430,6 +431,7 @@ impl fmt::Display for FacetEntityWriteError {
             Self::SameFacet { facet } => {
                 write!(formatter, "'{facet}' is already the facet it's moving from")
             }
+            Self::MutationRefused(detail) => write!(formatter, "mutation refused: {detail}"),
             Self::HiddenUndecidable(error) => error.fmt(formatter),
             Self::Io(error) => error.fmt(formatter),
         }
@@ -456,6 +458,7 @@ impl Error for FacetEntityWriteError {
             | Self::IdentityMapLoser { .. }
             | Self::MoveConflict { .. }
             | Self::RelationshipOccupied { .. }
+            | Self::MutationRefused(_)
             | Self::SameFacet { .. } => None,
         }
     }

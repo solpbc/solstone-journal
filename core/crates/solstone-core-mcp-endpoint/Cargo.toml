@@ -26,6 +26,10 @@ axum.workspace = true
 async-trait = "0.1.89"
 base64 = "0.22.1"
 bytes.workspace = true
+caseless = "0.2.2"
+thiserror.workspace = true
+unicode-normalization = "0.1.25"
+unicode-general-category.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 futures = "0.3.31"
 hickory-resolver = { version = "0.24", default-features = false, features = ["tokio-runtime"] }
@@ -58,6 +62,9 @@ solstone-core-memory-original.workspace = true
 solstone-core-possible-names.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-mcp-audit.workspace = true
+solstone-core-entity.workspace = true
+solstone-core-entity-matching.workspace = true
+solstone-core-speaker-resolve.workspace = true
 solstone-core-retention.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-sol-link = { workspace = true, features = ["host"] }
@@ -82,7 +89,6 @@ nix = { workspace = true, features = ["dir", "fs", "user", "resource"] }
 ipconfig = { version = "0.3.2", default-features = false }
 
 [dev-dependencies]
-solstone-core-entity.workspace = true
 solstone-core-removals.workspace = true
 solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 pulldown-cmark.workspace = true

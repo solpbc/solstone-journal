@@ -259,12 +259,29 @@
    shell drawer brings its own summary chrome and is left alone. */
 .curation-item details:not(.drawer) > summary{box-sizing:border-box;min-height:44px;padding:6px 0}
 .curation-source-dates{display:flex;flex-wrap:wrap;gap:8px 16px}.curation-source-dates a{display:inline-flex;align-items:center;min-height:46px;color:var(--orange-text-aa)}.curation-origin-details summary{cursor:pointer;padding:12px 0}.curation-origin-details li{overflow-wrap:anywhere}
+/* Agent suggestions: a connected agent's suggested correction. The journal
+   speaks in normal ink; the agent's reason sits in a quote under its name. */
+.sg-filter{margin:0;color:var(--ink-soft);line-height:1.45}.sg-filter a{color:var(--orange-text-aa);text-underline-offset:2px}
+.sg-card{border:1px solid var(--hairline);border-radius:8px;background:var(--paper);padding:1em 1.1em;min-width:0}
+.sg-head{display:flex;gap:.6em;align-items:baseline;flex-wrap:wrap;margin:0}.sg-agent{font-weight:650}.sg-key{font-weight:500;color:var(--ink-faint);font-variant-numeric:tabular-nums}.sg-when{margin-left:auto;color:var(--ink-faint);font-size:.88em}
+.sg-kind{margin:.35em 0 0;font-size:1.08em;font-weight:650;line-height:1.3}.sg-place{margin:.2em 0 0;color:var(--ink-faint);font-size:.9em;line-height:1.4}
+.sg-grid{display:grid;grid-template-columns:9.5em minmax(0,1fr);gap:.55em 1em;margin:1em 0 0}.sg-grid dt{color:var(--ink-faint);font-size:.88em;padding-top:.15em;line-height:1.35}.sg-grid dd{margin:0;line-height:1.5;overflow-wrap:anywhere}
+.sg-lines{list-style:none;margin:0;padding:0;display:grid;gap:.25em}.sg-lines li{display:grid;grid-template-columns:3.6em 5.4em minmax(0,1fr);gap:.4em}.sg-lines time{color:var(--ink-faint);font-variant-numeric:tabular-nums}.sg-lines .who{color:var(--ink-soft);font-weight:600;overflow-wrap:anywhere}
+.sg-change{background:var(--cream-bright);border-left:3px solid var(--orange);border-radius:0 6px 6px 0;padding:.45em .75em}.sg-change strong{font-weight:650}.sg-account{display:block;white-space:pre-wrap}
+.sg-quote{margin:0;border-left:2px solid var(--hairline-2);padding:.1em 0 .1em .8em;color:var(--ink-soft);white-space:pre-wrap}.sg-whoby{display:block;color:var(--ink-faint);font-size:.88em;margin-bottom:.2em}.sg-then{color:var(--ink-soft)}
+.sg-open{margin-left:auto;color:var(--orange-text-aa);text-decoration:underline;text-underline-offset:2px;display:inline-flex;align-items:center;min-height:44px}.sg-open-inline{margin-left:0}
+.sg-edit label{display:block;font-weight:650;font-size:.92em;margin:1em 0 .35em}.sg-edit textarea,.sg-edit input{width:100%;box-sizing:border-box;border:1px solid var(--hairline-2);border-radius:8px;padding:.6em .7em;font:inherit;background:var(--paper);color:var(--ink);line-height:1.5}.sg-edit textarea{min-height:7.5em;resize:vertical}.sg-hint{margin:.35em 0 0;color:var(--ink-faint);font-size:.88em}
+.sg-receipt{display:flex;align-items:center;gap:.8em;flex-wrap:wrap;border:1px solid var(--hairline);border-radius:8px;background:var(--cream-bright);padding:.6em 1em}.sg-receipt p{margin:0;flex:1;min-width:12em;line-height:1.45}.sg-updating{color:var(--ink-faint)}
+.sg-stale{border-left:3px solid var(--warn)}.sg-stale-lead{margin:.8em 0 0;line-height:1.5}.sg-chip{font-size:.75em;font-weight:600;border-radius:999px;padding:1px 8px;background:var(--warn-wash);color:var(--ink);margin-left:.4em;vertical-align:.12em}
+.sg-earlier{border-top:1px solid var(--hairline);padding-top:.4em}.sg-earlier>summary{cursor:pointer;color:var(--ink-soft);font-weight:600;min-height:44px;display:flex;align-items:center}.sg-earlier ul{list-style:none;margin:0;padding:0}.sg-earlier li{display:flex;gap:.8em;align-items:baseline;flex-wrap:wrap;padding:.55em 0;border-top:1px solid var(--hairline);line-height:1.4}.sg-earlier li:first-child{border-top:0}.sg-earlier .what{flex:1;min-width:14em}.sg-earlier .meta{color:var(--ink-faint);font-size:.88em}.sg-earlier a{color:var(--orange-text-aa);text-underline-offset:2px;display:inline-flex;align-items:center;min-height:44px}
+@media (max-width:640px){.sg-grid{grid-template-columns:1fr;gap:.15em}.sg-grid dd{margin-bottom:.6em}.sg-lines li{grid-template-columns:3.4em minmax(0,1fr)}.sg-lines .who,.sg-lines .said{grid-column:2}.sg-open{margin-left:0;justify-content:center}}
 </style>
 
 <section class="curation-shell" data-curation-root>
 </section>
 
 <script src="/app/curation/static/curation_evidence.js"></script>
+<script src="/app/curation/static/agent_suggestions.js"></script>
 <script>
 let CUR_COPY = {};
 window.CUR_COPY = CUR_COPY;
@@ -623,7 +640,9 @@ window.CUR_COPY = CUR_COPY;
     `;
   }
 
-  const openReviewGroups = new Set();
+  // Agent suggestions open by default: an agent may have just told the
+  // owner one is waiting (operator approval, 2026-11-15).
+  const openReviewGroups = new Set(['agents']);
   // A journal can hold thousands of suggestions; the state arrives one page per
   // group (`?limit=`), with each group's full size under `totals`. The rest
   // loads on request from `?group=&offset=`, where the offset is what this page
@@ -666,6 +685,7 @@ window.CUR_COPY = CUR_COPY;
 
   function refreshGroupCounts() {
     root.querySelectorAll('[data-review-group]').forEach(group => {
+      if (group.dataset.reviewGroup === 'agents') return;
       const remaining = group.querySelectorAll('[data-curation-item], [data-review-history]').length
         + Number(group.dataset.groupUnloaded || 0);
       group.querySelector('[data-group-count]').textContent = `(${remaining})`;
@@ -674,7 +694,10 @@ window.CUR_COPY = CUR_COPY;
     const unloaded = Array.from(root.querySelectorAll('[data-review-group]'))
       .filter((group) => group.dataset.reviewGroup !== 'set_aside')
       .reduce((sum, group) => sum + Number(group.dataset.groupUnloaded || 0), 0);
-    const total = root.querySelectorAll('[data-curation-item]').length + unloaded;
+    const agentWaiting = window.CurationAgentSuggestions ? window.CurationAgentSuggestions.pendingCount() : 0;
+    const agentCount = root.querySelector('[data-agent-count]');
+    if (agentCount) agentCount.textContent = agentWaiting == null ? '' : `(${agentWaiting})`;
+    const total = agentWaiting == null ? null : root.querySelectorAll('[data-curation-item]').length + unloaded + agentWaiting;
     if (count) count.textContent = total ? `${total.toLocaleString()} suggestions to review. choose a group to begin.` : '';
   }
   function renderState(payload, preserveOutcomes = false) {
@@ -690,7 +713,8 @@ window.CUR_COPY = CUR_COPY;
     const setAsideItems = payload.set_aside_items || [];
     const speakerItems = payload.speaker_items || [];
     const speakerCandidatePairItems = payload.speaker_candidate_pair_items || [];
-    const empty = !facetItems.length && !ambiguityGroups.length && !speakerItems.length && !speakerCandidatePairItems.length && !setAsideItems.length;
+    const agentGroup = window.CurationAgentSuggestions ? window.CurationAgentSuggestions.groupHtml(openReviewGroups.has('agents')) : '';
+    const empty = !agentGroup && !facetItems.length && !ambiguityGroups.length && !speakerItems.length && !speakerCandidatePairItems.length && !setAsideItems.length;
     window.Drawer.preserveOpen(root, () => {
       root.innerHTML = `
         <h1 class="curation-header">${escapeHtml(CUR_COPY.CUR_HEADING)}</h1>
@@ -698,6 +722,7 @@ window.CUR_COPY = CUR_COPY;
         <p data-review-total></p>
         <div class="curation-outcomes" data-curation-outcomes></div>
         <div class="curation-list" data-curation-list>
+          ${agentGroup}
           ${reviewGroup('facet', 'facet suggestions', facetItems, facetItemHtml)}
           ${reviewGroup('ambiguity', 'names to clarify', ambiguityGroups, ambiguityGroupHtml)}
           ${reviewGroup('speaker', 'possible duplicate speaker names', speakerItems, speakerItemHtml)}
@@ -719,14 +744,28 @@ window.CUR_COPY = CUR_COPY;
     reportCurationReady(empty ? 'empty' : 'content');
   }
 
+  // The agents' suggestions load beside the journal's own; a failure there
+  // shows inside its group and never takes the page down.
+  function loadAgentSuggestions() {
+    return window.CurationAgentSuggestions ? window.CurationAgentSuggestions.load() : Promise.resolve();
+  }
+
   async function refreshCurationState() {
-    renderState(await window.apiJson(CURATION_STATE_PATH, curationRequestOptions()), true);
+    const [payload] = await Promise.all([
+      window.apiJson(CURATION_STATE_PATH, curationRequestOptions()),
+      loadAgentSuggestions()
+    ]);
+    renderState(payload, true);
   }
 
   async function loadInitialState() {
     renderLoading();
     try {
-      renderState(await window.apiJson(CURATION_STATE_PATH, curationRequestOptions()));
+      const [payload] = await Promise.all([
+        window.apiJson(CURATION_STATE_PATH, curationRequestOptions()),
+        loadAgentSuggestions()
+      ]);
+      renderState(payload);
     } catch (err) {
       renderError(err, loadInitialState);
       reportCurationReady('error');
@@ -940,7 +979,20 @@ window.CUR_COPY = CUR_COPY;
     previewNode.hidden = false;
   }
 
+  async function reloadAgentSuggestions() {
+    try {
+      await refreshCurationState();
+    } catch (err) {
+      window.logError?.(err, {context: 'curation-agent-reload'});
+    }
+  }
+
+  root.addEventListener('submit', (event) => {
+    window.CurationAgentSuggestions?.handle(event, refreshGroupCounts, reloadAgentSuggestions);
+  });
+
   root.addEventListener('click', (event) => {
+    if (window.CurationAgentSuggestions?.handle(event, refreshGroupCounts, reloadAgentSuggestions)) return;
     const button = event.target.closest('[data-action]');
     if (!button) return;
     const item = itemFor(button);

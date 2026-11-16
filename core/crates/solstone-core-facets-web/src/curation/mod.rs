@@ -46,6 +46,10 @@ pub fn routes(root: PathBuf) -> Router {
             "/app/curation/static/curation_evidence.js",
             get(|| async { assets::curation_evidence_js() }),
         )
+        .route(
+            "/app/curation/static/agent_suggestions.js",
+            get(|| async { assets::curation_agent_suggestions_js() }),
+        )
         .route("/app/curation/api/state", get(state))
         .route("/app/curation/api/summary", get(summary))
         .route("/app/curation/api/entity/preview", post(entity_preview))

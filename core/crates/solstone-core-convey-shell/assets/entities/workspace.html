@@ -5117,6 +5117,16 @@ function renderJournalEntityHistory(entityId, rows) {
       after: entityTrustIdentitySummary(event.identity_after)
     });
     summary.appendChild(change);
+    // An accepted agent suggestion is the owner's change; this names the agent that suggested it.
+    const by = event.suggested_by || event.metadata?.suggested_by;
+    if (by && (by.label || by.source) && ENT_COPY.ENT_TRUST_HISTORY_SUGGESTED_BY) {
+      const suggested = document.createElement('div');
+      suggested.className = 'entity-trust-meta';
+      suggested.textContent = entityTrustFormat(ENT_COPY.ENT_TRUST_HISTORY_SUGGESTED_BY, {
+        agent: [by.label || '', String(by.source || '').slice(0, 4)].filter(Boolean).join(' · ')
+      });
+      summary.appendChild(suggested);
+    }
 
     if (event.restore_available && event.version_id) {
       const restore = document.createElement('button');

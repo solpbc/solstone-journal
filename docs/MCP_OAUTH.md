@@ -33,7 +33,7 @@ per-request metadata and header validation, or `server/discover`.
 tools are advertised from the connection's current grant. with transcripts,
 entities and facets enabled, the set is `list_facets`, `list_activities`,
 `get_activity_sources`, `search`, `fetch`, `list_transcripts`, `get_transcript`,
-`list_entities`, `get_entity`, `save_memory` and `recall_memory`.
+`list_entities`, `get_entity`, `save_memory`, `recall_memory` and `suggest_correction`.
 `list_activities` needs facets; an entity reference on it also needs entities.
 `get_activity_sources` needs transcripts and facets. `get_week` is advertised
 only for a whole-journal grant that also has transcripts and facets. chosen
@@ -268,6 +268,10 @@ an agent or backups. Backup restoration preserves retry consumption only when th
 matching identity and operation records are restored together. An older backup
 can roll consumption back. windows file publication is checked, but this does
 not promise directory-entry durability across sudden power loss.
+
+## Agent suggestions
+
+`suggest_correction` queues a correction about whether a recording or video was playing, what happened, who said a line, or a person's name. the target must be visible to the connection. pending suggestions stay under `mcp-endpoint/correction-suggestions/`, outside journal content. only the owner can accept, edit an account or name before accepting, dismiss, or undo. accepting uses the existing owner correction authority and records `suggested_by` in its history. undo refuses when it would overwrite a later owner answer. suggestions are on by default for each agent; switching them off leaves pending suggestions reviewable.
 
 ## Activity reads
 

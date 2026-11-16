@@ -17,6 +17,10 @@ use tokio::sync::watch;
 use solstone_core_journal_config::McpEndpointCertificateEnvironment;
 use solstone_core_journal_io::journal_root::JournalRoot;
 
+pub const AGENT_SUGGESTIONS_READY: bool = true;
+
+pub mod suggestions;
+
 #[allow(dead_code)]
 mod account_wire;
 pub(crate) mod acme_http;

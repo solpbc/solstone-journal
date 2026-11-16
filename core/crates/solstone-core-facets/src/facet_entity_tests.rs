@@ -347,7 +347,17 @@ fn aka_does_not_conflict_with_a_blocked_entitys_name() {
     // Blocking is what frees a name for reuse: the reference's guard filters
     // blocked candidates out before comparing, so an alias matching a blocked
     // entity's name is accepted. Verified against the reference by execution.
-    assert!(add_entity_aka(temporary.path(), "scope", "target", "reserved").is_ok());
+    assert!(
+        add_entity_aka(
+            temporary.path(),
+            "scope",
+            "target",
+            "reserved",
+            json!({}),
+            |_| Ok(())
+        )
+        .is_ok()
+    );
     update_facet_entity_identity(
         temporary.path(),
         "scope",
@@ -355,6 +365,9 @@ fn aka_does_not_conflict_with_a_blocked_entitys_name() {
         "target two",
         "",
         &["reserved".to_owned()],
+        None,
+        json!({}),
+        |_| Ok(()),
     )
     .unwrap();
 }

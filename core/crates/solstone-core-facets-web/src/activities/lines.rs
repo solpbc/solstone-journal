@@ -22,23 +22,21 @@ use axum::{
     response::Response,
 };
 use chrono::Utc;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use solstone_core_facets::{
     ActivityRecord, ActivityRecordStoreError, EDIT_LINES, EDIT_SPEAKER, OWNER_LINES_ACTOR,
     edit_removed,
 };
-use solstone_core_speaker_id::owner_line_labels::{
-    OwnerLineEntry, owner_line_entry_from_value, owner_line_entry_value,
-};
+use solstone_core_speaker_id::owner_line_labels::{OwnerLineEntry, owner_line_entry_from_value};
 use solstone_core_speaker_resolve::owner_line_labels::{
     LineRevert, LineSpeaker, OwnerLine, OwnerLineLabelError, current_owner_line_entries,
-    revert_owner_line_labels_then, set_owner_line_labels_then,
+    revert_owner_line_labels_then,
 };
 use solstone_core_system::owner_ask::{AskedActivity, activities_over};
 
 use super::{
-    ACTOR_HEADER, ACTOR_OWNER, not_found, object_body, query_value, store_error, think_again_over,
-    with_ask,
+    ACTOR_HEADER, ACTOR_OWNER, internal, not_asked, not_found, object_body, query_value,
+    store_error, think_again_over, with_ask,
 };
 use crate::{Clock, http};
 
@@ -252,69 +250,63 @@ pub(super) fn set_lines_checked(
             StatusCode::BAD_REQUEST,
         );
     }
-    let owner_lines = lines
-        .iter()
-        .map(|line| line.owner_line(root, day))
-        .collect::<Vec<_>>();
-    let by_dir = lines
-        .iter()
-        .zip(&owner_lines)
-        .map(|(key, line)| {
-            (
-                line.segment_dir.clone(),
-                (key.stream.clone(), key.segment.clone()),
+    let line_targets: Vec<solstone_core_speaker_resolve::owner_line_labels::LineAnswerTarget> =
+        lines
+            .iter()
+            .map(
+                |line| solstone_core_speaker_resolve::owner_line_labels::LineAnswerTarget {
+                    stream: line.stream.clone(),
+                    segment: line.segment.clone(),
+                    source: line.source.clone(),
+                    sentence_id: line.sentence_id,
+                },
             )
-        })
-        .collect::<BTreeMap<_, _>>();
+            .collect();
     let timestamp = clock
         .now()
         .with_timezone(&Utc)
         .format("%Y-%m-%dT%H:%M:%SZ")
         .to_string();
-    let tagged = speaker.tagged();
-    let saved = set_owner_line_labels_then(root, &owner_lines, &speaker, |set| {
-        let recorded = set
-            .iter()
-            .map(|set| {
-                let (stream, segment) = by_dir[&set.line.segment_dir].clone();
-                json!({
-                    "stream": stream,
-                    "segment": segment,
-                    "source": set.line.source,
-                    "sentence_id": set.line.sentence_id,
-                    "set_at": set.set_at,
-                    "prior": set.prior.as_ref().map(owner_line_entry_value),
-                })
-            })
-            .collect();
-        match solstone_core_facets::append_activity_lines_edit(
-            root,
-            facet,
-            day,
-            span_id,
-            recorded,
-            tagged.clone(),
-            &timestamp,
-            edit_check,
-        ) {
-            Ok(Some(record)) => Ok(record),
-            Ok(None) | Err(ActivityRecordStoreError::MissingDayFile { .. }) => {
-                Err(Box::new(not_found(span_id.to_owned())))
-            }
-            Err(error) => Err(Box::new(store_error(error))),
+    let applied = solstone_core_speaker_resolve::owner_line_labels::apply_owner_line_answers(
+        root,
+        day,
+        facet,
+        span_id,
+        &line_targets,
+        &speaker,
+        &timestamp,
+        &Map::new(),
+        &|| Ok(()),
+        edit_check,
+        Some(&super::request_correction_thinking),
+    );
+    match applied {
+        Ok(applied) => {
+            let ask = if applied.asked {
+                Map::from_iter([("asked".to_owned(), Value::Bool(true))])
+            } else if let Some(reason) = applied.ask_reason {
+                Map::from_iter([
+                    ("asked".to_owned(), Value::Bool(false)),
+                    ("ask_reason".to_owned(), Value::String(reason)),
+                ])
+            } else {
+                not_asked()
+            };
+            with_ask(applied.record, ask)
         }
-    });
-    let record = match saved {
-        Ok(Ok(record)) => record,
-        Ok(Err(response)) => return *response,
-        Err(error) => return store_refused(&error),
-    };
-    let this = AskedActivity {
-        facet: facet.to_owned(),
-        activity: span_id.to_owned(),
-    };
-    let ask = ask_over(root, day, this, &lines);
-    with_ask(record, ask)
+        Err(solstone_core_speaker_resolve::owner_line_labels::ApplyOwnerLineAnswersError::NotFound) => {
+            not_found(span_id.to_owned())
+        }
+        Err(solstone_core_speaker_resolve::owner_line_labels::ApplyOwnerLineAnswersError::CheckpointRefused(msg)) => {
+            internal(msg)
+        }
+        Err(solstone_core_speaker_resolve::owner_line_labels::ApplyOwnerLineAnswersError::LineLabel(err)) => {
+            store_refused(&err)
+        }
+        Err(solstone_core_speaker_resolve::owner_line_labels::ApplyOwnerLineAnswersError::ActivityStore(err)) => {
+            store_error(err)
+        }
+    }
 }
 
 /// One `owner:lines` edit's lines with each line's token and prior answer.

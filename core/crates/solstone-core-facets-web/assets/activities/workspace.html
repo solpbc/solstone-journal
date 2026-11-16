@@ -1145,6 +1145,7 @@
     'history-remove': 'remove',
     'history-remove-label': 'remove: {line}',
     'history-removed': 'removed',
+    'history-suggested-by': 'suggested by {agent}',
     'remove-stale': "that changed since it was shown. here's how it stands now.",
     'remove-failure': "couldn't remove that. try again in a moment.",
     'home-today-link': "all of today's activities →"
@@ -1967,7 +1968,12 @@
         }
         const removed = ed.removed ? `<span class="act-panel-history-date" data-copy-key="history-removed">${esc(STRINGS['history-removed'])}</span>` : '';
         const remove = ed.removable ? `<button type="button" class="act-history-remove" data-history-remove="${idx}" data-copy-key="history-remove" aria-label="${esc(fmt('history-remove-label', { line: label }))}">${esc(STRINGS['history-remove'])}</button>` : '';
-        editHtml += `<li class="act-panel-history-item"><span data-copy-key="${kindKey}">${esc(label)}</span>${dateStr ? `<span class="act-panel-history-date">${esc(dateStr)}</span>` : ''}${removed}${remove}</li>`;
+        // An accepted agent suggestion is the owner's own change; the line under
+        // it names the agent that suggested it, by its grant's name and key.
+        const by = ed.suggested_by && (ed.suggested_by.label || ed.suggested_by.source)
+          ? `<span class="act-panel-history-date" data-copy-key="history-suggested-by">${esc(fmt('history-suggested-by', { agent: [ed.suggested_by.label || '', String(ed.suggested_by.source || '').slice(0, 4)].filter(Boolean).join(' · ') }))}</span>`
+          : '';
+        editHtml += `<li class="act-panel-history-item"><span data-copy-key="${kindKey}">${esc(label)}</span>${by}${dateStr ? `<span class="act-panel-history-date">${esc(dateStr)}</span>` : ''}${removed}${remove}</li>`;
       }
       if (editHtml) {
         const editInstant = ed.timestamp ? new Date(ed.timestamp).getTime() : null;

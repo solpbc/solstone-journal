@@ -56,6 +56,7 @@
   "ENT_TRUST_HISTORY_EMPTY": "no identity history is available yet.",
   "ENT_TRUST_HISTORY_SUMMARY": "{kind} · {date} · {name}",
   "ENT_TRUST_HISTORY_CHANGE": "{before} → {after}",
+  "ENT_TRUST_HISTORY_SUGGESTED_BY": "suggested by {agent}",
   "ENT_TRUST_IDENTITY_SUMMARY": "{name} · {type} · aka: {akas}",
   "ENT_TRUST_IDENTITY_NONE": "no prior identity",
   "ENT_TRUST_RESTORE_ACTION": "restore this version",

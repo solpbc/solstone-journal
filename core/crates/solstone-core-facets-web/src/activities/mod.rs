@@ -345,33 +345,39 @@ async fn update(
     .await
 }
 
-/// Fields an owner correction of the activity itself names. Changing one of
-/// them runs the activity's talents again; a title alone only lets the day's
-/// briefing regenerate.
-const RETHOUGHT_FIELDS: [&str; 3] = ["details", "playback", "description"];
-
 /// Ask the journal to think the corrected day again, once the correction has
 /// been saved: every activity in `activities`, and the day's briefing. The
 /// correction stands either way; the reply says whether the ask was saved too,
 /// so a client never repeats the correction to get one.
+fn request_correction_thinking(
+    root: &Path,
+    day: &str,
+    activities: &[solstone_core_system::owner_ask::AskedActivity],
+) -> Result<(), solstone_core_system::owner_ask::AskError> {
+    #[cfg(test)]
+    {
+        solstone_core_system::owner_ask::record(
+            root,
+            day,
+            activities,
+            true,
+            Utc::now().timestamp_millis(),
+        )
+        .map(|_| ())
+    }
+    #[cfg(not(test))]
+    {
+        solstone_core_system::owner_ask::ask_corrected(root, day, activities)
+    }
+}
+
 fn think_again_over(
     root: &Path,
     day: &str,
     activities: &[solstone_core_system::owner_ask::AskedActivity],
 ) -> Map<String, Value> {
-    #[cfg(not(test))]
-    let asked = solstone_core_system::owner_ask::think_again(root, day, activities, true);
-    // Routine tests check the ask itself and never wake work discovery's socket.
-    #[cfg(test)]
-    let asked = solstone_core_system::owner_ask::record(
-        root,
-        day,
-        activities,
-        true,
-        Utc::now().timestamp_millis(),
-    );
-    match asked {
-        Ok(_) => Map::from_iter([("asked".to_owned(), Value::Bool(true))]),
+    match request_correction_thinking(root, day, activities) {
+        Ok(()) => Map::from_iter([("asked".to_owned(), Value::Bool(true))]),
         Err(error) => Map::from_iter([
             ("asked".to_owned(), Value::Bool(false)),
             (
@@ -395,7 +401,7 @@ fn edit_refused(refusal: solstone_core_facets::EditRefusal) -> Response {
     )
 }
 
-fn not_asked() -> Map<String, Value> {
+pub(crate) fn not_asked() -> Map<String, Value> {
     Map::from_iter([("asked".to_owned(), Value::Bool(false))])
 }
 
@@ -621,61 +627,79 @@ async fn mutate_update(
     let patch = &patch;
     // The owner's account and recording mark hold for every activity over the
     // same stretch, in any facet; each of those is thought about again too.
-    let saved = if actor == "owner:update" {
-        solstone_core_facets::stretch::correct_over_stretch(
-            root, &facet, &day, &span_id, patch, &note, &timestamp,
-        )
-        .map(|saved| (saved.record, saved.copies))
-    } else {
-        solstone_core_facets::update_activity_record(
-            root, &facet, &day, &span_id, patch, actor, &note, &timestamp,
-        )
-        .map(|record| (record, Vec::new()))
-    };
-    match saved {
-        Ok((Some(record), copies)) => {
-            let ask =
-                if actor == "owner:update" && !solstone_core_facets::is_body_record(&record) {
-                    let rethought = patch
-                        .keys()
-                        .any(|key| RETHOUGHT_FIELDS.contains(&key.as_str()));
-                    let activities =
-                        rethought
-                            .then(|| {
-                                std::iter::once((facet.clone(), span_id.clone()))
-                                    .chain(copies.into_iter().map(|copy| (copy.facet, copy.id)))
-                            })
-                            .into_iter()
-                            .flatten()
-                            .map(|(facet, activity)| {
-                                solstone_core_system::owner_ask::AskedActivity { facet, activity }
-                            })
-                            .collect::<Vec<_>>();
-                    think_again_over(root, &day, &activities)
+    if actor == "owner:update" {
+        let applied = solstone_core_system::owner_activity::apply_owner_activity_correction(
+            root,
+            &facet,
+            &day,
+            &span_id,
+            patch,
+            &note,
+            &timestamp,
+            log_source,
+            log_actor,
+            |_| Ok(()),
+            &Map::new(),
+            false,
+            Some(&request_correction_thinking),
+        );
+        match applied {
+            Ok(applied) => {
+                let Some(record) = applied.correction.record else {
+                    return not_found(span_id);
+                };
+                if applied.action_log_failed {
+                    return internal("action log failed".to_string());
+                }
+                if joins_hidden {
+                    queue_hidden_activity(root, &facet, &day, &span_id);
+                }
+                let ask = if applied.asked {
+                    Map::from_iter([("asked".to_owned(), Value::Bool(true))])
+                } else if let Some(reason) = applied.ask_reason {
+                    Map::from_iter([
+                        ("asked".to_owned(), Value::Bool(false)),
+                        ("ask_reason".to_owned(), Value::String(reason)),
+                    ])
                 } else {
                     not_asked()
                 };
-            if let Err(error) = solstone_core_facets::append_action_log_for_day(
-                root,
-                Some(&facet),
-                log_source,
-                log_actor,
-                "activity_update",
-                json!({"id":span_id,"fields":patch.keys().collect::<Vec<_>>() }),
-                &day,
-            ) {
-                return internal(error.to_string());
+                with_ask(record, ask)
             }
-            if joins_hidden {
-                queue_hidden_activity(root, &facet, &day, &span_id);
+            Err(solstone_core_facets::ActivityRecordStoreError::MissingDayFile { .. }) => {
+                not_found(span_id)
             }
-            with_ask(record, ask)
+            Err(error) => store_error(error),
         }
-        Ok((None, _))
-        | Err(solstone_core_facets::ActivityRecordStoreError::MissingDayFile { .. }) => {
-            not_found(span_id)
+    } else {
+        let saved = solstone_core_facets::update_activity_record(
+            root, &facet, &day, &span_id, patch, actor, &note, &timestamp,
+        );
+        match saved {
+            Ok(Some(record)) => {
+                let ask = not_asked();
+                if let Err(error) = solstone_core_facets::append_action_log_for_day(
+                    root,
+                    Some(&facet),
+                    log_source,
+                    log_actor,
+                    "activity_update",
+                    json!({"id":span_id,"fields":patch.keys().collect::<Vec<_>>() }),
+                    &day,
+                ) {
+                    return internal(error.to_string());
+                }
+                if joins_hidden {
+                    queue_hidden_activity(root, &facet, &day, &span_id);
+                }
+                with_ask(record, ask)
+            }
+            Ok(None)
+            | Err(solstone_core_facets::ActivityRecordStoreError::MissingDayFile { .. }) => {
+                not_found(span_id)
+            }
+            Err(error) => store_error(error),
         }
-        Err(error) => store_error(error),
     }
 }
 
@@ -988,7 +1012,7 @@ fn already_exists(detail: String) -> Response {
         StatusCode::CONFLICT,
     )
 }
-fn internal(detail: String) -> Response {
+pub(crate) fn internal(detail: String) -> Response {
     http::error(
         "internal_error",
         "that request didn't finish.",

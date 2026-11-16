@@ -11,6 +11,8 @@ use axum::{
 const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
 const CURATION_WORKSPACE: &[u8] = include_bytes!("../assets/curation/workspace.html");
 const CURATION_EVIDENCE_JS: &[u8] = include_bytes!("../assets/curation/curation_evidence.js");
+const CURATION_AGENT_SUGGESTIONS_JS: &[u8] =
+    include_bytes!("../assets/curation/agent_suggestions.js");
 const ACTIVITIES_WORKSPACE: &[u8] = include_bytes!("../assets/activities/workspace.html");
 
 pub fn shell() -> axum::response::Response {
@@ -27,6 +29,13 @@ pub fn curation_workspace() -> axum::response::Response {
 
 pub fn curation_evidence_js() -> axum::response::Response {
     asset(CURATION_EVIDENCE_JS, "text/javascript; charset=utf-8")
+}
+
+pub fn curation_agent_suggestions_js() -> axum::response::Response {
+    asset(
+        CURATION_AGENT_SUGGESTIONS_JS,
+        "text/javascript; charset=utf-8",
+    )
 }
 
 fn asset(bytes: &'static [u8], content_type: &'static str) -> axum::response::Response {

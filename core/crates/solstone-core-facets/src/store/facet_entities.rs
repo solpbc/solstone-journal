@@ -314,7 +314,7 @@ fn attach_or_reactivate(
                 journal_root,
                 &entity.entity_id,
                 &identity,
-                Some(&operation(EntityOperationKind::Update)),
+                Some(&operation(EntityOperationKind::Update, json!({}))),
             )?;
         }
         return Ok(FacetEntityAttachResult {
@@ -423,7 +423,7 @@ fn create_identity(
         journal_root,
         &entity_id,
         &identity,
-        Some(&operation(EntityOperationKind::Create)),
+        Some(&operation(EntityOperationKind::Create, json!({}))),
     )?;
     let stored = read_entity_identity(journal_root, &saved.entity_dir)?
         .expect("saved identity exists")
@@ -1210,6 +1210,8 @@ pub fn add_entity_aka(
     facet_dir: &str,
     entity_id: &str,
     aka: &str,
+    metadata: Value,
+    checkpoint: impl FnOnce(&Value) -> Result<(), FacetEntityWriteError>,
 ) -> Result<Vec<String>, FacetEntityWriteError> {
     let _facet_trust = hold_facet_trust_lock(journal_root)?;
     let _entity_trust = solstone_core_entity::hold_entity_trust_lock(journal_root)?;
@@ -1246,6 +1248,7 @@ pub fn add_entity_aka(
         })?
         .value()
         .clone();
+    checkpoint(&identity)?;
     let aliases = identity_aliases(&identity)
         .into_iter()
         .chain(std::iter::once(aka.to_owned()))
@@ -1260,11 +1263,12 @@ pub fn add_entity_aka(
         journal_root,
         entity_id,
         &identity,
-        Some(&operation(EntityOperationKind::Update)),
+        Some(&operation(EntityOperationKind::Update, metadata)),
     )?;
     Ok(aliases)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_facet_entity_identity(
     journal_root: &Path,
     facet_dir: &str,
@@ -1272,6 +1276,9 @@ pub fn update_facet_entity_identity(
     new_name: &str,
     entity_type: &str,
     aka_list: &[String],
+    expected_entity_id: Option<&str>,
+    metadata: Value,
+    checkpoint: impl FnOnce(&Value) -> Result<(), FacetEntityWriteError>,
 ) -> Result<Value, FacetEntityWriteError> {
     let _facet_trust = hold_facet_trust_lock(journal_root)?;
     let _entity_trust = solstone_core_entity::hold_entity_trust_lock(journal_root)?;
@@ -1283,6 +1290,14 @@ pub fn update_facet_entity_identity(
         .ok_or_else(|| FacetEntityWriteError::EntityNotFound {
             entity_id: old_name.to_owned(),
         })?;
+    if let Some(expected) = expected_entity_id
+        && target.entity_id != expected
+    {
+        return Err(FacetEntityWriteError::EntityNotFound {
+            entity_id: expected.to_owned(),
+        });
+    }
+    checkpoint(&target.identity)?;
     let new_query = normalize_resolution_query(new_name);
     for entity in &entities {
         if entity.entity_id != target.entity_id
@@ -1333,17 +1348,17 @@ pub fn update_facet_entity_identity(
         journal_root,
         &target.entity_id,
         &identity,
-        Some(&operation(EntityOperationKind::Update)),
+        Some(&operation(EntityOperationKind::Update, metadata)),
     )?;
     Ok(identity)
 }
 
-fn operation(kind: EntityOperationKind) -> EntityOperationContext {
+fn operation(kind: EntityOperationKind, metadata: Value) -> EntityOperationContext {
     EntityOperationContext {
         kind,
         caller: Value::Null,
         actor: Value::Null,
-        metadata: json!({}),
+        metadata,
     }
 }
 fn now_iso() -> String {

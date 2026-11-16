@@ -115,6 +115,17 @@ const FETCH: ToolRequirement = ToolRequirement {
     any_of: true,
     one_of: &[],
 };
+const SUGGEST_CORRECTION: ToolRequirement = ToolRequirement {
+    read: &[
+        AdmittedCategory::Facets,
+        AdmittedCategory::Entities,
+        AdmittedCategory::Transcripts,
+        AdmittedCategory::Body,
+    ],
+    whole_journal: false,
+    any_of: true,
+    one_of: &[],
+};
 
 /// The single registry used for advertisement, dispatch, validation, and auditing.
 pub(crate) const TOOLS: &[ToolEntry] = &[
@@ -226,7 +237,127 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         requires: FACETS_AND_TRANSCRIPTS_OR_BODY,
         audit_name: solstone_core_mcp_audit::ToolName::GetActivitySources,
     },
+    ToolEntry {
+        tool_name: crate::jsonrpc::ToolName::SuggestCorrection,
+        wire_name: "suggest_correction",
+        title: "suggest a correction",
+        description: "suggest a correction to the journal when the owner says something recorded is wrong, when you know firsthand from your own work, or when the owner asks you to look. the suggestion will be held for the owner's review.",
+        input_schema: suggest_correction_input_schema,
+        requires: SUGGEST_CORRECTION,
+        audit_name: solstone_core_mcp_audit::ToolName::SuggestCorrection,
+    },
 ];
+
+fn suggest_correction_input_schema(_context: &SchemaContext<'_>) -> Value {
+    let reference = json!({
+        "type": "string", "minLength": 1,
+        "maxLength": crate::tools::MAX_OPAQUE_REFERENCE_BYTES,
+        "description": "the reference returned by a journal read tool"
+    });
+    let target = json!({
+        "type": "object", "properties": {"reference": reference},
+        "required": ["reference"], "additionalProperties": false
+    });
+    let lines_target = json!({
+        "type": "object",
+        "properties": {
+            "reference": reference,
+            "lines": {
+                "type": "array", "minItems": 1, "maxItems": 20,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "time": {"type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$"},
+                        "starts_with": {"type": "string", "minLength": 1}
+                    },
+                    "required": ["time", "starts_with"], "additionalProperties": false
+                }
+            }
+        },
+        "required": ["reference", "lines"], "additionalProperties": false
+    });
+    let kinds = [
+        (
+            "recording",
+            target.clone(),
+            json!({"type": "object", "properties": {}, "additionalProperties": false}),
+        ),
+        (
+            "what_happened",
+            target.clone(),
+            json!({
+                "type": "object", "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 600}},
+                "required": ["text"], "additionalProperties": false
+            }),
+        ),
+        (
+            "who_said_it",
+            lines_target,
+            json!({
+                "type": "object",
+                "properties": {"speaker": {"type": "string", "minLength": 1,
+                    "description": "owner, someone_else, or the reference of a visible person"}},
+                "required": ["speaker"], "additionalProperties": false
+            }),
+        ),
+        (
+            "name",
+            target,
+            json!({
+                "type": "object", "properties": {
+                    "text": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "mode": {"type": "string", "enum": ["replace", "also_known_as"]}
+                },
+                "required": ["text", "mode"], "additionalProperties": false
+            }),
+        ),
+    ];
+    let rules = kinds
+        .into_iter()
+        .map(|(kind, target, value)| {
+            json!({
+                "if": {"properties": {"kind": {"const": kind}}},
+                "then": {"properties": {"target": target, "value": value}}
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "type": "object",
+        "properties": {
+            "kind": {
+                "type": "string",
+                "enum": ["recording", "what_happened", "who_said_it", "name"],
+                "description": "the kind of correction to suggest"
+            },
+            "target": {
+                "type": "object",
+                "description": "what in the journal this correction targets"
+            },
+            "value": {
+                "type": "object",
+                "description": "the suggested correction value"
+            },
+            "basis": {
+                "type": "string",
+                "enum": ["owner_said", "my_own_work", "journal_shows", "outside_source"],
+                "description": "how you know this correction is needed"
+            },
+            "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "a concise reason explaining why this correction is suggested (up to 200 characters)"
+            },
+            "operation_id": {
+                "type": "string",
+                "description": "a unique client operation id for idempotency"
+            }
+        },
+        "allOf": rules,
+        "required": ["kind", "target", "value", "basis", "reason", "operation_id"],
+        "additionalProperties": false
+    })
+}
 
 pub(crate) fn tool_by_wire_name(name: &str) -> Option<&'static ToolEntry> {
     TOOLS.iter().find(|entry| entry.wire_name == name)
@@ -341,6 +472,11 @@ pub(crate) fn advertised_tools_list_with_facet_ids(
     let tools = TOOLS
         .iter()
         .filter(|entry| {
+            if entry.tool_name == crate::jsonrpc::ToolName::SuggestCorrection
+                && !crate::suggestions::suggestions_ready()
+            {
+                return false;
+            }
             entry.tool_name.is_memory()
                 || snapshot.is_some_and(|snapshot| snapshot_allows(snapshot, entry))
         })
@@ -361,7 +497,9 @@ pub(crate) fn advertised_tools_list_with_facet_ids(
 /// this journal. `save_memory` adds a note and changes nothing already there,
 /// and a retry with the same `operation_id` and content stores it once.
 fn annotations(entry: &ToolEntry) -> Value {
-    if entry.tool_name == crate::jsonrpc::ToolName::SaveMemory {
+    if entry.tool_name == crate::jsonrpc::ToolName::SaveMemory
+        || entry.tool_name == crate::jsonrpc::ToolName::SuggestCorrection
+    {
         json!({
             "title": entry.title,
             "readOnlyHint": false,
@@ -945,6 +1083,7 @@ mod tests {
     fn advertised_effects_distinguish_append_from_reads() {
         // Dropped once in a rewrite without anyone noticing; clients use the
         // hint to run a tool without asking the owner each time.
+        crate::suggestions::set_test_suggestions_ready(true);
         let journal = journal_with_two_facets();
         let snapshot = ConnectionReadSnapshot {
             categories: all_categories(),
@@ -957,7 +1096,10 @@ mod tests {
         for tool in tools {
             assert_eq!(
                 tool["annotations"]["readOnlyHint"],
-                tool["name"] != "save_memory",
+                !matches!(
+                    tool["name"].as_str(),
+                    Some("save_memory" | "suggest_correction")
+                ),
                 "{} is not marked read-only",
                 tool["name"]
             );

@@ -4656,7 +4656,14 @@ async fn aka_route(
     let aka = aka.to_owned();
     let exclude_name = exclude_name.to_owned();
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_facets::add_entity_aka(&root, &facet, &entity_id, &aka)
+        solstone_core_facets::add_entity_aka(
+            &root,
+            &facet,
+            &entity_id,
+            &aka,
+            serde_json::json!({"owner_answer": true}),
+            |_| Ok(()),
+        )
     })
     .await
     {
@@ -4753,6 +4760,9 @@ async fn update_entity_route(
             &new_name,
             &entity_type,
             &aka_list,
+            None,
+            serde_json::json!({"owner_answer": true}),
+            |_| Ok(()),
         )
     })
     .await
@@ -5040,6 +5050,14 @@ async fn history_route(
                         }
                     ),
                 );
+            }
+            if let Some(suggested_by) = object
+                .get("operation")
+                .and_then(serde_json::Value::as_object)
+                .and_then(|op| op.get("suggested_by"))
+                .filter(|v| v.is_object())
+            {
+                object.insert("suggested_by".to_owned(), suggested_by.clone());
             }
         }
         Ok(Some((id, items)))

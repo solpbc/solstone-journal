@@ -377,6 +377,29 @@ pub fn think_again(
     Ok(ask)
 }
 
+/// The owner's ask to think a corrected day again.
+///
+/// In production, records the ask and wakes work discovery. In tests, records
+/// the ask without waking the socket.
+pub fn ask_corrected(root: &Path, day: &str, activities: &[AskedActivity]) -> Result<(), AskError> {
+    #[cfg(not(test))]
+    {
+        think_again(root, day, activities, true)?;
+        Ok(())
+    }
+    #[cfg(test)]
+    {
+        record(
+            root,
+            day,
+            activities,
+            true,
+            chrono::Utc::now().timestamp_millis(),
+        )?;
+        Ok(())
+    }
+}
+
 /// Wake work discovery for `day`. Best effort: the next pass finds the ask.
 pub fn wake(journal: &Path, day: &str) {
     let envelope = solstone_core_callosum::CallosumEnvelope::supervisor_drain(day);
@@ -573,6 +596,9 @@ pub fn update(
     })
     .map_err(|error| error.to_string())
 }
+
+/// The shared correction authority's optional ask implementation.
+pub type CorrectionAsk<'a> = dyn Fn(&Path, &str, &[AskedActivity]) -> Result<(), AskError> + 'a;
 
 #[cfg(test)]
 mod tests {

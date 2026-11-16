@@ -254,7 +254,19 @@ pub fn set_owner_line_labels_then<T, E>(
     speaker: &LineSpeaker,
     then: impl FnOnce(&[SetLine]) -> Result<T, E>,
 ) -> Result<Result<T, E>, OwnerLineLabelError> {
-    let (results, written, _trust) = set_locked(journal, lines, speaker, &|| Ok(()))?;
+    set_owner_line_labels_checked_then(journal, lines, speaker, &|| Ok(()), then)
+}
+
+/// Check the caller's precondition under the answer authority's locks before
+/// writing, then retain those locks through the companion history write.
+pub fn set_owner_line_labels_checked_then<T, E>(
+    journal: &Path,
+    lines: &[OwnerLine],
+    speaker: &LineSpeaker,
+    checkpoint: Checkpoint<'_>,
+    then: impl FnOnce(&[SetLine]) -> Result<T, E>,
+) -> Result<Result<T, E>, OwnerLineLabelError> {
+    let (results, written, _trust) = set_locked(journal, lines, speaker, checkpoint)?;
     finish(written, || then(&results))
 }
 
@@ -670,7 +682,7 @@ fn surviving_id(journal: &Path, id: &str) -> Result<String, OwnerLineLabelError>
 }
 
 /// The source both the transcript renderer and the transcript page label.
-fn agreed_source(segment_dir: &Path) -> Result<String, OwnerLineLabelError> {
+pub fn agreed_source(segment_dir: &Path) -> Result<String, OwnerLineLabelError> {
     let labelled = solstone_core_transcripts::labelled_audio_source(segment_dir);
     let (transcript_page, _) = solstone_core_transcripts::speaker_label_source(segment_dir);
     match (labelled, transcript_page) {
@@ -1090,6 +1102,196 @@ fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error.to_string()),
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LineAnswerTarget {
+    pub stream: String,
+    pub segment: String,
+    pub source: String,
+    pub sentence_id: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct LineAnswerSetOutcome {
+    pub stream: String,
+    pub segment: String,
+    pub sentence_id: i64,
+    pub set_at: String,
+    pub prior: Option<Value>,
+}
+
+#[derive(Debug)]
+pub struct AppliedOwnerLineAnswers {
+    pub record: solstone_core_facets::ActivityRecord,
+    pub lines: Vec<LineAnswerSetOutcome>,
+    pub asked: bool,
+    pub ask_reason: Option<String>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ApplyOwnerLineAnswersError {
+    #[error("owner line label error: {0}")]
+    LineLabel(#[from] OwnerLineLabelError),
+    #[error("activity store error: {0}")]
+    ActivityStore(#[from] solstone_core_facets::ActivityRecordStoreError),
+    #[error("checkpoint refused: {0}")]
+    CheckpointRefused(String),
+    #[error("activity not found")]
+    NotFound,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn apply_owner_line_answers(
+    root: &Path,
+    day: &str,
+    facet: &str,
+    activity_id: &str,
+    lines: &[LineAnswerTarget],
+    speaker: &LineSpeaker,
+    timestamp: &str,
+    extra: &Map<String, Value>,
+    line_checkpoint: Checkpoint<'_>,
+    checkpoint: impl FnOnce() -> Result<(), String>,
+    ask_hook: Option<&solstone_core_system::owner_ask::CorrectionAsk<'_>>,
+) -> Result<AppliedOwnerLineAnswers, ApplyOwnerLineAnswersError> {
+    let owner_lines: Vec<OwnerLine> = lines
+        .iter()
+        .map(|target| {
+            let segment = solstone_core_segment::SegmentDir::resolve(
+                root,
+                day,
+                &target.segment,
+                &target.stream,
+            )
+            .map_err(|error| OwnerLineLabelError::SegmentUnavailable(error.to_string()))?;
+            Ok(OwnerLine {
+                segment_dir: segment.path().to_path_buf(),
+                source: target.source.clone(),
+                sentence_id: target.sentence_id,
+            })
+        })
+        .collect::<Result<_, OwnerLineLabelError>>()?;
+
+    let by_dir: std::collections::BTreeMap<std::path::PathBuf, (String, String)> = lines
+        .iter()
+        .zip(&owner_lines)
+        .map(|(target, line)| {
+            (
+                line.segment_dir.clone(),
+                (target.stream.clone(), target.segment.clone()),
+            )
+        })
+        .collect();
+
+    let tagged = speaker.tagged();
+    let saved = set_owner_line_labels_checked_then(
+        root,
+        &owner_lines,
+        speaker,
+        line_checkpoint,
+        |set| {
+            let recorded: Vec<Value> = set
+            .iter()
+            .map(|s| {
+                let (stream, segment) = by_dir[&s.line.segment_dir].clone();
+                serde_json::json!({
+                    "stream": stream,
+                    "segment": segment,
+                    "source": s.line.source,
+                    "sentence_id": s.line.sentence_id,
+                    "set_at": s.set_at,
+                    "prior": s.prior.as_ref().map(solstone_core_speaker_id::owner_line_labels::owner_line_entry_value),
+                })
+            })
+            .collect();
+
+            let outcome_lines: Vec<LineAnswerSetOutcome> = set
+                .iter()
+                .map(|s| {
+                    let (stream, segment) = by_dir[&s.line.segment_dir].clone();
+                    LineAnswerSetOutcome {
+                        stream,
+                        segment,
+                        sentence_id: s.line.sentence_id,
+                        set_at: s.set_at.clone(),
+                        prior: s.prior.as_ref().map(
+                            solstone_core_speaker_id::owner_line_labels::owner_line_entry_value,
+                        ),
+                    }
+                })
+                .collect();
+
+            match solstone_core_facets::append_activity_lines_edit(
+                root,
+                facet,
+                day,
+                activity_id,
+                recorded,
+                tagged.clone(),
+                timestamp,
+                extra,
+                checkpoint,
+            ) {
+                Ok(Some(record)) => Ok((record, outcome_lines)),
+                Ok(None)
+                | Err(solstone_core_facets::ActivityRecordStoreError::MissingDayFile { .. }) => {
+                    Err(ApplyOwnerLineAnswersError::NotFound)
+                }
+                Err(solstone_core_facets::ActivityRecordStoreError::PublicationRefused {
+                    detail,
+                }) => Err(ApplyOwnerLineAnswersError::CheckpointRefused(detail)),
+                Err(err) => Err(ApplyOwnerLineAnswersError::ActivityStore(err)),
+            }
+        },
+    );
+
+    let (record, outcome_lines) = match saved {
+        Ok(Ok(pair)) => pair,
+        Ok(Err(err)) => return Err(err),
+        Err(err) => return Err(ApplyOwnerLineAnswersError::LineLabel(err)),
+    };
+
+    let mut asked = false;
+    let mut ask_reason = None;
+
+    if !solstone_core_facets::is_body_record(&record) {
+        let this = solstone_core_system::owner_ask::AskedActivity {
+            facet: facet.to_owned(),
+            activity: activity_id.to_owned(),
+        };
+        let pairs = lines
+            .iter()
+            .map(|line| (line.stream.clone(), line.segment.clone()))
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut activities =
+            solstone_core_system::owner_ask::activities_over(root, day, &pairs).unwrap_or_default();
+        if !activities.contains(&this) {
+            activities.push(this);
+        }
+
+        let ask_res = match ask_hook {
+            Some(hook) => hook(root, day, &activities),
+            None => solstone_core_system::owner_ask::ask_corrected(root, day, &activities),
+        };
+
+        match ask_res {
+            Ok(()) => {
+                asked = true;
+            }
+            Err(err) => {
+                asked = false;
+                ask_reason = Some(err.reason_code().to_owned());
+            }
+        }
+    }
+
+    Ok(AppliedOwnerLineAnswers {
+        record,
+        lines: outcome_lines,
+        asked,
+        ask_reason,
+    })
 }
 
 #[cfg(test)]

@@ -69,6 +69,7 @@ pub(crate) enum ValidatedTool {
     GetWeek(ValidatedGetWeek),
     ListActivities(ValidatedListActivities),
     GetActivitySources(ValidatedGetActivitySources),
+    SuggestCorrection(crate::suggestions::submit::ValidatedSuggestCorrection),
 }
 
 /// A public-safe reason to reject or fail one read-only tool call.
@@ -86,6 +87,7 @@ pub(crate) enum ToolError {
     SourceArguments,
     ActivityDayArguments,
     TranscriptTimeArguments,
+    SuggestionOperationConflict,
 }
 
 impl ToolError {
@@ -103,6 +105,7 @@ impl ToolError {
             Self::SourceArguments | Self::ActivityDayArguments | Self::TranscriptTimeArguments => {
                 "invalid_tool_input"
             }
+            Self::SuggestionOperationConflict => "suggestion_operation_conflict",
         }
     }
 
@@ -131,6 +134,9 @@ impl ToolError {
             }
             Self::TranscriptTimeArguments => {
                 "time_from and time_to need a day, and time_to can't be before time_from"
+            }
+            Self::SuggestionOperationConflict => {
+                "an operation with this id was already processed with different arguments"
             }
         }
     }

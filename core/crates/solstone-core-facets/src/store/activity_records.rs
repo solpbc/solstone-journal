@@ -1016,6 +1016,7 @@ pub fn update_activity_record_with(
         actor,
         note,
         timestamp,
+        |_| Ok(()),
         || Ok(()),
         None,
     )
@@ -1063,6 +1064,7 @@ pub fn update_activity_record_checked(
         actor,
         note,
         timestamp,
+        |_| Ok(()),
         checkpoint,
         None,
     )
@@ -1080,6 +1082,7 @@ pub fn update_activity_record_noting(
     actor: &str,
     note: &str,
     timestamp: &str,
+    checkpoint: impl FnOnce(&ActivityRecord) -> Result<(), String>,
     extra: &Map<String, Value>,
 ) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
     update_activity_record_with_check(
@@ -1091,6 +1094,7 @@ pub fn update_activity_record_noting(
         actor,
         note,
         timestamp,
+        checkpoint,
         || Ok(()),
         Some(extra),
     )
@@ -1106,23 +1110,32 @@ fn update_activity_record_with_check(
     actor: &str,
     note: &str,
     timestamp: &str,
-    checkpoint: impl Fn() -> Result<(), String>,
+    checkpoint: impl FnOnce(&ActivityRecord) -> Result<(), String>,
+    renewal: impl Fn() -> Result<(), String>,
     extra: Option<&Map<String, Value>>,
 ) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
     let current_id = admit_activity_destination(root, facet)?;
     let mut derive = Some(derive);
+    let mut checkpoint = Some(checkpoint);
     locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
-        checkpoint().map_err(|detail| ActivityRecordStoreError::PublicationRefused { detail })?;
+        renewal().map_err(|detail| ActivityRecordStoreError::PublicationRefused { detail })?;
         refuse_while_moving(root, facet, day, &rows, record_id)?;
         let rows = adopt_moved_rows(root, &current_id, rows);
-        let mut result = None;
         for row in &rows {
-            if id(row) == record_id
-                && let Some(stored_id) = row.get("destination_id").and_then(Value::as_str)
-            {
-                super::declaration::require_observed_facet_write_identity(root, facet, stored_id)?;
+            if id(row) == record_id {
+                if let Some(cp) = checkpoint.take() {
+                    cp(row).map_err(|detail| ActivityRecordStoreError::PublicationRefused {
+                        detail,
+                    })?;
+                }
+                if let Some(stored_id) = row.get("destination_id").and_then(Value::as_str) {
+                    super::declaration::require_observed_facet_write_identity(
+                        root, facet, stored_id,
+                    )?;
+                }
             }
         }
+        let mut result = None;
         let updated = rows
             .into_iter()
             .map(|row| {
@@ -1174,7 +1187,7 @@ fn update_activity_record_with_check(
                 edited
             })
             .collect();
-        checkpoint().map_err(|detail| ActivityRecordStoreError::PublicationRefused { detail })?;
+        renewal().map_err(|detail| ActivityRecordStoreError::PublicationRefused { detail })?;
         Ok((updated, result))
     })
 }
@@ -1558,7 +1571,39 @@ pub fn remove_activity_edit(
     edit_actor: &str,
     removed_at: &str,
 ) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
+    remove_activity_edit_checked(
+        root,
+        facet,
+        day,
+        record_id,
+        position,
+        edit_timestamp,
+        edit_actor,
+        removed_at,
+        |_| Ok(()),
+    )
+}
+
+/// Remove an owner edit after checking the current record under its day lock.
+#[allow(clippy::too_many_arguments)]
+pub fn remove_activity_edit_checked(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    record_id: &str,
+    position: usize,
+    edit_timestamp: &str,
+    edit_actor: &str,
+    removed_at: &str,
+    checkpoint: impl FnOnce(&ActivityRecord) -> Result<(), String>,
+) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
+    let mut checkpoint = Some(checkpoint);
     modify_record(root, facet, day, record_id, |mut record| {
+        if let Some(checkpoint) = checkpoint.take() {
+            checkpoint(&record)
+                .map_err(|detail| ActivityRecordStoreError::PublicationRefused { detail })?;
+        }
+
         let mut edits = record
             .get("edits")
             .and_then(Value::as_array)
@@ -1634,6 +1679,7 @@ pub fn append_activity_lines_edit(
     lines: Vec<Value>,
     speaker: Value,
     timestamp: &str,
+    extra: &Map<String, Value>,
     checkpoint: impl FnOnce() -> Result<(), String>,
 ) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
     let mut checkpoint = Some(checkpoint);
@@ -1648,6 +1694,9 @@ pub fn append_activity_lines_edit(
             .and_then(Value::as_array_mut)
             .and_then(|edits| edits.last_mut())
         {
+            for (key, value) in extra {
+                edit.insert(key.clone(), value.clone());
+            }
             edit.insert(EDIT_LINES.to_owned(), Value::Array(lines));
             edit.insert(EDIT_SPEAKER.to_owned(), speaker);
         }

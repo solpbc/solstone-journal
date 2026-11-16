@@ -155,6 +155,6 @@ fn read_history_event(path: &Path) -> Result<HistoryEvent, EntityStoreError> {
     HistoryEvent::from_value(value, path)
 }
 
-fn is_recorded_merge(event: &HistoryEvent) -> bool {
+pub(super) fn is_recorded_merge(event: &HistoryEvent) -> bool {
     matches!(event.kind(), Some("merge" | "merge_undo"))
 }

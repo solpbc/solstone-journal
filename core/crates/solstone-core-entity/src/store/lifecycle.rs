@@ -45,6 +45,7 @@ pub enum EntityLifecycleError {
         version_id: String,
     },
     RestoreTargetsRecordedMerge,
+    RestoreNameChanged,
     RestoreCrossesRecordedMerge,
     RestoreSnapshotNotObject {
         entity_id: String,
@@ -86,6 +87,9 @@ impl fmt::Display for EntityLifecycleError {
                 formatter,
                 "history version not found for {entity_id}: {version_id}"
             ),
+            Self::RestoreNameChanged => {
+                formatter.write_str("a later name or alias change blocks undo")
+            }
             Self::RestoreTargetsRecordedMerge => formatter
                 .write_str("that version is a merge, and a merge can't be restored or undone"),
             Self::RestoreCrossesRecordedMerge => formatter
@@ -128,6 +132,7 @@ impl Error for EntityLifecycleError {
             | Self::EntityNotBlocked { .. }
             | Self::RestoreWhileHidden { .. }
             | Self::HistoryVersionNotFound { .. }
+            | Self::RestoreNameChanged
             | Self::RestoreTargetsRecordedMerge
             | Self::RestoreCrossesRecordedMerge
             | Self::RestoreSnapshotNotObject { .. }
@@ -332,7 +337,7 @@ pub fn delete_entity_directory(
     Ok(())
 }
 
-/// Restore one visible identity snapshot after merge and principal guards pass.
+/// Restore only the name and aliases after checking the expected names under the entity trust lock.
 pub fn restore_journal_entity_version(
     journal_root: &Path,
     entity_id: &str,
@@ -393,6 +398,97 @@ pub fn restore_journal_entity_version(
         metadata: json!({"restored_version_id": version_id}),
     };
     let saved = save_entity_identity(journal_root, entity_id, &snapshot, Some(&operation))?;
+    Ok(saved
+        .event
+        .expect("an explicit restore operation always produces a history event"))
+}
+
+/// Restore only the name and aliases after checking the expected names under the entity trust lock.
+pub fn restore_identity_snapshot(
+    journal_root: &Path,
+    entity_id: &str,
+    snapshot: &Value,
+    expected_after: &Value,
+    accepted_version: &str,
+    metadata: Value,
+) -> Result<Value, EntityLifecycleError> {
+    let _trust = hold_entity_trust_lock(journal_root)?;
+    let entity_dir = resolve_entity_dir(journal_root, entity_id)?;
+    let current = read_entity_identity(journal_root, &entity_dir)?
+        .expect("resolved identity-map directory contains an identity");
+
+    let events = read_visible_history(journal_root, &entity_dir)?;
+    // A completed restore is replayable even if publishing the queue receipt failed.
+    let suggestion = metadata.get("suggestion_id");
+    if events.iter().any(|event| {
+        event.value().get("operation").is_some_and(|op| {
+            op.get("suggestion_id") == suggestion
+                && op.get("suggestion_undo") == Some(&Value::Bool(true))
+        })
+    }) {
+        return Ok(events
+            .iter()
+            .find(|event| {
+                event.value().get("operation").is_some_and(|op| {
+                    op.get("suggestion_id") == suggestion
+                        && op.get("suggestion_undo") == Some(&Value::Bool(true))
+                })
+            })
+            .expect("found undo")
+            .value()
+            .clone());
+    }
+    if entity_is_hidden(current.value()) {
+        return Err(EntityLifecycleError::RestoreWhileHidden {
+            entity_id: entity_id.to_owned(),
+        });
+    }
+
+    if !name_restore_matches(current.value(), &events, expected_after, accepted_version) {
+        return Err(EntityLifecycleError::RestoreNameChanged);
+    }
+
+    let Some(snapshot_obj) = snapshot.as_object() else {
+        return Err(EntityLifecycleError::RestoreSnapshotNotObject {
+            entity_id: entity_id.to_owned(),
+            version_id: String::new(),
+        });
+    };
+    let snapshot_id = snapshot_obj
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    if snapshot_id.as_deref() != Some(entity_id) {
+        return Err(EntityLifecycleError::RestoreSnapshotIdentityMismatch {
+            entity_id: entity_id.to_owned(),
+            version_id: String::new(),
+            snapshot_id,
+        });
+    }
+    if identity_is_principal(snapshot) {
+        guard_restore_principal(journal_root, entity_id)?;
+    }
+
+    let mut restored = current.value().clone();
+    let object = restored.as_object_mut().expect("identity object");
+    for field in ["name", "aka"] {
+        match snapshot.get(field) {
+            Some(value) => {
+                object.insert(field.to_owned(), value.clone());
+            }
+            None => {
+                object.remove(field);
+            }
+        }
+    }
+
+    let operation = EntityOperationContext {
+        kind: EntityOperationKind::Restore,
+        caller: Value::Null,
+        actor: Value::Null,
+        metadata,
+    };
+    let saved = save_entity_identity(journal_root, entity_id, &restored, Some(&operation))?;
     Ok(saved
         .event
         .expect("an explicit restore operation always produces a history event"))
@@ -479,4 +575,56 @@ pub(crate) fn value_is_truthy(value: &Value) -> bool {
         Value::Array(value) => !value.is_empty(),
         Value::Object(value) => !value.is_empty(),
     }
+}
+
+fn name_restore_matches(
+    current: &Value,
+    events: &[super::history::HistoryEvent],
+    expected: &Value,
+    version: &str,
+) -> bool {
+    let same_names = |left: &Value, right: &Value| {
+        left.get("name") == right.get("name") && left.get("aka") == right.get("aka")
+    };
+    let Some(accepted) = events
+        .iter()
+        .position(|event| event.value().get("version_id").and_then(Value::as_str) == Some(version))
+    else {
+        return false;
+    };
+    !entity_is_hidden(current)
+        && same_names(current, expected)
+        && !events[accepted + 1..].iter().any(|event| {
+            let value = event.value();
+            super::history::is_recorded_merge(event)
+                || value
+                    .get("identity_before")
+                    .zip(value.get("identity_after"))
+                    .is_some_and(|(before, after)| !same_names(before, after))
+                || value
+                    .get("operation")
+                    .and_then(|operation| operation.get("owner_answer"))
+                    == Some(&Value::Bool(true))
+        })
+}
+
+/// Whether the exact name inverse is still available, using the same history guard as restore.
+pub fn identity_name_restore_allowed(
+    root: &Path,
+    entity: &str,
+    expected: &Value,
+    version: &str,
+) -> Result<bool, EntityLifecycleError> {
+    let _trust = hold_entity_trust_lock(root)?;
+    let directory = resolve_entity_dir(root, entity)?;
+    let Some(current) = read_entity_identity(root, &directory)? else {
+        return Ok(false);
+    };
+    let events = read_visible_history(root, &directory)?;
+    Ok(name_restore_matches(
+        current.value(),
+        &events,
+        expected,
+        version,
+    ))
 }

@@ -213,6 +213,11 @@ pub(crate) fn dispatch_authenticated_tool_call(
     arguments: Option<&Value>,
     now: DateTime<Utc>,
 ) -> Result<ToolOutput, DispatchError> {
+    if tool_name == crate::jsonrpc::ToolName::SuggestCorrection
+        && !crate::suggestions::suggestions_ready()
+    {
+        return Err(DispatchError::InvalidInput);
+    }
     let entry = find_tool(tool_name);
     // ⚠ Validation precedes admission, unchanged: malformed protocol traffic
     // stays outside the per-agent tool trail, and only a syntactically valid
@@ -535,6 +540,9 @@ fn owner_error_reason(error: DispatchError) -> &'static str {
             | ToolError::TranscriptTimeArguments,
         )
         | DispatchError::InvalidInput => "the request's arguments were not valid for this tool",
+        DispatchError::Tool(ToolError::SuggestionOperationConflict) => {
+            "an operation with this id was already processed with different arguments"
+        }
         DispatchError::PermissionDenied(_) => {
             "the request was outside this connection's permission"
         }
@@ -637,6 +645,9 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
                 arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
             }
         }
+        ValidatedTool::SuggestCorrection(request) => {
+            return crate::suggestions::submit::recorded_arguments(request);
+        }
     }
     arguments
 }
@@ -654,7 +665,7 @@ fn insert_present(arguments: &mut Map<String, Value>, key: &str, value: Option<&
 /// an owner nothing and stop meaning anything at the next restart. ✅ The
 /// fingerprint distinguishes two calls, and the outcome record names the target
 /// the reference resolved to, in the owner's own coordinates.
-fn reference_fingerprint(token: &str) -> String {
+pub(crate) fn reference_fingerprint(token: &str) -> String {
     digest(token).chars().take(16).collect()
 }
 
@@ -707,6 +718,9 @@ fn validate(
         crate::jsonrpc::ToolName::GetActivitySources => {
             crate::tools::activities::validate_get_sources(arguments)
                 .map(ValidatedTool::GetActivitySources)
+        }
+        crate::jsonrpc::ToolName::SuggestCorrection => {
+            crate::suggestions::submit::validate(arguments).map(ValidatedTool::SuggestCorrection)
         }
         crate::jsonrpc::ToolName::SaveMemory | crate::jsonrpc::ToolName::RecallMemory => {
             return Err(DispatchError::InvalidInput);
@@ -817,6 +831,13 @@ fn execute_validated(
         }
         ValidatedTool::GetEntity(request) => get_entity(journal_root, principal, snapshot, request),
         ValidatedTool::GetWeek(request) => get_week(journal_root, principal, snapshot, request),
+        ValidatedTool::SuggestCorrection(request) => crate::suggestions::submit::execute(
+            journal_root,
+            principal,
+            snapshot,
+            request,
+            Utc::now(),
+        ),
     }
 }
 

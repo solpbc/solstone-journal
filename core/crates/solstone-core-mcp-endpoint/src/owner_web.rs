@@ -77,6 +77,26 @@ pub fn owner_routes(journal_root: PathBuf) -> Router {
         .route(
             "/app/agents/api/memories/{source}",
             get(crate::owner_memories::page),
+        )
+        .route(
+            "/app/agents/api/suggestions",
+            get(crate::suggestions::owner::list_suggestions),
+        )
+        .route(
+            "/app/agents/api/suggestions/{id}/accept",
+            post(crate::suggestions::owner::accept_suggestion),
+        )
+        .route(
+            "/app/agents/api/suggestions/{id}/dismiss",
+            post(crate::suggestions::owner::dismiss_suggestion),
+        )
+        .route(
+            "/app/agents/api/suggestions/{id}/undo",
+            post(crate::suggestions::owner::undo_suggestion),
+        )
+        .route(
+            "/app/agents/api/connections/{kind}/{id}/suggestions",
+            put(crate::suggestions::owner::set_connection_suggestions),
         );
     with_byo_routes(router)
         .route_layer(middleware::from_fn(admit_owner))
@@ -185,12 +205,26 @@ pub(crate) fn state_value_with_iface(
     let (activity_by_connection, activity_complete) = activity_this_week(root)?;
     let side_store_fault = crate::agent_state::read_store(root).is_err();
     let now = crate::oauth::current_time();
+    let settings =
+        crate::suggestions::store::read_settings(root).map_err(|error| error.to_string())?;
+    let records =
+        crate::suggestions::store::list_records(root).map_err(|error| error.to_string())?;
+    let mut pending_by_authority: BTreeMap<String, usize> = BTreeMap::new();
+    for rec in &records {
+        if crate::suggestions::owner::effective_status(root, rec) == "pending" {
+            *pending_by_authority
+                .entry(rec.authority_id.clone())
+                .or_insert(0) += 1;
+        }
+    }
     let mut connections = Vec::new();
     for token in tokens {
         let key = format!("bearer:{}", token.id);
         let activity = activity_by_connection.get(&key);
         let (memory_source, paused, paused_attempts) =
             connection_projection_fields(root, &key, None, side_store_fault, now);
+        let suggestions_enabled = settings.enabled.get(&key).copied().unwrap_or(true);
+        let pending_suggestions = pending_by_authority.get(&key).copied().unwrap_or(0);
         connections.push(json!({
             "kind": "bearer", "id": token.id, "key": key, "name": token.label,
             "memory_source": memory_source,
@@ -202,6 +236,8 @@ pub(crate) fn state_value_with_iface(
             "requests_this_week": activity.map_or(0, |(count, _)| *count),
             "last_request_at": activity.and_then(|(_, last)| *last),
             "activity_complete": activity_complete,
+            "suggestions_enabled": suggestions_enabled,
+            "pending_suggestions": pending_suggestions,
         }));
     }
     for grant in grants {
@@ -211,6 +247,8 @@ pub(crate) fn state_value_with_iface(
         let refresh_expires_at = oauth.grant_refresh_expires_at(&grant.id).ok().flatten();
         let (memory_source, paused, paused_attempts) =
             connection_projection_fields(root, &key, refresh_expires_at, side_store_fault, now);
+        let suggestions_enabled = settings.enabled.get(&key).copied().unwrap_or(true);
+        let pending_suggestions = pending_by_authority.get(&key).copied().unwrap_or(0);
         connections.push(json!({
             "kind": "oauth", "id": grant.id, "key": key,
             "memory_source": memory_source,
@@ -224,6 +262,8 @@ pub(crate) fn state_value_with_iface(
             "requests_this_week": activity.map_or(0, |(count, _)| *count),
             "last_request_at": activity.and_then(|(_, last)| *last),
             "activity_complete": activity_complete,
+            "suggestions_enabled": suggestions_enabled,
+            "pending_suggestions": pending_suggestions,
         }));
     }
     let facet_names =
@@ -2745,7 +2785,18 @@ async fn rename_connection(
         );
     }
     match TokenStore::open(&journal).rename_by_id(&id, &body.name) {
-        Ok(true) => Json(json!({"name": body.name})).into_response(),
+        Ok(true) => {
+            let authority_id = format!("{kind}:{id}");
+            if let Ok(source) = crate::agent_state::memory_source(&journal, &authority_id) {
+                let hex = source.component();
+                if !hex.is_empty() {
+                    let sanitized = crate::suggestions::submit::sanitize_label(&body.name);
+                    let _ =
+                        crate::suggestions::store::update_stored_label(&journal, hex, &sanitized);
+                }
+            }
+            Json(json!({"name": body.name})).into_response()
+        }
         Ok(false) => refusal(
             "connection_not_found",
             "connection was not found",

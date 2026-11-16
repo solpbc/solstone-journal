@@ -51,8 +51,9 @@ pub use activity_records::{
     load_activity_records, load_activity_records_readable, parse_activity_records_strict,
     read_activity_records_readable, read_activity_records_strict, reconcile_faceprints,
     reconcile_faceprints_for_activity, reconcile_faceprints_for_segments, refresh_body_account,
-    remake_activity_day, remove_activity_edit, set_activity_hidden, set_activity_hidden_checked,
-    update_activity_record, update_activity_record_checked, update_activity_record_with,
+    remake_activity_day, remove_activity_edit, remove_activity_edit_checked, set_activity_hidden,
+    set_activity_hidden_checked, update_activity_record, update_activity_record_checked,
+    update_activity_record_with,
 };
 pub use awareness::{
     AwarenessStoreError, append_log, load_current, load_imports, read_log, record_import,

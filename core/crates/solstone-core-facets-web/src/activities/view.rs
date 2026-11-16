@@ -692,6 +692,9 @@ fn project_item(
                         edit_out.insert("lines".to_owned(), Value::from(lines));
                         edit_out.insert("speaker".to_owned(), speaker);
                     }
+                    if let Some(suggested_by) = obj.get("suggested_by").filter(|v| v.is_object()) {
+                        edit_out.insert("suggested_by".to_owned(), suggested_by.clone());
+                    }
                     Value::Object(edit_out)
                 })
                 .collect::<Vec<_>>()
