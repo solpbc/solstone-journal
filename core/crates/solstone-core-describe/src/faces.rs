@@ -688,6 +688,7 @@ fn run_segment_with_ocr(
             dhash_threshold: 0,
             scene_cut_threshold: 0,
             min_stride_seconds: 0.,
+            start_reference: None,
         };
         let mut pull = crate::decode::FramePull::open(video, config, true)
             .map_err(|_| "could not decode recording")?;
@@ -1008,6 +1009,7 @@ pub(crate) mod tests {
             dhash_threshold: 0,
             scene_cut_threshold: 0,
             min_stride_seconds: 0.,
+            start_reference: None,
         };
         let mut pull = crate::decode::FramePull::open(&video, config, true).unwrap();
         pull.select_native_frames([1].into_iter().collect());

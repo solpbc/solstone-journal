@@ -215,9 +215,11 @@ pub fn frames(
     } else {
         None
     };
-    walk_video_metadata(video, config, gate, &|| false).unwrap_or_else(|_| crate::DescribeResult {
-        decode_failed: true,
-        ..Default::default()
+    walk_video_metadata(video, config, gate, None, &|| false).unwrap_or_else(|_| {
+        crate::DescribeResult {
+            decode_failed: true,
+            ..Default::default()
+        }
     })
 }
 
@@ -352,7 +354,7 @@ impl LivePull {
 }
 
 fn run_prepared(
-    options: DescribeOptions<'_>,
+    mut options: DescribeOptions<'_>,
     factory: &dyn DescribeSessionFactory,
     detector: &dyn ScreenDetector,
     ocr_factory: &mut dyn OcrWorkerFactory,
@@ -469,6 +471,14 @@ fn run_prepared(
         previous_attempts = record.as_ref().map(record_attempts).unwrap_or(0);
         incremental_source = Some(output.clone());
     }
+    // A screen unchanged since the previous segment continues from that segment's last
+    // kept frame. Phone and tablet screens have no text gate, so they start fresh. Every
+    // later open of the video starts from the same reference, so frame ids agree.
+    let carry = phone
+        .is_none()
+        .then(|| crate::carry::resolve(options.journal, options.video, &recipe_id))
+        .flatten();
+    options.config.start_reference = carry.as_ref().map(|carry| carry.reference);
     let window = crate::DescribeWorkBound::for_jobs(options.jobs).max_png_slots;
     let (mut decoded, video_source) = match decode_start {
         DecodeStart::Ready(decoded) => (decoded, false),
@@ -480,10 +490,32 @@ fn run_prepared(
             } else {
                 None
             };
-            let decoded = walk_video_metadata(options.video, options.config, gate, checkpoint)?;
+            let decoded = walk_video_metadata(
+                options.video,
+                options.config,
+                gate,
+                carry.as_ref().map(|carry| carry.occurrences.as_slice()),
+                checkpoint,
+            )?;
             (decoded, true)
         }
     };
+    // When the first frame matched, the previous segment's row stands in for it and the
+    // frames kept after it are described as usual. Otherwise nothing is carried.
+    let mut carried_row = match (&carry, decoded.carried_frame) {
+        (Some(carry), Some((frame_id, timestamp))) if !decoded.decode_failed => {
+            decoded.last_hash = decoded.last_hash.or(Some(carry.reference));
+            Some(carry.row(frame_id, timestamp))
+        }
+        _ => None,
+    };
+    let carried_id = carried_row
+        .as_ref()
+        .and_then(|row| row.get("frame_id").and_then(Value::as_u64));
+    // The header counts rows, the carried one included: a screen carried whole reads as
+    // one unchanged frame.
+    let carried = usize::from(carried_id.is_some());
+    decoded.qualified_count += carried;
     let text_changed = decoded.text_changed.clone();
     let redecode = video_source;
     let start = Instant::now();
@@ -548,6 +580,10 @@ fn run_prepared(
         )??;
         let (state, reason) = if decoded.decode_failed {
             (vocab::STATE_FAILED, vocab::REASON_CORRUPT_INPUT)
+        } else if let Some(row) = &carried_row {
+            // Carried whole: the screen never changed, and its one row is the copy.
+            rows.row(row)?;
+            (vocab::STATE_ANALYZED, vocab::REASON_OK)
         } else {
             (vocab::STATE_EMPTY, vocab::REASON_NO_DECODABLE_FRAMES)
         };
@@ -833,11 +869,12 @@ fn run_prepared(
     if matches!(categorization, Err(RunError::Cancelled)) {
         return Err(RunError::Cancelled);
     }
-    decoded.qualified_count = decoded.qualified_frames.len();
+    decoded.qualified_count = decoded.qualified_frames.len() + carried;
     qualified_ids = decoded
         .qualified_frames
         .iter()
         .map(|frame| frame.frame_id)
+        .chain(carried_id)
         .collect();
     if streamed {
         let released = release_held_frames(
@@ -1049,6 +1086,10 @@ fn run_prepared(
             }
             Ok(())
         })?;
+    }
+    if let Some(row) = carried_row.take() {
+        emit_value(&mut rows, &mut incremental_rows, row.clone())?;
+        final_rows.push(row);
     }
     let mut detection_disabled = None;
     for row in categorized {
@@ -1346,13 +1387,17 @@ fn walk_video_metadata(
     video: &Path,
     config: WinnowConfig,
     text_gate: Option<&mut dyn OcrWorkerFactory>,
+    carried_lines: Option<&[screen_ocr::RawOccurrence]>,
     checkpoint: &dyn Fn() -> bool,
 ) -> Result<crate::DescribeResult, RunError> {
     let mut pull = match crate::decode::FramePull::open(video, config, false) {
         Ok(pull) => pull,
         Err(result) => return Ok(result),
     };
-    let mut gate = text_gate.map(crate::text_gate::TextGate::new);
+    let mut gate = text_gate.map(|factory| match carried_lines {
+        Some(lines) => crate::text_gate::TextGate::carried(factory, lines),
+        None => crate::text_gate::TextGate::new(factory),
+    });
     loop {
         match pull.next_gated(checkpoint, gate.as_mut()) {
             PullNext::Frame(_) => {}

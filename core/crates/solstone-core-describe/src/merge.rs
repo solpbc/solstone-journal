@@ -126,6 +126,12 @@ pub(crate) fn build_incremental_merge_plan(
 
     for existing_row in rows {
         let row = &existing_row.data;
+        // A row carried from the previous segment was never described here. Each run copies
+        // it again from that segment as it is now, so it is neither reused nor a gap. When
+        // this run keeps that frame instead, it is missing below and nothing is reused.
+        if row.get("carried_from").is_some() {
+            continue;
+        }
         let frame_id = row.get("frame_id").and_then(Value::as_u64)?;
         if !qualified_ids.contains(&frame_id) || !seen_ids.insert(frame_id) {
             return None;

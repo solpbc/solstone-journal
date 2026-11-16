@@ -311,6 +311,7 @@ fn decoded(frame_ids: &[u64]) -> DescribeResult {
         decode_failed: false,
         winnow: None,
         text_changed: Default::default(),
+        carried_frame: None,
     }
 }
 
@@ -2053,4 +2054,250 @@ fn optional_faces_fail_open_without_changing_screen_rows() {
                 && !line.contains(test.root.to_str().unwrap())));
         }
     }
+}
+
+/// Moves `test` to a segment of one stream on one day, recording the same screen.
+fn carry_segment(test: &mut TestRun, segment: &str) {
+    let dir = test
+        .journal
+        .join("chronicle/20261020/desktop")
+        .join(segment);
+    fs::create_dir_all(&dir).unwrap();
+    test.video = dir.join("screen.webm");
+    fs::write(&test.video, format!("raw input {segment}")).unwrap();
+}
+
+/// A decode whose first frame matched the previous segment's last kept frame, then kept
+/// `kept`.
+fn carried_start(kept: &[u64]) -> DescribeResult {
+    let mut result = decoded(kept);
+    result.first_hash = Some(0x15);
+    if kept.is_empty() {
+        result.last_hash = None;
+    }
+    result.carried_frame = Some((1, 0.0));
+    result
+}
+
+/// Describes the current segment with the literal screen-text reader; returns the model
+/// requests made.
+fn describe_segment(
+    test: &TestRun,
+    options: DescribeOptions<'_>,
+    decoded: DescribeResult,
+) -> Vec<GenerateRequest> {
+    let factory = ScriptedFactory::new(default_response);
+    super::run_decoded_with_ocr_factory(options, &factory, decoded, &mut LiteralOcr)
+        .unwrap_or_else(|error| panic!("{} describes: {error:?}", test.video.display()));
+    factory.requests()
+}
+
+fn screen_text_frames(test: &TestRun) -> Vec<u64> {
+    crate::screen_ocr::load_segment_sidecars(test.video.parent().unwrap())
+        .iter()
+        .flat_map(|sidecar| sidecar.frames.iter().map(|frame| frame.frame_id))
+        .collect()
+}
+
+fn frame_requests(requests: &[GenerateRequest]) -> usize {
+    phase_requests(requests, "observe.describe.frame").len()
+}
+
+#[test]
+fn an_unchanged_screen_carries_its_description_across_segments_without_model_calls() {
+    let mut test = TestRun::new("carry");
+    carry_segment(&mut test, "090000_300");
+    let requests = describe_segment(&test, test.options(false, Vec::new()), decoded(&[1, 2]));
+    assert_eq!(frame_requests(&requests), 2);
+    assert_eq!(screen_text_frames(&test), [1, 2]);
+    let described = test.rows()[2].clone();
+
+    // Carried whole: one row, a copy of the last described frame, and no model calls.
+    carry_segment(&mut test, "090500_300");
+    let requests = describe_segment(&test, test.options(false, Vec::new()), carried_start(&[]));
+    assert!(requests.is_empty());
+    let rows = test.rows();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
+    assert_eq!(rows[0]["_solstone_processing"]["reason_code"], "ok");
+    assert_eq!(rows[0]["first_hash"], "0000000000000015");
+    assert_eq!(rows[0]["last_hash"], "0000000000000014");
+    assert_eq!(rows[0]["qualified_count"], 1);
+    assert_eq!(rows[1]["frame_id"], 1);
+    assert_eq!(rows[1]["timestamp"], 0.0);
+    assert_eq!(rows[1]["requests"], json!([]));
+    assert_eq!(
+        rows[1]["carried_from"],
+        json!({"segment": "090000_300", "frame_id": 2})
+    );
+    for field in ["analysis", "content", "enhanced"] {
+        assert_eq!(rows[1][field], described[field], "{field}");
+    }
+    assert!(screen_text_frames(&test).is_empty());
+
+    // Carried again: the copy still names the segment that was described.
+    carry_segment(&mut test, "091000_300");
+    let requests = describe_segment(&test, test.options(false, Vec::new()), carried_start(&[]));
+    assert!(requests.is_empty());
+    let rows = test.rows();
+    assert_eq!(rows[0]["last_hash"], "0000000000000014");
+    assert_eq!(
+        rows[1]["carried_from"],
+        json!({"segment": "090000_300", "frame_id": 2})
+    );
+    assert_eq!(rows[1]["analysis"], described["analysis"]);
+
+    // Carried, then changed: the copy comes first and only the new frame is described.
+    carry_segment(&mut test, "091500_300");
+    let requests = describe_segment(&test, test.options(false, Vec::new()), carried_start(&[2]));
+    assert_eq!(frame_requests(&requests), 1);
+    let rows = test.rows();
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
+    assert_eq!(rows[0]["first_hash"], "0000000000000015");
+    assert_eq!(rows[0]["last_hash"], "0000000000000014");
+    assert_eq!(rows[0]["qualified_count"], 2);
+    let ids = rows[1..]
+        .iter()
+        .map(|row| row["frame_id"].as_u64().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, [1, 2]);
+    assert!(rows[1].get("carried_from").is_some());
+    assert!(rows[2].get("carried_from").is_none());
+    // Screen text is recorded only for the frame read here, never for the copy.
+    assert_eq!(screen_text_frames(&test), [2]);
+    let body = artifact_body(&test.artifact());
+
+    // A retry keeps the copy and the described frame, and asks the model nothing again.
+    rewrite_header(&test.artifact(), |header| {
+        header["_solstone_processing"]["state"] = json!("failed");
+        header["_solstone_processing"]["reason_code"] = json!("analysis_failed");
+        header["_solstone_processing"]["attempts"] = json!(1);
+    });
+    let requests = describe_segment(&test, test.options(false, Vec::new()), carried_start(&[2]));
+    assert_eq!(frame_requests(&requests), 0);
+    assert_eq!(test.rows()[0]["_solstone_processing"]["state"], "analyzed");
+    assert_eq!(artifact_body(&test.artifact()), body);
+}
+
+#[test]
+fn a_screen_without_a_usable_predecessor_is_described_on_its_own() {
+    fn expect_fallback(test: &TestRun, options: DescribeOptions<'_>, case: &str) {
+        let requests = describe_segment(test, options, carried_start(&[]));
+        assert!(requests.is_empty(), "{case}");
+        let rows = test.rows();
+        assert_eq!(rows.len(), 1, "{case}");
+        assert_eq!(rows[0]["_solstone_processing"]["state"], "empty", "{case}");
+    }
+    let mut test = TestRun::new("carry-fallback");
+    carry_segment(&mut test, "090000_300");
+    expect_fallback(
+        &test,
+        test.options(false, Vec::new()),
+        "first segment of the day",
+    );
+    describe_segment(&test, test.options(true, Vec::new()), decoded(&[1, 2]));
+    let predecessor = test.artifact();
+    let original = fs::read(&predecessor).unwrap();
+
+    // The segment after a gap longer than ten minutes.
+    carry_segment(&mut test, "091600_300");
+    expect_fallback(&test, test.options(false, Vec::new()), "gap");
+    fs::remove_dir_all(test.video.parent().unwrap()).unwrap();
+
+    carry_segment(&mut test, "090500_300");
+    let mut phone = test.options(false, Vec::new());
+    phone.capture.meta = Some(json!({"platform": "ios"}).as_object().unwrap().clone());
+    expect_fallback(&test, phone, "phone screen");
+
+    rewrite_header(&predecessor, |header| {
+        header["_solstone_processing"]["state"] = json!("failed");
+    });
+    expect_fallback(&test, test.options(true, Vec::new()), "predecessor failed");
+
+    // The same segment carries once its predecessor is usable again.
+    fs::write(&predecessor, &original).unwrap();
+    assert!(describe_segment(&test, test.options(true, Vec::new()), carried_start(&[])).is_empty());
+    let rows = test.rows();
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
+    assert!(rows[1].get("carried_from").is_some());
+
+    let contents = String::from_utf8(original.clone()).unwrap();
+    let mut lines = contents.lines().map(str::to_owned).collect::<Vec<_>>();
+    let mut last: Value = serde_json::from_str(lines.last().unwrap()).unwrap();
+    last["error"] = json!("Invalid JSON response");
+    *lines.last_mut().unwrap() = last.to_string();
+    fs::write(&predecessor, lines.join("\n") + "\n").unwrap();
+    expect_fallback(&test, test.options(true, Vec::new()), "last row failed");
+
+    fs::write(&predecessor, &original).unwrap();
+    for entry in fs::read_dir(predecessor.parent().unwrap()).unwrap() {
+        let path = entry.unwrap().path();
+        if path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with(".screen-ocr-")
+        {
+            fs::remove_file(path).unwrap();
+        }
+    }
+    expect_fallback(
+        &test,
+        test.options(true, Vec::new()),
+        "no stored screen text",
+    );
+}
+
+#[test]
+fn a_recording_carried_from_its_predecessor_describes_only_what_changed() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/describe_corpus");
+    let describe_video = |test: &TestRun| {
+        let factory = ScriptedFactory::new(default_response);
+        super::run_prepared(
+            test.options(false, Vec::new()),
+            &factory,
+            &super::SpawnScreenDetector,
+            &mut LiteralOcr,
+            &|| false,
+            None,
+            super::DecodeStart::Video,
+        )
+        .expect("recording describes");
+        frame_requests(&factory.requests())
+    };
+    let mut test = TestRun::new("carry-video");
+    carry_segment(&mut test, "090000_300");
+    fs::copy(corpus.join("static_vp8_screen.webm"), &test.video).unwrap();
+    assert_eq!(describe_video(&test), 1);
+    let still = test.rows()[0]["last_hash"].clone();
+
+    // The same still screen in the next segment: nothing is described.
+    carry_segment(&mut test, "090500_300");
+    fs::copy(corpus.join("static_vp8_screen.webm"), &test.video).unwrap();
+    assert_eq!(describe_video(&test), 0);
+    let rows = test.rows();
+    assert_eq!(rows[0]["first_hash"], still);
+    assert_eq!(rows[0]["last_hash"], still);
+    assert_eq!(rows[0]["qualified_count"], 1);
+    assert_eq!(rows[1]["carried_from"]["segment"], "090000_300");
+
+    // A recording whose first frame matches, then cuts to another scene: only the cut is
+    // described, and its frame is found again on every later open of the recording.
+    let stride = corpus.join("stride_floor_vp8_screen.webm");
+    let plain = crate::process_video_metadata(&stride, WinnowConfig::default());
+    let first = crate::format_dhash(plain.first_hash.unwrap());
+    rewrite_header(&test.artifact(), |header| {
+        header["last_hash"] = json!(first)
+    });
+    carry_segment(&mut test, "091000_300");
+    fs::copy(&stride, &test.video).unwrap();
+    assert_eq!(describe_video(&test), 1);
+    let rows = test.rows();
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
+    assert_eq!(rows[0]["first_hash"], json!(first));
+    assert_eq!(rows[0]["qualified_count"], 2);
+    assert_eq!(rows[1]["frame_id"], 1);
+    assert_eq!(rows[1]["carried_from"]["segment"], "090000_300");
+    assert_eq!(rows[2]["frame_id"], 2);
+    assert_eq!(rows[2]["enhanced"], true);
 }
