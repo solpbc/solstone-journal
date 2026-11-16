@@ -19,6 +19,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - home's "add your phone" step points to solstone.app/mobile, the page for the solstone app on phones and tablets. the old address still works.
 - the stats and thinking pages now work like home, transcripts and search: moving between them and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+- the import page now works like home, transcripts and search: moving between it and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 - your journal now keeps working through older recordings and days whenever it has room, rather than pausing for minutes between small batches. newer work still goes first. if thinking stops answering for a while, your journal tries again after five minutes and picks the older work back up as soon as thinking answers, instead of setting it aside until it next goes back through your older days.
 - your journal now thinks one step at a time, whichever model you use, and always takes the most important step next, so a question you ask goes before older work. on mac and linux, with confidential processing it keeps one secure connection open instead of opening a new one for each step, so each step starts sooner. with your own keys or your own endpoint, thinking no longer sends several requests at once. the `confidential_history_rest_seconds` and `parallel_slots` settings are no longer used.
 
