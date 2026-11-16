@@ -380,6 +380,36 @@ fn think(
         log_skip(log, context, "sense", segment, "set_aside", stream);
         return Ok(ModeResult::default());
     }
+    // A silent segment whose screens describe carried over unchanged continues
+    // its predecessor's Sense: asking the model again re-reads the same screen.
+    if !refresh && let Some(continued) = sense_continuation(context, segment, stream, &segment_dir)
+    {
+        let change =
+            write_sense_and_change(context, log, segment, stream, &segment_dir, &continued)?;
+        log_sense(
+            log,
+            context,
+            segment,
+            continued
+                .get("density")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
+            stream,
+        );
+        let change_class = change
+            .get("change_class")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        log_change(log, context, segment, change_class, stream);
+        if change_class == "redundant" {
+            log_skip(log, context, "sense", segment, "continuation", stream);
+            log_skip(log, context, "*", segment, "change_redundant", stream);
+            let result = ModeResult::default();
+            complete(log, context, segment, stream, result.clone());
+            return Ok(result);
+        }
+        // Something changed between the check and the write, so Sense runs.
+    }
     let runtime = runtime()?;
     let sense_use = match dispatch_agent(
         context,
@@ -2045,6 +2075,94 @@ fn selected_completed(
             })
         })
         .collect()
+}
+
+/// The predecessor's Sense, marked as continued, when this segment adds
+/// nothing to it: the screen is unchanged against the true predecessor, every
+/// monitor's description was carried from it whole, and neither segment holds
+/// speech. Anything else, including a missing or partial predecessor Sense,
+/// returns `None` and Sense runs.
+fn sense_continuation(
+    context: &ThinkContext,
+    segment: &str,
+    stream: Option<&str>,
+    segment_dir: &std::path::Path,
+) -> Option<Map<String, Value>> {
+    let stream = stream.unwrap_or(DEFAULT_STREAM);
+    let predecessor = resolve_predecessor(&context.journal, &context.day, Some(stream), segment)?;
+    let previous_name = predecessor.get("segment")?.as_str()?.to_owned();
+    let change = detect_segment_change(
+        &context.journal,
+        &context.day,
+        Some(stream),
+        segment,
+        segment_dir,
+        Some(predecessor),
+        "",
+    );
+    if change.get("change_class").and_then(Value::as_str) != Some("redundant")
+        || change["sensors"]["transcript"]["present"].as_bool() != Some(false)
+        || !every_screen_carried_whole(segment_dir)
+    {
+        return None;
+    }
+    let previous_dir = iter_segments(&context.journal, PathOrDay::Day(&context.day))
+        .ok()?
+        .into_iter()
+        .find_map(|entry| {
+            (entry.stream().matches(stream) && entry.name().to_str() == Some(&previous_name))
+                .then(|| entry.path().to_path_buf())
+        })?;
+    let read = |name: &str| -> Option<Value> {
+        serde_json::from_slice(&std::fs::read(previous_dir.join("talents").join(name)).ok()?).ok()
+    };
+    // A predecessor that heard speech shaped its Sense around it, which this
+    // silent segment cannot inherit.
+    if read("change.json")?["sensors"]["transcript"]["present"].as_bool() != Some(false) {
+        return None;
+    }
+    let previous = read("sense.json")?;
+    if !valid_activity_sense(&previous) || previous.get("partial_input").is_some() {
+        return None;
+    }
+    let mut continued = previous.as_object()?.clone();
+    continued.insert("continuation_of".to_owned(), Value::String(previous_name));
+    Some(continued)
+}
+
+/// Every screen in the segment holds exactly one row, carried unchanged from
+/// the predecessor, so describe made no model call for any of them.
+fn every_screen_carried_whole(segment_dir: &std::path::Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(segment_dir) else {
+        return false;
+    };
+    let mut screens = 0;
+    for path in entries.filter_map(Result::ok).map(|entry| entry.path()) {
+        if !path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with("screen.jsonl"))
+        {
+            continue;
+        }
+        screens += 1;
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            return false;
+        };
+        let rows = contents
+            .lines()
+            .skip(1)
+            .filter(|line| !line.trim().is_empty())
+            .map(serde_json::from_str::<Value>)
+            .collect::<Result<Vec<_>, _>>();
+        let Ok([row]) = rows.as_deref() else {
+            return false;
+        };
+        if !row.get("carried_from").is_some_and(Value::is_object) {
+            return false;
+        }
+    }
+    screens > 0
 }
 
 /// A durable Sense projection can drive activity state once it says how

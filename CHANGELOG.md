@@ -15,12 +15,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- the journal no longer describes a screen again when it looks the same as it did a few minutes earlier. it keeps the earlier description, so a quiet desk uses much less of the thinking you chose. when no screen changed and nothing was said, it also keeps its earlier account of what you were doing.
 - the import page now works like home, transcripts and search: moving between it and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 
 ### Fixed
 
 - after you merge two entities, the activities that named the one you merged away now name the one you kept, not an internal id, and an activity that already named the one you kept lists it once.
 - a connected agent that may see entities now also finds, by name, the activities an earlier merge labelled with an internal id.
+- new conversation could be treated as unchanged when it ran about as long as the one before it, so who said each line, and the people detected in it, weren't worked out for that stretch. any new speech now counts as a change.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
