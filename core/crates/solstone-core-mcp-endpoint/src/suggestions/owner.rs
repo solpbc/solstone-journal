@@ -1620,11 +1620,7 @@ fn compute_context(root: &Path, record: &SuggestionRecord) -> (Value, Value, Val
                     "off"
                 })
             } else {
-                activity
-                    .as_ref()
-                    .and_then(|act| act.get(field))
-                    .cloned()
-                    .unwrap_or(json!(""))
+                json!(activity.as_ref().map(activity_account).unwrap_or(""))
             };
             let place = json!({"kind":"activity", "title":activity.as_ref().and_then(|act|act.get("title")), "day":day,
                 "start":activity.as_ref().and_then(|act|act.get("start")), "end":activity.as_ref().and_then(|act|act.get("end")), "facets":[facet]});
@@ -1867,6 +1863,15 @@ fn decode_cursor(token: &str) -> Option<(String, String)> {
     Some((created_at.to_owned(), id.to_owned()))
 }
 
+pub(crate) fn activity_account(record: &solstone_core_facets::ActivityRecord) -> &str {
+    record
+        .get("details")
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+        .or_else(|| record.get("description").and_then(Value::as_str))
+        .unwrap_or("")
+}
+
 pub(crate) fn activity_baseline(
     kind: &str,
     record: &solstone_core_facets::ActivityRecord,
@@ -1890,9 +1895,9 @@ pub(crate) fn activity_baseline(
     let value = if kind == "recording" {
         json!(record.get(field).and_then(Value::as_bool).unwrap_or(false))
     } else {
-        json!(super::submit::normalize_suggestion_text(
-            record.get(field).and_then(Value::as_str).unwrap_or("")
-        ))
+        json!(super::submit::normalize_suggestion_text(activity_account(
+            record
+        )))
     };
     json!({"id":record.get("id"), "hidden":record.get("hidden").is_some_and(solstone_core_facets::activity_value_truthy), "source":record.get("source"),
         "stream":record.get("stream"), "segments":record.get("segments"),

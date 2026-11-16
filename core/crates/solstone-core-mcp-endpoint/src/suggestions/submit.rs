@@ -623,10 +623,7 @@ fn execute_admitted(
                     ));
                 }
             } else if let ValidatedValue::WhatHappened { text } = &request.value {
-                let live_details = act_record
-                    .get("details")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let live_details = super::owner::activity_account(&act_record);
                 if normalize_suggestion_text(live_details) == normalize_suggestion_text(text) {
                     return Ok(Prepared::new(
                         json!({

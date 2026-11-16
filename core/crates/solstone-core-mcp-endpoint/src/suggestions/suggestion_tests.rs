@@ -2230,3 +2230,62 @@ async fn omitted_activity_fields_use_the_same_baseline_as_the_owner_writer() {
     assert_eq!(status, StatusCode::OK, "{accepted}");
     assert_eq!(accepted["suggestion"]["status"], "accepted");
 }
+
+#[tokio::test]
+async fn account_card_shows_the_journals_story_and_regeneration_stales_it() {
+    set_test_suggestions_ready(true);
+    for omitted in [false, true] {
+        let journal = init_test_journal();
+        let root = journal.path();
+        let day = "20261114";
+        setup_activity(root, "work", day, "story", "");
+        let path = root.join(format!("facets/work/activities/{day}.jsonl"));
+        let mut activity: Value =
+            serde_json::from_str(fs::read_to_string(&path).unwrap().trim()).unwrap();
+        activity["description"] = json!("The journal's generated account");
+        if omitted {
+            activity.as_object_mut().unwrap().remove("details");
+        }
+        fs::write(&path, format!("{activity}\n")).unwrap();
+        let target = crate::names::activity_name(day, "work", "story").unwrap();
+        let current = suggest(
+            root,
+            "what_happened",
+            &target,
+            json!({"text":"The journal's generated account"}),
+            "same-story",
+        );
+        assert_eq!(current["status"], "already_true", "{current}");
+        let queued = suggest(
+            root,
+            "what_happened",
+            &target,
+            json!({"text":"The owner's corrected account"}),
+            "new-story",
+        );
+        assert_eq!(queued["status"], "pending", "{queued}");
+        let id = queued["suggestion_id"].as_str().unwrap();
+        let record = read_record(root, id).unwrap().unwrap();
+        assert_eq!(
+            super::owner::project_card(root, &record)["now"],
+            "The journal's generated account"
+        );
+        activity["description"] = json!("A newly generated journal account");
+        fs::write(&path, format!("{activity}\n")).unwrap();
+        let (status, refused) = owner_call(
+            root,
+            "POST",
+            &format!("/app/agents/api/suggestions/{id}/accept"),
+            None,
+            true,
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{refused}");
+        assert_eq!(refused["code"], "already_changed");
+        assert_eq!(
+            refused["suggestion"]["now"],
+            "A newly generated journal account"
+        );
+        assert_eq!(fs::read_to_string(path).unwrap(), format!("{activity}\n"));
+    }
+}
