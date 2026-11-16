@@ -291,6 +291,40 @@ fn check_residual(target: &str, id: &str, fact: &str, value: &str) -> Result<(),
     Ok(())
 }
 
+/// restic-erase is built from restic's own release tarball and one in-repo
+/// patch (`core/distribution/restic-erase/build.py`); the owner origin only
+/// hosts the result. Its source is that upstream, read from committed records:
+/// the tarball `build.py` pins, which must be the restic release the Windows
+/// ARM64 build pins, plus the patch as this checkout carries it.
+fn restic_erase_source(checkout: &Path) -> Result<String, EvidenceError> {
+    let dir = checkout.join("core/distribution/restic-erase");
+    let build_path = dir.join("build.py");
+    let build = std::fs::read_to_string(&build_path)
+        .map_err(|e| EvidenceError::new(format!("read {}: {e}", build_path.display())))?;
+    let pinned = build
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("SOURCE_SHA256 = \"")
+                .and_then(|rest| rest.strip_suffix('"'))
+        })
+        .ok_or_else(|| {
+            EvidenceError::new(format!("no SOURCE_SHA256 in {}", build_path.display()))
+        })?;
+    if pinned != crate::restic_windows::SOURCE_SHA256 {
+        return Err(EvidenceError::new(format!(
+            "restic-erase source tarball {pinned} is not the pinned restic release"
+        )));
+    }
+    let patch_path = dir.join("erase-paths.patch");
+    let patch = std::fs::read(&patch_path)
+        .map_err(|e| EvidenceError::new(format!("read {}: {e}", patch_path.display())))?;
+    Ok(format!(
+        "{}+core/distribution/restic-erase/erase-paths.patch@sha256:{}",
+        crate::restic_windows::SOURCE_URL,
+        crate::digest::sha256_hex(&patch)
+    ))
+}
+
 fn catalog_source(
     artifact: &solstone_core_assets::Artifact,
     id: &str,
@@ -300,6 +334,9 @@ fn catalog_source(
         if id == "llama-server-cuda" {
             let rev = read_llama_cpp_revision(checkout, artifact.version)?;
             return Ok(rev);
+        }
+        if id == "restic-erase" {
+            return restic_erase_source(checkout);
         }
         return Err(EvidenceError::new(format!("owner-origin-source: {id}")));
     }
@@ -2600,6 +2637,97 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn every_posix_pinned_component_has_an_identity_off_the_owner_origin() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let inv =
+            crate::inventory::load_inventory(&repo_root.join("core/distribution/inventory.toml"))
+                .unwrap();
+        let mut named = 0;
+        for target in ["linux-x86_64", "linux-aarch64", "macos-arm64"] {
+            for entry in &inv.entry {
+                let input = match entry {
+                    crate::inventory::Entry::PinnedMembers { input, .. }
+                    | crate::inventory::Entry::PinnedNative { input, .. } => input,
+                    _ => continue,
+                };
+                if !entry_targets(entry).iter().any(|t| t == target)
+                    || entry.class() != Some(crate::inventory::DeliveryClass::Component)
+                {
+                    continue;
+                }
+                let Some(id) = crate::inventory::entry_component_id(entry) else {
+                    continue;
+                };
+                match pinned_identity(input, id, &repo_root) {
+                    Ok((_, source, _)) => assert!(
+                        !source.contains("updates.solstone.app"),
+                        "{id} on {target} names the owner origin: {source}"
+                    ),
+                    Err(err) => panic!("no identity for {id} on {target}: {}", err.message),
+                }
+                named += 1;
+            }
+        }
+        assert!(named > 0);
+    }
+
+    #[test]
+    fn restic_erase_names_the_restic_release_and_its_patch() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let patch =
+            std::fs::read(repo_root.join("core/distribution/restic-erase/erase-paths.patch"))
+                .unwrap();
+        let want = format!(
+            "https://github.com/restic/restic/releases/download/v0.19.0/restic-0.19.0.tar.gz\
+             +core/distribution/restic-erase/erase-paths.patch@sha256:{}",
+            crate::digest::sha256_hex(&patch)
+        );
+        let rows: Vec<_> = solstone_core_assets::catalog()
+            .iter()
+            .filter(|a| a.unit == "restic-erase")
+            .collect();
+        assert_eq!(rows.len(), 3);
+        for artifact in rows {
+            assert!(artifact.upstream_url.contains("updates.solstone.app"));
+            assert_eq!(
+                catalog_source(artifact, "restic-erase", &repo_root).unwrap(),
+                want
+            );
+            // Any other id on the owner origin is still refused.
+            let err = catalog_source(artifact, "restic", &repo_root).unwrap_err();
+            assert_eq!(err.message, "owner-origin-source: restic");
+        }
+    }
+
+    #[test]
+    fn restic_erase_refuses_a_source_tarball_other_than_the_pinned_release() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path().join("core/distribution/restic-erase");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("erase-paths.patch"), b"patch").unwrap();
+        std::fs::write(
+            dir.join("build.py"),
+            format!("SOURCE_SHA256 = \"{}\"\n", "0".repeat(64)),
+        )
+        .unwrap();
+        let err = restic_erase_source(scratch.path()).unwrap_err();
+        assert_eq!(
+            err.message,
+            format!(
+                "restic-erase source tarball {} is not the pinned restic release",
+                "0".repeat(64)
+            )
+        );
+        std::fs::write(dir.join("build.py"), b"VERSION = \"0.19.0-sol3\"\n").unwrap();
+        assert!(
+            restic_erase_source(scratch.path())
+                .unwrap_err()
+                .message
+                .starts_with("no SOURCE_SHA256")
+        );
     }
 
     #[test]
