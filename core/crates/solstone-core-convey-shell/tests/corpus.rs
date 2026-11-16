@@ -310,8 +310,10 @@ fn strip_permanent_status_capabilities_addition_from_actual(actual: &mut Value) 
 fn apply_client_capture_projection_rename(expected: &mut Value) {
     #[cfg(target_os = "linux")]
     {
-        let hold_state = solstone_core_update::owner_data_dir()
-            .map(|dir| solstone_core_update::read_hold_state(&dir))
+        let data_dir = solstone_core_update::owner_data_dir();
+        let hold_state = data_dir
+            .as_deref()
+            .map(solstone_core_update::read_hold_state)
             .unwrap_or(solstone_core_update::HoldState::Unknown);
         let hold_str = match hold_state {
             solstone_core_update::HoldState::Held => "held",
@@ -332,6 +334,12 @@ fn apply_client_capture_projection_rename(expected: &mut Value) {
             "message": "this copy is a source checkout. install the released journal to update it.",
             "components": null,
         });
+        // Automatic updates: a source checkout is never eligible and updates
+        // no app; the owner's choice and the run state are read from disk.
+        if let Some(dir) = data_dir {
+            expected["version"]["automatic"] =
+                json!(solstone_core_update::automatic::status(None, &dir));
+        }
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -1014,6 +1022,18 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     apply_client_capture_projection_rename(&mut expected);
                     strip_permanent_status_capabilities_addition_from_actual(&mut actual);
                     strip_permanent_status_security_addition_from_actual(&mut actual);
+                }
+                if phase == "established" && path == "/app/speakers/api/state" {
+                    // The corpus checks the state contract, not the evolving
+                    // product copy, as the speakers corpus does.
+                    assert!(
+                        actual["speaker_copy"]
+                            .as_object()
+                            .is_some_and(|copy| !copy.is_empty()),
+                        "speakers state carries its copy"
+                    );
+                    actual.as_object_mut().unwrap().remove("speaker_copy");
+                    expected.as_object_mut().unwrap().remove("speaker_copy");
                 }
                 normalize(&mut actual, &journal.0.display().to_string(), "");
                 normalize(&mut expected, &journal.0.display().to_string(), "");

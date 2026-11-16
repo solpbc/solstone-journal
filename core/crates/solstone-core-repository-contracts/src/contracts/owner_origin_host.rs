@@ -30,11 +30,6 @@ struct AllowlistRow {
 
 const ALLOWLIST: &[AllowlistRow] = &[
     AllowlistRow {
-        path: "core/crates/solstone-core-update/src/catalogue.rs",
-        marker: "CATALOGUE_HOST",
-        reason: "signed platform catalogue's expected host for initial URL and every redirect",
-    },
-    AllowlistRow {
         path: "core/crates/solstone-core-update/src/fetch.rs",
         marker: "UPDATE_ORIGIN",
         reason: "native updater version origin",
@@ -47,12 +42,7 @@ const ALLOWLIST: &[AllowlistRow] = &[
     AllowlistRow {
         path: "core/crates/solstone-core-update/src/fetch.rs",
         marker: "NATIVE_HOST",
-        reason: "native updater's expected host for initial URL and every redirect",
-    },
-    AllowlistRow {
-        path: "core/crates/solstone-core-update/src/advisory.rs",
-        marker: "ADVISORY_HOST",
-        reason: "security advisory's expected host for initial URL and every redirect; a bare GET that sends no identifier, version or owner detail",
+        reason: "update origin's expected host for initial URL and every redirect: the native updater, the signed platform catalogue and the security advisory (a bare GET that sends no identifier, version or owner detail)",
     },
     AllowlistRow {
         path: "core/crates/solstone-core-artifact-download/src/lib.rs",
