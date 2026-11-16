@@ -77,13 +77,15 @@ function queryAll(root, selector) {
   for (const piece of pieces) {
     const next = [];
     for (const candidate of candidates) {
-      const visit = (element) => {
-        for (const child of element.children) {
-          if (matchesSelector(child, piece)) next.push(child);
-          visit(child);
-        }
-      };
-      visit(candidate);
+      // A loop, not a closure: a closure over `next` keeps the matches, and
+      // through `parentNode` their tree, while the engine compiles it.
+      const pending = [candidate];
+      while (pending.length) {
+        const node = pending.pop();
+        if (node !== candidate && matchesSelector(node, piece)) next.push(node);
+        const kids = node.children;
+        for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
+      }
     }
     candidates = next;
   }

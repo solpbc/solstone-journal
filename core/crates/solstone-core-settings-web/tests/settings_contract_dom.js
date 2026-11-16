@@ -322,10 +322,18 @@ class Element extends Target {
     [...this.childNodes].forEach((n) => this.removeChild(n));
     this.append(...nodes);
   }
+  // Walked in a loop, not a closure: while the engine compiles a closure in
+  // the background it keeps the closure's matches, and through `parentNode`
+  // the tree they came from, past a collection case's `gc()` rounds.
   querySelectorAll(selector) {
     const out = [];
-    const walk = (el) => el.children.forEach((c) => { if (matches(c, selector)) out.push(c); walk(c); });
-    walk(this);
+    const pending = [this];
+    while (pending.length) {
+      const el = pending.pop();
+      if (el !== this && matches(el, selector)) out.push(el);
+      const kids = el.children;
+      for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
+    }
     return out;
   }
   // `:last-of-type` is modelled as the last match, which is how the view uses it.

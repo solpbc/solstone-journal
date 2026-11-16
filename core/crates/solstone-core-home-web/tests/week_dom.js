@@ -164,13 +164,15 @@ function queryAll(root, selector) {
   for (const piece of pieces) {
     const next = [];
     for (const candidate of candidates) {
-      const visit = (element) => {
-        element.children.forEach((child) => {
-          if (matchesSelector(child, piece)) next.push(child);
-          visit(child);
-        });
-      };
-      visit(candidate);
+      // A loop, not a closure: a closure over `next` keeps the matches, and
+      // through `parentNode` their tree, while the engine compiles it.
+      const pending = [candidate];
+      while (pending.length) {
+        const node = pending.pop();
+        if (node !== candidate && matchesSelector(node, piece)) next.push(node);
+        const kids = node.children;
+        for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
+      }
     }
     candidates = next;
   }
@@ -503,15 +505,17 @@ class Document {
   }
 
   createTreeWalker(root, _whatToShow) {
+    // Collected in a loop, not a closure, as `queryAll` walks.
     const textNodes = [];
-    function collect(n) {
+    const pending = [root];
+    while (pending.length) {
+      const n = pending.pop();
       if (n.nodeType === 3) {
         textNodes.push(n);
       } else if (n.children) {
-        n.children.forEach(collect);
+        for (let i = n.children.length - 1; i >= 0; i -= 1) pending.push(n.children[i]);
       }
     }
-    collect(root);
     let idx = -1;
     return {
       currentNode: null,

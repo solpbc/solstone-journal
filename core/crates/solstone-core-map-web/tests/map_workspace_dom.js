@@ -122,17 +122,23 @@ class DOMNode {
     this.setAttribute('class', val);
   }
 
+  // Walked in a loop, not a closure: while the engine compiles a closure in
+  // the background it keeps the closure's map, and through `parentNode` the
+  // tree its controls came from.
   get elements() {
     const elMap = {};
-    const walk = (node) => {
-      for (const child of node.children || []) {
-        if (!child || child.nodeType === 3) continue;
-        const name = child.getAttribute && child.getAttribute('name');
-        if (name && !(name in elMap)) elMap[name] = child;
-        walk(child);
+    const pending = [this];
+    while (pending.length) {
+      const node = pending.pop();
+      const kids = node.children || [];
+      for (let i = kids.length - 1; i >= 0; i -= 1) {
+        const child = kids[i];
+        if (child && child.nodeType !== 3) pending.push(child);
       }
-    };
-    walk(this);
+      if (node === this) continue;
+      const name = node.getAttribute && node.getAttribute('name');
+      if (name && !(name in elMap)) elMap[name] = node;
+    }
     return elMap;
   }
 

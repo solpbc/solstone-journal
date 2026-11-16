@@ -66,10 +66,18 @@ class Element extends Target {
   get textContent() { return this.childNodes.map((n) => (n.nodeType === 3 ? n.data : n.textContent)).join(''); }
   appendChild(node) { node.parentNode = this; this.childNodes.push(node); return node; }
   replaceChildren() { this.childNodes.forEach((n) => { n.parentNode = null; }); this.childNodes = []; }
+  // Walked in a loop, not a closure: while the engine compiles a closure in
+  // the background it keeps the closure's matches, and through `parentNode`
+  // the tree they came from.
   querySelectorAll(tag) {
     const out = [];
-    const walk = (el) => el.children.forEach((c) => { if (c.tagName === tag.toUpperCase()) out.push(c); walk(c); });
-    walk(this);
+    const pending = [this];
+    while (pending.length) {
+      const el = pending.pop();
+      if (el !== this && el.tagName === tag.toUpperCase()) out.push(el);
+      const kids = el.children;
+      for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
+    }
     return out;
   }
   find(id) {

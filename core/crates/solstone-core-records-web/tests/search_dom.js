@@ -64,20 +64,25 @@ class Node {
     this.append(child);
     return child;
   }
+  // Walked in a loop, not a closure: while the engine compiles a closure in
+  // the background it keeps the closure's matches, and through `parentNode`
+  // the tree they came from.
   querySelectorAll(sel) {
     const results = [];
-    const walk = (el) => {
-      for (const child of el.children) {
+    const pending = [this];
+    while (pending.length) {
+      const child = pending.pop();
+      if (child !== this) {
         const isTag = child.tagName && child.tagName.toLowerCase() === sel.toLowerCase();
         const isClass =
           sel.startsWith('.') &&
           child.attributes.class &&
           child.attributes.class.split(' ').includes(sel.slice(1));
         if (isTag || isClass) results.push(child);
-        walk(child);
       }
-    };
-    walk(this);
+      const kids = child.children;
+      for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
+    }
     return results;
   }
   querySelector(sel) {

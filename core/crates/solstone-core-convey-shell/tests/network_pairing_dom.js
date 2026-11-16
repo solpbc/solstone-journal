@@ -262,16 +262,23 @@ class Element {
     return null;
   }
 
+  // Walked in a loop, not a closure: while the engine compiles a closure in
+  // the background it keeps the closure's matches, and through `parentNode`
+  // the tree they came from.
   querySelectorAll(selector) {
     const selectors = selector.split(',').map((part) => part.trim());
     const matches = [];
-    const visit = (node) => {
-      node.children.forEach((child) => {
-        if (selectors.some((part) => child.matches(part))) matches.push(child);
-        visit(child);
-      });
-    };
-    visit(this);
+    const pending = [this];
+    while (pending.length) {
+      const node = pending.pop();
+      if (node !== this) {
+        for (const part of selectors) {
+          if (node.matches(part)) { matches.push(node); break; }
+        }
+      }
+      const kids = node.children;
+      for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
+    }
     return matches;
   }
 
