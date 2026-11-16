@@ -4175,7 +4175,7 @@
         html += renderScreenChunkMarkdown(withoutLeadingTimeHeading(chunk.markdown));
       } else if (shot.text === 'no_processing') {
         html += `<div class="tr-shot-final"><p>${escapeHtml(SCREENSHOT_COPY.J6)}</p>`
-          + `<p class="tr-shot-action"><a href="/app/thinking">${escapeHtml(SCREENSHOT_COPY.J6_ACTION)}</a></p></div>`;
+          + `<p class="tr-shot-action"><a href="/app/thinking/">${escapeHtml(SCREENSHOT_COPY.J6_ACTION)}</a></p></div>`;
       } else if (shot.text === 'unreadable') {
         html += `<div class="tr-shot-final"><p>${escapeHtml(SCREENSHOT_COPY.J7)}</p>`
           + `<p class="tr-shot-action"><button type="button" class="tr-analyze-action" data-modality="screen">${escapeHtml(BTN_LABEL_FAILED)}</button></p></div>`;

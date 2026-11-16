@@ -451,6 +451,130 @@ fn erase_with_backups_removes_it_from_every_backup_and_keeps_everything_else() {
     );
 }
 
+/// sol pbc's operated storage, with a stub broker handing out credentials for
+/// the loopback bucket. It records each scope asked for.
+struct StubBroker {
+    endpoint: String,
+    scopes: std::cell::RefCell<Vec<String>>,
+}
+impl StubBroker {
+    fn answer(&self, request: &HttpRequest) -> Result<HttpResponse, HttpError> {
+        if !request.url.ends_with("/backup/credentials") {
+            return Err(HttpError::Other);
+        }
+        let scope = serde_json::from_slice::<Value>(&request.body).unwrap()["scope"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        self.scopes.borrow_mut().push(scope);
+        Ok(HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&json!({
+                "access_key_id": "fixture-access", "secret_access_key": "fixture-secret",
+                "session_token": "fixture-session", "endpoint": self.endpoint,
+                "expires_at": "2099-01-01T00:00:00Z",
+            }))
+            .unwrap(),
+        })
+    }
+}
+impl HttpTransport for StubBroker {
+    fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, HttpError> {
+        self.answer(request)
+    }
+    fn execute_cancellable(
+        &self,
+        request: &HttpRequest,
+        _: &ArchiveCancellation,
+    ) -> Result<HttpResponse, HttpError> {
+        self.answer(request)
+    }
+}
+
+#[test]
+#[ignore = "requires native restic, its erase helper and rclone; see the module doc"]
+fn operated_storage_takes_the_same_choice_through_the_maintenance_credential() {
+    let fixture = Fixture::new();
+    let journal = &fixture.journal;
+    let endpoint = fixture
+        .repository
+        .trim_start_matches("s3:")
+        .trim_end_matches("/fixture-bucket/byo")
+        .to_owned();
+    solstone_core_backup::save_hosted_binding(
+        journal,
+        &solstone_core_backup::HostedBinding {
+            broker_endpoint: "https://broker.invalid".into(),
+            account_id: "synthetic-account".into(),
+            instance_id: "synthetic-instance".into(),
+            bucket: "fixture-bucket".into(),
+            prefix: "byo".into(),
+            broker_token: "synthetic-broker-token".into(),
+        },
+    )
+    .unwrap();
+    solstone_core_backup::set_mode(journal, "operated").unwrap();
+    let broker = StubBroker {
+        endpoint,
+        scopes: std::cell::RefCell::new(Vec::new()),
+    };
+    let rclone = required("SOLSTONE_NATIVE_RCLONE");
+    let services = BackupServices {
+        rclone_path: Some(&rclone),
+        ..fixture.services_with(&broker)
+    };
+    let backup = || {
+        std::thread::sleep(Duration::from_millis(1100));
+        let result = run_backup(journal, &services);
+        assert_eq!(result.status, "ok", "{result:?}");
+        result.snapshot_id.unwrap()
+    };
+    let before_delete = backup();
+    let id = delete(journal, ERASED);
+    let in_trash = backup();
+    let mut erased_pieces = fixture.pieces(&before_delete, &segment_rel(ERASED));
+    erased_pieces.extend(fixture.pieces(
+        &in_trash,
+        &format!(".trash/{id}/files/{}", segment_rel(ERASED)),
+    ));
+    assert!(
+        !erased_pieces.is_empty() && fixture.stored_copies(&erased_pieces) > 0,
+        "positive control"
+    );
+    let kept_pieces = fixture.pieces(&in_trash, &segment_rel(KEPT));
+    assert!(
+        !broker.scopes.borrow().iter().any(|s| s == "maintenance"),
+        "a backup never asks for the delete-capable credential"
+    );
+
+    erase(journal, &id, true);
+    assert_eq!(
+        solstone_core_trash::backup_erase::pending(journal).0.len(),
+        1
+    );
+    broker.scopes.borrow_mut().clear();
+    let report = solstone_core_offload::backup_erase::run(journal, &services);
+    assert_eq!(report.state, "done", "{report:?}");
+    assert_eq!(
+        (report.removed, report.shared, report.staying),
+        (1, 0, 0),
+        "{report:?}"
+    );
+    let asked = broker.scopes.borrow().clone();
+    assert!(
+        !asked.is_empty() && asked.iter().all(|s| s == "maintenance"),
+        "the erase takes only the maintenance credential: {asked:?}"
+    );
+
+    fixture.restic(&["check", "--read-data", "-q"]);
+    assert_eq!(fixture.snapshots().len(), 2, "no backup was lost");
+    assert!(!fixture.listed_anywhere(&format!("{}/audio.m4a", segment_rel(ERASED))));
+    assert!(!fixture.listed_anywhere(&format!(".trash/{id}")));
+    assert_eq!(fixture.stored_copies(&erased_pieces), 0);
+    assert!(fixture.stored_copies(&kept_pieces) > 0);
+}
+
 #[test]
 #[ignore = "requires native restic, its erase helper and rclone; see the module doc"]
 fn storage_that_keeps_versions_or_cant_say_is_never_called_done() {

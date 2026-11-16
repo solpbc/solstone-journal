@@ -656,7 +656,7 @@
     function renderPhoneStepHtml() {
       return '<div class="pulse-getting-started-step" data-phone-step>'
         + '<h4>add your phone</h4>'
-        + '<p>get solstone on your phone at solstone.app/phone, then pair it with your journal.</p>'
+        + '<p>get solstone on your phone at solstone.app/mobile, then pair it with your journal.</p>'
         + '<a href="/app/network/#devices">pair a device →</a>'
         + '</div>';
     }

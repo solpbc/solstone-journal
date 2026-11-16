@@ -226,8 +226,12 @@ async function main() {
   const manifestDir = process.argv[2];
   if (!manifestDir) throw new Error('manifest directory required');
   let source = fs.readFileSync(path.join(manifestDir, 'assets/thinking/thinking.js'), 'utf8');
+  // The view registers a mount, and the mount starts with init(). Here the
+  // mount hands its internals out instead, and the cases drive them by hand.
+  const seam = '  init();\n} });';
+  assert(source.endsWith(`${seam}\n`), 'the mount still ends with init()');
   source = source.replace(
-    '  init();\n})();',
+    seam,
     `  window.__thinkingRuns = {
     loadAfterFirstPaint,
     state,
@@ -307,7 +311,7 @@ async function main() {
     clearLocalEndpoint,
     switchLane,
   };
-})();`,
+} });`,
   );
 
   const nodes = new Map();
@@ -646,9 +650,9 @@ async function main() {
         if (handler) return typeof handler === 'function' ? handler(url, options) : Promise.resolve(handler);
         return Promise.resolve({ providers: {}, keys: {}, copy: {} });
       }
-      if (url.startsWith('api/local/')) return localResponses.shift()?.(url, options) || Promise.reject(new Error(`unexpected URL: ${url}`));
-      if (url.startsWith('api/providers')) return providerResponses.shift()?.(url, options) || Promise.reject(new Error(`unexpected URL: ${url}`));
-      if (url.startsWith('/app/thinking/api/chatgpt/') || url.startsWith('api/chatgpt/')) {
+      if (url.startsWith('/app/thinking/api/local/')) return localResponses.shift()?.(url, options) || Promise.reject(new Error(`unexpected URL: ${url}`));
+      if (url.startsWith('/app/thinking/api/providers')) return providerResponses.shift()?.(url, options) || Promise.reject(new Error(`unexpected URL: ${url}`));
+      if (url.startsWith('/app/thinking/api/chatgpt/')) {
         const handler = chatgptResponses.shift();
         if (!handler) return Promise.reject(new Error(`unexpected ChatGPT URL: ${url}`));
         return typeof handler === 'function' ? handler(url, options) : handler;
@@ -685,7 +689,31 @@ async function main() {
   vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/date_format.js'), 'utf8'), context);
   vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/journal-web-host.js'), 'utf8'), context);
   vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/external-navigation.js'), 'utf8'), context);
+  // The view contract, as far as these cases need it: the registered mount,
+  // and a ctx over this harness's own stand-ins. The contract itself is
+  // thinking_contract_dom.js's, through the real shell.
+  let registered = null;
+  window.SolViews = { register(name, definition) { if (name === 'thinking') registered = definition; } };
+  const hashOf = (url) => new URL(url, window.location.href).hash;
+  const ctx = {
+    route: { pathname: '/app/thinking/', search: '', hash: '' },
+    disposed: false,
+    signal: null,
+    read: (url, options) => window.apiJson(url, options),
+    fetch: (...args) => context.fetch(...args),
+    setTimeout: (fn, ms, ...args) => context.setTimeout(fn, ms, ...args),
+    clearTimeout: (id) => context.clearTimeout(id),
+    on: (target, type, fn, options) => target.addEventListener(type, fn, options),
+    history: {
+      push: (url) => window.history.pushState(null, '', hashOf(url)),
+      replace: (url) => window.history.replaceState(null, '', hashOf(url)),
+    },
+    ready() {},
+    onDispose() {},
+  };
   vm.runInNewContext(source, context, {filename: 'thinking.js'});
+  assert(registered, 'thinking registers a view');
+  registered.mount(ctx);
   const format = window.JournalFormat;
   assert.strictEqual(format.segmentTime('125903_60'), '12:59:03');
   assert.strictEqual(format.segmentTime('246099_60'), 'time unavailable');
@@ -2304,7 +2332,7 @@ async function main() {
   sessionStorage.clear();
   const pendingPollPromise = deferred();
   chatgptResponses.push((url, options) => {
-    assert.strictEqual(url, 'api/chatgpt/sign-in');
+    assert.strictEqual(url, '/app/thinking/api/chatgpt/sign-in');
     assert.strictEqual(options.method, 'POST');
     return Promise.resolve({
       attempt_id: 'attempt_test',
@@ -2357,7 +2385,7 @@ async function main() {
   // 5. Finish posts the field value unchanged, including a value with no scheme
   nodes.get('chatgptRedirectUrl').value = 'localhost:4040/callback?code=abc&state=xyz';
   chatgptResponses.push((url, options) => {
-    assert.strictEqual(url, 'api/chatgpt/sign-in/attempt_test/finish');
+    assert.strictEqual(url, '/app/thinking/api/chatgpt/sign-in/attempt_test/finish');
     assert.strictEqual(options.method, 'POST');
     const body = JSON.parse(options.body);
     assert.strictEqual(body.redirect_url, 'localhost:4040/callback?code=abc&state=xyz', 'field value is posted unchanged');
@@ -2400,7 +2428,7 @@ async function main() {
 
   // 7. Sign-out {revoked:false} still shows revoke_unconfirmed after the refresh
   chatgptResponses.push((url, options) => {
-    assert.strictEqual(url, 'api/chatgpt/sign-out');
+    assert.strictEqual(url, '/app/thinking/api/chatgpt/sign-out');
     assert.strictEqual(options.method, 'POST');
     return Promise.resolve({ revoked: false });
   });
@@ -2416,7 +2444,7 @@ async function main() {
   // 8. Save model_not_found still shows that sentinel after the refresh
   thinking.state.chatgpt.selectedModel = 'gpt-test';
   providerResponses.push((url, options) => {
-    assert.strictEqual(url, 'api/providers');
+    assert.strictEqual(url, '/app/thinking/api/providers');
     assert.strictEqual(options.method, 'PUT');
     assert.strictEqual(options.body, JSON.stringify({ lane: 'byo', provider: 'chatgpt', model: 'gpt-test' }));
     return Promise.reject(Object.assign(new Error('Model not found'), { status: 400, reasonCode: 'model_not_found', payload: { error: 'Model not found', reason_code: 'model_not_found' } }));
@@ -2434,9 +2462,9 @@ async function main() {
   assert.strictEqual(validateModelCalls.length, 0, 'zero api/validate-model calls were made');
 
   // 10. Failure states record no POST/PUT api/providers except that one refused-save write
-  const providerMutations = requests.filter((u) => u === 'api/providers' || u.startsWith('api/providers'));
+  const providerMutations = requests.filter((u) => u === '/app/thinking/api/providers' || u.startsWith('/app/thinking/api/providers'));
   // The only mutation to api/providers was the PUT in step 8
-  const providerPuts = requests.filter((u) => u === 'api/providers');
+  const providerPuts = requests.filter((u) => u === '/app/thinking/api/providers');
   assert.ok(providerPuts.length >= 1, 'PUT api/providers was called for save');
 
   // 11. A runs row with provider chatgpt shows the provider_labels.chatgpt sentinel
@@ -2642,7 +2670,7 @@ async function main() {
   // 15. Start over forget failure: sign-out rejection closes opened window, stays on card, sign_out_failed
   openedWindows.length = 0;
   chatgptResponses.push((url, options) => {
-    assert.strictEqual(url, 'api/chatgpt/sign-out');
+    assert.strictEqual(url, '/app/thinking/api/chatgpt/sign-out');
     assert.strictEqual(options.method, 'POST');
     const body = JSON.parse(options.body);
     assert.strictEqual(body.forget, true);
@@ -2656,12 +2684,12 @@ async function main() {
 
   // 16. Start over with revoked: false: pending notice is SENTINEL_REVOKE_UNCONFIRMED
   chatgptResponses.push((url, options) => {
-    assert.strictEqual(url, 'api/chatgpt/sign-out');
+    assert.strictEqual(url, '/app/thinking/api/chatgpt/sign-out');
     assert.strictEqual(options.method, 'POST');
     return Promise.resolve({ revoked: false });
   });
   chatgptResponses.push((url, options) => {
-    assert.strictEqual(url, 'api/chatgpt/sign-in');
+    assert.strictEqual(url, '/app/thinking/api/chatgpt/sign-in');
     assert.strictEqual(options.method, 'POST');
     return Promise.resolve({ attempt_id: 'attempt_revoked_false', authorize_url: 'https://auth.openai.com/oauth/authorize?test=2' });
   });
@@ -2805,7 +2833,7 @@ async function main() {
   // a) POST busy
   openedWindows.length = 0;
   chatgptResponses.push((url, options) => {
-    assert.strictEqual(url, 'api/chatgpt/sign-in');
+    assert.strictEqual(url, '/app/thinking/api/chatgpt/sign-in');
     return Promise.reject(Object.assign(new Error('Busy'), { status: 409, reasonCode: 'busy' }));
   });
   await thinking.startChatGptSignIn({ startOver: false });
@@ -2817,7 +2845,7 @@ async function main() {
   // b) POST storage_error
   openedWindows.length = 0;
   chatgptResponses.push((url, options) => {
-    assert.strictEqual(url, 'api/chatgpt/sign-in');
+    assert.strictEqual(url, '/app/thinking/api/chatgpt/sign-in');
     return Promise.reject(Object.assign(new Error('Storage error'), { status: 500, reasonCode: 'storage_error' }));
   });
   await thinking.startChatGptSignIn({ startOver: false });
@@ -2829,7 +2857,7 @@ async function main() {
   // c) POST general failure
   openedWindows.length = 0;
   chatgptResponses.push((url, options) => {
-    assert.strictEqual(url, 'api/chatgpt/sign-in');
+    assert.strictEqual(url, '/app/thinking/api/chatgpt/sign-in');
     return Promise.reject(Object.assign(new Error('Internal server error'), { status: 500, reasonCode: 'internal_error' }));
   });
   await thinking.startChatGptSignIn({ startOver: false });
@@ -2841,7 +2869,7 @@ async function main() {
   // 23. Emitted clicks (card Continue, panel start-over, glance Continue)
   openedWindows.length = 0;
   chatgptResponses.push((url) => {
-    assert.strictEqual(url, 'api/chatgpt/sign-in');
+    assert.strictEqual(url, '/app/thinking/api/chatgpt/sign-in');
     return Promise.resolve({ attempt_id: 'attempt_click', authorize_url: 'https://auth.openai.com/oauth/authorize?test=click' });
   });
   const clickPollDeferred = deferred();
@@ -2860,7 +2888,7 @@ async function main() {
   thinking.state.chatgpt.screen = 'card';
   sessionStorage.setItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY, JSON.stringify({ id: 'attempt_stored_test', authorizeUrl: 'https://auth.openai.com/stored' }));
   chatgptResponses.push((url) => {
-    assert.strictEqual(url, 'api/chatgpt/sign-in/attempt_stored_test');
+    assert.strictEqual(url, '/app/thinking/api/chatgpt/sign-in/attempt_stored_test');
     return Promise.resolve({ state: 'pending' });
   });
   const storedPollDeferred = deferred();
@@ -2923,7 +2951,7 @@ async function main() {
   assert.strictEqual(nodes.get('byoLaneStatus').textContent, 'SENTINEL_LANE_SIGNED_IN');
   assert.strictEqual(nodes.get('chatgptPanel').hidden, false);
   assert.strictEqual(nodes.get('byoProviderGrid').hidden, true);
-  const postSignInCalls1 = apiCalls.slice(callsBeforeOpenLane1).filter((c) => c.url === 'api/chatgpt/sign-in' && c.method === 'POST');
+  const postSignInCalls1 = apiCalls.slice(callsBeforeOpenLane1).filter((c) => c.url === '/app/thinking/api/chatgpt/sign-in' && c.method === 'POST');
   assert.strictEqual(postSignInCalls1.length, 0, 'zero POST sign-in calls on openLane configured true');
 
   // b) configured: false (and with Anthropic key saved) -> SENTINEL_LANE_SIGNED_OUT, card screen, grid not hidden, Continue shown, zero POST sign-in
@@ -2937,7 +2965,7 @@ async function main() {
   assert.strictEqual(thinking.state.chatgpt.screen, 'card');
   assert.strictEqual(nodes.get('byoProviderGrid').hidden, false);
   assert.strictEqual(nodes.get('chatgptCardContinue').hidden, false);
-  const postSignInCalls2 = apiCalls.slice(callsBeforeOpenLane2).filter((c) => c.url === 'api/chatgpt/sign-in' && c.method === 'POST');
+  const postSignInCalls2 = apiCalls.slice(callsBeforeOpenLane2).filter((c) => c.url === '/app/thinking/api/chatgpt/sign-in' && c.method === 'POST');
   assert.strictEqual(postSignInCalls2.length, 0, 'zero POST sign-in calls on openLane configured false');
 
   // 27. Lane switch target local with ChatGPT brain
@@ -3206,7 +3234,7 @@ async function main() {
 
   // 42. Duplicate startChatGptSignIn while unsettled issues one window.open and one POST
   openedWindows.length = 0;
-  const initialPostCalls = apiCalls.filter(c => c.url === 'api/chatgpt/sign-in').length;
+  const initialPostCalls = apiCalls.filter(c => c.url === '/app/thinking/api/chatgpt/sign-in').length;
   const signInDeferred = deferred();
   chatgptResponses.push(() => signInDeferred.promise);
   const p1 = thinking.startChatGptSignIn({ startOver: false });
@@ -3216,7 +3244,7 @@ async function main() {
   const dupPollDef = deferred();
   chatgptResponses.push(() => dupPollDef.promise);
   await Promise.all([p1, p2]);
-  const finalPostCalls = apiCalls.filter(c => c.url === 'api/chatgpt/sign-in').length;
+  const finalPostCalls = apiCalls.filter(c => c.url === '/app/thinking/api/chatgpt/sign-in').length;
   assert.strictEqual(finalPostCalls, initialPostCalls + 1, 'only one sign-in POST sent');
   thinking.stopChatGptPoll();
   dupPollDef.resolve({ state: 'pending' });
@@ -3830,7 +3858,7 @@ async function main() {
   const originalApiJson = window.apiJson;
   window.apiJson = async function (url, options = {}) {
     const method = options.method || 'GET';
-    if (url === 'api/local/endpoint' && method === 'POST') {
+    if (url === '/app/thinking/api/local/endpoint' && method === 'POST') {
       saveCalls += 1;
       if (saveHandler) {
         return saveHandler(url, options);
@@ -3842,10 +3870,10 @@ async function main() {
         },
       };
     }
-    if (url === 'api/local/endpoint' && method === 'DELETE') {
+    if (url === '/app/thinking/api/local/endpoint' && method === 'DELETE') {
       return { local_endpoint: {} };
     }
-    if (url.startsWith('api/local/endpoint/check') && method === 'POST') {
+    if (url.startsWith('/app/thinking/api/local/endpoint/check') && method === 'POST') {
       checkCalls += 1;
       assert.strictEqual(saveBtn.disabled, true, 'save button is disabled during check');
       assert.strictEqual(clearBtn.disabled, true, 'clear button is disabled during check');
@@ -3870,7 +3898,7 @@ async function main() {
       }
       return { image_check: { status: 'read' } };
     }
-    if (url.startsWith('api/providers')) {
+    if (url.startsWith('/app/thinking/api/providers')) {
       if (method === 'PUT') putProvidersCount += 1;
       return {
         local_override: {
@@ -3881,11 +3909,11 @@ async function main() {
         active: { provider: 'local' },
       };
     }
-    if (url.startsWith('api/local/availability')) {
+    if (url.startsWith('/app/thinking/api/local/availability')) {
       getAvailabilityCount += 1;
       return { available: true };
     }
-    if (url.startsWith('api/keys')) {
+    if (url.startsWith('/app/thinking/api/keys')) {
       return { api_keys: {}, key_validation: {} };
     }
     if (method === 'GET') {
@@ -4229,7 +4257,7 @@ async function main() {
     const checks = [];
     const baseApiJson = window.apiJson;
     window.apiJson = (url, options) => {
-      if (url === 'api/brain/check') {
+      if (url === '/app/thinking/api/brain/check') {
         assert.strictEqual(options.method, 'POST', 'use the existing owner check route');
         assert.strictEqual(options.body, '{}', 'the owner action does not select another provider or request');
         return checks.shift()();
@@ -4242,7 +4270,7 @@ async function main() {
       ...base,
       brain: {state, evidence: {observed_at: observed}, ...extra},
     });
-    const reads = () => requests.filter((url) => url.startsWith('api/providers')).length;
+    const reads = () => requests.filter((url) => url.startsWith('/app/thinking/api/providers')).length;
     providerResponses.length = 0;
     thinking.showView('main');
 
@@ -4412,9 +4440,9 @@ async function main() {
       const payload = response(operation, enabled, provenance);
       thinking.state.providers = response(null, false, false);
       window.apiJson = (url, options) => {
-        if (url === 'api/confidential/enable') return Promise.resolve({operation: {phase: 'waiting'}});
-        if (url.startsWith('api/providers')) return Promise.resolve(payload);
-        if (url === 'api/brain/check') {
+        if (url === '/app/thinking/api/confidential/enable') return Promise.resolve({operation: {phase: 'waiting'}});
+        if (url.startsWith('/app/thinking/api/providers')) return Promise.resolve(payload);
+        if (url === '/app/thinking/api/brain/check') {
           assert.strictEqual(options.method, 'POST', 'use the normal check request');
           checks += 1;
           return Promise.resolve({ok: true, brain: payload.brain});
@@ -4431,9 +4459,9 @@ async function main() {
     let checks = 0;
     thinking.state.providers = response(null, false, false);
     window.apiJson = (url) => {
-      if (url === 'api/confidential/enable') return Promise.resolve({operation: {phase: 'waiting'}});
-      if (url.startsWith('api/providers')) return new Promise((resolve) => { releaseRead = resolve; });
-      if (url === 'api/brain/check') { checks += 1; return Promise.resolve({ok: true}); }
+      if (url === '/app/thinking/api/confidential/enable') return Promise.resolve({operation: {phase: 'waiting'}});
+      if (url.startsWith('/app/thinking/api/providers')) return new Promise((resolve) => { releaseRead = resolve; });
+      if (url === '/app/thinking/api/brain/check') { checks += 1; return Promise.resolve({ok: true}); }
       throw Error(`unexpected cancelled consent request: ${url}`);
     };
     const enabling = thinking.enableConfidential();
@@ -4462,28 +4490,33 @@ async function main() {
       answers.push([url, pending]);
       return pending.promise;
     };
-    const providerReads = () => asked.filter((url) => url.startsWith('api/providers')).length;
+    const providerReads = () => asked.filter((url) => url.startsWith('/app/thinking/api/providers')).length;
     const loading = thinking.loadAfterFirstPaint();
     await settle();
-    assert(asked.some((url) => url.startsWith('api/keys')), 'keys right away');
-    assert(asked.some((url) => url.startsWith('api/local/models')), 'models right away');
-    assert(!asked.some((url) => url.startsWith('api/local/runtime')), 'local reads wait for the model list');
+    assert(asked.some((url) => url.startsWith('/app/thinking/api/keys')), 'keys right away');
+    assert(asked.some((url) => url.startsWith('/app/thinking/api/local/models')), 'models right away');
+    assert(!asked.some((url) => url.startsWith('/app/thinking/api/local/runtime')), 'local reads wait for the model list');
     const providersBefore = providerReads();
-    answers.find(([url]) => url.startsWith('api/local/models'))[1].resolve([{name: 'local/a'}]);
+    answers.find(([url]) => url.startsWith('/app/thinking/api/local/models'))[1].resolve([{name: 'local/a'}]);
     await settle();
     await settle();
-    for (const prefix of ['api/local/bootstrap/status', 'api/local/runtime', 'api/local/availability']) {
+    for (const prefix of ['/app/thinking/api/local/bootstrap/status', '/app/thinking/api/local/runtime', '/app/thinking/api/local/availability']) {
       assert(asked.some((url) => url.startsWith(prefix)), `${prefix} goes out once the model list is in`);
     }
     assert.strictEqual(providerReads(), providersBefore + 1, 'the providers read goes out with them, not before');
     for (let round = 0; round < 3; round += 1) {
-      for (const [url, pending] of answers) pending.resolve(url.startsWith('api/local/availability') ? {available: true} : {});
+      for (const [url, pending] of answers) pending.resolve(url.startsWith('/app/thinking/api/local/availability') ? {available: true} : {});
       await settle();
     }
     await loading.catch(() => {});
     window.apiJson = base;
     passedCases += 1;
   }
+
+  // Thinking on the view contract: the real fragment through the real shell.
+  const contractCases = await require('./thinking_contract_dom.js')(manifestDir);
+  passedCases += contractCases;
+  executedCases += contractCases;
 
   console.log(`DOM CASES: ${passedCases}/${executedCases} passed`);
 }

@@ -1433,7 +1433,9 @@ test('a screenshot says where its text stands in each state', async () => {
   const unsetEntry = unset.doc.querySelector('#tr-tabpanel-transcript .tr-entry-screenshot');
   const link = unsetEntry.querySelector('.tr-shot-final .tr-shot-action a');
   assert.ok(link, unsetEntry.innerHTML);
-  assert.strictEqual(link.getAttribute('href'), '/app/thinking');
+  // Thinking's own address: a move in the page to it takes the read the page
+  // starts for it at the move, which a bare /app/thinking doesn't match.
+  assert.strictEqual(link.getAttribute('href'), '/app/thinking/');
 
   const failed = await shotEnvironment('unreadable');
   const failedEntry = failed.doc.querySelector('#tr-tabpanel-transcript .tr-entry-screenshot');
