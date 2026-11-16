@@ -3712,13 +3712,14 @@ function closeSettingsDialogs() {
 
 // After a back or forward between sections, focus that was in the section the
 // entry left goes to the shown section's own place: its tab, the narrow
-// layout's select, or its heading. Focus still on something shown stays.
+// layout's select, or its heading. Focus still on something shown stays,
+// unless it's the nav's tab for the section the entry left.
 function settingsShown(node) {
   if (!node || !node.isConnected || node === settingsPage.body || node.closest('[hidden]')) return false;
   return typeof node.getClientRects !== 'function' || node.getClientRects().length > 0;
 }
 function settingsSectionFocus(focused) {
-  if (settingsShown(focused) && settingsPage.activeElement === focused) return;
+  if (settingsShown(focused) && settingsPage.activeElement === focused && !focused.matches('.settings-nav-item')) return;
   const section = document.querySelector('.settings-section.active');
   const name = section ? section.id.replace(/^section-/, '') : '';
   const place = [document.getElementById(`tab-${name}`), document.getElementById('navSelect'), section && section.querySelector('h2, h3')]
@@ -4430,6 +4431,7 @@ async function revalidateAllKeys() {
     btn.disabled = false;
   }
 }
+document.getElementById('revalidateAllKeys').addEventListener('click', revalidateAllKeys);
 
 function setValue(id, value) {
   const el = document.getElementById(id);
