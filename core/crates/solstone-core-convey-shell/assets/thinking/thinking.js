@@ -337,11 +337,16 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     return {'local-setup': 'local', 'confidential-setup': 'confidential', 'byo-setup': 'byo'}[view] || '';
   }
 
+  // The control's own row first (next, then previous), then the rest of the part.
   function nearestControls(part, from) {
-    const all = Array.from(part.querySelectorAll(FOCUS_CONTROLS))
-      .filter((el) => el.getAttribute('tabindex') !== '-1' && el.type !== 'hidden');
-    const at = all.indexOf(from);
-    return at < 0 ? all : [...all.slice(at + 1), ...all.slice(0, at).reverse()];
+    const near = (root) => {
+      const all = Array.from(root.querySelectorAll(FOCUS_CONTROLS))
+        .filter((el) => el.getAttribute('tabindex') !== '-1' && el.type !== 'hidden');
+      const at = all.indexOf(from);
+      return at < 0 ? all : [...all.slice(at + 1), ...all.slice(0, at).reverse()];
+    };
+    const row = from?.parentElement && from.parentElement !== part ? near(from.parentElement) : [];
+    return [...row, ...near(part)];
   }
 
   function focusTargets(held, finished) {

@@ -1750,6 +1750,23 @@ module.exports = async function thinkingContractCases(crateDir) {
     assert.ok(q.opened.length === 0, 'and no window opens');
   });
 
+  await test('a control that goes takes focus to the nearest control in its own row before anything else in the part', async () => {
+    let cancelled = false;
+    let status = Object.assign(installing(local), { attempt_id: 'attempt-9' });
+    const p = await boot(env, '/app/thinking/#local-setup', { phase: 'none', overrides: {
+      'GET /app/thinking/api/providers': missingProviders,
+      // A computer the install can't finish on: once stopped, nothing is offered but "check again" and the links.
+      'GET /app/thinking/api/local/availability': { available: false, reason_code: 'gpu_unavailable', reason: 'no GPU' },
+      'GET /app/thinking/api/local/bootstrap/status': () => status,
+      'POST /app/thinking/api/local/bootstrap/cancel': () => { cancelled = true; status = Object.assign(clone(status), { install_state: 'idle' }); return status; },
+    } });
+    await run(p, 2000);
+    await pressFrom(p, 'localCancel', 4000);
+    assert.ok(p.byId('localBootstrap').hidden && p.byId('localCancel').hidden, 'neither install nor cancel is offered now');
+    assert.ok(p.qa('#localSetupLinks a, #localSetupLinks button').length > 0, 'the part has links after the row');
+    assert.ok(focusOn(p) === 'BUTTON#localRefresh', `focus on "check again", in cancel's own row (${focusOn(p)})`);
+  });
+
   // ---- moves inside thinking: a lane's control, and back to the lanes
 
   for (const [name, phase, control, section, heading] of [
