@@ -362,10 +362,9 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   function settleFocus(held, finished) {
     if (!held || ctx.disposed) return;
     if (SolFocus.isShown(held) && !held.disabled) return;
-    const active = document.activeElement;
-    // The owner has moved on to something still shown: leave it.
-    if (active !== held && !SolFocus.focusLost(document)) return;
-    if (active === held) held.blur?.();
+    // A browser can still report a control it has just turned off as focused.
+    if (document.activeElement === held) held.blur?.();
+    // Focus the owner has since moved to something still shown is left there.
     SolFocus.refocus(document, true, focusTargets(held, finished));
   }
 
@@ -505,7 +504,6 @@ window.SolViews.register('thinking', { mount: (ctx) => {
 
   function removeElementData(el, key, attr) {
     if (!el) return;
-    if (!hasAttr(el, attr) && el.dataset?.[key] === undefined) return;
     if (el.dataset) delete el.dataset[key];
     if (typeof el.removeAttribute === 'function') el.removeAttribute(attr);
   }

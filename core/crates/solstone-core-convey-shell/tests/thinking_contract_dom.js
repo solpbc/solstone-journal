@@ -140,7 +140,6 @@ class Element extends Target {
     // with a caret that a new value puts at the end.
     this._value = null;
     this._caret = null;
-    this.disabled = false;
     this.checked = false;
     this._style = null;
     const self = this;
@@ -189,6 +188,9 @@ class Element extends Target {
   }
   set href(v) { this.setAttribute('href', v); }
   get target() { return this.getAttribute('target') || ''; }
+  // `disabled` reflects its attribute, as in a browser, so writing it is a change.
+  get disabled() { return this.hasAttribute('disabled'); }
+  set disabled(v) { if (v) this.setAttribute('disabled', ''); else this.removeAttribute('disabled'); }
   get hidden() { return this.hasAttribute('hidden'); }
   set hidden(v) { if (v) this.setAttribute('hidden', ''); else this.removeAttribute('hidden'); }
   setAttribute(k, v) { this.attrs.set(k, String(v)); if (k === 'style') this._style = null; }
@@ -1401,6 +1403,7 @@ module.exports = async function thinkingContractCases(crateDir) {
     ['ChatGPT sign-in', '/app/thinking/#byo-setup', { storage: { 'solstone.thinking.chatgptAttempt': ATTEMPT }, overrides: { 'GET /app/thinking/api/chatgpt/sign-in/attempt-1': { state: 'pending' } } }, '/app/thinking/api/chatgpt/sign-in/attempt-1', 'chatgptFinish'],
     ['brain follow', '/app/thinking/', { overrides: { 'GET /app/thinking/api/providers': brainChecking, 'POST /app/thinking/api/brain/check': { brain: brainChecking.brain } } }, '/app/thinking/api/providers', 'brainCheckAction'],
     ['access re-read', '/app/thinking/', { phase: 'confidential' }, '/app/thinking/api/state', 'thinkingRunsTab'],
+    ['access re-read, local blocked', '/app/thinking/', { phase: 'confidential', overrides: { 'GET /app/thinking/api/state': Object.assign(clone(env.answers('confidential').get('/app/thinking/api/state')), { local_capability: { overall: 'blocked', reason_code: 'gpu', detail: 'this computer has no GPU local thinking can use.' } }) } }, '/app/thinking/api/state', 'thinkingRunsTab'],
   ];
   for (const [name, address, options, prefix, focusId] of quietPolls) {
     await test(`the ${name} poll, answering what the page already shows, writes nothing and keeps the focused node`, async () => {
@@ -1411,7 +1414,7 @@ module.exports = async function thinkingContractCases(crateDir) {
       }
       // Each poll's first answer can still differ from the first read; the
       // ones after it say the same thing.
-      if (name !== 'access re-read') await run(p, 3000);
+      if (!name.startsWith('access re-read')) await run(p, 3000);
       const control = p.byId(focusId);
       control.focus();
       assert.ok(focusOn(p) === `${control.tagName}#${focusId}`, `${name}: focus is on ${focusId} (${focusOn(p)})`);
@@ -1530,6 +1533,7 @@ module.exports = async function thinkingContractCases(crateDir) {
   let signedOut = false;
   let turnedOn = false;
   let finished = false;
+  let disabled = false;
   let installStatus = null;
   function signedInNow() { return signedOut ? { signed_in: false } : signedIn; }
 
@@ -1698,6 +1702,52 @@ module.exports = async function thinkingContractCases(crateDir) {
     await run(p, 3000);
     assert.ok(p.byId('localCancel').hidden, 'cancel went');
     assert.ok(p.doc.activeElement === rail, `the rail keeps focus (${focusOn(p)})`);
+  });
+
+  await test('a built part someone else wrote into is built again, even with the same values', async () => {
+    const p = await boot(env, '/app/thinking/#byo-setup', { phase: 'none', overrides: { 'GET /app/thinking/api/chatgpt/status': signedIn, 'GET /app/thinking/api/chatgpt/models': models } });
+    await pressFrom(p, 'chatgptCardManage', 1000);
+    const choices = p.byId('chatgptModelChoices');
+    assert.ok(choices.querySelectorAll('input').length === 1, 'the model is drawn');
+    // Something else writes into it, leaving as many nodes as it had.
+    choices.replaceChildren(p.doc.createElement('span'));
+    // Coming back to the tab re-reads and draws the page again.
+    p.doc.visibilityState = 'visible';
+    p.doc.dispatch(p.doc.body, { type: 'visibilitychange' });
+    await run(p, 1500);
+    assert.ok(choices.querySelectorAll('input').length === 1, 'drawn again after something else emptied it');
+  });
+
+  await test('a press keeps its own control drawn while its reads are still out, then moves focus once', async () => {
+    const p = await boot(env, '/app/thinking/#confidential-setup', { phase: 'confidential', overrides: {
+      'POST /app/thinking/api/confidential/disable': { ok: true },
+      'GET /app/thinking/api/providers': () => (disabled ? confOff : confProviders),
+      // The access re-read reads the whole state; it says the same.
+      'GET /app/thinking/api/state': () => Object.assign(clone(env.answers('confidential').get('/app/thinking/api/state')), { providers: disabled ? confOff : confProviders }),
+    } });
+    disabled = false;
+    p.holds.push((call) => call.url.startsWith('/app/thinking/api/keys'));
+    const off = await pressFrom(p, 'confidentialDisable', 0);
+    disabled = true;
+    await run(p, 1500);
+    assert.ok(p.reads('/app/thinking/api/providers').length > 0 && p.held().some((c) => c.url.startsWith('/app/thinking/api/keys')), 'the providers read answered; the keys read is out');
+    assert.ok(!off.hidden && p.doc.activeElement === off && off.getAttribute('aria-busy') === 'true', `still drawn, busy, with focus (${focusOn(p)})`);
+    answerHeld(p, (c) => c.url.startsWith('/app/thinking/api/keys'), clone(byoKeys));
+    p.holds.length = 0;
+    await run(p, 1500);
+    assert.ok(focusOn(p) === 'BUTTON#confidentialLaneStatus', `then the lane's control (${focusOn(p)})`);
+  });
+
+  await test('a turn-on that answers after thinking has gone leaves its gone control as it was', async () => {
+    const q = await boot(env, '/app/thinking/#confidential-setup', { phase: 'confidential_inactive', overrides: { 'GET /app/thinking/api/providers': confOff } });
+    q.holds.push((call) => call.url.startsWith('/app/thinking/api/confidential/enable'));
+    const on = await pressFrom(q, 'confidentialEnable', 500);
+    q.leave();
+    await drain(q);
+    answerHeld(q, (call) => call.url.startsWith('/app/thinking/api/confidential/enable'), { operation: { phase: 'waiting', portal_url: 'https://services.example/consent' } });
+    await run(q, 3000);
+    assert.ok(on.getAttribute('aria-busy') === 'true' && !on.hidden, 'the gone markup is not touched');
+    assert.ok(q.opened.length === 0, 'and no window opens');
   });
 
   // ---- moves inside thinking: a lane's control, and back to the lanes
