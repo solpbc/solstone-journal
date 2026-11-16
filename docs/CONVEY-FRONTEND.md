@@ -149,7 +149,7 @@ window.SolViews.register('transcripts', {
 view takes a change of parameters in place. A view's scripts run once in the
 life of the page (they only register); the view starts each time it is
 mounted. Home (with its week and originals pages), transcripts, more, body,
-activities, the map, search, entities, speakers, sources, support, network, agents and stats are on the contract; every other view is not, and keeps its full page loads.
+activities, the map, search, entities, speakers, sources, support, network, agents, stats and thinking are on the contract; every other view is not, and keeps its full page loads.
 A view with two modes at two addresses (speakers' overview and its day)
 offers `update` only from the mode that takes a day, so a move between the
 modes mounts the view again, in the page. A view that keeps a lot of state
@@ -214,8 +214,11 @@ shipped hidden). A view whose first heading isn't its title marks its root
 restored per history entry. `solRouter.arrival()` says how the view on the
 page arrived: `'push'`, `'pop'` (a back or forward) or `'replace'`, and `null`
 for the page's first view; a view reads it once, at mount. Code is fetched ahead on a press or
-a hover on a rail entry, unless the page has learned the journal is another
-build (that press loads the page whole); data never is. A view whose first load ended in its
+a hover on a rail entry, and a move with nothing fetched ahead fetches the
+view's code beside its fragment. Both use `fetch()` into the HTTP cache, never
+`<link rel=preload>`, whose failed answer the browser would hand the view's
+script. Neither happens once the page has learned the journal is another build
+(that press or move loads the page whole); data is never fetched ahead. A view whose first load ended in its
 error state reads again when the live stream next connects, once per connect.
 
 **Loading states in a contract view** don't set `aria-busy`
