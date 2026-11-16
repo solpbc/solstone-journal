@@ -16,6 +16,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - the import page now works like home, transcripts and search: moving between it and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+- settings now works like home, transcripts and search: moving between it and the other pages that work this way, by the side rail or a link, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 
 ### Fixed
 
@@ -50,6 +51,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
 - on the thinking page, focus now stays where you were when you check, clear or save a key, choose a model, switch where the thinking happens, turn confidential processing on or off, or change its audio setting, sign in to ChatGPT or sign out, install local thinking or cancel it, and when you open a choice or go back from it with "‹ thinking": on the same button if it's still there, otherwise on what took its place. a refresh that brings nothing new now leaves the page as it is, and an endpoint you're typing stays as you typed it. before, focus was dropped or landed on a status line, so if you use a keyboard or a screen reader, you lost your place.
 - on the import page, focus now stays where you were when you open a source or go back to the sources, validate, preview or start an import, answer a facet question, delete an import, load more of your history, or turn a page of an import's content: on the same button if it's still there, otherwise on what took its place, such as the import's progress or the next import in your history. a refresh that brings nothing new now leaves the page as it is, and "bookkeeping" on an import's page stays open if you opened it. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
+- in settings, the "clean up logs" box now closes, and a cleanup that ran no longer says it failed.
+- in settings, a change you made just before moving to home, transcripts or another page that works like them is now saved.
 
 ## [2.0.81] - 2026-11-16
 
