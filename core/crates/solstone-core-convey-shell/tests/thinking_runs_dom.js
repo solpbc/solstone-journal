@@ -150,10 +150,15 @@ class Element {
     return node === this || this.children.some((child) => child.contains(node));
   }
 
+  // Walked in a loop, not a closure: while the engine compiles a closure in
+  // the background it keeps the closure's matches, and through `parentNode`
+  // the tree they came from.
   querySelectorAll(selector) {
     const results = [];
-    const walk = (node) => {
-      for (const child of node.children) {
+    const pending = [this];
+    while (pending.length) {
+      const child = pending.pop();
+      if (child !== this) {
         if (selector === '[role="tab"]' && child.attributes.role === 'tab') {
           results.push(child);
         } else if (selector.startsWith('input[name="') && child.tag === 'input' && child.name === selector.slice(12, -2)) {
@@ -164,10 +169,10 @@ class Element {
             results.push(child);
           }
         }
-        walk(child);
       }
-    };
-    walk(this);
+      const kids = child.children;
+      for (let i = kids.length - 1; i >= 0; i -= 1) pending.push(kids[i]);
+    }
     return results;
   }
 }
