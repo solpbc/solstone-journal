@@ -597,19 +597,6 @@ pub fn run_segment_with_lease(
     )
 }
 
-/// A meeting row's timestamp does not match the frame this decoder gives its
-/// `frame_id`: the screen output was described from another decode of the
-/// recording (an earlier describe), so no row can be bound to a frame.
-const UNALIGNED_RECORDING: &str = "meeting frame timestamp differs from raw recording";
-
-/// Face backfill treats a recording whose screen rows do not line up with its
-/// decoded frames as unsupported by this version, not as a failure that
-/// repeats every hour. The developer face-pass entry still fails on it; live
-/// describe pairs rows and frames from one decode and never reaches this check.
-pub fn unaligned_recording(error: &str) -> bool {
-    error == UNALIGNED_RECORDING
-}
-
 /// Ask the exact decoder registry used by describe, without decoding frames.
 /// An unreadable container is an error, not an unsupported-codec disposition.
 pub fn recording_supported(video: &Path) -> PassResult<bool> {
@@ -699,13 +686,9 @@ fn run_segment_with_ocr(
                     let row = wanted
                         .remove(&frame.frame_id)
                         .ok_or("unexpected decoded frame")?;
-                    let ts = row
-                        .get("timestamp")
-                        .and_then(Value::as_f64)
-                        .ok_or("meeting timestamp missing")?;
-                    if (ts - frame.timestamp).abs() > 0.002 {
-                        return Err(UNALIGNED_RECORDING.into());
-                    }
+                    // The ordinal identifies the picture in both native and older
+                    // screen readings. Keep the note's timestamp: older readings
+                    // can use a different timeline from the current decoder.
                     pass.add_frame(&row, &frame.png, cached.as_ref(), ocr)
                         .map_err(|e| e.to_string())?;
                     if wanted.is_empty() {
@@ -1002,9 +985,23 @@ pub(crate) mod tests {
 
     #[cfg(feature = "full-tests")]
     #[test]
-    fn screen_rows_from_another_decode_read_as_unaligned_not_any_failure() {
+    fn historical_meeting_replay_preserves_picture_and_note_coordinates() {
+        struct NoText;
+        impl crate::OcrWorker for NoText {
+            fn recognize(&mut self, _: &[u8]) -> Result<Vec<RawOccurrence>, crate::OcrFailure> {
+                Ok(Vec::new())
+            }
+        }
+        impl OcrWorkerFactory for NoText {
+            fn recipe_id(&mut self) -> String {
+                "empty-test-ocr".into()
+            }
+            fn create(&mut self) -> Result<Option<Box<dyn crate::OcrWorker>>, crate::OcrFailure> {
+                Ok(Some(Box::new(NoText)))
+            }
+        }
         let video = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/describe_corpus/static_vp8_screen.webm");
+            .join("../../fixtures/describe_corpus/scene_cuts_vp8_screen.webm");
         let config = crate::WinnowConfig {
             dhash_threshold: 0,
             scene_cut_threshold: 0,
@@ -1012,55 +1009,82 @@ pub(crate) mod tests {
             start_reference: None,
         };
         let mut pull = crate::decode::FramePull::open(&video, config, true).unwrap();
-        pull.select_native_frames([1].into_iter().collect());
-        let crate::decode::PullNext::Frame(first) = pull.next(&|| false) else {
-            panic!("fixture has a first frame");
+        // Bypass winnowing, just as face replay does. Locate a transition so
+        // choosing the adjacent picture is observable in the resulting crop.
+        pull.select_native_frames((1..=100).collect());
+        let mut previous = None;
+        let (requested, expected_crop) = loop {
+            let crate::decode::PullNext::Frame(frame) = pull.next(&|| false) else {
+                panic!("fixture needs distinguishable adjacent frames");
+            };
+            let image = image::load_from_memory(&frame.png).unwrap().to_rgb8();
+            let crop = crop_jpeg(&image, [0., 0., 2., 2.]).unwrap();
+            if let Some((prior, prior_crop)) = previous.take()
+                && prior_crop != crop
+            {
+                break (prior, prior_crop);
+            }
+            previous = Some((frame, crop));
         };
         let journal = tempfile::tempdir().unwrap();
-        fs::create_dir(journal.path().join("config")).unwrap();
-        fs::write(
-            journal.path().join("config/journal.json"),
-            json!({"faces":{"enabled":true}}).to_string(),
-        )
-        .unwrap();
         let raw = journal.path().join("screen.webm");
         fs::copy(&video, &raw).unwrap();
         let screen = raw.with_extension("jsonl");
-        let row = |timestamp: f64| {
+        let row = |id: u64, timestamp: Value| {
             format!(
                 "{}\n{}\n",
-                json!({"header": true}),
+                json!({"raw": "screen.webm"}),
                 json!({
-                    "frame_id": first.frame_id,
+                    "frame_id": id,
                     "timestamp": timestamp,
-                    "content": {"meeting": {"participants": [{"name": "synthetic"}]}},
+                    "content": {"meeting": {"participants": [{
+                        "name": "synthetic", "box_2d": [0, 0, 1000, 1000]
+                    }]}},
                 })
             )
         };
-        // Suze's pre-native VP9 rows sat 0.47–0.85 s off their decoded frames.
-        fs::write(&screen, row(first.timestamp + 0.7)).unwrap();
-        let unaligned = with_models(false, || {
-            run_segment(journal.path(), &raw, &screen, &|| false)
-        });
-        assert!(
-            unaligned
-                .as_ref()
-                .is_err_and(|error| unaligned_recording(error)),
-            "{unaligned:?}"
-        );
-        assert!(!sidecar_path(&raw).exists());
-        // The same row on the decoder's own timeline is never read as unaligned.
-        fs::write(&screen, row(first.timestamp)).unwrap();
-        let aligned = with_models(false, || {
-            run_segment(journal.path(), &raw, &screen, &|| false)
-        });
-        assert!(
-            !aligned
-                .as_ref()
-                .is_err_and(|error| unaligned_recording(error)),
-            "{aligned:?}"
-        );
-        assert!(!unaligned_recording("could not decode recording"));
+        let replay = || {
+            with_models(false, || {
+                run_segment_with_ocr(
+                    journal.path(),
+                    &raw,
+                    &screen,
+                    &mut NoText,
+                    &|| false,
+                    Default::default(),
+                    None,
+                )
+            })
+        };
+        // Offsets beyond half a frame would favor the neighboring picture if
+        // replay matched by time. The original note coordinates must survive.
+        for offset in [0., 0.47, 0.7, 0.85] {
+            let timestamp = requested.timestamp + offset;
+            let notes = row(requested.frame_id, json!(timestamp));
+            fs::write(&screen, &notes).unwrap();
+            let stats = replay().unwrap();
+            assert_eq!((stats.frames, stats.faces, stats.crops), (1, 1, 1));
+            let output = fs::read_to_string(sidecar_path(&raw)).unwrap();
+            let face: FaceRow = serde_json::from_str(output.lines().nth(1).unwrap()).unwrap();
+            assert_eq!(face.frame_id, requested.frame_id);
+            assert_eq!(face.timestamp.to_bits(), timestamp.to_bits());
+            assert_eq!(
+                fs::read(journal.path().join(face.crop.unwrap())).unwrap(),
+                expected_crop
+            );
+            assert_eq!(fs::read_to_string(&screen).unwrap(), notes);
+        }
+        // A malformed note or absent ordinal must never replace good evidence.
+        let accepted = fs::read(sidecar_path(&raw)).unwrap();
+        for notes in [
+            row(requested.frame_id, Value::Null),
+            row(u64::MAX, json!(0.)),
+        ] {
+            fs::write(&screen, &notes).unwrap();
+            assert!(replay().is_err());
+            assert_eq!(fs::read(sidecar_path(&raw)).unwrap(), accepted);
+            assert_eq!(fs::read_to_string(&screen).unwrap(), notes);
+        }
     }
 
     #[cfg(feature = "full-tests")]
