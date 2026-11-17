@@ -188,6 +188,43 @@ impl OwnerProbe for ShortProbe {
     }
 }
 
+/// `ShortProbe` on the probe's own deadline, for a check that must see a closed
+/// port refused. Linux refuses a loopback connect at once, but Windows retries
+/// the refused connect for longer than `ShortProbe`'s half second, so there the
+/// short check ends as a timeout before the refusal arrives.
+struct RefusalProbe;
+impl OwnerProbe for RefusalProbe {
+    fn process_overrides(&self) -> bool {
+        ShortProbe.process_overrides()
+    }
+    fn bundled_runtime_fingerprint(
+        &self,
+        journal: &Path,
+        config: &Map<String, Value>,
+    ) -> Option<String> {
+        ShortProbe.bundled_runtime_fingerprint(journal, config)
+    }
+    fn assess_bundled_runtime(
+        &self,
+        journal: &Path,
+        expected: Option<&str>,
+    ) -> BundledRuntimePrerequisiteAssessment {
+        ShortProbe.assess_bundled_runtime(journal, expected)
+    }
+    fn execute_generate(
+        &self,
+        request: &GenerateRequest,
+        journal: &Path,
+        config: &Map<String, Value>,
+        cancellation: &Cancellation,
+    ) -> Result<GenerateResponse, ClientError> {
+        RespondWithConfigProbe {
+            runtime: solstone_core_generate_wire::EndpointRuntime::default(),
+        }
+        .execute_generate(request, journal, config, cancellation)
+    }
+}
+
 struct NoSpp;
 impl OwnerSppPrerequisite for NoSpp {
     fn assess(&self, _: &Path, _: &Map<String, Value>, _: DateTime<Utc>) -> Value {
@@ -278,10 +315,12 @@ fn endpoint_health_and_save_check_wait_outside_the_probe_timeout_and_keep_ready_
     let down = self::config(&format!("http://{}", port.local_addr().unwrap()));
     drop(port);
     save_config(journal.path(), &down);
+    let outcome = refresh(journal.path(), &options(), &RefusalProbe, &NoSpp, &|| false);
     assert!(
-        matches!(refresh(journal.path(), &options(), &ShortProbe, &NoSpp, &|| false),
+        matches!(&outcome,
         OwnerRefreshOutcome::PersistedNonReady { view, .. }
-            if view.reason_code.as_deref() == Some("endpoint_unreachable"))
+            if view.reason_code.as_deref() == Some("endpoint_unreachable")),
+        "{outcome:?}"
     );
 }
 
