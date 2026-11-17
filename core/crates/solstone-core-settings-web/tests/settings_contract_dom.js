@@ -1588,6 +1588,7 @@ module.exports = async function settingsContractCases(crateDir) {
     p.doc.dispatch(toggle, { type: 'change' });
     await settle();
     assert.ok(!p.byId('localAccessConfirm').hidden, 'the group stays while the choice is out');
+    assert.ok(p.doc.activeElement === yes, `and focus stays on its confirm: ${at(p)}`);
     const puts = p.writes().filter((call) => call.url === '/app/settings/api/local-access').length;
     assert.ok(puts === 1, `one save: ${puts}`);
   });
