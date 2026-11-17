@@ -343,14 +343,12 @@ fn transcript_files(segment: &Path) -> Result<Vec<PathBuf>, SegmentTranscriptRea
 }
 
 fn is_transcript_name(name: &str) -> bool {
-    name == "audio.jsonl"
-        || name.ends_with("_audio.jsonl")
-        || (name.ends_with("_transcript.jsonl")
-            || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name))
-        || name == "imported.md"
-        || name.ends_with("_transcript.md")
-        || name == "workout.json"
-        || name == solstone_core_format::content::body_records::BODY_RECORDS_FILE
+    !solstone_core_format::content::segment_file_offers(
+        name,
+        solstone_core_format::content::SegmentReader::Agent,
+        solstone_core_format::content::FileFacts::default(),
+    )
+    .is_empty()
 }
 
 fn source_version(
@@ -476,10 +474,7 @@ fn stream_name(segment_origin: &str) -> Option<&str> {
 }
 
 fn is_speech_transcript_name(name: &str) -> bool {
-    name == "audio.jsonl"
-        || name.ends_with("_audio.jsonl")
-        || name.ends_with("_transcript.jsonl")
-        || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name)
+    solstone_core_format::content::speech_transcript_name(name)
 }
 
 /// The source-unit channel for one approved transcript file. Classification is
@@ -522,7 +517,17 @@ fn project_line(segment_origin: &str, name: &str, speech: bool, line: &str) -> S
             append_speaker_change_warning(&text, line)
         }
         ContentResolution::Indexed(Family::BodyRecords) => {
-            solstone_core_format::content::body_records::render_line(line)
+            solstone_core_format::content::format_file(
+                solstone_core_format::content::FileFormat::Content(Family::BodyRecords),
+                &rel,
+                line,
+                solstone_core_format::content::FormatterView::BodyLine,
+            )
+            .chunks
+            .into_iter()
+            .map(|chunk| chunk.content)
+            .collect::<Vec<_>>()
+            .join("\n")
         }
         ContentResolution::Indexed(Family::AiChat) => {
             let produced = produce_chunks(Family::AiChat, &rel, line);
@@ -559,7 +564,17 @@ fn project_line(segment_origin: &str, name: &str, speech: bool, line: &str) -> S
                     .join("\n");
                 append_speaker_change_warning(&text, line)
             } else {
-                line.to_owned()
+                solstone_core_format::content::format_file(
+                    solstone_core_format::content::FileFormat::Content(Family::Markdown),
+                    &rel,
+                    line,
+                    solstone_core_format::content::FormatterView::LiteralMarkdown,
+                )
+                .chunks
+                .into_iter()
+                .map(|chunk| chunk.content)
+                .collect::<Vec<_>>()
+                .join("\n")
             }
         }
     }

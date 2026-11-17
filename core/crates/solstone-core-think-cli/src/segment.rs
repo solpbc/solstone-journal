@@ -2141,7 +2141,20 @@ fn every_screen_carried_whole(segment_dir: &std::path::Path) -> bool {
         if !path
             .file_name()
             .and_then(|name| name.to_str())
-            .is_some_and(|name| name.ends_with("screen.jsonl"))
+            .is_some_and(|name| {
+                solstone_core_format::content::segment_file_offers(
+                    name,
+                    solstone_core_format::content::SegmentReader::Talents,
+                    Default::default(),
+                )
+                .iter()
+                .any(|offer| {
+                    offer.format
+                        == solstone_core_format::content::FileFormat::Raw(
+                            solstone_core_format::content::RawPerceptFamily::RawScreen,
+                        )
+                })
+            })
         {
             continue;
         }

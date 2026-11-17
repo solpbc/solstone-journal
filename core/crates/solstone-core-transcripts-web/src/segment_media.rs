@@ -158,7 +158,7 @@ pub(crate) fn markdown_only(dir: &Path, stream: &str) -> bool {
         .collect::<Vec<_>>();
     names
         .iter()
-        .any(|name| name == "imported.md" || name.ends_with("_transcript.md"))
+        .any(|name| solstone_core_format::content::markdown_transcript_name(name))
         && !names.iter().any(|name| {
             name.ends_with("audio.jsonl")
                 || name.ends_with("screen.jsonl")
@@ -176,7 +176,9 @@ pub(crate) fn markdown_files(dir: &Path) -> Vec<PathBuf> {
                 && path
                     .file_name()
                     .and_then(|name| name.to_str())
-                    .is_some_and(|name| name == "imported.md" || name.ends_with("_transcript.md"))
+                    .is_some_and(|name| {
+                        solstone_core_format::content::markdown_transcript_name(name)
+                    })
         })
         .collect::<Vec<_>>();
     values.sort();

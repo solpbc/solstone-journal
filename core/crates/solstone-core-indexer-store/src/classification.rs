@@ -430,15 +430,7 @@ fn unclassified(path: &str) -> ChunkClassification {
 }
 
 pub(crate) fn category_name(category: AdmittedCategory) -> &'static str {
-    match category {
-        AdmittedCategory::Transcripts => "transcripts",
-        AdmittedCategory::Entities => "entities",
-        AdmittedCategory::Facets => "facets",
-        AdmittedCategory::ScreenText => "screen_text",
-        // No pattern admits it: body is decided from the path when read, and
-        // the stored category of a body import's file stays transcripts.
-        AdmittedCategory::Body => "body",
-    }
+    category.as_str()
 }
 
 pub(crate) fn basis_name(basis: ScopeBasis) -> &'static str {

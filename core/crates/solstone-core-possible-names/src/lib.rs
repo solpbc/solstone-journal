@@ -213,10 +213,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 fn is_transcript_file_name(name: &str) -> bool {
     !name.contains(['/', '\\'])
         && !name.starts_with('.')
-        && (name == "audio.jsonl"
-            || name.ends_with("_audio.jsonl")
-            || name.ends_with("_transcript.jsonl")
-            || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name))
+        && solstone_core_format::content::speech_transcript_name(name)
 }
 
 fn check_contract(sidecar: &Sidecar) -> Result<(), String> {

@@ -30,6 +30,7 @@ pub mod places;
 pub mod projection;
 mod reconcile_io;
 pub mod record;
+pub mod segment_format;
 pub mod stay;
 
 pub use fingerprint::daily_location_fingerprint;

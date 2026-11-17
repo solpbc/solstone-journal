@@ -51,13 +51,9 @@ impl ConsentSelection {
         Self {
             scope: None,
             facets: Vec::new(),
-            categories: vec![
-                "transcripts".to_owned(),
-                "entities".to_owned(),
-                "facets".to_owned(),
-                "screen_text".to_owned(),
-                "body".to_owned(),
-            ],
+            categories: solstone_core_format::content::kinds::permission_words()
+                .map(str::to_owned)
+                .collect(),
         }
     }
 }
@@ -820,10 +816,8 @@ fn chosen_categories(pairs: &[(String, String)]) -> Vec<String> {
         .iter()
         .filter(|(key, value)| {
             key == "category"
-                && matches!(
-                    value.as_str(),
-                    "transcripts" | "entities" | "facets" | "screen_text" | "body"
-                )
+                && solstone_core_format::content::AdmittedCategory::from_stored_word(value)
+                    .is_some()
         })
         .map(|(_, value)| value.clone())
         .collect()

@@ -122,7 +122,18 @@ impl Candidate {
             let source = source
                 .as_ref()
                 .ok_or("original source metadata unavailable")?;
-            if !source.file.ends_with("screen.jsonl") {
+            if !solstone_core_format::content::segment_file_offers(
+                &source.file,
+                solstone_core_format::content::SegmentReader::Talents,
+                Default::default(),
+            )
+            .iter()
+            .any(|offer| {
+                offer.format
+                    == solstone_core_format::content::FileFormat::Raw(
+                        solstone_core_format::content::RawPerceptFamily::RawScreen,
+                    )
+            }) {
                 continue;
             }
             if source.unparsed_lines != 0 || source.chunks.len() != source.chunk_offsets.len() {

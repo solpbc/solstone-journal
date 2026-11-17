@@ -284,8 +284,7 @@ fn resolve_candidates(
     // 1. Segment file: day-rooted path with at least 3 components whose third contains segment_key
     if parts.len() >= 3 && is_day_key(parts[0]) {
         if let Some(filename) = parts.last() {
-            if *filename == "imported.md"
-                || filename.ends_with("_transcript.md")
+            if solstone_core_format::content::markdown_transcript_name(filename)
                 || *filename == "workout.json"
             {
                 return Vec::new();

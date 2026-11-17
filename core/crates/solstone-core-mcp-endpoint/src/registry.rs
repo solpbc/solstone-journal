@@ -720,13 +720,7 @@ fn recall_memory_input_schema(_context: &SchemaContext<'_>) -> Value {
 }
 
 pub(crate) fn category_token(category: &AdmittedCategory) -> &'static str {
-    match category {
-        AdmittedCategory::Transcripts => "transcripts",
-        AdmittedCategory::Entities => "entities",
-        AdmittedCategory::Facets => "facets",
-        AdmittedCategory::ScreenText => "screen_text",
-        AdmittedCategory::Body => "body",
-    }
+    category.as_str()
 }
 
 /// The `facet` argument, enumerated for this connection. `None` means the

@@ -95,10 +95,17 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
     ),
     (
         "core/crates/solstone-core-format/src/content/mod.rs",
-        "KNOWN_UNINDEXED_PATTERNS",
+        "INDEX_FAMILY_PATTERNS",
         "entity.json",
-        1,
+        2,
         "derived: the classifier records identity files as indexed by entity search",
+    ),
+    (
+        "core/crates/solstone-core-format/src/content/mod.rs",
+        "INDEX_FAMILY_PATTERNS",
+        "facet.json",
+        1,
+        "derived: the file registry identifies facet configuration as non-content",
     ),
     (
         "core/crates/solstone-core-import-sources/src/archive.rs",

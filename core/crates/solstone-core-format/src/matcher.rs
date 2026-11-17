@@ -51,6 +51,28 @@ impl<T: Copy, P: PatternSpec<T> + 'static> Resolver<T, P> {
         self.resolve_index(rel).map(|index| &self.patterns[index])
     }
 
+    /// Resolve the first matching row whose additional input condition holds.
+    pub fn resolve_spec_where(
+        &self,
+        rel: &str,
+        accepts: impl Fn(&P) -> bool,
+    ) -> Option<&'static P> {
+        let options = MatchOptions {
+            case_sensitive: true,
+            require_literal_separator: true,
+            require_literal_leading_dot: false,
+        };
+        let rel_path = Path::new(rel);
+        self.patterns_for_root(PatternRoot::Structural)
+            .iter()
+            .chain(self.patterns_for_root(PatternRoot::DayRooted))
+            .find_map(|compiled| {
+                let row = &self.patterns[compiled.index];
+                (compiled.pattern.matches_path_with(rel_path, options) && accepts(row))
+                    .then_some(row)
+            })
+    }
+
     fn resolve_index(&self, rel: &str) -> Option<usize> {
         let options = MatchOptions {
             case_sensitive: true,

@@ -274,14 +274,20 @@ pub const MIN_INPUT_CHARS: usize = 50;
 /// any other name is known by the processing record transcribe wrote at its
 /// head rather than by its name.
 pub fn is_speech_transcript_file(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| {
-            name.ends_with("audio.jsonl")
-                || name.ends_with("_transcript.jsonl")
-                || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name)
-        })
-        || solstone_core_processing_record::is_transcribe_output(path)
+    solstone_core_format::content::segment_file_offers(
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default(),
+        solstone_core_format::content::SegmentReader::Talents,
+        solstone_core_format::content::FileFacts {
+            transcribe_header: solstone_core_processing_record::is_transcribe_output(path),
+            ..Default::default()
+        },
+    )
+    .iter()
+    .any(|offer| {
+        offer.format == solstone_core_format::content::FileFormat::Raw(RawPerceptFamily::Audio)
+    })
 }
 
 impl EntrySource {
@@ -962,7 +968,20 @@ fn process_segment(
             .filter(|path| {
                 path.file_name()
                     .and_then(|name| name.to_str())
-                    .is_some_and(|name| name == "imported.md" || name.ends_with("_transcript.md"))
+                    .is_some_and(|name| {
+                        solstone_core_format::content::segment_file_offers(
+                            name,
+                            solstone_core_format::content::SegmentReader::Talents,
+                            Default::default(),
+                        )
+                        .iter()
+                        .any(|offer| {
+                            offer.format
+                                == solstone_core_format::content::FileFormat::Content(
+                                    Family::Markdown,
+                                )
+                        })
+                    })
             })
             .collect::<Vec<_>>();
         markdown.sort();
@@ -975,7 +994,17 @@ fn process_segment(
                         end,
                         segment,
                         "transcript",
-                        content,
+                        solstone_core_format::content::format_file(
+                            solstone_core_format::content::FileFormat::Content(Family::Markdown),
+                            &path.to_string_lossy(),
+                            &content,
+                            solstone_core_format::content::FormatterView::LiteralMarkdown,
+                        )
+                        .chunks
+                        .into_iter()
+                        .map(|chunk| chunk.content)
+                        .collect::<Vec<_>>()
+                        .join(""),
                         stream.clone(),
                         None,
                     ));
@@ -991,10 +1020,19 @@ fn process_segment(
         }
         // A Strava workout piece: only the workout's first piece renders, so a
         // workout reads once, on the day it started.
-        for path in files
+        for path in files.iter().filter(|path| {
+            solstone_core_format::content::segment_file_offers(
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default(),
+                solstone_core_format::content::SegmentReader::Talents,
+                Default::default(),
+            )
             .iter()
-            .filter(|path| path.file_name().and_then(|name| name.to_str()) == Some("workout.json"))
-        {
+            .any(|offer| {
+                offer.format == solstone_core_format::content::FileFormat::Content(Family::Workout)
+            })
+        }) {
             let rel = format!(
                 "{day}/{}/{}/workout.json",
                 stream.as_deref().unwrap_or_default(),
@@ -1030,15 +1068,26 @@ fn process_segment(
             }
         }
         for path in &files {
-            if first_kind(path).as_deref() == Some("image")
-                && let Some(content) = raw_content(
-                    path,
-                    segment,
-                    day,
-                    RawPerceptFamily::Audio,
-                    PerceptProjection::Generic,
-                )
-            {
+            let offers = solstone_core_format::content::segment_file_offers(
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default(),
+                solstone_core_format::content::SegmentReader::Talents,
+                solstone_core_format::content::FileFacts {
+                    image_header: first_kind(path).as_deref() == Some("image"),
+                    ..Default::default()
+                },
+            );
+            if offers.iter().any(|offer| {
+                offer.exception
+                    == Some(solstone_core_format::content::ReaderException::PhotoAsSpeechForTalents)
+            }) && let Some(content) = raw_content(
+                path,
+                segment,
+                day,
+                RawPerceptFamily::Audio,
+                PerceptProjection::Generic,
+            ) {
                 entries.push(entry(
                     start,
                     end,
@@ -1974,6 +2023,71 @@ mod tests {
 
     fn only(stems: &[&str]) -> TalentSource {
         TalentSource::Only(stems.iter().map(|stem| (*stem).to_owned()).collect())
+    }
+
+    #[test]
+    fn chat_and_photo_keep_their_distinct_reader_projections() {
+        let root = TempDir::new().unwrap();
+        let chat = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("import.claude")
+            .join(SEGMENT);
+        let photo = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("camera")
+            .join(SEGMENT);
+        fs::create_dir_all(&chat).unwrap();
+        fs::create_dir_all(&photo).unwrap();
+        fs::write(chat.join("conversation_transcript.jsonl"), "{\"model\":\"example\"}\n{\"start\":\"09:00:01\",\"speaker\":\"User\",\"text\":\"the chat words\"}\n").unwrap();
+        let image = "{\"kind\":\"image\",\"raw\":\"photo.jpg\"}\n{\"start\":\"09:00:02\",\"text\":\"the photograph description\"}\n";
+        fs::write(photo.join("photo.jsonl"), image).unwrap();
+        let (talent, _) = cluster(
+            root.path(),
+            DAY,
+            &sources(true, false, TalentSource::Disabled),
+        );
+        assert!(
+            talent.contains("[09:00:01] User: the chat words"),
+            "{talent}"
+        );
+        assert!(
+            talent.contains("[09:00:02] the photograph description"),
+            "{talent}"
+        );
+        let chat_segment = solstone_core_journal_io::paths::Segment::resolve_exact(
+            root.path(),
+            DAY,
+            "import.claude",
+            SEGMENT,
+        )
+        .unwrap()
+        .unwrap();
+        let page =
+            crate::segment_page::read_segment_transcript_page(&chat_segment, None, None, None)
+                .unwrap();
+        assert!(
+            page.entries
+                .iter()
+                .any(|entry| entry.text.contains("**User:** the chat words"))
+        );
+        let photo_segment = solstone_core_journal_io::paths::Segment::resolve_exact(
+            root.path(),
+            DAY,
+            "camera",
+            SEGMENT,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(
+            crate::segment_page::read_segment_transcript_page(&photo_segment, None, None, None)
+                .unwrap()
+                .entries
+                .is_empty()
+        );
     }
 
     #[test]

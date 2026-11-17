@@ -327,7 +327,7 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
         }
         let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
         if resolution == ContentResolution::Unrecognized
-            && (filename.ends_with("_transcript.md") || filename == "imported.md")
+            && content::markdown_transcript_name(filename)
         {
             resolution = ContentResolution::Indexed(Family::Markdown);
         }

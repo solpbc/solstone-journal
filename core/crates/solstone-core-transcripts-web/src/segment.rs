@@ -20,7 +20,10 @@ use solstone_core_format::audio_archive::{
 use solstone_core_format::content::{
     Family, RawPerceptFamily, produce_chunks, produce_raw_percept_chunks, talent_projection_map,
 };
-use solstone_core_format::objects::{objects_line, objects_overlay};
+use solstone_core_format::content::{
+    FileFacts, FileFormat, FormatterView, SegmentReader, format_file, segment_file_offers,
+};
+use solstone_core_format::objects::objects_overlay;
 use solstone_core_format::segment::segment_parse;
 use solstone_core_processing_record::vocab;
 use solstone_core_system_health::{DataState, derive_modality_state};
@@ -229,9 +232,18 @@ fn prepare_segment(
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        let is_audio = name.ends_with("audio.jsonl")
-            || (name.ends_with(".jsonl")
-                && placement_part_stems.contains(name.trim_end_matches(".jsonl")));
+        let offered = segment_file_offers(
+            &format!("{day}/{stream}/{key}/{name}"),
+            SegmentReader::Dashboard,
+            FileFacts {
+                archive_part: name.ends_with(".jsonl")
+                    && placement_part_stems.contains(name.trim_end_matches(".jsonl")),
+                calendar_stream: solstone_core_segment::is_calendar_stream(root, stream),
+                ..Default::default()
+            },
+        );
+        let offered_format = offered.first().map(|offer| offer.format);
+        let is_audio = offered_format == Some(FileFormat::Raw(RawPerceptFamily::Audio));
         if is_audio {
             has_jsonl.insert("audio".into(), true);
             match read_entries(path) {
@@ -252,7 +264,7 @@ fn prepare_segment(
                 }
                 Err(error) => warnings.push(warning("audio", path, error, now)),
             }
-        } else if name.ends_with("screen.jsonl") {
+        } else if offered_format == Some(FileFormat::Raw(RawPerceptFamily::RawScreen)) {
             has_jsonl.insert("screen".into(), true);
             match read_entries(path) {
                 Ok(entries) => {
@@ -263,14 +275,12 @@ fn prepare_segment(
                 }
                 Err(error) => warnings.push(warning("screen", path, error, now)),
             }
-        } else if name.starts_with("browser_") && name.ends_with(".jsonl") {
+        } else if offered_format == Some(FileFormat::Content(Family::Browser)) {
             match read_entries(path) {
                 Ok(entries) => browser_chunks(&mut chunks, zone, name, &entries),
                 Err(error) => warnings.push(warning("browser", path, error, now)),
             }
-        } else if solstone_core_format::calendar::names_calendar_file(name)
-            && solstone_core_segment::is_calendar_stream(root, stream)
-        {
+        } else if offered_format == Some(FileFormat::Content(Family::Calendar)) {
             // Each calendar note as plain text, at the moment it was recorded,
             // with the owner found by their own addresses as search has it.
             match fs::read_to_string(path) {
@@ -292,13 +302,13 @@ fn prepare_segment(
                             "type": "calendar",
                             "time": local_time(zone, timestamp),
                             "timestamp": timestamp,
-                            "text": solstone_core_format::calendar::render_calendar_note(note, owner),
+                            "text": format_file(FileFormat::Content(Family::Calendar), name, "", FormatterView::CalendarNote { note, owner }).chunks.into_iter().map(|chunk| chunk.content).collect::<String>(),
                         }));
                     }
                 }
                 Err(error) => warnings.push(warning("calendar", path, error, now)),
             }
-        } else if name.ends_with("_protected_video.jsonl") {
+        } else if offered_format == Some(FileFormat::Content(Family::ProtectedVideo)) {
             match fs::read_to_string(path) {
                 Ok(text) => {
                     let produced = produce_chunks(Family::ProtectedVideo, name, &text);
@@ -314,7 +324,7 @@ fn prepare_segment(
                 }
                 Err(error) => warnings.push(warning("protected_video", path, error, now)),
             }
-        } else if name.ends_with("_desktop_activity.jsonl") {
+        } else if offered_format == Some(FileFormat::Content(Family::DesktopActivity)) {
             match fs::read_to_string(path) {
                 Ok(text) => {
                     let four_part_rel = format!("{day}/{stream}/{key}/{name}");
@@ -354,7 +364,7 @@ fn prepare_segment(
                     if !is_failed {
                         let mut registered = false;
                         for entry in &entries {
-                            if let Some(text) = entry.get("text").and_then(Value::as_str) {
+                            if entry.get("text").and_then(Value::as_str).is_some() {
                                 if !registered {
                                     media.register_image_url(day, stream, key, raw_name);
                                     registered = true;
@@ -379,10 +389,16 @@ fn prepare_segment(
                                 if let Some(overlay) = detections.and_then(objects_overlay) {
                                     source_ref["objects"] = overlay;
                                 }
-                                let markdown = match detections.and_then(objects_line) {
-                                    Some(line) => format!("{text}\n\n{line}"),
-                                    None => text.to_owned(),
-                                };
+                                let markdown = format_file(
+                                    FileFormat::PhotoDescription,
+                                    raw_name,
+                                    &serde_json::to_string(entry).expect("JSON object serializes"),
+                                    FormatterView::Stored,
+                                )
+                                .chunks
+                                .into_iter()
+                                .map(|chunk| chunk.content)
+                                .collect::<String>();
                                 chunks.push(json!({
                                     "type": "image",
                                     "time": time,
@@ -404,6 +420,16 @@ fn prepare_segment(
         for path in markdown_files(&dir) {
             match fs::read_to_string(&path) {
                 Ok(markdown) if !markdown.trim().is_empty() => {
+                    let markdown = format_file(
+                        FileFormat::Content(Family::Markdown),
+                        &path.to_string_lossy(),
+                        &markdown,
+                        FormatterView::LiteralMarkdown,
+                    )
+                    .chunks
+                    .into_iter()
+                    .map(|chunk| chunk.content)
+                    .collect::<String>();
                     chunks.push(json!({"type":"markdown","time":time,"timestamp":timestamp,"markdown":markdown.trim(),"source_ref":{"filename":path.file_name().and_then(|name| name.to_str()).unwrap_or_default()}}));
                     markdown_added = true;
                 }

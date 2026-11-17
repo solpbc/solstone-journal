@@ -760,13 +760,7 @@ fn audit_permission_snapshot(
     let categories = snapshot
         .categories
         .iter()
-        .map(|category| match category {
-            solstone_core_indexer_query::AdmittedCategory::Transcripts => "transcripts".to_owned(),
-            solstone_core_indexer_query::AdmittedCategory::Entities => "entities".to_owned(),
-            solstone_core_indexer_query::AdmittedCategory::Facets => "facets".to_owned(),
-            solstone_core_indexer_query::AdmittedCategory::ScreenText => "screen_text".to_owned(),
-            solstone_core_indexer_query::AdmittedCategory::Body => "body".to_owned(),
-        })
+        .map(|category| category.as_str().to_owned())
         .collect();
     let (scope, facet_ids) = match &snapshot.scope {
         solstone_core_indexer_query::ConnectionScope::WholeJournal => {
