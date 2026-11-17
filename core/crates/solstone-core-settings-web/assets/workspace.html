@@ -2230,7 +2230,7 @@ button:focus:not(:focus-visible) {
 .trash-bar-actions { margin-left: auto; display: flex; gap: .5em; }
 /* A control whose write is out stays focusable and drawn, dimmed; a switch
    draws through its slider, since its box is invisible. */
-:is(#section-trash, #section-storage, #section-localaccess, #section-transcription, #section-vision, #section-sync, #trashConfirmModal, #cleanupLogsModal, #ownerVoiceConsentModal, #facesClearModal) :is([aria-busy="true"], [aria-busy="true"] + .slider) { opacity: .8; cursor: progress; }
+:is(#section-trash, #section-storage, #section-localaccess, #section-transcription, #section-vision, #section-sync, #section-facets, #settings-facet-detail-view, #trashConfirmModal, #cleanupLogsModal, #ownerVoiceConsentModal, #facesClearModal, #facetCreateModal, #customActivityModal) :is([aria-busy="true"], [aria-busy="true"] + .slider) { opacity: .8; cursor: progress; }
 .trash-danger-outline { padding: .5em 1em; background: var(--paper); color: var(--danger); border: 1px solid var(--danger); border-radius: 6px; font-size: .9em; cursor: pointer; }
 .trash-result { padding: .5em 1em; border-bottom: 1px solid var(--hairline); color: var(--ink-soft); font-size: .9em; }
 .trash-row { display: flex; align-items: flex-start; gap: .75em; padding: .65em 1em; font-size: .85em; cursor: pointer; }
@@ -3710,7 +3710,8 @@ function closeOntoOpener(modal) {
 }
 
 // Focus the owner had on a control that a redraw hid or turned off goes to the
-// first of `targets` still shown. Focus anywhere else is left alone.
+// first of `targets` still shown. Focus anywhere else is left alone. `held` is
+// that control, or true when the caller already knows focus was its.
 function settingsLand(held, targets) {
   if (!held) return false;
   // A browser can still report a control it has just turned off as focused.
@@ -4166,13 +4167,15 @@ function setupFacetCreateModal() {
   });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    // The add, or Enter in the name, while one is out sends nothing more.
+    if (window.SolFocus.isBusy(submit)) return;
     const title = name.value.trim();
     if (!title) {
       notifyError('validation error', 'name is required');
       name.focus();
       return;
     }
-    submit.disabled = true;
+    window.SolFocus.setBusy(submit, true);
     try {
       const response = await settingsFetch('/app/settings/api/facet', {
         method: 'POST',
@@ -4188,7 +4191,7 @@ function setupFacetCreateModal() {
     } catch (err) {
       notifyError('creation failed', err.message);
     } finally {
-      submit.disabled = false;
+      window.SolFocus.setBusy(submit, false);
     }
   });
 }
@@ -4260,9 +4263,14 @@ document.getElementById('settingsNav').addEventListener('keydown', (e) => {
   switchSection(visibleTabs[newIndex].dataset.section);
 });
 
-// Mobile select change
+// Mobile select change. The facets section hides the select (it has its own
+// way back), so focus goes to the section's heading: where the owner chose
+// to go.
 document.getElementById('navSelect').addEventListener('change', (e) => {
+  const held = settingsHeld(e.target);
   switchSection(e.target.value);
+  const section = document.querySelector('.settings-section.active');
+  settingsLand(held, [section && section.querySelector('h2')]);
 });
 
 // Devices moved to the network app; an old settings link lands there.
@@ -4785,7 +4793,9 @@ function setupDoubleTapEdit(fieldId, displayId, inputId, configKey) {
 
   if (input.tagName !== 'TEXTAREA') {
     input.onkeydown = (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      // Enter saves as leaving the field does; focus goes back to the name
+      // it's shown as, not to the page.
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); settingsLand(input, [display]); }
     };
   }
 }
@@ -4810,7 +4820,7 @@ function setupEmojiPicker() {
   };
 
   input.onkeydown = (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); settingsLand(input, [display]); }
   };
 }
 
@@ -5141,12 +5151,20 @@ function setupColorPicker() {
 function setupMutedAction() {
   const action = document.getElementById('facetMuteAction');
   action.onclick = async () => {
-    action.disabled = true;
-    await saveFacetField('muted', !Boolean(facetConfig?.muted), null);
-    action.disabled = false;
+    // A second press while the mute is out sends nothing more.
+    if (window.SolFocus.isBusy(action)) return;
+    window.SolFocus.setBusy(action, true);
+    try {
+      await saveFacetField('muted', !Boolean(facetConfig?.muted), null);
+    } finally {
+      window.SolFocus.setBusy(action, false);
+    }
     noteFacetMuted(facetDetailSlugState, facetConfig?.muted);
   };
 }
+
+// Each facet field's value while its save is out, as JSON.
+const facetSending = new Map();
 
 async function saveFacetField(field, value, triggerEl) {
   if (!facetDetailSlugState) return;
@@ -5155,6 +5173,10 @@ async function saveFacetField(field, value, triggerEl) {
   if (JSON.stringify(facetConfig?.[field]) === JSON.stringify(value)) {
     return;
   }
+  // Nor the value already on its way.
+  const sending = JSON.stringify(value);
+  if (facetSending.get(field) === sending) return;
+  facetSending.set(field, sending);
 
   try {
     const response = await settingsFetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}`, {
@@ -5178,6 +5200,8 @@ async function saveFacetField(field, value, triggerEl) {
     console.error('Save error:', err);
     // For errors, use notification since they need attention and page won't reload
     notifyError( 'save failed', err.message);
+  } finally {
+    if (facetSending.get(field) === sending) facetSending.delete(field);
   }
 }
 
@@ -5335,8 +5359,15 @@ function wireFacetDeleteDialog(nodes) {
     facetEraseBackups = erase && window.BackupErase
       ? { chosen: window.BackupErase.chosenIn(body), clause: window.BackupErase.receiptIn(body, 1) }
       : { chosen: false, clause: '' };
+    // The page is out from under the dialog before focus goes back to its
+    // opener, which stays busy while the delete is out.
+    const opener = facetDialog.returnFocus;
     closeFacetDeleteDialog(false);
-    runFacetDelete(slug, erase);
+    window.ConveyModalLayer?.reconcile?.({ restore: false });
+    const button = document.getElementById('facetDeleteBtn');
+    window.SolFocus.setBusy(button, true);
+    if (opener && typeof opener.focus === 'function') opener.focus();
+    runFacetDelete(slug, erase).finally(() => window.SolFocus.setBusy(button, false));
   };
   nodes.confirm.addEventListener('click', () => act(false));
   nodes.eraseConfirm.addEventListener('click', () => act(true));
@@ -5356,6 +5387,8 @@ function wireFacetDeleteDialog(nodes) {
 function deleteFacetFromPage() {
   const nodes = facetDialogNodes();
   if (!nodes.modal || !facetDetailSlugState) return;
+  // No second dialog, or a second delete, while one is out.
+  if (window.SolFocus.isBusy(document.getElementById('facetDeleteBtn'))) return;
   wireFacetDeleteDialog(nodes);
   const title = (facetConfig && facetConfig.title) || facetDetailSlugState;
   facetDialog = { slug: facetDetailSlugState, title, step: 'move', returnFocus: document.activeElement, overflow: document.body.style.overflow };
@@ -5430,24 +5463,33 @@ function showStashedFacetReceipt() {
 // ========== END FACET DELETE ==========
 
 // ========== ACTIVITY LOG ==========
-function loadLogs(facetName, cursor = null) {
+function loadLogs(facetName, cursor = null, button = null) {
   const url = cursor
     ? `/app/settings/api/facet/${facetName}/logs?cursor=${cursor}`
     : `/app/settings/api/facet/${facetName}/logs`;
 
-  settingsFetch(url)
+  window.SolFocus.setBusy(button, true);
+  return settingsFetch(url)
     .then(r => r.json())
     .then(data => {
+      const held = settingsHeld(button);
+      const entries = document.getElementById('logEntries');
+      const loaded = entries.children.length;
       renderLogDay(data, !cursor);
       logNextCursor = data.next_cursor;
       document.getElementById('logMore').style.display = logNextCursor ? 'block' : 'none';
+      // "load older" hides once nothing older is left: focus goes to the
+      // first of what it loaded.
+      const added = Array.from(entries.children).slice(loaded);
+      settingsLand(held, [added.map(row => row.querySelector('summary')).find(Boolean), added[0] && added[0].querySelector('.log-day-label'), document.querySelector('#facetDetailActivity h3')]);
     })
     .catch(err => {
       console.error('Error loading logs:', err);
       if (!cursor) {
         document.getElementById('logEntries').innerHTML = '<div class="log-empty">error loading logs</div>';
       }
-    });
+    })
+    .finally(() => window.SolFocus.setBusy(button, false));
 }
 
 const FACET_ACTION_LABELS = Object.freeze({
@@ -5514,9 +5556,12 @@ function formatLogDay(day) {
   return window.JournalFormat.day(day).toLowerCase();
 }
 
-document.getElementById('logMoreBtn').onclick = () => {
+document.getElementById('logMoreBtn').onclick = (event) => {
+  const button = event.currentTarget;
+  // One older day at a time.
+  if (window.SolFocus.isBusy(button)) return;
   if (logNextCursor && facetDetailSlugState) {
-    loadLogs(facetDetailSlugState, logNextCursor);
+    loadLogs(facetDetailSlugState, logNextCursor, button);
   }
 };
 
@@ -7051,6 +7096,7 @@ function renderActivities(data) {
   const attachedList = document.getElementById('attachedActivitiesList');
   const defaultsList = document.getElementById('defaultActivitiesList');
   const countEl = document.getElementById('attachedActivitiesCount');
+  const held = activitiesHeld(attachedList, defaultsList);
 
   const attached = data.activities || [];
   const defaults = data.defaults || [];
@@ -7103,26 +7149,83 @@ function renderActivities(data) {
 
     // Set up click handlers for chips
     defaultsList.querySelectorAll('.activity-chip:not(.activity-chip-attached)').forEach(chip => {
-      chip.addEventListener('click', () => addDefaultActivity(chip.dataset.id));
+      chip.addEventListener('click', () => addDefaultActivity(chip.dataset.id, chip));
+      // A chip is a button: Enter and Space press it, as a click does.
+      chip.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        addDefaultActivity(chip.dataset.id, chip);
+      });
     });
   }
+  if (held) landActivities(held);
+}
+
+// Where focus was in the activity lists before a redraw: the control, by its
+// kind and activity, and the rows around it.
+function activitiesHeld(attachedList, defaultsList) {
+  const active = settingsPage.activeElement;
+  if (!active || active === settingsPage.body) return null;
+  const list = attachedList.contains(active) ? attachedList : defaultsList.contains(active) ? defaultsList : null;
+  if (!list || !active.dataset || !active.dataset.id) return null;
+  const kind = active.classList.contains('activity-chip') ? 'chip' : active.classList.contains('activity-priority') ? 'priority' : 'remove';
+  const rows = list === attachedList
+    ? Array.from(attachedList.querySelectorAll('.activity-item')).map(row => row.dataset.id)
+    : Array.from(defaultsList.querySelectorAll('.activity-chip:not(.activity-chip-attached)')).map(chip => chip.dataset.id);
+  return { kind, id: active.dataset.id, rows };
+}
+
+// After a redraw: the same control drawn again; else, where its row went, the
+// next row's (a priority for a removed activity, the next chip for an added
+// one), else the one before; else what is left there: the activities heading,
+// or "add custom activity".
+function landActivities(held) {
+  const attached = id => document.querySelector(`#attachedActivitiesList .activity-item[data-id="${CSS.escape(id)}"] .activity-priority`);
+  const chip = id => document.querySelector(`#defaultActivitiesList .activity-chip[data-id="${CSS.escape(id)}"]:not(.activity-chip-attached)`);
+  const same = held.kind === 'chip' ? chip(held.id)
+    : document.querySelector(`#attachedActivitiesList .activity-${held.kind}[data-id="${CSS.escape(held.id)}"]`);
+  const find = held.kind === 'chip' ? chip : attached;
+  const at = held.rows.indexOf(held.id);
+  const after = held.rows.slice(at + 1).map(find).find(Boolean);
+  const before = held.rows.slice(0, Math.max(at, 0)).reverse().map(find).find(Boolean);
+  const rest = held.kind === 'chip'
+    ? document.getElementById('addCustomActivityBtn')
+    : document.querySelector('#facetDetailActivities h3');
+  settingsLand(true, [same, after, before, rest]);
 }
 
 function setupAttachedActivityListeners() {
   // Priority change
   document.querySelectorAll('.activity-priority').forEach(select => {
     select.addEventListener('change', async () => {
+      // While a priority's save is out, the choice stays the one sent.
+      if (window.SolFocus.isBusy(select)) {
+        select.value = select.dataset.sending;
+        return;
+      }
       const activityId = select.dataset.id;
       const priority = select.value;
-      await updateActivity(activityId, { priority });
+      select.dataset.sending = priority;
+      window.SolFocus.setBusy(select, true);
+      try {
+        await updateActivity(activityId, { priority });
+      } finally {
+        window.SolFocus.setBusy(select, false);
+      }
     });
   });
 
   // Remove button
   document.querySelectorAll('.activity-remove').forEach(btn => {
     btn.addEventListener('click', async () => {
+      if (window.SolFocus.isBusy(btn)) return;
       const activityId = btn.dataset.id;
-      await removeActivity(activityId);
+      window.SolFocus.setBusy(btn, true);
+      try {
+        await removeActivity(activityId);
+      } finally {
+        window.SolFocus.setBusy(btn, false);
+      }
     });
   });
 
@@ -7191,8 +7294,11 @@ function startEditField(el, field) {
   });
 }
 
-async function addDefaultActivity(activityId) {
+async function addDefaultActivity(activityId, chip = null) {
   if (!facetDetailSlugState) return;
+  // A second press while the add is out sends nothing more.
+  if (chip && window.SolFocus.isBusy(chip)) return;
+  window.SolFocus.setBusy(chip, true);
 
   try {
     const response = await settingsFetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities`, {
@@ -7208,6 +7314,8 @@ async function addDefaultActivity(activityId) {
   } catch (err) {
     console.error('Error adding activity:', err);
     notifyError('add failed', err.message);
+  } finally {
+    window.SolFocus.setBusy(chip, false);
   }
 }
 
@@ -7266,7 +7374,10 @@ document.getElementById('customActivityModal').addEventListener('click', (e) => 
   if (e.target === document.getElementById('customActivityModal')) document.getElementById('customActivityModal')._closeAccessible();
 });
 
-document.getElementById('saveCustomActivityBtn').addEventListener('click', async () => {
+document.getElementById('saveCustomActivityBtn').addEventListener('click', async (event) => {
+  const save = event.currentTarget;
+  // A second press while the add is out sends nothing more.
+  if (window.SolFocus.isBusy(save)) return;
   const name = document.getElementById('customActivityName').value.trim();
   const description = document.getElementById('customActivityDesc').value.trim();
   const emoji = document.getElementById('customActivityIcon').value.trim();
@@ -7279,6 +7390,7 @@ document.getElementById('saveCustomActivityBtn').addEventListener('click', async
 
   if (!facetDetailSlugState) return;
 
+  window.SolFocus.setBusy(save, true);
   try {
     const response = await settingsFetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities`, {
       method: 'POST',
@@ -7293,6 +7405,8 @@ document.getElementById('saveCustomActivityBtn').addEventListener('click', async
   } catch (err) {
     console.error('Error adding custom activity:', err);
     notifyError('add failed', err.message);
+  } finally {
+    window.SolFocus.setBusy(save, false);
   }
 });
 
@@ -7376,9 +7490,7 @@ async function saveEmptyAudioConfig() {
       emptyAudio.busy = false;
       renderEmptyAudio();
       // A failure turns the toggle off: focus goes to the line that says why.
-      // A browser can still report a control it has just turned off as focused.
-      if (held && toggle.disabled) toggle.blur();
-      window.SolFocus.refocus(settingsPage, held, [document.getElementById('emptyAudioStatus')]);
+      settingsLand(held && toggle, [document.getElementById('emptyAudioStatus')]);
       void measureStorage();
     }
   }
@@ -8292,7 +8404,7 @@ function localAccessHeld() {
   return Boolean(active) && document.getElementById('localAccessConfirm').contains(active);
 }
 function landLocalAccess(held) {
-  window.SolFocus.refocus(settingsPage, held, [document.getElementById('field-local-access-open'), document.getElementById('localAccessResult')]);
+  settingsLand(held, [document.getElementById('field-local-access-open'), document.getElementById('localAccessResult')]);
 }
 
 async function saveLocalAccess(open, button = null) {
@@ -9495,7 +9607,7 @@ async function runTrashAct(act, chosen, choice = null, opener = null) {
   const clause = done && window.BackupErase ? window.BackupErase.receipt(choice, done) : '';
   result.textContent = [trashResultLine(act, chosen, answer, listed), clause].filter(Boolean).join(' ');
   result.hidden = !result.textContent;
-  window.SolFocus.refocus(settingsPage, held, trashLandings(act, chosen, order, loaded).filter(Boolean));
+  settingsLand(held, trashLandings(act, chosen, order, loaded));
   loadRemovalHistory();
 }
 
