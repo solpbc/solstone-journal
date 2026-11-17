@@ -76,7 +76,8 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
   const timers = new Map();
   let timerId = 0;
   const watched = journal || {now: '2026-09-24T12:00:00Z', today: '20260924', pairing: null, connections: []};
-  const fields = Object.fromEntries(['outcome', 'tool', 'agent', 'from', 'to', 'byo-hostname', 'byo-relay-address', 'byo-relay-port'].map(key => [key.startsWith('byo-') ? key : `a-${key}`, {value: ''}]));
+  // Stand-ins for the fields the page reads and writes by id; the page also listens on its agent filter.
+  const fields = Object.fromEntries(['outcome', 'tool', 'agent', 'from', 'to', 'byo-hostname', 'byo-relay-address', 'byo-relay-port'].map(key => [key.startsWith('byo-') ? key : `a-${key}`, {value: '', addEventListener() {}}]));
   const view = {
     _html: '',
     // Stand-ins for the view's top-level nodes: a new one for each write, so the page's check
@@ -288,6 +289,160 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
   return {view, calls, click, opened, popups, location, tick, fields, keydown, journal: watched, notifications};
 }
 async function settle() { for (let i = 0; i < 6; i += 1) await new Promise(resolve => setImmediate(resolve)); }
+
+// ---- a pick from a select, on a phone that blurs it late
+
+// The contract cases' page (a document with focus and events, a clock the cases move, the view
+// contract, its read store and the shell's focus helpers), loaded apart from them.
+function contractPage() {
+  const file = path.join(__dirname, 'agents_contract_dom.js');
+  const body = `${fs.readFileSync(file, 'utf8')}\nreturn { makePage, settle, journal, agentsState };`;
+  return new Function('require', 'module', 'exports', '__dirname', '__filename', body)(require, {exports: {}}, {}, __dirname, file);
+}
+// iOS, after a pick: the change with the select still focused...
+function pick(p, select, value) {
+  select.focus();
+  assert.ok(p.doc.activeElement === select, 'the select has focus before the pick');
+  select.value = value;
+  p.doc.dispatch(select, {type: 'change'});
+}
+// ...then, as its menu closes, a blur with nothing pressed in the page.
+function lateBlur(p, select, {moveFocus = true} = {}) {
+  if (moveFocus) p.doc.activeElement = p.doc.body;
+  select.fire({type: 'blur', target: select, bubbles: false, preventDefault() {}, stopPropagation() {}});
+  p.doc.dispatch(select, {type: 'focusout'});
+}
+// The document's capture listeners of the kinds a wait listens for.
+function captureListeners(p) {
+  let n = 0;
+  for (const type of ['pointerdown', 'touchstart', 'mousedown', 'keydown']) n += (p.doc.listeners.get(type) || []).filter(l => l.capture).length;
+  return n;
+}
+
+async function selectLandingCases() {
+  const kit = contractPage();
+  const scriptStart = html.indexOf("<script>\n(() => {\n  'use strict';");
+  assert.ok(scriptStart > 0, 'the fragment has its one inline script');
+  const env = {manifestDir: root, script: html.slice(scriptStart + '<script>'.length, html.indexOf('</script>', scriptStart)), markup: html.slice(0, scriptStart).replace(/<style>[\s\S]*?<\/style>/g, '')};
+  async function bootPage(answers) {
+    const p = kit.makePage(env, '/app/agents/', answers ? {answers} : undefined);
+    p.loadScript();
+    p.place();
+    await p.mount();
+    await kit.settle();
+    return p;
+  }
+  // An agent's own page, with what it may see.
+  async function scopePage(answers) {
+    const p = await bootPage(answers);
+    p.press(p.q('[data-connection="oauth:g1"]'));
+    await kit.settle();
+    const select = p.byId('scope');
+    assert.ok(select && select.checkVisibility(), 'the scope select is shown');
+    return {p, select, value: 'facets'};
+  }
+  // The activity page, with its agent filter.
+  async function activityPage() {
+    const p = await bootPage();
+    p.press(p.q('[data-route="activity"]'));
+    await kit.settle();
+    const select = p.byId('a-agent');
+    assert.ok(select && select.checkVisibility(), 'the agent filter is shown');
+    return {p, select, value: 'oauth:g1'};
+  }
+
+  for (const [label, open] of [['what an agent may see', scopePage], ['the activity agent filter', activityPage]]) {
+    await test(`${label}: a pick on a phone keeps focus through the menu's late blur`, async () => {
+      const {p, select, value} = await open();
+      pick(p, select, value);
+      p.clock.advance(865);
+      lateBlur(p, select);
+      p.clock.advance(0);
+      assert.ok(p.doc.activeElement === select, 'focus is back on the same select');
+    });
+
+    await test(`${label}: a pick where the select keeps focus leaves nothing behind`, async () => {
+      const {p, select, value} = await open();
+      const held = JSON.stringify(p.view.ctx.held());
+      const capture = captureListeners(p);
+      pick(p, select, value);
+      p.clock.advance(2000);
+      await kit.settle();
+      assert.ok(p.doc.activeElement === select, 'focus is untouched');
+      assert.ok(JSON.stringify(p.view.ctx.held()) === held, 'the view holds what it held before the pick');
+      assert.ok(captureListeners(p) === capture, 'no capture listener is left on the document');
+    });
+  }
+
+  await test('leaving while a pick waits lands nothing and leaves nothing of the wait', async () => {
+    const {p, select, value} = await scopePage();
+    const view = p.view;
+    pick(p, select, value);
+    p.leave();
+    await kit.settle();
+    lateBlur(p, select, {moveFocus: false});
+    p.clock.advance(2000);
+    await kit.settle();
+    assert.ok(p.doc.activeElement !== select, 'focus is not put back on the gone select');
+    assert.ok(Object.values(view.ctx.held()).every(n => n === 0), 'the view holds nothing');
+    assert.ok(captureListeners(p) === 0, 'no capture listener is left on the document');
+  });
+
+  // A solstone.me sign-up the enable poll follows; once it's done the page reads its state again,
+  // with a new facet, and draws the agent's page again: a new scope select.
+  function redrawJournal() {
+    const box = {st: kit.agentsState(), op: {phase: 'waiting', portal_url: 'https://services.example/consent'}};
+    const answers = kit.journal({'GET /app/agents/api/state': () => box.st, 'GET /app/agents/api/enable': () => ({operation: box.op})});
+    return {box, answers};
+  }
+  async function heldPoll(p, box) {
+    p.holds.push(call => call.url.startsWith('/app/agents/api/enable'));
+    p.clock.advance(1500);
+    await kit.settle();
+    const out = p.calls.find(call => call.url.startsWith('/app/agents/api/enable') && !call.settled);
+    assert.ok(out, 'the enable poll is out');
+    return () => {
+      box.op = {phase: 'enabled'};
+      box.st = {...box.st, facets: [{id: 'f1', name: 'work', title: 'work'}]};
+      p.holds.length = 0;
+      out.answer({operation: box.op});
+    };
+  }
+
+  await test('what an agent may see: drawn again before the late blur, focus is on the new select', async () => {
+    const {box, answers} = redrawJournal();
+    const {p, select, value} = await scopePage(answers);
+    const finish = await heldPoll(p, box);
+    pick(p, select, value);
+    finish();
+    await kit.settle();
+    const drawn = p.byId('scope');
+    assert.ok(!select.isConnected && drawn && drawn !== select, 'the page drew a new select');
+    assert.ok(p.doc.activeElement === drawn, 'the redraw keeps focus on the new select');
+    p.clock.advance(865);
+    lateBlur(p, select, {moveFocus: false});
+    p.clock.advance(0);
+    assert.ok(p.doc.activeElement === drawn, 'a late blur of the old select changes nothing');
+    p.clock.advance(2000);
+    assert.ok(captureListeners(p) === 0, 'no capture listener of the wait is left');
+  });
+
+  await test('what an agent may see: drawn again after the landing, focus is on the new select', async () => {
+    const {box, answers} = redrawJournal();
+    const {p, select, value} = await scopePage(answers);
+    const finish = await heldPoll(p, box);
+    pick(p, select, value);
+    p.clock.advance(865);
+    lateBlur(p, select);
+    p.clock.advance(0);
+    assert.ok(p.doc.activeElement === select, 'focus is back on the select');
+    finish();
+    await kit.settle();
+    const drawn = p.byId('scope');
+    assert.ok(!select.isConnected && drawn && drawn !== select, 'the page drew a new select');
+    assert.ok(p.doc.activeElement === drawn, 'the redraw keeps focus on the new select');
+  });
+}
 function has(view, text, why) { assert(view.innerHTML.includes(text), why || `missing: ${text}`); }
 function lacks(view, text, why) { assert(!view.innerHTML.includes(text), why || `unexpected: ${text}`); }
 async function test(name, body) {
@@ -298,8 +453,9 @@ async function test(name, body) {
 (async () => {
   await test('applied activity filters survive rendering and preserve the request scope', async () => {
     const agent = connection('oauth', 'g1', 'Claude', null);
-    const {click, fields, calls} = await boot(baseState({...ME_ON, connections: [agent]}));
+    const {click, fields, calls, notifications} = await boot(baseState({...ME_ON, connections: [agent]}));
     await click({activityConnection: agent.key});
+    assert.strictEqual(notifications.length, 0, 'the activity page draws without an error');
     assert.strictEqual(fields['a-agent'].value, agent.key);
     const filters = {outcome: 'refused', tool: 'search', agent: agent.key, from: '2026-09-01', to: '2026-09-24'};
     for (const [key, value] of Object.entries(filters)) fields[`a-${key}`].value = value;
@@ -1400,6 +1556,7 @@ async function test(name, body) {
     lacks(paired.view, 'data-again=');
   });
 
+  await selectLandingCases();
   cases += await require('./agents_contract_dom.js')(root);
   console.log(`DOM CASES: ${cases} passed`);
 })().catch(error => { console.error(error); process.exit(1); });
