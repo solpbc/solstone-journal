@@ -1306,5 +1306,318 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(read.aborted, 'aborted with the view');
   });
 
+  // ---- presses that keep focus: the trash, storage and local access
+
+  // A journal whose trash list is what the last act left, and whose local
+  // access answers (the base journal() leaves it out).
+  async function livePage(address, { items = ['t1', 't2', 't3'], local = null, extra = {} } = {}) {
+    let listed = items.map((id) => (typeof id === 'string' ? trashItem(id) : id));
+    const base = journal(extra);
+    const answers = (url, opts) => {
+      const u = new URL(url, ORIGIN);
+      const method = String(opts?.method || 'GET').toUpperCase();
+      const body = opts?.body ? JSON.parse(opts.body) : {};
+      if (u.pathname === '/app/settings/api/trash' && method === 'GET') return { erase_after_days: 7, items: listed };
+      if (u.pathname === '/app/settings/api/trash/erase' || u.pathname === '/app/settings/api/trash/recover') {
+        listed = listed.filter((item) => !body.ids.includes(item.id));
+        return { done: body.ids, failed: [] };
+      }
+      if (u.pathname === '/app/settings/api/trash/empty') {
+        const done = listed.map((item) => item.id);
+        listed = [];
+        return { done, failed: [] };
+      }
+      if (u.pathname === '/app/settings/api/local-access') {
+        if (!local) return undefined;
+        if (method === 'PUT') local = { ...local, open: !!body.open };
+        return local;
+      }
+      if (u.pathname === '/app/settings/api/storage' && method === 'PUT') {
+        return { success: true, retention: { empty_audio: body.empty_audio } };
+      }
+      return base(url, opts);
+    };
+    const page = await boot(env, address, { answers });
+    // A held write never reaches the fixture: what its answer takes, by hand.
+    page.take = (ids) => { listed = listed.filter((item) => !ids.includes(item.id)); };
+    return page;
+  }
+  // The focused node by tag and id only: a failure message stays small.
+  const at = (p) => { const a = p.doc.activeElement; return a ? a.tagName + (a.id ? '#' + a.id : '') + (a.dataset?.trashId ? '[' + a.dataset.trashId + ']' : '') : 'none'; };
+  const box = (p, id) => p.qa('#trashList input[type="checkbox"]').find((el) => el.dataset.trashId === id);
+  function holdOnce(p, url) {
+    const held = { release: null };
+    p.holds.push((call) => {
+      if (call.url !== url || held.release) return false;
+      held.release = () => { p.holds.length = 0; call.answer(p.env.answerOf ? null : undefined); };
+      held.call = call;
+      return true;
+    });
+    return held;
+  }
+  // A box pressed by Space: it ticks, then its change fires.
+  const tick = (p, el) => { el.checked = !el.checked; p.doc.dispatch(el, { type: 'change' }); };
+  // A write that fails: answered 503 without reaching the journal.
+  function failing(p, test) {
+    p.holds.push((call) => {
+      if (!test(call)) return false;
+      Promise.resolve().then(() => call.answer({ error: 'down' }, 503));
+      return true;
+    });
+  }
+  async function eraseVia(p, ids, opener = 'trashEraseBtn') {
+    // The stand-in's click doesn't tick a box: tick it, then its change.
+    for (const id of ids) { const el = box(p, id); el.checked = true; p.doc.dispatch(el, { type: 'change' }); }
+    await settle();
+    const button = p.byId(opener);
+    button.focus();
+    p.press(button);
+    p.clock.advance(20);
+    await settle();
+  }
+
+  await test('an erase lands on the row after the first one erased, else the one before, else the trash heading', async () => {
+    const p = await livePage('/app/settings/#trash');
+    await eraseVia(p, ['t2']);
+    p.press(p.byId('trashConfirmErase'));
+    await settle();
+    assert.ok(p.doc.activeElement === box(p, 't3'), `the next row: ${at(p)}`);
+    await eraseVia(p, ['t3']);
+    p.press(p.byId('trashConfirmErase'));
+    await settle();
+    assert.ok(p.doc.activeElement === box(p, 't1'), `the one before: ${at(p)}`);
+    await eraseVia(p, ['t1']);
+    p.press(p.byId('trashConfirmErase'));
+    await settle();
+    assert.strictEqual(at(p), 'H2#trashHeading', 'the heading once nothing is left');
+  });
+
+  await test('an erase of two lands on the row after the first of them', async () => {
+    const p = await livePage('/app/settings/#trash', { items: ['t1', 't2', 't3', 't4'] });
+    await eraseVia(p, ['t2', 't3']);
+    p.press(p.byId('trashConfirmErase'));
+    await settle();
+    assert.ok(p.doc.activeElement === box(p, 't4'), `the row after: ${at(p)}`);
+  });
+
+  await test('the trash confirm gives focus back to its opener as it closes, the layer reconciled at once', async () => {
+    const p = await livePage('/app/settings/#trash');
+    p.holds.push((call) => call.url === '/app/settings/api/trash/erase');
+    await eraseVia(p, ['t1']);
+    const reconciles = p.window.ConveyModalLayer.reconciles;
+    p.press(p.byId('trashConfirmErase'));
+    assert.ok(p.window.ConveyModalLayer.reconciles > reconciles, 'the layer is reconciled as the dialog closes');
+    assert.strictEqual(at(p), 'BUTTON#trashEraseBtn', 'focus is on the opener with no frame waited');
+  });
+
+  await test('a held erase keeps its opener focused and busy; the other acts are off, and no press starts a second', async () => {
+    const p = await livePage('/app/settings/#trash');
+    p.holds.push((call) => call.url === '/app/settings/api/trash/erase');
+    await eraseVia(p, ['t1']);
+    p.press(p.byId('trashConfirmErase'));
+    await settle();
+    const erase = p.byId('trashEraseBtn');
+    const recover = p.byId('trashRecoverBtn');
+    assert.ok(p.doc.activeElement === erase, `focus stays on erase now: ${at(p)}`);
+    assert.ok(erase.getAttribute('aria-busy') === 'true' && erase.getAttribute('aria-disabled') === 'true', 'it is busy');
+    assert.ok(!erase.disabled, 'and not disabled');
+    assert.ok(recover.getAttribute('aria-disabled') === 'true' && recover.getAttribute('aria-busy') === null, 'recover is off, not busy');
+    p.press(erase);
+    p.press(recover);
+    p.press(p.byId('trashEmptyBtn'));
+    p.clock.advance(20);
+    await settle();
+    assert.deepStrictEqual(p.shownModals(), [], 'no second confirm opens');
+    const acts = p.writes().filter((call) => call.url.startsWith('/app/settings/api/trash/')).length;
+    assert.ok(acts === 1, `one act sent: ${acts}`);
+    p.held().forEach((call) => call.answer({ done: ['t1'], failed: [] }));
+    await settle();
+    assert.ok(erase.getAttribute('aria-busy') === null && recover.getAttribute('aria-disabled') === null, 'the answer clears both');
+  });
+
+  await test('a failed erase lands on the line that says so', async () => {
+    const p = await livePage('/app/settings/#trash');
+    failing(p, (call) => call.url === '/app/settings/api/trash/erase');
+    await eraseVia(p, ['t2']);
+    p.press(p.byId('trashConfirmErase'));
+    await settle();
+    assert.strictEqual(at(p), 'DIV#trashResult', 'the result line');
+    assert.ok(!p.byId('trashResult').hidden, 'which is shown');
+  });
+
+  await test('an empty lands on the trash heading; a failed one stays on its button', async () => {
+    const p = await livePage('/app/settings/#trash');
+    const empty = p.byId('trashEmptyBtn');
+    empty.focus();
+    p.press(empty);
+    p.clock.advance(20);
+    await settle();
+    failing(p, (call) => call.url === '/app/settings/api/trash/empty');
+    p.press(p.byId('trashConfirmErase'));
+    await settle();
+    assert.ok(p.doc.activeElement === empty, `a failed empty: ${at(p)}`);
+    p.holds.length = 0;
+    p.press(empty);
+    p.clock.advance(20);
+    await settle();
+    p.press(p.byId('trashConfirmErase'));
+    await settle();
+    assert.strictEqual(at(p), 'H2#trashHeading', 'an empty that answered');
+  });
+
+  await test('a recover lands as an erase does, busy while it is out, and one at a time', async () => {
+    const p = await livePage('/app/settings/#trash');
+    p.holds.push((call) => call.url === '/app/settings/api/trash/recover');
+    await eraseVia(p, ['t2'], 'trashRecoverBtn');
+    const recover = p.byId('trashRecoverBtn');
+    assert.ok(p.doc.activeElement === recover && recover.getAttribute('aria-busy') === 'true', `busy and focused: ${at(p)}`);
+    p.press(recover);
+    await settle();
+    const sent = p.writes().filter((call) => call.url === '/app/settings/api/trash/recover').length;
+    assert.ok(sent === 1, `one recover: ${sent}`);
+    p.holds.length = 0;
+    p.take(['t2']);
+    p.held().forEach((call) => call.answer({ done: ['t2'], failed: [] }));
+    await settle();
+    assert.ok(p.doc.activeElement === box(p, 't3'), `the next row: ${at(p)}`);
+  });
+
+  await test('a recover over a facet confirms, and lands as a recover', async () => {
+    const facet = { id: 'f1', kind: 'facet', title: 'Spare', erase_at: '2099-11-15T00:00:00.000Z', replaces: true };
+    const p = await livePage('/app/settings/#trash', { items: ['t1', facet, 't3'] });
+    await eraseVia(p, ['f1'], 'trashRecoverBtn');
+    assert.deepStrictEqual(p.shownModals(), ['trashConfirmModal'], 'its replace confirm');
+    p.press(p.byId('trashConfirmErase'));
+    await settle();
+    assert.ok(p.doc.activeElement === box(p, 't3'), `the next row: ${at(p)}`);
+  });
+
+  await test("a held audio-with-no-speech save keeps the toggle focused and busy, a second press sends nothing, and a failure lands on the line that says why", async () => {
+    const p = await livePage('/app/settings/#storage');
+    p.holds.push((call) => call.url === '/app/settings/api/storage' && call.method === 'PUT');
+    const toggle = p.byId('emptyAudioKeep');
+    toggle.focus();
+    tick(p, toggle);
+    await settle();
+    assert.ok(p.doc.activeElement === toggle, `focus stays on the toggle: ${at(p)}`);
+    assert.ok(toggle.getAttribute('aria-busy') === 'true' && !toggle.disabled, 'busy, not disabled');
+    tick(p, toggle);
+    await settle();
+    const puts = () => p.writes().filter((call) => call.url === '/app/settings/api/storage').length;
+    assert.ok(puts() === 1, `one save: ${puts()}`);
+    p.held().forEach((call) => call.answer({ error: 'down' }, 503));
+    await settle();
+    assert.ok(toggle.disabled, 'a failure turns it off: the choice is unknown');
+    assert.strictEqual(at(p), 'DIV#emptyAudioStatus', 'the line that says so');
+  });
+
+  await test('an answered audio-with-no-speech save keeps the toggle', async () => {
+    const p = await livePage('/app/settings/#storage');
+    const toggle = p.byId('emptyAudioKeep');
+    toggle.focus();
+    tick(p, toggle);
+    await settle();
+    assert.ok(p.doc.activeElement === toggle && !toggle.disabled && toggle.getAttribute('aria-busy') === null, `kept: ${at(p)}`);
+  });
+
+  await test("a held logs cleanup keeps its delete focused and busy in the open dialog, and a second press sends nothing", async () => {
+    const answers = { '/app/settings/api/storage/prune-logs#POST': { enabled: true, files_deleted: 2, dirs_deleted: 0, retention_log: { lines_removed: 0 } } };
+    const p = await livePage('/app/settings/#storage', { extra: answers });
+    p.press(p.byId('cleanupLogsBtn'));
+    p.clock.advance(20);
+    await settle();
+    p.press(p.byId('cleanupLogsPreviewBtn'));
+    await settle();
+    p.holds.push((call) => call.url === '/app/settings/api/storage/prune-logs' && JSON.parse(call.body).dry_run === false);
+    const del = p.byId('cleanupLogsConfirmBtn');
+    del.focus();
+    p.press(del);
+    await settle();
+    assert.ok(p.doc.activeElement === del, `focus stays on delete: ${at(p)}`);
+    assert.ok(del.getAttribute('aria-busy') === 'true' && !del.disabled, 'busy, not disabled');
+    p.press(del);
+    await settle();
+    const runs = p.writes().filter((call) => call.url === '/app/settings/api/storage/prune-logs' && JSON.parse(call.body).dry_run === false).length;
+    assert.ok(runs === 1, `one delete: ${runs}`);
+  });
+
+  const LOCAL = { available: true, open: true, closed_now: false, message: null, account_check: true };
+  async function confirmLocal(p) {
+    const toggle = p.byId('field-local-access-open');
+    toggle.focus();
+    tick(p, toggle);
+    await settle();
+    const yes = p.byId('localAccessConfirmYes');
+    yes.focus();
+    return { toggle, yes };
+  }
+
+  await test("local access's confirm lands on its toggle once the group hides, answered or failed", async () => {
+    const p = await livePage('/app/settings/#localaccess', { local: LOCAL });
+    let { toggle, yes } = await confirmLocal(p);
+    p.press(yes);
+    await settle();
+    assert.ok(p.byId('localAccessConfirm').hidden, 'the group hides');
+    assert.ok(p.doc.activeElement === toggle, `answered: ${at(p)}`);
+    ({ toggle, yes } = await confirmLocal(p));
+    failing(p, (call) => call.url === '/app/settings/api/local-access' && call.method === 'PUT');
+    p.press(yes);
+    await settle();
+    assert.ok(p.doc.activeElement === toggle, `failed: ${at(p)}`);
+  });
+
+  await test("local access's 'keep it open' lands on the toggle", async () => {
+    const p = await livePage('/app/settings/#localaccess', { local: LOCAL });
+    const { toggle } = await confirmLocal(p);
+    p.press(p.byId('localAccessConfirmNo'));
+    await settle();
+    assert.ok(p.doc.activeElement === toggle, `kept open: ${at(p)}`);
+  });
+
+  await test("a held local access choice keeps its confirm focused and busy, and nothing else hides the group or sends a second", async () => {
+    const p = await livePage('/app/settings/#localaccess', { local: LOCAL });
+    p.holds.push((call) => call.url === '/app/settings/api/local-access' && call.method === 'PUT');
+    const { toggle, yes } = await confirmLocal(p);
+    p.press(yes);
+    await settle();
+    assert.ok(p.doc.activeElement === yes, `focus stays on it: ${at(p)}`);
+    assert.ok(yes.getAttribute('aria-busy') === 'true' && !yes.disabled, 'busy, not disabled');
+    p.press(yes);
+    p.press(p.byId('localAccessConfirmNo'));
+    toggle.checked = !toggle.checked;
+    p.doc.dispatch(toggle, { type: 'change' });
+    await settle();
+    assert.ok(!p.byId('localAccessConfirm').hidden, 'the group stays while the choice is out');
+    const puts = p.writes().filter((call) => call.url === '/app/settings/api/local-access').length;
+    assert.ok(puts === 1, `one save: ${puts}`);
+  });
+
+  await test("a local access answer that turns the toggle off lands on the line that says what happened", async () => {
+    const p = await livePage('/app/settings/#localaccess', { local: LOCAL });
+    p.holds.push((call) => {
+      if (call.url !== '/app/settings/api/local-access' || call.method !== 'PUT') return false;
+      Promise.resolve().then(() => call.answer({ ...LOCAL, open: false, available: false, message: 'unavailable here' }));
+      return true;
+    });
+    const { yes } = await confirmLocal(p);
+    p.press(yes);
+    await settle();
+    assert.strictEqual(at(p), 'P#localAccessResult', 'the result line');
+  });
+
+  await test('focus elsewhere when an act answers is left where it is', async () => {
+    const p = await livePage('/app/settings/#trash');
+    p.holds.push((call) => call.url === '/app/settings/api/trash/erase');
+    await eraseVia(p, ['t2']);
+    p.press(p.byId('trashConfirmErase'));
+    await settle();
+    const rail = p.byId('rail-home');
+    rail.focus();
+    p.holds.length = 0;
+    p.held().forEach((call) => call.answer({ done: ['t2'], failed: [] }));
+    await settle();
+    assert.strictEqual(at(p), 'A#rail-home', 'the rail keeps it');
+  });
+
   return cases;
 };
