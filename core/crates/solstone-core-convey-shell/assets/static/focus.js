@@ -9,6 +9,7 @@
 //     SolFocus.isShown(el)
 //     SolFocus.focusLost(doc)
 //     SolFocus.refocus(doc, held, targets)
+//     SolFocus.keepAfterPick(select, life)
 //
 // The shell carries it in its boot part, so every view has it before it mounts
 // and no view asks for it on its own.
@@ -57,7 +58,67 @@
     return false;
   }
 
-  const SolFocus = { setBusy, isBusy, isShown, focusLost, refocus };
+  // After a pick from a select that stays shown. A phone's own menu for the
+  // select can take focus off it as the menu closes, after the change and
+  // with nothing pressed in the page. That focus goes back to the select, one
+  // task later, unless the owner has moved first: a tap, a press or a key ends
+  // the wait, and so do its window, its landing, the next pick and the view
+  // going. A browser that keeps focus on the select never blurs it, and the
+  // wait ends with nothing done.
+  //
+  // Called from the select's change, after the view's own work for the pick:
+  // it arms only while the select still has focus and is still shown, so a
+  // change that hid it, replaced it or moved focus off it keeps nothing. A
+  // null select ends the earlier wait and keeps nothing, for a pick that
+  // leaves the page.
+  //
+  // `life` is the view's mount: its listeners and timers go with the view.
+  // A page that isn't a view leaves it out and lasts as long as the page.
+  // The window is twice the slowest delay seen on a phone from the change to
+  // that blur (865 ms).
+  const PICK_BLUR_MS = 1730;
+  const pageLife = {
+    on(target, type, fn, options) {
+      target.addEventListener(type, fn, options);
+      return () => target.removeEventListener(type, fn, options);
+    },
+    setTimeout: (fn, ms) => global.setTimeout(fn, ms),
+    clearTimeout: (id) => global.clearTimeout(id)
+  };
+  const pickWaits = new WeakMap();
+
+  function keepAfterPick(select, life) {
+    life = life || pageLife;
+    const earlier = pickWaits.get(life);
+    if (earlier) earlier();
+    const doc = select?.ownerDocument;
+    if (!doc || doc.activeElement !== select || !isShown(select)) return false;
+    let landing = 0;
+    let expiry = 0;
+    const offs = [];
+    const end = () => {
+      offs.splice(0).forEach((off) => off());
+      life.clearTimeout(expiry);
+      life.clearTimeout(landing);
+      if (pickWaits.get(life) === end) pickWaits.delete(life);
+    };
+    ['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach((type) => {
+      offs.push(life.on(doc, type, end, { capture: true }));
+    });
+    // Landed a task later: the menu is still closing as the blur arrives.
+    offs.push(life.on(select, 'focusout', () => {
+      life.clearTimeout(landing);
+      landing = life.setTimeout(() => {
+        end();
+        refocus(doc, true, [select]);
+      }, 0);
+    }));
+    expiry = life.setTimeout(end, PICK_BLUR_MS);
+    pickWaits.set(life, end);
+    return true;
+  }
+
+  const SolFocus = { setBusy, isBusy, isShown, focusLost, refocus, keepAfterPick };
   global.SolFocus = SolFocus;
   if (typeof module !== 'undefined' && module.exports) module.exports = SolFocus;
 })(typeof window !== 'undefined' ? window : globalThis);

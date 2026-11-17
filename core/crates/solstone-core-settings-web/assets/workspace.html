@@ -4265,46 +4265,16 @@ document.getElementById('settingsNav').addEventListener('keydown', (e) => {
 
 // Mobile select change. The facets section hides the select (it has its own
 // way back), so focus goes to the section's heading: where the owner chose
-// to go. Every other section keeps the select, and focus stays on it.
-//
-// A phone's own menu for the select can take focus off it as the menu
-// closes, after the change. That focus goes back to the select, unless the
-// owner has moved first: a tap, a press or a key ends the wait, and so does
-// the window passing. A browser that keeps focus on the select never blurs
-// it, and the wait ends with nothing done. Every timer here is the mount's,
-// so settings going takes the wait and its landing with it. The window is
-// twice the slowest delay seen on a phone from the change to that blur (865 ms).
-const NAV_MENU_BLUR_MS = 1730;
-let navMenuWaitEnd = () => {};
-function awaitNavMenuBlur(select) {
-  let landing = 0;
-  const offs = [];
-  const end = () => {
-    offs.splice(0).forEach(off => off());
-    clearTimeout(expiry);
-    clearTimeout(landing);
-  };
-  ['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach(type => {
-    offs.push(ctx.on(window.document, type, end, { capture: true }));
-  });
-  // Landed a task later: the menu is still closing as the blur arrives.
-  offs.push(ctx.on(select, 'focusout', () => {
-    landing = setTimeout(() => {
-      end();
-      settingsLand(true, [select]);
-    }, 0);
-  }));
-  const expiry = setTimeout(end, NAV_MENU_BLUR_MS);
-  navMenuWaitEnd = end;
-}
+// to go. Every other section keeps the select, and focus stays on it, a
+// phone's late blur as its menu closes included (SolFocus.keepAfterPick).
+// Support leaves the page, so it keeps nothing.
 document.getElementById('navSelect').addEventListener('change', (e) => {
   const select = e.target;
   const held = settingsHeld(select);
-  navMenuWaitEnd();
   switchSection(select.value);
   const section = document.querySelector('.settings-section.active');
   settingsLand(held, [section && section.querySelector('h2')]);
-  if (held && select.value !== 'support' && window.SolFocus.isShown(select)) awaitNavMenuBlur(select);
+  window.SolFocus.keepAfterPick(select.value === 'support' ? null : select, ctx);
 });
 
 // Devices moved to the network app; an old settings link lands there.
@@ -4531,7 +4501,10 @@ function applyEnvSaveEffects(el, key, result) {
 // ========== GENERIC FIELD SAVING ==========
 function setupAutoSave() {
   document.querySelectorAll('[data-section][data-key]').forEach(el => {
-    el.addEventListener('change', () => handleFieldChange(el));
+    el.addEventListener('change', () => {
+      handleFieldChange(el);
+      if (el.tagName === 'SELECT') window.SolFocus.keepAfterPick(el, ctx);
+    });
     el.addEventListener('blur', () => handleFieldChange(el));
   });
 }
@@ -5763,6 +5736,7 @@ async function saveTranscribeProcessing(value) {
 
 document.getElementById('field-transcribe-processing').addEventListener('change', (event) => {
   void saveTranscribeProcessing(event.target.value);
+  window.SolFocus.keepAfterPick(event.target, ctx);
 });
 
 function setLoadState(slotId, html = '') {
@@ -5923,6 +5897,7 @@ function switchTranscribeBackend(backend, config) {
 document.getElementById('field-transcribe-backend').addEventListener('change', async (e) => {
   const backend = e.target.value;
   switchTranscribeBackend(backend, configData);
+  window.SolFocus.keepAfterPick(e.target, ctx);
 
   try {
     const response = await settingsFetch('/app/settings/api/config', {
@@ -6273,6 +6248,7 @@ document.getElementById('plaudApiKeysLink')?.addEventListener('click', (e) => {
     const key = id === 'field-parakeet-model-version' ? 'model_version' :
                 id === 'field-parakeet-device' ? 'device' : 'timeout_sec';
     const value = key === 'timeout_sec' ? Number(e.target.value) : e.target.value;
+    if (e.target.tagName === 'SELECT') window.SolFocus.keepAfterPick(e.target, ctx);
 
     try {
       const response = await settingsFetch('/app/settings/api/config', {
@@ -6296,6 +6272,7 @@ document.getElementById('plaudApiKeysLink')?.addEventListener('click', (e) => {
 
 document.getElementById('field-parakeet-cpp-device')?.addEventListener('change', async (e) => {
   const value = e.target.value;
+  window.SolFocus.keepAfterPick(e.target, ctx);
 
   try {
     const response = await settingsFetch('/app/settings/api/config', {
@@ -7258,6 +7235,7 @@ function setupAttachedActivityListeners() {
       const priority = select.value;
       select.dataset.sending = priority;
       window.SolFocus.setBusy(select, true);
+      window.SolFocus.keepAfterPick(select, ctx);
       try {
         await updateActivity(activityId, { priority });
       } finally {
@@ -8231,7 +8209,10 @@ document.getElementById('cleanupModalClose').addEventListener('click', closeClea
 document.getElementById('cleanupModal').addEventListener('click', (e) => {
   if (e.target === document.getElementById('cleanupModal')) closeCleanupModal();
 });
-document.getElementById('cleanupStreamFilter').addEventListener('change', resetCleanupResults);
+document.getElementById('cleanupStreamFilter').addEventListener('change', (e) => {
+  resetCleanupResults();
+  window.SolFocus.keepAfterPick(e.target, ctx);
+});
 document.getElementById('cleanupPreviewBtn').addEventListener('click', runCleanupMark);
 document.getElementById('cleanupConfirmBtn').addEventListener('click', closeCleanupAfterMark);
 document.getElementById('cleanupLogsModalClose').addEventListener('click', closeLogCleanupModal);
