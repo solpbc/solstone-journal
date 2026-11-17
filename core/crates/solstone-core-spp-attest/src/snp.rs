@@ -1158,11 +1158,10 @@ mod tests {
 
     use super::{
         BINDING_DOMAIN, CpuAppraisalStage, CpuBundle, CpuEvidence, CpuLegError, HCL_REPORT_OFFSET,
-        PcrMode, Policy, TcbFloor, TcbVersion,
-        SNP_OFF_MEASUREMENT, SNP_OFF_VERSION, SnpParseError, SnpReport, SnpVerifyError,
-        appraise_cpu_evidence, check_pcr_fingerprint, check_policy_with, embedded_root_pairs,
-        hex_lower, parse_hcla, select_root_generation, verify_amd_chain_and_report,
-        verify_rsa_pss_sha384_signature,
+        PcrMode, Policy, SNP_OFF_MEASUREMENT, SNP_OFF_VERSION, SnpParseError, SnpReport,
+        SnpVerifyError, TcbFloor, TcbVersion, appraise_cpu_evidence, check_pcr_fingerprint,
+        check_policy_with, embedded_root_pairs, hex_lower, parse_hcla, select_root_generation,
+        verify_amd_chain_and_report, verify_rsa_pss_sha384_signature,
     };
     use crate::test_support::fixture_bytes;
 
@@ -1510,7 +1509,9 @@ mod tests {
             .expect("embedded ARK parses");
         assert_eq!(
             super::vcek_tcb(&ark.der, report.generation),
-            Err(SnpVerifyError::VcekTcbMissing { field: "boot_loader" })
+            Err(SnpVerifyError::VcekTcbMissing {
+                field: "boot_loader"
+            })
         );
     }
 
@@ -1550,12 +1551,29 @@ mod tests {
         };
         let qualified = crate::pins::PRODUCTION_MIN_VCEK_TCB;
         let appraisal = appraise(qualified.clone()).expect("the qualified level is admitted");
-        assert!(appraisal.steps.iter().any(|step| step.name == "snp-tcb-floor"));
+        assert!(
+            appraisal
+                .steps
+                .iter()
+                .any(|step| step.name == "snp-tcb-floor")
+        );
         for above in [
-            TcbFloor { snp: Some(28), ..qualified.clone() },
-            TcbFloor { microcode: Some(89), ..qualified.clone() },
-            TcbFloor { boot_loader: Some(11), ..qualified.clone() },
-            TcbFloor { tee: Some(1), ..qualified.clone() },
+            TcbFloor {
+                snp: Some(28),
+                ..qualified.clone()
+            },
+            TcbFloor {
+                microcode: Some(89),
+                ..qualified.clone()
+            },
+            TcbFloor {
+                boot_loader: Some(11),
+                ..qualified.clone()
+            },
+            TcbFloor {
+                tee: Some(1),
+                ..qualified.clone()
+            },
         ] {
             assert!(matches!(
                 appraise(above),

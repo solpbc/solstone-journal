@@ -101,7 +101,10 @@ pub const PUBLISHED_APPLICATION_PCR_PROFILES: &[(&str, &ApplicationPcrValues)] =
         "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
         &IMAGE_5_APPLICATION_PCRS,
     ),
-    ("8391a8217575b2c33f063565a2c60fae9c7b5a7d54c852e4bc4223eac3a6dfb9", &IMAGE_6_APPLICATION_PCRS),
+    (
+        "8391a8217575b2c33f063565a2c60fae9c7b5a7d54c852e4bc4223eac3a6dfb9",
+        &IMAGE_6_APPLICATION_PCRS,
+    ),
 ];
 
 /// Complete register policies for the admitted published builds.

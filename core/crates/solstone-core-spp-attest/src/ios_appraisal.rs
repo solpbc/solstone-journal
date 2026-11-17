@@ -11,8 +11,7 @@ use crate::error::GpuAppraisalReason;
 use crate::ios_service_tools::{IosVerifierRefusal, admitted_ios_verifier};
 use crate::nvgpu::appraise::evidence_json;
 use crate::nvgpu::{
-    GpuAppraisal, GpuProfile, NvattestAcceptance, NvattestVerdict, StatusExpectation,
-    StatusMode,
+    GpuAppraisal, GpuProfile, NvattestAcceptance, NvattestVerdict, StatusExpectation, StatusMode,
 };
 use crate::snp::AppraisalStep;
 use crate::tlv::GpuEnvelope;

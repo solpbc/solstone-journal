@@ -219,7 +219,9 @@ fn main() {
                     Some("595.71.05") => ManifestSet::QUALIFIED_595_71_05,
                     Some("595.91.07") => ManifestSet::QUALIFIED_595_91_07,
                     other => {
-                        eprintln!("error: invalid --offline-status-driver {other:?}, expected 595.71.05 or 595.91.07");
+                        eprintln!(
+                            "error: invalid --offline-status-driver {other:?}, expected 595.71.05 or 595.91.07"
+                        );
                         std::process::exit(1);
                     }
                 };

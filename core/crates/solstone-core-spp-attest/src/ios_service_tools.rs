@@ -1050,14 +1050,13 @@ mod tests {
     use super::*;
 
     fn valid_receipt() -> IosGpuAppraisalReceipt {
-        let qualified_rims: Vec<IosPackagedRimEntry> =
-            crate::nvgpu::production_rims()
-                .iter()
-                .map(|rim| IosPackagedRimEntry {
-                    filename: rim.filename().to_string(),
-                    sha256: rim.sha256().to_string(),
-                })
-                .collect();
+        let qualified_rims: Vec<IosPackagedRimEntry> = crate::nvgpu::production_rims()
+            .iter()
+            .map(|rim| IosPackagedRimEntry {
+                filename: rim.filename().to_string(),
+                sha256: rim.sha256().to_string(),
+            })
+            .collect();
 
         let regorus_pin = solstone_core_distribution::regorus_build_revision_pin();
 
