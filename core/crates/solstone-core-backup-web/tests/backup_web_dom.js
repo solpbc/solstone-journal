@@ -186,6 +186,9 @@ class Element {
   }
 
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
+  removeEventListener(type, listener) {
+    this.listeners[type] = (this.listeners[type] || []).filter((candidate) => candidate !== listener);
+  }
 
   dispatchEvent(event) {
     event.target ||= this;
@@ -213,6 +216,12 @@ class Element {
     let node = this;
     while (node && node !== this.ownerDocument) node = node.parentElement;
     return node === this.ownerDocument;
+  }
+
+  // A box while it and every ancestor are shown and it is in the page.
+  getClientRects() {
+    for (let node = this; node && node !== this.ownerDocument; node = node.parentElement) if (node.hidden) return [];
+    return this.isConnected ? [{}] : [];
   }
 }
 
@@ -446,6 +455,7 @@ function createHarness(options = {}) {
   const timers = [];
   const popups = [];
   let nextTimer = 1;
+  let now = 0;
   const statusQueue = (options.statusQueue || []).slice();
   const popupFactory = options.popupFactory || (() => ({
     closed: false,
@@ -489,7 +499,7 @@ function createHarness(options = {}) {
       return popup;
     },
     setTimeout(callback, delay) {
-      const timer = { id: nextTimer++, callback, delay, cleared: false };
+      const timer = { id: nextTimer++, callback, delay, due: now + Math.max(0, Number(delay) || 0), cleared: false };
       timers.push(timer);
       return timer.id;
     },
@@ -528,6 +538,7 @@ function createHarness(options = {}) {
     window[window.solstoneJournalWebHost.javascriptCapability] = 1;
   }
   vm.runInContext(navJs, context, { filename: 'external-navigation.js' });
+  vm.runInContext(fs.readFileSync(path.join(shellAssets, 'focus.js'), 'utf8'), context, { filename: 'focus.js' });
   const source = fs.readFileSync(path.join(crateDir, 'assets', 'backup.js'), 'utf8');
   vm.runInContext(fs.readFileSync(path.join(crateDir, 'assets', 'backup-status.js'), 'utf8'), context, { filename: 'backup-status.js' });
   vm.runInContext(source, context, { filename: 'backup.js' });
@@ -553,6 +564,20 @@ function createHarness(options = {}) {
       timer.cleared = true;
       await timer.callback();
     },
+    // Moves the clock: timers come due in order, one at a time.
+    advance(ms) {
+      const until = now + ms;
+      for (;;) {
+        const due = timers.filter((candidate) => !candidate.cleared && candidate.due <= until);
+        if (!due.length) break;
+        const next = due.reduce((first, candidate) => (candidate.due < first.due ? candidate : first));
+        next.cleared = true;
+        now = next.due;
+        next.callback();
+      }
+      now = until;
+    },
+    pendingTimers() { return timers.filter((candidate) => !candidate.cleared).map((candidate) => candidate.delay); },
   };
 }
 
@@ -2527,6 +2552,60 @@ asyncCase('an unavailable clipboard leaves a visible recovery path', async () =>
   assert.strictEqual(error.hidden, false);
   assert.ok(error.textContent.length > 0);
   h.detach();
+});
+
+// The destination form at setup, its backend groups beside the backend field.
+async function backendPickHarness() {
+  const harness = createHarness({ statusQueue: [Object.assign(status(), { recovery_key_confirmed: true, destination: null })] });
+  await settle();
+  assert.ok(!harness.destination.hidden, 'the destination form is shown');
+  const backend = harness.destinationForm.elements.backend;
+  const groups = ['s3', 'b2'].map((name) => add(harness.destinationForm, 'div', { 'data-backend-fields': name }));
+  await ready(harness);
+  const listeners = () => [harness.document, backend].reduce(
+    (total, target) => total + Object.values(target.listeners).reduce((sum, list) => sum + list.length, 0), 0);
+  const pick = (value) => {
+    backend.focus();
+    backend.value = value;
+    backend.dispatchEvent(event('change', { bubbles: true }));
+  };
+  // A phone's late blur: focus goes to the page, with nothing pressed.
+  const lateBlur = () => {
+    harness.document.activeElement = harness.document.body;
+    backend.dispatchEvent(event('blur'));
+    backend.dispatchEvent(event('focusout', { bubbles: true }));
+  };
+  return { harness, backend, groups, listeners, pick, lateBlur };
+}
+
+asyncCase("a phone's late blur after a backend pick lands back on that same backend field", async () => {
+  const { harness, backend, groups, listeners, pick, lateBlur } = await backendPickHarness();
+  const before = listeners();
+  const timersBefore = harness.pendingTimers().length;
+  pick('b2');
+  assert.ok(groups[0].hidden && !groups[1].hidden, 'the pick shows the picked backend\'s fields');
+  assert.ok(harness.document.activeElement === backend, 'the pick leaves focus on the field');
+  harness.advance(865);
+  lateBlur();
+  assert.ok(harness.document.activeElement === harness.document.body, 'the blur leaves focus on the page');
+  harness.advance(0);
+  assert.ok(harness.document.activeElement === backend, 'focus is back on the field it left');
+  assert.ok(harness.root.querySelector('[data-field="backend"]') === backend, 'the field was not drawn again');
+  assert.strictEqual(listeners(), before);
+  assert.strictEqual(harness.pendingTimers().length, timersBefore);
+});
+
+asyncCase('a backend pick with no late blur keeps focus, leaves no wait behind and asks the server for nothing', async () => {
+  const { harness, backend, listeners, pick } = await backendPickHarness();
+  const before = listeners();
+  const timersBefore = harness.pendingTimers().length;
+  pick('b2');
+  await settle();
+  harness.advance(2000);
+  assert.ok(harness.document.activeElement === backend, 'focus stays on the field');
+  assert.strictEqual(listeners(), before);
+  assert.strictEqual(harness.pendingTimers().length, timersBefore);
+  assert.strictEqual(harness.calls.length, 0);
 });
 
 async function runAsyncCases() {
