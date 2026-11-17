@@ -137,6 +137,7 @@ pub fn prepare(
     }
     let sources = composed.get("sources").and_then(Value::as_object).cloned();
     let mut entry_sources = Vec::new();
+    let mut speaker_count = None;
     let mut entry_layout = solstone_core_transcripts::TranscriptLayout::default();
     if composed
         .get("day")
@@ -188,6 +189,10 @@ pub fn prepare(
                 Value::String("no_input".to_owned()),
             );
             return Ok(PreparedTalent::new(name, composed));
+        }
+        // Speech ranges refer to the loaded transcript, before the sparse note.
+        if name == "conversation" {
+            speaker_count = crate::story_input::speaker_count(&transcript, &entry_sources);
         }
         if counts.total() < 3 {
             transcript.insert_str(0, SPARSE_INPUT_NOTE);
@@ -267,11 +272,7 @@ pub fn prepare(
         .map_err(PrepareFailure::Refusal)?;
         // Conversation reads who spoke as a counted fact, not an inference:
         // the owner is usually a minor speaker in their own conversations.
-        let instruction = match (name == "conversation")
-            .then(|| composed.get("transcript").and_then(Value::as_str))
-            .flatten()
-            .and_then(|transcript| crate::story_input::speaker_count(transcript, &entry_sources))
-        {
+        let instruction = match speaker_count {
             Some(count) => format!("{count}\n\n{instruction}"),
             None => instruction,
         };
@@ -1278,6 +1279,25 @@ mod tests {
     }
 
     fn prepare_shipped_talent(talent: &str, activity: Value) -> PreparedTalent {
+        prepare_shipped_talent_with_audio(talent, activity, |journal| {
+            // Something said in the segment, so the talent has input to run on.
+            let mut audio = json!({"raw":"fixture"}).to_string() + "\n";
+            for text in ["Let's ship it.", "The release is ready.", "Tag it now."] {
+                audio += &(json!({"start":"00:00:01","text":text}).to_string() + "\n");
+            }
+            fs::write(
+                journal.join("chronicle/20260101/090000_60/audio.jsonl"),
+                audio,
+            )
+            .expect("audio");
+        })
+    }
+
+    fn prepare_shipped_talent_with_audio(
+        talent: &str,
+        activity: Value,
+        write_audio: impl FnOnce(&Path),
+    ) -> PreparedTalent {
         let root = tempfile::tempdir().expect("root");
         let payload = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone");
         let talent_root = root.path().join("talent");
@@ -1301,16 +1321,7 @@ mod tests {
             r#"{"name":"work","description":"Work"}"#,
         )
         .expect("facet");
-        // Something said in the segment, so the talent has input to run on.
-        let mut audio = json!({"raw":"fixture"}).to_string() + "\n";
-        for text in ["Let's ship it.", "The release is ready.", "Tag it now."] {
-            audio += &(json!({"start":"00:00:01","text":text}).to_string() + "\n");
-        }
-        fs::write(
-            journal.join("chronicle/20260101/090000_60/audio.jsonl"),
-            audio,
-        )
-        .expect("audio");
+        write_audio(&journal);
         for entry in fs::read_dir(payload.join("talent")).expect("talents") {
             let path = entry.expect("talent").path();
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
@@ -1336,6 +1347,59 @@ mod tests {
 
     fn sections(text: &str) -> usize {
         text.lines().filter(|line| line.starts_with("## ")).count()
+    }
+
+    #[test]
+    fn conversation_counts_every_speech_line_in_a_sparse_segment() {
+        let activity =
+            json!({"id":"meeting_090000_60","activity":"meeting","segments":["090000_60"]});
+        let prepared = prepare_shipped_talent_with_audio("conversation", activity, |journal| {
+            let segment = journal.join("chronicle/20260101/090000_60");
+            let mut audio = Vec::new();
+            let mut labels = Vec::new();
+            for (id, name, principal) in [("owner", "Soleil", true), ("bea", "Bea", false)] {
+                let dir = journal.join("entities").join(id);
+                fs::create_dir_all(&dir).unwrap();
+                fs::write(
+                    dir.join("entity.json"),
+                    json!({"id":id,"name":name,"type":"Person","is_principal":principal})
+                        .to_string(),
+                )
+                .unwrap();
+            }
+            for (i, text) in [
+                "I have the first draft ready for review.",
+                "I will check the dates in the draft.",
+                "I will make the edits this afternoon.",
+                "I will send the updated copy tomorrow.",
+            ]
+            .iter()
+            .enumerate()
+            {
+                let n = i + 1;
+                let speaker = if i % 2 == 0 { "owner" } else { "bea" };
+                audio.push(json!({"start":format!("00:00:0{n}"),"sentence_id":n,"speaker":1+i%2,"text":text}).to_string());
+                labels.push(json!({"sentence_id":n,"speaker":speaker,"method":"user_confirmed"}));
+            }
+            fs::write(segment.join("audio.jsonl"), audio.join("\n")).unwrap();
+            fs::create_dir_all(segment.join("talents")).unwrap();
+            fs::write(
+                segment.join("talents/speaker_labels.json"),
+                json!({"labels":labels}).to_string(),
+            )
+            .unwrap();
+        });
+        assert!(
+            prepared.config["transcript"]
+                .as_str()
+                .unwrap()
+                .starts_with(super::SPARSE_INPUT_NOTE)
+        );
+        let instruction = prepared.config["user_instruction"].as_str().unwrap();
+        assert!(
+            instruction.contains("- You: 2 of 4 lines.\n- Named voices: Bea 2."),
+            "{instruction}"
+        );
     }
 
     #[test]
