@@ -132,12 +132,23 @@ pub fn jsonl_has_row_with_key(path: &Path, row_key: &str) -> bool {
 ///
 /// Transcribe re-enters failed, non-exhausted records via branch 1, and its
 /// handler skip guards consult this predicate (`transcribe/src/args.rs:297`
-/// `already_processed`). Branch 2 recordless re-entry remains describe and depict only.
+/// `already_processed`). Describe also retries incomplete sidecars with no screen
+/// rows, even when they already hold a processing header.
 pub fn should_reenter_analysis_output(
     record: Option<&Value>,
     output_path: &Path,
     handler: &str,
 ) -> bool {
+    if handler == vocab::HANDLER_DESCRIBE {
+        let state = record
+            .and_then(|record| record.get("state"))
+            .and_then(Value::as_str);
+        if state == Some(vocab::STATE_FAILED) {
+            return record.is_some_and(|record| !is_failure_exhausted(record));
+        }
+        return state != Some(vocab::STATE_EMPTY)
+            && !jsonl_has_row_with_key(output_path, vocab::SCREEN_ANALYSIS_ROW_KEY);
+    }
     if let Some(record) = record
         && record.get("state").and_then(Value::as_str) == Some(vocab::STATE_FAILED)
         && record

@@ -30,6 +30,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- health could overlook an unfinished screen file when another display from the same moment was ready. it now includes the unfinished work.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - security fix: an agent suggesting a correction could use the reply to check guesses about your answers or a speaker the transcript did not name.
 - when you use your own model endpoint, the thinking page and connection test now wait for your journal's running request instead of reporting a failure while it is busy.

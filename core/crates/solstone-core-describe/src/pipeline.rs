@@ -2775,6 +2775,15 @@ fn keep_existing_reading(
 ) -> Result<(), RunError> {
     let mut header = existing.header.clone();
     let mut record = existing.record.clone();
+    if !solstone_core_processing_record::jsonl_has_row_with_key(
+        promotion.output,
+        vocab::SCREEN_ANALYSIS_ROW_KEY,
+    ) {
+        // A malformed prior reading is newly retryable. Retain its text, but
+        // let this failed/empty attempt establish the same retry bound.
+        record["state"] = json!(promotion.state);
+        record["reason_code"] = json!(promotion.reason);
+    }
     record["attempted_at"] =
         json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
     record["attempts"] = json!(promotion.previous_attempts + 1);

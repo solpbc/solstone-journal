@@ -132,6 +132,7 @@ pub(crate) fn build_incremental_merge_plan(
         if row.get("carried_from").is_some() {
             continue;
         }
+        row.get("timestamp").and_then(Value::as_f64)?;
         let frame_id = row.get("frame_id").and_then(Value::as_u64)?;
         if !qualified_ids.contains(&frame_id) || !seen_ids.insert(frame_id) {
             return None;
@@ -167,7 +168,6 @@ pub(crate) fn build_incremental_merge_plan(
                 if !row.get("requests").is_some_and(Value::is_array) {
                     return None;
                 }
-                row.get("timestamp").and_then(Value::as_f64)?;
                 phase3_gaps.insert(frame_id, (row.clone(), missing));
                 continue;
             }

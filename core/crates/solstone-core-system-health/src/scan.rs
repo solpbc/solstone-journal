@@ -317,18 +317,23 @@ pub(crate) fn detect_data_state(
         .iter()
         .filter(|path| media_kind_for(path) == Some(MediaKind::Video) || is_screenshot(path))
         .collect();
-    let screen_analyzed = screen_jsonl
-        .iter()
-        .any(|path| jsonl_has_row_with_key(path, vocab::SCREEN_ANALYSIS_ROW_KEY));
-    let screen = derive_modality_state(
-        segment_path,
-        "screen",
-        screen_analyzed,
-        !screen_jsonl.is_empty(),
-        has_raw_media(&files, MediaKind::Video) || files.iter().any(|path| is_screenshot(path)),
-        read_processing_record(&screen_jsonl).as_ref(),
-        now,
-    );
+    let screen = if screen_raw_paths.is_empty() {
+        // Retained sidecars and terminal text have no raw input for Sense to repair.
+        let screen_analyzed = screen_jsonl
+            .iter()
+            .any(|path| jsonl_has_row_with_key(path, vocab::SCREEN_ANALYSIS_ROW_KEY));
+        derive_modality_state(
+            segment_path,
+            "screen",
+            screen_analyzed,
+            !screen_jsonl.is_empty(),
+            has_raw_media(&files, MediaKind::Video) || files.iter().any(|path| is_screenshot(path)),
+            read_processing_record(&screen_jsonl).as_ref(),
+            now,
+        )
+    } else {
+        aggregate_screen_state(segment_path, &screen_raw_paths, &screen_jsonl, now)
+    };
 
     let image_state = unclaimed_image_state(segment_path, stream_parent_name, now)?;
     let image = image_state.state;
@@ -390,6 +395,63 @@ pub(crate) fn detect_data_state(
         );
     }
     Ok((DataStateMap(states), modality_input_mtime_ms))
+}
+
+/// Match Sense's source-by-source sidecar lookup before folding screen health.
+fn aggregate_screen_state(
+    segment_path: &Path,
+    raw_paths: &[&PathBuf],
+    retained_outputs: &[PathBuf],
+    now: DateTime<Utc>,
+) -> DataState {
+    let state_for = |output: &PathBuf, has_raw| {
+        let record = if has_raw {
+            read_processing_record_header(output)
+        } else {
+            read_processing_record(std::slice::from_ref(output))
+        };
+        derive_modality_state(
+            segment_path,
+            "screen",
+            jsonl_has_row_with_key(output, vocab::SCREEN_ANALYSIS_ROW_KEY),
+            output.is_file(),
+            has_raw,
+            record.as_ref(),
+            now,
+        )
+    };
+    let outputs = raw_paths
+        .iter()
+        .map(|raw| raw.with_extension("jsonl"))
+        .collect::<BTreeSet<_>>();
+    let mut states = outputs
+        .iter()
+        .map(|output| state_for(output, true))
+        .collect::<Vec<_>>();
+    // Released originals keep their terminal evidence, including exhausted
+    // failures, but an orphan cannot owe work that Sense has no source to run.
+    states.extend(
+        retained_outputs
+            .iter()
+            .filter(|output| !outputs.contains(*output))
+            .map(|output| state_for(output, false))
+            .filter(|state| crate::SENSED_TERMINAL_STATES.contains(&state.as_str())),
+    );
+    // Unfinished work wins over terminal siblings. With every input terminal,
+    // preserve exhausted failures for completion and health consumers.
+    for state in [
+        DataState::Failed,
+        DataState::Analyzing,
+        DataState::Pending,
+        DataState::FailedFinal,
+        DataState::Analyzed,
+        DataState::Empty,
+    ] {
+        if states.contains(&state) {
+            return state;
+        }
+    }
+    DataState::Absent
 }
 
 fn archive_audio_state(
@@ -1480,5 +1542,351 @@ mod tests {
                 .contains_key("desktop_activity")
         );
         assert!(segments_multi[0].data_state.0.contains_key("screen"));
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod multi_file_tests {
+    use std::{fs, path::Path};
+
+    use chrono::Utc;
+    use tempfile::TempDir;
+
+    use crate::{FilesystemSegmentSource, scan_day, segment_fully_sensed};
+
+    const DAY: &str = "20260101";
+
+    fn segment(root: &Path) -> std::path::PathBuf {
+        let segment = root
+            .join("chronicle")
+            .join(DAY)
+            .join("device")
+            .join("120000_300");
+        fs::create_dir_all(&segment).unwrap();
+        segment
+    }
+
+    fn analyzed(path: &Path, row: &str) {
+        let handler = if row == "timestamp" {
+            "describe"
+        } else {
+            "transcribe"
+        };
+        let header = serde_json::json!({"raw":path.file_name().unwrap().to_str().unwrap(), "_solstone_processing":{
+            "schema":"solstone.processing.v1", "handler":handler, "state":"analyzed", "reason_code":"ok"
+        }});
+        let entry = serde_json::json!({row:"12:00:00", "text":"fixture"});
+        fs::write(path.with_extension("jsonl"), format!("{header}\n{entry}\n")).unwrap();
+    }
+
+    fn scan(root: &Path) -> crate::DaySegment {
+        let (_, _, mut segments) =
+            scan_day(&FilesystemSegmentSource, root, DAY, Utc::now()).unwrap();
+        assert_eq!(segments.len(), 1);
+        segments.remove(0)
+    }
+
+    #[derive(Default)]
+    struct DescribeWriter(std::sync::Mutex<Vec<std::path::PathBuf>>);
+
+    impl solstone_core_sense::dispatch::SenseExecutor for DescribeWriter {
+        fn execute(
+            &self,
+            handler: &str,
+            path: &Path,
+            _context: &solstone_core_sense::work::SegmentContext,
+            _attempt: Option<&solstone_core_system::work_retry::Attempt>,
+            _cancel: &std::sync::atomic::AtomicBool,
+        ) -> solstone_core_sense::dispatch::SenseJobResult {
+            assert_eq!(handler, "describe");
+            analyzed(path, "timestamp");
+            self.0.lock().unwrap().push(path.to_path_buf());
+            solstone_core_sense::dispatch::SenseJobResult::Finished(0)
+        }
+    }
+
+    #[test]
+    fn missing_monitor_is_owed_until_sense_repairs_it() {
+        let root = TempDir::new().unwrap();
+        let dir = segment(root.path());
+        let left = dir.join("a_screen.webm");
+        let right = dir.join("b_screen.webm");
+        fs::write(&left, "video").unwrap();
+        fs::write(&right, "video").unwrap();
+        analyzed(&left, "timestamp");
+        let original_left = fs::read(left.with_extension("jsonl")).unwrap();
+        let backlog_not_sensed = || {
+            let view = crate::read_backlog_view(
+                &crate::FilesystemHealthLogSource::new(root.path()),
+                &FilesystemSegmentSource,
+                root.path(),
+                1,
+                Utc::now() + chrono::Duration::days(2),
+            )
+            .unwrap();
+            assert_eq!(view.days.len(), 1);
+            assert!(view.errors.is_empty(), "{view:?}");
+            assert!(view.days[0].error.is_none(), "{view:?}");
+            view.days[0].not_sensed
+        };
+        assert_eq!(backlog_not_sensed(), 1);
+        let row = scan(root.path());
+        assert!(
+            !segment_fully_sensed(&row.data_state),
+            "a described sibling hides missing screen output"
+        );
+        assert_eq!(row.types, ["screen"]);
+        let work = solstone_core_sense::batch::scan_unprocessed(
+            root.path(),
+            &root.path().join("chronicle").join(DAY),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(work.len(), 1);
+        assert_eq!(work[0].path, right);
+        assert_eq!(work[0].handler, "describe");
+
+        // Exercise the real batch scanner/dispatcher; replace only the model handler.
+        let writer = std::sync::Arc::new(DescribeWriter::default());
+        let request = solstone_core_sense::batch::BatchRequest {
+            day: DAY.into(),
+            jobs: 1,
+            reprocess: None,
+            segment: None,
+            stream: None,
+            dry_run: false,
+            verbose: false,
+            debug: false,
+        };
+        solstone_core_sense::batch::run_batch_with_executor(
+            root.path(),
+            &request,
+            &solstone_core_system::process::ChildLaunchContext::default(),
+            Some(std::time::Duration::from_secs(30)),
+            writer.clone(),
+            solstone_core_sense::dispatch::BatchMarkerPolicy::AdvanceStream,
+        )
+        .unwrap();
+        solstone_core_sense::batch::run_batch_with_executor(
+            root.path(),
+            &request,
+            &solstone_core_system::process::ChildLaunchContext::default(),
+            Some(std::time::Duration::from_secs(30)),
+            writer.clone(),
+            solstone_core_sense::dispatch::BatchMarkerPolicy::AdvanceStream,
+        )
+        .unwrap();
+        assert_eq!(*writer.0.lock().unwrap(), [right]);
+        assert_eq!(
+            fs::read(left.with_extension("jsonl")).unwrap(),
+            original_left
+        );
+        assert_eq!(backlog_not_sensed(), 0);
+        for _ in 0..2 {
+            assert!(segment_fully_sensed(&scan(root.path()).data_state));
+            assert!(
+                solstone_core_sense::batch::scan_unprocessed(
+                    root.path(),
+                    &root.path().join("chronicle").join(DAY),
+                    None,
+                    None,
+                    None
+                )
+                .unwrap()
+                .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn each_terminal_header_belongs_only_to_its_own_source() {
+        let (extension, modality, row_key, handler) = ("webm", "screen", "timestamp", "describe");
+        for terminal_first in [false, true] {
+            for (state, reason, attempts, expected) in [
+                ("empty", "no_decodable_frames", 1, "empty"),
+                ("failed", "corrupt_input", 1, "failed_final"),
+                ("failed", "decode_transient", 1, "failed"),
+            ] {
+                let root = TempDir::new().unwrap();
+                let dir = segment(root.path());
+                let terminal = dir.join(format!(
+                    "{}_{modality}.{extension}",
+                    if terminal_first { "a" } else { "b" }
+                ));
+                let other = dir.join(format!(
+                    "{}_{modality}.{extension}",
+                    if terminal_first { "b" } else { "a" }
+                ));
+                fs::write(&terminal, "raw").unwrap();
+                fs::write(&other, "raw").unwrap();
+                fs::write(
+                    terminal.with_extension("jsonl"),
+                    format!(
+                        "{}\n",
+                        serde_json::json!({"_solstone_processing":{
+                            "schema":"solstone.processing.v1", "state":state, "reason_code":reason,
+                            "handler":handler, "attempts":attempts,
+                        }})
+                    ),
+                )
+                .unwrap();
+                // Neither an empty nor an exhausted first header completes its sibling.
+                assert!(!segment_fully_sensed(&scan(root.path()).data_state));
+                let work = solstone_core_sense::batch::scan_unprocessed(
+                    root.path(),
+                    &root.path().join("chronicle").join(DAY),
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+                assert!(work.iter().any(|item| item.path == other));
+                assert_eq!(work.len(), if expected == "failed" { 2 } else { 1 });
+                analyzed(&other, row_key);
+                let scanned = scan(root.path());
+                let aggregate = if expected == "empty" {
+                    "analyzed"
+                } else {
+                    expected
+                };
+                assert_eq!(scanned.data_state.0[modality], aggregate);
+                assert_eq!(
+                    segment_fully_sensed(&scanned.data_state),
+                    expected != "failed"
+                );
+                let completion =
+                    crate::classify_segment_completion(&[scanned.into()], &Default::default());
+                assert_eq!(
+                    completion.exhausted.len(),
+                    usize::from(expected == "failed_final")
+                );
+                let work = solstone_core_sense::batch::scan_unprocessed(
+                    root.path(),
+                    &root.path().join("chronicle").join(DAY),
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+                assert_eq!(work.len(), usize::from(expected == "failed"));
+            }
+        }
+    }
+
+    #[test]
+    fn phone_video_screenshot_and_carried_output_are_screen_members() {
+        for name in ["phone.mp4", "tablet_screen.mov", "screenshot_screen.png"] {
+            let root = TempDir::new().unwrap();
+            let dir = segment(root.path());
+            let carried = dir.join("a_screen.webm");
+            let missing = dir.join(name);
+            fs::write(&carried, "raw").unwrap();
+            fs::write(&missing, "raw").unwrap();
+            fs::write(carried.with_extension("jsonl"), "{\"_solstone_processing\":{\"state\":\"analyzed\",\"handler\":\"describe\"}}\n{\"timestamp\":0,\"carried_from\":{\"segment\":\"115500_300\"}}\n").unwrap();
+            let scanned = scan(root.path());
+            assert_eq!(scanned.types, ["screen"]);
+            assert!(!segment_fully_sensed(&scanned.data_state));
+            analyzed(&missing, "timestamp");
+            assert_eq!(scan(root.path()).data_state.0["screen"], "analyzed");
+            // A retained sidecar still describes its own released raw original.
+            fs::remove_file(&carried).unwrap();
+            assert!(segment_fully_sensed(&scan(root.path()).data_state));
+        }
+    }
+
+    #[test]
+    fn a_sidecar_without_its_source_does_not_owe_an_unrepairable_screen() {
+        let root = TempDir::new().unwrap();
+        let dir = segment(root.path());
+        let current = dir.join("current_screen.webm");
+        fs::write(&current, "raw").unwrap();
+        analyzed(&current, "timestamp");
+        fs::write(dir.join("orphan_screen.jsonl"), "not-json\n").unwrap();
+        assert!(segment_fully_sensed(&scan(root.path()).data_state));
+        assert!(
+            solstone_core_sense::batch::scan_unprocessed(
+                root.path(),
+                &root.path().join("chronicle").join(DAY),
+                None,
+                None,
+                None
+            )
+            .unwrap()
+            .is_empty()
+        );
+        fs::write(dir.join("released_screen.jsonl"), "{\"_solstone_processing\":{\"state\":\"failed\",\"handler\":\"describe\",\"reason_code\":\"corrupt_input\"}}\n").unwrap();
+        let scanned = scan(root.path());
+        assert_eq!(scanned.data_state.0["screen"], "failed_final");
+        assert_eq!(
+            crate::classify_segment_completion(&[scanned.into()], &Default::default()).exhausted,
+            ["120000_300"]
+        );
+        fs::remove_file(current).unwrap();
+        assert!(segment_fully_sensed(&scan(root.path()).data_state));
+    }
+
+    #[test]
+    fn a_header_without_screen_evidence_is_real_repair_work() {
+        for state in ["analyzed", "unknown"] {
+            let root = TempDir::new().unwrap();
+            let dir = segment(root.path());
+            let ready = dir.join("a_screen.webm");
+            let incomplete = dir.join("b_screen.webm");
+            fs::write(&ready, "raw").unwrap();
+            fs::write(&incomplete, "raw").unwrap();
+            analyzed(&ready, "timestamp");
+            fs::write(
+                incomplete.with_extension("jsonl"),
+                format!(
+                    "{}\n",
+                    serde_json::json!({"_solstone_processing":{
+                        "schema":"solstone.processing.v1", "handler":"describe", "state":state
+                    }})
+                ),
+            )
+            .unwrap();
+            assert!(!segment_fully_sensed(&scan(root.path()).data_state));
+            let work = solstone_core_sense::batch::scan_unprocessed(
+                root.path(),
+                &root.path().join("chronicle").join(DAY),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                work.iter().map(|item| &item.path).collect::<Vec<_>>(),
+                [&incomplete]
+            );
+        }
+    }
+
+    #[test]
+    fn raw_screen_health_and_sense_read_the_same_first_header() {
+        for contents in [
+            "\n{\"_solstone_processing\":{\"state\":\"empty\"}}\n",
+            "{\"_solstone_processing\":{\"state\":\"empty\"}}",
+        ] {
+            let root = TempDir::new().unwrap();
+            let dir = segment(root.path());
+            let raw = dir.join("screen.webm");
+            fs::write(&raw, "raw").unwrap();
+            fs::write(raw.with_extension("jsonl"), contents).unwrap();
+            assert!(!segment_fully_sensed(&scan(root.path()).data_state));
+            assert_eq!(
+                solstone_core_sense::batch::scan_unprocessed(
+                    root.path(),
+                    &root.path().join("chronicle").join(DAY),
+                    None,
+                    None,
+                    None
+                )
+                .unwrap()
+                .len(),
+                1
+            );
+        }
     }
 }

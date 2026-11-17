@@ -786,6 +786,71 @@ fn failed_retry_keeps_a_partial_reading_and_still_exhausts() {
     );
 }
 
+#[test]
+fn a_malformed_reading_retries_without_losing_its_failure_bound() {
+    use solstone_core_processing_record::{
+        read_processing_record_header, should_reenter_analysis_output, vocab,
+    };
+
+    for empty in [false, true] {
+        let test = TestRun::new("malformed-reading");
+        run_decoded(
+            test.options(false, Vec::new()),
+            &ScriptedFactory::new(default_response),
+            decoded(&[1]),
+        )
+        .unwrap();
+        let mut rows = test.rows();
+        for row in rows.iter_mut().skip(1) {
+            row.as_object_mut().unwrap().remove("timestamp");
+        }
+        fs::write(
+            test.artifact(),
+            rows.iter()
+                .map(|row| format!("{row}\n"))
+                .collect::<String>(),
+        )
+        .unwrap();
+        let original_body = artifact_body(&test.artifact());
+        assert!(should_reenter_analysis_output(
+            read_processing_record_header(&test.artifact()).as_ref(),
+            &test.artifact(),
+            vocab::HANDLER_DESCRIBE
+        ));
+        let tries = if empty { 1 } else { 3 };
+        for attempt in 1..=tries {
+            if empty {
+                run_decoded(
+                    test.options(false, Vec::new()),
+                    &ScriptedFactory::new(default_response),
+                    DescribeResult::default(),
+                )
+                .unwrap();
+            } else {
+                let invalid = ScriptedFactory::new(|request| generated(request, "not json"));
+                assert!(
+                    run_decoded(test.options(false, Vec::new()), &invalid, decoded(&[1])).is_err()
+                );
+            }
+            let record = read_processing_record_header(&test.artifact()).unwrap();
+            assert_eq!(record["state"], if empty { "empty" } else { "failed" });
+            assert_eq!(record["attempts"], attempt);
+            assert_eq!(artifact_body(&test.artifact()), original_body);
+        }
+        let record = read_processing_record_header(&test.artifact()).unwrap();
+        assert!(!should_reenter_analysis_output(
+            Some(&record),
+            &test.artifact(),
+            vocab::HANDLER_DESCRIBE
+        ));
+        let before = fs::read(test.artifact()).unwrap();
+        let skipped = ScriptedFactory::failing();
+        run_decoded(test.options(false, Vec::new()), &skipped, decoded(&[1])).unwrap();
+        assert!(skipped.requests().is_empty());
+        assert_eq!(fs::read(test.artifact()).unwrap(), before);
+    }
+}
+
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[test]
 fn retained_screen_reading_keeps_its_private_faces() {
