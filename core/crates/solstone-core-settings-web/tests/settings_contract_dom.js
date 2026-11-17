@@ -706,6 +706,7 @@ function makePage(env, address = '/app/settings/', { answers } = {}) {
       url: u.pathname + u.search,
       method: String(opts?.method || 'GET').toUpperCase(),
       body: opts?.body,
+      keepalive: !!opts?.keepalive,
       kind, aborted: false, settled: false,
       answer(body, status = 200) {
         if (call.settled) return;
@@ -1618,6 +1619,388 @@ module.exports = async function settingsContractCases(crateDir) {
     p.held().forEach((call) => call.answer({ done: ['t2'], failed: [] }));
     await settle();
     assert.strictEqual(at(p), 'A#rail-home', 'the rail keeps it');
+  });
+
+  // ---- the keys and the per-field saves keep focus, and a pending save goes out as the page goes
+
+  const configPuts = (p) => p.writes().filter((call) => call.url === '/app/settings/api/config' && call.method === 'PUT');
+  const typeInto = (el, text) => { el.focus(); el.value = text; };
+  const leaveField = (p, el) => { el.blur(); p.doc.dispatch(el, { type: 'blur', bubbles: false }); };
+  const FIELDS = [['field-name', 'a new name', '#profile'], ['field-preferred', 'lab', '#profile'], ['field-aliases', 'lab, labby', '#profile'],
+    ['field-emails', 'lab@example.com', '#profile'], ['field-timezone', 'Europe/Paris', '#profile'], ['field-env-plaud', 'lab-token', '#apikeys']];
+
+  await test('Enter in each auto-save field saves it once, after its half second, and keeps focus in the field: answered, failed and held', async () => {
+    for (const [id, text, hash] of FIELDS) {
+      for (const mode of ['answered', 'failed', 'held']) {
+        const p = await boot(env, `/app/settings/${hash}`);
+        if (mode === 'held') p.holds.push((call) => call.method === 'PUT');
+        if (mode === 'failed') failing(p, (call) => call.method === 'PUT');
+        const field = p.byId(id);
+        typeInto(field, text);
+        p.key(field, 'Enter');
+        assert.ok(p.doc.activeElement === field, `${id} ${mode}: focus stays in the field: ${at(p)}`);
+        assert.ok(configPuts(p).length === 0, `${id} ${mode}: not before its half second`);
+        p.clock.advance(600);
+        await settle();
+        assert.ok(configPuts(p).length === 1, `${id} ${mode}: one save: ${configPuts(p).length}`);
+        assert.ok(p.doc.activeElement === field, `${id} ${mode}: still in the field: ${at(p)}`);
+      }
+    }
+  });
+
+  await test("a second Enter, and leaving the field, while its save is out send nothing more; a new value still saves", async () => {
+    for (const [id, text, hash] of [FIELDS[1], FIELDS[5]]) {
+      const p = await boot(env, `/app/settings/${hash}`);
+      p.holds.push((call) => call.method === 'PUT');
+      const field = p.byId(id);
+      typeInto(field, text);
+      p.key(field, 'Enter');
+      p.clock.advance(200);
+      p.key(field, 'Enter');
+      p.clock.advance(600);
+      await settle();
+      assert.ok(configPuts(p).length === 1, `${id}: one save: ${configPuts(p).length}`);
+      p.key(field, 'Enter');
+      p.doc.dispatch(field, { type: 'change' });
+      leaveField(p, field);
+      p.clock.advance(600);
+      await settle();
+      assert.ok(configPuts(p).length === 1, `${id}: still one while it's out: ${configPuts(p).length}`);
+      field.focus();
+      field.value = `${text} two`;
+      p.key(field, 'Enter');
+      p.clock.advance(600);
+      await settle();
+      assert.ok(configPuts(p).length === 2, `${id}: a new value is its own save: ${configPuts(p).length}`);
+    }
+  });
+
+  await test('leaving an unset field unchanged sends nothing: bio, pronouns, aliases, emails, the preferred name; a set one cleared still saves', async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    for (const id of ['field-bio', 'field-pronouns', 'field-aliases', 'field-emails', 'field-preferred']) {
+      const field = p.byId(id);
+      field.focus();
+      p.doc.dispatch(field, { type: 'change' });
+      leaveField(p, field);
+    }
+    p.clock.advance(600);
+    await settle();
+    assert.ok(configPuts(p).length === 0, `nothing written: ${configPuts(p).map((call) => call.body).join(' ')}`);
+    const bio = p.byId('field-bio');
+    bio.focus();
+    bio.value = 'a bio';
+    leaveField(p, bio);
+    const name = p.byId('field-name');
+    name.focus();
+    name.value = '';
+    leaveField(p, name);
+    p.clock.advance(600);
+    await settle();
+    const sent = configPuts(p).map((call) => JSON.parse(call.body).data);
+    assert.deepStrictEqual(sent, [{ bio: 'a bio' }, { name: '' }]);
+  });
+
+  async function pendingPreferred(p) {
+    p.holds.push((call) => call.method === 'PUT');
+    const field = p.byId('field-preferred');
+    typeInto(field, 'lab');
+    leaveField(p, field);
+    p.clock.advance(200);
+    assert.ok(configPuts(p).length === 0, 'not yet sent');
+    return field;
+  }
+
+  await test("a field's save not yet sent goes out as the page goes, once, with keepalive; a restore, a hide, a leave and its timer send nothing more", async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    await pendingPreferred(p);
+    p.window.fire({ type: 'pagehide', persisted: true });
+    assert.ok(configPuts(p).length === 1, `the page going sends it: ${configPuts(p).length}`);
+    assert.ok(configPuts(p)[0].keepalive === true, 'with keepalive');
+    assert.deepStrictEqual(JSON.parse(configPuts(p)[0].body), { section: 'identity', data: { preferred: 'lab' } });
+    p.window.fire({ type: 'pageshow', persisted: true });
+    p.clock.advance(1000);
+    p.doc.visibilityState = 'hidden';
+    p.doc.fire({ type: 'visibilitychange' });
+    p.leave();
+    p.clock.advance(1000);
+    await settle();
+    assert.ok(configPuts(p).length === 1, `once: ${configPuts(p).length}`);
+  });
+
+  await test("hiding the page sends a save not yet sent, once, with keepalive; showing it and the page going after send nothing", async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    await pendingPreferred(p);
+    p.doc.visibilityState = 'hidden';
+    p.doc.fire({ type: 'visibilitychange' });
+    assert.ok(configPuts(p).length === 1 && configPuts(p)[0].keepalive === true, `hiding sends it, with keepalive: ${configPuts(p).length}`);
+    p.doc.visibilityState = 'visible';
+    p.doc.fire({ type: 'visibilitychange' });
+    p.window.fire({ type: 'pagehide', persisted: false });
+    p.clock.advance(1000);
+    await settle();
+    assert.ok(configPuts(p).length === 1, `once: ${configPuts(p).length}`);
+  });
+
+  await test('an in-page leave still sends a pending save without keepalive, and adds no listener that outlives settings', async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    const before = listenerCounts(p);
+    await pendingPreferred(p);
+    p.leave();
+    assert.ok(configPuts(p).length === 1 && configPuts(p)[0].keepalive === false, 'sent by the leave, plainly');
+    p.window.fire({ type: 'pagehide', persisted: false });
+    assert.ok(configPuts(p).length === 1, 'a pagehide after sends nothing');
+    const after = listenerCounts(p);
+    assert.ok(after[0] < before[0] && after[1] < before[1], `the window's and the document's listeners go with settings: ${before} → ${after}`);
+  });
+
+  // ---- Granola
+
+  const GRANOLA_ON = { connected: true, last_sync: '2026-11-16T10:00:00Z', last_added: '2026-11-16T09:00:00Z', meetings: 3, syncing: false, attention: null, attention_code: null };
+  async function granolaPage(start = {}) {
+    let state = { connected: false, last_sync: null, last_added: null, attention: null, attention_code: null, meetings: 0, syncing: false, ...start };
+    const base = journal();
+    const answers = (url, opts) => {
+      const u = new URL(url, ORIGIN);
+      const method = String(opts?.method || 'GET').toUpperCase();
+      if (u.pathname === '/app/settings/api/granola') {
+        if (method === 'POST') { state = { ...state, connected: true }; return {}; }
+        if (method === 'DELETE') { state = { ...state, connected: false }; return {}; }
+        return state;
+      }
+      if (u.pathname === '/app/settings/api/granola/sync') { state = { ...state, syncing: true }; return {}; }
+      return base(url, opts);
+    };
+    const p = await boot(env, '/app/settings/#sync', { answers });
+    p.granola = (next) => { state = { ...state, ...next }; };
+    return p;
+  }
+  const granolaWrites = (p, method, url = '/app/settings/api/granola') => p.writes().filter((call) => call.url === url && call.method === method).length;
+  const busyNotDisabled = (el) => el.getAttribute('aria-busy') === 'true' && el.getAttribute('aria-disabled') === 'true' && !el.disabled;
+  const offNotBusy = (el) => el.getAttribute('aria-disabled') === 'true' && el.getAttribute('aria-busy') === null && !el.disabled;
+  function holdGranola(p, method, url = '/app/settings/api/granola') {
+    const held = {};
+    p.holds.push((call) => {
+      if (call.url !== url || call.method !== method || held.call) return false;
+      held.call = call;
+      return true;
+    });
+    held.release = (body = {}, status = 200) => { p.holds.length = 0; held.call.answer(body, status); };
+    return held;
+  }
+
+  await test("a held Granola connect keeps the button focused and busy, the others off, and no press or Enter sends a second; its answer lands on check now", async () => {
+    const p = await granolaPage();
+    const held = holdGranola(p, 'POST');
+    const key = p.byId('granolaKey');
+    key.value = 'grn_lab';
+    const connect = p.byId('granolaConnect');
+    connect.focus();
+    p.press(connect);
+    await settle();
+    assert.ok(p.doc.activeElement === connect, `focus stays on connect: ${at(p)}`);
+    assert.ok(busyNotDisabled(connect), 'busy, not disabled');
+    p.press(connect);
+    p.key(key, 'Enter');
+    await settle();
+    assert.ok(granolaWrites(p, 'POST') === 1, `one connect: ${granolaWrites(p, 'POST')}`);
+    p.granola({ connected: true });
+    held.release();
+    await settle();
+    assert.strictEqual(at(p), 'BUTTON#granolaCheck', 'the connected controls took the key form\'s place');
+  });
+
+  await test("Granola's key by Enter connects once and keeps focus while it's out; a failed connect keeps focus on connect with its error", async () => {
+    const p = await granolaPage();
+    const held = holdGranola(p, 'POST');
+    const key = p.byId('granolaKey');
+    typeInto(key, 'grn_lab');
+    p.key(key, 'Enter');
+    await settle();
+    assert.ok(p.doc.activeElement === key, `focus stays in the key: ${at(p)}`);
+    p.key(key, 'Enter');
+    await settle();
+    assert.ok(granolaWrites(p, 'POST') === 1, `one connect: ${granolaWrites(p, 'POST')}`);
+    held.release({ error: 'refused' }, 400);
+    await settle();
+    assert.ok(p.doc.activeElement === key, `a failure keeps it: ${at(p)}`);
+    assert.ok(!p.byId('granolaKeyError').hidden, 'and says why');
+    const connect = p.byId('granolaConnect');
+    connect.focus();
+    failing(p, (call) => call.url === '/app/settings/api/granola' && call.method === 'POST');
+    p.press(connect);
+    await settle();
+    assert.ok(p.doc.activeElement === connect && connect.getAttribute('aria-busy') === null, `a failed connect stays on connect: ${at(p)}`);
+  });
+
+  await test('Granola: "use this key" lands on "use a new key", and so does the new key\'s cancel', async () => {
+    const p = await granolaPage(GRANOLA_ON);
+    const replace = p.byId('granolaReplace');
+    replace.focus();
+    p.press(replace);
+    await settle();
+    assert.strictEqual(at(p), 'INPUT#granolaKey', 'the new key');
+    p.byId('granolaKey').value = 'grn_two';
+    const connect = p.byId('granolaConnect');
+    connect.focus();
+    p.press(connect);
+    await settle();
+    assert.strictEqual(at(p), 'BUTTON#granolaReplace', 'the control the key form had taken the place of');
+    p.press(p.byId('granolaReplace'));
+    await settle();
+    const cancel = p.byId('granolaCancelKey');
+    cancel.focus();
+    p.press(cancel);
+    await settle();
+    assert.strictEqual(at(p), 'BUTTON#granolaReplace', "the cancel's");
+  });
+
+  await test("a held Granola disconnect keeps its button busy and sends one; its answer lands on the line that says what happened", async () => {
+    const p = await granolaPage(GRANOLA_ON);
+    const held = holdGranola(p, 'DELETE');
+    const disconnect = p.byId('granolaDisconnect');
+    disconnect.focus();
+    p.press(disconnect);
+    await settle();
+    assert.ok(p.doc.activeElement === disconnect && busyNotDisabled(disconnect), `busy and focused: ${at(p)}`);
+    assert.ok(offNotBusy(p.byId('granolaCheck')) && offNotBusy(p.byId('granolaReplace')), 'the others are off, not busy');
+    p.press(disconnect);
+    p.press(p.byId('granolaCheck'));
+    p.press(p.byId('granolaReplace'));
+    await settle();
+    assert.ok(granolaWrites(p, 'DELETE') === 1 && granolaWrites(p, 'POST', '/app/settings/api/granola/sync') === 0, 'one disconnect, nothing else');
+    assert.ok(p.byId('granolaKeyForm').hidden, 'no key form opened under it');
+    p.granola({ connected: false });
+    held.release();
+    await settle();
+    assert.strictEqual(at(p), 'P#granolaOffKept', 'what disconnecting kept');
+  });
+
+  await test('Granola check now stays focused and busy while the check runs, a second press sends nothing, and it is check now again after', async () => {
+    const p = await granolaPage(GRANOLA_ON);
+    const check = p.byId('granolaCheck');
+    check.focus();
+    p.press(check);
+    await settle();
+    assert.ok(p.doc.activeElement === check && busyNotDisabled(check), `busy while the journal checks: ${at(p)}`);
+    p.press(check);
+    await settle();
+    assert.ok(granolaWrites(p, 'POST', '/app/settings/api/granola/sync') === 1, 'one check');
+    p.granola({ syncing: false, last_sync: '2026-11-16T11:00:00Z' });
+    p.clock.advance(2000);
+    await settle();
+    assert.ok(p.doc.activeElement === check && check.getAttribute('aria-busy') === null, `free again, still focused: ${at(p)}`);
+  });
+
+  await test("Granola's follow writes nothing when a check changes nothing, and keeps the focused node when one does", async () => {
+    const p = await granolaPage({ ...GRANOLA_ON, syncing: true });
+    const card = p.byId('granolaSyncCard');
+    const disconnect = p.byId('granolaDisconnect');
+    disconnect.focus();
+    const from = mutationMark();
+    p.clock.advance(2000);
+    await settle();
+    p.clock.advance(2000);
+    await settle();
+    const reads = p.reads('/app/settings/api/granola').length;
+    assert.ok(reads >= 3, `the follow read again: ${reads}`);
+    assert.ok(mutationsUnder(card, from) === 0, `nothing written: ${mutationsSeen(card, from)}`);
+    assert.ok(p.doc.activeElement === disconnect, `focus on the same node: ${at(p)}`);
+    p.granola({ meetings: 4 });
+    const moved = mutationMark();
+    p.clock.advance(2000);
+    await settle();
+    assert.ok(mutationsUnder(card, moved) > 0, 'a change is drawn');
+    assert.ok(p.doc.activeElement === disconnect, `and focus stays on the same node: ${at(p)}`);
+  });
+
+  // ---- speech processing, leave out other voices, photos of people
+
+  await test('speech processing stays focused and busy while its save is out; unreadable after, it lands on the line that says so', async () => {
+    const extra = { '/app/settings/api/transcribe': { backends: [], parakeet_embedded: true } };
+    const base = journal(extra);
+    const read = { fails: false };
+    const p = await boot(env, '/app/settings/#transcription', { answers: (url, opts) => {
+      const method = String(opts?.method || 'GET').toUpperCase();
+      if (url.startsWith('/app/settings/api/config') && method === 'GET' && read.fails) return undefined;
+      return base(url, opts);
+    } });
+    const select = p.byId('field-transcribe-processing');
+    const held = holdGranola(p, 'PUT', '/app/settings/api/config');
+    select.focus();
+    select.value = 'confidential';
+    p.doc.dispatch(select, { type: 'change' });
+    await settle();
+    assert.ok(p.doc.activeElement === select && busyNotDisabled(select), `busy and focused: ${at(p)}`);
+    select.value = 'local';
+    p.doc.dispatch(select, { type: 'change' });
+    await settle();
+    assert.ok(configPuts(p).length === 1, `one save: ${configPuts(p).length}`);
+    read.fails = true;
+    held.release({ success: false }, 503);
+    await settle();
+    assert.ok(select.disabled, 'unreadable: off');
+    assert.strictEqual(at(p), 'SMALL#transcribeProcessingHelp', 'the line that says so');
+  });
+
+  await test('leave out other voices stays focused and busy while turning off, and a second press sends nothing; its confirm focuses the switch at once', async () => {
+    const extra = {
+      '/app/settings/api/config': { identity: { name: 'owner', timezone: 'UTC' }, transcribe: { owner_voice_only: true }, env: {}, runtime_env: {}, key_validation: {}, trash: { erase_after_days: 7 } },
+      '/app/settings/api/transcribe/owner-voice': { available: true, today: { left_out_s: 0, recordings: 0 }, pending_deletions: 0 },
+    };
+    const p = await boot(env, '/app/settings/#transcription', { answers: journal(extra) });
+    const held = holdGranola(p, 'PUT', '/app/settings/api/config');
+    const toggle = p.byId('ownerVoiceOnly');
+    toggle.focus();
+    tick(p, toggle);
+    await settle();
+    assert.ok(p.doc.activeElement === toggle && busyNotDisabled(toggle), `busy and focused: ${at(p)}`);
+    tick(p, toggle);
+    await settle();
+    assert.ok(configPuts(p).length === 1, `one save: ${configPuts(p).length}`);
+    held.release({ success: true, config: { transcribe: { owner_voice_only: false } } });
+    await settle();
+    assert.ok(p.doc.activeElement === toggle && toggle.getAttribute('aria-busy') === null, `kept: ${at(p)}`);
+    // On again, through its confirm: the switch has focus at once, busy.
+    p.holds.push((call) => call.method === 'PUT');
+    tick(p, toggle);
+    await settle();
+    const before = p.window.ConveyModalLayer.reconciles;
+    p.press(p.byId('ownerVoiceConsentConfirm'));
+    assert.ok(p.window.ConveyModalLayer.reconciles > before, 'the layer reconciled as the dialog closed');
+    await settle();
+    assert.ok(p.doc.activeElement === toggle && busyNotDisabled(toggle), `the switch, busy: ${at(p)}`);
+  });
+
+  await test('photos of people stays focused and busy while its save is out; its erase keeps its button busy and focused through the confirm', async () => {
+    const extra = { '/app/settings/api/config': { identity: { name: 'owner', timezone: 'UTC' }, transcribe: {}, faces: { enabled: false }, env: {}, runtime_env: {}, key_validation: {}, trash: { erase_after_days: 7 } } };
+    const p = await boot(env, '/app/settings/#vision', { answers: journal(extra) });
+    const clearHeld = holdGranola(p, 'POST', '/app/entities/api/journal/faces/clear');
+    const clear = p.byId('facesClearBtn');
+    clear.focus();
+    p.press(clear);
+    await settle();
+    p.press(p.byId('facesClearConfirm'));
+    await settle();
+    assert.ok(p.doc.activeElement === clear && busyNotDisabled(clear), `the erase, busy: ${at(p)}`);
+    const toggle = p.byId('facesEnabled');
+    assert.ok(offNotBusy(toggle), 'the switch is off while the erase is out');
+    p.press(clear);
+    await settle();
+    assert.ok(p.shownModals().length === 0, 'no second confirm');
+    clearHeld.release({ removed: 2 });
+    await settle();
+    assert.ok(p.doc.activeElement === clear && clear.getAttribute('aria-busy') === null, `kept after: ${at(p)}`);
+    const held = holdGranola(p, 'PUT', '/app/settings/api/config');
+    toggle.focus();
+    tick(p, toggle);
+    await settle();
+    assert.ok(p.doc.activeElement === toggle && busyNotDisabled(toggle), `the switch, busy: ${at(p)}`);
+    tick(p, toggle);
+    await settle();
+    assert.ok(configPuts(p).length === 1, `one save: ${configPuts(p).length}`);
+    held.release({ success: true, config: { faces: { enabled: true } } });
+    await settle();
+    assert.ok(p.doc.activeElement === toggle, `kept: ${at(p)}`);
   });
 
   return cases;
