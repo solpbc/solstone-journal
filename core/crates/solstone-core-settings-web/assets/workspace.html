@@ -4808,6 +4808,12 @@ function setupEmojiPicker() {
     input.style.display = 'block';
     input.focus();
   };
+  // It's a button: Enter and Space press it, as a click does.
+  display.onkeydown = (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    display.onclick();
+  };
 
   input.onblur = () => {
     const value = input.value.trim();
@@ -5110,6 +5116,12 @@ function setupColorPicker() {
     updateColorUI(selectedColor);
     modal.style.display = 'block';
     modal._openAccessible(trigger);
+  };
+  // It's a button: Enter and Space press it, as a click does.
+  trigger.onkeydown = (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    trigger.onclick();
   };
 
   closeBtn.onclick = () => modal._closeAccessible();
