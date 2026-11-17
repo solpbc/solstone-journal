@@ -2262,6 +2262,7 @@ module.exports = async function settingsContractCases(crateDir) {
   await test("a pick from the narrow section menu, then the menu's own blur, puts focus back on the select, for every section that keeps it", async () => {
     for (const value of ['transcription', 'profile', 'about', 'apikeys', 'vision', 'sync', 'storage', 'trash', 'guide']) {
       const p = await boot(env, '/app/settings/#profile');
+      const before = p.view.ctx.held();
       const select = pickSection(p, value);
       await settle();
       assert.ok(activeSection(p) === `section-${value}`, `${value} is shown`);
@@ -2269,6 +2270,8 @@ module.exports = async function settingsContractCases(crateDir) {
       assert.ok(p.doc.activeElement === p.doc.body, `${value}: the blur leaves the page`);
       p.clock.advance(0);
       assert.ok(p.doc.activeElement === select, `${value}: back on the select: ${at(p)}`);
+      const after = p.view.ctx.held();
+      assert.ok(after.listeners === before.listeners && after.timeouts === before.timeouts, `${value}: the landing ends the wait`);
     }
   });
 
@@ -2333,6 +2336,28 @@ module.exports = async function settingsContractCases(crateDir) {
       p.clock.advance(1000);
       assert.ok(p.doc.activeElement === next, `a Tab keeps the next control: ${at(p)}`);
     }
+  });
+
+  await test("after the landing a second blur is left alone: no tug of war with the phone", async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    const select = pickSection(p, 'transcription');
+    await settle();
+    menuBlur(p, select);
+    p.clock.advance(0);
+    assert.ok(p.doc.activeElement === select, `landed: ${at(p)}`);
+    menuBlur(p, select);
+    p.clock.advance(1000);
+    assert.ok(p.doc.activeElement === p.doc.body, `left: ${at(p)}`);
+  });
+
+  await test('a Tab off the end of the page after a pick is left there', async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    const select = pickSection(p, 'transcription');
+    await settle();
+    p.key(select, 'Tab');
+    menuBlur(p, select);
+    p.clock.advance(1000);
+    assert.ok(p.doc.activeElement === p.doc.body, `left: ${at(p)}`);
   });
 
   await test('a tap between the blur and its landing is the owner moving too', async () => {

@@ -4302,7 +4302,7 @@ document.getElementById('navSelect').addEventListener('change', (e) => {
   switchSection(select.value);
   const section = document.querySelector('.settings-section.active');
   settingsLand(held, [section && section.querySelector('h2')]);
-  if (settingsPage.activeElement === select) awaitNavMenuBlur(select);
+  awaitNavMenuBlur(select);
 });
 
 // Devices moved to the network app; an old settings link lands there.
