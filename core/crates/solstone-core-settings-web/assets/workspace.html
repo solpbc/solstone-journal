@@ -4271,7 +4271,8 @@ document.getElementById('settingsNav').addEventListener('keydown', (e) => {
 // closes, after the change. That focus goes back to the select, unless the
 // owner has moved first: a tap, a press or a key ends the wait, and so does
 // the window passing. A browser that keeps focus on the select never blurs
-// it, and the wait ends with nothing done.
+// it, and the wait ends with nothing done. Every timer here is the mount's,
+// so settings going takes the wait and its landing with it.
 const NAV_MENU_BLUR_MS = 1000;
 let navMenuWaitEnd = () => {};
 function awaitNavMenuBlur(select) {
@@ -4302,7 +4303,7 @@ document.getElementById('navSelect').addEventListener('change', (e) => {
   switchSection(select.value);
   const section = document.querySelector('.settings-section.active');
   settingsLand(held, [section && section.querySelector('h2')]);
-  awaitNavMenuBlur(select);
+  if (held && select.value !== 'support' && window.SolFocus.isShown(select)) awaitNavMenuBlur(select);
 });
 
 // Devices moved to the network app; an old settings link lands there.

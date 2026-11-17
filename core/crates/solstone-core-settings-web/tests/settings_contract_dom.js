@@ -2381,6 +2381,55 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(p.doc.activeElement === rail, `kept: ${at(p)}`);
   });
 
+  await test('settings going between the blur and its landing lands nothing and leaves nothing', async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    const view = p.view;
+    const select = pickSection(p, 'transcription');
+    await settle();
+    menuBlur(p, select);
+    p.leave();
+    p.clock.advance(1000);
+    const held = view.ctx.held();
+    assert.deepStrictEqual([held.listeners, held.timeouts], [0, 0]);
+    assert.ok(p.doc.activeElement !== select, 'the gone select takes nothing');
+  });
+
+  await test('a change with focus elsewhere, a pick of support and a pick of facets arm no wait', async () => {
+    {
+      const p = await boot(env, '/app/settings/#profile');
+      const base = ctxListeners(p);
+      const select = p.byId('navSelect');
+      p.byId('rail-home').focus();
+      select.value = 'transcription';
+      p.doc.dispatch(select, { type: 'change' });
+      assert.ok(ctxListeners(p) === base, 'focus elsewhere: no wait');
+    }
+    {
+      const p = await boot(env, '/app/settings/#profile');
+      const base = ctxListeners(p);
+      pickSection(p, 'support');
+      assert.ok(ctxListeners(p) === base, 'support: no wait');
+    }
+    {
+      // The narrow layout's one rule the page model needs: the facets section hides the select.
+      const p = await boot(env, '/app/settings/#profile');
+      const wrap = p.byId('settings-index-view');
+      const nav = p.q('.settings-nav-mobile');
+      const toggle = wrap.classList.toggle.bind(wrap.classList);
+      wrap.classList.toggle = (name, force) => {
+        const on = toggle(name, force);
+        if (name === 'facets-section-open') nav.style.display = on ? 'none' : '';
+        return on;
+      };
+      const base = ctxListeners(p);
+      pickSection(p, 'facets');
+      await settle();
+      const heading = p.q('#section-facets h2');
+      assert.ok(p.doc.activeElement === heading, `facets: its heading: ${at(p)}`);
+      assert.ok(ctxListeners(p) === base, 'facets: no wait');
+    }
+  });
+
   await test('settings going before the blur lands nothing and leaves nothing', async () => {
     const p = await boot(env, '/app/settings/#profile');
     const view = p.view;
