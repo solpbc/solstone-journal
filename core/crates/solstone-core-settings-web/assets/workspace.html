@@ -2228,8 +2228,9 @@ button:focus:not(:focus-visible) {
 .trash-count, .trash-all { color: var(--ink-soft); font-weight: 600; font-size: .9em; }
 .trash-all { display: inline-flex; align-items: center; gap: .5em; cursor: pointer; }
 .trash-bar-actions { margin-left: auto; display: flex; gap: .5em; }
-/* A control whose write is out stays focusable and drawn, dimmed. */
-:is(#section-trash, #section-storage, #section-localaccess, #trashConfirmModal, #cleanupLogsModal) [aria-busy="true"] { opacity: .8; cursor: progress; }
+/* A control whose write is out stays focusable and drawn, dimmed; a switch
+   draws through its slider, since its box is invisible. */
+:is(#section-trash, #section-storage, #section-localaccess, #trashConfirmModal, #cleanupLogsModal) :is([aria-busy="true"], [aria-busy="true"] + .slider) { opacity: .8; cursor: progress; }
 .trash-danger-outline { padding: .5em 1em; background: var(--paper); color: var(--danger); border: 1px solid var(--danger); border-radius: 6px; font-size: .9em; cursor: pointer; }
 .trash-result { padding: .5em 1em; border-bottom: 1px solid var(--hairline); color: var(--ink-soft); font-size: .9em; }
 .trash-row { display: flex; align-items: flex-start; gap: .75em; padding: .65em 1em; font-size: .85em; cursor: pointer; }
