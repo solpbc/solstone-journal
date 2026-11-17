@@ -260,6 +260,12 @@
       "locales": [
         "en-US"
       ]
+    },
+    {
+      "id": "android-phone",
+      "locales": [
+        "en-US"
+      ]
     }
   ]
 }
