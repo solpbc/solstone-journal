@@ -20,7 +20,7 @@ share these h100 firmware variants, and each adds the driver its engine runs:
   appraised again on 2026-10-01.
 
 the 595.71.05 set's outcomes are recorded in [the qualification
-receipt](qualification.json); the 595.91.07 set has no receipt in this directory.
+receipt](qualification.json); the 595.91.07 set has no receipt in this repository.
 the cpu fingerprint selects its set only after cpu verification. nvattest derives
 the requested identities from the gpu report and still checks signatures, certificate chains,
 versions, measurements and the fresh challenge. unknown identities have no
