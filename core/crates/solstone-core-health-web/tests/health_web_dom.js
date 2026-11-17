@@ -9,6 +9,7 @@ const vm = require('vm');
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
 const dateFormatSource = fs.readFileSync(path.resolve(crateDir, '../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8');
+const focusSource = fs.readFileSync(path.resolve(crateDir, '../solstone-core-convey-shell/assets/static/focus.js'), 'utf8');
 
 class ClassList {
   constructor(element) {
@@ -163,6 +164,10 @@ class Element {
   }
 
   appendChild(child) {
+    if (child.tagName === '#DOCUMENT-FRAGMENT') {
+      child.children.splice(0).forEach((node) => this.appendChild(node));
+      return child;
+    }
     child.parentElement = this;
     this.children.push(child);
     return child;
@@ -216,6 +221,9 @@ class Element {
   }
 
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
+  removeEventListener(type, listener) {
+    this.listeners[type] = (this.listeners[type] || []).filter((candidate) => candidate !== listener);
+  }
 
   dispatchEvent(event) {
     event.target ||= this;
@@ -227,6 +235,11 @@ class Element {
 
   focus() { this.ownerDocument.activeElement = this; }
   scrollIntoView() { this.scrolledIntoView = true; }
+  // A box while it and every ancestor are shown and it is in the page.
+  getClientRects() {
+    for (let node = this; node; node = node.parentElement) if (node.hidden) return [];
+    return this.isConnected ? [{}] : [];
+  }
 }
 
 class Document {
@@ -240,6 +253,7 @@ class Document {
   }
 
   createElement(tagName) { return new Element(tagName, this); }
+  createDocumentFragment() { return new Element('#document-fragment', this); }
   createTextNode(text) {
     const node = new Element('#text', this);
     node.textContent = text;
@@ -252,6 +266,9 @@ class Document {
   }
   querySelectorAll(selector) { return this.documentElement.querySelectorAll(selector); }
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
+  removeEventListener(type, listener) {
+    this.listeners[type] = (this.listeners[type] || []).filter((candidate) => candidate !== listener);
+  }
   dispatchEvent(event) {
     for (const listener of this.listeners[event.type] || []) listener.call(this, event);
     return true;
@@ -2097,6 +2114,170 @@ test('local TCP programs do not request unavailable transports and surface read 
   await vm.runInContext('loadLocalPrograms()', context);
   assert.strictEqual(requests, 1); assert.strictEqual(section.hidden, false);
   assert.ok(rows.textContent.length > 0);
+});
+
+// A clock the cases move by hand: timers run in due order, one at a time.
+function manualClock() {
+  let now = 0;
+  let nextId = 1;
+  const timers = new Map();
+  return {
+    setTimeout: (fn, ms) => {
+      const id = nextId++;
+      timers.set(id, { fn, due: now + Math.max(0, Number(ms) || 0) });
+      return id;
+    },
+    clearTimeout: (id) => { timers.delete(id); },
+    pending: () => timers.size,
+    advance(ms) {
+      const until = now + ms;
+      for (;;) {
+        let next = null;
+        for (const [id, timer] of timers) if (timer.due <= until && (!next || timer.due < next[1].due)) next = [id, timer];
+        if (!next) break;
+        timers.delete(next[0]);
+        now = next[1].due;
+        next[1].fn();
+      }
+      now = until;
+    },
+  };
+}
+
+function domEvent(type, bubbles = false) {
+  return { type, bubbles, cancelBubble: false, defaultPrevented: false,
+    preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.cancelBubble = true; } };
+}
+
+function listenerCount(target) {
+  return Object.values(target.listeners).reduce((total, list) => total + list.length, 0);
+}
+
+// The log card's filters and lines, with the page's own change handlers and
+// the shell's focus helpers over a hand-moved clock.
+function logFilterEnvironment() {
+  const source = loadHealthSource();
+  const doc = new Document();
+  const clock = manualClock();
+  const requests = [];
+  const ask = (url) => { requests.push(String(url)); return new Promise(() => {}); };
+  const card = doc.createElement('section');
+  card.setAttribute('class', 'logs-card');
+  doc.body.appendChild(card);
+  const controls = doc.createElement('div');
+  controls.setAttribute('class', 'logs-controls');
+  card.appendChild(controls);
+  const select = (id, values) => {
+    const el = doc.createElement('select');
+    el.id = id;
+    for (const value of values) {
+      const option = doc.createElement('option');
+      option.value = value;
+      el.appendChild(option);
+    }
+    el.value = values[0];
+    controls.appendChild(el);
+    return el;
+  };
+  const part = (tag) => { const el = doc.createElement(tag); card.appendChild(el); return el; };
+  const elements = {
+    logServiceFilter: select('logServiceFilter', ['all']),
+    logLevelFilter: select('logLevelFilter', ['all', 'error', 'warning', 'info']),
+    logStreamFilter: select('logStreamFilter', ['all', 'stdout', 'stderr']),
+    logsViewport: part('div'),
+    logsAnnouncer: part('p'),
+    logErrorBadge: part('span'),
+    logsSummaryBadge: part('span'),
+    logsCollapseIndicator: part('span'),
+  };
+  const window = { setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, fetch: ask, apiJson: ask, location: { search: '' } };
+  const context = vm.createContext({
+    window, document: doc, elements, console, CSS: { escape: String },
+    state: { logLevelFilter: 'all', serviceLogs: new Map(), logCollapsedServices: new Map(), logTotalCount: 0,
+      logErrorCount: 0, lastLogTs: null, lastLogFilter: null, logsCollapsed: false, deepLinkMode: false,
+      logFollow: true, pendingLogAnchor: null },
+    setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, requestAnimationFrame: (fn) => fn(),
+    fetch: ask, getJson: ask, updateLogsBadge() {},
+  });
+  vm.runInContext(focusSource, context, { filename: 'focus.js' });
+  vm.runInContext(sourceBlock(source, 'const HEALTH_LOGS_COPY =', 'const HEALTH_GLANCE_COPY ='), context);
+  vm.runInContext(sourceBlock(source, 'const SERVICE_NAMES =', '// Readable names for talent ids'), context);
+  vm.runInContext('let programmaticScroll = false;', context);
+  vm.runInContext(sourceBlock(source, 'function isAtBottom(', 'function recentErrorGroupKey('), context);
+  vm.runInContext(sourceBlock(source, 'const LOG_BUFFER_SIZE =', '// Event handlers by tract'), context);
+  const logLine = (name, line, stream = 'stdout') => context.handleLogsEvent({ event: 'line', name, line, stream, ts: 1 });
+  logLine('cortex', 'INFO cortex ready');
+  logLine('observer', 'WARNING observer slow', 'stderr');
+  vm.runInContext(sourceBlock(source, '// Log controls', "elements.logsViewport.addEventListener('scroll'"), context);
+  const pick = (el, value) => {
+    el.focus();
+    el.value = value;
+    el.dispatchEvent(domEvent('change', true));
+  };
+  // A phone's late blur: focus goes to the page, with nothing pressed.
+  const lateBlur = (el) => {
+    doc.activeElement = doc.body;
+    el.dispatchEvent(domEvent('blur'));
+    el.dispatchEvent(domEvent('focusout', true));
+  };
+  const listeners = () => listenerCount(doc) + Object.values(elements).reduce((total, el) => total + listenerCount(el), 0);
+  return { doc, elements, clock, requests, logLine, pick, lateBlur, listeners };
+}
+
+const LOG_FILTER_PICKS = [
+  { id: 'logServiceFilter', value: 'cortex', blurAt: 865 },
+  { id: 'logLevelFilter', value: 'error', blurAt: 729 },
+  { id: 'logStreamFilter', value: 'stderr', blurAt: 865 },
+];
+
+for (const { id, value, blurAt } of LOG_FILTER_PICKS) {
+  test(`a phone's late blur after a pick from ${id} lands back on that same filter`, () => {
+    const env = logFilterEnvironment();
+    const filter = env.doc.getElementById(id);
+    const before = env.listeners();
+    env.pick(filter, value);
+    assert.ok(env.doc.activeElement === filter, 'the pick leaves focus on the filter');
+    env.clock.advance(400);
+    // A log line from a service not seen yet adds an option to the service filter.
+    const options = env.elements.logServiceFilter.children.length;
+    env.logLine('importer', 'INFO importer started');
+    assert.strictEqual(env.elements.logServiceFilter.children.length, options + 1);
+    env.clock.advance(blurAt - 400);
+    env.lateBlur(filter);
+    assert.ok(env.doc.activeElement === env.doc.body, 'the blur leaves focus on the page');
+    env.clock.advance(0);
+    assert.ok(env.doc.activeElement === filter, 'focus is back on the filter it left');
+    assert.ok(env.doc.getElementById(id) === filter, 'the filter was not drawn again');
+    assert.strictEqual(env.listeners(), before);
+    assert.strictEqual(env.clock.pending(), 0);
+  });
+
+  test(`a pick from ${id} with no late blur keeps focus, leaves no wait behind and asks the server for nothing`, () => {
+    const env = logFilterEnvironment();
+    const filter = env.doc.getElementById(id);
+    const before = env.listeners();
+    env.pick(filter, value);
+    env.clock.advance(2000);
+    assert.ok(env.doc.activeElement === filter, 'focus stays on the filter');
+    assert.strictEqual(env.listeners(), before);
+    assert.strictEqual(env.clock.pending(), 0);
+    assert.strictEqual(env.requests.length, 0);
+  });
+}
+
+test('a tap after a level pick and before the late blur leaves focus on the page', () => {
+  const env = logFilterEnvironment();
+  const filter = env.elements.logLevelFilter;
+  const before = env.listeners();
+  env.pick(filter, 'warning');
+  env.clock.advance(300);
+  env.doc.dispatchEvent(domEvent('pointerdown'));
+  env.clock.advance(429);
+  env.lateBlur(filter);
+  env.clock.advance(0);
+  assert.ok(env.doc.activeElement === env.doc.body, 'the tap ended the wait');
+  assert.strictEqual(env.listeners(), before);
+  assert.strictEqual(env.clock.pending(), 0);
 });
 
 async function runAsyncCases() {
