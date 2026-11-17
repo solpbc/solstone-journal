@@ -29,6 +29,8 @@ class El {
   setAttribute(name, value) { (this.attributes ||= {})[name] = String(value); }
   getAttribute(name) { return this.attributes && name in this.attributes ? this.attributes[name] : null; }
   removeAttribute(name) { if (this.attributes) delete this.attributes[name]; }
+  hasAttribute(name) { return Boolean(this.attributes && name in this.attributes); }
+  get tagName() { return this.tag.toUpperCase(); }
   contains(node) { return node === this || this.children.some((child) => child.contains && child.contains(node)); }
   all(cls) { const out = []; for (const child of this.children) { if (child.className === cls) out.push(child); if (child.all) out.push(...child.all(cls)); } return out; }
 }
@@ -78,7 +80,10 @@ const sandbox = {
 };
 sandbox.settingsPage = document;
 vm.createContext(sandbox);
-vm.runInContext(`${sourceNames}\n${html.slice(start, end)};this.api={trashLandings,TRASH_COPY,TRASH_WORDS,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,renderTrashBackups,trashSelected,trashWord,trashRowNote,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
+// The landings go through settings' one landing, as the page has it.
+const land = html.slice(html.indexOf('function settingsLand('), html.indexOf('function settingsHeld('));
+assert.ok(land.includes('SolFocus.refocus'), 'the settings landing is sliced');
+vm.runInContext(`${sourceNames}\n${land}\n${html.slice(start, end)};this.api={trashLandings,TRASH_COPY,TRASH_WORDS,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,renderTrashBackups,trashSelected,trashWord,trashRowNote,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
 const { api } = sandbox;
 const C = api.TRASH_COPY;
 api.setupTrash();

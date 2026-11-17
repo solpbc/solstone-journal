@@ -2003,5 +2003,253 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(p.doc.activeElement === toggle, `kept: ${at(p)}`);
   });
 
+
+  // ---- the facet pages keep focus
+
+  const FP = `/app/settings/facets/${SLUG}`;
+  const facetPuts = (p) => p.writes().filter((call) => call.url === `/app/settings/api/facet/${SLUG}` && call.method === 'PUT');
+  const writesTo = (p, method, url) => p.writes().filter((call) => call.method === method && call.url === url);
+  // As a browser does, blur() fires the element's blur.
+  // An input's select() has nothing to model here.
+  const editable = (el) => { el.select = () => {}; return el; };
+  const blurFires = (p, el) => { const own = el.blur; el.blur = function () { const was = p.doc.activeElement === this; own.call(this); if (was) p.doc.dispatch(this, { type: 'blur', bubbles: false }); }; };
+  const ACT = (id, extra = {}) => ({ id, name: id, description: '', emoji: '', icon_svg: '', priority: 'normal', ...extra });
+  // A facet page whose activities answer as the journal does: a remove takes
+  // one out, an add puts one in.
+  async function activitiesPage({ attached = ['a1', 'a2', 'a3'], defaults = ['a1', 'a2', 'a3'], extra = {} } = {}) {
+    let on = [...attached];
+    const base = journal(extra);
+    const acts = `/app/settings/api/facet/${SLUG}/activities`;
+    const answers = (url, opts) => {
+      const u = new URL(url, ORIGIN);
+      const method = String(opts?.method || 'GET').toUpperCase();
+      if (u.pathname === acts && method === 'GET') return { activities: on.map((id) => ACT(id)), defaults: defaults.map((id) => ACT(id)) };
+      if (u.pathname === acts && method === 'POST') { on.push(JSON.parse(opts.body).id); return { success: true }; }
+      if (u.pathname.startsWith(acts + '/') && method === 'DELETE') { on = on.filter((id) => id !== u.pathname.slice(acts.length + 1)); return { success: true }; }
+      return base(url, opts);
+    };
+    const p = await boot(env, FP, { answers });
+    p.press(p.byId('facetDetailTabActivities'));
+    await settle();
+    p.take = (id) => { on = on.filter((x) => x !== id); };
+    p.put = (id) => { on.push(id); };
+    return p;
+  }
+  const removeOf = (p, id) => p.qa('#attachedActivitiesList .activity-remove').find((el) => el.dataset.id === id);
+  const priorityOf = (p, id) => p.qa('#attachedActivitiesList .activity-priority').find((el) => el.dataset.id === id);
+  const chipOf = (p, id) => p.qa('#defaultActivitiesList .activity-chip').find((el) => el.dataset.id === id);
+
+  await test("the facet create dialog's add stays focused and busy while it is out, and a second press or Enter in the name sends nothing; refused, it keeps focus", async () => {
+    const p = await boot(env, '/app/settings/#facets');
+    const held = holdGranola(p, 'POST', '/app/settings/api/facet');
+    p.press(p.qa('.facets-list-action')[0]);
+    await settle();
+    p.byId('facetCreateName').value = 'lab new';
+    const submit = p.byId('facetCreateSubmit');
+    submit.focus();
+    p.doc.dispatch(p.byId('facetCreateForm'), { type: 'submit' });
+    await settle();
+    assert.ok(p.doc.activeElement === submit && busyNotDisabled(submit), `the add, busy: ${at(p)}`);
+    p.doc.dispatch(p.byId('facetCreateForm'), { type: 'submit' });
+    await settle();
+    assert.ok(writesTo(p, 'POST', '/app/settings/api/facet').length === 1, `one add: ${writesTo(p, 'POST', '/app/settings/api/facet').length}`);
+    held.release({ success: false, error: 'a facet with that name already exists' }, 409);
+    await settle();
+    assert.ok(p.doc.activeElement === submit && submit.getAttribute('aria-busy') === null && !submit.disabled, `refused, kept on the add: ${at(p)}`);
+  });
+
+  await test("a facet's mute stays focused and busy while its save is out, a second press sends nothing, and it is the same button after", async () => {
+    const p = await boot(env, FP);
+    const held = holdGranola(p, 'PUT', `/app/settings/api/facet/${SLUG}`);
+    const mute = p.byId('facetMuteAction');
+    mute.focus();
+    p.press(mute);
+    await settle();
+    assert.ok(p.doc.activeElement === mute && busyNotDisabled(mute), `the mute, busy: ${at(p)}`);
+    p.press(mute);
+    await settle();
+    assert.ok(facetPuts(p).length === 1, `one save: ${facetPuts(p).length}`);
+    held.release({ success: true, config: { title: 'Work', color: '#c00', muted: true } });
+    await settle();
+    assert.ok(p.doc.activeElement === mute && mute.getAttribute('aria-busy') === null, `kept after: ${at(p)}`);
+    assert.ok(mute.textContent === 'unmute', 'and says what it does now');
+  });
+
+  await test("Enter in the facet's name saves it once and puts focus on the name as shown; the same name again while it's out sends nothing", async () => {
+    const p = await boot(env, FP);
+    const held = holdGranola(p, 'PUT', `/app/settings/api/facet/${SLUG}`);
+    const display = p.byId('facetTitleDisplay');
+    const input = editable(p.byId('facetTitleInput'));
+    blurFires(p, input);
+    display.focus();
+    p.key(display, 'Enter');
+    assert.ok(p.doc.activeElement === input, `editing: ${at(p)}`);
+    input.value = 'Work two';
+    p.key(input, 'Enter');
+    await settle();
+    assert.ok(p.doc.activeElement === display, `the name as shown: ${at(p)}`);
+    assert.ok(facetPuts(p).length === 1, `one save: ${facetPuts(p).length}`);
+    p.key(display, 'Enter');
+    input.value = 'Work two';
+    p.key(input, 'Enter');
+    await settle();
+    assert.ok(facetPuts(p).length === 1, `the value on its way isn't sent again: ${facetPuts(p).length}`);
+    held.release({ success: true, config: { title: 'Work two', color: '#c00', muted: false } });
+    await settle();
+    assert.ok(p.doc.activeElement === display, `kept after: ${at(p)}`);
+    p.key(display, 'Enter');
+    input.value = '';
+    p.key(input, 'Enter');
+    await settle();
+    assert.ok(p.doc.activeElement === display && facetPuts(p).length === 1, `an emptied name saves nothing and lands on the name: ${at(p)}`);
+  });
+
+  await test("a facet's emoji and color open from the keyboard, and Enter in the emoji lands on it", async () => {
+    const p = await boot(env, FP, { answers: journal({ [`/app/settings/api/facet/${SLUG}#PUT`]: { success: true, config: { title: 'Work', color: '#c00', emoji: '🧪', muted: false } } }) });
+    const emoji = p.byId('emojiDisplay');
+    const input = p.byId('emojiInput');
+    blurFires(p, input);
+    emoji.focus();
+    p.key(emoji, 'Enter');
+    assert.ok(p.doc.activeElement === input, `the emoji opens: ${at(p)}`);
+    input.value = '🧪';
+    p.key(input, 'Enter');
+    await settle();
+    assert.ok(p.doc.activeElement === emoji, `the emoji as shown: ${at(p)}`);
+    assert.ok(facetPuts(p).length === 1, 'one save');
+    const color = p.byId('colorTrigger');
+    color.focus();
+    p.key(color, ' ');
+    await settle();
+    assert.deepStrictEqual(p.shownModals(), ['colorPickerModal']);
+  });
+
+  await test("an activity's remove stays busy while it is out and sends one; its answer lands on the next row's priority, else the one before, else the heading", async () => {
+    const p = await activitiesPage();
+    const held = holdGranola(p, 'DELETE', `/app/settings/api/facet/${SLUG}/activities/a2`);
+    const remove = removeOf(p, 'a2');
+    remove.focus();
+    p.press(remove);
+    await settle();
+    assert.ok(p.doc.activeElement === remove && busyNotDisabled(remove), `the remove, busy: ${at(p)}`);
+    p.press(remove);
+    await settle();
+    assert.ok(p.writes().filter((c) => c.method === 'DELETE').length === 1, 'one remove');
+    p.take('a2');
+    held.release({ success: true });
+    await settle();
+    assert.ok(p.doc.activeElement === priorityOf(p, 'a3'), `the next row: ${at(p)} ${p.doc.activeElement.dataset?.id}`);
+    removeOf(p, 'a3').focus();
+    p.press(removeOf(p, 'a3'));
+    await settle();
+    assert.ok(p.doc.activeElement === priorityOf(p, 'a1'), `the one before: ${at(p)} ${p.doc.activeElement.dataset?.id}`);
+    removeOf(p, 'a1').focus();
+    p.press(removeOf(p, 'a1'));
+    await settle();
+    assert.ok(p.doc.activeElement === p.q('#facetDetailActivities h3'), `the heading: ${at(p)}`);
+  });
+
+  await test("an activity's priority stays busy while its save is out and keeps the choice sent; a failure lands on the same choice drawn again", async () => {
+    const p = await activitiesPage();
+    const held = holdGranola(p, 'PUT', `/app/settings/api/facet/${SLUG}/activities/a2`);
+    const select = priorityOf(p, 'a2');
+    select.focus();
+    select.value = 'high';
+    p.doc.dispatch(select, { type: 'change' });
+    await settle();
+    assert.ok(p.doc.activeElement === select && busyNotDisabled(select), `busy: ${at(p)}`);
+    select.value = 'low';
+    p.doc.dispatch(select, { type: 'change' });
+    await settle();
+    assert.ok(p.writes().filter((c) => c.method === 'PUT').length === 1 && select.value === 'high', `one save, the choice sent: ${select.value}`);
+    held.release({ error: 'lab: failed' }, 503);
+    await settle();
+    const again = priorityOf(p, 'a2');
+    assert.ok(again !== select && p.doc.activeElement === again, `the same choice, drawn again: ${at(p)}`);
+  });
+
+  await test('a default activity adds by Enter or Space, once while out, and lands on the next one left to add, else on "add custom activity"', async () => {
+    const p = await activitiesPage({ attached: [], defaults: ['a1', 'a2'] });
+    const held = holdGranola(p, 'POST', `/app/settings/api/facet/${SLUG}/activities`);
+    const chip = chipOf(p, 'a1');
+    chip.focus();
+    p.key(chip, 'Enter');
+    await settle();
+    assert.ok(p.doc.activeElement === chip && chip.getAttribute('aria-busy') === 'true', `the chip, busy: ${at(p)}`);
+    p.key(chip, ' ');
+    p.press(chip);
+    await settle();
+    assert.ok(p.writes().filter((c) => c.method === 'POST').length === 1, 'one add');
+    p.put('a1');
+    held.release({ success: true });
+    await settle();
+    assert.ok(p.doc.activeElement === chipOf(p, 'a2'), `the next chip: ${at(p)} ${p.doc.activeElement.dataset?.id}`);
+    p.key(chipOf(p, 'a2'), ' ');
+    await settle();
+    assert.ok(p.doc.activeElement === p.byId('addCustomActivityBtn'), `none left: ${at(p)}`);
+  });
+
+  await test("a custom activity's add stays busy while it is out, and a second press sends nothing", async () => {
+    const p = await activitiesPage();
+    const held = holdGranola(p, 'POST', `/app/settings/api/facet/${SLUG}/activities`);
+    p.press(p.byId('addCustomActivityBtn'));
+    await settle();
+    p.byId('customActivityName').value = 'lab';
+    const save = p.byId('saveCustomActivityBtn');
+    save.focus();
+    p.press(save);
+    await settle();
+    assert.ok(p.doc.activeElement === save && busyNotDisabled(save), `busy: ${at(p)}`);
+    p.press(save);
+    await settle();
+    assert.ok(p.writes().filter((c) => c.method === 'POST').length === 1, 'one add');
+    held.release({ error: 'lab: failed' }, 503);
+    await settle();
+    assert.ok(p.doc.activeElement === save && save.getAttribute('aria-busy') === null, `failed, kept: ${at(p)}`);
+  });
+
+  await test('"load older" reads one day at a time and, once nothing older is left, lands on the first of what it loaded', async () => {
+    const day = (d, next) => ({ day: d, entries: [{ action: 'facet_update', actor: 'owner', source: 'app', params: {} }], next_cursor: next });
+    const logs = `/app/settings/api/facet/${SLUG}/logs`;
+    const base = journal();
+    const answers = (url, opts) => (new URL(url, ORIGIN).pathname === logs ? (url.includes('cursor=') ? day('20261115', null) : day('20261116', 'c1')) : base(url, opts));
+    const p = await boot(env, FP, { answers });
+    p.press(p.byId('facetDetailTabActivity'));
+    await settle();
+    const more = p.byId('logMoreBtn');
+    const held = holdGranola(p, 'GET', `${logs}?cursor=c1`);
+    more.focus();
+    p.press(more);
+    await settle();
+    assert.ok(p.doc.activeElement === more && more.getAttribute('aria-busy') === 'true', `busy: ${at(p)}`);
+    p.press(more);
+    await settle();
+    assert.ok(p.reads(`${logs}?cursor=`).length === 1, 'one read');
+    held.release(day('20261115', null));
+    await settle();
+    const summaries = p.qa('#logEntries summary');
+    assert.ok(p.doc.activeElement === summaries[summaries.length - 1], `the first of the older day: ${at(p)}`);
+  });
+
+  await test("the facet delete's confirm puts focus on its opener at once, busy while the delete is out, with no second dialog; refused, the opener keeps it", async () => {
+    const p = await boot(env, FP);
+    const held = holdGranola(p, 'DELETE', `/app/settings/api/facet/${SLUG}`);
+    const opener = p.byId('facetDeleteBtn');
+    opener.hidden = false;
+    opener.focus();
+    p.press(opener);
+    await settle();
+    const reconciles = p.window.ConveyModalLayer.reconciles;
+    p.press(p.byId('facetDeleteModalConfirm'));
+    assert.ok(p.window.ConveyModalLayer.reconciles > reconciles, 'the layer is reconciled at once');
+    assert.ok(p.doc.activeElement === opener && busyNotDisabled(opener), `the opener, busy: ${at(p)}`);
+    p.press(opener);
+    await settle();
+    assert.deepStrictEqual(p.shownModals(), [], 'no second dialog');
+    held.release({ success: false, reason: 'busy' }, 409);
+    await settle();
+    assert.ok(p.doc.activeElement === opener && opener.getAttribute('aria-busy') === null, `refused, kept: ${at(p)}`);
+    assert.ok(p.writes().filter((c) => c.method === 'DELETE').length === 1, 'one delete');
+  });
   return cases;
 };

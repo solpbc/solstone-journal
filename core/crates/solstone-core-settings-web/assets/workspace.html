@@ -7178,12 +7178,13 @@ function renderActivities(data) {
 function activitiesHeld(attachedList, defaultsList) {
   const active = settingsPage.activeElement;
   if (!active || active === settingsPage.body) return null;
-  const list = attachedList.contains(active) ? attachedList : defaultsList.contains(active) ? defaultsList : null;
+  const within = (root) => { for (let at = active; at; at = at.parentNode) if (at === root) return true; return false; };
+  const list = within(attachedList) ? attachedList : within(defaultsList) ? defaultsList : null;
   if (!list || !active.dataset || !active.dataset.id) return null;
   const kind = active.classList.contains('activity-chip') ? 'chip' : active.classList.contains('activity-priority') ? 'priority' : 'remove';
   const rows = list === attachedList
     ? Array.from(attachedList.querySelectorAll('.activity-item')).map(row => row.dataset.id)
-    : Array.from(defaultsList.querySelectorAll('.activity-chip:not(.activity-chip-attached)')).map(chip => chip.dataset.id);
+    : Array.from(defaultsList.querySelectorAll('.activity-chip')).filter(chip => !chip.classList.contains('activity-chip-attached')).map(chip => chip.dataset.id);
   return { kind, id: active.dataset.id, rows };
 }
 
@@ -7192,10 +7193,13 @@ function activitiesHeld(attachedList, defaultsList) {
 // one), else the one before; else what is left there: the activities heading,
 // or "add custom activity".
 function landActivities(held) {
-  const attached = id => document.querySelector(`#attachedActivitiesList .activity-item[data-id="${CSS.escape(id)}"] .activity-priority`);
-  const chip = id => document.querySelector(`#defaultActivitiesList .activity-chip[data-id="${CSS.escape(id)}"]:not(.activity-chip-attached)`);
-  const same = held.kind === 'chip' ? chip(held.id)
-    : document.querySelector(`#attachedActivitiesList .activity-${held.kind}[data-id="${CSS.escape(held.id)}"]`);
+  const byId = (selector, id) => Array.from(document.querySelectorAll(selector)).find(el => el.dataset.id === id) || null;
+  const attached = id => byId('#attachedActivitiesList .activity-priority', id);
+  const chip = id => {
+    const found = byId('#defaultActivitiesList .activity-chip', id);
+    return found && !found.classList.contains('activity-chip-attached') ? found : null;
+  };
+  const same = held.kind === 'chip' ? chip(held.id) : byId(`#attachedActivitiesList .activity-${held.kind}`, held.id);
   const find = held.kind === 'chip' ? chip : attached;
   const at = held.rows.indexOf(held.id);
   const after = held.rows.slice(at + 1).map(find).find(Boolean);
