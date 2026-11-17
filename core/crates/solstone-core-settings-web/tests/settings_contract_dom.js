@@ -2455,5 +2455,311 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.deepStrictEqual([held.listeners, held.timeouts], [0, 0]);
     assert.ok(p.doc.activeElement !== select, 'the gone select takes nothing');
   });
+
+  // ---- every other select that stays shown after a pick: a phone's late blur, then focus back on it
+
+  // As a phone does as its menu closes: blur, then focusout, with nothing pressed first.
+  const lateBlur = (p, s) => { s.blur(); p.doc.dispatch(s, { type: 'blur', bubbles: false }); p.doc.dispatch(s, { type: 'focusout', relatedTarget: null }); };
+  // A move off the select: a Tab, then its blur to the next control.
+  const moveOff = (p, s) => {
+    p.key(s, 'Tab');
+    const next = p.byId('rail-home');
+    next.focus();
+    p.doc.dispatch(s, { type: 'blur', bubbles: false, relatedTarget: next });
+    p.doc.dispatch(s, { type: 'focusout', relatedTarget: next });
+  };
+  const pickFrom = (p, s, value) => { s.focus(); s.value = value; p.doc.dispatch(s, { type: 'change' }); return s; };
+  const holdWrites = (p) => { p.holds.push((call) => call.method !== 'GET'); };
+  // The shell's save helper with its revert, as api.js has it: a refused save
+  // puts back the value it read before the write.
+  const reverting = (p) => {
+    p.window.saveControl = async ({ el, fetchArgs, onSuccess, onError, revertOnError = true, readValue }) => {
+      const previous = typeof readValue === 'function' ? readValue(el) : el.value;
+      try {
+        const result = await fetchArgs();
+        if (typeof onSuccess === 'function') onSuccess(result);
+        return result;
+      } catch (error) {
+        if (revertOnError !== false) el.value = previous ?? '';
+        if (typeof onError === 'function') onError(error);
+        throw error;
+      }
+    };
+  };
+  const configOf = (identity, transcribe) => ({ identity: { name: 'owner', timezone: 'UTC', ...identity }, transcribe, env: {}, runtime_env: {}, key_validation: {}, trash: { erase_after_days: 7 } });
+  const BACKENDS = [{ name: 'parakeet', label: 'parakeet' }, { name: 'whisper', label: 'whisper' }];
+  const CONFIG_URL = '/app/settings/api/config';
+  // Each select, the state that draws it, a pick, and the one write it makes.
+  const PICKS = {
+    'pronouns': {
+      address: '/app/settings/#profile', id: 'field-pronouns', value: 'they/them/their/themselves',
+      write: ['PUT', CONFIG_URL, { section: 'identity', data: { pronouns: { subject: 'they', object: 'them', possessive: 'their', reflexive: 'themselves' } } }],
+    },
+    'speech processing': {
+      address: '/app/settings/#transcription', id: 'field-transcribe-processing', value: 'confidential',
+      extra: {
+        '/app/settings/api/transcribe': { backends: [], parakeet_embedded: true },
+        [`${CONFIG_URL}#PUT`]: { success: true, config: configOf({}, { backend: 'confidential', confidential_audio: true }) },
+      },
+      write: ['PUT', CONFIG_URL, { section: 'transcribe', data: { backend: 'confidential', confidential_audio: true } }],
+    },
+    'backend': {
+      address: '/app/settings/#transcription', id: 'field-transcribe-backend', value: 'whisper',
+      extra: { '/app/settings/api/transcribe': { backends: BACKENDS } },
+      write: ['PUT', CONFIG_URL, { section: 'transcribe', data: { backend: 'whisper' } }],
+    },
+    'parakeet model': {
+      address: '/app/settings/#transcription', id: 'field-parakeet-model-version', value: 'v3',
+      extra: { '/app/settings/api/transcribe': { backends: BACKENDS } },
+      write: ['PUT', CONFIG_URL, { section: 'transcribe', data: { parakeet: { model_version: 'v3' } } }],
+    },
+    'parakeet device': {
+      address: '/app/settings/#transcription', id: 'field-parakeet-device', value: 'cpu',
+      extra: { '/app/settings/api/transcribe': { backends: BACKENDS } },
+      write: ['PUT', CONFIG_URL, { section: 'transcribe', data: { parakeet: { device: 'cpu' } } }],
+    },
+    'parakeet.cpp device': {
+      address: '/app/settings/#transcription', id: 'field-parakeet-cpp-device', value: 'cpu',
+      extra: { '/app/settings/api/transcribe': { backends: [...BACKENDS, { name: 'parakeet-cpp', label: 'parakeet.cpp' }] }, [CONFIG_URL]: configOf({}, { backend: 'parakeet-cpp' }) },
+      write: ['PUT', CONFIG_URL, { section: 'transcribe', data: { 'parakeet-cpp': { device: 'cpu' } } }],
+    },
+    "an activity's priority": {
+      activity: 'a2', value: 'high',
+      write: ['PUT', `/app/settings/api/facet/${SLUG}/activities/a2`, { priority: 'high' }],
+    },
+    "the cleanup dialog's stream filter": { address: '/app/settings/#storage', id: 'cleanupStreamFilter', value: '', dialog: 'cleanupNowBtn' },
+  };
+  const WRITERS = Object.keys(PICKS).filter((name) => name !== 'pronouns' && PICKS[name].write);
+  async function pickPage(name) {
+    const spec = PICKS[name];
+    let p;
+    if (spec.activity) {
+      p = await activitiesPage();
+    } else {
+      p = await boot(env, spec.address, spec.extra ? { answers: journal(spec.extra) } : undefined);
+      if (spec.dialog) {
+        p.press(p.byId(spec.dialog));
+        await settle();
+        p.clock.advance(16);
+      }
+    }
+    const select = () => (spec.activity ? priorityOf(p, spec.activity) : p.byId(spec.id));
+    assert.ok(select() && p.window.SolFocus.isShown(select()) && !select().disabled, `${name} is drawn and on`);
+    return { p, spec, select };
+  }
+  const writesOf = (p, [method, url, body]) => p.writes().filter((call) => call.method === method && call.url === url && call.body === JSON.stringify(body));
+
+  for (const name of Object.keys(PICKS)) {
+    await test(`a pick from ${name}, then a phone's late blur, puts focus back on the select`, async () => {
+      const { p, spec, select } = await pickPage(name);
+      holdWrites(p);
+      const picked = pickFrom(p, select(), spec.value);
+      await settle();
+      p.clock.advance(PHONE_BLUR);
+      lateBlur(p, picked);
+      assert.ok(p.doc.activeElement === p.doc.body, 'the blur leaves the page');
+      p.clock.advance(0);
+      assert.ok(p.doc.activeElement === picked, `back on the select: ${at(p)}`);
+    });
+  }
+
+  await test("a pick from each of those selects with no late blur leaves focus on it, and what the wait added is gone after its window", async () => {
+    for (const name of Object.keys(PICKS)) {
+      const { p, spec, select } = await pickPage(name);
+      holdWrites(p);
+      const before = p.view.ctx.held();
+      const picked = pickFrom(p, select(), spec.value);
+      await settle();
+      p.clock.advance(2000);
+      await settle();
+      assert.ok(p.doc.activeElement === picked, `${name}: kept: ${at(p)}`);
+      const after = p.view.ctx.held();
+      assert.ok(after.listeners === before.listeners && after.timeouts === before.timeouts, `${name}: nothing left: ${after.listeners}/${before.listeners} ${after.timeouts}/${before.timeouts}`);
+    }
+  });
+
+  // Pronouns save on change and on blur: a phone's late blur, the landing and
+  // a later move off it send nothing past the one save.
+  const THEY = PICKS.pronouns.write[2].data.pronouns;
+  const HE = { subject: 'he', object: 'him', possessive: 'his', reflexive: 'himself' };
+  async function pronounsPage() {
+    const p = await boot(env, '/app/settings/#profile', { answers: journal({ [CONFIG_URL]: configOf({ pronouns: HE }, {}) }) });
+    reverting(p);
+    const held = holdGranola(p, 'PUT', CONFIG_URL);
+    const select = pickFrom(p, p.byId('field-pronouns'), PICKS.pronouns.value);
+    p.clock.advance(500);
+    await settle();
+    assert.ok(configPuts(p).length === 1, `sent after its half second: ${configPuts(p).length}`);
+    return { p, held, select };
+  }
+  const pronounsEnd = async (p, select) => {
+    p.clock.advance(PHONE_BLUR - 500);
+    lateBlur(p, select);
+    p.clock.advance(0);
+    await settle();
+    moveOff(p, select);
+    p.clock.advance(1000);
+    await settle();
+  };
+  const onePronounsSave = (p) => {
+    assert.ok(writesOf(p, PICKS.pronouns.write).length === 1, `one save of the pick: ${writesOf(p, PICKS.pronouns.write).length}`);
+    assert.ok(p.writes().length === 1, `nothing else: ${p.writes().length}`);
+  };
+
+  await test('pronouns: a save still out at the late blur is sent once, through the landing and a later move', async () => {
+    const { p, held, select } = await pronounsPage();
+    await pronounsEnd(p, select);
+    held.release({ success: true, config: configOf({ pronouns: THEY }, {}) });
+    await settle();
+    p.clock.advance(1000);
+    await settle();
+    onePronounsSave(p);
+  });
+
+  await test('pronouns: a save answered before the late blur is sent once, through the landing and a later move', async () => {
+    const { p, held, select } = await pronounsPage();
+    held.release({ success: true, config: configOf({ pronouns: THEY }, {}) });
+    await settle();
+    await pronounsEnd(p, select);
+    onePronounsSave(p);
+    assert.ok(select.value === PICKS.pronouns.value, 'the pick stays');
+  });
+
+  await test('pronouns: a save refused before the late blur puts back the saved choice, and neither blur sends it again', async () => {
+    const { p, held, select } = await pronounsPage();
+    held.release({ error: 'refused' }, 500);
+    await settle();
+    assert.ok(select.value === 'he/him/his/himself', `the saved choice: ${select.value}`);
+    await pronounsEnd(p, select);
+    onePronounsSave(p);
+  });
+
+  await test("each change-only writer sends one write per pick, and nothing from a phone's late blur, the landing or a later move", async () => {
+    for (const name of WRITERS) {
+      const { p, spec, select } = await pickPage(name);
+      const picked = pickFrom(p, select(), spec.value);
+      await settle();
+      p.clock.advance(PHONE_BLUR);
+      lateBlur(p, picked);
+      p.clock.advance(0);
+      await settle();
+      moveOff(p, picked);
+      p.clock.advance(2000);
+      await settle();
+      assert.ok(writesOf(p, spec.write).length === 1, `${name}: one write of the pick: ${writesOf(p, spec.write).length}`);
+      assert.ok(p.writes().length === 1, `${name}: nothing else: ${p.writes().length}`);
+    }
+  });
+
+  // A write each writer's code takes as refused.
+  const REFUSALS = {
+    'pronouns': [{ error: 'refused' }, 500],
+    'speech processing': [{ success: false }, 503],
+    'backend': [{ success: false, error: 'refused' }, 400],
+    'parakeet model': [{ success: false, error: 'refused' }, 400],
+    'parakeet device': [{ success: false, error: 'refused' }, 400],
+    'parakeet.cpp device': [{ success: false, error: 'refused' }, 400],
+    "an activity's priority": [{ error: 'refused' }, 404],
+  };
+  // The picked select, or for a priority, the same activity's drawn again.
+  const sameControl = (p, spec, picked) => (spec.activity ? priorityOf(p, spec.activity) : picked);
+
+  await test("a refused write, answered before or after a phone's late blur, leaves focus on the select, or on the same activity's priority drawn again", async () => {
+    for (const name of Object.keys(REFUSALS)) {
+      for (const answered of ['before', 'after']) {
+        const { p, spec, select } = await pickPage(name);
+        if (name === 'pronouns') reverting(p);
+        const held = holdGranola(p, spec.write[0], spec.write[1]);
+        const picked = pickFrom(p, select(), spec.value);
+        await settle();
+        if (name === 'pronouns') p.clock.advance(500);
+        await settle();
+        if (answered === 'before') { held.release(...REFUSALS[name]); await settle(); }
+        p.clock.advance(PHONE_BLUR - p.clock.now());
+        lateBlur(p, picked);
+        p.clock.advance(0);
+        if (answered === 'after') { held.release(...REFUSALS[name]); await settle(); }
+        p.clock.advance(2000);
+        await settle();
+        const same = sameControl(p, spec, picked);
+        assert.ok(same && p.doc.activeElement === same, `${name}, refused ${answered} the blur: ${at(p)}`);
+        if (spec.activity) assert.ok(same !== picked, `${name}: drawn again`);
+        assert.ok(p.writes().length === 1, `${name}: one write: ${p.writes().length}`);
+      }
+    }
+  });
+
+  await test("speech processing refused after a phone's late blur, its choice unreadable after, lands on the line that says so", async () => {
+    const extra = PICKS['speech processing'].extra;
+    const base = journal(extra);
+    const read = { fails: false };
+    const p = await boot(env, '/app/settings/#transcription', { answers: (url, opts) => {
+      if (url.startsWith(CONFIG_URL) && String(opts?.method || 'GET').toUpperCase() === 'GET' && read.fails) return undefined;
+      return base(url, opts);
+    } });
+    const held = holdGranola(p, 'PUT', CONFIG_URL);
+    const select = pickFrom(p, p.byId('field-transcribe-processing'), 'confidential');
+    await settle();
+    p.clock.advance(PHONE_BLUR);
+    lateBlur(p, select);
+    p.clock.advance(0);
+    assert.ok(p.doc.activeElement === select && busyNotDisabled(select), `back on the select, busy: ${at(p)}`);
+    read.fails = true;
+    held.release({ success: false }, 503);
+    await settle();
+    assert.ok(select.disabled && p.doc.activeElement === p.byId('transcribeProcessingHelp'), `the line that says so: ${at(p)}`);
+  });
+
+  await test("the backend's pick redraws its fieldsets, and the landing finds the same select", async () => {
+    const { p, select } = await pickPage('backend');
+    holdWrites(p);
+    const picked = select();
+    assert.ok(p.window.SolFocus.isShown(p.byId('parakeet-settings')), "parakeet's fieldset before");
+    pickFrom(p, picked, 'whisper');
+    await settle();
+    assert.ok(!p.window.SolFocus.isShown(p.byId('parakeet-settings')), "parakeet's fieldset hidden");
+    p.clock.advance(PHONE_BLUR);
+    lateBlur(p, picked);
+    p.clock.advance(0);
+    assert.ok(p.byId('field-transcribe-backend') === picked, 'the same select');
+    assert.ok(p.doc.activeElement === picked, `focus on it: ${at(p)}`);
+  });
+
+  await test("a pick of facets after an earlier pick: the select's blur as the heading takes focus lands nothing back on it", async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    // The narrow layout's one rule the page model needs: the facets section hides the select.
+    const wrap = p.byId('settings-index-view');
+    const nav = p.q('.settings-nav-mobile');
+    const toggle = wrap.classList.toggle.bind(wrap.classList);
+    wrap.classList.toggle = (name, force) => {
+      const on = toggle(name, force);
+      if (name === 'facets-section-open') nav.style.display = on ? 'none' : '';
+      return on;
+    };
+    const heading = p.q('#section-facets h2');
+    const select = p.byId('navSelect');
+    const base = ctxListeners(p);
+    pickSection(p, 'transcription');
+    await settle();
+    assert.ok(ctxListeners(p) > base, 'the earlier pick waits');
+    // As a browser does, focus moving to the heading blurs the select at once,
+    // inside the pick's change.
+    const own = heading.focus;
+    let blurred = 0;
+    heading.focus = function () {
+      own.call(this);
+      if (p.doc.activeElement === this && !blurred) { blurred += 1; p.doc.dispatch(select, { type: 'focusout', relatedTarget: this }); }
+    };
+    pickSection(p, 'facets');
+    assert.ok(blurred === 1, 'the select blurred inside the change');
+    await settle();
+    assert.ok(p.doc.activeElement === heading, `the heading: ${at(p)}`);
+    p.clock.advance(0);
+    assert.ok(p.doc.activeElement === heading, `still the heading: ${at(p)}`);
+    menuBlur(p, select);
+    p.clock.advance(NAV_WINDOW);
+    assert.ok(p.doc.activeElement === heading, `the heading after the window: ${at(p)}`);
+    assert.ok(ctxListeners(p) === base, 'no wait left');
+  });
   return cases;
 };
