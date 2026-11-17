@@ -19,9 +19,10 @@ share these h100 firmware variants, and each adds the driver its engine runs:
   envelope in [the attestation fixtures](../../../../tests/fixtures/spp_attest/),
   appraised again on 2026-10-01.
 
-the outcomes are recorded in [the qualification receipt](qualification.json).
-the cpu fingerprint selects its set only after cpu verification. nvattest derives the requested
-identities from the gpu report and still checks signatures, certificate chains,
+the 595.71.05 set's outcomes are recorded in [the qualification
+receipt](qualification.json); the 595.91.07 set has no receipt in this directory.
+the cpu fingerprint selects its set only after cpu verification. nvattest derives
+the requested identities from the gpu report and still checks signatures, certificate chains,
 versions, measurements and the fresh challenge. unknown identities have no
 matching local file and fail closed. adding a manifest profile does not change
 the accepted cpu pins in `pins.rs`.
@@ -47,8 +48,8 @@ gpu work.
 ## provenance
 
 retrieved unmodified from nvidia's [reference manifest api](https://docs.nvidia.com/attestation/cloud-services/latest/rim/rim_api.html)
-on 2026-10-01, and `NV_GPU_DRIVER_GH100_595.91.07` on 2026-11-16. each base64-decoded document's sha256 matched the api response
-and is pinned in the profile mapping. the signed bytes are preserved, including
+on 2026-10-01, and `NV_GPU_DRIVER_GH100_595.91.07` on 2026-11-16. each
+base64-decoded document's sha256 matched the api response and is pinned in the profile mapping. the signed bytes are preserved, including
 their nvidia certificate chains. filename and api identifier alone are not
 signed bindings to the cpu image; the finite mapping and approved digests are
 journal release policy, with the vendor signature and measurement checks
@@ -56,10 +57,12 @@ performed separately on every appraisal.
 
 api retrieval paths:
 
-- [driver](https://rim.attestation.nvidia.com/v1/rim/NV_GPU_DRIVER_GH100_595.71.05)
+- [driver 595.71.05](https://rim.attestation.nvidia.com/v1/rim/NV_GPU_DRIVER_GH100_595.71.05)
+- [driver 595.91.07](https://rim.attestation.nvidia.com/v1/rim/NV_GPU_DRIVER_GH100_595.91.07)
 - [current firmware](https://rim.attestation.nvidia.com/v1/rim/NV_GPU_VBIOS_1010_0210_886_96009F0004)
 - [previously qualified firmware](https://rim.attestation.nvidia.com/v1/rim/NV_GPU_VBIOS_1010_0210_886_9600880011)
 
 nvidia remains the signing and revocation authority. this bundle removes rim
-fetching from appraisal; ocsp network checks remain required. an unknown
+fetching from appraisal. revocation checks remain required; every production
+profile uses the engine-carried signed ocsp responses. an unknown
 firmware variant needs qualification and a new journal bundle before admission.
