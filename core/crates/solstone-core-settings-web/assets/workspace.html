@@ -4265,12 +4265,48 @@ document.getElementById('settingsNav').addEventListener('keydown', (e) => {
 
 // Mobile select change. The facets section hides the select (it has its own
 // way back), so focus goes to the section's heading: where the owner chose
-// to go.
+// to go. Every other section keeps the select, and focus stays on it.
+//
+// A phone's own menu for the select can take focus off it as the menu
+// closes, after the change. That focus goes back to the select, unless the
+// owner has moved first: a tap, a press or a key ends the wait, and so does
+// the window passing. A browser that keeps focus on the select never blurs
+// it, and the wait ends with nothing done.
+const NAV_MENU_BLUR_MS = 1000;
+let navMenuWaitEnd = null;
+function awaitNavMenuBlur(select) {
+  let landing = 0;
+  let expiry = 0;
+  const offs = [];
+  const end = () => {
+    offs.splice(0).forEach(off => off());
+    clearTimeout(expiry);
+    clearTimeout(landing);
+    if (navMenuWaitEnd === end) navMenuWaitEnd = null;
+  };
+  ['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach(type => {
+    offs.push(ctx.on(window.document, type, end, { capture: true }));
+  });
+  // Landed a task later: the menu is still closing as the blur arrives.
+  offs.push(ctx.on(select, 'focusout', () => {
+    clearTimeout(expiry);
+    clearTimeout(landing);
+    landing = setTimeout(() => {
+      end();
+      settingsLand(true, [select]);
+    }, 0);
+  }));
+  expiry = setTimeout(end, NAV_MENU_BLUR_MS);
+  navMenuWaitEnd = end;
+}
 document.getElementById('navSelect').addEventListener('change', (e) => {
-  const held = settingsHeld(e.target);
-  switchSection(e.target.value);
+  const select = e.target;
+  const held = settingsHeld(select);
+  navMenuWaitEnd?.();
+  switchSection(select.value);
   const section = document.querySelector('.settings-section.active');
   settingsLand(held, [section && section.querySelector('h2')]);
+  if (held && select.value !== 'support' && settingsPage.activeElement === select) awaitNavMenuBlur(select);
 });
 
 // Devices moved to the network app; an old settings link lands there.
