@@ -140,6 +140,19 @@ pub(crate) const RESTIC_MEMBER: &str = "lib/solstone-restic/restic";
 #[cfg(all(unix, not(any(target_os = "android", target_os = "ios"))))]
 pub(crate) const RCLONE_MEMBER: &str = "lib/solstone-rclone/rclone";
 pub const SUPPORTED_RESTIC_VERSION: &str = "0.19.0";
+/// Size and SHA-256 of the packaged Linux restic. Linux packages carry the
+/// upstream release binary for their architecture unchanged, so each one has a
+/// byte pin.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+pub(crate) const LINUX_RESTIC_PIN: (u64, &str) = (
+    30_924_962,
+    "ae7fe58ab3511f830fd31d157158620b209522ff1332b119199d2e938d72338c",
+);
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+pub(crate) const LINUX_RESTIC_PIN: (u64, &str) = (
+    28_573_858,
+    "e5277c64460889e289c061a41191427127daadaed200910431b4284cf8c87172",
+);
 
 #[cfg(unix)]
 enum AdmittedTool {
@@ -531,7 +544,10 @@ enum DirectInvocation {
 }
 impl DirectExecution {
     #[cfg(any(
-        all(target_os = "linux", target_arch = "x86_64"),
+        all(
+            target_os = "linux",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ),
         target_os = "macos",
         target_os = "android",
         target_os = "ios",
@@ -552,7 +568,10 @@ impl DirectExecution {
     /// Every child this read launched was reaped and no archive writer was ever
     /// submitted. This is not readback success.
     #[cfg(any(
-        all(target_os = "linux", target_arch = "x86_64"),
+        all(
+            target_os = "linux",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ),
         target_os = "macos",
         target_os = "android",
         target_os = "ios",
@@ -566,7 +585,10 @@ impl DirectExecution {
                 .is_none_or(ArchivePredecessorCustody::unwritten)
     }
     #[cfg(any(
-        all(target_os = "linux", target_arch = "x86_64"),
+        all(
+            target_os = "linux",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ),
         target_os = "macos",
         target_os = "android",
         target_os = "ios",
@@ -817,7 +839,13 @@ impl OwnedDirectReadHold {
     }
 
     fn qualify_release(&self) -> Result<(), ReadbackError> {
-        #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), target_os = "macos"))]
+        #[cfg(any(
+            all(
+                target_os = "linux",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ),
+            target_os = "macos"
+        ))]
         {
             pinned_member(&self._tool)?;
             self._tool.revalidate()?;
@@ -845,7 +873,10 @@ impl OwnedDirectReadHold {
             Ok(())
         }
         #[cfg(not(any(
-            all(target_os = "linux", target_arch = "x86_64"),
+            all(
+                target_os = "linux",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ),
             target_os = "macos",
             target_os = "android",
             target_os = "ios",
@@ -1693,7 +1724,13 @@ impl<'a> ReadOperation<'a> {
         if self.operation.owned_clock().is_none() {
             return Err(ReadbackError::Unsupported);
         }
-        #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), target_os = "macos"))]
+        #[cfg(any(
+            all(
+                target_os = "linux",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ),
+            target_os = "macos"
+        ))]
         {
             pinned_member(&self.tool)?;
             let execution = self.execution.borrow();
@@ -1720,7 +1757,10 @@ impl<'a> ReadOperation<'a> {
             execution.qualify_read_state()
         }
         #[cfg(not(any(
-            all(target_os = "linux", target_arch = "x86_64"),
+            all(
+                target_os = "linux",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ),
             target_os = "macos",
             target_os = "android",
             target_os = "ios",
@@ -2909,9 +2949,12 @@ fn admit_tool(input: &ReadAdmission<'_>) -> Result<AdmittedTool, ReadbackError> 
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn pinned_member(tool: &AdmittedTool) -> Result<(), ReadbackError> {
-    #[cfg(feature = "native-archive-host-tests")]
+    #[cfg(all(target_arch = "x86_64", feature = "native-archive-host-tests"))]
     if let AdmittedTool::Linked(context) = tool {
         return context.revalidate();
     }
@@ -2919,9 +2962,7 @@ fn pinned_member(tool: &AdmittedTool) -> Result<(), ReadbackError> {
     let AdmittedTool::Installed(member) = tool else {
         return Err(ReadbackError::ToolChanged);
     };
-    if member.bytes() != 30_924_962
-        || member.sha256() != "ae7fe58ab3511f830fd31d157158620b209522ff1332b119199d2e938d72338c"
-    {
+    if (member.bytes(), member.sha256()) != LINUX_RESTIC_PIN {
         return Err(ReadbackError::UnsupportedToolVersion);
     }
     Ok(())
@@ -3056,7 +3097,10 @@ mod tests {
 
     use super::*;
 
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     #[test]
     fn direct_read_state_requires_metadata_and_preserves_first_failure() {
         let mut state = DirectExecution::default();
@@ -3076,7 +3120,10 @@ mod tests {
         );
     }
 
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     #[test]
     fn refused_release_requires_every_launched_child_reaped_and_never_qualifies() {
         let mut state = DirectExecution::default();

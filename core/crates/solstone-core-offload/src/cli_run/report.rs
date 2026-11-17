@@ -496,7 +496,16 @@ impl OwnedOffloadCliRun {
                     "offload did not finish. keep its recovery files and review the recorded effects before retrying."
                 }
             };
-            format!("{guidance}\n")
+            match &self.custody {
+                // Name why admission refused; the closed message carries no secret.
+                Custody::AdmissionFailure { failure, .. } => {
+                    format!(
+                        "offload could not start: {}.\n{guidance}\n",
+                        failure.error()
+                    )
+                }
+                _ => format!("{guidance}\n"),
+            }
         };
     }
 }

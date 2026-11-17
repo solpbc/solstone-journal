@@ -165,7 +165,10 @@ enum WriterProgress {
     // Read by desktop settlement and by mobile same-owner settlement.
     #[cfg_attr(
         not(any(
-            all(target_os = "linux", target_arch = "x86_64"),
+            all(
+                target_os = "linux",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ),
             target_os = "macos",
             target_os = "android",
             target_os = "ios"
@@ -301,12 +304,12 @@ impl ArchivePredecessorCustody {
         if !self.creator_executor() {
             return Ok(());
         }
-        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        #[cfg(all(
+            target_os = "linux",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
         {
-            if member.bytes() == 30_924_962
-                && member.sha256()
-                    == "ae7fe58ab3511f830fd31d157158620b209522ff1332b119199d2e938d72338c"
-            {
+            if (member.bytes(), member.sha256()) == super::LINUX_RESTIC_PIN {
                 Ok(())
             } else {
                 Err(ReadbackError::UnsupportedToolVersion)
@@ -319,7 +322,13 @@ impl ArchivePredecessorCustody {
             let _ = member;
             Ok(())
         }
-        #[cfg(not(any(all(target_os = "linux", target_arch = "x86_64"), target_os = "macos")))]
+        #[cfg(not(any(
+            all(
+                target_os = "linux",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ),
+            target_os = "macos"
+        )))]
         {
             let _ = member;
             Err(ReadbackError::Unsupported)
@@ -339,7 +348,10 @@ impl ArchivePredecessorCustody {
     // Direct readback qualifies on the desktop pins and on mobile same-owner settlement.
     #[cfg_attr(
         not(any(
-            all(target_os = "linux", target_arch = "x86_64"),
+            all(
+                target_os = "linux",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ),
             target_os = "macos",
             target_os = "android",
             target_os = "ios"
