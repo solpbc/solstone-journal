@@ -21,9 +21,16 @@
       who_said_it: 'who said it',
       what_happened: 'what actually happened',
       recording: 'this was a recording or video playing',
-      name: 'a name'
+      name: 'a name',
+      same_person: 'the same person'
     },
     now: 'your journal says',
+    nowPeople: 'your journal has',
+    personIn: 'in {facets}',
+    notesOne: '1 note',
+    notesMany: '{n} notes',
+    samePersonChange: 'merge them into one person',
+    keepName: 'name to use',
     suggested: 'suggested',
     why: 'why',
     then: 'if you accept',
@@ -47,6 +54,7 @@
     thenRecording: 'your journal will think this through again as something you watched or listened to, with no one else taking part.',
     thenRename: 'your journal calls this person {to} from now on. {from} stays in the version history, where you can restore it.',
     thenAlsoKnownAs: 'your journal also calls this person {to}. the earlier version stays in the version history, where you can restore it.',
+    thenSamePerson: "your journal keeps one person called {kept}, also called {other}, and moves everything attached to {other} onto them. a merge can't be undone.",
     accept: 'accept',
     edit: 'edit',
     dismiss: 'dismiss',
@@ -65,6 +73,7 @@
     acceptedPartial: "accepted {agent}'s suggestion for this activity. some other activities couldn't be updated.",
     acceptedRename: "accepted {agent}'s suggestion. {from} is now {to}.",
     acceptedAlsoKnownAs: "accepted {agent}'s suggestion. {from} is also called {to} now.",
+    acceptedSamePerson: "accepted {agent}'s suggestion. {other} and {kept} are one person now, called {kept}.",
     undone: 'undone. your journal will think about it again without that change.',
     acceptedPlain: "accepted {agent}'s suggestion.",
     undonePlain: 'undone.',
@@ -190,6 +199,81 @@
     return String(speaker?.label || '');
   }
 
+  // --- the same person ---------------------------------------------------------
+  // Both people come from the journal (`change_parts.people`, in the order the
+  // agent named them); the agent supplies only which two, and why. The owner
+  // picks which one the merged person stays, and the other name is kept as
+  // another name for them. A merge has no undo, so none is offered.
+  let facetTitles = {};
+  const keepChoice = new Map();
+
+  function setFacetTitles(titles) {
+    facetTitles = titles && typeof titles === 'object' ? titles : {};
+  }
+
+  function facetName(slug) {
+    return Object.prototype.hasOwnProperty.call(facetTitles, slug) ? facetTitles[slug] : String(slug || '');
+  }
+
+  function namesList(names) {
+    if (names.length <= 1) return names.join('');
+    if (names.length === 2) return `${names[0]} and ${names[1]}`;
+    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  }
+
+  function people(card) {
+    const list = Array.isArray(card?.change_parts?.people) ? card.change_parts.people : [];
+    return list.filter((person) => person && person.id);
+  }
+
+  // The owner's pick on this page, then what the journal recorded (an accepted
+  // card keeps the survivor it merged into), then the journal's default.
+  function keptId(card) {
+    const list = people(card);
+    const ids = [keepChoice.get(String(card.id)), card.value?.keep_id, card.change_parts?.keep_id];
+    return ids.find((id) => id && list.some((person) => person.id === id)) || list[0]?.id || '';
+  }
+
+  function pairOf(card) {
+    const id = keptId(card);
+    const list = people(card);
+    return {
+      kept: list.find((person) => person.id === id) || {},
+      other: list.find((person) => person.id !== id) || {}
+    };
+  }
+
+  // What each person is attached to, as the journal counts it: the facets
+  // they appear in and the notes held under them. Nothing reported, nothing said.
+  function personMeta(person) {
+    const attachments = Array.isArray(person.attachments) ? person.attachments : [];
+    const slugs = attachments.length
+      ? attachments.map((item) => item?.facet).filter(Boolean)
+      : (Array.isArray(person.facets) ? person.facets : []);
+    const facets = [...new Set(slugs)].map(facetName).filter(Boolean);
+    const notes = attachments.reduce((sum, item) => sum + (Number(item?.notes) || 0), 0);
+    const parts = [];
+    if (facets.length) parts.push(fmt(S.personIn, {facets: namesList(facets)}));
+    if (notes) parts.push(notes === 1 ? S.notesOne : fmt(S.notesMany, {n: notes}));
+    return parts.join(SEP);
+  }
+
+  function peopleHtml(card) {
+    return `<ul class="sg-people">${people(card).map((person) => {
+      const meta = personMeta(person);
+      return `<li><strong>${escapeHtml(person.name || '')}</strong>${meta ? `<span class="sg-person-meta">${escapeHtml(meta)}</span>` : ''}</li>`;
+    }).join('')}</ul>`;
+  }
+
+  function keepRow(card) {
+    const list = people(card);
+    if (list.length < 2) return '';
+    const id = `sg-keep-${String(card.id).replace(/[^A-Za-z0-9_-]/g, '')}`;
+    const kept = keptId(card);
+    const options = list.map((person) => `<label class="sg-keep-option"><input type="radio" name="${id}" value="${escapeHtml(person.id)}" data-agent-keep${person.id === kept ? ' checked' : ''}><span>${escapeHtml(person.name || '')}</span></label>`).join('');
+    return `<dt id="${id}">${escapeHtml(S.keepName)}</dt><dd><div class="sg-keep" role="radiogroup" aria-labelledby="${id}">${options}</div></dd>`;
+  }
+
   function nowHtml(card) {
     const lines = Array.isArray(card.now_lines) ? card.now_lines : [];
     if (card.kind === 'who_said_it' && lines.length) {
@@ -202,6 +286,9 @@
   // always off, which the place line and the suggestion already say. When it is
   // on (the owner marked it first), the journal's words for that are shown.
   function nowRow(card) {
+    if (card.kind === 'same_person') {
+      return people(card).length ? `<dt>${escapeHtml(S.nowPeople)}</dt><dd>${peopleHtml(card)}</dd>` : '';
+    }
     if (card.kind === 'recording') {
       const on = /^(on|true|yes)$/i.test(String(card.now || '').trim());
       return on ? `<dt>${escapeHtml(S.now)}</dt><dd>${escapeHtml(S.recordingChange)}</dd>` : '';
@@ -211,6 +298,7 @@
 
   function changeHtml(card) {
     const parts = card.change_parts || {};
+    if (card.kind === 'same_person') return escapeHtml(S.samePersonChange);
     if (card.kind === 'who_said_it') {
       const n = Number(parts.line_count) || 0;
       const speaker = `<strong>${escapeHtml(speakerText(parts.speaker))}</strong>`;
@@ -230,6 +318,10 @@
   // gets no line rather than a guess.
   function thenText(card) {
     const parts = card.change_parts || {};
+    if (card.kind === 'same_person') {
+      const {kept, other} = pairOf(card);
+      return kept.name && other.name ? fmt(S.thenSamePerson, {kept: kept.name, other: other.name}) : '';
+    }
     if (card.kind === 'name') {
       return fmt(parts.mode === 'also_known_as' ? S.thenAlsoKnownAs : S.thenRename, {from: parts.from || '', to: parts.to || ''});
     }
@@ -245,14 +337,21 @@
   }
 
   function openLabel(card) {
+    if (card.kind === 'same_person') return fmt(S.openNamed, {name: pairOf(card).kept.name || ''});
     if (card.kind === 'name') return fmt(S.openNamed, {name: card.place?.name || card.change_parts?.from || ''});
     if (card.kind === 'who_said_it') return S.openLines;
     return S.openActivity;
   }
 
+  function openUrl(card) {
+    if (card.kind === 'same_person') return pairOf(card).kept.open_url || card.open_url || '';
+    return card.open_url || '';
+  }
+
   function openHtml(card) {
-    return card.open_url
-      ? `<a class="sg-open" href="${escapeHtml(card.open_url)}">${escapeHtml(openLabel(card))}</a>`
+    const url = openUrl(card);
+    return url
+      ? `<a class="sg-open" href="${escapeHtml(url)}">${escapeHtml(openLabel(card))}</a>`
       : '';
   }
 
@@ -274,12 +373,13 @@
       <dl class="sg-grid">
         ${nowRow(card)}
         <dt>${escapeHtml(S.suggested)}</dt><dd class="sg-change">${changeHtml(card)}</dd>
+        ${card.kind === 'same_person' ? keepRow(card) : ''}
         ${card.reason ? `<dt>${escapeHtml(S.why)}</dt><dd>${basis ? `<span class="sg-whoby">${escapeHtml(fmt(basis, {agent: agentName(card.agent)}))}</span>` : ''}<p class="sg-quote">"${escapeHtml(card.reason)}"</p></dd>` : ''}
         ${then ? `<dt>${escapeHtml(S.then)}</dt><dd class="sg-then">${escapeHtml(then)}</dd>` : ''}
       </dl>
       <div class="curation-actions">
         <button class="curation-button curation-button-primary" type="button" data-action="agent-accept">${escapeHtml(S.accept)}</button>
-        ${card.editable ? `<button class="curation-button" type="button" data-action="agent-edit">${escapeHtml(S.edit)}</button>` : ''}
+        ${card.editable && card.kind !== 'same_person' ? `<button class="curation-button" type="button" data-action="agent-edit">${escapeHtml(S.edit)}</button>` : ''}
         <button class="curation-button" type="button" data-action="agent-dismiss">${escapeHtml(S.dismiss)}</button>
         ${openHtml(card)}
       </div>
@@ -331,13 +431,17 @@
     }
     if (card.incomplete) return fmt(S.acceptedPartial, {agent});
     if (card.kind === 'name') return fmt(aka ? S.acceptedAlsoKnownAs : S.acceptedRename, {agent, from: parts.from || '', to: parts.to || ''});
+    if (card.kind === 'same_person') {
+      const {kept, other} = pairOf(card);
+      return kept.name && other.name ? fmt(S.acceptedSamePerson, {agent, kept: kept.name, other: other.name}) : fmt(S.acceptedPlain, {agent});
+    }
     // Thinking again is claimed only when the journal reports it asked.
     if (failedAsk) return fmt(S.acceptedNotAsked, {agent});
     return fmt(card.asked === true ? S.accepted : S.acceptedPlain, {agent});
   }
 
   function receiptHtml(card, phase, note = '') {
-    const warn = (card.asked === false && card.ask_reason && card.kind !== 'name') || note;
+    const warn = (card.asked === false && card.ask_reason && card.kind !== 'name' && card.kind !== 'same_person') || note;
     const undo = phase === 'accepted' && card.can_undo
       ? `<button class="curation-button" type="button" data-action="agent-undo">${escapeHtml(S.undo)}</button>`
       : '';
@@ -355,13 +459,15 @@
       undone: S.earlierUndone,
       stale: S.earlierStale
     }[card.status] || '';
-    const subject = card.place?.kind === 'entity' ? (card.place?.name || '') : (card.place?.title || '');
+    const subject = card.kind === 'same_person'
+      ? namesList(people(card).map((person) => person.name).filter(Boolean))
+      : (card.place?.kind === 'entity' ? (card.place?.name || '') : (card.place?.title || ''));
     const meta = [agentText(card.agent), status, when(card.updated_at || card.created_at)].filter(Boolean).join(SEP);
     const undo = card.status === 'accepted' && card.can_undo
       ? `<button class="curation-button" type="button" data-action="agent-undo">${escapeHtml(S.undo)}</button>` : '';
     const actions = card.status === 'accepted'
       ? `<div class="sg-earlier-actions" ${attrs(card)}>${undo}${openHtml(card)}</div>`
-      : (card.open_url ? `<a href="${escapeHtml(card.open_url)}">${escapeHtml(S.open)}</a>` : '');
+      : (openUrl(card) ? `<a href="${escapeHtml(openUrl(card))}">${escapeHtml(S.open)}</a>` : '');
     return `<li><span class="what"><b>${escapeHtml(S.kind[card.kind] || '')}</b>${subject ? escapeHtml(SEP + subject) : ''}</span><span class="meta">${escapeHtml(meta)}</span>${actions}</li>`;
 
   }
@@ -626,6 +732,18 @@
       accept(node, value, onChange);
       return true;
     }
+    const keep = event.target.closest?.('[data-agent-keep]');
+    if (event.type === 'change' && keep) {
+      const node = cardFor(keep);
+      const card = current(node);
+      if (!card) return true;
+      keepChoice.set(String(card.id), keep.value);
+      const then = node.querySelector('.sg-then');
+      if (then) then.textContent = thenText(card);
+      const open = node.querySelector('.curation-actions .sg-open');
+      if (open) open.outerHTML = openHtml(card);
+      return true;
+    }
     if (event.type !== 'click') return false;
     const button = event.target.closest?.('[data-action^="agent-"]');
     if (!button) return false;
@@ -639,7 +757,7 @@
         loadMore(button, onChange);
         return true;
       case 'agent-accept':
-        accept(node, undefined, onChange);
+        accept(node, card?.kind === 'same_person' && keptId(card) ? {keep_id: keptId(card)} : undefined, onChange);
         return true;
       case 'agent-edit':
         if (card) replace(node, editHtml(card)).querySelector('[data-agent-edit-value]')?.focus();
@@ -663,5 +781,5 @@
     }
   }
 
-  global.CurationAgentSuggestions = {load, groupHtml, handle, pendingCount};
+  global.CurationAgentSuggestions = {load, groupHtml, handle, pendingCount, setFacetTitles};
 })(window);
