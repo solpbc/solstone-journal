@@ -3872,15 +3872,19 @@
   }
 
   // Log controls
+  // A phone's late blur as a filter's menu closes goes back to the filter.
   elements.logServiceFilter.addEventListener('change', () => {
     renderLogs();
+    window.SolFocus.keepAfterPick(elements.logServiceFilter);
   });
   elements.logLevelFilter.addEventListener('change', () => {
     state.logLevelFilter = elements.logLevelFilter.value;
     renderLogs();
+    window.SolFocus.keepAfterPick(elements.logLevelFilter);
   });
   elements.logStreamFilter.addEventListener('change', () => {
     renderLogs();
+    window.SolFocus.keepAfterPick(elements.logStreamFilter);
   });
   elements.logsViewport.addEventListener('scroll', () => {
     if (programmaticScroll) return;

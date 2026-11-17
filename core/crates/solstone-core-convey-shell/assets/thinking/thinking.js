@@ -5853,6 +5853,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       stopConfidentialPoll();
       state.install = null;
       renderAll();
+      window.SolFocus.keepAfterPick($('localModelSelect'), ctx);
       Promise.all([
         refreshLocalAvailability(),
         refreshProviders(),

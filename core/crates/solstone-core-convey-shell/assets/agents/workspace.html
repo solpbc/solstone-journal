@@ -1303,9 +1303,13 @@
       const scope = document.getElementById('scope');
       const facetField = document.getElementById('facet-field');
       if (scope && facetField) { const sync = () => facetField.classList.toggle('hidden', scope.value !== 'facets'); scope.addEventListener('change', sync); sync(); }
+      // A phone's late blur as a select's menu closes goes back to the select.
+      if (scope) scope.addEventListener('change', () => window.SolFocus.keepAfterPick(scope, ctx));
       if (route.name === 'activity') {
         view.querySelector('.toolbar')?.insertAdjacentHTML('afterbegin', `<div class="field"><label for="a-agent">agent</label><select id="a-agent"><option value="">all agents</option>${state.connections.map(connection => `<option value="${esc(connection.key)}">${esc(connection.name)}${connection.memory_source ? ` · ${esc(String(connection.memory_source).slice(0, 4))}` : ''}</option>`).join('')}</select></div><div class="field"><label for="a-from">from</label><input id="a-from" type="date"></div><div class="field"><label for="a-to">to</label><input id="a-to" type="date"></div>`);
         for (const [key, value] of Object.entries(activityFilters)) document.getElementById(`a-${key}`).value = value;
+        const agentFilter = document.getElementById('a-agent');
+        agentFilter?.addEventListener('change', () => window.SolFocus.keepAfterPick(agentFilter, ctx));
       }
       if (window.JournalClock?.placeNote) {
         for (const el of view.querySelectorAll('[data-activity-heading]')) {

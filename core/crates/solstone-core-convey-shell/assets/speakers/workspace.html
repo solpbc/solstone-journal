@@ -4195,6 +4195,7 @@ function runDay(ctx, page) {
         } else {
           applyBtn.style.display = 'none';
         }
+        window.SolFocus.keepAfterPick(select, ctx);
       });
     });
 
@@ -4207,6 +4208,7 @@ function runDay(ctx, page) {
         } else {
           applyBtn.style.display = 'none';
         }
+        window.SolFocus.keepAfterPick(select, ctx);
       });
     });
 
@@ -5246,7 +5248,10 @@ function runOverview(ctx, page) {
     sortSelect.innerHTML = COPY.SPK_OVERVIEW_KNOWN_VOICES_SORTS.map((sort) => (
       `<option value="${escapeHtml(sort)}">${escapeHtml(sort)}</option>`
     )).join('');
-    sortSelect.addEventListener('change', loadKnown);
+    sortSelect.addEventListener('change', () => {
+      loadKnown();
+      window.SolFocus.keepAfterPick(sortSelect, ctx);
+    });
     knownFilter.addEventListener('input', () => {
       if (lastKnownData) renderKnown(lastKnownData);
     });

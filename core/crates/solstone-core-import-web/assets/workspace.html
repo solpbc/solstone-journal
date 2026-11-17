@@ -2708,6 +2708,7 @@ async function loadImports() {
         importPick.ids.clear();
         importPick.notes.clear();
         loadImports();
+        window.SolFocus.keepAfterPick(event.target, ctx);
       };
     }
     paintImportPick();
@@ -3251,6 +3252,7 @@ function renderStravaFacet() {
   select.addEventListener('change', () => {
     hint();
     invalidateImportPreview('guided');
+    window.SolFocus.keepAfterPick(select, ctx);
   });
   hint();
 }
@@ -3920,6 +3922,16 @@ ctx.on(window.document, 'input', event => {
   if (['guidedPathInput', 'guidedFileInput'].includes(id)) currentGuidedSaved = null;
   if (['guidedSettingInput', 'guidedPathInput', 'guidedFileInput', 'guidedArchiveZone', 'guidedArchiveManifest'].includes(id)) invalidateImportPreview('guided');
   if (['timestampInput', 'settingInput', 'fileInput', 'pasteText', 'quickSettingInput'].includes(id)) invalidateImportPreview('quick');
+});
+
+// A phone's late blur as a select's menu closes goes back to the select: the
+// guided time zone and a connection's cadence, whose change does nothing else.
+ctx.on(window.document, 'change', event => {
+  const target = event.target;
+  if (!importOwns(target)) return;
+  if (target.id === 'guidedArchiveZone' || /^source-.+-every$/.test(target.id || '')) {
+    window.SolFocus.keepAfterPick(target, ctx);
+  }
 });
 
 async function startGuidedImport(source) {
@@ -4994,6 +5006,7 @@ document.getElementById('contentSearch').addEventListener('input', function() {
 document.getElementById('contentMonth').addEventListener('change', function() {
   contentMonth = this.value;
   loadContent(1);
+  window.SolFocus.keepAfterPick(this, ctx);
 });
 
 // Load import details
