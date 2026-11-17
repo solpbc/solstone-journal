@@ -2252,5 +2252,111 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(p.doc.activeElement === opener && opener.getAttribute('aria-busy') === null, `refused, kept: ${at(p)}`);
     assert.ok(p.writes().filter((c) => c.method === 'DELETE').length === 1, 'one delete');
   });
+
+  // ---- the narrow section menu: a phone's menu can blur the select as it closes, after the change
+
+  const pickSection = (p, value) => { const s = p.byId('navSelect'); s.focus(); s.value = value; p.doc.dispatch(s, { type: 'change' }); return s; };
+  const menuBlur = (p, s) => { s.blur(); p.doc.dispatch(s, { type: 'focusout', relatedTarget: null }); };
+  const ctxListeners = (p) => p.view.ctx.held().listeners;
+
+  await test("a pick from the narrow section menu, then the menu's own blur, puts focus back on the select, for every section that keeps it", async () => {
+    for (const value of ['transcription', 'profile', 'about', 'apikeys', 'vision', 'sync', 'storage', 'trash', 'guide']) {
+      const p = await boot(env, '/app/settings/#profile');
+      const select = pickSection(p, value);
+      await settle();
+      assert.ok(activeSection(p) === `section-${value}`, `${value} is shown`);
+      menuBlur(p, select);
+      assert.ok(p.doc.activeElement === p.doc.body, `${value}: the blur leaves the page`);
+      p.clock.advance(0);
+      assert.ok(p.doc.activeElement === select, `${value}: back on the select: ${at(p)}`);
+    }
+  });
+
+  await test('a pick with no late blur leaves focus where it is, and the wait ends with its window', async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    const base = ctxListeners(p);
+    const timers = p.clock.live();
+    const select = pickSection(p, 'transcription');
+    await settle();
+    p.clock.advance(999);
+    assert.ok(p.doc.activeElement === select, `kept: ${at(p)}`);
+    assert.ok(ctxListeners(p) > base, 'the wait is armed inside its window');
+    p.clock.advance(1);
+    assert.ok(ctxListeners(p) === base, 'the wait takes its listeners back');
+    assert.ok(p.clock.live() <= timers, 'and its timer');
+    menuBlur(p, select);
+    p.clock.advance(0);
+    assert.ok(p.doc.activeElement === p.doc.body, `a blur after the window is left alone: ${at(p)}`);
+  });
+
+  await test('a second pick ends the first wait before it arms its own', async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    const base = ctxListeners(p);
+    pickSection(p, 'transcription');
+    const one = ctxListeners(p) - base;
+    pickSection(p, 'about');
+    assert.ok(ctxListeners(p) - base === one, 'one wait');
+    p.clock.advance(1000);
+    assert.ok(ctxListeners(p) === base, 'none left');
+  });
+
+  await test('a tap, a press or a key after a pick is the owner moving: the blur that follows is left alone', async () => {
+    for (const type of ['pointerdown', 'touchstart', 'mousedown']) {
+      const p = await boot(env, '/app/settings/#profile');
+      const select = pickSection(p, 'transcription');
+      await settle();
+      p.doc.dispatch(p.q('#section-transcription'), { type });
+      menuBlur(p, select);
+      p.clock.advance(1000);
+      assert.ok(p.doc.activeElement === p.doc.body, `${type} on the page: left on it: ${at(p)}`);
+    }
+    {
+      const p = await boot(env, '/app/settings/#profile');
+      const select = pickSection(p, 'transcription');
+      await settle();
+      const next = p.qa('#section-transcription button, #section-transcription select, #section-transcription input').find((el) => el.checkVisibility() && !el.disabled);
+      assert.ok(next, 'a control in the section');
+      p.doc.dispatch(next, { type: 'pointerdown' });
+      next.focus();
+      p.doc.dispatch(select, { type: 'focusout', relatedTarget: next });
+      p.clock.advance(1000);
+      assert.ok(p.doc.activeElement === next, `a tap on another control keeps it: ${at(p)}`);
+    }
+    {
+      const p = await boot(env, '/app/settings/#profile');
+      const select = pickSection(p, 'transcription');
+      await settle();
+      p.key(select, 'Tab');
+      const next = p.qa('#section-transcription button, #section-transcription select, #section-transcription input').find((el) => el.checkVisibility() && !el.disabled);
+      next.focus();
+      p.doc.dispatch(select, { type: 'focusout', relatedTarget: next });
+      p.clock.advance(1000);
+      assert.ok(p.doc.activeElement === next, `a Tab keeps the next control: ${at(p)}`);
+    }
+  });
+
+  await test('a blur that moved focus somewhere shown, with no input first, is left there', async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    const select = pickSection(p, 'transcription');
+    await settle();
+    const rail = p.byId('rail-home');
+    rail.focus();
+    p.doc.dispatch(select, { type: 'focusout', relatedTarget: rail });
+    p.clock.advance(0);
+    assert.ok(p.doc.activeElement === rail, `kept: ${at(p)}`);
+  });
+
+  await test('settings going before the blur lands nothing and leaves nothing', async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    const view = p.view;
+    const select = pickSection(p, 'transcription');
+    await settle();
+    p.leave();
+    menuBlur(p, select);
+    p.clock.advance(1000);
+    const held = view.ctx.held();
+    assert.deepStrictEqual([held.listeners, held.timeouts], [0, 0]);
+    assert.ok(p.doc.activeElement !== select, 'the gone select takes nothing');
+  });
   return cases;
 };
