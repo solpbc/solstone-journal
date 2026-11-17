@@ -3220,10 +3220,18 @@ fn main() {
             prefs::with_test_state_dir(temp.path(), || {
                 let locator = create_test_locator(temp.path());
 
-                // Payload larger than 64 KiB
-                let mut large_pkg =
-                    make_valid_nupkg("SolstoneJournal", "2.0.28", "bin/journal-app.exe");
-                large_pkg.extend(vec![0u8; 128 * 1024]);
+                let package = make_valid_nupkg("SolstoneJournal", "2.0.28", "bin/journal-app.exe");
+                let mut archive = ZipWriter::new_append(Cursor::new(package)).unwrap();
+                archive
+                    .start_file(
+                        "lib/net45/transfer-fixture.bin",
+                        SimpleFileOptions::default()
+                            .compression_method(zip::CompressionMethod::Stored),
+                    )
+                    .unwrap();
+                archive.write_all(&[0; 128 * 1024]).unwrap();
+                let large_pkg = archive.finish().unwrap().into_inner();
+                assert!(large_pkg.len() > 64 * 1024);
                 let large_sig = sign_with_key(&keys.primary_sec, &large_pkg);
 
                 let listener = TcpListener::bind("127.0.0.1:0").unwrap();
