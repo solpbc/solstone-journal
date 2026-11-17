@@ -2781,7 +2781,17 @@ async fn same_person_journal_candidate_and_owner_answers_take_precedence() {
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["suggestion"]["status"], "stale");
+    assert_eq!(body["suggestion"]["stale_reason"], "journal_candidate");
     solstone_core_entity::dismiss_merge_candidate(root, "work", "a-lovelace", "ada").unwrap();
+    let (_, earlier) = owner_call(
+        root,
+        "GET",
+        "/app/agents/api/suggestions?status=stale",
+        None,
+        true,
+    )
+    .await;
+    assert_eq!(earlier["items"][0]["stale_reason"], "owner_answered");
     assert_eq!(
         suggest_same_person(root, "ada@work", "a-lovelace@work", "answered")["status"],
         "owner_answered"
@@ -2828,6 +2838,16 @@ async fn same_person_rechecks_speaker_candidates_and_recovers_a_chained_merge() 
     )
     .await;
     assert_eq!(list["items"], json!([]));
+    let (_, stale) = owner_call(
+        root,
+        "GET",
+        "/app/agents/api/suggestions?status=stale",
+        None,
+        true,
+    )
+    .await;
+    // A speaker candidate is not in possible duplicates, so the card does not point there.
+    assert_eq!(stale["items"][0]["stale_reason"], "journal_question");
     assert_eq!(
         suggest_same_person(root, "bee@work", "bea@work", "speaker-first")["status"],
         "already_exists"

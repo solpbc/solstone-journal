@@ -1374,6 +1374,9 @@ pub fn project_card(journal_root: &Path, record: &SuggestionRecord) -> Value {
         "incomplete": record.receipt.as_ref().is_some_and(|receipt|receipt.incomplete),
     });
 
+    if record.kind == "same_person" && status == "stale" {
+        card["stale_reason"] = json!(same_person::stale_reason(journal_root, record));
+    }
     if let Some(asked) = record.asked {
         card["asked"] = Value::Bool(asked);
     }

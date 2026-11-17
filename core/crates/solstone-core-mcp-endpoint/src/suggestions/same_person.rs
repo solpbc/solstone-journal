@@ -193,6 +193,46 @@ pub(super) fn is_stale(root: &Path, record: &SuggestionRecord) -> bool {
     !names_match || !matches!(pair_state(root, first, second), Ok(PairState::Free))
 }
 
+/// Why a waiting card can no longer be accepted, so the owner's card can say
+/// where the pair is answered. `journal_candidate` is only an open entity pair,
+/// the one kind the possible duplicates list shows; a set-aside or speaker
+/// candidate is `journal_question`. `busy` is a merge still being recovered or
+/// an unreadable answer, which is not a change to either person.
+pub(super) fn stale_reason(root: &Path, record: &SuggestionRecord) -> &'static str {
+    let Some([first, second]) = pair(record) else {
+        return "changed";
+    };
+    if entity_merge_recovery_pending(root) {
+        return "busy";
+    }
+    let names_match = [first, second].into_iter().enumerate().all(|(index, id)| {
+        person_name(root, id).is_some_and(|name| record.baseline["people"][index]["name"] == name)
+    });
+    if !names_match {
+        return "changed";
+    }
+    match pair_state(root, first, second) {
+        Ok(PairState::OwnerAnswered) => "owner_answered",
+        Ok(PairState::JournalCandidate) if open_entity_pair(root, first, second) => {
+            "journal_candidate"
+        }
+        Ok(PairState::JournalCandidate) => "journal_question",
+        Ok(PairState::Free) => "changed",
+        Err(_) => "busy",
+    }
+}
+
+fn open_entity_pair(root: &Path, first: &str, second: &str) -> bool {
+    load_merge_candidates_strict(root).is_ok_and(|rows| {
+        rows.iter().any(|row| {
+            matches!(
+                (row["source_slug"].as_str(), row["target_slug"].as_str()),
+                (Some(source), Some(target)) if same_pair(first, second, source, target)
+            ) && entity_merge_open_class(row) == EntityMergeOpenClass::Open
+        })
+    })
+}
+
 pub(super) fn accept_value(record: &SuggestionRecord, value: &Value) -> Option<Value> {
     let keep = value.get("keep_id")?.as_str()?;
     (value.as_object()?.len() == 1 && pair(record)?.contains(&keep))

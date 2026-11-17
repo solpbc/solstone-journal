@@ -19,7 +19,7 @@ use solstone_core_journal_io::journal_root::JournalRoot;
 
 pub const AGENT_SUGGESTIONS_READY: bool = true;
 /// The owner card and agent admission become available together.
-pub const SAME_PERSON_SUGGESTIONS_READY: bool = false;
+pub const SAME_PERSON_SUGGESTIONS_READY: bool = true;
 
 pub mod suggestions;
 

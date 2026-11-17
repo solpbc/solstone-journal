@@ -85,6 +85,17 @@
     dismissed: 'dismissed. if {agent} suggests this again, {agent} is told you already said no.',
     stale: "this changed after {agent} suggested it, so there's nothing to accept. here's how it stands now:",
     staleChip: 'already changed',
+    staleSamePerson: {
+      journal_candidate: 'your journal is already asking whether {a} and {b} are the same person. you can answer it in possible duplicates.',
+      owner_answered: "you already kept {a} and {b} separate, so there's nothing to accept.",
+      journal_question: "your journal has its own question about {a} and {b}, so there's nothing to accept here.",
+      changed: "{a} or {b} changed after {agent} suggested this, so there's nothing to accept.",
+      busy: "this can't be accepted right now."
+    },
+    openDuplicates: 'open possible duplicates',
+    earlierInDuplicates: 'in possible duplicates',
+    earlierKeptSeparate: 'you kept them separate',
+    earlierNotAccepted: 'not accepted',
     acceptFailed: "couldn't accept that, so nothing changed. try again in a moment.",
     actionFailed: "that didn't go through. try again.",
     acceptUnconfirmed: "your journal didn't answer, so this may already be accepted. trying again won't accept it twice.",
@@ -226,11 +237,13 @@
     return list.filter((person) => person && person.id);
   }
 
-  // The owner's pick on this page, then what the journal recorded (an accepted
-  // card keeps the survivor it merged into), then the journal's default.
+  // While it waits: the owner's pick on this page, then the journal's default.
+  // Once acted on, only what the journal recorded: an accepted card names the
+  // person it merged into, whatever another tab had selected.
   function keptId(card) {
     const list = people(card);
-    const ids = [keepChoice.get(String(card.id)), card.value?.keep_id, card.change_parts?.keep_id];
+    const chosen = card.status === 'pending' ? keepChoice.get(String(card.id)) : '';
+    const ids = [chosen, card.value?.keep_id, card.change_parts?.keep_id];
     return ids.find((id) => id && list.some((person) => person.id === id)) || list[0]?.id || '';
   }
 
@@ -387,7 +400,30 @@
     </article>`;
   }
 
+  // A same-person card that can't be accepted says where the pair is answered
+  // instead; its people are as they were when the agent suggested it, so they
+  // are not shown as how things stand now.
+  const DUPLICATES_URL = '/app/entities/?folder=duplicates';
+
+  function staleSamePersonHtml(card) {
+    const names = people(card).map((person) => person.name || '');
+    const reason = S.staleSamePerson[card.stale_reason] ? card.stale_reason : 'changed';
+    const open = reason === 'journal_candidate'
+      ? `<a class="sg-open" href="${escapeHtml(DUPLICATES_URL)}">${escapeHtml(S.openDuplicates)}</a>`
+      : openHtml(card);
+    const chip = reason === 'changed' ? `<span class="sg-chip">${escapeHtml(S.staleChip)}</span>` : '';
+    return `<article class="sg-card sg-stale" ${attrs(card)}>
+      ${headHtml(card, chip)}
+      <p class="sg-stale-lead">${escapeHtml(fmt(S.staleSamePerson[reason], {a: names[0] || '', b: names[1] || '', agent: agentName(card.agent)}))}</p>
+      <div class="curation-actions">
+        <button class="curation-button" type="button" data-action="agent-stale-ok">${escapeHtml(S.ok)}</button>
+        ${open}
+      </div>
+    </article>`;
+  }
+
   function staleCardHtml(card) {
+    if (card.kind === 'same_person') return staleSamePersonHtml(card);
     return `<article class="sg-card sg-stale" ${attrs(card)}>
       ${headHtml(card, `<span class="sg-chip">${escapeHtml(S.staleChip)}</span>`)}
       <p class="sg-stale-lead">${escapeHtml(fmt(S.stale, {agent: agentName(card.agent)}))}</p>
@@ -453,12 +489,16 @@
   }
 
   function earlierRowHtml(card) {
-    const status = card.incomplete && card.status === 'accepted' ? S.earlierPartial : {
+    const pairStale = card.kind === 'same_person' && card.status === 'stale'
+      ? {journal_candidate: S.earlierInDuplicates, owner_answered: S.earlierKeptSeparate,
+        journal_question: S.earlierNotAccepted, busy: S.earlierNotAccepted}[card.stale_reason]
+      : '';
+    const status = pairStale || (card.incomplete && card.status === 'accepted' ? S.earlierPartial : {
       accepted: S.earlierAccepted,
       dismissed: S.earlierDismissed,
       undone: S.earlierUndone,
       stale: S.earlierStale
-    }[card.status] || '';
+    }[card.status] || '');
     const subject = card.kind === 'same_person'
       ? namesList(people(card).map((person) => person.name).filter(Boolean))
       : (card.place?.kind === 'entity' ? (card.place?.name || '') : (card.place?.title || ''));
@@ -467,7 +507,9 @@
       ? `<button class="curation-button" type="button" data-action="agent-undo">${escapeHtml(S.undo)}</button>` : '';
     const actions = card.status === 'accepted'
       ? `<div class="sg-earlier-actions" ${attrs(card)}>${undo}${openHtml(card)}</div>`
-      : (openUrl(card) ? `<a href="${escapeHtml(openUrl(card))}">${escapeHtml(S.open)}</a>` : '');
+      : (pairStale === S.earlierInDuplicates
+        ? `<a href="${escapeHtml(DUPLICATES_URL)}">${escapeHtml(S.open)}</a>`
+        : (openUrl(card) ? `<a href="${escapeHtml(openUrl(card))}">${escapeHtml(S.open)}</a>` : ''));
     return `<li><span class="what"><b>${escapeHtml(S.kind[card.kind] || '')}</b>${subject ? escapeHtml(SEP + subject) : ''}</span><span class="meta">${escapeHtml(meta)}</span>${actions}</li>`;
 
   }
