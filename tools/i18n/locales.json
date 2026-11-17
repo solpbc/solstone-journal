@@ -169,6 +169,10 @@
     {
       "namespace": "android",
       "owner": "solstone-android"
+    },
+    {
+      "namespace": "ios",
+      "owner": "ios"
     }
   ],
   "bundles": [
@@ -263,6 +267,12 @@
     },
     {
       "id": "android-phone",
+      "locales": [
+        "en-US"
+      ]
+    },
+    {
+      "id": "ios",
       "locales": [
         "en-US"
       ]
