@@ -73,6 +73,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on the import page, focus now stays where you were when you open a source or go back to the sources, validate, preview or start an import, answer a facet question, delete an import, load more of your history, or turn a page of an import's content: on the same button if it's still there, otherwise on what took its place, such as the import's progress or the next import in your history. a refresh that brings nothing new now leaves the page as it is, and "bookkeeping" on an import's page stays open if you opened it. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 - in settings, the "clean up logs" box now closes, and a cleanup that ran no longer says it failed.
 - in settings, a change you made just before moving to home, transcripts or another page that works like them is now saved.
+- on the settings page, focus now stays where you were when you erase or recover something in the trash, turn "keep audio with no speech" on or off, clean up logs, or answer the question about local access: on the button you pressed while it's working, then on what took its place, such as the next thing in the trash or the local access switch. before, focus was dropped, or in the trash it landed above the list, so if you use a keyboard or a screen reader, you lost your place.
 
 ## [2.0.81] - 2026-11-16
 
