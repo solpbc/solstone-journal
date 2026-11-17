@@ -17,6 +17,8 @@ const html = fs.readFileSync(path.join(crateDir, 'assets', 'workspace.html'), 'u
 const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
 assert.strictEqual(scripts.length, 1, 'one inline workspace script');
 const source = scripts[0];
+// The shell's focus helper, as its boot part gives it to every view.
+const SOL_FOCUS = require(path.join(crateDir, '../solstone-core-convey-shell/assets/static/focus.js'));
 
 let focusDocument = null;
 const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
@@ -169,6 +171,14 @@ class DOMNode {
 
   focus() {
     if (focusDocument) focusDocument.activeElement = this;
+  }
+
+  get ownerDocument() {
+    return focusDocument;
+  }
+
+  getClientRects() {
+    return this.hidden ? [] : [{ width: 1, height: 1 }];
   }
 
   addEventListener(type, handler) {
@@ -481,7 +491,31 @@ function listenBag() {
   };
 }
 
-async function run({ pathname, responses, withLeaflet = false, withGrid = true }) {
+// A clock a case moves by hand, for the view's own timers.
+function makeClock() {
+  let now = 0;
+  let serial = 0;
+  const timers = new Map();
+  return {
+    setTimeout(fn, ms = 0) { serial += 1; timers.set(serial, { at: now + ms, fn }); return serial; },
+    clearTimeout(id) { timers.delete(id); },
+    advance(ms) {
+      const end = now + ms;
+      for (;;) {
+        const due = [...timers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due) break;
+        timers.delete(due[0]);
+        now = due[1].at;
+        due[1].fn();
+      }
+      now = end;
+    },
+    live: () => timers.size,
+  };
+}
+
+async function run({ pathname, responses, withLeaflet = false, withGrid = true, clock = null }) {
+  const timers = clock || { setTimeout, clearTimeout };
   const elements = {
     'map-shell': element('map-shell'),
     'map-view-root': element('map-view-root'),
@@ -504,6 +538,7 @@ async function run({ pathname, responses, withLeaflet = false, withGrid = true }
     },
     ConveyIcons: { svg: () => '' },
     CONVEY_COPY: {},
+    SolFocus: SOL_FOCUS,
     solPathContext: () => ({ day: /^\/app\/map\/(\d{8})$/.exec(pathname)?.[1] || null }),
     apiJson: async (url, opts) => {
       const method = opts && opts.method ? String(opts.method).toUpperCase() : 'GET';
@@ -583,7 +618,7 @@ async function run({ pathname, responses, withLeaflet = false, withGrid = true }
       return off;
     },
     setTimeout(fn, ms, ...args) {
-      const id = setTimeout(() => {
+      const id = timers.setTimeout(() => {
         timeouts.delete(id);
         fn(...args);
       }, ms);
@@ -592,7 +627,7 @@ async function run({ pathname, responses, withLeaflet = false, withGrid = true }
     },
     clearTimeout(id) {
       timeouts.delete(id);
-      clearTimeout(id);
+      timers.clearTimeout(id);
     },
     observe(observer) { return observer; },
     ready() {},
@@ -621,7 +656,7 @@ async function run({ pathname, responses, withLeaflet = false, withGrid = true }
       while (undo.length) {
         try { undo.pop()(); } catch (_) {}
       }
-      timeouts.forEach((id) => clearTimeout(id));
+      timeouts.forEach((id) => timers.clearTimeout(id));
       timeouts.clear();
     },
   };
@@ -1914,6 +1949,66 @@ test('a place save in flight is not drawn after a day step or after leaving', as
   assert.ok(stepped.elements['map-view-root'].innerHTML.includes('the day, in order'));
   assert.ok(!stepped.elements['map-view-root'].innerHTML.includes('step-drawn-label'));
   assert.ok(!left.elements['map-view-root'].innerHTML.includes('leave-drawn-label'));
+});
+
+// A pick from a place's "call it" select, and a phone's late blur as its menu
+// closes: change with the select still focused, then some 865 ms later focus
+// goes to the page (blur and focusout) with no input between.
+const PHONE_BLUR_MS = 865;
+async function aliasPage() {
+  const place = {
+    id: '0123456789ab', label: 'the reading room', owner_name: 'the reading room', name: 'the reading room',
+    alias: '', hidden: false, area: { label: 'near Denver, Colorado' }, words: null, dates: 1, first: '20261002',
+    last: '20261002', night_dates: 0, stays: [],
+  };
+  const clock = makeClock();
+  const view = await run({ pathname: '/app/map/place/0123456789ab', responses: { '/app/map/api/place/0123456789ab': place }, clock });
+  const select = view.elements['map-view-root'].querySelector('[data-place-form]').elements.alias;
+  assert.ok(select && select.tagName === 'SELECT', 'the alias select is drawn');
+  // The event goes up from the node, then to the document.
+  const fire = (node, type) => {
+    const event = { type, target: node, preventDefault() {}, stopPropagation() {} };
+    for (let at = node; at; at = at.parentNode) [...(at.listeners?.[type] || [])].forEach((fn) => fn.call(at, event));
+    [...(view.listeners.document[type] || [])].forEach((fn) => fn(event));
+  };
+  const pick = (value) => {
+    select.focus();
+    select.value = value;
+    fire(select, 'change');
+  };
+  const phoneBlur = () => {
+    view.document.activeElement = view.document.body;
+    fire(select, 'blur');
+    fire(select, 'focusout');
+  };
+  const added = () => [Object.values(view.listeners.document).reduce((n, list) => n + list.length, 0), (select.listeners.focusout || []).length, clock.live()];
+  return { view, clock, select, pick, phoneBlur, fire, added };
+}
+
+test("a place's alias: a phone's late blur after a pick lands back on the same select a task later", async () => {
+  const { view, clock, select, pick, phoneBlur } = await aliasPage();
+  pick('home');
+  clock.advance(PHONE_BLUR_MS);
+  assert.ok(view.document.activeElement === select, 'still on the select before the blur');
+  phoneBlur();
+  assert.ok(view.document.activeElement === view.document.body, 'the blur takes focus to the page');
+  clock.advance(0);
+  assert.ok(view.document.activeElement === select, 'focus is back on the same select');
+  view.ctx.teardown();
+});
+
+test("a place's alias: a pick with no late blur leaves focus alone, and the wait leaves nothing behind", async () => {
+  const { view, clock, select, pick, phoneBlur, added } = await aliasPage();
+  select.focus();
+  const before = added();
+  pick('work');
+  clock.advance(2000);
+  assert.ok(view.document.activeElement === select, 'focus stays on the select');
+  assert.deepStrictEqual(added(), before, 'no listener or timer of the wait is left');
+  phoneBlur();
+  clock.advance(0);
+  assert.ok(view.document.activeElement === view.document.body, 'a later blur is left alone');
+  view.ctx.teardown();
 });
 
 (async () => {

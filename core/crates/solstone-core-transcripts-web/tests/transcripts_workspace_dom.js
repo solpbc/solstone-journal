@@ -352,6 +352,21 @@ class Element {
   }
 
   focus() { this.ownerDocument.activeElement = this; }
+  blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = this.ownerDocument.body; }
+  // In the page when its ancestors reach the document's root.
+  get isConnected() {
+    let at = this;
+    while (at.parentElement) at = at.parentElement;
+    return !!this.ownerDocument && at === this.ownerDocument.documentElement;
+  }
+  // Boxes while it is in the page and nothing above it is hidden.
+  getClientRects() {
+    if (!this.isConnected) return [];
+    for (let at = this; at; at = at.parentElement) {
+      if (at.hasAttribute('hidden') || at.style.display === 'none') return [];
+    }
+    return [{ width: 1, height: 1 }];
+  }
   getBoundingClientRect() {
     return { top: 0, left: 0, bottom: this.clientHeight, right: this.clientWidth, width: this.clientWidth, height: this.clientHeight };
   }
@@ -3869,4 +3884,131 @@ test('delete dialog: a photo\'s segment lists its photo, not audio or screen, an
   assert.deepStrictEqual(listed, [TRASH_COPY.parts.photo, TRASH_COPY.parts.analysis]);
   const time = env.doc.querySelectorAll('.tr-delete-segment-meta strong')[2];
   assert.strictEqual(time.textContent, '11:45');
+});
+
+// A pick from the segment picker, and a phone's late blur as its menu closes:
+// change with the picker still focused, then some 865 ms later focus goes to
+// the page (blur and focusout) with no input between.
+const PHONE_BLUR_MS = 865;
+
+// The view's timers set from here on wait on a clock the case moves; one set
+// before stays on the host's.
+function clockTimers(env) {
+  let now = 0;
+  let serial = 0;
+  const timers = new Map();
+  const hostClear = env.window.clearTimeout;
+  env.window.setTimeout = (fn, ms = 0, ...args) => { serial += 1; timers.set(`clock-${serial}`, { at: now + ms, fn, args }); return `clock-${serial}`; };
+  env.window.clearTimeout = (id) => { if (timers.has(id)) timers.delete(id); else hostClear(id); };
+  return {
+    advance(ms) {
+      const end = now + ms;
+      for (;;) {
+        const due = [...timers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due) break;
+        timers.delete(due[0]);
+        now = due[1].at;
+        due[1].fn(...due[1].args);
+      }
+      now = end;
+    },
+    live: () => timers.size,
+  };
+}
+
+async function pickerPick() {
+  const env = await createEnvironment();
+  const picker = env.doc.getElementById('trSegmentPicker');
+  const clock = clockTimers(env);
+  const pill = getZoomPills(env.doc)[2];
+  const pick = () => {
+    picker.focus();
+    picker.value = JSON.stringify([pill.dataset.stream, pill.dataset.key]);
+    picker.dispatchEvent({ type: 'change', bubbles: true });
+  };
+  const phoneBlur = () => {
+    picker.blur();
+    picker.dispatchEvent({ type: 'blur' });
+    picker.dispatchEvent({ type: 'focusout', bubbles: true });
+  };
+  const flush = () => new Promise((r) => setTimeout(r, 10));
+  const dayReads = () => env.requested.filter((url) => url.includes('/api/day/20200115') && !url.includes('/body-window')).length;
+  return { env, picker, clock, pill, pick, phoneBlur, flush, dayReads };
+}
+
+test("segment picker: a phone's late blur after a pick lands back on the same select a task later", async () => {
+  const { env, picker, clock, pick, phoneBlur, flush } = await pickerPick();
+  pick();
+  await env.releasePendingSegmentGets();
+  clock.advance(PHONE_BLUR_MS);
+  await flush();
+  assert.ok(env.doc.activeElement === picker, 'still on the picker before the blur');
+  phoneBlur();
+  assert.ok(env.doc.activeElement === env.doc.body, 'the blur takes focus to the page');
+  clock.advance(0);
+  await flush();
+  assert.ok(env.doc.activeElement === picker, 'focus is back on the same picker');
+  assert.ok(env.doc.getElementById('trSegmentPicker') === picker, 'the picker is the one picked from');
+});
+
+test('segment picker: the segment read answers after the landing, and focus stays on the same select through its draw', async () => {
+  const { env, picker, clock, pill, pick, phoneBlur, flush, dayReads } = await pickerPick();
+  const baseline = env.history.length;
+  const days = dayReads();
+  pick();
+  await flush();
+  assert.ok(env.segmentGetRequests.some((req) => !req.fulfilled), 'the segment read is out');
+  clock.advance(PHONE_BLUR_MS);
+  phoneBlur();
+  clock.advance(0);
+  await flush();
+  assert.ok(env.doc.activeElement === picker, 'landed before the read is in');
+  await env.releasePendingSegmentGets();
+  clock.advance(0);
+  await flush();
+  assert.ok(env.doc.getElementById('trSegmentPicker') === picker, 'the draw keeps the picker');
+  assert.ok(env.doc.activeElement === picker, 'focus stays on the same picker');
+  // The pick's entry is the view's own: the view stays mounted.
+  assert.strictEqual(env.history.length, baseline + 1, 'the pick writes one entry');
+  assert.ok(env.window.location.hash.includes(pill.dataset.key), 'at the picked segment');
+  assert.strictEqual(dayReads(), days, 'the day is not read again');
+});
+
+test('segment picker: a pick with no late blur leaves focus alone, and the wait leaves nothing behind', async () => {
+  const { env, picker, clock, pick, phoneBlur, flush } = await pickerPick();
+  picker.focus();
+  const added = () => [
+    Object.values(env.doc.captureListeners || {}).reduce((n, list) => n + list.length, 0),
+    (picker.listeners.focusout || []).length,
+    clock.live(),
+  ];
+  const before = added();
+  pick();
+  await env.releasePendingSegmentGets();
+  clock.advance(2000);
+  await flush();
+  assert.ok(env.doc.activeElement === picker, 'focus stays on the picker');
+  assert.deepStrictEqual(added(), before, 'no listener or timer of the wait is left');
+  phoneBlur();
+  clock.advance(0);
+  await flush();
+  assert.ok(env.doc.activeElement === env.doc.body, 'a later blur is left alone');
+});
+
+test('segment picker: one segment read per pick, and none from the late blur or its landing', async () => {
+  const { env, clock, pick, phoneBlur, flush } = await pickerPick();
+  const reads = env.requested.length;
+  const segments = env.segmentGetRequests.length;
+  pick();
+  await env.releasePendingSegmentGets();
+  assert.strictEqual(env.segmentGetRequests.length, segments + 1, 'one segment read for the pick');
+  const picked = env.requested.slice(reads);
+  assert.ok(picked.length === 2 && picked.filter((url) => url.includes('/api/segment/')).length === 1
+    && picked.filter((url) => url.startsWith('/app/body/api/window?')).length === 1, `the segment and its body window (${picked.join(' ')})`);
+  const afterPick = env.requested.length;
+  clock.advance(PHONE_BLUR_MS);
+  phoneBlur();
+  clock.advance(0);
+  await flush();
+  assert.strictEqual(env.requested.length, afterPick, `nothing more is read (${env.requested.slice(reads).join(' ')})`);
 });

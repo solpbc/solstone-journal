@@ -1813,5 +1813,117 @@ module.exports = async function thinkingContractCases(crateDir) {
     }
   });
 
+  // ---- a pick from the local model select, and a phone's late blur
+  //
+  // A phone fires change with the select still focused, then some 865 ms
+  // later takes focus to the page (blur and focusout) with no input between.
+
+  const PHONE_BLUR_MS = 865;
+  const twoModels = [
+    { name: 'local/qwen3.5-4b', label: 'small', min_ram_gb: 8, size_bytes: 1 },
+    { name: 'local/other-8b', label: 'larger', min_ram_gb: 16, size_bytes: 2 },
+  ];
+  // The reads a pick starts again: availability, providers, the install and the runtime.
+  const PICK_READS = ['/app/thinking/api/local/availability', '/app/thinking/api/providers', '/app/thinking/api/local/bootstrap/status', '/app/thinking/api/local/runtime'];
+  const isPickRead = (call) => call.method === 'GET' && PICK_READS.some((prefix) => call.url === prefix || call.url.startsWith(`${prefix}?`));
+  async function modelPage() {
+    const p = await boot(env, '/app/thinking/#local-setup', { overrides: {
+      'GET /app/thinking/api/local/models': twoModels,
+      'GET /app/thinking/api/local/availability': { available: true, reason_code: 'ready' },
+      'GET /app/thinking/api/local/bootstrap/status': Object.assign(clone(local.get('/app/thinking/api/local/bootstrap/status') || {}), { install_state: 'installed' }),
+    } });
+    await run(p, 1000);
+    const select = p.byId('localModelSelect');
+    assert.ok(select && select.checkVisibility() && select.options.length === 2, 'the model select is shown with both models');
+    return p;
+  }
+  function pickModel(p, select) {
+    select.focus();
+    select.value = twoModels[1].name;
+    p.doc.dispatch(select, { type: 'change' });
+  }
+  function phoneBlur(p, select) {
+    select.blur();
+    p.doc.dispatch(select, { type: 'blur' });
+    p.doc.dispatch(select, { type: 'focusout' });
+  }
+
+  await test("the local model: a phone's late blur after a pick lands back on the same select a task later", async () => {
+    const p = await modelPage();
+    const select = p.byId('localModelSelect');
+    pickModel(p, select);
+    await settle();
+    assert.ok(p.calls.filter(isPickRead).every((call) => call.settled), 'the reads are in before the blur');
+    p.clock.advance(PHONE_BLUR_MS);
+    await settle();
+    assert.ok(p.doc.activeElement === select, `still on the select before the blur (${focusOn(p)})`);
+    phoneBlur(p, select);
+    assert.ok(p.doc.activeElement === p.doc.body, 'the blur takes focus to the page');
+    p.clock.advance(0);
+    await settle();
+    assert.ok(p.doc.activeElement === select, `focus is back on the same select (${focusOn(p)})`);
+    assert.ok(p.byId('localModelSelect') === select, 'the select is the one picked from');
+  });
+
+  await test('the local model: reads that answer after the landing redraw, and focus stays on the same select', async () => {
+    const p = await modelPage();
+    const select = p.byId('localModelSelect');
+    const from = p.calls.length;
+    p.holds.push(isPickRead);
+    pickModel(p, select);
+    await settle();
+    p.clock.advance(PHONE_BLUR_MS);
+    phoneBlur(p, select);
+    p.clock.advance(0);
+    await settle();
+    assert.ok(p.doc.activeElement === select, `landed before the reads are in (${focusOn(p)})`);
+    const out = p.calls.slice(from).filter((call) => isPickRead(call) && !call.settled);
+    assert.ok(out.length === PICK_READS.length, `the pick's reads are out (${out.map((c) => c.url).join(' ')})`);
+    p.holds.length = 0;
+    const answers = journal(env.answers('bundled_local'), {
+      'GET /app/thinking/api/local/availability': { available: true, reason_code: 'ready' },
+      'GET /app/thinking/api/local/bootstrap/status': Object.assign(clone(local.get('/app/thinking/api/local/bootstrap/status') || {}), { install_state: 'installed' }),
+    });
+    out.forEach((call) => call.answer(answers(call.url, { method: 'GET' })));
+    await settle();
+    assert.ok(p.byId('localModelSelect') === select, 'the redraw keeps the select');
+    assert.ok(p.doc.activeElement === select, `focus stays on the same select (${focusOn(p)})`);
+  });
+
+  await test('the local model: a pick with no late blur leaves focus alone, and the wait leaves nothing behind', async () => {
+    const p = await modelPage();
+    const select = p.byId('localModelSelect');
+    select.focus();
+    const before = [p.doc.listenerCount(), select.listenerCount(), p.clock.live()];
+    pickModel(p, select);
+    await settle();
+    p.clock.advance(2000);
+    await settle();
+    assert.ok(p.doc.activeElement === select, `focus stays on the select (${focusOn(p)})`);
+    assert.deepStrictEqual([p.doc.listenerCount(), select.listenerCount(), p.clock.live()], before, 'no listener or timer of the wait is left');
+    phoneBlur(p, select);
+    p.clock.advance(0);
+    await settle();
+    assert.ok(p.doc.activeElement === p.doc.body, `a later blur is left alone (${focusOn(p)})`);
+  });
+
+  await test("the local model: a pick reads its four once, and the late blur and its landing read nothing", async () => {
+    const p = await modelPage();
+    const select = p.byId('localModelSelect');
+    const from = p.calls.length;
+    pickModel(p, select);
+    await settle();
+    const picked = p.calls.slice(from).filter((call) => call.method === 'GET');
+    assert.ok(picked.length === PICK_READS.length && PICK_READS.every((prefix) => picked.filter(isPickRead).some((c) => c.url.split('?')[0] === prefix)),
+      `one of each read for the pick (${picked.map((c) => c.url).join(' ')})`);
+    assert.ok(picked.some((c) => c.url === `/app/thinking/api/local/availability?model=${encodeURIComponent(twoModels[1].name)}`), 'availability asks after the picked model');
+    const afterPick = p.calls.length;
+    p.clock.advance(PHONE_BLUR_MS);
+    phoneBlur(p, select);
+    p.clock.advance(0);
+    await settle();
+    assert.ok(p.calls.length === afterPick, `nothing more is read (${p.calls.slice(afterPick).map((c) => c.url).join(' ')})`);
+  });
+
   return cases;
 };
