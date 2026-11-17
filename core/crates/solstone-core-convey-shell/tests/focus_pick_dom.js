@@ -379,6 +379,34 @@ test('something that isn\'t a select, blurred while the wait is armed, is left',
   assert.ok(p.doc.activeElement === p.doc.body, 'not pulled back to the select');
 });
 
+test('a view that stops its own focusout still gets the landing: the blur is heard in capture', async () => {
+  const p = makePage();
+  const view = await p.mountView();
+  const form = p.make('FORM');
+  const select = p.make('SELECT', form);
+  form.addEventListener('focusout', (event) => event.stopPropagation());
+  p.pick(select, view.ctx);
+  p.clock.advance(865);
+  p.blurToBody(select);
+  p.clock.advance(0);
+  assert.ok(p.doc.activeElement === select, 'back on the select');
+});
+
+test('two blurs before the landing: it lands on the last one blurred', async () => {
+  const p = makePage();
+  const view = await p.mountView();
+  const a = p.make('SELECT');
+  const b = p.make('SELECT');
+  p.pick(a, view.ctx);
+  p.clock.advance(865);
+  p.blurToBody(a);
+  p.doc.activeElement = b; // the view put focus on another copy meanwhile
+  p.blurToBody(b);
+  p.clock.advance(0);
+  assert.ok(p.doc.activeElement === b, 'on the one that last had focus');
+  assert.ok(view.ctx.held().timeouts === 0, 'one landing, nothing left');
+});
+
 test('not armed: focus elsewhere, the select hidden, or gone', async () => {
   const p = makePage();
   const view = await p.mountView();
