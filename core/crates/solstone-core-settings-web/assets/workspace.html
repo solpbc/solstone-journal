@@ -2604,10 +2604,6 @@ button:focus:not(:focus-visible) {
       <p class="settings-section-desc">configure service tokens for imports. tokens are stored in your journal config.</p>
 
       <form class="settings-form" onsubmit="return false;">
-      <div style="margin-bottom: 1em;">
-        <button type="button" id="revalidateAllKeys" class="btn-secondary">re-validate all keys</button>
-        <span id="revalidateStatus" style="margin-left: 0.5em; font-size: 0.85em;"></span>
-      </div>
       <div class="settings-field">
         <label for="field-env-plaud">Plaud</label>
         <div class="password-wrap">
@@ -4446,37 +4442,6 @@ function updateEnvStatus(fieldId, isJournalConfigured, isSystemConfigured) {
     }
   }
 }
-
-async function revalidateAllKeys() {
-  const btn = document.getElementById('revalidateAllKeys');
-  const status = document.getElementById('revalidateStatus');
-  if (!btn || !status || window.SolFocus.isBusy(btn)) return;
-  // Busy, not disabled, so focus stays on the button while the check is out.
-  window.SolFocus.setBusy(btn, true);
-  status.textContent = 'validating…';
-  status.className = 'key-status-validating';
-  try {
-    const response = await settingsFetch('/app/settings/api/validate-keys', { method: 'POST' });
-    const result = await response.json();
-    if (result.error) throw new Error(result.detail || result.error);
-    keyValidationData = result.key_validation || {};
-    if (configData) {
-      configData.key_validation = keyValidationData;
-    }
-    const env = configData?.env || {};
-    const sysEnv = configData?.runtime_env || {};
-    updateEnvStatus('field-env-plaud', env.PLAUD_ACCESS_TOKEN, sysEnv.PLAUD_ACCESS_TOKEN);
-    status.textContent = 'done';
-    status.className = 'key-status-valid';
-    setTimeout(() => { status.textContent = ''; }, 2000);
-  } catch (err) {
-    status.textContent = 'error: ' + err.message;
-    status.className = 'key-status-invalid';
-  } finally {
-    window.SolFocus.setBusy(btn, false);
-  }
-}
-document.getElementById('revalidateAllKeys').addEventListener('click', revalidateAllKeys);
 
 function setValue(id, value) {
   const el = document.getElementById(id);

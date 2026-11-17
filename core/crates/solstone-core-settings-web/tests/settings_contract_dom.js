@@ -875,7 +875,7 @@ function activeSection(p) {
   return section ? section.id : null;
 }
 
-const GONE = ['mountSettings', 'switchSection', 'initSettingsWorkspace', 'loadConfig', 'loadTrash', 'revalidateAllKeys', 'saveField',
+const GONE = ['mountSettings', 'switchSection', 'initSettingsWorkspace', 'loadConfig', 'loadTrash', 'saveField',
   'reportSettingsReady', 'configData', 'VALID_SECTIONS', 'settingsAbout', 'loadGranola', 'facetDialog', 'FACET_DELETE_COPY'];
 
 // Run from facets_dom.js: answers with the number of cases.
@@ -1095,38 +1095,14 @@ module.exports = async function settingsContractCases(crateDir) {
   });
 
   await test('each markup handler runs by its own event after an in-page mount', async () => {
-    const p = await boot(env, '/app/settings/#apikeys');
-    p.press(p.byId('revalidateAllKeys'));
+    const p = await boot(env, '/app/settings/#sync');
+    p.byId('granolaKey').value = 'grn_lab';
+    p.press(p.byId('granolaConnect'));
     await settle();
-    assert.ok(p.writes().some((call) => call.url === '/app/settings/api/validate-keys'), 're-validate posts the check');
+    assert.ok(p.writes().some((call) => call.url === '/app/settings/api/granola' && call.method === 'POST'), "Granola's connect posts the key");
+    assert.ok(!p.byId('revalidateAllKeys'), 'no re-validate button: nothing here can check a key');
     const forms = p.qa('form').filter((form) => form.getAttribute('onsubmit'));
     assert.ok(forms.length === 7, `the seven form guards: ${forms.length}`);
-  });
-
-  await test('a held re-validate keeps focus on its button, busy, and a second press sends nothing', async () => {
-    const p = await boot(env, '/app/settings/#apikeys');
-    let release = null;
-    p.holds.push((call) => {
-      if (call.url !== '/app/settings/api/validate-keys') return false;
-      release = () => call.answer({ key_validation: {} }, 200);
-      return true;
-    });
-    const btn = p.byId('revalidateAllKeys');
-    btn.focus();
-    p.press(btn);
-    await settle();
-    const checks = () => p.writes().filter((call) => call.url === '/app/settings/api/validate-keys').length;
-    assert.ok(checks() === 1, `one check out: ${checks()}`);
-    assert.ok(btn.getAttribute('aria-disabled') === 'true', 'the button is busy while the check is out');
-    assert.ok(!btn.disabled, 'and not disabled, which would drop focus');
-    assert.ok(p.doc.activeElement === btn, `focus stays on it: ${focusOn(p)}`);
-    p.press(btn);
-    await settle();
-    assert.ok(checks() === 1, `a press while busy sends nothing: ${checks()}`);
-    release();
-    await settle();
-    assert.ok(btn.getAttribute('aria-disabled') === null, 'the answer clears busy');
-    assert.ok(p.doc.activeElement === btn, `focus is still on it: ${focusOn(p)}`);
   });
 
   await test('each section is an arrival by its hash, the bare path takes the slashed address, and ?facet= shows the index', async () => {
@@ -1270,8 +1246,9 @@ module.exports = async function settingsContractCases(crateDir) {
   });
 
   await test('a press on the gone markup after settings has gone starts no write', async () => {
-    const p = await boot(env, '/app/settings/#apikeys');
-    const gone = p.byId('revalidateAllKeys');
+    const p = await boot(env, '/app/settings/#sync');
+    p.byId('granolaKey').value = 'grn_lab';
+    const gone = p.byId('granolaConnect');
     p.leave();
     gone.click();
     await settle();
