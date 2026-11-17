@@ -312,10 +312,11 @@ function lateBlur(p, select, {moveFocus = true} = {}) {
   select.fire({type: 'blur', target: select, bubbles: false, preventDefault() {}, stopPropagation() {}});
   p.doc.dispatch(select, {type: 'focusout'});
 }
-// The document's capture listeners of the kinds a wait listens for.
+// The document's capture listeners of the kinds a wait listens for. The model's dispatch reaches
+// the document's listeners, capture ones included, after the target's.
 function captureListeners(p) {
   let n = 0;
-  for (const type of ['pointerdown', 'touchstart', 'mousedown', 'keydown']) n += (p.doc.listeners.get(type) || []).filter(l => l.capture).length;
+  for (const type of ['pointerdown', 'touchstart', 'mousedown', 'keydown', 'focusout']) n += (p.doc.listeners.get(type) || []).filter(l => l.capture).length;
   return n;
 }
 
@@ -425,6 +426,27 @@ async function selectLandingCases() {
     assert.ok(p.doc.activeElement === drawn, 'a late blur of the old select changes nothing');
     p.clock.advance(2000);
     assert.ok(captureListeners(p) === 0, 'no capture listener of the wait is left');
+  });
+
+  await test('what an agent may see: drawn again inside the window, the late blur of the new select lands back on it', async () => {
+    const {box, answers} = redrawJournal();
+    const {p, select, value} = await scopePage(answers);
+    const capture = captureListeners(p);
+    const finish = await heldPoll(p, box);
+    pick(p, select, value);
+    finish();
+    await kit.settle();
+    const drawn = p.byId('scope');
+    assert.ok(!select.isConnected && drawn && drawn !== select, 'the page drew a new select');
+    assert.ok(p.doc.activeElement === drawn, 'the redraw puts focus on the new select');
+    p.clock.advance(865);
+    lateBlur(p, drawn);
+    p.clock.advance(0);
+    assert.ok(p.doc.activeElement === drawn, 'focus is back on the new select');
+    p.clock.advance(2000);
+    await kit.settle();
+    assert.ok(p.doc.activeElement === drawn, 'and stays there');
+    assert.ok(captureListeners(p) === capture, 'no capture listener of the wait is left');
   });
 
   await test('what an agent may see: drawn again after the landing, focus is on the new select', async () => {
