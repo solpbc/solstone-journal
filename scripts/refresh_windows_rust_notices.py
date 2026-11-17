@@ -1083,7 +1083,8 @@ def build_git_substitutions(
     byte-for-byte unchanged. Removals, and additions outside the moved prefixes,
     still refuse, except the `vendor/<name>-<version>/` prefixes of registry
     packages the lock removes alongside the move: the caller drops those
-    members and proves exactly they went.
+    members and proves exactly they went. Registry .gitignore files omitted
+    by cargo vendor are carried from the prior checksum-bound archive.
     """
     with tempfile.TemporaryDirectory(prefix="windows-rust-notice-vendor-") as scratch:
         if vendor_dir is None:
@@ -1095,39 +1096,46 @@ def build_git_substitutions(
                 raise RefreshError(f"--vendor-dir is not a directory: {vendor_root}")
 
         prior_vendor: dict[str, str] = {}
+        prior_manifests: dict[str, bytes] = {}
+        moved_prefixes = tuple(
+            f"vendor/{new_row['name']}-{new_row['version']}/"
+            for _, new_row in moved_git
+        )
         with tarfile.open(prior_archive_path, "r:gz") as tar:
             for member in tar:
-                if member.isfile() and member.name.startswith("vendor/"):
-                    prior_vendor[member.name] = sha256_bytes(
-                        tar.extractfile(member).read()
-                    )
-        if removed_prefixes:
-            prior_vendor = {
-                name: digest for name, digest in prior_vendor.items()
-                if not name.startswith(removed_prefixes)
-            }
+                name = member.name
+                if not member.isfile() or not name.startswith("vendor/") or name.startswith(removed_prefixes):
+                    continue
+                data = tar.extractfile(member).read()
+                prior_vendor[name] = sha256_bytes(data)
+                if name.endswith("/.cargo-checksum.json") and not name.startswith(moved_prefixes):
+                    prior_manifests[name] = data
         fresh_vendor = {
             "vendor/" + str(path.relative_to(vendor_root)): path
             for path in vendor_root.rglob("*")
             if path.is_file()
         }
-        moved_prefixes = tuple(
-            f"vendor/{new_row['name']}-{new_row['version']}/"
-            for _, new_row in moved_git
-        )
+        carried: set[str] = set()
+        carried_by_manifest: dict[str, dict[str, str]] = {}
+        for name in prior_vendor.keys() - fresh_vendor.keys():
+            if not name.endswith("/.gitignore"):
+                continue
+            crate, _, relative = name.removeprefix("vendor/").partition("/")
+            manifest = f"vendor/{crate}/.cargo-checksum.json"
+            if manifest not in prior_manifests or manifest not in fresh_vendor:
+                continue
+            files, package = checksum_attestation(prior_manifests[manifest])
+            if package and files.get(relative) == prior_vendor[name]:
+                carried.add(name)
+                carried_by_manifest.setdefault(manifest, {})[relative] = files[relative]
         added_inside = admit_git_pin_vendor_delta(
-            set(prior_vendor), set(fresh_vendor), moved_prefixes
+            set(prior_vendor), set(fresh_vendor) | carried, moved_prefixes
         )
-
-        prior_manifests: dict[str, bytes] = {}
-        with tarfile.open(prior_archive_path, "r:gz") as tar:
-            for name in prior_vendor:
-                if (Path(name).name == ".cargo-checksum.json"
-                        and not name.startswith(moved_prefixes)):
-                    prior_manifests[name] = tar.extractfile(name).read()
 
         substitutions: dict[str, bytes] = {}
         for name, digest in prior_vendor.items():
+            if name in carried:
+                continue
             data = fresh_vendor[name].read_bytes()
             if sha256_bytes(data) != digest:
                 # A licence-identical upgrade writes its checksum manifest with
@@ -1135,10 +1143,12 @@ def build_git_substitutions(
                 # vendor writes it compactly. Outside the moved packages the
                 # same file digests and package checksum are the same
                 # attestation, so the prior bytes stay.
-                if name in prior_manifests and checksum_attestation(data) == checksum_attestation(
-                    prior_manifests[name]
-                ):
-                    continue
+                if name in prior_manifests:
+                    files, package = checksum_attestation(data)
+                    for relative, ignore_digest in carried_by_manifest.get(name, {}).items():
+                        files.setdefault(relative, ignore_digest)
+                    if (files, package) == checksum_attestation(prior_manifests[name]):
+                        continue
                 substitutions[name] = data
         for name in added_inside:
             substitutions[name] = fresh_vendor[name].read_bytes()

@@ -312,7 +312,7 @@ class GitPinVendorDelta(unittest.TestCase):
         with self.assertRaisesRegex(refresh.RefreshError, "moved package prefix"):
             refresh.admit_git_pin_vendor_delta(prior, fresh, (self.prefix,))
 
-    def substitutions(self, fresh_digest_manifest, removed_prefixes):
+    def substitutions(self, fresh_digest_manifest, removed_prefixes, prior_ignore=False):
         """Run build_git_substitutions over a tiny prior archive and vendor tree.
 
         The prior archive carries the moved git package, a removed registry
@@ -329,6 +329,13 @@ class GitPinVendorDelta(unittest.TestCase):
             ).encode(),
         }
         fresh = dict(prior)
+        if prior_ignore:
+            manifest = "vendor/digest-1.0.0/.cargo-checksum.json"
+            checksum = json.loads(prior[manifest])
+            ignored = b"/target\n"
+            checksum["files"][".gitignore"] = refresh.sha256_bytes(ignored)
+            prior[manifest] = json.dumps(checksum).encode()
+            prior["vendor/digest-1.0.0/.gitignore"] = ignored
         del fresh["vendor/p256-0.13.2/src/lib.rs"]
         fresh[moved + "src/lib.rs"] = b"new\n"
         fresh["vendor/digest-1.0.0/.cargo-checksum.json"] = fresh_digest_manifest
@@ -374,6 +381,15 @@ class GitPinVendorDelta(unittest.TestCase):
             self.substitutions(self.compact("e" * 64), removed)
         with self.assertRaisesRegex(refresh.RefreshError, "no files map"):
             self.substitutions(b'{"package": null}', removed)
+
+    def test_registry_gitignore_omitted_by_vendor_stays_in_the_prior_archive(self):
+        removed = ("vendor/p256-0.13.2/",)
+        self.assertEqual(
+            self.substitutions(self.compact("d" * 64), removed, prior_ignore=True),
+            {"vendor/spl-core-0.1.0/src/lib.rs": b"new\n"},
+        )
+        with self.assertRaisesRegex(refresh.RefreshError, "outside the packages whose pin moved"):
+            self.substitutions(self.compact("e" * 64), removed, prior_ignore=True)
 
 
 class SourceOfferArchive(unittest.TestCase):
