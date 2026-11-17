@@ -2335,6 +2335,16 @@ module.exports = async function settingsContractCases(crateDir) {
     }
   });
 
+  await test('a tap between the blur and its landing is the owner moving too', async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    const select = pickSection(p, 'transcription');
+    await settle();
+    menuBlur(p, select);
+    p.doc.dispatch(p.q('#section-transcription'), { type: 'touchstart' });
+    p.clock.advance(1000);
+    assert.ok(p.doc.activeElement === p.doc.body, `left on the page: ${at(p)}`);
+  });
+
   await test('a blur that moved focus somewhere shown, with no input first, is left there', async () => {
     const p = await boot(env, '/app/settings/#profile');
     const select = pickSection(p, 'transcription');
