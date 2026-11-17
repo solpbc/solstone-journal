@@ -165,6 +165,10 @@
     {
       "namespace": "macos",
       "owner": "macos"
+    },
+    {
+      "namespace": "android",
+      "owner": "solstone-android"
     }
   ],
   "bundles": [
@@ -247,6 +251,12 @@
     },
     {
       "id": "macos",
+      "locales": [
+        "en-US"
+      ]
+    },
+    {
+      "id": "android-wear",
       "locales": [
         "en-US"
       ]
