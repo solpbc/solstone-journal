@@ -1314,7 +1314,7 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(p.window.location.pathname === `/app/import/${DONE}`, 'the row opened its import');
     assert.ok(p.loads.length === 0, 'in the page');
     assert.ok(p.byId('importDetailView').style.display === '', 'its page shows');
-    assert.ok(focusOn(p) !== 'BODY', `focus is placed (${focusOn(p)})`);
+    assert.ok(p.doc.activeElement !== p.doc.body, `focus is placed (${focusOn(p)})`);
     p.press(p.q('.back-link'));
     await settle();
     assert.ok(p.window.location.pathname === '/app/import/' && p.loads.length === 0, 'back to the list in the page');
@@ -1344,7 +1344,7 @@ module.exports = async function importContractCases(crateDir) {
       assert.ok(p.window.location.href === new URL(address, ORIGIN).href, `${address}: at that address`);
       assert.ok(check(p), `${address}: shows what a full load shows`);
       assert.ok(p.window.history.state?.solRoute?.id, `${address}: the entry keeps its id`);
-      assert.ok(focusOn(p) !== 'BODY', `${address}: focus is placed (${focusOn(p)})`);
+      assert.ok(p.doc.activeElement !== p.doc.body, `${address}: focus is placed (${focusOn(p)})`);
     }
   });
 
@@ -1923,6 +1923,139 @@ module.exports = async function importContractCases(crateDir) {
     await settle();
     assert.ok(p.writes().length === before, 'a held start sends nothing');
   });
+
+  // ---- a pick from a select, and a phone's late blur as its menu closes
+  //
+  // A phone fires change with the select still focused, then some 865 ms
+  // later takes focus to the page (blur and focusout) with no input between.
+
+  const PHONE_BLUR_MS = 865;
+  // Where focus is, for a message: the page itself by its tag alone.
+  const at = (p) => (p.doc.activeElement === p.doc.body ? 'BODY' : focusOn(p));
+  function pickFrom(p, select, value) {
+    select.focus();
+    select.value = value;
+    p.doc.dispatch(select, { type: 'change' });
+  }
+  function phoneBlur(p, select) {
+    select.blur();
+    p.doc.dispatch(select, { type: 'blur' });
+    p.doc.dispatch(select, { type: 'focusout' });
+  }
+  const strava = { name: 'strava', display_name: 'Strava', description: 'workouts', has_guide: false, input_type: 'file', accept: '.zip' };
+  const stravaFacet = { offer: { state: 'chosen', facet: 'fitness' }, facets: [{ name: 'fitness', title: 'fitness' }, { name: 'body', title: 'body' }],
+    copy: { heading: 'which', this_import: 'this import', none_option: 'none', none_hint: 'none', files_earlier: 'earlier {facet}' } };
+  const archive = { name: 'audio_archive', display_name: 'recordings', description: 'a folder', has_guide: false, input_type: 'file', time_zones: ['UTC', 'America/Denver'] };
+  // Each select that stays shown after a pick: its page, the select, and a value to pick.
+  const PICKS = [
+    ['the source filter', () => bootList(), (p) => p.byId('importSourceFilter'), 'chatgpt'],
+    ['the content month', () => bootList(`/app/import/${DONE}#content`), (p) => p.byId('contentMonth'), '202611'],
+    ['the facet', () => bootList('/app/import/#guide/strava', {
+      'GET /app/import/api/sources': () => ({ items: [...sourcesAnswer().items, strava] }),
+      'GET /app/import/api/body-facet': () => stravaFacet,
+    }), (p) => p.byId('guidedFacetSelect'), ''],
+    ['the time zone', () => bootList('/app/import/#guide/audio_archive', {
+      'GET /app/import/api/sources': () => ({ items: [...sourcesAnswer().items, archive] }),
+    }), (p) => p.byId('guidedArchiveZone'), 'America/Denver'],
+    ['a cadence', async () => {
+      const p = await bootList('/app/import/', {}, { folders: true });
+      p.q('[data-sync-source="audio"] details').setAttribute('open', '');
+      return p;
+    }, (p) => p.byId('source-audio-every'), '1h'],
+  ];
+
+  for (const [name, open, find, value] of PICKS) {
+    await test(`${name}: a phone's late blur after a pick lands back on the same select a task later`, async () => {
+      const p = await open();
+      const select = find(p);
+      assert.ok(select && !select.disabled && select.checkVisibility(), `${name} is drawn and shown`);
+      pickFrom(p, select, value);
+      await settle();
+      p.clock.advance(PHONE_BLUR_MS);
+      await settle();
+      assert.ok(p.doc.activeElement === select, `still on ${name} before the blur (${at(p)})`);
+      phoneBlur(p, select);
+      assert.ok(p.doc.activeElement === p.doc.body, 'the blur takes focus to the page');
+      p.clock.advance(0);
+      await settle();
+      assert.ok(p.doc.activeElement === select, `focus is back on the same select (${at(p)})`);
+      assert.ok(find(p) === select, 'the select is the one picked from');
+    });
+
+    await test(`${name}: a pick with no late blur leaves focus alone, and the wait leaves nothing behind`, async () => {
+      const p = await open();
+      const select = find(p);
+      select.focus();
+      const before = [p.doc.listenerCount(), select.listenerCount(), p.clock.live()];
+      pickFrom(p, select, value);
+      await settle();
+      p.clock.advance(2000);
+      await settle();
+      assert.ok(p.doc.activeElement === select, `focus stays on ${name} (${at(p)})`);
+      assert.deepStrictEqual([p.doc.listenerCount(), select.listenerCount(), p.clock.live()], before, 'no listener or timer of the wait is left');
+      // A blur after the window is the owner's own: nothing brings focus back.
+      phoneBlur(p, select);
+      p.clock.advance(0);
+      await settle();
+      assert.ok(p.doc.activeElement === p.doc.body, `a later blur is left alone (${at(p)})`);
+    });
+  }
+
+  // The filter and the month read again after a pick, and draw what comes back.
+  const REREADS = [
+    ['the source filter', PICKS[0], (c) => c.method === 'GET' && c.url.startsWith('/app/import/api/list?') && c.url.endsWith('source=chatgpt')],
+    ['the content month', PICKS[1], (c) => c.method === 'GET' && c.url.includes('/content?') && c.url.includes('month=202611')],
+  ];
+  for (const [name, [, open, find, value], t] of REREADS) {
+    await test(`${name}: a read that answers before the late blur draws, and the landing still keeps the same select`, async () => {
+      const p = await open();
+      const select = find(p);
+      pickFrom(p, select, value);
+      await settle();
+      assert.ok(p.calls.filter(t).length === 1 && p.calls.filter(t)[0].settled, 'the read is in before the blur');
+      assert.ok(find(p) === select && p.doc.activeElement === select, `the draw keeps the select and its focus (${at(p)})`);
+      p.clock.advance(PHONE_BLUR_MS);
+      phoneBlur(p, select);
+      p.clock.advance(0);
+      await settle();
+      assert.ok(p.doc.activeElement === select, `focus is back on the same select (${at(p)})`);
+    });
+
+    await test(`${name}: a read that answers after the landing draws, and focus stays on the same select`, async () => {
+      const p = await open();
+      const select = find(p);
+      p.holds.push(t);
+      pickFrom(p, select, value);
+      await settle();
+      p.clock.advance(PHONE_BLUR_MS);
+      phoneBlur(p, select);
+      p.clock.advance(0);
+      await settle();
+      assert.ok(p.doc.activeElement === select, `landed before the read is in (${at(p)})`);
+      const out = p.calls.filter(t);
+      assert.ok(out.length === 1 && !out[0].settled, 'the read is still out');
+      p.holds.length = 0;
+      out[0].answer(name === 'the source filter' ? listAnswer() : contentAnswer(1));
+      await settle();
+      assert.ok(find(p) === select, 'the draw keeps the select');
+      assert.ok(p.doc.activeElement === select, `focus stays on the same select (${at(p)})`);
+    });
+
+    await test(`${name}: one read per pick, and none from the late blur or its landing`, async () => {
+      const p = await open();
+      const select = find(p);
+      const gets = () => p.calls.filter((c) => c.method === 'GET').length;
+      const start = gets();
+      pickFrom(p, select, value);
+      await settle();
+      assert.ok(p.calls.filter(t).length === 1 && gets() === start + 1, `one read for the pick (${gets() - start})`);
+      p.clock.advance(PHONE_BLUR_MS);
+      phoneBlur(p, select);
+      p.clock.advance(0);
+      await settle();
+      assert.ok(gets() === start + 1, `nothing more is read (${gets() - start})`);
+    });
+  }
 
   return cases;
 };
