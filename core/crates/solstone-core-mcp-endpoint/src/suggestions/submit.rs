@@ -48,6 +48,10 @@ pub enum ValidatedTarget {
     Entity {
         reference: String,
     },
+    People {
+        reference: String,
+        other_reference: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +66,7 @@ pub enum ValidatedValue {
     WhatHappened { text: String },
     WhoSaidIt { speaker: ValidatedSpeaker },
     Name { text: String, mode: String },
+    SamePerson,
 }
 
 #[derive(Debug, Clone)]
@@ -345,6 +350,26 @@ pub(crate) fn validate(arguments: Option<&Value>) -> Result<ValidatedSuggestCorr
                 },
             )
         }
+        "same_person" if super::same_person_ready() => {
+            if target_obj.len() != 2 || !value_obj.is_empty() {
+                return Err(ToolError::InvalidInput);
+            }
+            let read_reference = |key| {
+                target_obj
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty() && value.len() <= MAX_OPAQUE_REFERENCE_BYTES)
+                    .map(str::to_owned)
+                    .ok_or(ToolError::InvalidInput)
+            };
+            (
+                ValidatedTarget::People {
+                    reference: read_reference("reference")?,
+                    other_reference: read_reference("other_reference")?,
+                },
+                ValidatedValue::SamePerson,
+            )
+        }
         _ => return Err(ToolError::InvalidInput),
     };
 
@@ -399,6 +424,16 @@ pub(crate) fn recorded_arguments(request: &ValidatedSuggestCorrection) -> Map<St
         }
         ValidatedTarget::Entity { reference } => {
             arguments.insert("entity".to_owned(), reference_fingerprint(reference).into());
+        }
+        ValidatedTarget::People {
+            reference,
+            other_reference,
+        } => {
+            arguments.insert("entity".to_owned(), reference_fingerprint(reference).into());
+            arguments.insert(
+                "other_entity".to_owned(),
+                reference_fingerprint(other_reference).into(),
+            );
         }
     }
     arguments
@@ -1425,51 +1460,14 @@ fn execute_admitted(
                 ));
             }
 
-            // Caps
-            let pending_count = records
-                .iter()
-                .filter(|r| {
-                    r.authority_id == principal.connection
-                        && super::owner::effective_status(journal_root, r) == "pending"
-                })
-                .count();
-            if pending_count >= PENDING_AGENT_CAP {
-                return Ok(Prepared::new(
-                    json!({
-                        "schema": SUGGESTION_RESULT_SCHEMA,
-                        "status": "rate_limited",
-                        "next": "wait_for_review",
-                        "operation_id": request.operation_id,
-                        "message": "pending suggestions cap reached",
-                    }),
-                    1,
-                    Vec::new(),
-                ));
-            }
-
-            let daily_count = records
-                .iter()
-                .filter(|r| {
-                    r.authority_id == principal.connection
-                        && chrono::DateTime::parse_from_rfc3339(&r.created_at)
-                            .map(|dt| {
-                                dt.with_timezone(&chrono::Utc).date_naive() == now.date_naive()
-                            })
-                            .unwrap_or(false)
-                })
-                .count();
-            if daily_count >= DAILY_AGENT_CAP {
-                return Ok(Prepared::new(
-                    json!({
-                        "schema": SUGGESTION_RESULT_SCHEMA,
-                        "status": "rate_limited",
-                        "next": "retry_tomorrow",
-                        "operation_id": request.operation_id,
-                        "message": "daily suggestions cap reached",
-                    }),
-                    1,
-                    Vec::new(),
-                ));
+            if let Some(result) = cap_result(
+                journal_root,
+                &records,
+                principal.connection,
+                &request.operation_id,
+                now,
+            ) {
+                return Ok(result);
             }
 
             // Dedup
@@ -1553,8 +1551,265 @@ fn execute_admitted(
 
             Ok(Prepared::new(tool_result, 1, Vec::new()))
         }
+        &"same_person" => {
+            use super::same_person as merge;
+            let ValidatedTarget::People {
+                reference,
+                other_reference,
+            } = &request.target
+            else {
+                return refusal;
+            };
+            let _trust = solstone_core_entity::hold_entity_trust_lock(journal_root)
+                .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+            // Do not answer from a partially applied merge.
+            if solstone_core_entity::entity_merge_recovery_pending(journal_root) {
+                return refusal;
+            }
+            let address = |reference: &str| {
+                if crate::names::is_name(reference) {
+                    return crate::names::parse_entity(reference);
+                }
+                let ReferenceTarget::Entity(entity) = codec
+                    .resolve(
+                        reference,
+                        ReferenceKind::Entity,
+                        principal.connection,
+                        snapshot.generation,
+                    )
+                    .ok()?
+                else {
+                    return None;
+                };
+                Some((entity.entity_id, entity.facet_id))
+            };
+            let (Some((first, first_facet)), Some((second, second_facet))) =
+                (address(reference), address(other_reference))
+            else {
+                return refusal;
+            };
+            let admitted = |id: &str, facet: &str| -> Option<String> {
+                let reads_person = |id| {
+                    crate::dispatch::read_entity(journal_root, snapshot, facet, id).is_ok()
+                        && merge::person_name(journal_root, id).is_some()
+                };
+                if reads_person(id) {
+                    return Some(id.to_owned());
+                }
+                // A readable name is forgeable. A retired ID can answer
+                // only with prior admission or a recorded source membership
+                // in the exact facet the connection is allowed to read now.
+                let (facet_id, _) = crate::may_see::reached_facet(journal_root, snapshot, facet)?;
+                let successor = solstone_core_entity::merged_away(journal_root, id).ok()??;
+                let known = records.iter().any(|record| {
+                    record.authority_id == principal.connection
+                        && merge::record_has_address(record, id, &facet_id)
+                });
+                if !known
+                    && !merge::retired_address_in_facet(journal_root, id, &successor, &facet_id)
+                {
+                    return None;
+                }
+                let live = solstone_core_entity::live_merge_successor(journal_root, &successor)?;
+                reads_person(&live).then_some(live)
+            };
+            let (Some(live_first), Some(live_second)) = (
+                admitted(&first, &first_facet),
+                admitted(&second, &second_facet),
+            ) else {
+                return refusal;
+            };
+
+            if let Some(existing) = replay {
+                return Ok(existing_result(
+                    journal_root,
+                    principal,
+                    existing,
+                    &request.operation_id,
+                    true,
+                ));
+            }
+            let answer = |status, message| {
+                Ok(Prepared::new(
+                    json!({
+                        "schema": SUGGESTION_RESULT_SCHEMA, "status":status,
+                        "operation_id":request.operation_id,"message":message
+                    }),
+                    1,
+                    Vec::new(),
+                ))
+            };
+            let pair_state = merge::pair_state(journal_root, &first, &second)
+                .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+            let similarity_key = merge::pair_key(&live_first, &live_second);
+            if pair_state == merge::PairState::OwnerAnswered
+                || records.iter().any(|record| {
+                    record.kind == "same_person"
+                        && record.status == "dismissed"
+                        && (record.similarity_key == similarity_key
+                            || merge::record_is_pair(record, &first, &second))
+                })
+            {
+                return answer(
+                    "owner_answered",
+                    "the owner has already answered this question",
+                );
+            }
+            if live_first == live_second {
+                return answer(
+                    "already_true",
+                    "these references already point to the same person",
+                );
+            }
+            // A retired reference may answer equality, but it cannot nominate
+            // an unseen or different record for a new permanent merge.
+            if live_first != first || live_second != second {
+                return refusal;
+            }
+            if let Some(result) = cap_result(
+                journal_root,
+                &records,
+                principal.connection,
+                &request.operation_id,
+                now,
+            ) {
+                return Ok(result);
+            }
+            if pair_state == merge::PairState::JournalCandidate {
+                return answer("already_exists", "a similar suggestion already exists");
+            }
+            if let Some(existing) = records
+                .iter()
+                .find(|record| record.similarity_key == similarity_key)
+            {
+                return Ok(existing_result(
+                    journal_root,
+                    principal,
+                    existing,
+                    &request.operation_id,
+                    false,
+                ));
+            }
+
+            let Some(people) = merge::people_baseline(journal_root, [&first, &second]) else {
+                return refusal;
+            };
+            let id = format!("sc_{}", random_32_lower_hex());
+            let mut tool_result = json!({
+                "schema": SUGGESTION_RESULT_SCHEMA,
+                "status": "pending",
+                "operation_id": request.operation_id,
+                "suggestion_id": id,
+                "message": "suggestion queued for owner review",
+            });
+            if let Some(link) =
+                solstone_core_journal_link::seal(journal_root, &Place::Person { id: first.clone() })
+            {
+                tool_result["link"] = json!(format!("https://go.solstone.app/j#{link}"));
+            }
+            let label = capture_label(journal_root, principal.connection, &mut settings);
+            let memory_source_key =
+                crate::agent_state::memory_source(journal_root, principal.connection)
+                    .map(|source| source.component().to_owned())
+                    .unwrap_or_default();
+            let Some((first_facet, _)) =
+                crate::may_see::reached_facet(journal_root, snapshot, &first_facet)
+            else {
+                return refusal;
+            };
+            let Some((second_facet, _)) =
+                crate::may_see::reached_facet(journal_root, snapshot, &second_facet)
+            else {
+                return refusal;
+            };
+            let stamp = now.to_rfc3339();
+            let record = SuggestionRecord {
+                id,
+                schema: SUGGESTION_SCHEMA,
+                status: "pending".to_owned(),
+                kind: request.kind,
+                basis: request.basis,
+                reason: request.reason,
+                value: json!({"keep_id":first}),
+                operation_id: request.operation_id,
+                request_sha256,
+                similarity_key,
+                authority_id: principal.connection.to_owned(),
+                source: memory_source_key,
+                label,
+                created_at: stamp.clone(),
+                updated_at: stamp,
+                target: json!({
+                    "entity_id":first, "facet":first_facet,
+                    "other_entity_id":second, "other_facet":second_facet,
+                }),
+                baseline: json!({"people":people}),
+                applied_stretch_id: None,
+                receipt: None,
+                asked: None,
+                ask_reason: None,
+                tool_result: tool_result.clone(),
+            };
+            write_new_record(journal_root, &record)
+                .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+            Ok(Prepared::new(tool_result, 1, Vec::new()))
+        }
         _ => refusal,
     }
+}
+
+fn cap_result(
+    journal_root: &Path,
+    records: &[SuggestionRecord],
+    connection: &str,
+    operation_id: &str,
+    now: DateTime<Utc>,
+) -> Option<Prepared> {
+    let pending_count = records
+        .iter()
+        .filter(|r| {
+            r.authority_id == connection
+                && super::owner::effective_status(journal_root, r) == "pending"
+        })
+        .count();
+    if pending_count >= PENDING_AGENT_CAP {
+        return Some(Prepared::new(
+            json!({
+                "schema": SUGGESTION_RESULT_SCHEMA,
+                "status": "rate_limited",
+                "next": "wait_for_review",
+                "operation_id": operation_id,
+                "message": "pending suggestions cap reached",
+            }),
+            1,
+            Vec::new(),
+        ));
+    }
+
+    let daily_count = records
+        .iter()
+        .filter(|r| {
+            r.authority_id == connection
+                && chrono::DateTime::parse_from_rfc3339(&r.created_at)
+                    .map(|dt| dt.with_timezone(&chrono::Utc).date_naive() == now.date_naive())
+                    .unwrap_or(false)
+        })
+        .count();
+    if daily_count >= DAILY_AGENT_CAP {
+        return Some(Prepared::new(
+            json!({
+                "schema": SUGGESTION_RESULT_SCHEMA,
+                "status": "rate_limited",
+                "next": "retry_tomorrow",
+                "operation_id": operation_id,
+                "message": "daily suggestions cap reached",
+            }),
+            1,
+            Vec::new(),
+        ));
+    }
+
+    None
 }
 
 pub fn random_32_lower_hex() -> String {

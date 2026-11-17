@@ -2622,3 +2622,289 @@ async fn line_card_uses_canonical_numbers_and_only_voice_or_owner_names() {
     .unwrap();
     assert_eq!(card()["now_lines"][0]["speaker"], "Ada");
 }
+
+fn suggest_same_person(root: &Path, first: &str, second: &str, operation: &str) -> Value {
+    dispatch_authenticated_tool_call(
+        root,
+        DispatchPrincipal {
+            connection: "bearer:test-agent",
+            agent_identity: "bearer:test-agent",
+        },
+        ToolName::SuggestCorrection,
+        Some(&json!({
+            "kind":"same_person", "target":{"reference":first,"other_reference":second}, "value":{},
+            "basis":"owner_said", "reason":"Use the person's name from the journal.",
+            "operation_id":operation,
+        })),
+        Utc::now(),
+    )
+    .unwrap()
+    .value
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn same_person_only_owner_can_choose_and_merge_with_durable_history() {
+    set_test_suggestions_ready(true);
+    super::TEST_SAME_PERSON_READY.set(true);
+    let journal = init_test_journal();
+    let root = journal.path();
+    setup_entity(root, "work", "ada", "Ada", &[]);
+    fs::rename(root.join("entities/ada"), root.join("entities/legacy-ada")).unwrap();
+    setup_entity(root, "work", "a-lovelace", "Ada Lovelace", &[]);
+    setup_entity(root, "private", "hidden", "Hidden", &[]);
+
+    assert_eq!(
+        suggest_same_person(root, "ada@work", "hidden@work", "hidden")["status"],
+        "refused"
+    );
+    assert_eq!(
+        suggest_same_person(root, "ada@work", "ada@work", "same")["status"],
+        "already_true"
+    );
+    let queued = suggest_same_person(root, "ada@work", "a-lovelace@work", "ada");
+    assert_eq!(queued["status"], "pending");
+    assert!(root.join("entities/legacy-ada/entity.json").exists());
+    let duplicate = suggest_same_person(root, "a-lovelace@work", "ada@work", "reverse");
+    assert_eq!(duplicate["status"], "already_exists");
+    assert_eq!(duplicate["suggestion_id"], queued["suggestion_id"]);
+    let id = queued["suggestion_id"].as_str().unwrap();
+    let url = format!("/app/agents/api/suggestions/{id}/accept");
+    let (_, list) = owner_call(
+        root,
+        "GET",
+        "/app/agents/api/suggestions?status=pending",
+        None,
+        true,
+    )
+    .await;
+    let card = &list["items"][0];
+    assert_eq!(card["change_parts"]["people"][0]["name"], "Ada");
+    assert_eq!(card["change_parts"]["people"][1]["name"], "Ada Lovelace");
+    assert_eq!(
+        card["change_parts"]["people"][1]["attachments"][0]["facet"],
+        "work"
+    );
+    assert_eq!(card["change_parts"]["keep_id"], "ada");
+    assert_eq!(card["can_undo"], false);
+    let switched = json!({"value":{"keep_id":"a-lovelace"}});
+    let (status, _) = owner_call(root, "POST", &url, Some(switched.clone()), false).await;
+    assert!(!status.is_success());
+    assert!(root.join("entities/legacy-ada/entity.json").exists());
+
+    set_force_suggestion_receipt_failure(true);
+    let (status, body) = owner_call(root, "POST", &url, Some(switched), true).await;
+    set_force_suggestion_receipt_failure(false);
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    let (status, body) = owner_call(root, "POST", &url, None, true).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let card = &body["suggestion"];
+    assert_eq!(card["status"], "accepted");
+    assert_eq!(card["value"]["keep_id"], "a-lovelace");
+    assert_eq!(card["change_parts"]["people"][0]["name"], "Ada");
+    assert_eq!(card["asked"], false);
+    assert_eq!(card["can_undo"], false);
+    let identity = solstone_core_entity::read_entity_identity(root, "a-lovelace")
+        .unwrap()
+        .unwrap();
+    assert_eq!(identity.value()["name"], "Ada Lovelace");
+    assert_eq!(identity.value()["aka"], json!(["Ada"]));
+    assert_eq!(
+        solstone_core_entity::merged_away(root, "ada")
+            .unwrap()
+            .as_deref(),
+        Some("a-lovelace")
+    );
+    let merges = solstone_core_entity::read_visible_history(root, "a-lovelace").unwrap();
+    let merges = merges
+        .iter()
+        .filter(|event| event.value()["kind"] == "merge")
+        .collect::<Vec<_>>();
+    assert_eq!(merges.len(), 1);
+    let event = merges[0].value();
+    assert_eq!(event["actor"]["kind"], "owner");
+    assert_eq!(event["operation"]["suggestion_id"], id);
+    assert!(event["operation"]["suggested_by"]["label"].is_string());
+    assert_eq!(
+        suggest_same_person(root, "ada@work", "a-lovelace@work", "ada")["existing_status"],
+        "accepted"
+    );
+    assert_eq!(
+        suggest_same_person(root, "a-lovelace@work", "ada@work", "merged")["status"],
+        "already_true"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn same_person_journal_candidate_and_owner_answers_take_precedence() {
+    set_test_suggestions_ready(true);
+    super::TEST_SAME_PERSON_READY.set(true);
+    let journal = init_test_journal();
+    let root = journal.path();
+    setup_entity(root, "work", "ada", "Ada", &[]);
+    setup_entity(root, "work", "a-lovelace", "Ada Lovelace", &[]);
+    let queued = suggest_same_person(root, "ada@work", "a-lovelace@work", "ada");
+    let id = queued["suggestion_id"].as_str().unwrap();
+    solstone_core_entity::record_merge_candidate(
+        root,
+        "work",
+        "20261114",
+        "Ada Lovelace",
+        "a-lovelace",
+        "Ada",
+        "ada",
+        "The results look similar.",
+        None,
+        Some(2),
+        Some(2),
+    )
+    .unwrap();
+    let (_, list) = owner_call(
+        root,
+        "GET",
+        "/app/agents/api/suggestions?status=pending",
+        None,
+        true,
+    )
+    .await;
+    assert_eq!(list["items"], json!([]));
+    assert_eq!(
+        suggest_same_person(root, "a-lovelace@work", "ada@work", "open")["status"],
+        "already_exists"
+    );
+    let (status, body) = owner_call(
+        root,
+        "POST",
+        &format!("/app/agents/api/suggestions/{id}/accept"),
+        None,
+        true,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["suggestion"]["status"], "stale");
+    solstone_core_entity::dismiss_merge_candidate(root, "work", "a-lovelace", "ada").unwrap();
+    assert_eq!(
+        suggest_same_person(root, "ada@work", "a-lovelace@work", "answered")["status"],
+        "owner_answered"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn same_person_rechecks_speaker_candidates_and_recovers_a_chained_merge() {
+    use solstone_core_speaker_resolve::{
+        name_variant_scan::NameVariantCandidate, speaker_review_candidates,
+    };
+    set_test_suggestions_ready(true);
+    super::TEST_SAME_PERSON_READY.set(true);
+    let journal = init_test_journal();
+    let root = journal.path();
+    for (id, name) in [
+        ("ada", "Ada"),
+        ("al", "Ada Lovelace"),
+        ("ada-l", "Ada L"),
+        ("bea", "Bea"),
+        ("bee", "Bee"),
+        ("jon", "Jon"),
+        ("john", "John"),
+    ] {
+        setup_entity(root, "work", id, name, &[]);
+    }
+    let candidate = NameVariantCandidate {
+        source_id: "bea".to_owned(),
+        source_label: "Bea".to_owned(),
+        target_id: "bee".to_owned(),
+        target_label: "Bee".to_owned(),
+        similarity: 0.98,
+        readiness: "ready".to_owned(),
+    };
+    let queued = suggest_same_person(root, "bea@work", "bee@work", "agent-first");
+    assert_eq!(queued["status"], "pending");
+    speaker_review_candidates::record_name_variant_candidate(root, &candidate).unwrap();
+    let (_, list) = owner_call(
+        root,
+        "GET",
+        "/app/agents/api/suggestions?status=pending",
+        None,
+        true,
+    )
+    .await;
+    assert_eq!(list["items"], json!([]));
+    assert_eq!(
+        suggest_same_person(root, "bee@work", "bea@work", "speaker-first")["status"],
+        "already_exists"
+    );
+    speaker_review_candidates::dismiss_candidate(root, "bea", "bee").unwrap();
+    assert_eq!(
+        suggest_same_person(root, "bee@work", "bea@work", "speaker-dismissed")["status"],
+        "owner_answered"
+    );
+
+    let queued = suggest_same_person(root, "ada@work", "al@work", "chain");
+    assert_eq!(queued["status"], "pending");
+    let id = queued["suggestion_id"].as_str().unwrap();
+    let url = format!("/app/agents/api/suggestions/{id}/accept");
+    set_force_suggestion_receipt_failure(true);
+    let (status, body) = owner_call(
+        root,
+        "POST",
+        &url,
+        Some(json!({"value":{"keep_id":"al"}})),
+        true,
+    )
+    .await;
+    set_force_suggestion_receipt_failure(false);
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    solstone_core_entity::commit_entity_merge(
+        root,
+        "al",
+        "ada-l",
+        solstone_core_entity::EntityMergeOptions {
+            keep_source_as_aka: true,
+        },
+        &solstone_core_entity::EncoderIdentity {
+            id: "unresolved".to_owned(),
+            sha256: "0".repeat(64),
+            width: 256,
+        },
+    )
+    .unwrap();
+    let (status, body) = owner_call(root, "POST", &url, None, true).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["suggestion"]["status"], "accepted");
+    assert_eq!(body["suggestion"]["value"]["keep_id"], "al");
+    assert_eq!(
+        solstone_core_entity::read_merge_log(root).unwrap().0.len(),
+        2
+    );
+    // This pair has never had an agent proposal. A manual merge records
+    // the missing source's original membership in the exact facet.
+    solstone_core_entity::commit_entity_merge(
+        root,
+        "jon",
+        "john",
+        solstone_core_entity::EntityMergeOptions {
+            keep_source_as_aka: true,
+        },
+        &solstone_core_entity::EncoderIdentity {
+            id: "unresolved".to_owned(),
+            sha256: "0".repeat(64),
+            width: 256,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        suggest_same_person(root, "jon@work", "john@work", "manual")["status"],
+        "already_true"
+    );
+    solstone_core_facets::create_facet(root, "other", "Other", "", "", "", None).unwrap();
+    let linked = root.join("facets/other/entities/john");
+    fs::create_dir_all(&linked).unwrap();
+    fs::write(
+        linked.join("entity.json"),
+        json!({"entity_id":"john"}).to_string(),
+    )
+    .unwrap();
+    assert_eq!(
+        suggest_same_person(root, "jon@other", "john@other", "guessed")["status"],
+        "refused"
+    );
+}

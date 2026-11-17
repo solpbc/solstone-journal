@@ -122,6 +122,14 @@ pub(crate) fn name_variants(args: &[String], journal: &Path) -> CliRun {
             )?;
         let (mut created, mut updated, mut suppressed) = (0, 0, 0);
         for candidate in &scan.candidates {
+            // Detection reads outside the trust lock. Recheck both IDs before
+            // publishing because an owner may have merged one in the interim.
+            let _trust = solstone_core_entity::hold_entity_trust_lock(journal)?;
+            if solstone_core_entity::merged_away(journal, &candidate.source_id)?.is_some()
+                || solstone_core_entity::merged_away(journal, &candidate.target_id)?.is_some()
+            {
+                continue;
+            }
             let (_, was_created, was_suppressed) = solstone_core_speaker_resolve::speaker_review_candidates::record_name_variant_candidate(journal, candidate)?;
             if was_created {
                 created += 1;

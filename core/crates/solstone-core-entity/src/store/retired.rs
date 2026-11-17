@@ -734,6 +734,9 @@ fn holds_another_entity(journal_root: &Path, identity_id: &str) -> Result<bool, 
 pub struct MergeLogRow {
     pub source_id: String,
     pub target_id: String,
+    pub merge_id: Option<String>,
+    pub suggestion_id: Option<String>,
+    pub source_facet_ids: Vec<String>,
     /// Milliseconds since the epoch, when the line carries them.
     pub ts_ms: Option<i64>,
 }
@@ -767,6 +770,15 @@ pub fn read_merge_log(journal_root: &Path) -> Result<(Vec<MergeLogRow>, Vec<Stri
             (Some(source), Some(target)) => rows.push(MergeLogRow {
                 source_id: source.to_owned(),
                 target_id: target.to_owned(),
+                merge_id: record["merge_id"].as_str().map(str::to_owned),
+                suggestion_id: record["suggestion_id"].as_str().map(str::to_owned),
+                source_facet_ids: record["source_facet_ids"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect(),
                 ts_ms: record.get("ts").and_then(Value::as_i64),
             }),
             _ => malformed.push(line.to_owned()),

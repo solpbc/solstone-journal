@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{SecondsFormat, Utc};
 use serde_json::Value;
+use solstone_core_entity::{EntityTrustLockError, hold_entity_trust_lock};
 use solstone_core_journal_io::durability::{ArtifactId, read_jsonl_durable};
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, ReadError, hold_lock, write_jsonl,
@@ -16,6 +17,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SpeakerReviewCandidateError {
+    #[error("speaker review candidate entity trust lock: {0}")]
+    Trust(#[from] EntityTrustLockError),
     #[error("speaker review candidates directory failed at {path}: {source}")]
     Directory {
         path: PathBuf,
@@ -52,6 +55,18 @@ pub fn load_candidates(journal_root: &Path) -> Result<Vec<Value>, SpeakerReviewC
         .collect())
 }
 
+/// Read without repair when checking an owner's answer before another write.
+pub fn load_candidates_strict(
+    journal_root: &Path,
+) -> Result<Vec<Value>, SpeakerReviewCandidateError> {
+    let rows = solstone_core_journal_io::read_jsonl::<serde_json::Map<String, Value>>(
+        &review_candidates_path(journal_root),
+        Vec::new(),
+        solstone_core_journal_io::MalformedPolicy::Raise,
+    )?;
+    Ok(rows.into_iter().map(Value::Object).collect())
+}
+
 /// Record a detected name variant without reopening an accepted or dismissed pair.
 pub fn record_name_variant_candidate(
     journal_root: &Path,
@@ -65,6 +80,7 @@ pub fn record_name_variant_candidate_checked(
     candidate: &crate::name_variant_scan::NameVariantCandidate,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(Value, bool, bool), SpeakerReviewCandidateError> {
+    let _trust = hold_entity_trust_lock(journal_root)?;
     let path = review_candidates_path(journal_root);
     create_parent(&path)?;
     let _lock = hold_lock(&path, LockOptions::default())?;
@@ -204,6 +220,7 @@ fn mutate_candidates<T>(
     journal_root: &Path,
     mutate: impl FnOnce(&mut [Value]) -> T,
 ) -> Result<T, SpeakerReviewCandidateError> {
+    let _trust = hold_entity_trust_lock(journal_root)?;
     let path = review_candidates_path(journal_root);
     create_parent(&path)?;
     let _lock = hold_lock(&path, LockOptions::default())?;

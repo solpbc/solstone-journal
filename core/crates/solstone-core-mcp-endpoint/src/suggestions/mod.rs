@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 pub mod owner;
+mod same_person;
 pub mod store;
 pub mod submit;
 
@@ -18,6 +19,19 @@ pub const DAILY_AGENT_CAP: usize = 50;
 #[cfg(not(test))]
 pub fn suggestions_ready() -> bool {
     crate::AGENT_SUGGESTIONS_READY
+}
+
+pub(crate) fn same_person_ready() -> bool {
+    #[cfg(test)]
+    if TEST_SAME_PERSON_READY.with(std::cell::Cell::get) {
+        return true;
+    }
+    crate::SAME_PERSON_SUGGESTIONS_READY
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TEST_SAME_PERSON_READY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 #[cfg(not(test))]

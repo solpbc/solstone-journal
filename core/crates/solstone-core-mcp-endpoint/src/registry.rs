@@ -312,6 +312,19 @@ fn suggest_correction_input_schema(_context: &SchemaContext<'_>) -> Value {
             }),
         ),
     ];
+    let mut kinds = Vec::from(kinds);
+    if crate::suggestions::same_person_ready() {
+        kinds.push((
+            "same_person",
+            json!({
+                "type": "object",
+                "properties": {"reference": reference, "other_reference": reference},
+                "required": ["reference", "other_reference"], "additionalProperties": false
+            }),
+            json!({"type": "object", "properties": {}, "additionalProperties": false}),
+        ));
+    }
+    let kind_names = kinds.iter().map(|(kind, _, _)| *kind).collect::<Vec<_>>();
     let rules = kinds
         .into_iter()
         .map(|(kind, target, value)| {
@@ -326,7 +339,7 @@ fn suggest_correction_input_schema(_context: &SchemaContext<'_>) -> Value {
         "properties": {
             "kind": {
                 "type": "string",
-                "enum": ["recording", "what_happened", "who_said_it", "name"],
+                "enum": kind_names,
                 "description": "the kind of correction to suggest"
             },
             "target": {
@@ -481,9 +494,15 @@ pub(crate) fn advertised_tools_list_with_facet_ids(
                 || snapshot.is_some_and(|snapshot| snapshot_allows(snapshot, entry))
         })
         .map(|entry| {
+            let mut description = entry.description.to_owned();
+            if entry.tool_name == crate::jsonrpc::ToolName::SuggestCorrection
+                && crate::suggestions::same_person_ready()
+            {
+                description.push_str(" if two people in the journal are the same person, use same_person with both references.");
+            }
             json!({
                 "name": entry.wire_name,
-                "description": entry.description,
+                "description": description,
                 "inputSchema": (entry.input_schema)(&context),
                 "title": entry.title,
                 "annotations": annotations(entry),

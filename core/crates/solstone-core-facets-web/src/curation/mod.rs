@@ -1378,6 +1378,9 @@ fn speaker_busy(error: &speaker_store::SpeakerReviewCandidateError) -> bool {
     matches!(
         error,
         speaker_store::SpeakerReviewCandidateError::Lock(LockError::Timeout(_))
+            | speaker_store::SpeakerReviewCandidateError::Trust(
+                solstone_core_entity::EntityTrustLockError::Lock(LockError::Timeout(_))
+            )
     )
 }
 

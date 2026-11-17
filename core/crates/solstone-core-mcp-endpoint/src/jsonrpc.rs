@@ -235,6 +235,9 @@ pub(crate) fn initialize_result() -> Value {
     let mut instructions = SERVER_INSTRUCTIONS.to_owned();
     if crate::suggestions::suggestions_ready() {
         instructions.push_str(SUGGESTION_INSTRUCTIONS);
+        if crate::suggestions::same_person_ready() {
+            instructions.push_str(" you can suggest that two people in the journal are the same person. give both person references and let the owner decide.");
+        }
     }
     json!({
         "protocolVersion": "2025-03-26",

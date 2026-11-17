@@ -530,6 +530,14 @@ pub fn load_merge_candidates(
         .collect())
 }
 
+/// A write admission must distinguish a missing owner answer from damaged rows.
+pub fn load_merge_candidates_strict(journal_root: &Path) -> Result<Vec<Value>, EntityStoreError> {
+    read_candidate_rows(
+        &review_candidates_path(journal_root)?,
+        MalformedPolicy::Raise,
+    )
+}
+
 pub(crate) fn mutate_candidates<T>(
     journal_root: &Path,
     mutate: impl FnOnce(&mut Vec<Value>) -> Result<T, EntityReviewCandidateError>,

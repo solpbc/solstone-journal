@@ -76,7 +76,7 @@ pub use map::{
 };
 pub use merge::{
     EntityMergeError, EntityMergeOptions, EntityMergePreview, EntityMergeReport,
-    commit_entity_merge, preview_entity_merge,
+    commit_entity_merge, commit_entity_merge_attributed, preview_entity_merge,
 };
 pub use merge_rollback::{entity_merge_recovery_pending, recover_interrupted_entity_merge};
 pub use observations::{
@@ -108,8 +108,9 @@ pub use review_candidates::{
     EntityMergeOpenClass, EntityReviewCandidateError, PreparedMergeProposals,
     accept_merge_candidate, cmp_composite_then_key, dismiss_merge_candidate,
     entity_merge_open_class, entity_merge_row_key, find_active_recorded_merge, json_i64,
-    load_merge_candidates, prepare_merge_proposals, publish_merge_proposals,
-    record_merge_candidate, record_merge_candidate_checked, standing_merge_for_suggestion,
+    load_merge_candidates, load_merge_candidates_strict, prepare_merge_proposals,
+    publish_merge_proposals, record_merge_candidate, record_merge_candidate_checked,
+    standing_merge_for_suggestion,
 };
 pub use review_policy::{
     AmbiguityGroupResolveRequest, ENTITY_REVIEW_POLICY_VERSION, PREFIX_CUTOFF,

@@ -23,6 +23,8 @@ use crate::suggestions::store::{
 };
 use crate::suggestions::submit::sanitize_label;
 
+use super::same_person;
+
 #[derive(Deserialize, Default)]
 pub struct ListQuery {
     pub agent: Option<String>,
@@ -138,6 +140,7 @@ fn find_existing_effect(
     record: &SuggestionRecord,
 ) -> Option<(Value, SuggestionReceipt)> {
     match record.kind.as_str() {
+        "same_person" => same_person::existing_effect(journal_root, record),
         "recording" | "what_happened" => {
             let facet = record.target.get("facet").and_then(Value::as_str)?;
             let day = record.target.get("day").and_then(Value::as_str)?;
@@ -372,6 +375,18 @@ pub async fn accept_suggestion(
         Err(err) => return refusal("storage_error", err, StatusCode::INTERNAL_SERVER_ERROR),
     };
 
+    let _trust = if record.kind == "same_person" {
+        let trust = match solstone_core_entity::hold_entity_trust_lock(&journal) {
+            Ok(trust) => trust,
+            Err(error) => return refusal("entity_busy", error, StatusCode::CONFLICT),
+        };
+        if let Err(error) = solstone_core_entity::recover_interrupted_entity_merge(&journal) {
+            return refusal("storage_error", error, StatusCode::INTERNAL_SERVER_ERROR);
+        }
+        Some(trust)
+    } else {
+        None
+    };
     if let Err(error) = reconcile_pending_effect(&journal, &mut record) {
         return refusal("storage_error", error, StatusCode::INTERNAL_SERVER_ERROR);
     }
@@ -435,6 +450,15 @@ pub async fn accept_suggestion(
                     );
                 }
                 json!({ "text": text, "mode": mode })
+            } else if record.kind == "same_person" {
+                let Some(value) = same_person::accept_value(&record, &edit_val) else {
+                    return refusal(
+                        "invalid_body",
+                        "choose one of the two people",
+                        StatusCode::BAD_REQUEST,
+                    );
+                };
+                value
             } else {
                 record.value.clone()
             }
@@ -868,6 +892,10 @@ pub async fn accept_suggestion(
                 };
                 (receipt, false, None)
             }
+            "same_person" => match same_person::apply(&journal, &record, &accepted_value) {
+                Ok(receipt) => (receipt, false, None),
+                Err(error) => return refusal("mutation_failed", error, StatusCode::CONFLICT),
+            },
             _ => return refusal("invalid_kind", "unknown kind", StatusCode::BAD_REQUEST),
         };
 
@@ -1286,6 +1314,7 @@ pub fn project_card(journal_root: &Path, record: &SuggestionRecord) -> Value {
         "name" => {
             json!({"from":record.baseline.get("name"), "to":record.value.get("text"), "mode":record.value.get("mode")})
         }
+        "same_person" => same_person::change_parts(journal_root, record, status),
         _ => json!({}),
     };
     let part = |key| {
@@ -1297,6 +1326,12 @@ pub fn project_card(journal_root: &Path, record: &SuggestionRecord) -> Value {
             .to_owned()
     };
     let place = match record.kind.as_str() {
+        "same_person" => solstone_core_journal_link::Place::Person {
+            id: record.value["keep_id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+        },
         "name" => solstone_core_journal_link::Place::Person {
             id: part("entity_id"),
         },
@@ -1505,6 +1540,7 @@ pub(crate) fn effective_status<'a>(journal_root: &Path, record: &'a SuggestionRe
 
 pub fn is_record_stale(journal_root: &Path, record: &SuggestionRecord) -> bool {
     match record.kind.as_str() {
+        "same_person" => same_person::is_stale(journal_root, record),
         "recording" | "what_happened" => {
             let facet = record
                 .target

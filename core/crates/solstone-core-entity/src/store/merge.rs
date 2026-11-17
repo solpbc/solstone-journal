@@ -107,6 +107,7 @@ pub(crate) struct FacetMergeStats {
     pub merged_count: usize,
     pub observations_appended: usize,
     pub touched_facets: Vec<String>,
+    pub source_facet_ids: Vec<String>,
     pub removed_source_dirs: Vec<String>,
     pub unreadable_links: usize,
 }
@@ -360,6 +361,46 @@ pub(crate) fn commit_entity_merge_with_injector(
     fallback_encoder: &EncoderIdentity,
     injector: Option<&FailureInjector>,
 ) -> Result<EntityMergeReport, EntityMergeError> {
+    commit_entity_merge_inner(
+        journal,
+        source_id,
+        target_id,
+        options,
+        fallback_encoder,
+        None,
+        injector,
+    )
+}
+
+/// Commit through the same recoverable merge, recording who suggested the owner's action.
+pub fn commit_entity_merge_attributed(
+    journal: &Path,
+    source_id: &str,
+    target_id: &str,
+    options: EntityMergeOptions,
+    fallback_encoder: &EncoderIdentity,
+    context: &EntityOperationContext,
+) -> Result<EntityMergeReport, EntityMergeError> {
+    commit_entity_merge_inner(
+        journal,
+        source_id,
+        target_id,
+        options,
+        fallback_encoder,
+        Some(context),
+        None,
+    )
+}
+
+fn commit_entity_merge_inner(
+    journal: &Path,
+    source_id: &str,
+    target_id: &str,
+    options: EntityMergeOptions,
+    fallback_encoder: &EncoderIdentity,
+    context: Option<&EntityOperationContext>,
+    injector: Option<&FailureInjector>,
+) -> Result<EntityMergeReport, EntityMergeError> {
     let canonical_journal =
         solstone_core_journal_io::realpath_non_strict(journal).map_err(SnapshotError::Path)?;
     let journal = canonical_journal.as_path();
@@ -405,6 +446,7 @@ pub(crate) fn commit_entity_merge_with_injector(
         counts: Value::Null,
     };
     let mut touched_facets = Vec::new();
+    let mut source_facet_ids = Vec::new();
     let mut removed_source_dirs = Vec::new();
     let mut stats = MergeStats::default();
     for phase in PHASES {
@@ -436,13 +478,29 @@ pub(crate) fn commit_entity_merge_with_injector(
                     stats.facets_merged = result.merged_count;
                     stats.facets_observations_appended = result.observations_appended;
                     touched_facets = result.touched_facets;
+                    source_facet_ids = result.source_facet_ids;
                     removed_source_dirs = result.removed_source_dirs;
                 }),
             "history" => (|| {
-                let saved = save_entity_identity(journal, target_id, &plan.target_after, Some(&EntityOperationContext {
-                    kind: EntityOperationKind::Merge, caller: Value::Null, actor: Value::Null,
-                    metadata: json!({"merge_id":merge_id,"source_id":source_id,"target_id":target_id}),
-                })).map_err(EntityMergeError::Write)?;
+                let mut metadata = context
+                    .and_then(|context| context.metadata.as_object())
+                    .cloned()
+                    .unwrap_or_default();
+                metadata.insert("merge_id".to_owned(), json!(merge_id));
+                metadata.insert("source_id".to_owned(), json!(source_id));
+                metadata.insert("target_id".to_owned(), json!(target_id));
+                let saved = save_entity_identity(
+                    journal,
+                    target_id,
+                    &plan.target_after,
+                    Some(&EntityOperationContext {
+                        kind: EntityOperationKind::Merge,
+                        caller: context.map_or(Value::Null, |context| context.caller.clone()),
+                        actor: context.map_or(Value::Null, |context| context.actor.clone()),
+                        metadata: Value::Object(metadata),
+                    }),
+                )
+                .map_err(EntityMergeError::Write)?;
                 // The restore guard refuses any restore across this event.
                 if saved.event.is_none() {
                     return Err(EntityMergeError::Refused(
@@ -485,7 +543,15 @@ pub(crate) fn commit_entity_merge_with_injector(
                 .map_err(|_| {
                     EntityMergeError::Refused("merge audit timestamp exceeds u64".to_owned())
                 })?;
-                append_jsonl(path, &json!({"ts":ts,"merge_id":merge_id,"source_id":source_id,"source_display_name":plan.source_display_name,"target_id":target_id,"target_display_name":plan.target_display_name,"principal_transferred":plan.principal_transferred,"counts":audit_counts(&stats, plan.aliases_added, plan.emails_added, plan.principal_transferred),"caller":Value::Null})).map_err(EntityMergeError::Audit)
+                let mut audit = json!({"ts":ts,"merge_id":merge_id,"source_id":source_id,"source_display_name":plan.source_display_name,"target_id":target_id,"target_display_name":plan.target_display_name,"principal_transferred":plan.principal_transferred,"counts":audit_counts(&stats, plan.aliases_added, plan.emails_added, plan.principal_transferred),"caller":Value::Null});
+                if plan.source_is_person && !source_facet_ids.is_empty() {
+                    audit["source_facet_ids"] = json!(source_facet_ids);
+                }
+                if let Some(id) = context.and_then(|context| context.metadata.get("suggestion_id"))
+                {
+                    audit["suggestion_id"] = id.clone();
+                }
+                append_jsonl(path, &audit).map_err(EntityMergeError::Audit)
             })(),
             "segments" => {
                 merge_segment_labels(journal, source_id, target_id, Some(&mut rollback), injector)
@@ -1111,7 +1177,21 @@ pub(crate) fn merge_facets(
         if source_folders.is_empty() {
             continue;
         }
-        let (_, unreadable) = dirs.scan().map_err(refused)?;
+        let (links, unreadable) = dirs.scan().map_err(refused)?;
+        if links
+            .iter()
+            .any(|link| link.id_written && link.entity_id == source_id && !link.detached())
+        {
+            // A later scoped read may follow a retired source only when we
+            // can prove that this exact facet held a live source link.
+            let path =
+                contained_path(journal, &format!("facets/{facet}/facet.json")).map_err(refused)?;
+            if let Ok(value) = read_json::<Value>(path, Value::Null, MalformedPolicy::Raise)
+                && let Some(id) = value["id"].as_str().filter(|id| !id.is_empty())
+            {
+                stats.source_facet_ids.push(id.to_owned());
+            }
+        }
         stats.unreadable_links += unreadable.len();
         let target_was_linked = dirs.find(target_id).map_err(refused)?.is_some();
         let mut captured = HashSet::new();
@@ -1342,6 +1422,7 @@ struct MergePlan {
     aliases_added: usize,
     emails_added: usize,
     source_display_name: String,
+    source_is_person: bool,
     /// The source's name, as activity records wrote it.
     source_names: Vec<String>,
     target_display_name: String,
@@ -1487,6 +1568,7 @@ fn plan_merge(
         aliases_added: aliases.len().saturating_sub(aliases_before.len()),
         emails_added: emails.len().saturating_sub(emails_before.len()),
         source_display_name,
+        source_is_person: is_person(&source),
         source_names,
         target_display_name,
         principal_transferred,
