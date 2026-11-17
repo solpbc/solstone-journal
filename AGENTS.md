@@ -124,6 +124,9 @@ Verified against `Makefile`. Grouped by use.
 | `make build-native-sol-inventory` | Regenerate the compiled `solstone call` inventory after an `authority.toml` change. A Rust `make ci` test refuses stale authority sources. `make check-native-sol-inventory` remains a manual exact-output check. |
 
 Use the narrowest applicable `make check-rust-*` target for a focused change, then `make test` for selected unit evidence and `make ci` before commit. Run `make ci-full` on the exact release tree for full host evidence; a change lands on the tests that cover it and `make ci`, not on `make ci-full`.
+
+Run a backgrounded gate bare (`make ci > ci.log 2>&1 &`) so the job's exit status is the gate's own. With `; echo rc=$?` appended, the job reports `echo`'s exit 0 over a red tree. Read the gate's result before you commit or push, and never chain a push onto the command that reads its output.
+
 The native Windows rail is operator-run and deliberately separate from
 `ci-full`. `make win-host-ci` refuses untracked, non-ignored files, binds the
 transferred Git snapshot to the workspace lockfile digest, and reports success
