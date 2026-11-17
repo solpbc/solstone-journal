@@ -138,6 +138,10 @@ path = "tests/journal_clock.rs"
 name = "date_nav_clock"
 path = "tests/date_nav_clock.rs"
 
+[[test]]
+name = "focus_pick_dom"
+path = "tests/focus_pick_dom.rs"
+
 # Cargo auto-discovery is disabled; this custom Node target drives global shell action handlers.
 [[test]]
 name = "shell_global_facet_contract_dom"
