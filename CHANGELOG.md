@@ -19,6 +19,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on linux computers with arm processors, media offload no longer stops every run before it begins. when it stops early, `solstone journal backup offload run` now says why.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed older days getting stuck before their daily briefing when an empty audio transcript had no recording beside it.
 - people and activity details could be left out when nightly photo maintenance overlapped with thinking. this resolves that conflict.

@@ -499,10 +499,7 @@ impl OwnedOffloadCliRun {
             match &self.custody {
                 // Name why admission refused; the closed message carries no secret.
                 Custody::AdmissionFailure { failure, .. } => {
-                    format!(
-                        "offload could not start: {}.\n{guidance}\n",
-                        failure.error()
-                    )
+                    format!("offload stopped: {}.\n{guidance}\n", failure.error())
                 }
                 _ => format!("{guidance}\n"),
             }
