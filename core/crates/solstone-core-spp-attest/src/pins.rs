@@ -14,8 +14,10 @@ use crate::{
 // Image 4 is no longer admitted in either firmware state: it lacks image 5's
 // measured partition table. An unqualified prediction never enters this set.
 // Each pin's authenticated manifests and status mode live in nvgpu/rims.rs.
-pub const PRODUCTION_PCR_SHA256_PINS: &[&str] =
-    &["8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf"];
+pub const PRODUCTION_PCR_SHA256_PINS: &[&str] = &[
+    "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
+    "8391a8217575b2c33f063565a2c60fae9c7b5a7d54c852e4bc4223eac3a6dfb9",
+];
 
 // The key that signs Azure's confidential-VM firmware (the paravisor that
 // implements the vTPM behind every PCR). The PCR pins say what the engine
@@ -65,11 +67,42 @@ pub const IMAGE_5_APPLICATION_PCRS: ApplicationPcrValues = [
     ),
 ];
 
+// Complete application registers for conf-proc 1630bf4. The qualified
+// post-roll fingerprint selects this vector as one indivisible policy.
+pub const IMAGE_6_APPLICATION_PCRS: ApplicationPcrValues = [
+    (
+        4,
+        decode_hex("b0d2d3940c2615c47b6b263ab9ae9ff13f71f5be57db7b445ba887fd1cf2a749"),
+    ),
+    (
+        7,
+        decode_hex("6ea866422436b46a50e6f2313be40c782a57aee0c71833f9f3c0b6ccfb67c73d"),
+    ),
+    (
+        9,
+        decode_hex("99c49cb4fa664bc262f1125327cad5dd5b88f687d63ee2f9c5b78bd187171a7e"),
+    ),
+    (
+        11,
+        decode_hex("82faceec9967f5b56c64d6e25fae7a7420e454b6471478fa68da252fef99a46d"),
+    ),
+    (12, [0u8; 32]),
+    (13, [0u8; 32]),
+    (14, [0u8; 32]),
+    (
+        15,
+        decode_hex("ee22ecf6651b12ade6fd7ab54a8743ea2606e8ce130446ff86792fdb55d3f0e6"),
+    ),
+];
+
 /// Each admitted fingerprint and its complete published register values.
-pub const PUBLISHED_APPLICATION_PCR_PROFILES: &[(&str, &ApplicationPcrValues)] = &[(
-    "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
-    &IMAGE_5_APPLICATION_PCRS,
-)];
+pub const PUBLISHED_APPLICATION_PCR_PROFILES: &[(&str, &ApplicationPcrValues)] = &[
+    (
+        "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
+        &IMAGE_5_APPLICATION_PCRS,
+    ),
+    ("8391a8217575b2c33f063565a2c60fae9c7b5a7d54c852e4bc4223eac3a6dfb9", &IMAGE_6_APPLICATION_PCRS),
+];
 
 /// Complete register policies for the admitted published builds.
 pub fn published_application_pcr_profiles() -> ApplicationPcrProfiles {
@@ -153,7 +186,8 @@ mod tests {
         test_support::fixture_bytes,
     };
 
-    const PUBLISHED_BUILD_QUOTES: &[&str] = &["image5-post-roll-quote.pcrs"];
+    const PUBLISHED_BUILD_QUOTES: &[&str] =
+        &["image5-post-roll-quote.pcrs", "image6-post-roll-quote.pcrs"];
 
     /// Image 4's two reboot-qualified states, admitted until image 5 replaced it.
     const RETIRED_BUILD_QUOTES: &[&str] =

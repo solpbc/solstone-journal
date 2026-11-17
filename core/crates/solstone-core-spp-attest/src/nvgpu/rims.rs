@@ -148,11 +148,18 @@ impl GpuProfile {
 // separate from CPU admission: a profile here never adds its fingerprint to
 // pins.rs, and the integrity test refuses an admitted pin without a profile.
 // The admitted build uses authenticated, image-carried status proofs.
-const PRODUCTION_PROFILES: &[(&str, ManifestSet, StatusMode)] = &[(
-    "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
-    ManifestSet::QUALIFIED_595_71_05,
-    StatusMode::OfflineSignedAge,
-)];
+const PRODUCTION_PROFILES: &[(&str, ManifestSet, StatusMode)] = &[
+    (
+        "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
+        ManifestSet::QUALIFIED_595_71_05,
+        StatusMode::OfflineSignedAge,
+    ),
+    (
+        "8391a8217575b2c33f063565a2c60fae9c7b5a7d54c852e4bc4223eac3a6dfb9",
+        ManifestSet::QUALIFIED_595_91_07,
+        StatusMode::OfflineSignedAge,
+    ),
+];
 
 /// Every reference manifest a production profile uses, once each, in profile
 /// order. Packaged clients ship and check exactly this set.
@@ -288,6 +295,32 @@ fn verify_digest(xml: &[u8], expected: &str) -> Result<(), GpuAppraisalReason> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_ios_helper_checks_exactly_the_production_manifests() {
+        // The iOS helper is its own workspace and keeps its own table; an
+        // admitted image whose manifests it lacks would fail on every iPhone.
+        let source = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tools/ios-runtime/appraisal-helper/src/lib.rs"
+        ))
+        .expect("iOS helper source");
+        let table = source
+            .split("const QUALIFIED_RIMS")
+            .nth(1)
+            .and_then(|rest| rest.split("];").next())
+            .expect("QUALIFIED_RIMS table");
+        let quoted: Vec<&str> = table.split('"').skip(1).step_by(2).collect();
+        let helper: Vec<(&str, &str)> = quoted.chunks(2).map(|pair| (pair[0], pair[1])).collect();
+        let mut production: Vec<(&str, &str)> = production_rims()
+            .iter()
+            .map(|rim| (rim.filename(), rim.sha256()))
+            .collect();
+        let mut helper_sorted = helper.clone();
+        production.sort_unstable();
+        helper_sorted.sort_unstable();
+        assert_eq!(helper_sorted, production);
+    }
 
     #[test]
     fn every_admitted_cpu_profile_has_integrity_checked_collateral() {

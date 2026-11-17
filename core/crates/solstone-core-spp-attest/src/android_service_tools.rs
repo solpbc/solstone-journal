@@ -58,7 +58,12 @@ const fn is_dot_component(bytes: &[u8]) -> bool {
 
 const _: () = assert!(staging_component_is_single(ANDROID_APPRAISAL_STAGING_DIR));
 
-const ANDROID_SERVICE_TOOL_FILE_COUNT: usize = 8;
+// The native tools and the CA bundle, plus every production reference manifest.
+const ANDROID_SERVICE_TOOL_FIXED_FILE_COUNT: usize = 5;
+
+fn android_service_tool_file_count() -> usize {
+    ANDROID_SERVICE_TOOL_FIXED_FILE_COUNT + crate::nvgpu::production_rims().len()
+}
 
 const NVATTEST_CLI_NEEDED: &[&str] = &["libnvat.so", "libm.so", "libdl.so", "libc.so"];
 const NVAT_LIBRARY_NEEDED: &[&str] = &["libz.so", "liblog.so", "libdl.so", "libm.so", "libc.so"];
@@ -1365,10 +1370,11 @@ pub fn admit_android_service_tools(
             }
         }
     }
-    if files.len() != ANDROID_SERVICE_TOOL_FILE_COUNT {
+    let expected_files = android_service_tool_file_count();
+    if files.len() != expected_files {
         return Err(AndroidServiceToolsRefusal::ManifestInvalid {
             detail: format!(
-                "manifest files set must contain exactly {ANDROID_SERVICE_TOOL_FILE_COUNT} entries, found {}",
+                "manifest files set must contain exactly {expected_files} entries, found {}",
                 files.len()
             ),
         });
@@ -1759,7 +1765,7 @@ mod tests {
         fs::write(resource_dir.join(ANDROID_CA_BUNDLE_FILENAME), &ca_bytes).unwrap();
 
         let mut rim_bytes = Vec::new();
-        for rim in crate::nvgpu::ManifestSet::QUALIFIED_595_71_05.entries() {
+        for rim in crate::nvgpu::production_rims() {
             let bytes = rim.xml().to_vec();
             fs::write(resource_dir.join(rim.filename()), &bytes).unwrap();
             rim_bytes.push(bytes);
@@ -2639,7 +2645,7 @@ mod tests {
         fs::create_dir(&resource_dir).unwrap();
         let ca_bytes = solstone_core_distribution::read_test_ca_bundle_pem().unwrap();
         fs::write(resource_dir.join(ANDROID_CA_BUNDLE_FILENAME), &ca_bytes).unwrap();
-        for rim in crate::nvgpu::ManifestSet::QUALIFIED_595_71_05.entries() {
+        for rim in crate::nvgpu::production_rims() {
             fs::write(resource_dir.join(rim.filename()), rim.xml()).unwrap();
         }
 

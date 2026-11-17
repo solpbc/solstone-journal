@@ -106,7 +106,7 @@ fn setup_fixture_roots(native_dir: &Path, resource_dir: &Path) {
     let ca_bytes = read_test_ca_bundle_pem().unwrap();
     fs::write(resource_dir.join(ANDROID_CA_BUNDLE_FILENAME), ca_bytes).unwrap();
 
-    for rim in ManifestSet::QUALIFIED_595_71_05.entries() {
+    for rim in solstone_core_spp_attest::nvgpu::production_rims() {
         fs::write(resource_dir.join(rim.filename()), rim.xml()).unwrap();
     }
 }

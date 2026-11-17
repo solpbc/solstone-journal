@@ -33,10 +33,14 @@ const MAX_PROOFS_BYTES: usize = 16_384;
 #[cfg(any(target_os = "ios", test))]
 const MAX_RIM_BYTES: u64 = 16 * 1024 * 1024;
 #[cfg(any(target_os = "ios", test))]
-const QUALIFIED_RIMS: [(&str, &str); 3] = [
+const QUALIFIED_RIMS: [(&str, &str); 4] = [
     (
         "NV_GPU_DRIVER_GH100_595.71.05.xml",
         "143005c060a5eb2866f7db046c234d27f87ae386cab20ab40d9daa706be46ea4",
+    ),
+    (
+        "NV_GPU_DRIVER_GH100_595.91.07.xml",
+        "062a154aaec72a87cc943b7242b9be32603b3c23f450b854ecab68391c7e1662",
     ),
     (
         "NV_GPU_VBIOS_1010_0210_886_96009F0004.xml",
@@ -508,6 +512,9 @@ mod tests {
         match name {
             "NV_GPU_DRIVER_GH100_595.71.05.xml" => include_bytes!(
                 "../../../../core/crates/solstone-core-spp-attest/rims/NV_GPU_DRIVER_GH100_595.71.05.xml"
+            ),
+            "NV_GPU_DRIVER_GH100_595.91.07.xml" => include_bytes!(
+                "../../../../core/crates/solstone-core-spp-attest/rims/NV_GPU_DRIVER_GH100_595.91.07.xml"
             ),
             "NV_GPU_VBIOS_1010_0210_886_96009F0004.xml" => include_bytes!(
                 "../../../../core/crates/solstone-core-spp-attest/rims/NV_GPU_VBIOS_1010_0210_886_96009F0004.xml"

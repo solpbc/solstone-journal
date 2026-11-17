@@ -1051,8 +1051,7 @@ mod tests {
 
     fn valid_receipt() -> IosGpuAppraisalReceipt {
         let qualified_rims: Vec<IosPackagedRimEntry> =
-            crate::nvgpu::ManifestSet::QUALIFIED_595_71_05
-                .entries()
+            crate::nvgpu::production_rims()
                 .iter()
                 .map(|rim| IosPackagedRimEntry {
                     filename: rim.filename().to_string(),
