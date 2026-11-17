@@ -306,7 +306,7 @@ test('a second pick ends the first, on another select too', async () => {
   p.pick(a, view.ctx);
   p.clock.advance(200);
   p.pick(b, view.ctx);
-  assert.ok(p.listening(a) === 0, 'the first select\'s blur listener went');
+  assert.ok(p.listening(p.doc) === 5, 'one wait on the page: four inputs and the blur');
   assert.ok(view.ctx.held().timeouts === 1, 'one window left: the second\'s');
   p.clock.advance(865);
   p.blurToBody(b);
@@ -345,6 +345,38 @@ test('the earlier wait\'s queued landing is cleared by the next call', async () 
   p.clock.advance(10);
   assert.ok(p.doc.activeElement === heading, 'the old wait landed nothing on the select');
   assert.ok(view.ctx.held().timeouts === 0, 'and left nothing');
+});
+
+test('the select drawn again before the blur: the new copy, blurred, gets focus back', async () => {
+  // A refused write or a poll redraws the list; the view puts focus on the
+  // new copy, and the phone's blur then takes it from that copy.
+  const p = makePage();
+  const view = await p.mountView();
+  const old = p.make('SELECT');
+  p.pick(old, view.ctx);
+  p.clock.advance(200);
+  const copy = p.make('SELECT');
+  old.remove();
+  copy.focus();
+  p.clock.advance(665);
+  p.blurToBody(copy);
+  p.clock.advance(0);
+  assert.ok(p.doc.activeElement === copy, 'back on the new copy');
+  assert.ok(p.listening(p.doc) === 0 && view.ctx.held().timeouts === 0, 'nothing left');
+});
+
+test('something that isn\'t a select, blurred while the wait is armed, is left', async () => {
+  const p = makePage();
+  const view = await p.mountView();
+  const select = p.make('SELECT');
+  const input = p.make('INPUT');
+  p.pick(select, view.ctx);
+  // Focus on the field with no event the wait hears, then the field's blur.
+  p.doc.activeElement = input;
+  p.clock.advance(100);
+  p.blurToBody(input);
+  p.clock.advance(10);
+  assert.ok(p.doc.activeElement === p.doc.body, 'not pulled back to the select');
 });
 
 test('not armed: focus elsewhere, the select hidden, or gone', async () => {

@@ -106,13 +106,18 @@
       offs.push(life.on(doc, type, end, { capture: true }));
     });
     // Landed a task later: the menu is still closing as the blur arrives.
-    offs.push(life.on(select, 'focusout', () => {
+    // The view may have drawn the select again since the pick (a refused
+    // write, a poll) and put focus on the new copy, which is then the one
+    // blurred; it is heard on the document, and focus goes back to it.
+    offs.push(life.on(doc, 'focusout', (event) => {
+      const blurred = event.target;
+      if (blurred !== select && blurred?.tagName !== 'SELECT') return;
       life.clearTimeout(landing);
       landing = life.setTimeout(() => {
         end();
-        refocus(doc, true, [select]);
+        refocus(doc, true, [blurred, select]);
       }, 0);
-    }));
+    }, { capture: true }));
     expiry = life.setTimeout(end, PICK_BLUR_MS);
     pickWaits.set(life, end);
     return true;
