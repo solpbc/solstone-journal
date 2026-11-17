@@ -27,12 +27,16 @@ class El {
   fire(name, event = {}) { return this.listeners[name]({ currentTarget: this, target: this, ...event }); }
   focus() { document.activeElement = this; }
   setAttribute(name, value) { (this.attributes ||= {})[name] = String(value); }
+  getAttribute(name) { return this.attributes && name in this.attributes ? this.attributes[name] : null; }
+  removeAttribute(name) { if (this.attributes) delete this.attributes[name]; }
+  contains(node) { return node === this || this.children.some((child) => child.contains && child.contains(node)); }
   all(cls) { const out = []; for (const child of this.children) { if (child.className === cls) out.push(child); if (child.all) out.push(...child.all(cls)); } return out; }
 }
-const ids = ['trashBar', 'trashBarIdle', 'trashBarSome', 'trashCount', 'trashSelectAll', 'trashSelectAllLabel', 'trashEmptyBtn', 'trashRecoverBtn', 'trashEraseBtn', 'trashResult', 'trashList', 'trashEraseAfterDays', 'trashHeading', 'trashConfirmHeading', 'trashConfirmBody', 'trashConfirmCancel', 'trashConfirmErase', 'trashConfirmModal', 'trashConfirmChoice', 'trashBackupsField', 'trashBackupsLine', 'trashBackupsSetting', 'trashBackupsNote', 'trashBackupsSettingLabel', 'trashBackupsMoreSummary', 'trashBackupsMoreList'];
-const byId = Object.fromEntries(ids.map((id) => [id, new El('div')]));
+const ids = ['section-trash', 'trashBar', 'trashBarIdle', 'trashBarSome', 'trashCount', 'trashSelectAll', 'trashSelectAllLabel', 'trashEmptyBtn', 'trashRecoverBtn', 'trashEraseBtn', 'trashResult', 'trashList', 'trashEraseAfterDays', 'trashHeading', 'trashConfirmHeading', 'trashConfirmBody', 'trashConfirmCancel', 'trashConfirmErase', 'trashConfirmModal', 'trashConfirmChoice', 'trashBackupsField', 'trashBackupsLine', 'trashBackupsSetting', 'trashBackupsNote', 'trashBackupsSettingLabel', 'trashBackupsMoreSummary', 'trashBackupsMoreList'];
+const TRASH_OPENER_IDS = ['trashRecoverBtn', 'trashEraseBtn', 'trashEmptyBtn'];
+const byId = Object.fromEntries(ids.map((id) => { const el = new El('div'); el.id = id; return [id, el]; }));
 const modal = byId.trashConfirmModal;
-modal._openAccessible = () => { modal.open = true; };
+modal._openAccessible = (trigger) => { modal.open = true; modal._triggerEl = trigger; };
 modal._closeAccessible = () => { modal.open = false; };
 byId.trashEraseAfterDays.disabled = true;
 const document = {
@@ -48,6 +52,8 @@ const calls = [];
 const statuses = [];
 const saves = [];
 const window = {
+  // The shell's focus helpers, as the page has them.
+  SolFocus: require(path.join(crateDir, '..', 'solstone-core-convey-shell', 'assets', 'static', 'focus.js')),
   JournalClock: { dayKey: (instant) => instant.toISOString().slice(0, 10).replace(/-/g, ''), placeNote: () => {} },
   JournalFormat: { day: (key) => key, stream: (stream) => `label:${stream}`, },
   apiJson: async (url, options) => {
@@ -68,9 +74,11 @@ const sandbox = {
   // The mount's read and write, and its state, as the trash block sees them.
   settingsApi: (url, options) => window.apiJson(url, options),
   ctx: { disposed: false },
+  settingsPage: null,
 };
+sandbox.settingsPage = document;
 vm.createContext(sandbox);
-vm.runInContext(`${sourceNames}\n${html.slice(start, end)};this.api={TRASH_COPY,TRASH_WORDS,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,renderTrashBackups,trashSelected,trashWord,trashRowNote,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
+vm.runInContext(`${sourceNames}\n${html.slice(start, end)};this.api={trashLandings,TRASH_COPY,TRASH_WORDS,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,renderTrashBackups,trashSelected,trashWord,trashRowNote,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
 const { api } = sandbox;
 const C = api.TRASH_COPY;
 api.setupTrash();
@@ -184,6 +192,49 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   byId.trashConfirmErase.fire('click');
   await flush();
   assert.deepStrictEqual(JSON.parse(calls.find((call) => call.url === '/app/settings/api/trash/empty').options.body), { backups: false }, 'empty sends only the backups choice');
+
+  // One act at a time: a held erase keeps its opener busy, never disabled,
+  // the other acts are off without being busy, and no press starts another.
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [seg('a'), seg('c')] };
+  await api.loadTrash();
+  byId.trashSelectAll.fire('change');
+  calls.length = 0;
+  let releaseErase = null;
+  answers['/app/settings/api/trash/erase'] = () => new Promise((resolve) => { releaseErase = () => resolve({ done: ['a', 'c'], failed: [] }); });
+  byId.trashEraseBtn.fire('click');
+  await flush();
+  byId.trashConfirmErase.fire('click');
+  await flush();
+  const attr = (el, name) => el.getAttribute(name);
+  assert.ok(attr(byId.trashEraseBtn, 'aria-busy') === 'true' && attr(byId.trashEraseBtn, 'aria-disabled') === 'true', 'the pressed opener is busy');
+  assert.ok(!byId.trashEraseBtn.disabled, 'and not disabled');
+  assert.ok(attr(byId.trashRecoverBtn, 'aria-disabled') === 'true' && attr(byId.trashRecoverBtn, 'aria-busy') === null, 'recover is off, not busy');
+  assert.ok(attr(byId.trashEmptyBtn, 'aria-disabled') === 'true' && attr(byId.trashEmptyBtn, 'aria-busy') === null, 'empty is off, not busy');
+  byId.trashEraseBtn.fire('click');
+  byId.trashEmptyBtn.fire('click');
+  byId.trashRecoverBtn.fire('click');
+  await flush();
+  assert.strictEqual(modal.open, false, 'no second confirm opens while the erase is out');
+  assert.ok(calls.filter((call) => call.url.startsWith('/app/settings/api/trash/')).length === 1, 'one act sent');
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [] };
+  releaseErase();
+  await flush(); await flush();
+  assert.ok(TRASH_OPENER_IDS.every((id) => attr(byId[id], 'aria-disabled') === null && attr(byId[id], 'aria-busy') === null), 'the answer clears them all');
+
+  // Where an act lands: the row after the first one it took, else the one
+  // before, else the heading; nothing taken, the result line.
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [seg('a'), seg('c')] };
+  await api.loadTrash();
+  const landing = (act, chosen, order) => api.trashLandings(act, chosen.map((id) => ({ id })), order, true).map((el) => (el ? (el.dataset.trashId || el === byId.trashHeading && 'heading' || el === byId.trashResult && 'result' || el === byId.trashEmptyBtn && 'empty') : null)).join(' ');
+  assert.strictEqual(landing('erase', ['b'], ['a', 'b', 'c']), 'c a heading', 'b gone: c next, a before');
+  assert.strictEqual(landing('erase', ['x', 'b'], ['a', 'x', 'b', 'c']), 'c a heading', 'the first one taken decides, not the first chosen');
+  assert.strictEqual(landing('recover', ['c', 'd'], ['a', 'c', 'd']), ' c heading', 'the last row taken: the one before it, a refused one included');
+  assert.strictEqual(landing('erase', ['a'], ['a', 'c']), 'result heading', 'nothing taken: the result line');
+  assert.strictEqual(landing('empty', [], ['a', 'c']), 'empty result heading', 'an empty that left rows: its button');
+  answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [] };
+  await api.loadTrash();
+  assert.strictEqual(landing('empty', [], ['a', 'c']), 'heading', 'an empty that took everything: the heading');
+  assert.strictEqual(api.trashLandings('erase', [{ id: 'a' }], ['a'], false).map((el) => el.id).join(' '), 'trashResult trashHeading', 'no list drawn: the result line');
 
   // Confirm wording follows count and kind.
   const K = (act, items) => { const copy = api.trashConfirmCopy(act, items); return { title: copy.title, paragraphs: Array.from(copy.paragraphs) }; };
