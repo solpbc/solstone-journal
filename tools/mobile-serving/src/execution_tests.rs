@@ -1461,6 +1461,11 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
     let custom =
         json!({"cmd":["owner-custom-command"],"every":"weekly","enabled":false,"extra":"kept"});
     schedules.insert("custom".into(), custom.clone());
+    let saved_audio_schedule = json!({
+        "cmd": ["solstone", "journal", "importer", "--sync", "audio", "--save"],
+        "every": "1m", "enabled": false
+    });
+    schedules.insert("owner:source:audio".into(), saved_audio_schedule.clone());
     write(
         journal.path(),
         "config/schedules.json",
@@ -1509,6 +1514,10 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
     )
     .unwrap();
     host.stop_discovery_for_test();
+    let saved: Value = serde_json::from_slice(
+        &std::fs::read(journal.path().join("config/schedules.json")).unwrap(),
+    ).unwrap();
+    assert_eq!(saved["owner:source:audio"], saved_audio_schedule);
     let config_before = std::fs::read(&config_path).unwrap();
     let now = chrono::Utc::now();
     assert_eq!(call(&server, "GET", json!({})).1["enabled"], false);

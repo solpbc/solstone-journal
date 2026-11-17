@@ -1101,6 +1101,15 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(p.notices.length === 0 && p.errors.length === 0, 'no notice or error');
   });
 
+  await test('a past audio folder import retains its source label on the desktop delete dialog', async () => {
+    const p = await boot(env, `/app/import/${DONE}`, { answers: journal({
+      [`GET /app/import/api/${DONE}`]: detailAnswer(DONE, { source_type: 'audio', source_display: 'audio' }),
+    }) });
+    p.press(p.q('[data-import-delete]'));
+    await settle();
+    assert.match(p.byId('importDeleteModal').textContent, /audio folder/);
+  });
+
   await test("a delete out when an import's page goes finishes, and its answer neither stashes a receipt nor moves the page", async () => {
     const p = await boot(env, `/app/import/${DONE}`);
     p.press(p.q('[data-import-delete]'));

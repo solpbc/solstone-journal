@@ -549,9 +549,9 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
                         "--path".to_owned(),
                         path(&inputs.audio_directory),
                     ],
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    contains: "Audio sync preview complete: source=",
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    contains: "--audio-archive",
                 },
                 Case {
                     args: args(&["--sync", "obsidian"]),

@@ -16,7 +16,7 @@ use crate::transport::{
 
 const IMPORT_API: &str = "/app/import/api";
 const JOURNAL_HOST_HINT: &str = "Run this on the journal host with `solstone journal importer`.";
-const HELP: &str = "usage: solstone import [-h] [--timestamp TIMESTAMP] [--setting SETTING] [--source SOURCE] [--force] [--auto [AUTO]] [--dry-run] [--backends] [--sync BACKEND] [--save] [--path PATH] [--list-importers] [--json] [-v] [media]\n\nImport media through the journal\n";
+const HELP: &str = "usage: solstone import [-h] [--timestamp TIMESTAMP] [--setting SETTING] [--source SOURCE] [--force] [--auto [AUTO]] [--dry-run] [--backends] [--sync BACKEND] [--save] [--list-importers] [--json] [-v] [media]\n\nImport media through the journal\n";
 
 #[must_use]
 pub fn import_top_level(ctx: CommandContext<'_>) -> CommandOutput {
@@ -172,6 +172,11 @@ fn push_positional(parsed: &mut ParsedArgs, value: String) {
 }
 
 fn reject_unsupported_modes(parsed: &ParsedArgs) -> Option<CommandOutput> {
+    if parsed.sync.as_deref() == Some("audio") {
+        return Some(rejected(
+            "audio folder sync is gone on computers. use `solstone journal importer FILE --timestamp YYYYMMDD_HHMMSS` or `solstone journal importer --audio-archive MANIFEST.json`.",
+        ));
+    }
     if parsed.backends {
         return Some(rejected(format!(
             "`--backends` requires the journal host. {JOURNAL_HOST_HINT}"

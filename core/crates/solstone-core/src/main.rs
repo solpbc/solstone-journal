@@ -1369,7 +1369,22 @@ fn run_streams(args: Vec<OsString>) -> ExitCode {
 }
 
 fn run_importer(args: Vec<OsString>) -> ExitCode {
-    run_storage_ops_verb("importer", args, importer_desktop::run)
+    let arguments = match require_utf8_argv("importer", &args) {
+        Ok(arguments) => arguments,
+        Err(code) => return code,
+    };
+    let (stdout, stderr, code) = match importer_desktop::run(&arguments, || {
+        resolve_process_journal_path().map(|journal| journal.path)
+    }) {
+        Ok(output) => output,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    print!("{stdout}");
+    eprint!("{stderr}");
+    ExitCode::from(code as u8)
 }
 
 fn run_segment(args: Vec<OsString>) -> ExitCode {

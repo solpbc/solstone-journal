@@ -515,6 +515,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_prior_audio_folder_recording_can_still_be_moved_to_the_trash() {
+        let root = journal();
+        let path = root.path();
+        let segment = "chronicle/20260801/import.audio/090000_300";
+        let original = format!("{segment}/imported_audio.opus");
+        write(path, &original, b"synthetic audio");
+        let checkpoint = br#"{"backend":"audio","files":{"voice-memo.opus":{"status":"imported","hash":"fixture"}}}"#;
+        write(path, "imports/audio.json", checkpoint);
+        std::fs::remove_file(path.join(format!("imports/{ID}/content_manifest.jsonl"))).unwrap();
+        write(
+            path,
+            &format!("imports/{ID}/manifest.json"),
+            br#"{"source_type":"audio"}"#,
+        );
+        write(
+            path,
+            &format!("imports/{ID}/import.json"),
+            br#"{"original_filename":"voice-memo.opus","import_id":"20260801_090000"}"#,
+        );
+        write(
+            path, &format!("imports/{ID}/imported.json"),
+            br#"{"schema":"solstone.import.publication.v1","status":"success","segments":[{"day":"20260801","segment":"090000_300","stream":"import.audio"}],"indexing":[],"day_markers":[]}"#,
+        );
+        let (status, preview) = call(
+            path,
+            Method::GET,
+            &format!("/app/import/api/imports/{ID}/delete"),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{preview}");
+        assert_eq!(preview["source"], "audio");
+        assert_eq!(preview["segments"], 1);
+
+        let (status, body) = call(
+            path,
+            Method::DELETE,
+            &format!("/app/import/api/imports/{ID}"),
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(!path.join(&original).exists());
+        assert!(!path.join("imports").join(ID).exists());
+        let items = solstone_core_trash::list(path).unwrap();
+        assert_eq!(items[0].label.as_deref(), Some("voice-memo.opus"));
+        assert_eq!(
+            std::fs::read(path.join("imports/audio.json")).unwrap(),
+            checkpoint
+        );
+    }
+
+    #[tokio::test]
     async fn a_file_whose_import_is_in_the_trash_imports_again() {
         let root = journal();
         let file = root.path().join("report.pdf");

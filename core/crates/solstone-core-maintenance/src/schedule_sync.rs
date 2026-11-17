@@ -125,10 +125,27 @@ pub fn render_list(path: &Path, routines: &[RoutineDescriptor]) -> Result<String
 /// Prune retired schedule entries and add missing generated entries in one
 /// locked whole-file transaction.
 pub fn sync(path: &Path, routines: &[RoutineDescriptor]) -> Result<SyncSummary, String> {
+    sync_with_retirements(path, routines, |_| false)
+}
+
+/// Reconcile schedules and prune additional commands retired by the calling host.
+pub fn sync_with_retirements(
+    path: &Path,
+    routines: &[RoutineDescriptor],
+    is_retired: impl Fn(&Value) -> bool,
+) -> Result<SyncSummary, String> {
     initialize_schedule_config(path).map_err(|error| error.to_string())?;
     mutate_schedule_entries(path, |raw| {
         let mut next = raw.clone();
-        let summary = plan_sync(&mut next, routines, host_unscheduled());
+        let mut summary = plan_sync(&mut next, routines, host_unscheduled());
+        next.retain(|name, entry| {
+            if is_retired(entry) {
+                summary.removed.push(name.clone());
+                false
+            } else {
+                true
+            }
+        });
         let changed = next != *raw;
         if changed {
             *raw = next;

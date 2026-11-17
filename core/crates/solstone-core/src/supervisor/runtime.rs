@@ -928,8 +928,9 @@ fn ready_sleep_marker_path(argv: &[String]) -> Option<&str> {
 /// the scheduler loads it: the built-in entries are registered when absent, and
 /// the maintenance entries are reconciled with the routine registry, retired
 /// names and routines this host cannot run pruned and missing routines added.
-/// Other entries an operator added or edited survive untouched. A failure leaves the file as it was and never blocks the
-/// boot; the scheduler then runs whatever the file already holds.
+/// Desktop audio-folder sync commands are pruned regardless of entry name.
+/// Other entries an operator added or edited survive untouched. A failure
+/// never blocks boot; the schedule sink still refuses retired audio sync work.
 /// Returns the schedule names added by this reconciliation, so the boot
 /// catch-up can leave them to start at their next mark.
 fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
@@ -947,9 +948,15 @@ fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
             "supervisor: built-in schedule registration skipped; scheduler runs the file as is: {error}"
         ),
     }
-    match solstone_core_maintenance::schedule_sync::sync(
+    match solstone_core_maintenance::schedule_sync::sync_with_retirements(
         schedule_config_path,
         solstone_core_maintenance::registry::routines(),
+        |entry| {
+            entry
+                .get("cmd")
+                .and_then(|cmd| serde_json::from_value::<Vec<String>>(cmd.clone()).ok())
+                .is_some_and(|cmd| super::bus::is_retired_audio_schedule(&cmd))
+        },
     ) {
         Ok(summary) if summary.removed.is_empty() && summary.added.is_empty() => {}
         Ok(summary) => {
@@ -2664,6 +2671,103 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     #[cfg(unix)]
     use std::time::Duration;
+
+    #[test]
+    fn desktop_schedule_reconciliation_removes_retired_imports_by_command() {
+        use serde_json::{Value, json};
+        use std::fs;
+
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("schedules.json");
+        let mut before = json!({
+            "daily_time": "04:15",
+            "owner:source:audio": {"cmd": ["journal", "importer", "--sync", "audio", "--save"], "every": "daily"},
+            "custom-preview": {"cmd": ["solstone", "journal", "-v", "importer", "--sync=audio", "--path=/my/source"], "every": "hourly", "enabled": false},
+            "native": {"cmd": ["/some/installation/solstone-core-journal", "importer", "--path", "/my/source", "--sync", "audio"], "every": "weekly"},
+            "windows-native": {"cmd": ["C:\\Apps\\Solstone.exe", "journal", "importer", "--sync=audio"], "every": "daily"},
+            "windows-alias": {"cmd": ["JOURNAL.EXE", "importer", "--sync=audio"], "every": "daily"},
+            "core": {"cmd": ["solstone-core", "importer", "--sync=audio"], "every": "daily"},
+            "old": {"cmd": ["sol", "import", "--sync=audio"], "every": "daily"},
+            "sync:audio": {"cmd": ["journal", "importer", "--sync=audio", "--sync=plaud", "--save"], "every": "hourly", "extra": true},
+            "oura": {"cmd": ["journal", "importer", "--sync=oura", "--save"], "every": "daily", "enabled": false},
+            "file": {"cmd": ["journal", "importer", "--setting", "--sync=audio", "memo.ogg"], "every": "daily"},
+            "archive": {"cmd": ["journal", "importer", "--sync=audio", "--audio-archive", "archive.json"], "every": "daily"},
+            "other-tool": {"cmd": ["/opt/tools/journal", "importer", "--sync=audio"], "every": "daily"}
+        });
+        fs::write(&path, before.to_string()).unwrap();
+
+        super::reconcile_schedules(&path);
+        let bytes = fs::read(&path).unwrap();
+        let saved: Value = serde_json::from_slice(&bytes).unwrap();
+        for name in [
+            "owner:source:audio",
+            "custom-preview",
+            "native",
+            "windows-native",
+            "windows-alias",
+            "core",
+            "old",
+        ] {
+            assert!(saved.get(name).is_none(), "retired entry survived: {name}");
+            before.as_object_mut().unwrap().remove(name);
+        }
+        for (name, entry) in before.as_object().unwrap() {
+            assert_eq!(&saved[name], entry, "{name}");
+        }
+        super::reconcile_schedules(&path);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[tokio::test]
+    async fn due_audio_sync_stays_out_of_the_queue_even_if_it_is_on_disk() {
+        use super::{
+            DefaultCapResolver, ScheduleEngine, ScheduleNow, SupervisorScheduleSink,
+            SystemProcessStateProbe, TaskQueue, TaskQueueOptions,
+        };
+        use chrono::{Duration, TimeZone, Utc};
+        use serde_json::json;
+        use solstone_core_callosum::CallosumSocketServer;
+        use std::{fs, sync::Arc};
+
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("schedules.json");
+        let state = root.path().join("scheduler.json");
+        let start = Utc.with_ymd_and_hms(2026, 8, 1, 9, 1, 0).unwrap();
+        let now = |time| ScheduleNow::in_zone(time, chrono_tz::UTC);
+        let (mut scheduler, _) = ScheduleEngine::init(&config, &state, now(start)).unwrap();
+        let queue = TaskQueue::new(TaskQueueOptions {
+            journal_root: root.path().to_owned(),
+            cap_resolver: Arc::new(DefaultCapResolver::new(std::time::Duration::from_secs(30))),
+            process_state_probe: Arc::new(SystemProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: false,
+            before_deadline_commit: None,
+            child_environment: Default::default(),
+            task_binary: None,
+        });
+        let server = Arc::new(
+            CallosumSocketServer::bind(root.path().join("bus.sock"))
+                .await
+                .unwrap(),
+        );
+        let sink = SupervisorScheduleSink { queue, server };
+        fs::write(
+            &config,
+            json!({
+                "retired": {"cmd":["journal","importer","--sync=audio","--save"],"every":"1m"},
+                "plaud": {"cmd":["journal","importer","--sync","plaud","--save"],"every":"1m"}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let report = scheduler
+            .check(now(start + Duration::minutes(1)), &sink)
+            .unwrap();
+        assert_eq!(report.submitted, ["plaud"]);
+        sink.server.stop().await;
+    }
 
     #[cfg(unix)]
     #[cfg(all(test, feature = "full-tests"))]

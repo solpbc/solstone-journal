@@ -282,9 +282,9 @@ const MODE_CASES: &[ModeCase] = &[
             (
                 Invocation::SyncAudio,
                 Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "Audio sync preview complete: source=",
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "--audio-archive",
                 },
             ),
             (
@@ -846,7 +846,37 @@ fn search_streams(journal: &TempDir, query: &str) -> Vec<String> {
 }
 
 #[test]
-fn local_syncs_save_into_the_journal_and_only_once() {
+fn retired_audio_sync_refuses_without_a_valid_journal_or_supervisor() {
+    let root = TempDir::new().expect("scratch directory");
+    let invalid_journal = root.path().join("not-a-journal");
+    fs::write(&invalid_journal, "").unwrap();
+    for args in [
+        &["--sync", "audio", "--path", "/unused/source"][..],
+        &["--sync=audio", "--save", "--path=/unused/source"][..],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+            .arg("importer")
+            .args(args)
+            .env("SOLSTONE_JOURNAL", &invalid_journal)
+            .env_remove("SOL_SKIP_SUPERVISOR_CHECK")
+            .env_remove("SOL_SUPERVISOR_SPAWNED")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(stderr.lines().count(), 1, "{stderr}");
+        assert!(
+            stderr.contains("importer FILE") && stderr.contains("--audio-archive"),
+            "{stderr}"
+        );
+    }
+}
+
+#[test]
+fn the_retained_audio_folder_imports_at_the_original_time_and_only_once() {
+    use solstone_core_import_host::{call, registry::IndexScan};
+
     let journal = TempDir::new().expect("journal");
 
     let recordings = journal.path().join("recordings");
@@ -884,18 +914,30 @@ fn local_syncs_save_into_the_journal_and_only_once() {
             .expect("fixed audio source time");
     }
     for saved in ["saved=2", "saved=0"] {
-        let output = run(
-            &["--sync", "audio", "--path", &path(&recordings), "--save"],
-            &journal,
-        );
-        assert_eq!(
-            output.status.code(),
-            Some(0),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        let args = ["--sync", "audio", "--path", &path(&recordings), "--save"]
+            .map(str::to_owned)
+            .to_vec();
+        let seams = call::ImportSeams {
+            text: Box::new(solstone_core_import::text::SystemWireClient::sibling()),
+            image: Box::new(solstone_core_import_sources::NullWireClient),
+            model: Box::new(solstone_core_import_sources::NullDocumentModelClient),
+            pdf: Box::new(solstone_core_import_sources::NullPdfWorker),
+            reindex: Box::new(IndexScan {
+                journal: journal.path().to_owned(),
+            }),
+        };
+        let (output, _) = call::start(
+            args,
+            journal.path().to_owned(),
+            seams,
+            solstone_core_import::WorkStop::new(),
+        )
+        .unwrap()
+        .join();
+        assert_eq!(output.exit_code, 0, "{}", output.stderr);
         assert!(
-            String::from_utf8_lossy(&output.stdout)
+            output
+                .stdout
                 .contains(&format!("Audio sync complete: {saved}")),
             "{saved}"
         );
@@ -920,6 +962,18 @@ fn local_syncs_save_into_the_journal_and_only_once() {
         audio.join("20260310/import.audio/091500_300").is_dir(),
         "dated recording at its creation date"
     );
+
+    // Search indexes the memory derived from the recording, rather than its
+    // raw audio transcript. Model an already-processed recording.
+    let memory = audio.join("20260310/import.audio/091500_300/talents");
+    fs::create_dir(&memory).unwrap();
+    fs::write(
+        memory.join("memory.md"),
+        "The conversation covered a moonstone.\n",
+    )
+    .unwrap();
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+    assert_eq!(search_streams(&journal, "moonstone"), ["import.audio"]);
 }
 
 fn find_named_file(root: &Path, name: &str) -> Option<PathBuf> {

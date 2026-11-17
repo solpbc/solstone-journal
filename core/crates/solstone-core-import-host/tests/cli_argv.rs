@@ -1268,18 +1268,35 @@ fn step_back_inside_second_chunk(path: &Path) {
 
 #[cfg(feature = "full-tests")]
 fn sync_audio_folder(journal: &Path, folder: &Path) -> CliRun {
-    run_at(
-        journal,
-        &[
-            "--sync",
-            "audio",
-            "--path",
-            folder.to_str().unwrap(),
-            "--save",
-        ],
-        |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
-        || false,
+    use solstone_core_import_host::{call, registry::IndexScan};
+
+    let args = [
+        "--sync",
+        "audio",
+        "--path",
+        folder.to_str().unwrap(),
+        "--save",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    let seams = call::ImportSeams {
+        text: Box::new(solstone_core_import::text::SystemWireClient::sibling()),
+        image: Box::new(solstone_core_import_sources::NullWireClient),
+        model: Box::new(solstone_core_import_sources::NullDocumentModelClient),
+        pdf: Box::new(solstone_core_import_sources::NullPdfWorker),
+        reindex: Box::new(IndexScan {
+            journal: journal.to_owned(),
+        }),
+    };
+    call::start(
+        args,
+        journal.to_owned(),
+        seams,
+        solstone_core_import::WorkStop::new(),
     )
+    .unwrap()
+    .join()
+    .0
 }
 
 #[cfg(feature = "full-tests")]

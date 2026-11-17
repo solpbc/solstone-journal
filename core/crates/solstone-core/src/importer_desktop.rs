@@ -7,9 +7,7 @@
 //! client, then calls the shared library entry. Help does not probe.
 
 use std::io::Write;
-use std::path::Path;
-#[cfg(not(windows))]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use solstone_core_generate::OneShotClient;
@@ -29,19 +27,31 @@ use solstone_core_segment::{SUPERVISOR_MESSAGE, SupervisorRefusal, require_solst
 
 const PDF_WORKER_TIMEOUT: Duration = Duration::from_secs(90);
 
-pub fn run(arguments: &[String], journal: &Path) -> (String, String, i32) {
-    run_with(arguments, journal, || require_solstone(journal))
+pub fn run<E>(
+    arguments: &[String],
+    resolve_journal: impl FnOnce() -> Result<PathBuf, E>,
+) -> Result<(String, String, i32), E> {
+    run_with(arguments, resolve_journal, require_solstone)
 }
 
-fn run_with(
+fn run_with<E>(
+    arguments: &[String],
+    resolve_journal: impl FnOnce() -> Result<PathBuf, E>,
+    preflight: impl FnOnce(&Path) -> Result<(), SupervisorRefusal>,
+) -> Result<(String, String, i32), E> {
+    if let Some(outcome) = grammar_outcome_before_preflight(arguments) {
+        return Ok((outcome.stdout, outcome.stderr, outcome.exit_code));
+    }
+    let journal = resolve_journal()?;
+    Ok(run_resolved(arguments, &journal, preflight))
+}
+
+fn run_resolved(
     arguments: &[String],
     journal: &Path,
-    preflight: impl FnOnce() -> Result<(), SupervisorRefusal>,
+    preflight: impl FnOnce(&Path) -> Result<(), SupervisorRefusal>,
 ) -> (String, String, i32) {
-    if let Some(outcome) = grammar_outcome_before_preflight(arguments) {
-        return (outcome.stdout, outcome.stderr, outcome.exit_code);
-    }
-    if let Err(refusal) = preflight() {
+    if let Err(refusal) = preflight(journal) {
         return refusal_output(refusal);
     }
     let notice = match force_day_notice_with(arguments, journal, || Ok(())) {
@@ -223,38 +233,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn grammar_runs_before_the_supervisor_preflight() {
-        let journal = Path::new(".");
-        let mut probed = false;
-        let unknown = run_with(&["--nonsense".to_owned()], journal, || {
-            probed = true;
-            Ok(())
-        });
-        assert!(!probed);
+    fn grammar_runs_before_journal_resolution_and_supervisor_preflight() {
+        let unresolved = || Err::<PathBuf, _>("no journal selected");
+        let unknown = run(&["--nonsense".to_owned()], unresolved).unwrap();
         assert_eq!(unknown.2, 2);
         assert!(unknown.1.contains("unrecognized arguments: --nonsense"));
         assert!(unknown.1.contains("usage: solstone journal importer"));
 
-        let help = run(&["-h".to_owned()], journal);
+        let help = run(&["-h".to_owned()], unresolved).unwrap();
         assert_eq!(help.2, 0);
         assert_eq!(help.0, solstone_core_import::cli_render::HELP);
         assert!(help.1.is_empty());
 
-        let direct = run(&["--nonsense".to_owned()], journal);
-        assert_eq!(direct.2, 2);
-        assert!(direct.1.contains("unrecognized arguments: --nonsense"));
-        assert!(direct.0.is_empty());
-
-        let spawned = run_with(&["file".to_owned()], journal, || {
+        let journal = || Ok::<_, ()>(PathBuf::from("."));
+        let spawned = run_with(&["file".to_owned()], journal, |_| {
             Err(SupervisorRefusal::SpawnedUnavailable)
-        });
+        })
+        .unwrap();
         assert_eq!(spawned, (String::new(), String::new(), 75));
 
-        let unavailable = run_with(&["file".to_owned()], journal, || {
+        let unavailable = run_with(&["file".to_owned()], journal, |_| {
             Err(SupervisorRefusal::Unavailable)
-        });
+        })
+        .unwrap();
         assert_eq!(unavailable.0, "");
         assert_eq!(unavailable.1, format!("{SUPERVISOR_MESSAGE}\n"));
         assert_eq!(unavailable.2, 1);
+    }
+
+    #[test]
+    fn retired_audio_sync_refuses_before_resolving_the_journal() {
+        for args in [
+            &["--sync", "audio", "--path", "recordings"][..],
+            &["--sync=audio", "--save", "--path=recordings"][..],
+        ] {
+            let args = args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>();
+            let result = run(&args, || Err::<PathBuf, _>("no journal selected")).unwrap();
+            assert_eq!(result.2, 1);
+            assert!(result.0.is_empty());
+            assert_eq!(result.1.lines().count(), 1);
+            assert!(result.1.contains("--audio-archive"));
+        }
     }
 }

@@ -97,7 +97,7 @@ pub const IMPORTERS: &[ImporterRow] = &[
     },
 ];
 
-pub const BACKENDS: &[&str] = &["plaud", "audio", "oura", "granola"];
+const BACKENDS: &[&str] = &["plaud", "audio", "oura", "granola"];
 
 /// What a retired notes-folder form tells the owner instead of importing.
 pub const NOTES_FOLDER_IMPORT_RETIRED: &str = "importing a folder of notes is gone; an Obsidian vault comes into your journal when you turn it on in the solstone app on the computer where the vault lives";
@@ -108,7 +108,7 @@ pub const HELP: &str = concat!(
     "                        [--auto [AUTO]] [--dry-run] [--confirm-body-save]\n",
     "                        [--date-from DATE_FROM] [--date-to DATE_TO]\n",
     "                        [--deterministic-only] [--backends] [--sync BACKEND]\n",
-    "                        [--save] [--path PATH] [--window-days WINDOW_DAYS]\n",
+    "                        [--save] [--window-days WINDOW_DAYS]\n",
     "                        [--scheduled] [--connect BACKEND] [--list-importers]\n",
     "                        [--audio-archive PATH] [--source-zone IANA] [--resume IMPORT_ID]\n",
     "                        [--audio-archive-status IMPORT_ID] [--audio-archive-members IMPORT_ID]\n",
@@ -134,7 +134,7 @@ pub const HELP: &str = concat!(
     "                        instead of failing\n",
     "  --backends            List syncable importer backends\n  --sync BACKEND\n",
     "  --save                With --sync: download and import new files (default is dry-run)\n",
-    "  --path PATH\n  --window-days WINDOW_DAYS\n  --scheduled\n  --connect BACKEND\n",
+    "  --window-days WINDOW_DAYS\n  --scheduled\n  --connect BACKEND\n",
     "  --list-importers      List available file importers\n",
     "  --audio-archive PATH  Import a folder of Ogg Opus recordings or a JSON manifest\n",
     "                        Folder: Limitless filenames and --source-zone are required.\n",
@@ -172,9 +172,16 @@ pub fn importers(json: bool) -> String {
     output
 }
 
-pub fn backends() -> String {
+pub fn sync_backends(embedded: bool) -> impl Iterator<Item = &'static str> {
+    BACKENDS
+        .iter()
+        .copied()
+        .filter(move |backend| embedded || *backend != "audio")
+}
+
+pub fn backends(embedded: bool) -> String {
     let mut output = String::from("Syncable backends:\n");
-    for backend in BACKENDS {
+    for backend in sync_backends(embedded) {
         output.push_str(&format!("  {backend}\n"));
     }
     output

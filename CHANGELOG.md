@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- audio folder sync (`--sync audio`) is gone from the journal on your computer. recordings already in your journal stay. you can still import an audio file or an audio archive.
 - the settings page no longer has a "re-validate all keys" button, because your journal can't check a Plaud token in this version. the check mark beside your token still shows whether one is saved.
 
 ### Fixed

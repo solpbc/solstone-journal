@@ -257,10 +257,14 @@ pub fn force_day_notice_with(
 pub fn grammar_outcome_before_preflight(args: &[String]) -> Option<CliRun> {
     match parse_arguments(args) {
         Ok(ParsedCommand::Help) => Some(success(cli_render::HELP.to_owned())),
-        Ok(ParsedCommand::RetiredNotesFolder) => Some(notes_folder_retired()),
-        Ok(_) => None,
+        Ok(parsed) => desktop_retirement(&parsed),
         Err(arguments) => Some(argparse_error(arguments)),
     }
+}
+
+/// Does this argv select audio-folder sync in the importer grammar?
+pub fn selects_audio_sync(args: &[String]) -> bool {
+    parse_arguments(args).is_ok_and(|parsed| parsed.is_audio_sync())
 }
 
 /// Run the importer grammar with the process environment and local supervisor probe.
@@ -299,8 +303,8 @@ fn run_after_parse(
     journal_path: &Path,
     preflight: impl FnOnce() -> Result<(), SupervisorRefusal>,
 ) -> CliOutcome {
-    if matches!(parsed, ParsedCommand::RetiredNotesFolder) {
-        return rendered(notes_folder_retired());
+    if let Some(run) = desktop_retirement(&parsed) {
+        return rendered(run);
     }
     if let Err(refusal) = preflight() {
         return rendered(refusal_run(refusal));
@@ -554,7 +558,7 @@ fn dispatch_parsed(
     match parsed {
         ParsedCommand::Help => rendered(success(cli_render::HELP.to_owned())),
         ParsedCommand::ListImporters { json } => rendered(success(cli_render::importers(json))),
-        ParsedCommand::Backends => rendered(success(cli_render::backends())),
+        ParsedCommand::Backends => rendered(success(cli_render::backends(dispatch.embedded()))),
         ParsedCommand::Connect { backend } => {
             if dispatch.embedded() && backend == "oura" {
                 return rendered(embedded_body_refused());
@@ -566,7 +570,12 @@ fn dispatch_parsed(
             if dispatch.embedded() && backend == "oura" {
                 return rendered(embedded_body_refused());
             }
-            rendered(run_sync(&backend, &options, journal_path))
+            rendered(run_sync(
+                &backend,
+                &options,
+                journal_path,
+                dispatch.embedded(),
+            ))
         }
         ParsedCommand::AudioArchive(options) => rendered(crate::audio_archive::run_audio_archive(
             options,
@@ -595,6 +604,22 @@ fn notes_folder_retired() -> CliRun {
     failure(
         "",
         &format!("{}\n", cli_render::NOTES_FOLDER_IMPORT_RETIRED),
+        1,
+    )
+}
+
+fn desktop_retirement(parsed: &ParsedCommand) -> Option<CliRun> {
+    match parsed {
+        ParsedCommand::RetiredNotesFolder => Some(notes_folder_retired()),
+        parsed if parsed.is_audio_sync() => Some(audio_sync_retired()),
+        _ => None,
+    }
+}
+
+fn audio_sync_retired() -> CliRun {
+    failure(
+        "",
+        "audio folder sync is gone on computers. use `solstone journal importer FILE --timestamp YYYYMMDD_HHMMSS` or `solstone journal importer --audio-archive MANIFEST.json`.\n",
         1,
     )
 }
@@ -654,7 +679,7 @@ fn run_connect(backend: &str, journal_path: &Path) -> CliRun {
     }
 }
 
-fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
+fn run_sync(backend: &str, options: &Options, journal_path: &Path, embedded: bool) -> CliRun {
     match backend {
         "oura" => crate::body_commands::sync_oura(&body_command(options), journal_path),
         "plaud" => run_plaud_sync(journal_path, options),
@@ -670,11 +695,15 @@ fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
                 Err(error) => failure("", &format!("{error}\n"), 1),
             }
         }
-        "audio" => run_audio_sync(journal_path, options),
+        "audio" if embedded => run_audio_sync(journal_path, options),
+        "audio" => audio_sync_retired(),
         _ => failure(
             "",
             &format!(
-                "Unknown sync backend: {backend}\nAvailable backends: plaud, audio, oura, granola\n"
+                "Unknown sync backend: {backend}\nAvailable backends: {}\n",
+                cli_render::sync_backends(embedded)
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
             1,
         ),
@@ -2248,6 +2277,12 @@ enum ParsedCommand {
 
 /// The argument value of the retired notes-folder import and sync.
 const RETIRED_NOTES_SOURCE: &str = "obsidian";
+
+impl ParsedCommand {
+    fn is_audio_sync(&self) -> bool {
+        matches!(self, Self::Sync { backend, .. } if backend == "audio")
+    }
+}
 
 fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
     let mut options = Options::default();

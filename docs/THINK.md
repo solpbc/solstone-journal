@@ -377,8 +377,9 @@ to date with what the journal ships: the built-in entries (`heartbeat`,
 `weekly-agents`, `cadence`, `brain`, `facet-candidates`, `rebuild-edges`) are
 added when absent, and the `maintenance:<routine>` entries generated from the
 maintenance routine registry are reconciled, retired names removed and missing
-routines added with their default cadence. Any entry an operator edited or
-added is left as it is, and an entry first added at a start waits for its next
+routines added with their default cadence. The desktop supervisor also removes
+entries that invoke retired commands. Other entries an operator edited or added
+stay as they are, and an entry first added at a start waits for its next
 cadence mark rather than running in the boot catch-up. `solstone journal maintenance
 sync` performs the maintenance half on demand.
 
