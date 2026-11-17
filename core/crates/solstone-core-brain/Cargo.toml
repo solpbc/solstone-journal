@@ -33,6 +33,7 @@ nix.workspace = true
 [dev-dependencies]
 chrono.workspace = true
 serde_json.workspace = true
+tempfile = "3.24.0"
 
 [features]
 full-tests = ["solstone-core-journal-io/test-hooks"]
