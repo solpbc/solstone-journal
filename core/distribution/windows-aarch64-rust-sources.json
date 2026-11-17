@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "2bde83f79c79bb259d2b224281c9755d2bdbc34acf0137df218eec662d178ab3",
+  "cargo_lock_sha256": "98712ebd88c34133446989c83a3420f3645c812be80fb83cf8d49064583b215a",
   "filter_platform": "aarch64-pc-windows-msvc",
   "notice_texts": [
     {
@@ -19518,17 +19518,17 @@
       ]
     },
     {
-      "identity": "zip@9.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
+      "identity": "zip@9.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "MIT",
       "notice_references": [
         {
           "bytes": 1085,
           "sha256": "58545fed1565e42d687aecec6897d35c6d37ccb71479a137c0deb2203e125c79",
           "source": {
-            "archive_sha256": "c2d98561b612a84ae525331a7a094429ef8a5772514ed507ff6db5f54badc971",
+            "archive_sha256": "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e",
             "kind": "cargo-registry-archive",
             "member": "LICENSE",
-            "source_url": "https://static.crates.io/crates/zip/zip-9.0.3.crate"
+            "source_url": "https://static.crates.io/crates/zip/zip-9.0.5.crate"
           }
         }
       ]
@@ -19665,7 +19665,7 @@
     }
   ],
   "path_dependency_trees": {
-    "velopack@1.2.0 (path+core/vendor/velopack)": "366188b0d2576ec64f1606cc86e41d4fa869802276476635b4d4f37ecb6c2e88"
+    "velopack@1.2.0 (path+core/vendor/velopack)": "86397f12dcfa000dc28d7f36904a121009d6d5510311569dc8463cd25bc59eba"
   },
   "schema": "solstone.rust-notices.v1",
   "shipped_feature_arguments": [

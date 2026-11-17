@@ -24,6 +24,13 @@ ignore = [
     # 2026-11-14: RUSTSEC-2026-0530 and -0531, the same class (see deny.toml).
     { id = "RUSTSEC-2026-0530", reason = "hickory-proto 0.24.4 parent-side NSEC at a zone cut accepted as nonexistence proof; DNSSEC features disabled, affected code not compiled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
     { id = "RUSTSEC-2026-0531", reason = "hickory-proto 0.24.4 child-side NSEC/NSEC3 accepted as no-DS proof; DNSSEC features disabled, affected code not compiled; revisit on DNSSEC enablement, resolver changes or a compatible patch" },
+    # These two reports also concern DNSSEC validation in hickory-proto 0.24.4.
+    { id = "RUSTSEC-2026-0550", reason = "hickory-proto 0.24.4 DNSSEC nonexistence validation defect. DNSSEC features are disabled. Revisit on DNSSEC enablement, resolver changes or a compatible patch." },
+    { id = "RUSTSEC-2026-0551", reason = "hickory-proto 0.24.4 DNSSEC record-class validation defect. DNSSEC features are disabled. Revisit on DNSSEC enablement, resolver changes or a compatible patch." },
+    # Interim maintenance exceptions. Product engineering reviews both by
+    # 2026-11-23, or sooner if upstream maintenance or the advisory status changes.
+    { id = "RUSTSEC-2026-0543", reason = "Informational maintenance advisory for chrono. RustSec lists no patched release. Retain during the timestamp-compatible replacement assessment." },
+    { id = "RUSTSEC-2026-0555", reason = "chrono-tz 0.10.4 ships tzdata 2025b and gives incorrect offsets and local-day boundaries in zones whose rules changed. RustSec lists no patched release. Retain temporarily while product engineering qualifies replacement time-zone data." },
     # 2026-10-26: paste 1.0.15 is a build-time macro dependency of pulp/gemm
     # in OCR and native inference. No patched release exists. Replacing that
     # transitive dependency requires an upstream change or a reviewed fork.

@@ -28,7 +28,7 @@ solstone-core-speaker-id.workspace = true
 solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 solstone-core-npy.workspace = true
 tempfile = "3.24.0"
-zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }
+zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }
 
 [features]
 full-tests = []

@@ -1,9 +1,9 @@
 {
-  "cargo_lock_sha256": "2bde83f79c79bb259d2b224281c9755d2bdbc34acf0137df218eec662d178ab3",
+  "cargo_lock_sha256": "98712ebd88c34133446989c83a3420f3645c812be80fb83cf8d49064583b215a",
   "dependency_source_companion": {
-    "bytes": 103340255,
-    "filename": "windows-rust-dependencies-2bde83f79c79bb25.tar.gz",
-    "sha256": "719f69a482f3d5f9cc4594b2b65f619379b350fff0402181ac5fe8958318209d"
+    "filename": "windows-rust-dependencies-98712ebd88c34133.tar.gz",
+    "bytes": 103348461,
+    "sha256": "051cdab1537b43e8aa7b0e6c3993f3bc68228040a9ff2d052182a56bf17237e9"
   },
   "notice_texts": [
     {
@@ -28877,8 +28877,8 @@
       "windows_notice_population": true
     },
     {
-      "archive_sha256": "c2d98561b612a84ae525331a7a094429ef8a5772514ed507ff6db5f54badc971",
-      "identity": "zip@9.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
+      "archive_sha256": "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e",
+      "identity": "zip@9.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "MIT",
       "name": "zip",
       "notice_references": [
@@ -28886,10 +28886,10 @@
           "bytes": 1085,
           "sha256": "58545fed1565e42d687aecec6897d35c6d37ccb71479a137c0deb2203e125c79",
           "source": {
-            "archive_sha256": "c2d98561b612a84ae525331a7a094429ef8a5772514ed507ff6db5f54badc971",
+            "archive_sha256": "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e",
             "kind": "cargo-registry-archive",
             "member": "LICENSE",
-            "source_url": "https://static.crates.io/crates/zip/zip-9.0.3.crate"
+            "source_url": "https://static.crates.io/crates/zip/zip-9.0.5.crate"
           }
         }
       ],
@@ -28898,11 +28898,11 @@
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "vcs": {
         "git": {
-          "sha1": "06b1fe7d51842772cbc31bd020e0a925428ecc22"
+          "sha1": "0123ed144cfa7d672dae78b79a034d8900f9aaeb"
         },
         "path_in_vcs": ""
       },
-      "version": "9.0.3",
+      "version": "9.0.5",
       "windows_notice_population": true
     },
     {
@@ -29117,7 +29117,7 @@
           }
         }
       ],
-      "patched_tree_sha256": "366188b0d2576ec64f1606cc86e41d4fa869802276476635b4d4f37ecb6c2e88",
+      "patched_tree_sha256": "86397f12dcfa000dc28d7f36904a121009d6d5510311569dc8463cd25bc59eba",
       "source": "path+core/vendor/velopack",
       "source_tree_member": "path-dependencies/velopack/",
       "version": "1.2.0",
@@ -29125,20 +29125,20 @@
     }
   ],
   "path_dependency_trees": {
-    "velopack@1.2.0 (path+core/vendor/velopack)": "366188b0d2576ec64f1606cc86e41d4fa869802276476635b4d4f37ecb6c2e88"
+    "velopack@1.2.0 (path+core/vendor/velopack)": "86397f12dcfa000dc28d7f36904a121009d6d5510311569dc8463cd25bc59eba"
   },
   "population": {
     "metadata_feature_scope": "workspace unified; conservative inclusion, not exact PE link graph",
     "notices": "non-dev dependency closure from Windows inventory binary roots in Windows-filtered Cargo metadata",
     "query": "cargo metadata --manifest-path core/Cargo.toml --locked --offline --format-version 1 --filter-platform x86_64-pc-windows-msvc --features solstone-core/journal-mcp-endpoint; inventory roots; follow non-dev dependency edges",
-    "query_utc": "2026-11-17T06:20:21.802698+00:00",
+    "query_utc": "2026-11-17T22:11:22.576391+00:00",
     "shipped_feature_arguments": [
       "--features",
       "solstone-core/journal-mcp-endpoint"
     ],
     "source": "complete Cargo.lock external-source set",
     "source_package_count": 567,
-    "source_sha256": "1596249dba844c10e67cfc052e5915336b6ef19242aa10b169174d60a47d95cb",
+    "source_sha256": "6d9a909065504c67cf202ed9b2fc366072cec2e77f7288bdc51e7e2538f7f3f4",
     "windows_notice_package_count": 502,
     "windows_notice_path_package_count": 1
   },

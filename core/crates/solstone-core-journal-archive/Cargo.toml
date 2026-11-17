@@ -11,7 +11,7 @@ publish = false
 
 [dependencies]
 solstone-core-journal = { workspace = true }
-zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }
+zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["dir", "user"] }
@@ -34,7 +34,7 @@ required-features = ["test-hooks"]
 
 [dev-dependencies]
 serde_json.workspace = true
-zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }
+zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["fs"] }

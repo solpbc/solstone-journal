@@ -34,7 +34,7 @@ bzip2-rs.workspace = true
 flate2.workspace = true
 lzma-rs.workspace = true
 minisign.workspace = true
-zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }
+zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }
 quick-xml = "0.41.0"
 serde.workspace = true
 serde_json.workspace = true
