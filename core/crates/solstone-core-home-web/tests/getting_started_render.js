@@ -1826,7 +1826,89 @@ async function runTests() {
   await readFirstMinutes();
   assert.strictEqual(getState().downloadTimer, null, 'heard with fresh false leaves downloadTimer null');
 
+  await firstPulseDuringStreamLoss(welcomePulse);
   console.log('all getting_started_render acceptance assertions passed');
+}
+
+async function firstPulseDuringStreamLoss(welcomePulse) {
+  const pulseUrl = '/app/home/api/pulse';
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  const pulseReads = () => apiRequests.filter(request => request.url === pulseUrl).length;
+  const vitals = () => surface.querySelector('[data-home-surface="vitals"]');
+  const listeners = new Map();
+  const states = [];
+  let notify;
+  let answer;
+  let fail;
+  win.appEvents = {
+    onConnectionState(callback) {
+      notify = callback;
+      callback({ connected: false, state: 'connecting' });
+      return () => { notify = null; };
+    },
+    listen(tract, callback) {
+      listeners.set(tract, callback);
+      return () => listeners.delete(tract);
+    },
+  };
+  apiResolver = url => url === pulseUrl
+    ? new Promise((resolve, reject) => { answer = resolve; fail = reject; })
+    : Promise.resolve(url === '/app/home/api/first-minutes' ? { window_open: false } : {});
+  delete win.SurfaceState; // Use Home's own retry control.
+  const mount = async () => {
+    states.length = 0;
+    apiRequests.length = 0;
+    await win.SolViews.mount('home', { reportReady: state => states.push(state) });
+  };
+  const disconnect = () => notify({ connected: false, state: 'disconnected' });
+  const connect = () => notify({ connected: true, state: 'connected' });
+
+  await mount();
+  assert.strictEqual(pulseReads(), 1);
+  assert.deepStrictEqual(states, []);
+  disconnect();
+  answer(welcomePulse);
+  await settle();
+  assert(vitals(), 'the first HTTP pulse paints even when the stream goes unavailable');
+  assert.strictEqual(vitals().querySelector('#pulse-status-headline').innerHTML, welcomePulse.health_glance.headline);
+  assert(states.includes('empty'), 'the first HTTP pulse settles view readiness');
+  assert.strictEqual(pulseReads(), 1, 'no second read or reconnect is needed to paint');
+
+  connect();
+  listeners.get('supervisor')({ event: 'status', queues: { segment: 1 }, held: [{ partition: 'segment' }] });
+  assert.strictEqual(pulseReads(), 2);
+  const liveVitals = vitals().outerHTML;
+  disconnect();
+  const staleVitals = vitals().outerHTML;
+  assert.notStrictEqual(staleVitals, liveVitals, 'stream loss invalidates rendered live status');
+  answer({ ...welcomePulse, health_glance: { headline: 'new observation' } });
+  await settle();
+  assert.strictEqual(vitals().outerHTML, staleVitals, 'a refresh overtaken by stream loss keeps the rendered status stale');
+  connect();
+  assert.strictEqual(pulseReads(), 3, 'reconnect requests fresh pulse');
+  answer(welcomePulse);
+  await settle();
+  assert.notStrictEqual(vitals().outerHTML, staleVitals, 'fresh pulse updates service status after reconnect');
+
+  for (const retry of ['manual', 'first-connect']) {
+    await mount();
+    disconnect();
+    fail(new TypeError('Failed to fetch'));
+    await settle();
+    assert(states.includes('error'), 'a failed initial pulse settles the view as an error');
+    const button = surface.querySelector('.surface-state-retry');
+    assert(button, 'the error offers a retry');
+    if (retry === 'manual') {
+      button.click();
+      disconnect();
+    } else {
+      connect();
+    }
+    assert.strictEqual(pulseReads(), 2);
+    answer(welcomePulse);
+    await settle();
+    assert(vitals(), `${retry} recovery paints from its pulse`);
+  }
 }
 
 runTests().catch((err) => {

@@ -1982,7 +1982,10 @@
       }, function () { return lastReadFailed; });
       ctx.onConnectionState(function (state) {
         if (!state?.connected) {
-          pulseAppliedVersion = ++pulseReadVersion;
+          // The first HTTP read still needs to settle the page while the
+          // event stream is unavailable. Once painted, keep the last known
+          // service status until a fresh read takes over.
+          if (lastPulse) pulseAppliedVersion = ++pulseReadVersion;
           pulseReadFailed = true;
           invalidateHeldWork();
         }
