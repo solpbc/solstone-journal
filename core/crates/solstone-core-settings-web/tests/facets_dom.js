@@ -358,6 +358,8 @@ function createHarness() {
   const window = {
     SolViews: { register(name, definition) { registered = { name, definition }; } },
     SolStore: { never: () => new Promise(() => {}) },
+    // The shell's focus helpers, as the page has them.
+    SolFocus: require(path.join(crateDir, '..', 'solstone-core-convey-shell', 'assets', 'static', 'focus.js')),
     document,
     Element,
     HTMLInputElement,
@@ -1515,7 +1517,9 @@ async function testCase(name, fn) {
     toggle.dispatchEvent(event('change', { bubbles: true }));
     assert.strictEqual(puts, 1);
     assert.strictEqual(toggle.checked, false);
-    assert.strictEqual(toggle.disabled, true);
+    // Busy while its save is out, never disabled, so it keeps focus.
+    assert.strictEqual(toggle.getAttribute('aria-busy'), 'true');
+    assert.strictEqual(toggle.disabled, false);
 
     toggle.dispatchEvent(event('change', { bubbles: true }));
     assert.strictEqual(puts, 1);

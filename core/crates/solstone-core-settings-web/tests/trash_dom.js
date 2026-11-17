@@ -27,9 +27,12 @@ class El {
   fire(name, event = {}) { return this.listeners[name]({ currentTarget: this, target: this, ...event }); }
   focus() { document.activeElement = this; }
   setAttribute(name, value) { (this.attributes ||= {})[name] = String(value); }
+  getAttribute(name) { return this.attributes && name in this.attributes ? this.attributes[name] : null; }
+  removeAttribute(name) { if (this.attributes) delete this.attributes[name]; }
+  contains(node) { return node === this || this.children.some((child) => child.contains && child.contains(node)); }
   all(cls) { const out = []; for (const child of this.children) { if (child.className === cls) out.push(child); if (child.all) out.push(...child.all(cls)); } return out; }
 }
-const ids = ['trashBar', 'trashBarIdle', 'trashBarSome', 'trashCount', 'trashSelectAll', 'trashSelectAllLabel', 'trashEmptyBtn', 'trashRecoverBtn', 'trashEraseBtn', 'trashResult', 'trashList', 'trashEraseAfterDays', 'trashHeading', 'trashConfirmHeading', 'trashConfirmBody', 'trashConfirmCancel', 'trashConfirmErase', 'trashConfirmModal', 'trashConfirmChoice', 'trashBackupsField', 'trashBackupsLine', 'trashBackupsSetting', 'trashBackupsNote', 'trashBackupsSettingLabel', 'trashBackupsMoreSummary', 'trashBackupsMoreList'];
+const ids = ['section-trash', 'trashBar', 'trashBarIdle', 'trashBarSome', 'trashCount', 'trashSelectAll', 'trashSelectAllLabel', 'trashEmptyBtn', 'trashRecoverBtn', 'trashEraseBtn', 'trashResult', 'trashList', 'trashEraseAfterDays', 'trashHeading', 'trashConfirmHeading', 'trashConfirmBody', 'trashConfirmCancel', 'trashConfirmErase', 'trashConfirmModal', 'trashConfirmChoice', 'trashBackupsField', 'trashBackupsLine', 'trashBackupsSetting', 'trashBackupsNote', 'trashBackupsSettingLabel', 'trashBackupsMoreSummary', 'trashBackupsMoreList'];
 const byId = Object.fromEntries(ids.map((id) => [id, new El('div')]));
 const modal = byId.trashConfirmModal;
 modal._openAccessible = () => { modal.open = true; };
@@ -48,6 +51,8 @@ const calls = [];
 const statuses = [];
 const saves = [];
 const window = {
+  // The shell's focus helpers, as the page has them.
+  SolFocus: require(path.join(crateDir, '..', 'solstone-core-convey-shell', 'assets', 'static', 'focus.js')),
   JournalClock: { dayKey: (instant) => instant.toISOString().slice(0, 10).replace(/-/g, ''), placeNote: () => {} },
   JournalFormat: { day: (key) => key, stream: (stream) => `label:${stream}`, },
   apiJson: async (url, options) => {
@@ -68,7 +73,9 @@ const sandbox = {
   // The mount's read and write, and its state, as the trash block sees them.
   settingsApi: (url, options) => window.apiJson(url, options),
   ctx: { disposed: false },
+  settingsPage: null,
 };
+sandbox.settingsPage = document;
 vm.createContext(sandbox);
 vm.runInContext(`${sourceNames}\n${html.slice(start, end)};this.api={TRASH_COPY,TRASH_WORDS,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,renderTrashBackups,trashSelected,trashWord,trashRowNote,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
 const { api } = sandbox;
