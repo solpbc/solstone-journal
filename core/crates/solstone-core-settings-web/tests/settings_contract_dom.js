@@ -2689,6 +2689,24 @@ module.exports = async function settingsContractCases(crateDir) {
     }
   });
 
+  await test("a priority refused before a phone's late blur, which then blurs the copy drawn again, lands on that copy", async () => {
+    const { p, spec, select } = await pickPage("an activity's priority");
+    const held = holdGranola(p, spec.write[0], spec.write[1]);
+    const picked = pickFrom(p, select(), spec.value);
+    await settle();
+    held.release(...REFUSALS["an activity's priority"]);
+    await settle();
+    const again = priorityOf(p, spec.activity);
+    assert.ok(again && again !== picked && p.doc.activeElement === again, `drawn again, focused: ${at(p)}`);
+    p.clock.advance(PHONE_BLUR - p.clock.now());
+    // The phone blurs what has focus now: the copy drawn again.
+    lateBlur(p, again);
+    assert.ok(p.doc.activeElement === p.doc.body, 'the blur leaves the page');
+    p.clock.advance(0);
+    assert.ok(p.doc.activeElement === again, `back on the copy: ${at(p)}`);
+    assert.ok(p.writes().length === 1, `one write: ${p.writes().length}`);
+  });
+
   await test("speech processing refused after a phone's late blur, its choice unreadable after, lands on the line that says so", async () => {
     const extra = PICKS['speech processing'].extra;
     const base = journal(extra);
