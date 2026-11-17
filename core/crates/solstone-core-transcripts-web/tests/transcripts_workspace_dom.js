@@ -492,7 +492,7 @@ function loadTranscriptsScript() {
 
 // Transcripts is on the view contract: its script registers, and the page
 // mounts it. The harness runs the page's read store and view contract.
-const viewRuntimeSource = ['store.js', 'views.js']
+const viewRuntimeSource = ['store.js', 'views.js', 'focus.js']
   .map((name) => fs.readFileSync(path.join(crateDir, '../solstone-core-convey-shell/assets/static', name), 'utf8'))
   .join('\n');
 

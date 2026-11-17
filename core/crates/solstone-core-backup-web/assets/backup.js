@@ -2817,6 +2817,8 @@
       destinationBackend.addEventListener('change', function () {
         syncBackendFields('');
         syncKeepHint();
+        // A phone's late blur as the menu closes goes back to the select.
+        window.SolFocus.keepAfterPick(destinationBackend);
       });
     }
     const restoreBackend = root.querySelector('[data-field="restore_backend"]');

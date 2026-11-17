@@ -1368,6 +1368,11 @@ button.map-month-row:hover { background: var(--cream); }
       <section class="map-card"><h2>visits and stays here</h2><ul class="map-week-items">${visits}</ul></section>
       <section class="map-card"><p class="map-muted">to remove a visit or stay, open its day and delete its segments in transcripts. a place lasts as long as a segment it came from does.</p></section>`);
     const form = root.querySelector("[data-place-form]");
+    // A phone's late blur as the menu closes goes back to the select.
+    const aliasSelect = form?.elements.alias;
+    aliasSelect?.addEventListener("change", () => {
+      if (ctx) window.SolFocus.keepAfterPick(aliasSelect, ctx);
+    });
     form?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const mine = epoch;

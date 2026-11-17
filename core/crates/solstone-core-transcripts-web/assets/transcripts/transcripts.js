@@ -293,6 +293,7 @@
     segmentPicker.addEventListener('change', () => {
       const seg = allSegments.find(item => segmentChoiceId(item) === segmentPicker.value);
       if (seg) selectSegment(seg);
+      window.SolFocus.keepAfterPick(segmentPicker, ctx);
     });
 
     // Elements - content panel

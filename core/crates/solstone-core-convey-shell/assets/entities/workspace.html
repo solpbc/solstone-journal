@@ -5259,6 +5259,10 @@ async function restoreJournalEntityVersion(entityId, versionId, button) {
 }
 
 // Handle journal entity edit form submission
+// A phone's late blur as the type menu closes goes back to the select.
+const editTypeSelect = document.getElementById('journal-detail-edit-type');
+editTypeSelect.addEventListener('change', () => window.SolFocus.keepAfterPick(editTypeSelect, ctx));
+
 document.getElementById('journal-detail-edit-form').addEventListener('submit', function(e) {
   e.preventDefault();
 
