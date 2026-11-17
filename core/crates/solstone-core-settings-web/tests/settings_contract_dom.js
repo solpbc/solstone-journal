@@ -2258,6 +2258,8 @@ module.exports = async function settingsContractCases(crateDir) {
   const pickSection = (p, value) => { const s = p.byId('navSelect'); s.focus(); s.value = value; p.doc.dispatch(s, { type: 'change' }); return s; };
   const menuBlur = (p, s) => { s.blur(); p.doc.dispatch(s, { type: 'focusout', relatedTarget: null }); };
   const ctxListeners = (p) => p.view.ctx.held().listeners;
+  const NAV_WINDOW = 1730; // the view's wait
+  const PHONE_BLUR = 865; // the slowest delay seen on a phone from the change to its blur
 
   await test("a pick from the narrow section menu, then the menu's own blur, puts focus back on the select, for every section that keeps it", async () => {
     for (const value of ['transcription', 'profile', 'about', 'apikeys', 'vision', 'sync', 'storage', 'trash', 'guide']) {
@@ -2266,6 +2268,7 @@ module.exports = async function settingsContractCases(crateDir) {
       const select = pickSection(p, value);
       await settle();
       assert.ok(activeSection(p) === `section-${value}`, `${value} is shown`);
+      p.clock.advance(PHONE_BLUR);
       menuBlur(p, select);
       assert.ok(p.doc.activeElement === p.doc.body, `${value}: the blur leaves the page`);
       p.clock.advance(0);
@@ -2281,7 +2284,7 @@ module.exports = async function settingsContractCases(crateDir) {
     const timers = p.clock.live();
     const select = pickSection(p, 'transcription');
     await settle();
-    p.clock.advance(999);
+    p.clock.advance(NAV_WINDOW - 1);
     assert.ok(p.doc.activeElement === select, `kept: ${at(p)}`);
     assert.ok(ctxListeners(p) > base, 'the wait is armed inside its window');
     p.clock.advance(1);
@@ -2292,6 +2295,16 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(p.doc.activeElement === p.doc.body, `a blur after the window is left alone: ${at(p)}`);
   });
 
+  await test("a blur in the window's last moment still lands", async () => {
+    const p = await boot(env, '/app/settings/#profile');
+    const select = pickSection(p, 'transcription');
+    await settle();
+    p.clock.advance(NAV_WINDOW - 1);
+    menuBlur(p, select);
+    p.clock.advance(0);
+    assert.ok(p.doc.activeElement === select, `back on the select: ${at(p)}`);
+  });
+
   await test('a second pick ends the first wait before it arms its own', async () => {
     const p = await boot(env, '/app/settings/#profile');
     const base = ctxListeners(p);
@@ -2299,7 +2312,7 @@ module.exports = async function settingsContractCases(crateDir) {
     const one = ctxListeners(p) - base;
     pickSection(p, 'about');
     assert.ok(ctxListeners(p) - base === one, 'one wait');
-    p.clock.advance(1000);
+    p.clock.advance(NAV_WINDOW);
     assert.ok(ctxListeners(p) === base, 'none left');
   });
 

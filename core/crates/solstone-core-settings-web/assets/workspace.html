@@ -4272,8 +4272,9 @@ document.getElementById('settingsNav').addEventListener('keydown', (e) => {
 // owner has moved first: a tap, a press or a key ends the wait, and so does
 // the window passing. A browser that keeps focus on the select never blurs
 // it, and the wait ends with nothing done. Every timer here is the mount's,
-// so settings going takes the wait and its landing with it.
-const NAV_MENU_BLUR_MS = 1000;
+// so settings going takes the wait and its landing with it. The window is
+// twice the slowest delay seen on a phone from the change to that blur (865 ms).
+const NAV_MENU_BLUR_MS = 1730;
 let navMenuWaitEnd = () => {};
 function awaitNavMenuBlur(select) {
   let landing = 0;
