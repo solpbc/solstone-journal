@@ -3929,7 +3929,11 @@ async function pickerPick() {
   const phoneBlur = () => {
     picker.blur();
     picker.dispatchEvent({ type: 'blur' });
-    picker.dispatchEvent({ type: 'focusout', bubbles: true });
+    // focusout reaches the document too, as in a browser (this model's
+    // bubbling stops at the root element).
+    const out = { type: 'focusout', bubbles: true };
+    picker.dispatchEvent(out);
+    env.doc.dispatchEvent(out);
   };
   const flush = () => new Promise((r) => setTimeout(r, 10));
   const dayReads = () => env.requested.filter((url) => url.includes('/api/day/20200115') && !url.includes('/body-window')).length;

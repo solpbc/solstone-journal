@@ -2218,7 +2218,11 @@ function logFilterEnvironment() {
   const lateBlur = (el) => {
     doc.activeElement = doc.body;
     el.dispatchEvent(domEvent('blur'));
-    el.dispatchEvent(domEvent('focusout', true));
+    // focusout reaches the document too, as in a browser (this model's
+    // bubbling stops at the root element).
+    const out = domEvent('focusout', true);
+    el.dispatchEvent(out);
+    doc.dispatchEvent(out);
   };
   const listeners = () => listenerCount(doc) + Object.values(elements).reduce((total, el) => total + listenerCount(el), 0);
   return { doc, elements, clock, requests, logLine, pick, lateBlur, listeners };
