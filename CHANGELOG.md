@@ -8,11 +8,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- a person's page now lists saved voice samples with their date, time and a link to the recording. you can remove a sample that belongs to someone else.
-- merge previews now show voice samples added, notes under the name being merged, speaker labels and activities affected.
-
-- on linux, a journal installed with `https://solstone.app/install.sh` on its default route now updates itself once a day. it checks the signed release catalogue, checks the installer that catalogue names before running it, and installs a newer version in the background. it never restarts your journal: the new version starts the next time your journal does. a new install turns this on and says so, and a journal you already have asks you once in its status pane. `solstone update --automatic off` turns it off.
-- on linux, if an automatic update doesn't work twice in a row, your journal stops trying, tells you, and keeps running the version it has. the status pane has a button to try again.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -20,28 +15,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- on linux, when a newer version is installed and waiting, the status pane now says it starts the next time your journal does. before, it said the update status was unknown.
-- on linux, when a security update is installed and only a restart is missing, your journal now says so and has a button to restart it.
-- on linux, `solstone update --check` and the status pane on a package install now say how updates arrive: through your system's updater, once the solstone repository is set up.
-- the journal no longer describes a screen again when it looks the same as it did a few minutes earlier. it keeps the earlier description, so a quiet desk uses much less of the thinking you chose. when no screen changed and nothing was said, it also keeps its earlier account of what you were doing.
-- on windows, with confidential processing your journal now keeps one secure connection open instead of opening a new one for each step, so each step starts sooner.
-- the import page now works like home, transcripts and search: moving between it and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
-- settings now works like home, transcripts and search: moving between it and the other pages that work this way, by the side rail or a link, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 - the settings page no longer has a "re-validate all keys" button, because your journal can't check a Plaud token in this version. the check mark beside your token still shows whether one is saved.
 
 ### Fixed
 
-- health could overlook an unfinished screen file when another display from the same moment was ready. it now includes the unfinished work.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
-- security fix: an agent suggesting a correction could use the reply to check guesses about your answers or a speaker the transcript did not name.
-- when you use your own model endpoint, the thinking page and connection test now wait for your journal's running request instead of reporting a failure while it is busy.
-- recordings tagged with dominant television or music no longer add voice samples to a person. speech with light background music can still contribute samples. existing samples stay available for you to review.
-
-- on linux, after an update that stopped part-way, `solstone update --check` and the status pane now say an update is still available, and running `solstone update` again finishes it. before, they could say your journal was up to date while the solstone app was still on its older version.
-- after you merge two entities, the activities that named the one you merged away now name the one you kept, not an internal id, and an activity that already named the one you kept lists it once.
-- a connected agent that may see entities now also finds, by name, the activities an earlier merge labelled with an internal id.
-- the speakers page no longer lists you under "known voices" when voice samples were saved to you, for example by merging another person into you. your own voice stays under "your voice".
-- new conversation could be treated as unchanged when it ran about as long as the one before it, so who said each line, and the people detected in it, weren't worked out for that stretch. any new speech now counts as a change.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
@@ -55,7 +33,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - fixed another android permission error when downloading a journal archive.
 - fixed a failure when downloading a journal archive in the android and iphone development apps.
 - dimming the journal on iphone hides the keyboard and page controls until you wake it.
-- with your own endpoint, when the server answers that it doesn't have the model, that you've hit a rate limit, or with a server error, your journal now waits and tries that work again later. before, it could send the same request several times in a row.
 - the journal on iphone keeps its folder permissions private when opening a new or existing journal.
 - fixed the stats page failing to open when your journal runs on android or ios.
 - reduced unnecessary background work while the journal on a phone is idle.
@@ -71,14 +48,47 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a first restore on a phone or tablet now waits for work in your journal to finish before copying. if restore is interrupted, you can retry the same backup.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+- in settings, a field you changed and moved off, or pressed Enter in, just before reloading the page, closing the tab or opening health, backup or suggestions is now saved too.
+- on the settings page, focus now stays where you were when you press Enter to save your name, aliases, emails, time zone or Plaud token, turn "leave out other voices" or "suggest photos of people" on or off, erase face data, or connect, check or disconnect Granola: in the field, or on the button you pressed while it's working, then on what took its place, such as Granola's "check now" or the line saying what disconnecting kept. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
+- on the settings page, focus now stays where you were when you add a facet, mute or unmute one, press Enter to save its name or emoji, load older entries in its activity log, or add or remove one of its activities: on the button you pressed while it's working, then on what took its place, such as the next activity or the older entries. choosing "facets" from the section menu on a narrow screen now puts focus on the facets heading. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place. an activity under "add activity", a facet's emoji and its color now answer Enter and Space as well as a click.
+
+## [2.0.82] - 2026-11-17
+
+### Added
+
+- a person's page now lists saved voice samples with their date, time and a link to the recording. you can remove a sample that belongs to someone else.
+- merge previews now show voice samples added, notes under the name being merged, speaker labels and activities affected.
+- on linux, a journal installed with `https://solstone.app/install.sh` the default way, not as a package, now updates itself once a day. it checks the signed release catalogue, checks the installer that catalogue names before running it, and installs a newer version in the background. it never restarts your journal: the new version starts the next time your journal does. a new install turns this on and says so, and a journal you already have asks you once in its status pane. `solstone update --automatic off` turns it off.
+- on linux, if an automatic update doesn't work twice in a row, your journal stops trying, tells you, and keeps running the version it has. the status pane has a button to try again.
+
+### Changed
+
+- on linux, when a newer version is installed and waiting, the status pane now says it starts the next time your journal does. before, it said the update status was unknown.
+- on linux, when a security update is installed and only a restart is missing, your journal now says so and has a button to restart it.
+- on linux, `solstone update --check` and the status pane on a package install now say how updates arrive: through your system's updater, once the solstone repository is set up.
+- the journal no longer describes a screen again when it looks the same as it did a few minutes earlier. it keeps the earlier description, so a quiet desk uses much less of the thinking you chose. when no screen changed and nothing was said, it also keeps its earlier account of what you were doing.
+- on windows, with confidential processing your journal now keeps one secure connection open instead of opening a new one for each step, so each step starts sooner.
+- the import page now works like home, transcripts and search: moving between it and the other pages that work this way no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+- settings now works like home, transcripts and search: moving between it and the other pages that work this way, by the side rail or a link, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+
+### Fixed
+
+- security fix: a connected agent suggesting a correction could use the reply to check guesses about your answers or a speaker the transcript did not name.
+- health could overlook an unfinished screen file when another display from the same moment was ready. it now includes the unfinished work.
+- in suggestions, a card saying something was a recording or video no longer shows "off" under "your journal says", speaker names stay on one line, and "today" and "yesterday" are lowercase mid-sentence.
+- when you use your own model endpoint, the thinking page and connection test now wait for your journal's running request instead of reporting a failure while it is busy.
+- recordings tagged with dominant television or music no longer add voice samples to a person. speech with light background music can still contribute samples. existing samples stay available for you to review.
+- on linux, after an update that stopped part-way, `solstone update --check` and the status pane now say an update is still available, and running `solstone update` again finishes it. before, they could say your journal was up to date while the solstone app was still on its older version.
+- after you merge two entities, the activities that named the one you merged away now name the one you kept, not an internal id, and an activity that already named the one you kept lists it once.
+- a connected agent that may see entities now also finds, by name, the activities an earlier merge labelled with an internal id.
+- the speakers page no longer lists you under "known voices" when voice samples were saved to you, for example by merging another person into you. your own voice stays under "your voice".
+- new conversation could be treated as unchanged when it ran about as long as the one before it, so who said each line, and the people detected in it, weren't worked out for that stretch. any new speech now counts as a change.
+- with your own endpoint, when the server answers that it doesn't have the model, that you've hit a rate limit, or with a server error, your journal now waits and tries that work again later. before, it could send the same request several times in a row.
 - on the thinking page, focus now stays where you were when you check, clear or save a key, choose a model, switch where the thinking happens, turn confidential processing on or off, or change its audio setting, sign in to ChatGPT or sign out, install local thinking or cancel it, and when you open a choice or go back from it with "‹ thinking": on the same button if it's still there, otherwise on what took its place. a refresh that brings nothing new now leaves the page as it is, and an endpoint you're typing stays as you typed it. before, focus was dropped or landed on a status line, so if you use a keyboard or a screen reader, you lost your place.
 - on the import page, focus now stays where you were when you open a source or go back to the sources, validate, preview or start an import, answer a facet question, delete an import, load more of your history, or turn a page of an import's content: on the same button if it's still there, otherwise on what took its place, such as the import's progress or the next import in your history. a refresh that brings nothing new now leaves the page as it is, and "bookkeeping" on an import's page stays open if you opened it. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
 - in settings, the "clean up logs" box now closes, and a cleanup that ran no longer says it failed.
 - in settings, a change you made just before moving to home, transcripts or another page that works like them is now saved.
-- in settings, a field you changed and moved off, or pressed Enter in, just before reloading the page, closing the tab or opening health, backup or suggestions is now saved too.
 - on the settings page, focus now stays where you were when you erase or recover something in the trash, turn "keep audio with no speech" on or off, clean up logs, or answer the question about local access: on the button you pressed while it's working, then on what took its place, such as the next thing in the trash or the local access switch. before, focus was dropped, or in the trash it landed above the list, so if you use a keyboard or a screen reader, you lost your place.
-- on the settings page, focus now stays where you were when you press Enter to save your name, aliases, emails, time zone or Plaud token, turn "leave out other voices" or "suggest photos of people" on or off, erase face data, or connect, check or disconnect Granola: in the field, or on the button you pressed while it's working, then on what took its place, such as Granola's "check now" or the line saying what disconnecting kept. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place.
-- on the settings page, focus now stays where you were when you add a facet, mute or unmute one, press Enter to save its name or emoji, load older entries in its activity log, or add or remove one of its activities: on the button you pressed while it's working, then on what took its place, such as the next activity or the older entries. choosing "facets" from the section menu on a narrow screen now puts focus on the facets heading. before, focus was dropped, so if you use a keyboard or a screen reader, you lost your place. an activity under "add activity", a facet's emoji and its color now answer Enter and Space as well as a click.
 
 ## [2.0.81] - 2026-11-16
 
