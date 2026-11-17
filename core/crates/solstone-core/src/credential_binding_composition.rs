@@ -657,6 +657,14 @@ impl EndpointRace {
         std::fs::write(journal.0.join("config/journal.json"), &config_before).unwrap();
         let key = solstone_core_brain::generate_fingerprint_key(&journal.0).unwrap();
         let root = Arc::new(solstone_core_journal_io::JournalRoot::open(&journal.0).unwrap());
+        // Credential fencing must also hold when the ordering-only model-call
+        // line is unavailable and production deliberately proceeds unordered.
+        // Otherwise these overlapping requests wait on each other's turn.
+        std::fs::write(
+            solstone_core_local::admission::model_call_line_dir(&journal.0),
+            b"unavailable ordering line",
+        )
+        .unwrap();
         Self {
             journal,
             listener,
