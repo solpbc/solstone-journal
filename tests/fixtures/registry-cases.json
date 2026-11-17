@@ -1,0 +1,677 @@
+[
+  {
+    "path": "20260107/import.document/120000_60/document_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.document/*/document_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.image/120000_60/image_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.image/*/image_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.ics/120000_60/event_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.ics/*/event_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case3/120000_60/talents/screen.md",
+    "pattern": "*/*/*/talents/screen.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/agent-memory-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/120000_60/note.txt",
+    "pattern": "*/agent-memory-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]/*/note.txt",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/talents/case5.md",
+    "pattern": "*/talents/*.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/location.md",
+    "pattern": "*/location.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/body.md",
+    "pattern": "*/body.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case8/120000_60/talents/sense.json",
+    "pattern": "*/*/*/talents/sense.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case9/120000_60/talents/documents.json",
+    "pattern": "*/*/*/talents/documents.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case10/120000_60/talents/screen.json",
+    "pattern": "*/*/*/talents/screen.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/talents/morning_briefing.json",
+    "pattern": "*/talents/morning_briefing.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/talents/case12.jsonl",
+    "pattern": "*/talents/*.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case13/120000_60/talents/screen_text.md",
+    "pattern": "*/*/*/talents/screen_text.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case14/120000_60/talents/possible_names.json",
+    "pattern": "*/*/*/talents/possible_names.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case15/120000_60/talents/case15.md",
+    "pattern": "*/*/*/talents/*.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case16/120000_60/talents/case16/case16.md",
+    "pattern": "*/*/*/talents/*/*.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.case17/120000_60/case17_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.*/*/*_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.case18/120000_60/imported.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.*/*/imported.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.apple_health/120000_60/body.jsonl",
+    "pattern": "*/import.apple_health/*/body.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.oura/120000_60/body.jsonl",
+    "pattern": "*/import.oura/*/body.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.strava/120000_60/workout.json",
+    "pattern": "*/import.strava/*/workout.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case22/120000_60/browser_case22.jsonl",
+    "pattern": "*/*/*/browser_*.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case23/120000_60/note_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/*/*/note_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case24/120000_60/calendar_case24.jsonl",
+    "pattern": "*/*/*/calendar_*.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case25/120000_60/case25_protected_video.jsonl",
+    "pattern": "*/*/*/*_protected_video.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case26/120000_60/case26_desktop_activity.jsonl",
+    "pattern": "*/*/*/*_desktop_activity.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.case27/imported.jsonl",
+    "pattern": "*/import.*/imported.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.chatgpt/120000_60/conversation_transcript.jsonl",
+    "pattern": "*/import.chatgpt/*/conversation_transcript.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.claude/120000_60/conversation_transcript.jsonl",
+    "pattern": "*/import.claude/*/conversation_transcript.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.gemini/120000_60/conversation_transcript.jsonl",
+    "pattern": "*/import.gemini/*/conversation_transcript.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.text/120000_60/conversation_transcript.jsonl",
+    "pattern": "*/import.text/*/conversation_transcript.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.chatgpt/120000_60/imported_audio.jsonl",
+    "pattern": "*/import.chatgpt/*/imported_audio.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.claude/120000_60/imported_audio.jsonl",
+    "pattern": "*/import.claude/*/imported_audio.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.gemini/120000_60/imported_audio.jsonl",
+    "pattern": "*/import.gemini/*/imported_audio.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "config/actions/case35.jsonl",
+    "pattern": "config/actions/*.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case36/events/case36.jsonl",
+    "pattern": "facets/*/events/*.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case37/entities/case37/observations.jsonl",
+    "pattern": "facets/*/entities/*/observations.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case38/entities/case38.jsonl",
+    "pattern": "facets/*/entities/*.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case39/activities/case39.jsonl",
+    "pattern": "facets/*/activities/*.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case40/logs/case40.jsonl",
+    "pattern": "facets/*/logs/*.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case41/activities/case41/case41/case41.md",
+    "pattern": "facets/*/activities/*/*/*.md",
+    "condition": "Path"
+  },
+  {
+    "path": "reflections/weekly/case42.md",
+    "pattern": "reflections/weekly/*.md",
+    "condition": "Path"
+  },
+  {
+    "path": "imports/case43/summary.md",
+    "pattern": "imports/*/summary.md",
+    "condition": "Path"
+  },
+  {
+    "path": "apps/case44/talents/case44.md",
+    "pattern": "apps/*/talents/*.md",
+    "condition": "Path"
+  },
+  {
+    "path": "entities/case45/entity.json",
+    "pattern": "entities/*/entity.json",
+    "condition": "Path"
+  },
+  {
+    "path": "reflections/weekly/case46.json",
+    "pattern": "reflections/weekly/*.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case47/120000_60/audio.jsonl",
+    "pattern": "*/*/*/audio.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case48/120000_60/case48_audio.jsonl",
+    "pattern": "*/*/*/*_audio.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case49/120000_60/case49_transcript.jsonl",
+    "pattern": "*/*/*/*_transcript.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case50/120000_60/screen.jsonl",
+    "pattern": "*/*/*/screen.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case51/120000_60/case51_screen.jsonl",
+    "pattern": "*/*/*/*_screen.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case52/120000_60/location.jsonl",
+    "pattern": "*/*/*/location.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.image/120000_60/original.case53",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.image/*/original.*",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.document/120000_60/original.case54",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.document/*/original.*",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.document/120000_60/pages/case55.png",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.document/*/pages/*.png",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case56/120000_60/screenshot_screen.case56",
+    "pattern": "*/*/*/screenshot_screen.*",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case57/120000_60/case57_transcript.md",
+    "pattern": "*/*/*/*_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case58/120000_60/imported.md",
+    "pattern": "*/*/*/imported.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case59/120000_60/body.jsonl",
+    "pattern": "*/*/*/body.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case60/120000_60/workout.json",
+    "pattern": "*/*/*/workout.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case61/120000_60/case61.png",
+    "pattern": "*/*/*/*.png",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case62/120000_60/case62.jpg",
+    "pattern": "*/*/*/*.jpg",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case63/120000_60/case63.jpeg",
+    "pattern": "*/*/*/*.jpeg",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case64/120000_60/case64.webp",
+    "pattern": "*/*/*/*.webp",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case65/120000_60/case65.flac",
+    "pattern": "*/*/*/*.flac",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case66/120000_60/case66.webm",
+    "pattern": "*/*/*/*.webm",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case67/120000_60/case67.m4a",
+    "pattern": "*/*/*/*.m4a",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case68/120000_60/case68.mp4",
+    "pattern": "*/*/*/*.mp4",
+    "condition": "Path"
+  },
+  {
+    "path": "config/sample",
+    "pattern": "config/**",
+    "condition": "Path"
+  },
+  {
+    "path": "health/sample",
+    "pattern": "health/**",
+    "condition": "Path"
+  },
+  {
+    "path": "awareness/sample",
+    "pattern": "awareness/**",
+    "condition": "Path"
+  },
+  {
+    "path": "link/sample",
+    "pattern": "link/**",
+    "condition": "Path"
+  },
+  {
+    "path": "streams/sample",
+    "pattern": "streams/**",
+    "condition": "Path"
+  },
+  {
+    "path": "mcp-endpoint/sample",
+    "pattern": "mcp-endpoint/**",
+    "condition": "Path"
+  },
+  {
+    "path": "indexer/sample",
+    "pattern": "indexer/**",
+    "condition": "Path"
+  },
+  {
+    "path": "logs/sample",
+    "pattern": "logs/**",
+    "condition": "Path"
+  },
+  {
+    "path": "solstone/sample",
+    "pattern": "solstone/**",
+    "condition": "Path"
+  },
+  {
+    "path": "apps/sample",
+    "pattern": "apps/**",
+    "condition": "Path"
+  },
+  {
+    "path": "imports/sample",
+    "pattern": "imports/**",
+    "condition": "Path"
+  },
+  {
+    "path": "entities/sample",
+    "pattern": "entities/**",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case81/facet.json",
+    "pattern": "facets/*/facet.json",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case82/activities.jsonl",
+    "pattern": "facets/*/activities.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case83/news/case83.md",
+    "pattern": "facets/*/news/*.md",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case84/agent-runs/sample",
+    "pattern": "facets/*/agent-runs/**",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case85/journal/sample",
+    "pattern": "facets/*/journal/**",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case86/state/sample",
+    "pattern": "facets/*/state/**",
+    "condition": "Path"
+  },
+  {
+    "path": "AGENTS.md",
+    "pattern": "AGENTS.md",
+    "condition": "Path"
+  },
+  {
+    "path": "CLAUDE.md",
+    "pattern": "CLAUDE.md",
+    "condition": "Path"
+  },
+  {
+    "path": "GEMINI.md",
+    "pattern": "GEMINI.md",
+    "condition": "Path"
+  },
+  {
+    "path": "README.md",
+    "pattern": "README.md",
+    "condition": "Path"
+  },
+  {
+    "path": ".gitignore",
+    "pattern": ".gitignore",
+    "condition": "Path"
+  },
+  {
+    "path": ".gitkeep",
+    "pattern": ".gitkeep",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/health/sample",
+    "pattern": "*/health/**",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case94/120000_60/stream.json",
+    "pattern": "*/*/*/stream.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case95/120000_60/ingest.json",
+    "pattern": "*/*/*/ingest.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case96/120000_60/events.jsonl",
+    "pattern": "*/*/*/events.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case97/120000_60/placement.json",
+    "pattern": "*/*/*/placement.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case98/120000_60/shape.json",
+    "pattern": "*/*/*/shape.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case99/120000_60/talents/case99.json",
+    "pattern": "*/*/*/talents/*.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case100/120000_60/talents/case100/case100.json",
+    "pattern": "*/*/*/talents/*/*.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case101/120000_60/health/sample",
+    "pattern": "*/*/*/health/**",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case102/120000_60/.case102",
+    "pattern": "*/*/*/.*",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case103/120000_60/case103.sqlite",
+    "pattern": "*/*/*/*.sqlite",
+    "condition": "Path"
+  },
+  {
+    "path": "maint/sample",
+    "pattern": "maint/**",
+    "condition": "Path"
+  },
+  {
+    "path": "talents/sample",
+    "pattern": "talents/**",
+    "condition": "Path"
+  },
+  {
+    "path": "tokens/sample",
+    "pattern": "tokens/**",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/review-candidates.jsonl",
+    "pattern": "facets/review-candidates.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case110/.gitkeep",
+    "pattern": "facets/*/.gitkeep",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case111/entities.md",
+    "pattern": "facets/*/entities.md",
+    "condition": "Path"
+  },
+  {
+    "path": "facets/case112/entities/case112/entity.json",
+    "pattern": "facets/*/entities/*/entity.json",
+    "condition": "Path"
+  },
+  {
+    "path": "entities.md",
+    "pattern": "entities.md",
+    "condition": "Path"
+  },
+  {
+    "path": "summary.md",
+    "pattern": "summary.md",
+    "condition": "Path"
+  },
+  {
+    "path": "entity_review.log",
+    "pattern": "entity_review.log",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/indexer/sample",
+    "pattern": "*/indexer/**",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/README.md",
+    "pattern": "*/README.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/.gitkeep",
+    "pattern": "*/.gitkeep",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case119/120000_60/audio.json",
+    "pattern": "*/*/*/audio.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case120/120000_60/case120_diff.json",
+    "pattern": "*/*/*/*_diff.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case121/120000_60/case121_diff_box.json",
+    "pattern": "*/*/*/*_diff_box.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case122/120000_60/case122.jsonl",
+    "pattern": "*/*/*/*",
+    "condition": "ImageHeader"
+  },
+  {
+    "path": "20260107/case123/120000_60/case123.jsonl",
+    "pattern": "*/*/*/*",
+    "condition": "TranscribeHeader"
+  },
+  {
+    "path": "20260107/case124/120000_60/p0001_0123456789abcdef.jsonl",
+    "pattern": "*/*/*/*.jsonl",
+    "condition": "ArchiveName"
+  },
+  {
+    "path": "20260107/case125/120000_60/case125audio.jsonl",
+    "pattern": "*/*/*/*audio.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/case126/120000_60/case126screen.jsonl",
+    "pattern": "*/*/*/*screen.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.evernote/120000_60/note_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.evernote/*/note_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.obsidian/120000_60/note_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.obsidian/*/note_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.apple_health/120000_60/sample_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.apple_health/*/*_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.oura/120000_60/sample_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.oura/*/*_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.strava/120000_60/sample_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.strava/*/*_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "cache/registry-witness",
+    "pattern": "cache/**",
+    "condition": "Path"
+  },
+  {
+    "path": "backup/registry-witness",
+    "pattern": "backup/**",
+    "condition": "Path"
+  },
+  {
+    "path": ".agents/registry-witness",
+    "pattern": ".agents/**",
+    "condition": "Path"
+  },
+  {
+    "path": ".claude/registry-witness",
+    "pattern": ".claude/**",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/custom/120000_60/calendar_note.txt",
+    "pattern": "*/*/*/calendar_*",
+    "condition": "Path"
+  }
+]
