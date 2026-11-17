@@ -390,6 +390,35 @@ pub fn read_day(
         .unwrap_or_default()
 }
 
+/// Project exactly the supplied segment's readings, without adjoining segments
+/// or the next day's visit completion. Naming and hide policy stay identical
+/// to the day projection.
+pub fn read_segment_text(
+    day: &str,
+    segment: &Segment,
+    text: &str,
+    tier: &AreaTier,
+    packs: Option<&Packs>,
+    directory: &dyn DeviceDirectory,
+    owner: Tz,
+) -> Result<DayLocation, String> {
+    let located =
+        located(day, segment).ok_or_else(|| "location segment has no coordinate".to_owned())?;
+    let file = parse_segment_file(text.as_bytes());
+    if file.unreadable_file || file.unreadable_lines > 0 || file.unrecognised_lines > 0 {
+        return Err("location file contains unreadable or unrecognized readings".to_owned());
+    }
+    Ok(assemble(
+        day,
+        vec![located],
+        vec![(file, directory.segment_context(segment.path()))],
+        tier,
+        packs,
+        directory,
+        owner,
+    ))
+}
+
 /// Assemble several days, each read once. A day still holding an arrival-only
 /// visit is completed from the day after it: the one listed next when it is
 /// the following day, else that day read on its own.
