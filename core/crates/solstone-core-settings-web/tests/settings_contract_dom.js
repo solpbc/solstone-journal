@@ -1831,6 +1831,26 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.strictEqual(at(p), 'BUTTON#granolaReplace', "the cancel's");
   });
 
+  await test('a held Granola "use this key" keeps its form: its cancel and "use a new key" do nothing while it is out', async () => {
+    const p = await granolaPage(GRANOLA_ON);
+    p.press(p.byId('granolaReplace'));
+    await settle();
+    const held = holdGranola(p, 'POST');
+    p.byId('granolaKey').value = 'grn_two';
+    const connect = p.byId('granolaConnect');
+    connect.focus();
+    p.press(connect);
+    await settle();
+    const cancel = p.byId('granolaCancelKey');
+    assert.ok(offNotBusy(cancel), 'the cancel is off');
+    p.press(cancel);
+    await settle();
+    assert.ok(!p.byId('granolaKeyForm').hidden && p.doc.activeElement === connect, `the form stays, focus on its busy button: ${at(p)}`);
+    held.release();
+    await settle();
+    assert.strictEqual(at(p), 'BUTTON#granolaReplace', 'then lands as an answered one does');
+  });
+
   await test("a held Granola disconnect keeps its button busy and sends one; its answer lands on the line that says what happened", async () => {
     const p = await granolaPage(GRANOLA_ON);
     const held = holdGranola(p, 'DELETE');
@@ -1961,6 +1981,9 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(p.doc.activeElement === clear && busyNotDisabled(clear), `the erase, busy: ${at(p)}`);
     const toggle = p.byId('facesEnabled');
     assert.ok(offNotBusy(toggle), 'the switch is off while the erase is out');
+    tick(p, toggle);
+    await settle();
+    assert.ok(configPuts(p).length === 0, 'and a press on it sends nothing');
     p.press(clear);
     await settle();
     assert.ok(p.shownModals().length === 0, 'no second confirm');
