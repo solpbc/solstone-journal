@@ -2228,6 +2228,8 @@ button:focus:not(:focus-visible) {
 .trash-count, .trash-all { color: var(--ink-soft); font-weight: 600; font-size: .9em; }
 .trash-all { display: inline-flex; align-items: center; gap: .5em; cursor: pointer; }
 .trash-bar-actions { margin-left: auto; display: flex; gap: .5em; }
+/* A control whose write is out stays focusable and drawn, dimmed. */
+:is(#section-trash, #section-storage, #section-localaccess, #trashConfirmModal, #cleanupLogsModal) [aria-busy="true"] { opacity: .8; cursor: progress; }
 .trash-danger-outline { padding: .5em 1em; background: var(--paper); color: var(--danger); border: 1px solid var(--danger); border-radius: 6px; font-size: .9em; cursor: pointer; }
 .trash-result { padding: .5em 1em; border-bottom: 1px solid var(--hairline); color: var(--ink-soft); font-size: .9em; }
 .trash-row { display: flex; align-items: flex-start; gap: .75em; padding: .65em 1em; font-size: .85em; cursor: pointer; }
@@ -2935,7 +2937,7 @@ button:focus:not(:focus-visible) {
             <button type="button" class="btn-secondary" id="localAccessConfirmNo"></button>
           </div>
         </div>
-        <p id="localAccessResult" role="status" aria-live="polite" style="font-size: 0.9em;"></p>
+        <p id="localAccessResult" role="status" aria-live="polite" tabindex="-1" style="font-size: 0.9em;"></p>
       </form>
     </section>
 
@@ -2995,7 +2997,7 @@ button:focus:not(:focus-visible) {
           </label>
           <label for="emptyAudioKeep" class="toggle-label" style="cursor: pointer;">keep audio with no speech</label>
         </div>
-        <div id="emptyAudioStatus" style="margin-top: 0.75em; color: var(--ink-soft); font-size: 0.9em;">currently: list audio with no speech for removal after processing.</div>
+        <div id="emptyAudioStatus" tabindex="-1" style="margin-top: 0.75em; color: var(--ink-soft); font-size: 0.9em;">currently: list audio with no speech for removal after processing.</div>
       </div>
 
       <div id="streamOverridesMount"></div>
@@ -3034,7 +3036,7 @@ button:focus:not(:focus-visible) {
 
     <!-- Trash Section: what waits before it's erased, the setting, and the removal history -->
     <section class="settings-section" id="section-trash" role="tabpanel" aria-labelledby="tab-trash">
-      <h2 id="trashHeading">trash</h2>
+      <h2 id="trashHeading" tabindex="-1">trash</h2>
       <p class="settings-section-desc">things you delete wait here until the date beside them, then they're erased. recovering one puts it back in your journal.</p>
       <div class="log-panel trash-panel">
         <div class="trash-bar" id="trashBar" tabindex="-1" hidden>
@@ -7188,8 +7190,16 @@ function renderEmptyAudio() {
   const status = document.getElementById('emptyAudioStatus');
   if (!toggle || !status) return;
   toggle.checked = emptyAudio.known && emptyAudio.kept;
-  toggle.disabled = emptyAudio.busy || !emptyAudio.known || storageControlsDisabled;
-  toggle.setAttribute('aria-disabled', toggle.disabled ? 'true' : 'false');
+  // Busy while its save is out, so it keeps focus; off only when the choice
+  // can't be confirmed or storage is off.
+  const unavailable = !emptyAudio.known || storageControlsDisabled;
+  toggle.disabled = unavailable;
+  if (emptyAudio.busy && !unavailable) {
+    window.SolFocus.setBusy(toggle, true);
+  } else {
+    toggle.removeAttribute('aria-busy');
+    toggle.setAttribute('aria-disabled', unavailable ? 'true' : 'false');
+  }
   if (!emptyAudio.known) {
     status.textContent = "couldn't confirm which choice is saved. reload the page to check.";
   } else {
@@ -7228,6 +7238,8 @@ async function saveEmptyAudioConfig() {
   } catch (_) {
     // Failure (network error, ApiError, 500 status, etc.)
   } finally {
+    const toggle = document.getElementById('emptyAudioKeep');
+    const held = Boolean(toggle) && document.activeElement === toggle;
     if (gen === emptyAudio.generation) {
       emptyAudio.generation++;
       if (confirmed) {
@@ -7239,6 +7251,8 @@ async function saveEmptyAudioConfig() {
       }
       emptyAudio.busy = false;
       renderEmptyAudio();
+      // A failure turns the toggle off: focus goes to the line that says why.
+      window.SolFocus.refocus(settingsPage, held, [document.getElementById('emptyAudioStatus')]);
       void measureStorage();
     }
   }
@@ -7886,13 +7900,16 @@ async function runLogCleanupPreview() {
 }
 
 async function runLogCleanupExecute() {
+  const btn = document.getElementById('cleanupLogsConfirmBtn');
+  // Busy, not disabled, while the delete is out: it keeps focus, and a
+  // second press sends nothing.
+  if (window.SolFocus.isBusy(btn)) return;
   const days = readLogCleanupDays();
   if (days === null) return;
 
-  const btn = document.getElementById('cleanupLogsConfirmBtn');
   const previewDiv = document.getElementById('cleanupLogsPreview');
   const previewText = document.getElementById('cleanupLogsPreviewText');
-  btn.disabled = true;
+  window.SolFocus.setBusy(btn, true);
   btn.textContent = 'deleting…';
   previewDiv.style.display = '';
 
@@ -7914,6 +7931,7 @@ async function runLogCleanupExecute() {
   } catch (err) {
     notifyError('cleanup failed', err.message);
   } finally {
+    window.SolFocus.setBusy(btn, false);
     btn.disabled = false;
     btn.textContent = 'delete logs';
   }
@@ -8038,6 +8056,8 @@ async function initSettingsWorkspace() {
 // can be closed. Elsewhere it is absent and the section stays hidden.
 const LOCAL_ACCESS_ROUTE = '/app/settings/api/local-access';
 let localAccess = null;
+// While a choice is being saved, the group stays as it is.
+let localAccessSaving = false;
 
 async function loadLocalAccess() {
   let response;
@@ -8128,15 +8148,36 @@ function showLocalAccessConfirm(title, yes, no, open) {
   const noButton = document.getElementById('localAccessConfirmNo');
   yesButton.textContent = yes;
   noButton.textContent = no;
-  yesButton.onclick = () => saveLocalAccess(open);
-  noButton.onclick = () => renderLocalAccess(localAccess);
+  yesButton.onclick = () => saveLocalAccess(open, yesButton);
+  noButton.onclick = () => {
+    if (localAccessSaving) return;
+    const held = localAccessHeld();
+    renderLocalAccess(localAccess);
+    landLocalAccess(held);
+  };
   document.getElementById('localAccessConfirm').hidden = false;
   noButton.focus();
 }
 
-async function saveLocalAccess(open) {
+// The group hides once it's answered: focus goes to the toggle it was about,
+// else (the toggle turned off) the line that says what happened.
+function localAccessHeld() {
+  const active = document.activeElement;
+  return Boolean(active) && document.getElementById('localAccessConfirm').contains(active);
+}
+function landLocalAccess(held) {
+  window.SolFocus.refocus(settingsPage, held, [document.getElementById('field-local-access-open'), document.getElementById('localAccessResult')]);
+}
+
+async function saveLocalAccess(open, button = null) {
+  if (localAccessSaving) return;
+  localAccessSaving = true;
+  const noButton = document.getElementById('localAccessConfirmNo');
+  window.SolFocus.setBusy(button, true);
+  noButton.setAttribute('aria-disabled', 'true');
   const result = document.getElementById('localAccessResult');
   result.textContent = '';
+  const held = localAccessHeld();
   try {
     const response = await settingsFetch(LOCAL_ACCESS_ROUTE, {
       method: 'PUT',
@@ -8154,12 +8195,18 @@ async function saveLocalAccess(open) {
   } catch (_) {
     result.textContent = 'your choice could not be saved. please try again.';
     renderLocalAccess(localAccess);
+  } finally {
+    localAccessSaving = false;
+    window.SolFocus.setBusy(button, false);
+    noButton.removeAttribute('aria-disabled');
+    landLocalAccess(held);
   }
 }
 
 document.getElementById('field-local-access-open').addEventListener('change', (event) => {
-  // Nothing changes until the owner confirms.
+  // Nothing changes until the owner confirms, and nothing while a choice is saved.
   event.target.checked = !!localAccess?.open;
+  if (localAccessSaving) return;
   if (localAccess?.open) showCloseLocalAccess();
   else showOpenLocalAccess();
 });
@@ -8727,6 +8774,8 @@ const TRASH_STUCK = new Set(['merge_dest_missing', 'taken', 'name_redirected', '
 
 let trashItems = [];
 let trashConfirmed = null;
+// One act at a time: while one is out, every opener ignores a press.
+let trashActing = false;
 const trashSelected = new Set();
 // The note a refused row carries after an act, by id.
 const trashNotes = new Map();
@@ -9255,7 +9304,43 @@ function trashReplacesFacet(item) {
   return item.kind === 'facet' && item.replaces === true;
 }
 
-async function runTrashAct(act, chosen, choice = null) {
+// The pressed opener is busy while its act is out, never `disabled`, so it
+// keeps focus; the other two are off without being busy.
+const TRASH_OPENERS = ['trashRecoverBtn', 'trashEraseBtn', 'trashEmptyBtn'];
+function markTrashActing(opener, on) {
+  trashActing = on;
+  TRASH_OPENERS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el === opener) window.SolFocus.setBusy(el, on);
+    else if (on) el.setAttribute('aria-disabled', 'true');
+    else el.removeAttribute('aria-disabled');
+  });
+}
+
+// Where focus goes once an act has answered and the list is drawn again. An
+// erase or a recover: the row after the first one it took, else the one
+// before, else the heading. Nothing taken: the line that says why. An empty:
+// the heading once nothing is left, else its button, still drawn.
+function trashLandings(act, chosen, order, loaded) {
+  const heading = document.getElementById('trashHeading');
+  const result = document.getElementById('trashResult');
+  if (!loaded) return [result, heading];
+  const listed = new Set(trashItems.map(item => item.id));
+  if (act === 'empty') return listed.size ? [document.getElementById('trashEmptyBtn'), result, heading] : [heading];
+  const picked = new Set(chosen.map(item => item.id));
+  const at = order.findIndex(id => picked.has(id) && !listed.has(id));
+  if (at < 0) return [result, heading];
+  const boxes = Array.from(document.querySelectorAll('#trashList input[type="checkbox"]'));
+  const box = id => (listed.has(id) ? boxes.find(el => el.dataset.trashId === id) : null);
+  const after = order.slice(at + 1).map(box).find(Boolean);
+  const before = order.slice(0, at).reverse().map(box).find(Boolean);
+  return [after, before, heading];
+}
+
+async function runTrashAct(act, chosen, choice = null, opener = null) {
+  if (trashActing) return;
+  const order = trashItems.map(item => item.id);
+  markTrashActing(opener, true);
   const options = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
   const backups = window.BackupErase ? window.BackupErase.chosen(choice) : false;
   if (act === 'empty') options.body = JSON.stringify({ backups });
@@ -9274,15 +9359,18 @@ async function runTrashAct(act, chosen, choice = null) {
     const note = entry && trashRowNote(entry);
     if (note) trashNotes.set(entry.id, note);
   });
+  // Focus the act took: on its opener, or on the trash, when the answer comes.
+  const section = document.getElementById('section-trash');
+  const held = document.activeElement === opener || section.contains(document.activeElement);
   const loaded = await loadTrash();
+  markTrashActing(opener, false);
   const listed = loaded ? new Set(trashItems.map(item => item.id)) : null;
   const result = document.getElementById('trashResult');
   const done = answer && Array.isArray(answer.done) ? answer.done.length : 0;
   const clause = done && window.BackupErase ? window.BackupErase.receipt(choice, done) : '';
   result.textContent = [trashResultLine(act, chosen, answer, listed), clause].filter(Boolean).join(' ');
   result.hidden = !result.textContent;
-  const bar = document.getElementById('trashBar');
-  (bar.hidden ? result : bar).focus();
+  window.SolFocus.refocus(settingsPage, held, trashLandings(act, chosen, order, loaded).filter(Boolean));
   loadRemovalHistory();
 }
 
@@ -9297,15 +9385,20 @@ async function openTrashConfirm(act, items, trigger) {
   const confirm = document.getElementById('trashConfirmErase');
   confirm.textContent = copy.confirm;
   confirm.className = act === 'replace' ? 'trash-danger-outline' : 'cleanup-confirm-btn';
-  trashConfirmed = () => runTrashAct(act === 'replace' ? 'recover' : act, items, choice);
+  trashConfirmed = (opener) => runTrashAct(act === 'replace' ? 'recover' : act, items, choice, opener);
   const modal = document.getElementById('trashConfirmModal');
   modal.style.display = 'block';
   modal._openAccessible(trigger);
 }
 
+// The page is out from under the dialog before focus goes back to its opener,
+// so it lands now rather than at the modal layer's next frame.
 function closeTrashConfirm() {
   trashConfirmed = null;
-  document.getElementById('trashConfirmModal')._closeAccessible();
+  const modal = document.getElementById('trashConfirmModal');
+  modal._closeAccessible();
+  window.ConveyModalLayer?.reconcile?.({ restore: false });
+  modal._triggerEl?.focus?.();
 }
 
 function trashChosen() {
@@ -9339,17 +9432,19 @@ function setupTrash() {
   });
   // A facet recovered over another of its name erases that one, so it confirms first.
   byId('trashRecoverBtn').addEventListener('click', (event) => {
+    if (trashActing) return;
     const chosen = trashChosen();
     if (chosen.some(trashReplacesFacet)) openTrashConfirm('replace', chosen, event.currentTarget);
-    else runTrashAct('recover', chosen);
+    else runTrashAct('recover', chosen, null, event.currentTarget);
   });
-  byId('trashEraseBtn').addEventListener('click', (event) => openTrashConfirm('erase', trashChosen(), event.currentTarget));
-  byId('trashEmptyBtn').addEventListener('click', (event) => openTrashConfirm('empty', trashItems.slice(), event.currentTarget));
+  byId('trashEraseBtn').addEventListener('click', (event) => { if (!trashActing) openTrashConfirm('erase', trashChosen(), event.currentTarget); });
+  byId('trashEmptyBtn').addEventListener('click', (event) => { if (!trashActing) openTrashConfirm('empty', trashItems.slice(), event.currentTarget); });
   byId('trashConfirmCancel').addEventListener('click', closeTrashConfirm);
   byId('trashConfirmErase').addEventListener('click', () => {
     const act = trashConfirmed;
+    const opener = byId('trashConfirmModal')._triggerEl || null;
     closeTrashConfirm();
-    if (act) act();
+    if (act) act(opener);
   });
   byId('trashConfirmModal').addEventListener('click', (event) => {
     if (event.target === byId('trashConfirmModal')) closeTrashConfirm();
