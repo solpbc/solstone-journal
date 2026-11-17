@@ -7252,6 +7252,8 @@ async function saveEmptyAudioConfig() {
       emptyAudio.busy = false;
       renderEmptyAudio();
       // A failure turns the toggle off: focus goes to the line that says why.
+      // A browser can still report a control it has just turned off as focused.
+      if (held && toggle.disabled) toggle.blur();
       window.SolFocus.refocus(settingsPage, held, [document.getElementById('emptyAudioStatus')]);
       void measureStorage();
     }
