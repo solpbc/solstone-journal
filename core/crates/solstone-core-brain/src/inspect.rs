@@ -907,45 +907,28 @@ fn inspection(
 
 #[cfg(test)]
 mod tests {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     use serde_json::json;
 
     use super::*;
 
-    struct TempJournal(PathBuf);
+    struct TempJournal(tempfile::TempDir);
 
     impl TempJournal {
         fn new() -> Self {
-            let path = PathBuf::from("/var/tmp").join(format!(
-                "solstone-brain-inspect-{}-{}",
-                std::process::id(),
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("clock")
-                    .as_nanos(),
-            ));
-            fs::create_dir_all(&path).expect("create temporary journal");
-            Self(path)
+            Self(tempfile::tempdir().expect("create temporary journal"))
         }
 
         fn write_runtime(&self, value: Value) {
-            let path = self.0.join("health/providers/runtime");
+            let path = self.0.path().join("health/providers/runtime");
             fs::create_dir_all(&path).expect("create runtime directory");
             fs::write(path.join("local.json"), value.to_string()).expect("write runtime health");
-        }
-    }
-
-    impl Drop for TempJournal {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
         }
     }
 
     #[test]
     fn bundled_runtime_prerequisite_covers_missing_invalid_phases_and_fingerprint() {
         let journal = TempJournal::new();
-        let missing = assess_bundled_runtime_prerequisite(&journal.0, None);
+        let missing = assess_bundled_runtime_prerequisite(journal.0.path(), None);
         assert_eq!(
             missing.reason_code.as_deref(),
             Some("local_runtime_not_ready")
@@ -953,7 +936,7 @@ mod tests {
         assert_eq!(missing.phase.as_deref(), Some("stopped"));
 
         journal.write_runtime(json!({"phase":"not-a-real-phase"}));
-        let invalid = assess_bundled_runtime_prerequisite(&journal.0, None);
+        let invalid = assess_bundled_runtime_prerequisite(journal.0.path(), None);
         assert_eq!(
             invalid.reason_code.as_deref(),
             Some("local_runtime_state_invalid")
@@ -965,7 +948,7 @@ mod tests {
                 "phase": phase,
                 "desired_fingerprint_sha256": "a".repeat(64),
             }));
-            let assessment = assess_bundled_runtime_prerequisite(&journal.0, None);
+            let assessment = assess_bundled_runtime_prerequisite(journal.0.path(), None);
             let expected = local_contract()
                 .brain_state
                 .runtime_phase_to_reason
@@ -979,9 +962,10 @@ mod tests {
             "phase": "ready",
             "desired_fingerprint_sha256": "a".repeat(64),
         }));
-        let matched = assess_bundled_runtime_prerequisite(&journal.0, Some(&"a".repeat(64)));
+        let matched = assess_bundled_runtime_prerequisite(journal.0.path(), Some(&"a".repeat(64)));
         assert_eq!(matched.reason_code, None);
-        let mismatched = assess_bundled_runtime_prerequisite(&journal.0, Some(&"b".repeat(64)));
+        let mismatched =
+            assess_bundled_runtime_prerequisite(journal.0.path(), Some(&"b".repeat(64)));
         assert_eq!(
             mismatched.reason_code.as_deref(),
             Some("local_runtime_fingerprint_mismatch")
@@ -1056,7 +1040,7 @@ mod tests {
         let journal = TempJournal::new();
         journal.write_runtime(json!({"phase":"ready","desired_fingerprint_sha256":desired}));
         assert_eq!(
-            assess_bundled_runtime_prerequisite(&journal.0, Some(&desired)).reason_code,
+            assess_bundled_runtime_prerequisite(journal.0.path(), Some(&desired)).reason_code,
             None
         );
     }
@@ -1071,7 +1055,7 @@ mod tests {
         let journal = TempJournal::new();
         journal.write_runtime(json!({"phase":"ready","desired_fingerprint_sha256":cuda}));
         assert_eq!(
-            assess_bundled_runtime_prerequisite(&journal.0, Some(&vulkan))
+            assess_bundled_runtime_prerequisite(journal.0.path(), Some(&vulkan))
                 .reason_code
                 .as_deref(),
             Some("local_runtime_fingerprint_mismatch")
@@ -1196,7 +1180,7 @@ mod tests {
         assert_eq!(missing_key.aggregate_state, "unhealthy");
 
         let journal = TempJournal::new();
-        let path = brain_state_path(&journal.0);
+        let path = brain_state_path(journal.0.path());
         fs::create_dir_all(path.parent().expect("health")).expect("health directory");
         fs::write(
             path,
@@ -1206,7 +1190,7 @@ mod tests {
             .expect("record bytes"),
         )
         .expect("record writes");
-        let inspection = inspect_brain_state(&journal.0, &corrupt, fixture_now());
+        let inspection = inspect_brain_state(journal.0.path(), &corrupt, fixture_now());
         assert_eq!(
             inspection.projection.reason_code.as_deref(),
             Some("provider_key_invalid")
@@ -1341,25 +1325,25 @@ mod tests {
     fn assert_record_free_overlay(record_bytes: Option<&[u8]>) {
         let journal = TempJournal::new();
         if let Some(bytes) = record_bytes {
-            let path = brain_state_path(&journal.0);
+            let path = brain_state_path(journal.0.path());
             fs::create_dir_all(path.parent().expect("health")).expect("health");
             fs::write(path, bytes).expect("record");
         }
         let key = fixture_key();
         fs::create_dir_all(
-            brain_fingerprint_key_path(&journal.0)
+            brain_fingerprint_key_path(journal.0.path())
                 .parent()
                 .expect("health"),
         )
         .expect("health");
-        fs::write(brain_fingerprint_key_path(&journal.0), key).expect("key");
+        fs::write(brain_fingerprint_key_path(journal.0.path()), key).expect("key");
         let mut rejected = config_named("lane_byo_cloud");
         plant_rejection(
             &mut rejected,
             "anthropic",
             matching_entry("anthropic", "sk-test"),
         );
-        let inspection = inspect_brain_state(&journal.0, &rejected, fixture_now());
+        let inspection = inspect_brain_state(journal.0.path(), &rejected, fixture_now());
         assert_eq!(
             inspection.projection.reason_code.as_deref(),
             Some("provider_key_invalid")
@@ -1381,14 +1365,14 @@ mod tests {
             .and_then(Value::as_object_mut)
             .expect("env")
             .remove("ANTHROPIC_API_KEY");
-        let inspection = inspect_brain_state(&journal.0, &missing, fixture_now());
+        let inspection = inspect_brain_state(journal.0.path(), &missing, fixture_now());
         assert_eq!(
             inspection.projection.reason_code.as_deref(),
             Some("provider_key_missing")
         );
         assert_eq!(inspection.projection.aggregate_state, "blocked");
 
-        let spp = inspect_brain_state(&journal.0, &config_named("lane_spp"), fixture_now());
+        let spp = inspect_brain_state(journal.0.path(), &config_named("lane_spp"), fixture_now());
         let expected = if record_bytes.is_some() {
             "brain_record_invalid"
         } else {
@@ -1405,7 +1389,7 @@ mod tests {
             .and_then(Value::as_object_mut)
             .expect("active")
             .insert("provider".to_owned(), json!("chatgpt"));
-        let chatgpt = inspect_brain_state(&journal.0, &chatgpt, fixture_now());
+        let chatgpt = inspect_brain_state(journal.0.path(), &chatgpt, fixture_now());
         assert_eq!(chatgpt.projection.reason_code.as_deref(), Some(expected));
         assert_ne!(chatgpt.projection.aggregate_state, "ready");
     }

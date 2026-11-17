@@ -4477,6 +4477,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "tempfile",
 ]
 
 [[package]]
