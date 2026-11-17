@@ -352,6 +352,216 @@ function sampleFallsBackToTheLabel() {
   check(label({ day: '20261016', stream: 'device_9e92ab54', setting: 'kitchen' }) === 'DAY · kitchen', 'a setting still wins');
 }
 
+// ---- a pick from a select, on a phone that blurs it late
+
+// The contract cases' page (a document with focus and events, a clock the
+// cases move, the view contract and its read store), loaded apart from them.
+function contractPage() {
+  const file = path.join(__dirname, 'speakers_contract_dom.js');
+  const body = `${fs.readFileSync(file, 'utf8')}\nreturn { makePage, settle, journal, review, DAY, ORIGIN, Element };`;
+  const kit = new Function('require', 'module', 'exports', '__dirname', '__filename', body)(require, { exports: {} }, {}, __dirname, file);
+  if (!Object.getOwnPropertyDescriptor(kit.Element.prototype, 'nextElementSibling')) {
+    Object.defineProperty(kit.Element.prototype, 'nextElementSibling', {
+      get() {
+        const kids = this.parentNode ? this.parentNode.children : [];
+        const at = kids.indexOf(this);
+        return at >= 0 ? kids[at + 1] || null : null;
+      },
+    });
+  }
+  return kit;
+}
+
+async function pickCase(name, fn) {
+  try {
+    await fn();
+  } catch (error) {
+    error.message = `${name}: ${error.message}`;
+    throw error;
+  }
+  cases += 1;
+}
+
+// iOS, after a pick: the change with the select still focused...
+function pick(p, select, value) {
+  select.focus();
+  assert.ok(p.doc.activeElement === select, 'the select has focus before the pick');
+  select.value = value;
+  p.doc.dispatch(select, { type: 'change' });
+}
+
+// ...then, as its menu closes, a blur with nothing pressed in the page.
+function lateBlur(p, select, { moveFocus = true } = {}) {
+  if (moveFocus) p.doc.activeElement = p.doc.body;
+  select.fire({ type: 'blur', target: select, bubbles: false, preventDefault() {}, stopPropagation() {} });
+  p.doc.dispatch(select, { type: 'focusout' });
+}
+
+// The document's capture listeners of the kinds a wait listens for.
+function captureListeners(p) {
+  let n = 0;
+  for (const type of ['pointerdown', 'touchstart', 'mousedown', 'keydown']) {
+    n += (p.doc.listeners.get(type) || []).filter((l) => l.capture).length;
+  }
+  return n;
+}
+
+async function selectLandingCases(manifestDir) {
+  const kit = contractPage();
+  const workspace = fs.readFileSync(path.join(manifestDir, 'assets/speakers/workspace.html'), 'utf8');
+  const script = workspace.slice(workspace.lastIndexOf('<script>') + '<script>'.length, workspace.lastIndexOf('</script>'));
+  const markup = workspace.slice(0, workspace.indexOf('<script src="/app/speakers/static/who_is_this.js">'))
+    .replace(/<style>[\s\S]*?<\/style>/g, '')
+    .replace(/<script[^>]*><\/script>/g, '')
+    .replace(/<link[^>]*>/g, '');
+  const whoIsThis = fs.readFileSync(path.join(manifestDir, 'assets/speakers/who_is_this.js'), 'utf8');
+  const copy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/speakers/copy.json'), 'utf8'));
+  const focusJs = fs.readFileSync(path.join(manifestDir, 'assets/static/focus.js'), 'utf8');
+  const env = { manifestDir, script, markup, whoIsThis, copy };
+  const sorts = copy.SPK_OVERVIEW_KNOWN_VOICES_SORTS;
+  assert.ok(sorts.length >= 2, 'there are sorts to pick between');
+
+  // Known voices to sort, so the sort stays shown.
+  const known = { speakers: [{ entity_id: 'ada', name: 'Ada', embedding_count: 3, segment_count: 2 }] };
+  const answers = (url, opts) => (new URL(url, kit.ORIGIN).pathname === '/app/speakers/api/speakers/known' ? known : kit.journal(copy)(url, opts));
+
+  // The page as it ships: the shell's focus helpers, on the page's clock, before the view.
+  async function boot(address) {
+    const p = kit.makePage(env, address, { answers });
+    vm.runInContext(focusJs, p.context, { filename: 'focus.js' });
+    p.loadScripts();
+    p.place();
+    await p.mount();
+    p.startRouter();
+    await kit.settle();
+    return p;
+  }
+  async function dayWithSentences() {
+    const p = await boot(`/app/speakers/${kit.DAY}`);
+    p.byId('spkSegmentList').querySelectorAll('.spk-segment')[0].click();
+    await kit.settle();
+    return p;
+  }
+  const daySelects = [['.spk-correct-select', 'a correction'], ['.spk-assign-select', 'an assignment']];
+
+  for (const [selector, label] of daySelects) {
+    await pickCase(`a day: ${label} picked on a phone keeps focus through the menu's late blur`, async () => {
+      const p = await dayWithSentences();
+      const select = p.q(selector);
+      assert.ok(select, 'the select is drawn');
+      pick(p, select, 'ada');
+      p.clock.advance(865);
+      lateBlur(p, select);
+      p.clock.advance(0);
+      assert.ok(p.doc.activeElement === select, 'focus is back on the same select');
+    });
+
+    await pickCase(`a day: ${label} picked where the select keeps focus leaves nothing behind`, async () => {
+      const p = await dayWithSentences();
+      const select = p.q(selector);
+      const held = JSON.stringify(p.view.ctx.held());
+      const capture = captureListeners(p);
+      pick(p, select, 'ada');
+      p.clock.advance(2000);
+      await kit.settle();
+      assert.ok(p.doc.activeElement === select, 'focus is untouched');
+      assert.ok(JSON.stringify(p.view.ctx.held()) === held, 'the view holds what it held before the pick');
+      assert.ok(captureListeners(p) === capture, 'no capture listener is left on the document');
+    });
+  }
+
+  await pickCase('a day step while a pick waits lands nothing and leaves nothing of the wait', async () => {
+    const p = await dayWithSentences();
+    const capture = captureListeners(p);
+    const select = p.q('.spk-correct-select');
+    pick(p, select, 'ada');
+    p.window.solRouter.navigate('/app/speakers/20261111');
+    await kit.settle();
+    assert.ok(!select.isConnected, 'the old day is gone');
+    const after = p.doc.activeElement;
+    lateBlur(p, select, { moveFocus: false });
+    p.clock.advance(2000);
+    await kit.settle();
+    assert.ok(p.doc.activeElement === after, 'focus stays where the step put it');
+    assert.ok(captureListeners(p) === capture, 'no capture listener of the wait is left');
+  });
+
+  const sortReads = (p, sort) => p.reads(`/app/speakers/api/speakers/known?sort=${encodeURIComponent(sort)}`).length;
+
+  await pickCase('the overview: a sort picked on a phone keeps focus through the menu\'s late blur', async () => {
+    const p = await boot('/app/speakers/');
+    const sortSelect = p.byId('spkKnownSort');
+    assert.ok(sortSelect && !sortSelect.hidden, 'the sort is shown');
+    pick(p, sortSelect, sorts[1]);
+    p.clock.advance(865);
+    lateBlur(p, sortSelect);
+    p.clock.advance(0);
+    assert.ok(p.doc.activeElement === sortSelect, 'focus is back on the sort');
+  });
+
+  await pickCase('the overview: a sort picked where the select keeps focus leaves nothing behind', async () => {
+    const p = await boot('/app/speakers/');
+    const sortSelect = p.byId('spkKnownSort');
+    const held = JSON.stringify(p.view.ctx.held());
+    const capture = captureListeners(p);
+    pick(p, sortSelect, sorts[1]);
+    p.clock.advance(2000);
+    await kit.settle();
+    assert.ok(p.doc.activeElement === sortSelect, 'focus is untouched');
+    assert.ok(JSON.stringify(p.view.ctx.held()) === held, 'the view holds what it held before the pick');
+    assert.ok(captureListeners(p) === capture, 'no capture listener is left on the document');
+  });
+
+  // The reads are counted before the landing is asserted, so a page that
+  // doesn't land still shows how many it sent.
+  await pickCase('the overview: the list drawn again before the late blur, the landing finds the same sort, and one read per pick', async () => {
+    const p = await boot('/app/speakers/');
+    const sortSelect = p.byId('spkKnownSort');
+    const landed = [];
+    for (const sort of [sorts[1], sorts[0]]) {
+      const before = sortReads(p, sort);
+      const card = p.q('.spk-known-card');
+      pick(p, sortSelect, sort);
+      await kit.settle();
+      assert.ok(sortReads(p, sort) === before + 1, 'the pick reads its sort once');
+      assert.ok(card && p.q('.spk-known-card') && p.q('.spk-known-card') !== card, 'the list is drawn again');
+      p.clock.advance(865);
+      lateBlur(p, sortSelect);
+      p.clock.advance(0);
+      landed.push(p.doc.activeElement === sortSelect);
+      p.clock.advance(2000);
+      await kit.settle();
+      assert.ok(sortReads(p, sort) === before + 1, 'the landing reads nothing');
+    }
+    assert.ok(landed[0] && landed[1], 'each landing finds the same sort');
+  });
+
+  await pickCase('the overview: the list drawn again after the late blur keeps focus on the same sort, and one read per pick', async () => {
+    const p = await boot('/app/speakers/');
+    const sortSelect = p.byId('spkKnownSort');
+    const before = sortReads(p, sorts[1]);
+    p.holds.push((call) => call.url.startsWith('/app/speakers/api/speakers/known'));
+    pick(p, sortSelect, sorts[1]);
+    await kit.settle();
+    const out = p.calls.find((call) => call.url.startsWith('/app/speakers/api/speakers/known') && !call.settled);
+    assert.ok(out, 'the sort\'s read is out');
+    p.clock.advance(865);
+    lateBlur(p, sortSelect);
+    p.clock.advance(0);
+    const landed = p.doc.activeElement === sortSelect;
+    const card = p.q('.spk-known-card');
+    p.holds.length = 0;
+    out.answer(known);
+    await kit.settle();
+    assert.ok(card && p.q('.spk-known-card') !== card, 'the list is drawn again');
+    p.clock.advance(2000);
+    await kit.settle();
+    assert.ok(sortReads(p, sorts[1]) === before + 1, 'one read for the pick, none from the landing');
+    assert.ok(landed, 'focus is back on the sort');
+    assert.ok(p.doc.activeElement === sortSelect, 'the list drawn again leaves focus on the same sort');
+  });
+}
+
 async function main() {
   const manifestDir = process.argv[2];
   if (!manifestDir) throw new Error('manifest directory required');
@@ -387,6 +597,7 @@ async function main() {
   await voiceStreamsReadAsLabels(workspace);
   await statementHandoffResolvesFromThePageContext(workspace);
   sampleFallsBackToTheLabel();
+  await selectLandingCases(manifestDir);
   cases += await require('./speakers_contract_dom.js')(manifestDir);
 
   console.log(`DOM CASES: ${cases} passed`);
