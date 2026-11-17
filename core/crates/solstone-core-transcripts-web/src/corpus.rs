@@ -1715,14 +1715,14 @@ mod tests {
             DAY,
             "import.audio",
             "070000_17",
-            &[("audio.jsonl", b"{}\n")],
+            &[("audio.jsonl", b"{}\n"), ("audio.flac", b"recording")],
         );
         segment(
             root.path(),
             DAY,
             "import.audio",
             "073000_0",
-            &[("audio.jsonl", b"{}\n")],
+            &[("audio.jsonl", b"{}\n"), ("audio.flac", b"recording")],
         );
 
         let (status, _, body) =

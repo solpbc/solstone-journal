@@ -505,33 +505,20 @@ pub fn prune_unavailable_segments(journal: &Path, entity: &str) -> Result<usize>
     Ok(removed)
 }
 
-/// Remove references to activities that no longer exist after a recovery scan.
-/// Caller holds entity trust for the entire authoritative activity census.
-pub fn remove_orphan_activities(
-    journal: &Path,
-    live: &std::collections::BTreeSet<String>,
-) -> Result<usize> {
-    let _trust = crate::hold_entity_trust_lock(journal).map_err(err)?;
-    let mut removed = 0;
+/// Referenced activity coordinates, discovered one person at a time. These are
+/// hints only: callers must reread current activity authority before removal.
+pub fn activity_coordinates(journal: &Path) -> Result<BTreeSet<String>> {
+    let mut coordinates = BTreeSet::new();
+    let mut turn = ReconcileYield::default();
     for (folder, _) in crate::live_journal_entities(journal).map_err(err)? {
-        let dir = journal.join("entities").join(folder);
-        if !solstone_core_journal_io::path_lexists(&dir.join(ARCHIVE)).map_err(err)? {
-            continue;
-        }
-        let (binding, _lock) = hold_directory(&dir)?;
-        if let Some(mut a) = read_archive(&dir)? {
-            let before = a.clone();
-            for f in &mut a.faces {
-                f.metadata.activities.retain(|id| live.contains(id));
-            }
-            a.faces.retain(|f| !f.metadata.activities.is_empty());
-            removed += before.faces.len() - a.faces.len();
-            if a != before {
-                save_archive(&dir, &binding, &a)?;
+        if let Some(archive) = load_in_dir(journal, &folder)?.0 {
+            for face in archive.faces {
+                coordinates.extend(face.metadata.activities);
             }
         }
+        turn.after_unit();
     }
-    Ok(removed)
+    Ok(coordinates)
 }
 
 pub(crate) fn preflight_merge(journal: &Path, source: &str, target: &str) -> Result<()> {

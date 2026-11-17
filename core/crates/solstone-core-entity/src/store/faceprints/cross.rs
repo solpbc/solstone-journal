@@ -275,18 +275,20 @@ fn shared_facet(a: &[&Face], b: &[&Face]) -> Option<(String, String)> {
         .max_by(|(af, ad), (bf, bd)| ad.cmp(bd).then_with(|| bf.cmp(af)))
 }
 
-/// Called after participation recovery; one identity census and one trust hold.
-pub fn reconcile(journal: &Path) -> Result<Rules> {
-    if !super::enabled(journal)? {
-        return Ok(Rules::default());
-    }
-    let _trust = crate::hold_entity_trust_lock(journal).map_err(|e| e.to_string())?;
-    if !super::enabled(journal)? {
-        return Ok(Rules::default());
-    }
-    let roster = crate::live_journal_entities(journal).map_err(|e| e.to_string())?;
+#[derive(PartialEq)]
+struct Snapshot {
+    roster: Vec<(String, crate::JournalEntity)>,
+    pools: BTreeMap<String, (crate::JournalEntity, Vec<Face>, super::FacesState)>,
+}
+
+fn snapshot(journal: &Path, yielding: bool) -> Result<Snapshot> {
+    let roster = {
+        let _trust = crate::hold_entity_trust_lock(journal).map_err(|e| e.to_string())?;
+        crate::live_journal_entities(journal).map_err(|e| e.to_string())?
+    };
     let mut pools = BTreeMap::new();
     let mut encoder = None;
+    let mut turn = super::ReconcileYield::default();
     for (folder, entity) in &roster {
         if crate::is_admissible_person(entity) {
             let (archive, state) = super::load_in_dir(journal, folder)?;
@@ -298,10 +300,26 @@ pub fn reconcile(journal: &Path) -> Result<Rules> {
                     return Err("face encoder mismatch across people".into());
                 }
                 encoder = Some(archive.envelope.encoder);
-                pools.insert(entity.id.clone(), (entity, archive.faces, state));
+                pools.insert(entity.id.clone(), (entity.clone(), archive.faces, state));
             }
         }
+        if yielding {
+            turn.after_unit();
+        }
     }
+    Ok(Snapshot { roster, pools })
+}
+
+/// Calculate panels without entity trust. Publication verifies that every input
+/// still agrees under one hold; changed evidence is retried by maintenance.
+pub fn reconcile(journal: &Path) -> Result<Rules> {
+    if !super::enabled(journal)? {
+        return Ok(Rules::default());
+    }
+    let inputs = snapshot(journal, true)?;
+    #[cfg(all(test, feature = "full-tests"))]
+    tests::disk::after_snapshot();
+    let pools = &inputs.pools;
     let owner = pools
         .values()
         .find(|(e, _, _)| e.is_principal())
@@ -309,7 +327,7 @@ pub fn reconcile(journal: &Path) -> Result<Rules> {
     let mut kept = BTreeMap::new();
     let mut consensus = vec![];
     let mut looks = vec![];
-    for (id, (entity, faces, state)) in &pools {
+    for (id, (entity, faces, state)) in pools {
         let rows = panel::kept_evidence(faces, state, entity.is_principal(), owner.as_deref());
         let ns = names(entity);
         if let Some(s) = summary(id, &ns, &rows) {
@@ -324,9 +342,6 @@ pub fn reconcile(journal: &Path) -> Result<Rules> {
         kept.insert(id.clone(), rows);
     }
     let result = rules(&consensus, &looks);
-    // Replaying unchanged evidence must not rewrite review timestamps or undo a
-    // dismissal. Only a genuinely new face proposal is recorded.
-    let existing = crate::load_merge_candidates(journal, None, None).map_err(|e| e.to_string())?;
     let proposals: Vec<_> = result
         .merge_pairs
         .iter()
@@ -334,6 +349,16 @@ pub fn reconcile(journal: &Path) -> Result<Rules> {
             shared_facet(&kept[a], &kept[b]).map(|(facet, day)| (a, b, facet, day))
         })
         .collect();
+    let _trust = crate::hold_entity_trust_lock(journal).map_err(|e| e.to_string())?;
+    if !super::enabled(journal)? {
+        return Ok(Rules::default());
+    }
+    if snapshot(journal, false)? != inputs {
+        return Err("face evidence changed; cross-person reconciliation deferred".into());
+    }
+    // Replaying unchanged evidence must not rewrite review timestamps or undo a
+    // dismissal. Only a genuinely new face proposal is recorded.
+    let existing = crate::load_merge_candidates(journal, None, None).map_err(|e| e.to_string())?;
     let withdrawn = existing.iter().any(|r| is_stale_proposal(r, &proposals));
     if withdrawn {
         super::super::review_candidates::mutate_candidates(journal, |rows| {

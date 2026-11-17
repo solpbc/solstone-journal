@@ -2065,8 +2065,9 @@ mod tests {
                 .join("import.chatgpt")
                 .join(&segment);
             fs::create_dir_all(&path).unwrap();
-            // A transcript with no rows yet: the scan reads it as pending.
+            // A recording waiting on its transcript: the scan reads it as pending.
             fs::write(path.join("conversation_transcript.jsonl"), "{}\n").unwrap();
+            fs::write(path.join("audio.flac"), "pending recording").unwrap();
             blockers.insert(SegmentIdentity {
                 stream: Some("import.chatgpt".to_owned()),
                 segment,

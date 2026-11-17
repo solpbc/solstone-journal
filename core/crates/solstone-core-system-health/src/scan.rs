@@ -292,7 +292,8 @@ pub(crate) fn detect_data_state(
                 archive_audio_state(segment_path, &placement, now)
             })
     } else {
-        derive_modality_state(
+        let record = read_processing_record(&audio_jsonl);
+        let state = derive_modality_state(
             segment_path,
             "audio",
             audio_jsonl
@@ -302,10 +303,17 @@ pub(crate) fn detect_data_state(
                     || jsonl_has_row_with_key(path, solstone_core_format::content::granola::HEADER_KEY))
                 || markdown.iter().any(|path| has_nonempty_text(path)),
             !audio_jsonl.is_empty(),
-            has_raw_media(&files, MediaKind::Audio),
-            read_processing_record(&audio_jsonl).as_ref(),
+            !audio_raw_paths.is_empty(),
+            record.as_ref(),
             now,
-        )
+        );
+        // A recordless, unfinished sidecar without an original has nothing
+        // for Sense to transcribe. Keep content, outcomes and analysis markers.
+        if state == DataState::Pending && audio_raw_paths.is_empty() && record.is_none() {
+            DataState::Absent
+        } else {
+            state
+        }
     };
 
     let screen_jsonl = files
@@ -1584,6 +1592,135 @@ mod multi_file_tests {
             scan_day(&FilesystemSegmentSource, root, DAY, Utc::now()).unwrap();
         assert_eq!(segments.len(), 1);
         segments.remove(0)
+    }
+
+    #[test]
+    fn an_audio_only_orphan_does_not_hold_its_direct_layout_sibling() {
+        for (state, rows) in [
+            (
+                "analyzed",
+                "{\"start\":\"12:00:00\",\"text\":\"fixture speech\"}\n",
+            ),
+            ("empty", ""),
+        ] {
+            let root = TempDir::new().unwrap();
+            let named = segment(root.path());
+            let direct = root.path().join("chronicle").join(DAY).join("120000_300");
+            fs::create_dir_all(&direct).unwrap();
+            for dir in [&named, &direct] {
+                fs::write(dir.join("stream.json"), "{\"stream\":\"device\"}\n").unwrap();
+                fs::write(
+                    dir.join("audio.jsonl"),
+                    "{\"topics\":\"\",\"setting\":\"\",\"raw\":\"raw.flac\"}\n",
+                )
+                .unwrap();
+            }
+            fs::write(direct.join("raw.flac"), "recording").unwrap();
+            let header = serde_json::json!({"raw":"raw.flac", "_solstone_processing":{
+                "schema":"solstone.processing.v1", "handler":"transcribe", "state":state,
+                "reason_code":if state == "empty" { "no_transcript" } else { "ok" }
+            }});
+            fs::write(direct.join("raw.jsonl"), format!("{header}\n{rows}")).unwrap();
+
+            let (_, _, found) =
+                scan_day(&FilesystemSegmentSource, root.path(), DAY, Utc::now()).unwrap();
+            assert_eq!(
+                found.len(),
+                1,
+                "the named orphan must not owe transcription"
+            );
+            assert_eq!(
+                found[0].stream_layout,
+                solstone_core_journal_io::SegmentLayout::Direct
+            );
+            assert_eq!(found[0].data_state.0["audio"], state);
+            let named_state = crate::read_segment_data_state(
+                root.path(),
+                DAY,
+                "120000_300",
+                Some("device"),
+                Utc::now(),
+            );
+            assert!(!named_state.0.contains_key("audio"));
+            assert!(segment_fully_sensed(&named_state));
+            assert!(
+                solstone_core_sense::batch::scan_unprocessed(
+                    root.path(),
+                    &root.path().join("chronicle").join(DAY),
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .is_empty()
+            );
+
+            // A source arriving later is real pending work, independently of
+            // the finished direct-layout recording with the same key.
+            fs::write(named.join("raw.flac"), "another recording").unwrap();
+            assert_eq!(
+                crate::read_segment_data_state(
+                    root.path(),
+                    DAY,
+                    "120000_300",
+                    Some("device"),
+                    Utc::now(),
+                )
+                .0["audio"],
+                "pending"
+            );
+        }
+    }
+
+    #[test]
+    fn source_absent_audio_keeps_its_content_outcomes_and_analysis_markers() {
+        for (header, rows, marker, expected) in [
+            (
+                "{}",
+                "{\"start\":0,\"text\":\"retained speech\"}\n",
+                None,
+                "analyzed",
+            ),
+            (
+                "{\"_solstone_processing\":{\"state\":\"empty\"}}",
+                "",
+                None,
+                "empty",
+            ),
+            (
+                "{\"_solstone_processing\":{\"state\":\"analyzed\"}}",
+                "",
+                None,
+                "pending",
+            ),
+            (
+                "{\"_solstone_processing\":{\"state\":\"failed\",\"handler\":\"transcribe\",\"reason_code\":\"server_not_ready\"}}",
+                "",
+                None,
+                "failed",
+            ),
+            (
+                "{\"_solstone_processing\":{\"state\":\"failed\",\"handler\":\"transcribe\",\"reason_code\":\"corrupt_input\"}}",
+                "",
+                None,
+                "failed_final",
+            ),
+            ("{}", "", Some(".analyzing_audio"), "analyzing"),
+            ("{}", "", Some(".analyze_failed_audio"), "failed"),
+        ] {
+            let root = TempDir::new().unwrap();
+            let dir = segment(root.path());
+            fs::write(dir.join("audio.jsonl"), format!("{header}\n{rows}")).unwrap();
+            if let Some(marker) = marker {
+                fs::write(dir.join(marker), "{}").unwrap();
+            }
+            let state = scan(root.path()).data_state;
+            assert_eq!(state.0["audio"], expected);
+            assert_eq!(
+                segment_fully_sensed(&state),
+                matches!(expected, "analyzed" | "empty" | "failed_final")
+            );
+        }
     }
 
     #[derive(Default)]

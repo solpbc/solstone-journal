@@ -5,7 +5,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_entity::faceprints::{self, accumulation};
 use std::{fs, path::Path};
 
-fn fixture(root: &Path) {
+pub(crate) fn fixture(root: &Path) {
     crate::create_facet(root, "work", "Work", "", "", "", None).unwrap();
     fs::create_dir_all(root.join("config")).unwrap();
     fs::write(
@@ -51,13 +51,13 @@ fn fixture(root: &Path) {
     .unwrap();
     fs::write(seg.join(format!("{prefix}.jsonl")), body).unwrap();
 }
-fn rows(root: &Path, id: &str) -> usize {
+pub(crate) fn rows(root: &Path, id: &str) -> usize {
     faceprints::load(root, id)
         .unwrap()
         .0
         .map_or(0, |a| a.faces.len())
 }
-fn patch(id: &str) -> Map<String, Value> {
+pub(crate) fn patch(id: &str) -> Map<String, Value> {
     Map::from_iter([(
         "participation".into(),
         json!([{"name":"Full Person Name","entity_id":id}]),

@@ -20,6 +20,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
+- fixed older days getting stuck before their daily briefing when an empty audio transcript had no recording beside it.
+- people and activity details could be left out when nightly photo maintenance overlapped with thinking. this resolves that conflict.
 - photos of people can now be suggested from more of your older meetings.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.

@@ -3912,6 +3912,7 @@ mod tests {
         );
         let path = segment_dir(journal.path(), "20260813", "090000_300");
         fs::write(path.join("audio.jsonl"), "{}\n").unwrap();
+        fs::write(path.join("audio.flac"), "pending recording").unwrap();
 
         let first = run_segment(&context, journal.path(), "090000_300", false, false);
         let analyzing = segment_dir(journal.path(), "20260813", "090500_300");
@@ -4147,6 +4148,47 @@ mod tests {
             "idle"
         );
         assert!(recorder.requests.lock().unwrap().is_empty());
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn an_orphan_audio_header_finishes_no_input_thinking_without_model_dispatch() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, recorder) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\",\"load\":{\"audio\":true}\n}\n",
+        );
+        let path = segment_dir(journal.path(), &context.day, "090000_300");
+        fs::write(
+            path.join("audio.jsonl"),
+            "{\"topics\":\"\",\"setting\":\"\",\"raw\":\"raw.flac\"}\n",
+        )
+        .unwrap();
+        let result = run_segment(&context, journal.path(), "090000_300", false, false);
+        assert_eq!(result.failed, 0);
+        let sense: Value = serde_json::from_slice(
+            &fs::read(path.join("talents/sense.json")).expect("saved no-input Sense result"),
+        )
+        .unwrap();
+        assert_eq!(sense["density"], "idle");
+        let density: Value = serde_json::from_slice(
+            &fs::read(path.join("talents/density.json")).expect("saved idle density"),
+        )
+        .unwrap();
+        assert_eq!(density["classification"], "idle");
+        assert!(
+            oplog_records(journal.path(), &context.day, "segment")
+                .iter()
+                .any(|row| { row["event"] == "sense.complete" && row["density"] == "idle" })
+        );
+        assert!(recorder.requests.lock().unwrap().is_empty());
+        assert!(
+            solstone_core_system_health::day_unpublished_segments(journal.path(), &context.day,)
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[test]

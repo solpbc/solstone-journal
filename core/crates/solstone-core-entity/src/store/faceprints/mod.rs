@@ -21,6 +21,27 @@ pub const STATE: &str = "faces_state.json";
 pub const PHOTO: &str = "photo.jpg";
 pub type Result<T> = std::result::Result<T, String>;
 
+/// Leave polling writers a real turn during long face recovery walks. Call only
+/// between authoritative units, after all trust, source and record guards drop.
+pub struct ReconcileYield(std::time::Instant);
+
+impl Default for ReconcileYield {
+    fn default() -> Self {
+        Self(std::time::Instant::now())
+    }
+}
+
+impl ReconcileYield {
+    pub fn after_unit(&mut self) {
+        if self.0.elapsed() >= std::time::Duration::from_secs(1) {
+            std::thread::sleep(
+                solstone_core_journal_io::DEFAULT_LOCK_POLL_INTERVAL.saturating_mul(2),
+            );
+            self.0 = std::time::Instant::now();
+        }
+    }
+}
+
 /// Owner-action refusals that HTTP callers can classify without parsing text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActionError {

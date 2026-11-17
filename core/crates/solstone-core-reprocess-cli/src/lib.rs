@@ -1301,7 +1301,7 @@ mod tests {
 
         fs::write(
             segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
-            "{}\n",
+            "{}\n{\"start\":0,\"text\":\"fixture speech\"}\n",
         )
         .unwrap();
         let mut calls = 0;

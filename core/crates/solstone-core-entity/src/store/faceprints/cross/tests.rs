@@ -77,11 +77,185 @@ fn a_dropped_panel_cannot_contest_a_surviving_panel() {
 }
 
 #[cfg(all(test, feature = "full-tests"))]
-mod disk {
+pub(crate) mod disk {
     // Synthetic journal before-images are fixtures, not entity mutations.
     #![allow(clippy::disallowed_methods)]
     use super::*;
     use serde_json::json;
+    use std::{cell::RefCell, path::Path, time::Duration};
+    type Hook = Box<dyn FnOnce()>;
+    thread_local! { static AFTER_SNAPSHOT: RefCell<Option<Hook>> = RefCell::new(None); }
+    pub(crate) fn after_snapshot() {
+        if let Some(callback) = AFTER_SNAPSHOT.with(|h| h.borrow_mut().take()) {
+            callback();
+        }
+    }
+    fn populated(root: &Path) {
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config/journal.json"),
+            br#"{"faces":{"enabled":true}}"#,
+        )
+        .unwrap();
+        for (id, name) in [("a", "Casey Lane"), ("b", "Casey"), ("c", "Avery West")] {
+            crate::save_entity_identity(
+                root,
+                id,
+                &json!({"id":id,"name":name,"type":"Person"}),
+                None,
+            )
+            .unwrap();
+        }
+        let encoder = crate::faceprints::Encoder {
+            id: "synthetic".into(),
+            sha256: "0".repeat(64),
+            width: crate::faceprints::WIDTH,
+        };
+        let rows: Vec<_> = (0..5).map(|i| observation(i, "work", "20261101")).collect();
+        crate::faceprints::reconcile(
+            root,
+            &serde_json::to_string(&["work", "20261101", "meeting"]).unwrap(),
+            &encoder,
+            &BTreeMap::from([("a".into(), rows.clone()), ("b".into(), rows)]),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn cross_reconcile_releases_trust_and_refuses_changed_inputs() {
+        for change in ["identity", "archive", "new_archive", "owner_state"] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path();
+            populated(root);
+            reconcile(root).unwrap();
+            let before = std::fs::read(path(root).unwrap()).unwrap();
+            let candidates =
+                std::fs::read(crate::store::paths::review_candidates_path(root).unwrap()).unwrap();
+            let owned = root.to_owned();
+            AFTER_SNAPSHOT.with(|h| {
+                *h.borrow_mut() = Some(Box::new(move || {
+                    std::thread::spawn(move || {
+                        let _trust = crate::trust_lock::hold_entity_trust_lock_with_options(
+                            &owned,
+                            solstone_core_journal_io::LockOptions {
+                                timeout: Duration::from_secs(1),
+                                ..Default::default()
+                            },
+                        )
+                        .expect("cross calculation held entity trust");
+                        match change {
+                            "identity" => {
+                                crate::save_entity_identity(
+                                    &owned,
+                                    "a",
+                                    &json!({"id":"a","name":"Changed Person","type":"Person"}),
+                                    None,
+                                )
+                                .unwrap();
+                            }
+                            "owner_state" => {
+                                let key = crate::faceprints::load(&owned, "a")
+                                    .unwrap()
+                                    .0
+                                    .unwrap()
+                                    .faces[0]
+                                    .metadata
+                                    .key
+                                    .clone();
+                                crate::faceprints::reject(&owned, "a", &key).unwrap();
+                            }
+                            _ => {
+                                let mut row = observation(9, "work", "20261101");
+                                row.metadata.quality = 0.8;
+                                crate::faceprints::reconcile(
+                                    &owned,
+                                    "new_meeting",
+                                    &crate::faceprints::Encoder {
+                                        id: "synthetic".into(),
+                                        sha256: "0".repeat(64),
+                                        width: crate::faceprints::WIDTH,
+                                    },
+                                    &BTreeMap::from([(
+                                        (if change == "new_archive" { "c" } else { "a" }).into(),
+                                        vec![row],
+                                    )]),
+                                )
+                                .unwrap();
+                            }
+                        }
+                    })
+                    .join()
+                    .unwrap();
+                }))
+            });
+            assert!(reconcile(root).is_err(), "{change}");
+            assert_eq!(
+                std::fs::read(path(root).unwrap()).unwrap(),
+                before,
+                "{change}"
+            );
+            assert_eq!(
+                std::fs::read(crate::store::paths::review_candidates_path(root).unwrap()).unwrap(),
+                candidates,
+                "{change}"
+            );
+        }
+    }
+
+    #[test]
+    fn cross_reconcile_preserves_concurrent_backfill_and_cannot_revive_cleared_faces() {
+        for clear in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path();
+            populated(root);
+            let owned = root.to_owned();
+            AFTER_SNAPSHOT.with(|h| {
+                *h.borrow_mut() = Some(Box::new(move || {
+                    std::thread::spawn(move || {
+                        if clear {
+                            std::fs::write(
+                                owned.join("config/journal.json"),
+                                br#"{"faces":{"enabled":false}}"#,
+                            )
+                            .unwrap();
+                            crate::faceprints::accumulation::clear(
+                                &owned,
+                                solstone_core_removals::Surface::Cli,
+                            )
+                            .unwrap();
+                        } else {
+                            update_backfill(
+                                &owned,
+                                Backfill {
+                                    cursor: Some("new cursor".into()),
+                                    ..Default::default()
+                                },
+                            )
+                            .unwrap();
+                        }
+                    })
+                    .join()
+                    .unwrap();
+                }))
+            });
+            let rules = reconcile(root).unwrap();
+            if clear {
+                assert_eq!(rules, Rules::default());
+                assert!(!path(root).unwrap().exists());
+                assert!(
+                    crate::load_merge_candidates(root, None, None)
+                        .unwrap()
+                        .is_empty()
+                );
+            } else {
+                assert_eq!(rules.merge_pairs.len(), 1);
+                assert_eq!(
+                    load(root).unwrap().backfill.cursor.as_deref(),
+                    Some("new cursor")
+                );
+            }
+        }
+    }
     #[test]
     fn daily_reconcile_is_idempotent_and_clearing_preserves_other_suggestions() {
         let t = tempfile::tempdir().unwrap();

@@ -2759,7 +2759,7 @@ mod tests {
         std::fs::create_dir_all(&path).unwrap();
         std::fs::write(
             path.join("audio.jsonl"),
-            "{\"text\":\"A meeting about a garden.\"}\n",
+            "{}\n{\"start\":0,\"text\":\"A meeting about a garden.\"}\n",
         )
         .unwrap();
     }

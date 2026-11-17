@@ -228,7 +228,11 @@ mod tests {
             .join("phone")
             .join("110000_60");
         write_file(&s4, "location.jsonl", "{\"lat\":1}\n");
-        write_file(&s4, "audio.jsonl", "{\"row_type\":\"audio_transcript\"}\n");
+        write_file(
+            &s4,
+            "audio.jsonl",
+            "{}\n{\"start\":0,\"text\":\"fixture speech\"}\n",
+        );
 
         // Seg 5: bookkeeping without location.jsonl -> excluded
         let s5 = root

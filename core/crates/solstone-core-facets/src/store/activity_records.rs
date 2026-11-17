@@ -377,28 +377,115 @@ pub fn reconcile_faceprints_for_activity(
     day: &str,
     record_id: &str,
 ) -> Result<usize, String> {
+    reconcile_faceprints_activity_selected(root, facet, day, record_id, None, false, None)
+}
+
+fn matches_face_segments(
+    row: &ActivityRecord,
+    day: &str,
+    selected: Option<&[(String, String, String)]>,
+) -> bool {
+    selected.is_none_or(|ss| {
+        ss.iter().any(|(d, stream, seg)| {
+            d == day
+                && row
+                    .get("stream")
+                    .and_then(Value::as_str)
+                    .is_none_or(|s| s == stream)
+                && row
+                    .get("segments")
+                    .and_then(Value::as_array)
+                    .is_some_and(|segs| segs.iter().any(|s| s.as_str() == Some(seg.as_str())))
+        })
+    })
+}
+
+struct FaceIdentities {
+    entities: Vec<(String, solstone_core_entity::JournalEntity)>,
+    holders: std::collections::BTreeSet<String>,
+}
+
+impl FaceIdentities {
+    // The caller holds entity trust for this entire bounded batch.
+    fn read(root: &Path) -> Result<Self, String> {
+        let entities =
+            solstone_core_entity::live_journal_entities(root).map_err(|e| e.to_string())?;
+        let holders =
+            solstone_core_entity::faceprints::accumulation::face_holders(root, &entities)?;
+        Ok(Self { entities, holders })
+    }
+}
+
+fn reconcile_faceprints_activity_selected(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    record_id: &str,
+    selected: Option<&[(String, String, String)]>,
+    orphan_only: bool,
+    identities: Option<&mut FaceIdentities>,
+) -> Result<usize, String> {
     if !solstone_core_entity::faceprints::enabled(root)? {
         return Ok(0);
     }
     let _trust = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    #[cfg(all(test, feature = "full-tests"))]
+    face_reconcile_tests::hook("held");
+    use super::declaration::DestinationObservation;
+    let declared = match super::declaration::observe_facet_destination(root, facet)
+        .map_err(|e| e.to_string())?
+    {
+        DestinationObservation::Ready { .. } | DestinationObservation::LegacyWithoutId { .. } => {
+            true
+        }
+        DestinationObservation::Absent => false,
+        _ => return Err("unreadable facet declaration; face reconciliation deferred".into()),
+    };
     let path = day_path(root, facet, day).map_err(|e| e.to_string())?;
-    let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
-    let records = read_day_lines(&path).map_err(|e| e.to_string())?;
+    let _lock = if declared {
+        Some(hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+    let records = if declared {
+        read_day_lines(&path).map_err(|e| e.to_string())?
+    } else {
+        DayLines::default()
+    };
     if !records.kept.is_empty() {
         return Err("unreadable activity rows; face reconciliation deferred".into());
     }
+    let current = records.rows.iter().find(|r| id(r) == record_id);
+    if orphan_only && current.is_some() {
+        return Ok(0);
+    }
     let absent = Map::from_iter([("id".to_owned(), Value::String(record_id.to_owned()))]);
-    let record = records
-        .rows
-        .iter()
-        .find(|r| id(r) == record_id)
-        .unwrap_or(&absent);
-    solstone_core_entity::faceprints::accumulation::reconcile_activity(root, facet, day, record)
+    let record = current.unwrap_or(&absent);
+    if !matches_face_segments(record, day, selected) {
+        return Ok(0);
+    }
+    if let Some(identities) = identities {
+        let relevant = solstone_core_entity::faceprints::accumulation::relevant_entities(
+            record,
+            &identities.entities,
+            &identities.holders,
+        );
+        let added =
+            solstone_core_entity::faceprints::accumulation::reconcile_activity_with_entities(
+                root, facet, day, record, &relevant,
+            )?;
+        identities
+            .holders
+            .extend(relevant.into_iter().map(|(folder, _)| folder));
+        Ok(added)
+    } else {
+        solstone_core_entity::faceprints::accumulation::reconcile_activity(root, facet, day, record)
+    }
 }
 
 /// Replay private face evidence from current activity records, without inference.
-/// The maintenance scheduler calls this after an interrupted derived write. The
-/// same trust lock as participation writers prevents an old assignment winning.
+/// Each activity is read and published under entity trust, with polling gaps
+/// between bounded slices. No assignment snapshot crosses a gap.
 pub fn reconcile_faceprints(root: &Path) -> Result<usize, String> {
     reconcile_faceprints_selected(root, None)
 }
@@ -422,73 +509,63 @@ fn reconcile_faceprints_selected(
     if !solstone_core_entity::faceprints::enabled(root)? {
         return Ok(0);
     }
-    let _trust = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
-    let entities = solstone_core_entity::live_journal_entities(root).map_err(|e| e.to_string())?;
-    let mut holders =
-        solstone_core_entity::faceprints::accumulation::face_holders(root, &entities)?;
-    let mut live = std::collections::BTreeSet::new();
+    let mut turn = solstone_core_entity::faceprints::ReconcileYield::default();
     let mut added = 0;
     for name in super::map::list_declared_facet_names(root).map_err(|e| e.to_string())? {
-        let name = name.as_str();
-        let activity_dir = root.join("facets").join(name).join("activities");
-        if !activity_dir.is_dir() {
-            continue;
-        }
-        for day in
-            solstone_core_journal_io::list_dir_entries(&activity_dir).map_err(|e| e.to_string())?
-        {
-            if day.kind != solstone_core_journal_io::DirEntryKind::File
-                || day.path.extension().and_then(|s| s.to_str()) != Some("jsonl")
-            {
+        for day in list_activity_day_stems(root, &name).map_err(|e| e.to_string())? {
+            if selected.is_some_and(|ss| !ss.iter().any(|(d, _, _)| d == &day)) {
                 continue;
             }
-            let day_name = day
-                .path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .ok_or("invalid activity day")?;
-            if selected.is_some_and(|ss| !ss.iter().any(|(d, _, _)| d == day_name)) {
-                continue;
-            }
-            let _lock = hold_lock(&day.path, LockOptions::default()).map_err(|e| e.to_string())?;
-            let records = read_day_lines(&day.path).map_err(|e| e.to_string())?;
-            if !records.kept.is_empty() {
+            // Discovery supplies coordinates only. Every use rereads current
+            // membership, participation and identities under its own hold.
+            let path = day_path(root, &name, &day).map_err(|e| e.to_string())?;
+            let hints = read_day_lines(&path).map_err(|e| e.to_string())?;
+            if !hints.kept.is_empty() {
                 return Err("unreadable activity rows; face reconciliation deferred".into());
             }
-            for row in records.rows {
-                live.insert(
-                    serde_json::to_string(&[name, day_name, id(&row)])
-                        .map_err(|e| e.to_string())?,
-                );
-                if selected.is_some_and(|ss| {
-                    !ss.iter().any(|(d, stream, seg)| {
-                        d == day_name
-                            && row
-                                .get("stream")
-                                .and_then(Value::as_str)
-                                .is_none_or(|s| s == stream)
-                            && row
-                                .get("segments")
-                                .and_then(Value::as_array)
-                                .is_some_and(|segs| {
-                                    segs.iter().any(|s| s.as_str() == Some(seg.as_str()))
-                                })
-                    })
-                }) {
-                    continue;
+            let mut hints = hints.rows.into_iter().peekable();
+            while hints.peek().is_some() {
+                #[cfg(all(test, feature = "full-tests"))]
+                face_reconcile_tests::hook("discovered");
+                {
+                    let started = std::time::Instant::now();
+                    let _trust = solstone_core_entity::hold_entity_trust_lock(root)
+                        .map_err(|e| e.to_string())?;
+                    let mut identities = FaceIdentities::read(root)?;
+                    for row in hints.by_ref() {
+                        added += reconcile_faceprints_activity_selected(
+                            root,
+                            &name,
+                            &day,
+                            id(&row),
+                            selected,
+                            false,
+                            Some(&mut identities),
+                        )?;
+                        if started.elapsed() >= std::time::Duration::from_secs(1) {
+                            break;
+                        }
+                    }
                 }
-                let relevant = solstone_core_entity::faceprints::accumulation::relevant_entities(
-                    &row, &entities, &holders,
-                );
-                added += solstone_core_entity::faceprints::accumulation::reconcile_activity_with_entities(
-                    root, name, day_name, &row, &relevant,
-                )?;
-                holders.extend(relevant.into_iter().map(|(folder, _)| folder));
+                // Both the identity census and its trust hold end here. The
+                // next slice must refresh them before publishing anything.
+                turn.after_unit();
+                #[cfg(all(test, feature = "full-tests"))]
+                face_reconcile_tests::hook("released");
             }
         }
     }
     if selected.is_none() {
-        solstone_core_entity::faceprints::remove_orphan_activities(root, &live)?;
+        // Archive references are candidates, never a stale live census. A new
+        // activity in an already-walked day is checked where deletion occurs.
+        for coordinate in solstone_core_entity::faceprints::activity_coordinates(root)? {
+            let [facet, day, record_id]: [String; 3] =
+                serde_json::from_str(&coordinate).map_err(|e| e.to_string())?;
+            reconcile_faceprints_activity_selected(
+                root, &facet, &day, &record_id, None, true, None,
+            )?;
+            turn.after_unit();
+        }
     }
     Ok(added)
 }
@@ -2930,5 +3007,331 @@ mod hidden_outputs_tests {
             serde_json::from_str(r#"{"id":"d","hidden":false}"#).unwrap(),
         ];
         assert_eq!(hidden_changed(&before, &after), ["a", "c"]);
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod face_reconcile_tests {
+    #![allow(clippy::disallowed_methods, clippy::unwrap_used)]
+    use super::*;
+    use crate::faceprints_tests::{fixture, patch, rows};
+    use serde_json::json;
+    use std::{cell::RefCell, fs, sync::mpsc, time::Duration};
+    type Hook = Box<dyn FnMut(&str)>;
+    thread_local! { static HOOK: RefCell<Option<Hook>> = RefCell::new(None); }
+    pub(super) fn hook(phase: &str) {
+        let callback = HOOK.with(|h| h.borrow_mut().take());
+        if let Some(mut callback) = callback {
+            callback(phase);
+            HOOK.with(|h| *h.borrow_mut() = Some(callback));
+        }
+    }
+    struct ResetHook;
+    impl Drop for ResetHook {
+        fn drop(&mut self) {
+            HOOK.with(|h| *h.borrow_mut() = None);
+        }
+    }
+    fn meeting(root: &Path, record_id: &str, person: &str) {
+        let _ = crate::append_activity_record(
+            root,
+            "work",
+            "20261101",
+            json!({
+                "id":record_id,"activity":"meeting","segments":["090000_300"],
+                "stream":"screen","participation":[{"name":"Tile Alias","entity_id":person}]
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn full_walk_allows_a_detection_waiter_in_before_its_ten_second_timeout() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fixture(root);
+        let day = root.join("facets/work/activities/20261101.jsonl");
+        fs::create_dir_all(day.parent().unwrap()).unwrap();
+        let records: String = (0..12)
+            .map(|i| {
+                format!(
+                    "{}\n",
+                    json!({"id":format!("coding_{i}"),"activity":"coding"})
+                )
+            })
+            .collect();
+        fs::write(&day, records).unwrap();
+        let (held_tx, held_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        std::thread::scope(|scope| {
+            let walk = scope.spawn(|| {
+                let _reset = ResetHook;
+                let mut first = Some(held_tx);
+                HOOK.with(|h| {
+                    *h.borrow_mut() = Some(Box::new(move |phase| {
+                        if phase == "held" {
+                            if let Some(tx) = first.take() {
+                                tx.send(()).unwrap();
+                            }
+                            std::thread::sleep(Duration::from_secs(1));
+                        }
+                    }))
+                });
+                let result = reconcile_faceprints(root);
+                done_tx.send(()).unwrap();
+                result
+            });
+            held_rx
+                .recv_timeout(Duration::from_secs(10))
+                .expect("walk never entered its first authority hold");
+            // Raw sidecar acquisition follows the polling path used by a
+            // detection worker in a different process, not reentrant trust.
+            let waiter = hold_lock(
+                root.join("health/locks/entity-trust"),
+                LockOptions {
+                    timeout: Duration::from_secs(10),
+                    ..LockOptions::default()
+                },
+            );
+            assert!(
+                waiter.is_ok(),
+                "waiting detection lost its turn: {waiter:?}"
+            );
+            assert!(
+                matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
+                "writer only acquired after the full walk"
+            );
+            drop(waiter);
+            walk.join().unwrap().unwrap();
+        });
+    }
+
+    #[test]
+    fn participation_changed_and_appended_in_an_already_walked_day_survives_cleanup() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fixture(root);
+        meeting(root, "meeting", "a");
+        let owned = root.to_owned();
+        let _reset = ResetHook;
+        let mut changed = false;
+        HOOK.with(|h| {
+            *h.borrow_mut() = Some(Box::new(move |phase| {
+                if phase == "released" && !changed {
+                    changed = true;
+                    let writer_root = owned.clone();
+                    std::thread::spawn(move || {
+                        crate::update_activity_record(
+                            &writer_root,
+                            "work",
+                            "20261101",
+                            "meeting",
+                            &patch("b"),
+                            "participation",
+                            "test",
+                            "now",
+                        )
+                        .unwrap();
+                        meeting(&writer_root, "new_meeting", "a");
+                    })
+                    .join()
+                    .unwrap();
+                }
+            }))
+        });
+        reconcile_faceprints(root).unwrap();
+        assert_eq!(rows(root, "a"), 1);
+        assert_eq!(rows(root, "b"), 1);
+        let a = solstone_core_entity::faceprints::load(root, "a")
+            .unwrap()
+            .0
+            .unwrap();
+        let b = solstone_core_entity::faceprints::load(root, "b")
+            .unwrap()
+            .0
+            .unwrap();
+        let old = serde_json::to_string(&["work", "20261101", "meeting"]).unwrap();
+        let new = serde_json::to_string(&["work", "20261101", "new_meeting"]).unwrap();
+        assert!(
+            a.faces
+                .iter()
+                .all(|f| f.metadata.activities.contains(&new)
+                    && !f.metadata.activities.contains(&old))
+        );
+        assert!(b.faces.iter().all(|f| f.metadata.activities.contains(&old)));
+    }
+
+    #[test]
+    fn the_next_batch_refreshes_entity_admissibility_after_a_yield() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fixture(root);
+        meeting(root, "first_meeting", "a");
+        meeting(root, "second_meeting", "a");
+        let owned = root.to_owned();
+        let _reset = ResetHook;
+        let mut first_hold = true;
+        let mut changed = false;
+        HOOK.with(|h| {
+            *h.borrow_mut() = Some(Box::new(move |phase| {
+                if phase == "held" && first_hold {
+                    first_hold = false;
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+                if phase == "released" && !changed {
+                    changed = true;
+                    let writer_root = owned.clone();
+                    std::thread::spawn(move || {
+                        solstone_core_entity::save_entity_identity(
+                            &writer_root,
+                            "a",
+                            &json!({"id":"a","name":"Tool","type":"Tool"}),
+                            None,
+                        )
+                        .unwrap();
+                    })
+                    .join()
+                    .unwrap();
+                }
+            }))
+        });
+        reconcile_faceprints(root).unwrap();
+        let archive = solstone_core_entity::faceprints::load(root, "a")
+            .unwrap()
+            .0
+            .unwrap();
+        let second = serde_json::to_string(&["work", "20261101", "second_meeting"]).unwrap();
+        assert!(!archive.faces.is_empty());
+        assert!(
+            archive
+                .faces
+                .iter()
+                .all(|f| !f.metadata.activities.contains(&second))
+        );
+    }
+
+    #[test]
+    fn selected_replay_uses_membership_at_the_authority_hold() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fixture(root);
+        // Both segments contain valid evidence. Replaying the nonselected one
+        // would therefore publish a face, rather than succeeding as a no-op.
+        let original = root.join("chronicle/20261101/screen/090000_300");
+        let other = root.join("chronicle/20261101/screen/100000_300");
+        fs::create_dir_all(&other).unwrap();
+        for entry in fs::read_dir(&original).unwrap() {
+            let entry = entry.unwrap();
+            let target = other.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                fs::create_dir(&target).unwrap();
+                for crop in fs::read_dir(entry.path()).unwrap() {
+                    let crop = crop.unwrap();
+                    fs::copy(crop.path(), target.join(crop.file_name())).unwrap();
+                }
+            } else {
+                fs::copy(entry.path(), target).unwrap();
+            }
+        }
+        meeting(root, "meeting", "a");
+        fs::remove_file(root.join("entities/a/faceprints.npz")).unwrap();
+        let owned = root.to_owned();
+        let _reset = ResetHook;
+        let mut changed = false;
+        HOOK.with(|h| {
+            *h.borrow_mut() = Some(Box::new(move |phase| {
+                if phase == "discovered" && !changed {
+                    changed = true;
+                    let writer_root = owned.clone();
+                    std::thread::spawn(move || {
+                        crate::update_activity_record(
+                            &writer_root,
+                            "work",
+                            "20261101",
+                            "meeting",
+                            &Map::from_iter([("segments".into(), json!(["100000_300"]))]),
+                            "owner:update",
+                            "test",
+                            "now",
+                        )
+                        .unwrap();
+                        // Leave the other segment's derived write interrupted.
+                        // Only a pass that actually selects it may replay it.
+                        fs::remove_file(writer_root.join("entities/a/faceprints.npz")).unwrap();
+                    })
+                    .join()
+                    .unwrap();
+                }
+            }))
+        });
+        reconcile_faceprints_for_segments(
+            root,
+            &[("20261101".into(), "screen".into(), "090000_300".into())],
+        )
+        .unwrap();
+        assert_eq!(rows(root, "a"), 0);
+        drop(_reset);
+        crate::update_activity_record(
+            root,
+            "work",
+            "20261101",
+            "meeting",
+            &Map::from_iter([("segments".into(), json!(["090000_300"]))]),
+            "owner:update",
+            "test",
+            "later",
+        )
+        .unwrap();
+        fs::remove_file(root.join("entities/a/faceprints.npz")).unwrap();
+        reconcile_faceprints_for_segments(
+            root,
+            &[("20261101".into(), "screen".into(), "090000_300".into())],
+        )
+        .unwrap();
+        assert_eq!(rows(root, "a"), 1);
+    }
+
+    #[test]
+    fn orphan_cleanup_distinguishes_absence_from_unreadable_authority() {
+        for damage in [
+            "malformed_declaration",
+            "unreadable_declaration",
+            "unreadable_day",
+            "absent_day",
+            "absent_declaration",
+            "present",
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path();
+            fixture(root);
+            meeting(root, "meeting", "a");
+            let declaration = root.join("facets/work/facet.json");
+            let day = root.join("facets/work/activities/20261101.jsonl");
+            match damage {
+                "malformed_declaration" => fs::write(&declaration, b"{").unwrap(),
+                "unreadable_declaration" => {
+                    fs::remove_file(&declaration).unwrap();
+                    fs::create_dir(&declaration).unwrap();
+                }
+                "unreadable_day" => {
+                    fs::remove_file(&day).unwrap();
+                    fs::create_dir(&day).unwrap();
+                }
+                "absent_day" => fs::remove_file(&day).unwrap(),
+                "absent_declaration" => fs::remove_file(&declaration).unwrap(),
+                _ => (),
+            }
+            let result = reconcile_faceprints(root);
+            if damage.starts_with("absent") {
+                result.unwrap();
+                assert_eq!(rows(root, "a"), 0, "{damage}");
+            } else {
+                assert_eq!(result.is_ok(), damage == "present", "{damage}: {result:?}");
+                assert_eq!(rows(root, "a"), 1, "{damage}");
+            }
+        }
     }
 }
