@@ -33,6 +33,10 @@ impl Server {
             while !server_stop.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        // Windows hands back an accepted socket in the listener's
+                        // non-blocking mode (Linux does not), so a read could
+                        // find the request not yet arrived and fail WouldBlock.
+                        stream.set_nonblocking(false).unwrap();
                         let body = read_request(&mut stream);
                         let text = body["messages"][0]["content"].as_str().unwrap().to_owned();
                         let blocked = text == "long" || server_block.swap(false, Ordering::AcqRel);
@@ -77,7 +81,13 @@ impl Drop for Server {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
         let _ = self.release.send(());
-        self.worker.take().unwrap().join().unwrap();
+        let worker = self.worker.take().unwrap().join();
+        // A second panic while a failed test unwinds aborts the whole binary
+        // and loses every captured message, so a worker panic fails the test
+        // only when the test is not already failing.
+        if !thread::panicking() {
+            worker.unwrap();
+        }
     }
 }
 
