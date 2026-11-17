@@ -60,7 +60,7 @@ pub(crate) fn normalize_markdown_only_segments(
             .collect::<Vec<_>>();
         let markdown = names
             .iter()
-            .any(|name| name == "imported.md" || name.ends_with("_transcript.md"));
+            .any(|name| solstone_core_format::content::markdown_transcript_name(name));
         let jsonl = names.iter().any(|name| {
             name.ends_with("audio.jsonl")
                 || name.ends_with("screen.jsonl")

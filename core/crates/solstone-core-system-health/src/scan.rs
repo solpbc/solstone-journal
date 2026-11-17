@@ -507,20 +507,15 @@ fn markdown_transcript_files(files: &[PathBuf]) -> Vec<PathBuf> {
     files
         .iter()
         .filter(|path| {
-            file_name(path)
-                .is_some_and(|name| name == "imported.md" || name.ends_with("_transcript.md"))
+            file_name(path).is_some_and(solstone_core_format::content::markdown_transcript_name)
         })
         .cloned()
         .collect()
 }
 
 pub fn is_audio_jsonl(path: &Path) -> bool {
-    file_name(path).is_some_and(|name| {
-        name == "audio.jsonl"
-            || name.ends_with("_audio.jsonl")
-            || (name.ends_with("_transcript.jsonl")
-                || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name))
-    }) || (!is_screen_jsonl(path) && is_transcribe_output(path))
+    file_name(path).is_some_and(solstone_core_format::content::speech_transcript_name)
+        || (!is_screen_jsonl(path) && is_transcribe_output(path))
 }
 
 /// A screenshot is a screen, read as one frame, never a photo.

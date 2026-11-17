@@ -614,13 +614,7 @@ fn category_placeholders(count: usize) -> String {
 }
 
 fn category_sql_name(category: AdmittedCategory) -> &'static str {
-    match category {
-        AdmittedCategory::Transcripts => "transcripts",
-        AdmittedCategory::Entities => "entities",
-        AdmittedCategory::Facets => "facets",
-        AdmittedCategory::ScreenText => "screen_text",
-        AdmittedCategory::Body => "body",
-    }
+    category.as_str()
 }
 
 const BODY_MATERIAL_FUNCTION: &str = "solstone_body_material";

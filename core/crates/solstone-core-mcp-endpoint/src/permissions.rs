@@ -64,13 +64,9 @@ impl ReadPermission {
     #[must_use]
     pub fn default_whole_journal() -> Self {
         Self {
-            categories: vec![
-                "transcripts".to_string(),
-                "entities".to_string(),
-                "facets".to_string(),
-                "screen_text".to_string(),
-                "body".to_string(),
-            ],
+            categories: solstone_core_format::content::kinds::permission_words()
+                .map(str::to_owned)
+                .collect(),
             scope: ReadScope::WholeJournal,
         }
     }
@@ -271,14 +267,7 @@ pub fn evaluate_connection_read(journal_root: &Path, connection_key: &str) -> Pe
     let categories = read
         .categories
         .iter()
-        .filter_map(|category| match category.as_str() {
-            "transcripts" => Some(AdmittedCategory::Transcripts),
-            "entities" => Some(AdmittedCategory::Entities),
-            "facets" => Some(AdmittedCategory::Facets),
-            "screen_text" => Some(AdmittedCategory::ScreenText),
-            "body" => Some(AdmittedCategory::Body),
-            _ => None,
-        })
+        .filter_map(|category| AdmittedCategory::from_stored_word(category))
         .collect();
     let scope = match &read.scope {
         ReadScope::WholeJournal => ConnectionScope::WholeJournal,

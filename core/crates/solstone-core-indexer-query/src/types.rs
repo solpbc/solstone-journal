@@ -63,18 +63,11 @@ impl ConnectionBoundary {
     {
         let mut categories = BTreeSet::new();
         for token in tokens {
-            let category = match token.as_ref() {
-                "Transcripts" | "transcripts" => AdmittedCategory::Transcripts,
-                "Entities" | "entities" => AdmittedCategory::Entities,
-                "Facets" | "facets" => AdmittedCategory::Facets,
-                "ScreenText" | "screen_text" => AdmittedCategory::ScreenText,
-                "Body" | "body" => AdmittedCategory::Body,
-                value => {
-                    return Err(ConnectionBoundaryError::UnknownCategory {
-                        token: value.to_string(),
-                    });
+            let category = AdmittedCategory::from_query_token(token.as_ref()).ok_or_else(|| {
+                ConnectionBoundaryError::UnknownCategory {
+                    token: token.as_ref().to_string(),
                 }
-            };
+            })?;
             categories.insert(category);
         }
         Ok(Self { categories, scope })

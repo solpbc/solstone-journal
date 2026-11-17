@@ -41,12 +41,18 @@ pub fn is_seen_input(name: &str) -> bool {
 
 impl PerceptFamily {
     pub(crate) fn matches(self, name: &str) -> bool {
-        match self {
-            Self::Screen => name.ends_with("screen.jsonl"),
-            Self::Browser => name.starts_with("browser_") && name.ends_with(".jsonl"),
-            Self::ProtectedVideo => name.ends_with("_protected_video.jsonl"),
-            Self::DesktopActivity => name.ends_with("_desktop_activity.jsonl"),
-        }
+        use solstone_core_format::content::{
+            Family, FileFormat, RawPerceptFamily, SegmentReader, segment_file_offers,
+        };
+        let expected = match self {
+            Self::Screen => FileFormat::Raw(RawPerceptFamily::RawScreen),
+            Self::Browser => FileFormat::Content(Family::Browser),
+            Self::ProtectedVideo => FileFormat::Content(Family::ProtectedVideo),
+            Self::DesktopActivity => FileFormat::Content(Family::DesktopActivity),
+        };
+        segment_file_offers(name, SegmentReader::Talents, Default::default())
+            .iter()
+            .any(|offer| offer.format == expected)
     }
 }
 

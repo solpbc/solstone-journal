@@ -331,7 +331,18 @@ pub(crate) fn evaluate_topics(segment_dir: &Path, sense: &Map<String, Value>) ->
                     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
                         continue;
                     };
-                    if name.ends_with("audio.jsonl") || (name.ends_with("_transcript.jsonl") || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name)) {
+                    if solstone_core_format::content::segment_file_offers(
+                        name,
+                        solstone_core_format::content::SegmentReader::Talents,
+                        Default::default(),
+                    )
+                    .iter()
+                    .any(|offer| {
+                        offer.format
+                            == solstone_core_format::content::FileFormat::Raw(
+                                solstone_core_format::content::RawPerceptFamily::Audio,
+                            )
+                    }) {
                         speech_paths.push(path);
                     }
                 }

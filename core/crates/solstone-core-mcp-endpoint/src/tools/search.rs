@@ -70,15 +70,11 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedSearch, ToolEr
     {
         return Err(ToolError::InvalidInput);
     }
-    let category = match params.category.as_deref() {
-        None => None,
-        Some("transcripts") => Some(AdmittedCategory::Transcripts),
-        Some("entities") => Some(AdmittedCategory::Entities),
-        Some("facets") => Some(AdmittedCategory::Facets),
-        Some("screen_text") => Some(AdmittedCategory::ScreenText),
-        Some("body") => Some(AdmittedCategory::Body),
-        Some(_) => return Err(ToolError::InvalidInput),
-    };
+    let category = params
+        .category
+        .as_deref()
+        .map(|word| AdmittedCategory::from_stored_word(word).ok_or(ToolError::InvalidInput))
+        .transpose()?;
     Ok(ValidatedSearch {
         query: params.query,
         limit: params.limit,

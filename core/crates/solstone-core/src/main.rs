@@ -5377,10 +5377,8 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                 Err(code) => return code,
             };
             if categories.iter().any(|category| {
-                !matches!(
-                    category.as_str(),
-                    "transcripts" | "entities" | "facets" | "screen_text" | "body"
-                )
+                !solstone_core_format::content::AdmittedCategory::from_stored_word(category)
+                    .is_some()
             }) {
                 eprintln!(
                     "solstone journal mcp permission set: category must be transcripts, entities, facets, screen_text or body"
