@@ -173,6 +173,10 @@
     {
       "namespace": "ios",
       "owner": "ios"
+    },
+    {
+      "namespace": "linux",
+      "owner": "linux"
     }
   ],
   "bundles": [
@@ -273,6 +277,12 @@
     },
     {
       "id": "ios",
+      "locales": [
+        "en-US"
+      ]
+    },
+    {
+      "id": "linux",
       "locales": [
         "en-US"
       ]
