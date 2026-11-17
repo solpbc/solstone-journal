@@ -606,6 +606,29 @@ pub fn artifact(id: ArtifactId) -> &'static DurableArtifact {
         .expect("declared artifact")
 }
 
+/// Resolve the registered path for one facet directory's declaration.
+pub fn facet_declaration_path(root: &Path, facet: &str) -> Result<PathBuf, crate::PathError> {
+    let relative = artifact(ArtifactId::FacetDeclaration)
+        .path
+        .replace('*', facet);
+    crate::paths::contained_path(root, &relative)
+}
+
+/// Read only a facet's declared ID for link-transfer evidence. A missing or
+/// damaged declaration cannot authorize a historical reference.
+pub fn observe_facet_declaration_id(root: &Path, facet: &str) -> Option<String> {
+    let path = facet_declaration_path(root, facet).ok()?;
+    let DurableObservation::Present(value) =
+        observe_json_durable::<serde_json::Value>(ArtifactId::FacetDeclaration, &path)
+    else {
+        return None;
+    };
+    value["id"]
+        .as_str()
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+}
+
 /// The slice of all declared artifacts.
 pub fn artifacts() -> &'static [DurableArtifact] {
     JOURNAL_ARTIFACTS

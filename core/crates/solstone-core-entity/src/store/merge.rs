@@ -1184,12 +1184,10 @@ pub(crate) fn merge_facets(
         {
             // A later scoped read may follow a retired source only when we
             // can prove that this exact facet held a live source link.
-            let path =
-                contained_path(journal, &format!("facets/{facet}/facet.json")).map_err(refused)?;
-            if let Ok(value) = read_json::<Value>(path, Value::Null, MalformedPolicy::Raise)
-                && let Some(id) = value["id"].as_str().filter(|id| !id.is_empty())
+            if let Some(id) =
+                solstone_core_journal_io::durability::observe_facet_declaration_id(journal, &facet)
             {
-                stats.source_facet_ids.push(id.to_owned());
+                stats.source_facet_ids.push(id);
             }
         }
         stats.unreadable_links += unreadable.len();
