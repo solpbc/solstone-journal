@@ -9338,7 +9338,6 @@ function trashLandings(act, chosen, order, loaded) {
 }
 
 async function runTrashAct(act, chosen, choice = null, opener = null) {
-  if (trashActing) return;
   const order = trashItems.map(item => item.id);
   markTrashActing(opener, true);
   const options = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
