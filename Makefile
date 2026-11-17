@@ -1588,10 +1588,18 @@ check-standalone-lockfiles:
 	else \
 		echo "Not a Git work tree: lockfile inventory not compared; checking the listed graphs only"; \
 	fi; \
+	stale=""; \
 	for manifest in $(STANDALONE_LOCK_MANIFESTS); do \
 		printf 'Checking locked standalone graph: %s\n' "$$manifest"; \
-		cargo metadata --manifest-path "$$manifest" --locked --offline --format-version 1 >/dev/null; \
-	done
+		cargo metadata --manifest-path "$$manifest" --locked --offline --format-version 1 >/dev/null || stale="$$stale $$manifest"; \
+	done; \
+	if [ -n "$$stale" ]; then \
+		printf '\nStale standalone lockfiles:\n' >&2; \
+		for manifest in $$stale; do printf '  %s\n' "$$manifest" >&2; done; \
+		printf 'Refresh each one (never cargo update -p, which re-resolves unrelated crates):\n' >&2; \
+		printf '  for m in%s; do cargo metadata --manifest-path "$$m" --offline --format-version 1 >/dev/null; done\n' "$$stale" >&2; \
+		exit 1; \
+	fi
 
 # HOPPER_LID is set by the external build orchestrator that runs isolated
 # automated build tasks. The name is that tool's contract and cannot be
