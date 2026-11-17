@@ -3679,18 +3679,27 @@ function reportSettingsReady(state) {
 }
 
 // A field's save waits half a second after its change. The owner who changed
-// it and then left meant it, so leaving sends it now.
+// it and then left meant it, so leaving sends it now: an in-page leave when
+// settings goes, and a page load, a reload or a closed tab as the page goes.
 const pendingSaves = new Map();
 function pendingSave(key, run) {
   let ran = false;
-  const once = () => {
+  const once = (how) => {
     if (ran) return undefined;
     ran = true;
     if (pendingSaves.get(key) === once) pendingSaves.delete(key);
-    return run();
+    return run(how);
   };
   pendingSaves.set(key, once);
   return once;
+}
+// Each save not yet sent, sent now, once: its timer is cleared, and a timer
+// or a leave after this finds it already run.
+function sendPendingSaves(how) {
+  saveTimeouts.forEach(id => clearTimeout(id));
+  saveTimeouts.clear();
+  Array.from(pendingSaves.values()).forEach(run => run(how));
+  pendingSaves.clear();
 }
 
 // Every dialog settings opens, closed without putting focus back: by a back
@@ -3741,10 +3750,7 @@ function disposeSettings() {
   try {
     // Sent while settings is still up, so the write goes out; its answer
     // comes after, and is dropped.
-    saveTimeouts.forEach(id => clearTimeout(id));
-    saveTimeouts.clear();
-    Array.from(pendingSaves.values()).forEach(run => run());
-    pendingSaves.clear();
+    sendPendingSaves();
   } catch (error) {
     if (!(error instanceof ReferenceError)) throw error;
   }
@@ -3770,6 +3776,14 @@ let facetConfig = null;
 let facetDetailSlugState = '';
 let facetDetailTabLoaded = new Set();
 const saveTimeouts = new Map();
+// The page itself going sends them too. keepalive lets the write outlive the
+// page. A phone can end a page it has hidden without a pagehide, so hiding
+// sends them as well. Nothing is aborted here: a page the browser keeps and
+// shows again still has its reads.
+ctx.on(window, 'pagehide', () => sendPendingSaves({ keepalive: true }));
+ctx.on(window.document, 'visibilitychange', () => {
+  if (document.visibilityState === 'hidden') sendPendingSaves({ keepalive: true });
+});
 let logNextCursor = null;
 let keyValidationData = {};
 let transcribeResource = null;
@@ -4452,12 +4466,15 @@ function applySavedConfigResult(result, runtimeEnv) {
   configData.runtime_env = runtimeEnv;
 }
 
-async function saveConfigValue(section, key, value) {
-  const result = await settingsApi('/app/settings/api/config', {
+async function saveConfigValue(section, key, value, how) {
+  const opts = {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ section, data: { [key]: value } })
-  });
+  };
+  // Sent as the page goes: keepalive lets it outlive the page.
+  if (how?.keepalive) opts.keepalive = true;
+  const result = await settingsApi('/app/settings/api/config', opts);
   if (result.success) {
     return result;
   }
@@ -4503,79 +4520,107 @@ function handleFieldChange(el) {
     }
   }
 
-  // Skip save if value unchanged (except env fields which are masked)
+  // Skip save if value unchanged (except env fields which are masked). A value
+  // the journal doesn't have is drawn as an empty field, so an empty field
+  // over an unset value is unchanged too.
   if (section !== 'env') {
     const currentValue = configData?.[section]?.[key];
     if (JSON.stringify(currentValue) === JSON.stringify(value)) {
       return;
     }
+    if (currentValue == null && fieldValueEmpty(value)) return;
   } else {
     // For env fields, skip if empty (user didn't enter anything)
     if (!value) return;
   }
 
+  // The same value already on its way (waiting its half second, or sent and
+  // not answered) isn't sent again.
+  if (fieldSending.get(fieldSaveKey(el, section, key)) === JSON.stringify(value)) return;
+
   saveField(el, section, key, value);
 }
 
+function fieldValueEmpty(value) {
+  return value === '' || (Array.isArray(value) && value.length === 0);
+}
+
+// What each field's save is sending: set when it's asked for, cleared when
+// its answer comes.
+const fieldSending = new Map();
+function fieldSaveKey(el, section, key) {
+  return el?.id || `${section}:${key}`;
+}
+
 function saveField(el, section, key, value) {
-  const timeoutKey = el?.id || `${section}:${key}`;
+  const timeoutKey = fieldSaveKey(el, section, key);
+  const sending = JSON.stringify(value);
+  fieldSending.set(timeoutKey, sending);
   clearTimeout(saveTimeouts.get(timeoutKey));
-  saveTimeouts.set(timeoutKey, setTimeout(pendingSave(timeoutKey, async () => {
-    saveTimeouts.delete(timeoutKey);
-    const runtimeEnv = configData?.runtime_env || {};
-
-    if (!el) {
-      try {
-        const result = await saveConfigValue(section, key, value);
-        applySavedConfigResult(result, runtimeEnv);
-      } catch (err) {
-        window.logError(err, { context: `settings: saveField(${section}.${key}) failed` });
-      }
-      return;
-    }
-
-    if (section === 'env') {
-      const errorHost = prepareFieldErrorHost(el);
-      try {
-        const result = await saveConfigValue(section, key, value);
-        applySavedConfigResult(result, runtimeEnv);
-        applyEnvSaveEffects(el, key, result);
-        showFieldStatus(el, 'saved');
-      } catch (err) {
-        const message = window.SurfaceState.serverMessageFrom(err) || 'Save failed';
-        if (errorHost) {
-          errorHost.innerHTML = `<span data-control-save-error class="control-save-error">${escapeHtml(message)}</span>`;
-        }
-        window.logError(err, { context: `settings: saveField(env.${key}) failed` });
-      }
-      return;
-    }
-
-    const errorHost = prepareFieldErrorHost(el);
+  saveTimeouts.set(timeoutKey, setTimeout(pendingSave(timeoutKey, async (how) => {
     try {
-      await window.saveControl({
-        el,
-        errorHost,
-        revertOnError: true,
-        readValue: () => el.__lastKnownValue,
-        fetchArgs: () => saveConfigValue(section, key, value),
-        onSuccess: (result) => {
-          applySavedConfigResult(result, runtimeEnv);
-          el.__lastKnownValue = readAutoSaveControlValue(el);
-          showFieldStatus(el, 'saved');
-        },
-        onError: (err) => {
-          window.logError(err, { context: `settings: saveField(${section}.${key}) failed` });
-        }
-      });
-      // Debounced autosave: saveControl's onError already routes the failure
-      // through window.logError; this outer catch just swallows the awaited
-      // rejection so it doesn't escape as an unhandledrejection. The next
-      // input event re-fires saveField and retries the save.
-    } catch (_) {
-      // intentionally empty — see comment above
+      await sendField(el, section, key, value, how);
+    } finally {
+      if (fieldSending.get(timeoutKey) === sending) fieldSending.delete(timeoutKey);
     }
   }), 500));
+}
+
+async function sendField(el, section, key, value, how) {
+  saveTimeouts.delete(fieldSaveKey(el, section, key));
+  const runtimeEnv = configData?.runtime_env || {};
+
+  if (!el) {
+    try {
+      const result = await saveConfigValue(section, key, value, how);
+      applySavedConfigResult(result, runtimeEnv);
+    } catch (err) {
+      window.logError(err, { context: `settings: saveField(${section}.${key}) failed` });
+    }
+    return;
+  }
+
+  if (section === 'env') {
+    const errorHost = prepareFieldErrorHost(el);
+    try {
+      const result = await saveConfigValue(section, key, value, how);
+      applySavedConfigResult(result, runtimeEnv);
+      applyEnvSaveEffects(el, key, result);
+      showFieldStatus(el, 'saved');
+    } catch (err) {
+      const message = window.SurfaceState.serverMessageFrom(err) || 'Save failed';
+      if (errorHost) {
+        errorHost.innerHTML = `<span data-control-save-error class="control-save-error">${escapeHtml(message)}</span>`;
+      }
+      window.logError(err, { context: `settings: saveField(env.${key}) failed` });
+    }
+    return;
+  }
+
+  const errorHost = prepareFieldErrorHost(el);
+  try {
+    await window.saveControl({
+      el,
+      errorHost,
+      revertOnError: true,
+      readValue: () => el.__lastKnownValue,
+      fetchArgs: () => saveConfigValue(section, key, value, how),
+      onSuccess: (result) => {
+        applySavedConfigResult(result, runtimeEnv);
+        el.__lastKnownValue = readAutoSaveControlValue(el);
+        showFieldStatus(el, 'saved');
+      },
+      onError: (err) => {
+        window.logError(err, { context: `settings: saveField(${section}.${key}) failed` });
+      }
+    });
+    // Debounced autosave: saveControl's onError already routes the failure
+    // through window.logError; this outer catch just swallows the awaited
+    // rejection so it doesn't escape as an unhandledrejection. The next
+    // input event re-fires saveField and retries the save.
+  } catch (_) {
+    // intentionally empty — see comment above
+  }
 }
 
 // Store original helper text and timeout per field
@@ -9481,12 +9526,13 @@ function initSettings() {
   setupAutoSave();
   setupStorageListeners();
 
-  // Enter-to-save for auto-save text inputs inside forms
+  // Enter saves an auto-save text input inside a form, as leaving it does,
+  // and focus stays in the field.
   document.querySelectorAll('.settings-form input[data-section][type="text"], .settings-form input[data-section][type="number"], .settings-form input[data-section][type="password"]').forEach(input => {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        input.blur();
+        handleFieldChange(input);
       }
     });
   });
