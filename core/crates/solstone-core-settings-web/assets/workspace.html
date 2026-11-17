@@ -3702,6 +3702,32 @@ function sendPendingSaves(how) {
   pendingSaves.clear();
 }
 
+// A confirm that closes its dialog and starts a write: the page is out from
+// under the dialog before focus goes back to its opener, so the opener has
+// focus at once, and keeps it while it's busy (the modal layer's own restore
+// passes over a control marked off).
+function closeOntoOpener(modal) {
+  if (!modal) return;
+  modal._closeAccessible();
+  window.ConveyModalLayer?.reconcile?.({ restore: false });
+  modal._triggerEl?.focus?.();
+}
+
+// Focus the owner had on a control that a redraw hid or turned off goes to the
+// first of `targets` still shown. Focus anywhere else is left alone.
+function settingsLand(held, targets) {
+  if (!held) return false;
+  // A browser can still report a control it has just turned off as focused.
+  if (settingsPage.activeElement === held && held.disabled) held.blur?.();
+  return window.SolFocus.refocus(settingsPage, true, targets.filter(Boolean).map(target => {
+    if (!target.hasAttribute('tabindex') && !/^(A|BUTTON|INPUT|SELECT|TEXTAREA|SUMMARY)$/.test(target.tagName)) target.setAttribute('tabindex', '-1');
+    return target;
+  }));
+}
+function settingsHeld(el) {
+  return el && settingsPage.activeElement === el ? el : null;
+}
+
 // Every dialog settings opens, closed without putting focus back: by a back
 // between settings' own entries, and when settings goes.
 const SETTINGS_MODALS = ['ownerVoiceConsentModal', 'facesClearModal', 'customActivityModal', 'iconPickerModal', 'colorPickerModal', 'cleanupModal', 'trashConfirmModal', 'cleanupLogsModal', 'facetCreateModal'];
@@ -5626,9 +5652,13 @@ function renderTranscribeProcessing() {
   document.getElementById('transcribeProcessingField').hidden = !parakeetEmbedded;
   document.getElementById('transcribeBackendField').hidden = parakeetEmbedded;
   const select = document.getElementById('field-transcribe-processing');
-  select.disabled = !parakeetEmbedded || !transcribeProcessing.known || transcribeProcessing.busy;
+  // Busy while its save is out, so it keeps focus; off only when it isn't
+  // offered or the stored choice can't be read.
+  const held = settingsHeld(select);
+  select.disabled = !parakeetEmbedded || !transcribeProcessing.known;
+  window.SolFocus.setBusy(select, transcribeProcessing.busy && !select.disabled);
   select.value = transcribeProcessing.known && !transcribeProcessing.busy ? transcribeProcessing.choice : '';
-  select.setAttribute('aria-busy', String(transcribeProcessing.busy));
+  if (select.disabled) settingsLand(held, [document.getElementById('transcribeProcessingHelp')]);
 }
 
 async function saveTranscribeProcessing(value) {
@@ -5891,8 +5921,17 @@ function renderOwnerVoice() {
   const on = ownerVoice.known && ownerVoice.stored;
   const status = ownerVoice.statusLoaded && !ownerVoice.statusFailed;
   toggle.checked = on;
-  toggle.disabled = ownerVoice.busy || !ownerVoice.known || (!on && !ownerVoiceCanTurnOn());
-  toggle.setAttribute('aria-disabled', toggle.disabled ? 'true' : 'false');
+  // Busy while its save is out, so it keeps focus; off only when the choice
+  // can't be confirmed, or it can't be turned on yet.
+  const held = settingsHeld(toggle);
+  const unavailable = !ownerVoice.busy && (!ownerVoice.known || (!on && !ownerVoiceCanTurnOn()));
+  toggle.disabled = unavailable;
+  if (ownerVoice.busy) {
+    window.SolFocus.setBusy(toggle, true);
+  } else {
+    toggle.removeAttribute('aria-busy');
+    toggle.setAttribute('aria-disabled', unavailable ? 'true' : 'false');
+  }
   show('ownerVoiceUnknown', !ownerVoice.known);
   show('ownerVoiceSetup', ownerVoice.known && !on && status && !ownerVoice.available);
   show('ownerVoiceHeld', on && status && !ownerVoice.available);
@@ -5909,6 +5948,7 @@ function renderOwnerVoice() {
   show('ownerVoicePending', status && ownerVoice.pending > 0);
   // Unknown errs toward telling the owner originals may be deleted.
   show('ownerVoiceStorageNote', on || !ownerVoice.known);
+  if (unavailable) settingsLand(held, [document.getElementById(ownerVoice.known ? 'ownerVoiceSetup' : 'ownerVoiceUnknown')]);
 }
 
 async function loadOwnerVoiceStatus() {
@@ -5996,7 +6036,7 @@ document.getElementById('ownerVoiceConsentModal')?.addEventListener('keydown', (
   if (event.key === 'Escape') renderOwnerVoice();
 });
 document.getElementById('ownerVoiceConsentConfirm')?.addEventListener('click', () => {
-  document.getElementById('ownerVoiceConsentModal')._closeAccessible();
+  closeOntoOpener(document.getElementById('ownerVoiceConsentModal'));
   saveOwnerVoice(true);
 });
 
@@ -6024,13 +6064,27 @@ function renderFacesSetting() {
   };
   const on = facesSetting.known && facesSetting.stored;
   toggle.checked = on;
-  toggle.disabled = facesSetting.busy || facesSetting.clearing || !facesSetting.known;
-  toggle.setAttribute('aria-disabled', toggle.disabled ? 'true' : 'false');
+  // Busy while its save is out, so it keeps focus; off while the erase is out,
+  // and unavailable only when the choice can't be confirmed.
+  const held = settingsHeld(toggle);
+  const unavailable = !facesSetting.busy && !facesSetting.known;
+  toggle.disabled = unavailable;
+  if (facesSetting.busy) {
+    window.SolFocus.setBusy(toggle, true);
+  } else {
+    toggle.removeAttribute('aria-busy');
+    toggle.setAttribute('aria-disabled', unavailable || facesSetting.clearing ? 'true' : 'false');
+  }
   show('facesUnknown', !facesSetting.known);
   show('facesOnNote', on);
   show('facesClearRow', facesSetting.known && !on);
   const clear = document.getElementById('facesClearBtn');
-  if (clear) clear.disabled = facesSetting.clearing || facesSetting.busy;
+  if (clear) {
+    // Busy while the erase is out; off while the switch's save is.
+    window.SolFocus.setBusy(clear, facesSetting.clearing);
+    if (!facesSetting.clearing && facesSetting.busy) clear.setAttribute('aria-disabled', 'true');
+  }
+  if (unavailable) settingsLand(held, [document.getElementById('facesUnknown')]);
   const result = document.getElementById('facesClearResult');
   if (result) {
     result.replaceChildren();
@@ -6122,13 +6176,14 @@ document.getElementById('facesEnabled')?.addEventListener('change', (event) => {
   const wanted = toggle.checked;
   // Nothing changes until the save returns.
   toggle.checked = facesSetting.known && facesSetting.stored;
-  if (facesSetting.busy || !facesSetting.known || !facesSetting.available) {
+  if (facesSetting.busy || facesSetting.clearing || !facesSetting.known || !facesSetting.available) {
     renderFacesSetting();
     return;
   }
   saveFacesSetting(wanted);
 });
 document.getElementById('facesClearBtn')?.addEventListener('click', (event) => {
+  if (window.SolFocus.isBusy(event.currentTarget)) return;
   const modal = document.getElementById('facesClearModal');
   modal.style.display = 'block';
   modal._openAccessible(event.currentTarget);
@@ -6140,7 +6195,7 @@ document.getElementById('facesClearModal')?.addEventListener('click', (event) =>
   if (event.target === event.currentTarget) event.currentTarget._closeAccessible();
 });
 document.getElementById('facesClearConfirm')?.addEventListener('click', () => {
-  document.getElementById('facesClearModal')._closeAccessible();
+  closeOntoOpener(document.getElementById('facesClearModal'));
   clearFaceData();
 });
 
@@ -6268,7 +6323,7 @@ document.getElementById('field-plaud-sync-enabled').addEventListener('change', a
 
 // Granola: one card, five states. The status the journal reports is the
 // receipt for every action; nothing here claims an outcome before it does.
-const granola = { data: null, replacing: false, busy: false, poll: null };
+const granola = { data: null, replacing: false, lastReplacing: false, busy: false, poll: null };
 const granolaEl = id => document.getElementById(id);
 
 // The sources scale: just now · n min ago · n hours ago · yesterday · a date.
@@ -6302,30 +6357,70 @@ const GRANOLA_STATE_WORDS = {
   ready: 'ready to set up', 'setting-up': 'setting up', on: 'on', attention: 'needs attention', off: 'off',
 };
 
+// The card is drawn from the journal's status at every check, so each part is
+// written only when it differs: a check that changes nothing changes nothing
+// on the page, and a focused control stays the same node.
+function granolaText(el, text) {
+  if (el.textContent !== text) el.textContent = text;
+}
+function granolaHidden(el, hidden) {
+  if (el.hidden !== hidden) el.hidden = hidden;
+}
+function granolaAttr(el, name, value) {
+  if (value === null) {
+    if (el.hasAttribute(name)) el.removeAttribute(name);
+  } else if (el.getAttribute(name) !== value) {
+    el.setAttribute(name, value);
+  }
+}
+// A control is busy while its own write or check is out, so it keeps focus,
+// and off while another one is: it ignores presses, never `disabled`.
+function granolaMark(el, mark) {
+  granolaAttr(el, 'aria-busy', mark === 'busy' ? 'true' : null);
+  granolaAttr(el, 'aria-disabled', mark ? 'true' : null);
+}
+
+// Where focus goes when a check or a press hides the control it was on: what
+// took its place.
+function granolaLandings(held) {
+  const shown = id => granolaEl(id);
+  if (granolaEl('granolaKeyForm').contains(held)) {
+    // The key was taken: the connected controls are back, "use a new key"
+    // first when that's what opened the form.
+    return granola.lastReplacing
+      ? [shown('granolaReplace'), shown('granolaCheck'), shown('granolaDisconnect')]
+      : [shown('granolaCheck'), shown('granolaReplace'), shown('granolaDisconnect')];
+  }
+  // Disconnected, or the key was refused: what happened, then the key.
+  return [shown('granolaOffKept'), shown('granolaKey'), shown('granolaDisconnect')];
+}
+
 function renderGranola() {
   const data = granola.data;
   if (!data) return;
+  const card = granolaEl('granolaSyncCard');
+  const held = card.contains(settingsPage.activeElement) ? settingsPage.activeElement : null;
   const mode = granolaMode(data);
   const state = granolaEl('granolaState');
-  state.dataset.state = mode;
-  state.textContent = GRANOLA_STATE_WORDS[mode];
+  if (state.dataset.state !== mode) state.dataset.state = mode;
+  granolaText(state, GRANOLA_STATE_WORDS[mode]);
 
   const progress = granolaEl('granolaProgress');
-  progress.hidden = mode !== 'setting-up';
+  granolaHidden(progress, mode !== 'setting-up');
   if (mode === 'setting-up') {
-    progress.textContent = data.syncing
+    granolaText(progress, data.syncing
       ? (data.meetings > 0
         ? `bringing in your meetings from Granola. ${granolaMeetings(data.meetings)} so far.`
         : 'bringing in your meetings from Granola…')
-      : 'your journal will bring in your meetings from Granola within the hour.';
+      : 'your journal will bring in your meetings from Granola within the hour.');
   }
 
-  granolaEl('granolaAttention').hidden = mode !== 'attention';
+  granolaHidden(granolaEl('granolaAttention'), mode !== 'attention');
   if (mode === 'attention') {
-    granolaEl('granolaAttentionReason').textContent = data.attention;
-    granolaEl('granolaAttentionKept').textContent = data.meetings > 0
+    granolaText(granolaEl('granolaAttentionReason'), data.attention);
+    granolaText(granolaEl('granolaAttentionKept'), data.meetings > 0
       ? `the ${granolaMeetings(data.meetings)} already in your journal ${data.meetings === 1 ? 'stays' : 'stay'}.`
-      : 'nothing in your journal was changed.';
+      : 'nothing in your journal was changed.');
   }
 
   const facts = granolaEl('granolaFacts');
@@ -6335,52 +6430,63 @@ function renderGranola() {
     if (data.last_added) rows.push(['last added', granolaRelative(data.last_added)]);
     if (data.last_sync) rows.push(['last checked', data.syncing ? 'checking now…' : granolaRelative(data.last_sync)]);
   }
-  facts.hidden = rows.length === 0;
-  facts.replaceChildren(...rows.flatMap(([term, value]) => {
-    const dt = document.createElement('dt');
-    dt.textContent = term;
-    const dd = document.createElement('dd');
-    dd.textContent = value;
-    return [dt, dd];
-  }));
+  granolaHidden(facts, rows.length === 0);
+  const words = rows.flat();
+  const drawn = Array.from(facts.children);
+  const same = drawn.length === words.length
+    && drawn.every((el, i) => el.tagName === (i % 2 ? 'DD' : 'DT') && el.textContent === words[i]);
+  if (!same) {
+    facts.replaceChildren(...rows.flatMap(([term, value]) => {
+      const dt = document.createElement('dt');
+      dt.textContent = term;
+      const dd = document.createElement('dd');
+      dd.textContent = value;
+      return [dt, dd];
+    }));
+  }
 
   const offKept = granolaEl('granolaOffKept');
-  offKept.hidden = mode !== 'off';
+  granolaHidden(offKept, mode !== 'off');
   if (mode === 'off') {
-    offKept.textContent = `disconnected. the ${granolaMeetings(data.meetings)} from Granola ${data.meetings === 1 ? 'stays' : 'stay'} in your journal. connect again to keep them up to date; nothing comes in twice.`;
+    granolaText(offKept, `disconnected. the ${granolaMeetings(data.meetings)} from Granola ${data.meetings === 1 ? 'stays' : 'stay'} in your journal. connect again to keep them up to date; nothing comes in twice.`);
   }
 
   // A refused key is the one fault whose fix is a new key, so the field opens for it.
   const keyFault = mode === 'attention' && data.attention_code === 'key';
   const showKey = !data.connected || granola.replacing || keyFault;
   const replacingKey = data.connected && showKey;
-  granolaEl('granolaKeyForm').hidden = !showKey;
+  granolaHidden(granolaEl('granolaKeyForm'), !showKey);
   // Mid-replacement, the key form is the whole task. On a refused key a retry
   // can't help, so only disconnect stays beside it.
-  granolaEl('granolaConnected').hidden = !data.connected || granola.replacing;
-  granolaEl('granolaCheck').hidden = keyFault;
-  granolaEl('granolaKeyLabel').textContent = replacingKey ? 'new personal API key' : 'personal API key';
-  granolaEl('granolaConnect').textContent = granola.busy === 'connect'
+  granolaHidden(granolaEl('granolaConnected'), !data.connected || granola.replacing);
+  granolaHidden(granolaEl('granolaCheck'), keyFault);
+  granolaText(granolaEl('granolaKeyLabel'), replacingKey ? 'new personal API key' : 'personal API key');
+  granolaText(granolaEl('granolaConnect'), granola.busy === 'connect'
     ? 'checking the key…'
-    : (replacingKey ? 'use this key' : 'connect');
-  granolaEl('granolaCancelKey').hidden = !(granola.replacing && !keyFault);
-  granolaEl('granolaReplaceNote').hidden = !replacingKey;
-  granolaEl('granolaReplace').hidden = replacingKey;
+    : (replacingKey ? 'use this key' : 'connect'));
+  granolaHidden(granolaEl('granolaCancelKey'), !(granola.replacing && !keyFault));
+  granolaHidden(granolaEl('granolaReplaceNote'), !replacingKey);
+  granolaHidden(granolaEl('granolaReplace'), replacingKey);
   const guide = granolaEl('granolaGuide');
-  if (!guide.dataset.touched) guide.open = mode === 'ready';
+  if (!guide.dataset.touched && guide.open !== (mode === 'ready')) guide.open = mode === 'ready';
 
   const check = granolaEl('granolaCheck');
-  check.textContent = data.syncing ? 'checking…' : 'check now';
-  check.disabled = !!data.syncing || !!granola.busy;
-  granolaEl('granolaConnect').disabled = !!granola.busy;
-  granolaEl('granolaDisconnect').disabled = !!granola.busy;
-  granolaEl('granolaReplace').disabled = !!granola.busy;
+  granolaText(check, data.syncing ? 'checking…' : 'check now');
+  // A check the journal is running is the check button's work, whoever started it.
+  const other = name => (granola.busy && granola.busy !== name ? 'off' : null);
+  granolaMark(check, granola.busy === 'check' || data.syncing ? 'busy' : other('check'));
+  granolaMark(granolaEl('granolaConnect'), granola.busy === 'connect' ? 'busy' : other('connect'));
+  granolaMark(granolaEl('granolaDisconnect'), granola.busy === 'disconnect' ? 'busy' : other('disconnect'));
+  granolaMark(granolaEl('granolaReplace'), granola.busy ? 'off' : null);
+  granolaMark(granolaEl('granolaCancelKey'), granola.busy ? 'off' : null);
+
+  if (held && !window.SolFocus.isShown(held)) settingsLand(held, granolaLandings(held));
 }
 
 async function loadGranola() {
   try {
     granola.data = await settingsApi('/app/settings/api/granola');
-    granolaEl('granolaLoadError').hidden = true;
+    granolaHidden(granolaEl('granolaLoadError'), true);
     renderGranola();
   } catch (_) {
     granolaEl('granolaLoadError').hidden = false;
@@ -6402,6 +6508,7 @@ function granolaKeyError(message) {
 }
 
 async function connectGranola() {
+  if (granola.busy) return;
   const key = granolaEl('granolaKey');
   const value = key.value.trim();
   if (!value) {
@@ -6410,6 +6517,7 @@ async function connectGranola() {
     return;
   }
   granola.busy = 'connect';
+  granola.lastReplacing = granola.replacing;
   granolaKeyError('');
   renderGranola();
   try {
@@ -6429,6 +6537,7 @@ async function connectGranola() {
 }
 
 async function checkGranola() {
+  if (granola.busy || granola.data?.syncing) return;
   granola.busy = 'check';
   renderGranola();
   try {
@@ -6442,6 +6551,7 @@ async function checkGranola() {
 }
 
 async function disconnectGranola() {
+  if (granola.busy) return;
   granola.busy = 'disconnect';
   renderGranola();
   try {
@@ -6463,11 +6573,14 @@ granolaEl('granolaKey').addEventListener('keydown', event => {
 granolaEl('granolaCheck').addEventListener('click', checkGranola);
 granolaEl('granolaDisconnect').addEventListener('click', disconnectGranola);
 granolaEl('granolaReplace').addEventListener('click', () => {
+  if (granola.busy) return;
   granola.replacing = true;
   renderGranola();
   granolaEl('granolaKey').focus();
 });
 granolaEl('granolaCancelKey').addEventListener('click', () => {
+  if (granola.busy) return;
+  granola.lastReplacing = true;
   granola.replacing = false;
   granolaEl('granolaKey').value = '';
   granolaKeyError('');

@@ -595,9 +595,11 @@ async function testCase(name, fn) {
     };
     await run(h, `parakeetEmbedded = true; populateFields({identity: {timezone: 'UTC'}, transcribe: {confidential_audio: false}}); void saveTranscribeProcessing('confidential')`);
     const select = h.document.getElementById('field-transcribe-processing');
-    assert.strictEqual(select.disabled, true);
+    // Busy while its save is out, never disabled, so it keeps focus.
+    assert.strictEqual(select.disabled, false);
     assert.strictEqual(select.value, '');
     assert.strictEqual(select.getAttribute('aria-busy'), 'true');
+    assert.strictEqual(select.getAttribute('aria-disabled'), 'true');
     await run(h, `saveTranscribeProcessing('local')`);
     assert.strictEqual(writes, 1);
     finish(response({ success: true, config: { transcribe: { backend: 'confidential', confidential_audio: true } } }));
