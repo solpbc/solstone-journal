@@ -5163,8 +5163,9 @@ function setupColorPicker() {
 function setupMutedAction() {
   const action = document.getElementById('facetMuteAction');
   action.onclick = async () => {
-    // A second press while the mute is out sends nothing more: the value on
-    // its way isn't sent again (saveFacetField).
+    // A second press while the mute is out sends nothing more, and leaves
+    // the button busy until the first answers.
+    if (window.SolFocus.isBusy(action)) return;
     window.SolFocus.setBusy(action, true);
     try {
       await saveFacetField('muted', !Boolean(facetConfig?.muted), null);

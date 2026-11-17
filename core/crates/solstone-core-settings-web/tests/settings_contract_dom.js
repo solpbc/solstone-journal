@@ -2069,6 +2069,7 @@ module.exports = async function settingsContractCases(crateDir) {
     p.press(mute);
     await settle();
     assert.ok(facetPuts(p).length === 1, `one save: ${facetPuts(p).length}`);
+    assert.ok(p.doc.activeElement === mute && busyNotDisabled(mute), `still busy after a second press: ${at(p)}`);
     held.release({ success: true, config: { title: 'Work', color: '#c00', muted: true } });
     await settle();
     assert.ok(p.doc.activeElement === mute && mute.getAttribute('aria-busy') === null, `kept after: ${at(p)}`);
