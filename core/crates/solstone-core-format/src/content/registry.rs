@@ -78,6 +78,8 @@ impl OfferedTo {
     pub const DASHBOARD_AGENT: Self = Self(6);
     pub const AGENT: Self = Self(4);
     pub const AGENT_TALENTS: Self = Self(12);
+    pub const SEARCH_DASHBOARD: Self = Self(3);
+    pub const SEARCH_DASHBOARD_TALENTS: Self = Self(11);
     pub const SEARCH_DASHBOARD_AGENT: Self = Self(7);
     pub const SEARCH_DASHBOARD_AGENT_TALENTS: Self = Self(15);
     pub const DASHBOARD_AGENT_TALENTS: Self = Self(14);
@@ -103,6 +105,9 @@ pub struct FilePattern {
     pub disposition: IndexDisposition,
     pub kind: KindAssignment,
     pub unit: ContentUnit,
+    /// Static reader routes, subject to each reader's existing content and
+    /// visibility predicates. Search means a text-index route, independently
+    /// of connection admission (`disposition`).
     pub offered_to: OfferedTo,
     pub condition: FileCondition,
     /// Segment projection is narrower than search/fetch admission. A calendar
@@ -278,6 +283,48 @@ mod tests {
 
     use super::*;
     use crate::content::file_spec;
+
+    #[test]
+    fn offered_audiences_match_each_segment_rule() {
+        for row in super::super::INDEX_FAMILY_PATTERNS {
+            let Some(rule) = row.segment else { continue };
+            for reader in [Reader::Dashboard, Reader::Agent, Reader::Talents] {
+                assert_eq!(
+                    row.offered_to.contains(reader),
+                    rule.readers.contains(reader),
+                    "{} ({:?}, {reader:?})",
+                    row.pattern,
+                    row.condition,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn offered_search_matches_text_index_routes() {
+        for row in super::super::INDEX_FAMILY_PATTERNS {
+            let searchable = match row.classification {
+                // Disposition controls connection admission, not indexing.
+                ContentResolution::Indexed(_) => true,
+                ContentResolution::IndexedElsewhere => match row.pattern {
+                    // The entity-search builder projects identity text into
+                    // synthetic rows. Weekly JSON accompanies indexed Markdown.
+                    "entities/*/entity.json" => true,
+                    "reflections/weekly/*.json" => false,
+                    _ => panic!("unaccounted separate index route: {}", row.pattern),
+                },
+                ContentResolution::Unindexed(_) | ContentResolution::Unrecognized => false,
+            };
+            assert_eq!(
+                row.offered_to.contains(Reader::Search),
+                searchable,
+                "{} ({:?}, {:?})",
+                row.pattern,
+                row.classification,
+                row.disposition,
+            );
+        }
+    }
 
     fn missing_files(root: &Path, at: &Path, missing: &mut Vec<String>) {
         for entry in std::fs::read_dir(at).unwrap() {

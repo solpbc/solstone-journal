@@ -228,6 +228,7 @@ fn prepare_segment(
         BTreeMap::from([("audio".to_owned(), None), ("screen".to_owned(), None)]);
     let mut duration = 0.0_f64;
     let mut markdown_added = false;
+    let calendar_stream = solstone_core_segment::is_calendar_stream(root, stream);
     for path in &files {
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
@@ -238,7 +239,7 @@ fn prepare_segment(
             FileFacts {
                 archive_part: name.ends_with(".jsonl")
                     && placement_part_stems.contains(name.trim_end_matches(".jsonl")),
-                calendar_stream: solstone_core_segment::is_calendar_stream(root, stream),
+                calendar_stream,
                 ..Default::default()
             },
         );
@@ -1613,6 +1614,31 @@ mod tests {
                 .unwrap_or_default()
                 .contains("context:")
         }));
+    }
+
+    #[test]
+    fn declared_dashboard_talent_rows_reach_the_segment() {
+        use solstone_core_format::content::{Reader, file_spec};
+
+        let temp = tempfile::tempdir().unwrap();
+        let segment = "20260101/default/100000_60";
+        for (name, key) in [
+            ("summary.md", "summary"),
+            ("details/note.md", "details/note"),
+        ] {
+            let relative = format!("{segment}/talents/{name}");
+            let row = file_spec(&relative).unwrap();
+            assert!(row.segment.is_none());
+            assert!(row.offered_to.contains(Reader::Dashboard));
+            let path = temp.path().join("chronicle").join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, format!("projection witness {key}")).unwrap();
+        }
+        let value =
+            prepare_segment(temp.path(), "20260101", "default", "100000_60", Utc::now()).unwrap();
+        for key in ["summary", "details/note"] {
+            assert_eq!(value["md_files"][key], format!("projection witness {key}"));
+        }
     }
 
     #[test]
