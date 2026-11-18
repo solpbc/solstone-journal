@@ -6,6 +6,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
 
+use jiff::Timestamp;
 use jiff::civil::{Date, Weekday};
 use serde_json::{Value, json};
 use solstone_core_format::content::week_left_out::{LeftOut, read_left_out};
@@ -225,7 +226,7 @@ fn read_and_judge(journal: &Path, day: &str, listed_json: bool) -> Result<WeekJu
     let json_entry = entries.iter().find(|e| e.name == json_filename.as_str());
     let md_entry = entries.iter().find(|e| e.name == md_filename.as_str());
 
-    let content_bytes = match json_entry {
+    match json_entry {
         Some(entry) => {
             if entry.kind != JournalEntryKind::RegularFile {
                 return Err(());
@@ -233,29 +234,37 @@ fn read_and_judge(journal: &Path, day: &str, listed_json: bool) -> Result<WeekJu
             let Ok(root) = JournalRoot::open(journal) else {
                 return Err(());
             };
-            let rel = Path::new("reflections").join("weekly").join(&json_filename);
-            match read_relative_file_bounded(&root, &rel, MAX_WEEK_FILE_BYTES) {
-                Ok(Some(obs)) => obs.bytes,
-                _ => return Err(()),
-            }
+            read_week_json(&root, day, start_date, None)
         }
-        None if listed_json => return Err(()),
-        None => {
-            return Ok(match md_entry {
-                Some(entry) if entry.kind == JournalEntryKind::RegularFile => {
-                    WeekJudgment::CantShow
-                }
-                Some(entry) if entry.kind == JournalEntryKind::Directory => WeekJudgment::Absent,
-                Some(_) => WeekJudgment::CouldntCheck,
-                None => WeekJudgment::Absent,
-            });
-        }
-    };
-
-    Ok(judge_contents(day, start_date, &content_bytes))
+        None if listed_json => Err(()),
+        None => Ok(match md_entry {
+            Some(entry) if entry.kind == JournalEntryKind::RegularFile => WeekJudgment::CantShow,
+            Some(entry) if entry.kind == JournalEntryKind::Directory => WeekJudgment::Absent,
+            Some(_) => WeekJudgment::CouldntCheck,
+            None => WeekJudgment::Absent,
+        }),
+    }
 }
 
-fn judge_contents(day: &str, start_date: Date, content_bytes: &[u8]) -> WeekJudgment {
+fn read_week_json(
+    root: &JournalRoot,
+    day: &str,
+    start_date: Date,
+    as_of: Option<Timestamp>,
+) -> Result<WeekJudgment, ()> {
+    let rel = Path::new("reflections/weekly").join(format!("{day}.json"));
+    match read_relative_file_bounded(root, &rel, MAX_WEEK_FILE_BYTES) {
+        Ok(Some(observation)) => Ok(judge_contents(day, start_date, &observation.bytes, as_of)),
+        _ => Err(()),
+    }
+}
+
+fn judge_contents(
+    day: &str,
+    start_date: Date,
+    content_bytes: &[u8],
+    as_of: Option<Timestamp>,
+) -> WeekJudgment {
     if start_date.weekday() != Weekday::Sunday {
         return WeekJudgment::CouldntCheck;
     }
@@ -264,6 +273,15 @@ fn judge_contents(day: &str, start_date: Date, content_bytes: &[u8]) -> WeekJudg
         Ok(Value::Object(map)) => Value::Object(map),
         _ => return WeekJudgment::CouldntCheck,
     };
+
+    let generated_at = value
+        .get("generated_at")
+        .and_then(Value::as_str)
+        .and_then(|at| solstone_core_time::parse_rfc3339(at).ok())
+        .map(|at| at.timestamp());
+    if as_of.is_some_and(|cutoff| generated_at.is_none_or(|at| at > cutoff)) {
+        return WeekJudgment::Absent;
+    }
 
     let Some(version_val) = value.get("version") else {
         return WeekJudgment::CouldntCheck;
@@ -419,11 +437,6 @@ fn judge_contents(day: &str, start_date: Date, content_bytes: &[u8]) -> WeekJudg
         .to_string();
 
     let said = read_said(&value, &trusted_days, &trusted_memories);
-    let generated_at_ms = value
-        .get("generated_at")
-        .and_then(Value::as_str)
-        .and_then(|at| solstone_core_time::parse_rfc3339(at).ok())
-        .map(|at| at.timestamp().as_millisecond());
 
     WeekJudgment::Page(TrustedWeek {
         start_day,
@@ -431,7 +444,7 @@ fn judge_contents(day: &str, start_date: Date, content_bytes: &[u8]) -> WeekJudg
         days: trusted_days,
         memories: trusted_memories,
         said,
-        generated_at_ms,
+        generated_at_ms: generated_at.map(|at| at.as_millisecond()),
     })
 }
 
@@ -1332,54 +1345,7 @@ pub fn card(context: &HomeContext) -> Value {
         let stem_date = week_day(&newest).unwrap();
 
         match judge(context.journal_root(), &newest) {
-            WeekJudgment::Page(trusted) => {
-                let title = format_week_title(stem_date, current_year);
-                let url = format!("/app/home/week/{newest}");
-
-                let left_out = read_left_out(context.journal_root());
-                let empty_set = BTreeSet::new();
-                let left_out_keys = match &left_out {
-                    LeftOut::Keys(keys) => keys,
-                    _ => &empty_set,
-                };
-                let memory_by_id: std::collections::BTreeMap<&str, &TrustedMemory> = trusted
-                    .memories
-                    .iter()
-                    .map(|m| (m.id.as_str(), m))
-                    .collect();
-                let mut first_shown = None;
-                for d in &trusted.days {
-                    if d.state == "memory"
-                        && let Some(mem_id) = &d.memory_id
-                        && let Some(mem) = memory_by_id.get(mem_id.as_str())
-                        && !left_out_keys.contains(&mem.key)
-                    {
-                        first_shown = Some(mem.text.clone());
-                        break;
-                    }
-                }
-                let quote_showing = shown_quote_count(&trusted.said, left_out_keys) > 0;
-                let (memory, empty) = match left_out {
-                    LeftOut::Unreadable => (Value::Null, Value::Null),
-                    _ => match first_shown {
-                        Some(text) => (Value::String(text), Value::Null),
-                        None if quote_showing => (Value::Null, Value::Null),
-                        None => (
-                            Value::Null,
-                            Value::String("nothing from this week is showing.".to_string()),
-                        ),
-                    },
-                };
-
-                json!({
-                    "state": "week",
-                    "title": title,
-                    "url": url,
-                    "memory": memory,
-                    "empty": empty,
-                    "line": Value::Null,
-                })
-            }
+            WeekJudgment::Page(trusted) => week_card(context, stem_date, trusted),
             WeekJudgment::CantShow | WeekJudgment::Untrusted | WeekJudgment::CouldntCheck => {
                 let line = format_unreadable_line(stem_date, current_year);
                 json!({
@@ -1404,6 +1370,88 @@ pub fn card(context: &HomeContext) -> Value {
     } else {
         first_card(context)
     }
+}
+
+/// Pick a stored reflection whose generation time proves it was available.
+pub(crate) fn card_at(context: &HomeContext) -> Value {
+    let journal = context.journal_root();
+    let entries = match weekly_dir_entries(journal) {
+        WeeklyDirResult::Absent => return first_card(context),
+        WeeklyDirResult::Unreadable => return unchecked_card(),
+        WeeklyDirResult::Entries(entries) => entries,
+    };
+    let Ok(root) = JournalRoot::open(journal) else {
+        return unchecked_card();
+    };
+    let today = context.local_date();
+    let mut weeks = entries
+        .iter()
+        .filter(|entry| entry.kind == JournalEntryKind::RegularFile)
+        .filter_map(|entry| {
+            let stem = entry.name.to_str()?.strip_suffix(".json")?;
+            let date = week_day(stem)?;
+            (date <= today).then_some((date, stem))
+        })
+        .collect::<Vec<_>>();
+    weeks.sort_unstable();
+    for (date, stem) in weeks.into_iter().rev() {
+        if let Ok(WeekJudgment::Page(week)) =
+            read_week_json(&root, stem, date, Some(context.now_utc))
+        {
+            return week_card(context, date, week);
+        }
+    }
+    first_card(context)
+}
+
+fn week_card(context: &HomeContext, stem_date: Date, trusted: TrustedWeek) -> Value {
+    let title = format_week_title(stem_date, i32::from(context.local_date().year()));
+    let day = solstone_core_time::day_key(stem_date);
+    let url = format!("/app/home/week/{day}");
+
+    let left_out = read_left_out(context.journal_root());
+    let empty_set = BTreeSet::new();
+    let left_out_keys = match &left_out {
+        LeftOut::Keys(keys) => keys,
+        _ => &empty_set,
+    };
+    let memory_by_id: std::collections::BTreeMap<&str, &TrustedMemory> = trusted
+        .memories
+        .iter()
+        .map(|m| (m.id.as_str(), m))
+        .collect();
+    let mut first_shown = None;
+    for d in &trusted.days {
+        if d.state == "memory"
+            && let Some(mem_id) = &d.memory_id
+            && let Some(mem) = memory_by_id.get(mem_id.as_str())
+            && !left_out_keys.contains(&mem.key)
+        {
+            first_shown = Some(mem.text.clone());
+            break;
+        }
+    }
+    let quote_showing = shown_quote_count(&trusted.said, left_out_keys) > 0;
+    let (memory, empty) = match left_out {
+        LeftOut::Unreadable => (Value::Null, Value::Null),
+        _ => match first_shown {
+            Some(text) => (Value::String(text), Value::Null),
+            None if quote_showing => (Value::Null, Value::Null),
+            None => (
+                Value::Null,
+                Value::String("nothing from this week is showing.".to_string()),
+            ),
+        },
+    };
+
+    json!({
+        "state": "week",
+        "title": title,
+        "url": url,
+        "memory": memory,
+        "empty": empty,
+        "line": Value::Null,
+    })
 }
 
 fn next_week_card(context: &HomeContext) -> Value {

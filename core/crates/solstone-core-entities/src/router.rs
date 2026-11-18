@@ -5402,7 +5402,7 @@ fn network_plate_work(
                 include_principal: include_principal_flag(query.include_principal.as_deref()),
                 limit,
                 evidence_limit,
-                reference_day: None,
+                ..NetworkRequest::default()
             };
             let response = load_entity_network(
                 journal_root,

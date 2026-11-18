@@ -288,6 +288,8 @@ pub struct NetworkRequest {
     pub limit: i64,
     pub evidence_limit: i64,
     pub reference_day: Option<String>,
+    /// Historical read using the indexed evidence available at this instant.
+    pub as_of: Option<Timestamp>,
 }
 
 impl Default for NetworkRequest {
@@ -298,6 +300,7 @@ impl Default for NetworkRequest {
             limit: 25,
             evidence_limit: 5,
             reference_day: None,
+            as_of: None,
         }
     }
 }
@@ -517,17 +520,19 @@ pub fn load_entity_network(
     attendance_kinds: &[&str],
     aliases: &EdgeAliases,
 ) -> Result<NetworkResponse, EdgeQueryError> {
-    report_edge_damage(
+    let result = load_entity_network_unreported(
         journal,
-        load_entity_network_unreported(
-            journal,
-            entity_id,
-            request,
-            principal_id,
-            attendance_kinds,
-            aliases,
-        ),
-    )
+        entity_id,
+        request,
+        principal_id,
+        attendance_kinds,
+        aliases,
+    );
+    if request.as_of.is_some() {
+        result
+    } else {
+        report_edge_damage(journal, result)
+    }
 }
 
 fn load_entity_network_unreported(
@@ -554,10 +559,20 @@ fn load_entity_network_unreported(
     }
     let filter = build_filters(&request.filters)?;
     let zone = solstone_core_journal_config::owner_zone(journal);
-    let reference_day = reference_day(request.reference_day.as_deref(), &zone, Timestamp::now())?;
+    let reference_day = reference_day(
+        request
+            .reference_day
+            .as_deref()
+            .filter(|_| request.as_of.is_none()),
+        &zone,
+        request.as_of.unwrap_or_else(Timestamp::now),
+    )?;
     let reference = parse_reference_day(&reference_day)?;
-    let ranking = filter.with_ranking_cap(&reference_day);
+    let mut ranking = filter.with_ranking_cap(&reference_day);
     let connection = open_edges_reader(journal)?;
+    if let Some(at) = request.as_of {
+        ranking.cap_evidence_at(&connection, &reference_day, at)?;
+    }
     let members = aliases.members(entity_id);
     let neighbor_limit = request.limit as usize;
     let mut retained = Vec::with_capacity(neighbor_limit);
@@ -1101,6 +1116,48 @@ impl From<(&FilterSql, bool)> for NetworkFilters {
     }
 }
 impl FilterSql {
+    fn cap_evidence_at(
+        &mut self,
+        connection: &Connection,
+        reference_day: &str,
+        at: Timestamp,
+    ) -> Result<(), EdgeQueryError> {
+        connection
+            .create_scalar_function(
+                "edge_segment_duration_ms",
+                1,
+                rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
+                |args| {
+                    let path = args.get::<String>(0)?;
+                    let duration = solstone_core_format::segment::segment_key(&path)
+                        .and_then(|segment| segment.split_once('_')?.1.parse::<i64>().ok())
+                        .and_then(|seconds| seconds.checked_mul(1000));
+                    Ok(duration)
+                },
+            )
+            .map_err(|error| unavailable_db(connection, error))?;
+        // Whole-segment evidence arrives at the segment end. Zero and NULL
+        // only establish a day. Same-day legacy events may have imputed times.
+        self.sql.push_str(
+            "\n  AND day IS NOT NULL
+               AND (day < ? OR source != 'event-legacy')
+               AND CASE
+                   WHEN ts IS NULL OR ts = 0 THEN day < ?
+                   WHEN typeof(ts) != 'integer' THEN 0
+                   WHEN source IN ('calendar','document','mention','messaging','speaker')
+                       THEN ts + edge_segment_duration_ms(path) <= ?
+                   ELSE ts <= ?
+               END",
+        );
+        self.params.extend([
+            text(reference_day),
+            text(reference_day),
+            at.as_millisecond().into(),
+            at.as_millisecond().into(),
+        ]);
+        Ok(())
+    }
+
     fn with_ranking_cap(&self, reference_day: &str) -> Self {
         let mut params = self.params.clone();
         params.push(text(reference_day));
@@ -1576,4 +1633,64 @@ fn accumulate_kind(
     entry.count += count;
     entry.weighted += weighted;
     Ok(())
+}
+
+#[cfg(test)]
+mod account_time_tests {
+    use super::*;
+
+    #[test]
+    fn account_time_keeps_only_eligible_indexed_evidence() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE edges(label TEXT, day TEXT, source TEXT, path TEXT, ts INTEGER)",
+            )
+            .unwrap();
+        let cutoff = "2025-10-22T22:00:00Z".parse::<Timestamp>().unwrap();
+        connection
+            .execute(
+                "INSERT INTO edges VALUES
+                 ('older day only', '20251021', 'co-presence', 'older', 0),
+                 ('at cutoff', '20251022', 'participation', 'cutoff', ?1),
+                 ('later that day', '20251022', 'participation', 'after', ?1 + 1),
+                 ('unknown time', '20251022', 'co-presence', 'unknown', NULL),
+                 ('legacy event', '20251022', 'event-legacy', 'legacy', ?1 - 1),
+                 ('added later', '20251021', 'observation', 'added', ?1 + 2),
+                 ('unfinished segment', '20251022', 'speaker', '20251022/talk/215959_5/talents/speaker_labels.json', ?1 - 1000),
+                 ('finished segment', '20251022', 'speaker', '20251022/talk/215955_5/talents/speaker_labels.json', ?1 - 5000),
+                 ('future day', '20251023', 'calendar', '20251022/talk/215955_5/talents/screen.md', ?1 - 5000),
+                 ('unknown day', NULL, 'observation', 'undated', ?1 - 1)",
+                [cutoff.as_millisecond()],
+            )
+            .unwrap();
+        let mut ranking = FilterSql {
+            sql: String::new(),
+            params: Vec::new(),
+            payload: EdgeFiltersPayload {
+                kinds: None,
+                facet: None,
+                day_from: None,
+                day_to: None,
+            },
+        }
+        .with_ranking_cap("20251022");
+        ranking
+            .cap_evidence_at(&connection, "20251022", cutoff)
+            .unwrap();
+        let mut statement = connection
+            .prepare(&format!(
+                "SELECT label FROM edges WHERE 1=1 {} ORDER BY label",
+                ranking.sql
+            ))
+            .unwrap();
+        let labels = statement
+            .query_map(params_from_iter(&ranking.params), |row| {
+                row.get::<_, String>(0)
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(labels, ["at cutoff", "finished segment", "older day only"]);
+    }
 }

@@ -1076,6 +1076,7 @@ pub struct ConnectionReadError;
 pub fn load_connections_network(
     context: &HomeContext,
     principal: &Value,
+    as_of: Option<Timestamp>,
 ) -> Result<Option<solstone_core_indexer_query::NetworkResponse>, ConnectionReadError> {
     let Some(principal_id) = principal
         .get("id")
@@ -1087,6 +1088,7 @@ pub fn load_connections_network(
     let request = NetworkRequest {
         limit: 12,
         evidence_limit: 1,
+        as_of,
         ..NetworkRequest::default()
     };
     load_entity_network(
@@ -2247,7 +2249,7 @@ mod tests {
         let root = TempDir::new().unwrap();
         let context = context(root.path());
         assert!(matches!(
-            load_connections_network(&context, &json!({})),
+            load_connections_network(&context, &json!({}), None),
             Ok(None)
         ));
         assert!(connection_copy().is_object());
@@ -2438,7 +2440,7 @@ mod tests {
                 .unwrap();
         }
         drop(connection);
-        let network = load_connections_network(&context, &json!({"id":"me"}))
+        let network = load_connections_network(&context, &json!({"id":"me"}), None)
             .unwrap()
             .unwrap();
         assert_eq!(network.total_neighbors, 1);
@@ -2466,7 +2468,7 @@ mod tests {
             )
             .unwrap();
         drop(connection);
-        let network = load_connections_network(&context, &json!({"id":"me"}))
+        let network = load_connections_network(&context, &json!({"id":"me"}), None)
             .unwrap()
             .unwrap();
         assert_eq!(network.total_neighbors, 1);
@@ -2480,11 +2482,11 @@ mod tests {
         let context = context(root.path());
         assert_eq!(load_awareness(&context), json!({}));
         assert!(matches!(
-            load_connections_network(&context, &json!({})),
+            load_connections_network(&context, &json!({}), None),
             Ok(None)
         ));
         assert!(matches!(
-            load_connections_network(&context, &json!({"id":""})),
+            load_connections_network(&context, &json!({"id":""}), None),
             Ok(None)
         ));
     }

@@ -1271,7 +1271,10 @@
     ]);
 
     function formatConnectionDay(day) {
-      return window.JournalFormat.day(day);
+      const asOf = accountTime && lastPulse?.now?.slice(0, 16) === accountTime
+        ? new Date(accountTime)
+        : undefined;
+      return window.JournalFormat.day(day, asOf);
     }
 
     function midSentenceDay(day) {

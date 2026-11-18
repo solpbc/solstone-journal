@@ -116,7 +116,15 @@ fn build_pulse_context(
         )
     };
     let activities = collect_activities(account_context, &today, latest);
-    let latest_weekly_reflection = crate::weekly::card(context);
+    let latest_weekly_reflection = account
+        .as_ref()
+        .map_or_else(|| crate::weekly::card(context), crate::weekly::card_at);
+    let horizon = if account_time.is_none() {
+        read_connections_horizon(context.journal_root())
+    } else {
+        None
+    };
+    let connections = load_connections_card(context, horizon, account_time);
     let last_observe_relative = last_observe_relative_seconds(context)
         .map(|seconds| format!("{} ago", relative_time(seconds as f64)));
 
@@ -177,7 +185,8 @@ fn build_pulse_context(
         && !briefing_exists
         && attention.is_null()
         && pulse_needs.is_empty()
-        && !matches!(reflection_state, Some("week") | Some("unreadable"));
+        && !matches!(reflection_state, Some("week") | Some("unreadable"))
+        && !(account_time.is_some() && connections["state"] == "ok");
 
     let mut needs_keys = BTreeSet::new();
     if !attention.is_null() {
@@ -246,9 +255,6 @@ fn build_pulse_context(
             }
             summary
         });
-    let horizon = read_connections_horizon(context.journal_root());
-    let connections = load_connections_card(context, horizon);
-
     let mut fields = Map::new();
     fields.insert("today".to_owned(), today.into());
     fields.insert("briefing_analysis_day".to_owned(), yesterday.clone().into());
@@ -385,7 +391,11 @@ fn format_now(now: &ZonedDateTime) -> String {
     now.strftime("%Y-%m-%dT%H:%M:%S%.6f").to_string()
 }
 
-fn load_connections_card(context: &HomeContext, horizon: Option<ConnectionsHorizon>) -> Value {
+fn load_connections_card(
+    context: &HomeContext,
+    horizon: Option<ConnectionsHorizon>,
+    as_of: Option<Timestamp>,
+) -> Value {
     let principal = read_journal_principal(context.journal_root()).map_err(|_| ());
     let network = match principal.as_ref() {
         Err(_) | Ok(None) => Ok(json!({})),
@@ -397,7 +407,7 @@ fn load_connections_card(context: &HomeContext, horizon: Option<ConnectionsHoriz
         {
             Ok(json!({}))
         }
-        Ok(Some(principal)) => load_connections_network(context, principal)
+        Ok(Some(principal)) => load_connections_network(context, principal, as_of)
             .map_err(|_| ())
             .and_then(|network| {
                 network
@@ -1579,8 +1589,8 @@ mod tests {
     fn assert_horizon_failure_does_not_change_card(root: &Path) {
         let ctx = horizon_context(root);
         assert!(read_connections_horizon(root).is_none());
-        let with_refresh = load_connections_card(&ctx, read_connections_horizon(root));
-        let with_none = load_connections_card(&ctx, None);
+        let with_refresh = load_connections_card(&ctx, read_connections_horizon(root), None);
+        let with_none = load_connections_card(&ctx, None, None);
         assert_eq!(with_refresh, with_none);
         assert!(with_refresh.get("horizon_day").is_none());
         assert!(with_refresh.get("horizon_note").is_none());
@@ -1656,7 +1666,7 @@ mod tests {
         let ctx = horizon_context(root.path());
         let horizon = read_connections_horizon(root.path());
         assert!(horizon.is_none());
-        let card = load_connections_card(&ctx, horizon);
+        let card = load_connections_card(&ctx, horizon, None);
         assert!(card.get("horizon_day").is_none());
         assert!(card.get("horizon_note").is_none());
     }

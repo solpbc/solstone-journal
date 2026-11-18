@@ -440,6 +440,27 @@ mod tests {
             r#"{"identity":{"timezone":"Europe/London"}}"#,
         )
         .unwrap();
+        let weekly = root.path().join("reflections/weekly");
+        fs::create_dir_all(&weekly).unwrap();
+        for (start, generated_at) in [
+            (12, Some("2025-10-18T22:00:00Z")),
+            (19, Some("2025-10-23T00:00:00.000001+01:00")),
+            (26, None),
+        ] {
+            let days: Vec<_> = (start..start + 7)
+                .map(|day| {
+                    let date = jiff::civil::date(2025, 10, 1)
+                        .checked_add(jiff::Span::new().days(day - 1))
+                        .unwrap();
+                    json!({"day": solstone_core_time::day_key(date), "state": "nothing_shared"})
+                })
+                .collect();
+            fs::write(
+                weekly.join(format!("202510{start}.json")),
+                json!({"version": 1, "generated_at": generated_at, "days": days}).to_string(),
+            )
+            .unwrap();
+        }
         let now = "2026-08-14T09:00:00Z".parse().unwrap();
         let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now), |_| {
             false
@@ -458,6 +479,21 @@ mod tests {
         assert_eq!(demo_pulse["today"], "20251022");
         assert_eq!(demo_pulse["now"], "2025-10-22T00:30:00.000000");
         assert_eq!(demo_pulse["briefing_analysis_day"], "20251021");
+        let current_week = |pulse: &Value| pulse["latest_weekly_reflection"]["url"].clone();
+        assert_eq!(current_week(&live_pulse), "/app/home/week/20251026");
+        assert_eq!(current_week(&demo_pulse), "/app/home/week/20251012");
+        assert_eq!(
+            current_week(&read("pulse", "?today=2025-10-23T00:00").await),
+            "/app/home/week/20251012"
+        );
+        assert_eq!(
+            current_week(&read("pulse", "?today=2025-10-23T00:01").await),
+            "/app/home/week/20251019"
+        );
+        assert_eq!(
+            current_week(&read("pulse", "?today=2025-10-27T00:00").await),
+            "/app/home/week/20251019"
+        );
         for field in [
             "capture_health",
             "health_glance",
