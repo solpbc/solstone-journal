@@ -5,6 +5,113 @@ use serde_json::Value;
 
 use super::{JsonObject, ProducedChunks, clean_value, display_value, json_truthy, recorded_chunk};
 
+/// Render the saved Sense projections for the owner without changing what
+/// thinking and Search index. The entity list is also stored in individual
+/// index chunks, which have the same heading and omit the bullet.
+pub fn owner_sense_text(markdown: &str) -> Option<String> {
+    if let Some((heading, body)) = markdown.split_once('\n')
+        && heading.trim_end() == "# Sense Entities"
+    {
+        return owner_sense_list(body.trim_start_matches(['\n', '\r']));
+    }
+    owner_sense_record(markdown)
+}
+
+fn owner_sense_list(body: &str) -> Option<String> {
+    let is_list = body.starts_with("- ");
+    let mut projected = false;
+    let lines = body
+        .lines()
+        .enumerate()
+        .map(|(index, line)| {
+            let item = if is_list {
+                line.strip_prefix("- ").map(|item| ("- ", item))
+            } else {
+                (index == 0).then_some(("", line))
+            };
+            let Some((bullet, (name, context))) =
+                item.and_then(|(bullet, item)| Some((bullet, sense_entity_fields(item)?)))
+            else {
+                return line.to_owned();
+            };
+            projected = true;
+            if context.is_empty() {
+                format!("{bullet}{name}")
+            } else {
+                format!("{bullet}{name} — {context}")
+            }
+        })
+        .collect::<Vec<_>>();
+    projected.then(|| lines.join("\n"))
+}
+
+fn sense_entity_fields(item: &str) -> Option<(&str, &str)> {
+    let (kind, entity) = item.split_once(" — ")?;
+    if !entity_kind(kind) {
+        return None;
+    }
+    entity
+        .match_indices(" (role=")
+        .find_map(|(offset, marker)| {
+            let fields = &entity[offset + marker.len()..];
+            let (metadata, context) = fields
+                .split_once(") — ")
+                .or_else(|| fields.strip_suffix(") —").map(|metadata| (metadata, "")))?;
+            let (role, source) = metadata.split_once(", source=")?;
+            // The inserted fields are enum values. A name can contain "(role=".
+            [role, source]
+                .iter()
+                .all(|field| {
+                    field
+                        .bytes()
+                        .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+                })
+                .then_some((&entity[..offset], context))
+        })
+}
+
+// JSON Sense records are indexed using render_sense below. Keep their summary,
+// facets and speakers while projecting the generated entity rows.
+fn owner_sense_record(markdown: &str) -> Option<String> {
+    let mut projected = false;
+    let mut in_entities = false;
+    let lines = markdown
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            if index == 0 && line.starts_with("## Sense: ") {
+                projected = true;
+                return None;
+            }
+            if line.starts_with("### ") {
+                in_entities = line == "### Entities";
+                if in_entities {
+                    projected = true;
+                    return None;
+                }
+            }
+            if in_entities
+                && let Some(item) = line.strip_prefix("- ")
+                && let Some((kind, detail)) = item.split_once(": ")
+                && entity_kind(kind)
+            {
+                let detail = [" (high)", " (medium)", " (low)"]
+                    .iter()
+                    .find_map(|level| detail.strip_suffix(level))
+                    .unwrap_or(detail);
+                return Some(format!("- {detail}"));
+            }
+            Some(line.to_owned())
+        })
+        .collect::<Vec<_>>();
+    let text = lines.join("\n");
+    (projected && !text.trim().is_empty()).then(|| text.trim().to_owned())
+}
+
+fn entity_kind(kind: &str) -> bool {
+    matches!(kind, "Person" | "Company" | "Project" | "Tool")
+}
+
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
     if let Some(sense_obj) = records.first() {
@@ -157,6 +264,41 @@ mod tests {
 
     fn render_one(text: &str) -> ProducedChunks {
         render(&parse_json_object(text))
+    }
+
+    #[test]
+    fn owner_names_read_saved_entity_markdown_and_its_indexed_chunk() {
+        let saved = "# Sense Entities\n\n- Project — Acorn — v2 (role=reader) (role=mentioned, source=transcript) — Reviewed the plan (role=editor).\n  Tool — B (role=mentioned, source=screen) — quoted example\n- Person — Ada (role=attendee, source=speaker_label) — \n\nLeft out: Some input did not fit.";
+        let shown = owner_sense_text(saved).expect("saved Sense list");
+        assert!(shown.contains("Acorn — v2"));
+        assert!(shown.contains("Reviewed the plan (role=editor)."));
+        assert!(shown.contains("- Ada\n"));
+        assert!(shown.contains("Left out:"));
+        assert!(!shown.contains("source=transcript"));
+        assert!(!shown.contains("source=speaker_label"));
+
+        let indexed = crate::chunker::format_markdown(saved);
+        let excerpt =
+            owner_sense_text(&indexed.chunks[0].markdown).expect("Sense list item after chunking");
+        assert!(excerpt.starts_with("Acorn — v2 (role=reader)"), "{excerpt}");
+        assert!(excerpt.contains("Reviewed the plan (role=editor)."));
+        assert!(excerpt.contains("Tool — B (role=mentioned, source=screen) — quoted example"));
+        assert!(!excerpt.contains("source=transcript"));
+        assert!(owner_sense_text("# Sense Entities\n\nA note with no entity fields.").is_none());
+    }
+
+    #[test]
+    fn owner_sense_record_keeps_the_summary_and_names_from_the_existing_index_text() {
+        let stored = render_one(
+            r#"{"content_type":"meeting","activity_summary":"Reviewed launch.","entities":[{"type":"Person","name":"Ada","context":"Confirmed the priority was (high)","level":"medium"}],"facets":[{"facet":"work","activity":"planning"}]}"#,
+        );
+        let shown = owner_sense_text(&stored.chunks[0].content).expect("Sense record");
+        assert!(shown.starts_with("Reviewed launch."));
+        assert!(shown.contains("Ada — Confirmed the priority was (high)"));
+        assert!(shown.contains("work: planning"));
+        for internal in ["Sense: meeting", "Person: Ada", "(medium)"] {
+            assert!(!shown.contains(internal));
+        }
     }
 
     #[test]

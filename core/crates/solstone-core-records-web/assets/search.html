@@ -244,7 +244,7 @@
    results.replaceChildren();paging.replaceChildren();status.classList.remove('search-error');
    if(!state.q.trim()){status.textContent=initialStatus;settle();report('content');return;}
    if(state.from&&state.to&&state.from>state.to){status.textContent='choose an end date on or after the start date.';status.classList.add('search-error');settle();report('error');return;}
-   const p=new URLSearchParams({q:state.q.trim(),limit:String(state.limit),offset:String(state.offset)});
+   const p=new URLSearchParams({q:state.q.trim(),limit:String(state.limit),offset:String(state.offset),owner_view:'true'});
    if(state.from)p.set('day_from',state.from.replaceAll('-',''));if(state.to)p.set('day_to',state.to.replaceAll('-',''));
    const url='/app/search/api/search?'+p;
    const kept=restore?heldFor(id,url):null;

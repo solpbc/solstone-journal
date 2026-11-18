@@ -506,6 +506,9 @@ fn prepare_segment(
     if data_state.contains_key("screen") {
         md_files.remove("screen");
     }
+    let sense_display = md_files
+        .get("sense")
+        .and_then(|text| solstone_core_format::content::owner_sense_text(text));
     // Screen text names the clock time each group was seen, not its offset.
     if let Some(text) = md_files.get_mut("screen_text") {
         let clocked = solstone_core_format::content::screen_text::screen_text_with_clock(text, key);
@@ -545,6 +548,9 @@ fn prepare_segment(
         "warnings": warnings.len(),
         "warning_details": warnings,
     });
+    if let Some(text) = sense_display {
+        payload["sense_display"] = Value::String(text);
+    }
     if let Some(capture) = audio_capture {
         payload["audio_capture"] = capture;
     }

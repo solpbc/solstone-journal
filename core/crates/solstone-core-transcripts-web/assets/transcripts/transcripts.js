@@ -2285,7 +2285,12 @@
       }
 
       const mdStems = Object.keys(data.md_files || {}).sort((a, b) => a.localeCompare(b));
-      mdStems.forEach(stem => addTab(`md-${stem}`, stem === 'screen_text' ? 'screen text' : stem));
+      mdStems.forEach(stem => {
+        const label = stem === 'sense' && data.sense_display
+          ? 'names'
+          : stem === 'screen_text' ? 'screen text' : stem;
+        addTab(`md-${stem}`, label);
+      });
 
       tabsContainer.classList.add('visible');
     }
@@ -2358,7 +2363,7 @@
           renderSignalsTab(segmentData, pane);
         } else if (tabId.startsWith('md-')) {
           const stem = tabId.slice(3);
-          const content = (segmentData.md_files || {})[stem] || '';
+          const content = (stem === 'sense' && segmentData.sense_display) || (segmentData.md_files || {})[stem] || '';
           pane.innerHTML = `<div class="tr-md-content">${window.AppServices.renderMarkdown(content, { literalValues: stem === 'screen_text' })}</div>`;
         }
       }
@@ -4173,7 +4178,12 @@
       html += '<div class="tr-entry-desc">';
       html += `<div class="tr-shot-label" id="${labelId}"${imageUrl ? ' aria-hidden="true"' : ''}>${escapeHtml(label)}</div>`;
       if (searchable) {
-        html += renderScreenChunkMarkdown(withoutLeadingTimeHeading(chunk.markdown));
+        let markdown = withoutLeadingTimeHeading(chunk.markdown);
+        // A raw screen chunk puts the analysis category before its caption.
+        if (chunk.source_ref?.analysis) {
+          markdown = markdown.replace(/^\r?\n\*\*Category:\*\* [^\r\n]*(?:\r?\n|$)/, '');
+        }
+        html += renderScreenChunkMarkdown(markdown);
       } else if (shot.text === 'no_processing') {
         html += `<div class="tr-shot-final"><p>${escapeHtml(SCREENSHOT_COPY.J6)}</p>`
           + `<p class="tr-shot-action"><a href="/app/thinking/">${escapeHtml(SCREENSHOT_COPY.J6_ACTION)}</a></p></div>`;
@@ -4488,7 +4498,7 @@
         const monitor = shot ? '' : (f.source_ref?.monitor || '');
         const monitorPos = getMonitorPosition(monitor);
         const analysis = f.source_ref?.analysis || {};
-        const category = analysis.primary || '';
+        const category = shot ? '' : (analysis.primary || '');
         const searchableShot = !shot || shot.text === 'searchable';
         const description = f.type === 'image' ? (f.markdown || '') : (searchableShot ? (analysis.visual_description || '') : '');
         const imageUrl = frame.image;

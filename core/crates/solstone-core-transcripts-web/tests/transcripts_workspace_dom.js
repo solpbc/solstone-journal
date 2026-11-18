@@ -1349,7 +1349,7 @@ function shotChunk(text, markdown = '') {
       media_kind: 'image',
       monitor: 'screenshot',
       offset: 0,
-      analysis: text === 'searchable' ? { visual_description: 'a boarding pass' } : null,
+      analysis: text === 'searchable' ? { primary: 'media', visual_description: 'a boarding pass' } : null,
     },
   };
 }
@@ -1398,6 +1398,8 @@ test('a screenshot opens the frame viewer from a button a keyboard reaches', asy
   assert.strictEqual(entry.querySelectorAll('.sr-only').length, 0);
   opener.dispatchEvent({ type: 'click', stopPropagation() {} });
   assert.ok(env.doc.querySelector('.tr-screenshot-modal'), 'the viewer opened');
+  assert.strictEqual(env.doc.querySelector('.tr-modal-badge-category'), null);
+  assert.strictEqual(env.doc.querySelector('.tr-modal-description').textContent, 'a boarding pass');
 });
 
 test('the frame viewer keeps its keys from the page under it', async () => {
@@ -1432,12 +1434,14 @@ test("a screenshot's delete states its own reach: the screenshot and what was ma
   assert.ok(!meta.includes('11:48'), meta);
 });
 
-test("a screenshot's text drops only its own time heading and keeps the headings it carries", async () => {
-  const env = await shotEnvironment('searchable', '### 11:47:15\n\n### Itinerary\nGate B14');
+test("a screenshot shows its caption and text without the frame's time and category metadata", async () => {
+  const env = await shotEnvironment('searchable', '### 11:47:15\n\n**Category:** media\n\n### Itinerary\nGate B14\n\n**Category:** round trip');
   const desc = env.doc.querySelector('#tr-tabpanel-transcript .tr-entry-screenshot .tr-entry-desc .md').textContent;
   assert.ok(!desc.includes('11:47:15'), desc);
+  assert.ok(!desc.includes('**Category:** media'), desc);
   assert.ok(desc.includes('### Itinerary'), desc);
   assert.ok(desc.includes('Gate B14'), desc);
+  assert.ok(desc.includes('**Category:** round trip'), desc);
 });
 
 test('a screenshot says where its text stands in each state', async () => {

@@ -34,6 +34,7 @@ mod protected_video;
 mod raw_screen;
 mod screen;
 mod sense;
+pub use sense::owner_sense_text;
 mod shape;
 pub mod strava_body;
 mod talent_projections;

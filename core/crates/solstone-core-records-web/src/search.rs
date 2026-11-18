@@ -80,6 +80,8 @@ pub(crate) struct SearchQuery {
     pub(crate) time_bucket: Option<String>,
     pub(crate) day_from: Option<String>,
     pub(crate) day_to: Option<String>,
+    #[serde(default)]
+    pub(crate) owner_view: bool,
 }
 
 async fn search_api(journal_root: PathBuf, Query(query): Query<SearchQuery>) -> Response {
@@ -102,6 +104,7 @@ pub(crate) fn search_response_with_index(
     owner_index: &mut OwnerIndex,
     query: SearchQuery,
 ) -> Response {
+    let owner_view = query.owner_view;
     let (day_from, day_to) = match day_range(query.day_from.as_deref(), query.day_to.as_deref()) {
         Ok(range) => range,
         Err(detail) => return invalid_day(&detail),
@@ -199,7 +202,25 @@ pub(crate) fn search_response_with_index(
                 } else {
                     None
                 };
-                let display_text = search_display_text(&hit.metadata.path, &hit.text);
+                // Read the hit as it was indexed. Fetching today's Sense
+                // record here could show different names from the ones that matched.
+                let is_sense_list = hit.metadata.path.ends_with("/talents/sense.md");
+                let sense = if owner_view
+                    && (is_sense_list || hit.metadata.path.ends_with("/talents/sense.json"))
+                {
+                    solstone_core_format::content::owner_sense_text(&hit.text)
+                } else {
+                    None
+                };
+                let display_text = sense.as_deref().map_or_else(
+                    || search_display_text(&hit.metadata.path, &hit.text),
+                    Cow::Borrowed,
+                );
+                let agent_label = if sense.is_some() {
+                    if is_sense_list { "names" } else { "" }.to_owned()
+                } else {
+                    agent_label(&hit.metadata.agent)
+                };
                 let readable = readable_record(&hit.text);
                 // Fresh-eyes 3 #3: when the readable sentences hold no match
                 // the stored record becomes the excerpt, and sending it again
@@ -217,7 +238,7 @@ pub(crate) fn search_response_with_index(
                     "entry_id": hit.row_id,
                     "day": hit.metadata.day,
                     "agent": hit.metadata.agent,
-                    "agent_label": agent_label(&hit.metadata.agent),
+                    "agent_label": agent_label,
                     "facet": hit.metadata.facet,
                     "facet_title": facets.get(&hit.metadata.facet).map_or(&hit.metadata.facet, |facet| &facet.title),
                     "text": excerpt,
